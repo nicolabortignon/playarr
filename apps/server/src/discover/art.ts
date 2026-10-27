@@ -15,8 +15,12 @@ export function remoteArtUrl(url: string | undefined): string | undefined {
   }
 }
 
+/**
+ * Front cover for a release group. Goes through Lidarr's image CDN, which serves Cover Art
+ * Archive images in one hop instead of CAA's two redirects via archive.org mirrors.
+ */
 export function coverArtArchive(releaseGroupMbid: string, size: 250 | 500 = 250): string {
-  return `https://coverartarchive.org/release-group/${releaseGroupMbid}/front-${size}`;
+  return `https://images.lidarr.audio/cache/https://coverartarchive.org/release-group/${releaseGroupMbid}/front-${size}`;
 }
 
 /** Fetch an allowlisted image, following redirects only to allowlisted hosts. */

@@ -10,7 +10,7 @@ import type { LidarrImage, LidarrLookupAlbum, LidarrLookupArtist } from '../lida
 import type { Library } from '../library/library.ts';
 import { normalize } from '../library/search.ts';
 import { coverArtArchive, remoteArtUrl } from './art.ts';
-import { searchDeezerTracks, type DeezerTrack } from './deezer.ts';
+import { deezerArtistTopTracks, searchDeezerTracks, type DeezerTrack } from './deezer.ts';
 import { creditName, type MbReleaseGroup, type MusicBrainz } from './musicbrainz.ts';
 import type { Requests } from './requests.ts';
 
@@ -40,7 +40,23 @@ export class Discover {
       throw new Error(`Search failed: ${(hits.reason as Error).message}`);
     }
     const lidarrHits = hits.status === 'fulfilled' ? hits.value : [];
-    const songs = deezer.status === 'fulfilled' ? rankTracks(deezer.value, nq).slice(0, 10) : [];
+    let rawTracks = deezer.status === 'fulfilled' ? deezer.value : [];
+    // Query names an artist plus a title ("teardrop massive attack"): Deezer's free-text ranking
+    // favors remixes containing every word, so also check that artist's most popular tracks.
+    const named = rawTracks.find((t) => {
+      const a = normalize(t.artist.name);
+      return a && a !== nq && nq.includes(a);
+    })?.artist;
+    if (named) {
+      const rest = nq.replace(normalize(named.name), ' ').replace(/\s+/g, ' ').trim();
+      const top = await deezerArtistTopTracks(named.id, signal).catch(() => []);
+      const matching = top.filter((t) => {
+        const title = normalize(t.title_short || t.title);
+        return rest && (title.includes(rest) || rest.includes(title));
+      });
+      rawTracks = [...matching, ...rawTracks];
+    }
+    const songs = rankTracks(rawTracks, nq).slice(0, 10);
 
     // Artists: Lidarr matches by name, so keep the ones the query actually names.
     let lookupArtists = lidarrHits

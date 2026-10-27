@@ -127,25 +127,36 @@ export class Requests {
 
   /**
    * Resolve "artist + album title" (e.g. from a Deezer song) to a MusicBrainz release group.
-   * MusicBrainz first: its search is reliable and lets us prefer the studio album. Lidarr then
-   * returns the add-ready album resource for that id.
+   * MusicBrainz first: its search is reliable and lets us prefer the studio album over a
+   * same-named single or remix. Lidarr's own lookup is the fallback if MusicBrainz is down.
    */
   private async lookupByName(ref: AlbumRef): Promise<LidarrLookupAlbum> {
     const title = baseTitle(ref.albumTitle) || ref.albumTitle;
     const wantTitle = normalize(title);
     const wantArtist = normalize(ref.artistName);
-    const groups = await this.mb.searchReleaseGroups(ref.artistName, title).catch(() => []);
-    const match = groups
-      .filter((g) => normalize(baseTitle(g.title) || g.title) === wantTitle)
-      .filter((g) => {
-        const credit = normalize(creditName(g['artist-credit']));
-        return credit === wantArtist || credit.includes(wantArtist) || wantArtist.includes(credit);
-      })
-      .sort((a, b) => releaseGroupRank(a) - releaseGroupRank(b))[0];
-    if (!match) {
-      throw new RequestError(`Couldn't find “${title}” by ${ref.artistName} on MusicBrainz`, 404);
+    const sameArtist = (name: string) => {
+      const n = normalize(name);
+      return n === wantArtist || n.includes(wantArtist) || wantArtist.includes(n);
+    };
+    const sameTitle = (t: string) => normalize(baseTitle(t) || t) === wantTitle;
+
+    let mbError: Error | undefined;
+    try {
+      const groups = await this.mb.searchReleaseGroups(ref.artistName, title);
+      const match = groups
+        .filter((g) => sameTitle(g.title) && sameArtist(creditName(g['artist-credit'])))
+        .sort((a, b) => releaseGroupRank(a) - releaseGroupRank(b))[0];
+      if (match) return this.lookupByMbid(match.id);
+    } catch (err) {
+      mbError = err as Error;
     }
-    return this.lookupByMbid(match.id);
+
+    const hits = await this.lidarr.search(`${ref.artistName} ${title}`).catch(() => []);
+    const album = hits.find((h) => h.album && sameTitle(h.album.title) && sameArtist(h.album.artist.artistName))?.album;
+    if (album) return album;
+
+    if (mbError) throw new RequestError(`MusicBrainz is unavailable right now (${mbError.message}). Try again shortly.`, 503);
+    throw new RequestError(`Couldn't find “${title}” by ${ref.artistName} on MusicBrainz`, 404);
   }
 
   private async addToLidarr(lookup: LidarrLookupAlbum): Promise<LidarrAlbum> {

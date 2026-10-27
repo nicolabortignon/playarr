@@ -18,19 +18,26 @@ export interface DeezerTrack {
 const cache = new Map<string, { at: number; data: DeezerTrack[] }>();
 const TTL_MS = 30 * 60_000;
 
-export async function searchDeezerTracks(query: string, signal?: AbortSignal): Promise<DeezerTrack[]> {
-  const key = query.toLowerCase();
-  const hit = cache.get(key);
+async function get(path: string, signal?: AbortSignal): Promise<DeezerTrack[]> {
+  const hit = cache.get(path);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.data;
-
-  const res = await fetch(`https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=40`, {
+  const res = await fetch(`https://api.deezer.com${path}`, {
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`Deezer HTTP ${res.status}`);
   const body = (await res.json()) as { data?: DeezerTrack[]; error?: { message: string } };
   if (body.error) throw new Error(`Deezer: ${body.error.message}`);
   const data = body.data ?? [];
-  cache.set(key, { at: Date.now(), data });
+  cache.set(path, { at: Date.now(), data });
   if (cache.size > 300) cache.delete(cache.keys().next().value!);
   return data;
+}
+
+export function searchDeezerTracks(query: string, signal?: AbortSignal) {
+  return get(`/search/track?q=${encodeURIComponent(query.toLowerCase())}&limit=40`, signal);
+}
+
+/** An artist's most popular tracks; finds originals that free-text search buries under remixes. */
+export function deezerArtistTopTracks(artistId: number, signal?: AbortSignal) {
+  return get(`/artist/${artistId}/top?limit=50`, signal);
 }
