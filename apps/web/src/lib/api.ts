@@ -1,9 +1,13 @@
 import type {
   Album,
   AlbumDetail,
+  AlbumRef,
+  AlbumRequest,
   AlbumSort,
   Artist,
   ArtistDetail,
+  DiscoverArtistDetail,
+  DiscoverResults,
   HealthStatus,
   SearchResults,
   Track,
@@ -18,14 +22,19 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(path, { signal, headers: { Accept: 'application/json' } });
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+  });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new ApiError(body?.error ?? `Request failed (${res.status})`, res.status);
   }
-  return res.json() as Promise<T>;
+  return (res.status === 204 ? undefined : res.json()) as Promise<T>;
 }
+
+const get = <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal });
 
 export const api = {
   health: () => get<HealthStatus>('/api/health'),
@@ -39,6 +48,14 @@ export const api = {
   randomTracks: (limit = 50) => get<Track[]>(`/api/tracks/random?limit=${limit}`),
   search: (q: string, signal?: AbortSignal) =>
     get<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`, signal),
+  discover: (q: string, signal?: AbortSignal) =>
+    get<DiscoverResults>(`/api/discover/search?q=${encodeURIComponent(q)}`, signal),
+  discoverArtist: (mbid: string, signal?: AbortSignal) =>
+    get<DiscoverArtistDetail>(`/api/discover/artists/${mbid}`, signal),
+  requests: () => get<AlbumRequest[]>('/api/requests'),
+  requestAlbum: (ref: AlbumRef) =>
+    request<AlbumRequest>('/api/requests', { method: 'POST', body: JSON.stringify(ref) }),
+  removeRequest: (mbid: string) => request<void>(`/api/requests/${mbid}`, { method: 'DELETE' }),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */

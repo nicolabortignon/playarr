@@ -184,7 +184,8 @@ CRUD /api/playlists, /api/favorites
 - [ ] Lyrics (embedded tags / `.lrc` sidecars, synced display)
 - [ ] ReplayGain, crossfade, EQ (Web Audio)
 - [ ] Offline downloads (cache tracks in the service worker / IndexedDB)
-- [ ] Lidarr actions: monitor, search for missing albums, request new artists
+- [x] **Discover & request** (built 2026-10-27, see §11): search beyond the library, request albums, live download progress
+- [ ] Lidarr actions: show an in-library artist's missing albums, interactive release picking
 - [ ] Live library updates through Lidarr SignalR
 - [ ] Cast / AirPlay (Remote Playback API), Last.fm / ListenBrainz scrobbling
 - [ ] Optional wrappers: Tauri (desktop), Capacitor (mobile)
@@ -227,13 +228,32 @@ pnpm build && pnpm start # production: one process on :4000 serving the API and 
 pnpm --filter @playarr/web test   # smoke tests against the running server
 ```
 
-## 11. Decisions log
+## 11. Discover & requests (how song → album works)
+
+| Need | Source | Why |
+|---|---|---|
+| Songs ("bohemian rhapsody") | **Deezer** public search API (no key) | Ranked by popularity: finds Queen, not one of hundreds of covers. MusicBrainz has no popularity, and Lidarr has no track search |
+| Artists & albums | **Lidarr** `/api/v1/search` | Results already carry MusicBrainz ids and are ready to add |
+| Artist discography | **MusicBrainz** release-group browse | Complete; filtered to albums, EPs and soundtracks |
+| Song → album id | Deezer gives *artist + album title* → MusicBrainz release-group search (prefers the studio album) → Lidarr `album/lookup?term=lidarr:<mbid>`; Lidarr name search is the fallback | Every Lidarr album *is* a MusicBrainz release group (`foreignAlbumId`) |
+| Already own it? | Match artist + album title (edition suffixes stripped) against the library snapshot | Instant; "Mezzanine (Deluxe)" = "Mezzanine" |
+
+**Request flow:** `POST /api/requests` → `POST /api/v1/album` (new artist added with `monitor: none`, so only the requested album is wanted) or `PUT /album/monitor` if Lidarr already knows it → `AlbumSearch` command → status from command + `/queue` + album stats → library refresh when files land. Albums added this way are `AddType.Manual`, which Lidarr never deletes on refresh, so singles and soundtracks outside the metadata profile are safe. Requests persist in `apps/server/.cache/requests.json`.
+
+**Ranking tweaks:** title/artist match on top of popularity, versions (remix/live/edit) pushed down, and when the query names an artist, that artist's top tracks are checked too ("teardrop massive attack" → *Mezzanine*). Remote artwork goes through `/art/remote` (allowlisted hosts, checked on every redirect); release-group covers use Lidarr's image CDN.
+
+**Lidarr setup seen:** quality profiles Any/Lossless/Standard (root default: Any), metadata profile Standard = Album/Studio/Official. Indexers: Knaben + The Pirate Bay via Prowlarr; download client: qBittorrent. Overridable via `LIDARR_ROOT_FOLDER`, `LIDARR_QUALITY_PROFILE_ID`, `LIDARR_METADATA_PROFILE_ID`.
+
+## 12. Decisions log
 
 | Date | Decision |
 |---|---|
 | 2026-10-27 | Web-first React PWA with a Node/Fastify companion server, because Lidarr can't stream audio itself. |
 | 2026-10-27 | The server reads audio through a pluggable `MediaSource`: `sftp` for local dev (no mounts), `local` disk when deployed next to Lidarr, `none` until configured. `/stream` only serves `trackFileId`s that Lidarr reports; the client never sends a path. |
 | 2026-10-27 | Added `MEDIA_SOURCE=ssh` (exec `stat`/`tail`/`head` over SSH) because UGOS's SFTP hides non-UI shares. Config keys renamed `SFTP_*` → `SSH_*`. Paths are shell-quoted; channels close when the browser aborts. Limit: sshd `MaxSessions` (10) caps simultaneous streams per connection; fine for one user, revisit for multi-user. |
+| 2026-10-27 | Discover/requests: Deezer for songs, Lidarr for artists/albums, MusicBrainz for discographies and name → id resolution. Albums are resolved to MusicBrainz ids only at request time (not per search result), which keeps search fast. |
+| 2026-10-27 | Dev server must run outside Claude's sandbox: the sandbox blocks some external hosts (Cover Art Archive, Lidarr's image CDN). This Mac's internet also had intermittent connect timeouts; the code degrades gracefully (songs may be missing; covers retry once). |
+| 2026-10-27 | Git repo initialized; commit each step. |
 | 2026-10-27 | Single `<audio>` element (not two swapped ones) so iOS background playback keeps working. Gapless/crossfade come later via Web Audio. |
 | 2026-10-27 | Visual direction "liner notes": warm near-black, Gloock display serif, Schibsted Grotesk UI, DM Mono for specs and durations. The accent color comes from the current cover art; there's a subtle film grain. |
 | 2026-10-27 | Stack versions: React 19, Vite 8, Tailwind 4, React Router 7 (pinned below v8), TanStack Query 5, Zustand 5, Motion 14, Fastify 5, zod 4, TypeScript 7. |

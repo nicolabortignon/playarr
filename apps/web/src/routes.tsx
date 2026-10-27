@@ -4,9 +4,11 @@ import { AlbumPage } from './pages/Album';
 import { AlbumsPage } from './pages/Albums';
 import { ArtistPage } from './pages/Artist';
 import { ArtistsPage } from './pages/Artists';
+import { DiscoverArtistPage } from './pages/DiscoverArtist';
 import { HomePage } from './pages/Home';
 import { NotFoundPage } from './pages/NotFound';
 import { QueuePage } from './pages/Queue';
+import { RequestsPage } from './pages/Requests';
 import { SearchPage } from './pages/Search';
 
 export const routes: RouteObject[] = [
@@ -20,6 +22,8 @@ export const routes: RouteObject[] = [
       { path: 'albums', element: <AlbumsPage /> },
       { path: 'albums/:id', element: <AlbumPage /> },
       { path: 'queue', element: <QueuePage /> },
+      { path: 'requests', element: <RequestsPage /> },
+      { path: 'discover/artists/:mbid', element: <DiscoverArtistPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

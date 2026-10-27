@@ -3,9 +3,11 @@ import { useDeferredValue, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AlbumCard, ArtistCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
-import { SectionHeader, Shelf } from '../components/Section';
+import { DiscoverAlbumCard, DiscoverArtistCard, DiscoverTrackRow, RequestsPill } from '../components/Discover';
+import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
-import { useArtists, useSearch } from '../lib/queries';
+import { activeRequestCount, useArtists, useDiscover, useRequests, useSearch } from '../lib/queries';
+import { useDebounced } from '../lib/useDebounced';
 
 export function SearchPage() {
   const [params, setParams] = useSearchParams();
@@ -13,6 +15,7 @@ export function SearchPage() {
   const deferred = useDeferredValue(q.trim());
   const { data, isFetching } = useSearch(deferred);
   const input = useRef<HTMLInputElement>(null);
+  const { data: requests } = useRequests();
 
   useEffect(() => {
     input.current?.focus();
@@ -57,12 +60,18 @@ export function SearchPage() {
         </label>
       </div>
 
+      {activeRequestCount(requests) > 0 && (
+        <div className="mt-4">
+          <RequestsPill count={activeRequestCount(requests)} />
+        </div>
+      )}
+
       {!deferred && <BrowseArtists />}
 
       {empty && (
-        <div className="mt-20 text-center">
-          <div className="font-display text-3xl text-paper">Nothing in the crates.</div>
-          <p className="mt-2 text-sm text-muted">No matches for “{deferred}” in your library.</p>
+        <div className="mt-10">
+          <div className="font-display text-3xl text-paper">Not in your crates.</div>
+          <p className="mt-2 text-sm text-muted">Nothing in your library matches “{deferred}”. Here’s what’s out there:</p>
         </div>
       )}
 
@@ -117,7 +126,83 @@ export function SearchPage() {
           )}
         </div>
       )}
+
+      {deferred && <DiscoverSection q={deferred} />}
     </div>
+  );
+}
+
+/** Music that isn't in the library: search Lidarr/MusicBrainz/Deezer and request albums. */
+function DiscoverSection({ q }: { q: string }) {
+  const debounced = useDebounced(q, 450);
+  const { data, isFetching, error } = useDiscover(debounced);
+  // Albums already in the library appear in the results above.
+  const albums = data?.albums.filter((a) => a.availability.state !== 'available') ?? [];
+  const artists = data?.artists.filter((a) => !a.artistId) ?? [];
+  const tracks = data?.tracks ?? [];
+  const nothing = data && !albums.length && !artists.length && !tracks.length;
+  const loading = !data && (isFetching || debounced !== q);
+
+  return (
+    <section className="mt-16 border-t border-line pt-10">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="mb-1 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">
+            Lidarr · MusicBrainz · Deezer
+          </div>
+          <h2 className="flex items-center gap-3 font-display text-3xl leading-none text-paper md:text-4xl">
+            Not in your library
+            {isFetching && <span className="size-2 animate-pulse rounded-full bg-accent" aria-label="Searching" />}
+          </h2>
+        </div>
+        <p className="max-w-sm text-[13px] text-muted">
+          Request an album and Lidarr will search your indexers for it. It shows up here when it’s ready.
+        </p>
+      </div>
+
+      {loading && (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-14" />
+          ))}
+        </div>
+      )}
+      {error && !data && <p className="text-sm text-red-300/80">{(error as Error).message}</p>}
+      {nothing && <p className="text-sm text-muted">Nothing found for “{debounced}”.</p>}
+
+      <div className="space-y-12">
+        {tracks.length > 0 && (
+          <div>
+            <SectionHeader title="Songs" kicker="Request the album it’s on" />
+            <ol className="-mx-3 max-w-4xl">
+              {tracks.slice(0, 8).map((t) => (
+                <DiscoverTrackRow key={t.id} track={t} />
+              ))}
+            </ol>
+          </div>
+        )}
+        {albums.length > 0 && (
+          <div>
+            <SectionHeader title="Albums" />
+            <Shelf>
+              {albums.map((a, i) => (
+                <DiscoverAlbumCard key={a.mbid} album={a} className="w-[40vw] max-w-44 shrink-0 snap-start sm:w-40 md:w-44" style={{ animationDelay: `${i * 30}ms` }} />
+              ))}
+            </Shelf>
+          </div>
+        )}
+        {artists.length > 0 && (
+          <div>
+            <SectionHeader title="Artists" />
+            <Shelf>
+              {artists.map((a, i) => (
+                <DiscoverArtistCard key={a.mbid} artist={a} className="w-[32vw] max-w-40 shrink-0 snap-start sm:w-36 md:w-40" style={{ animationDelay: `${i * 40}ms` }} />
+              ))}
+            </Shelf>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

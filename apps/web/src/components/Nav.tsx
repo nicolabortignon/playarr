@@ -1,8 +1,8 @@
-import { Disc3, Home, Library, ListMusic, Search, type LucideIcon } from 'lucide-react';
+import { Disc3, Download, Home, Library, ListMusic, Search, type LucideIcon } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
-import { useHealth } from '../lib/queries';
+import { activeRequestCount, useHealth, useRequests } from '../lib/queries';
 
 const LINKS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/', label: 'Home', icon: Home },
@@ -27,6 +27,8 @@ export function Wordmark({ className }: { className?: string }) {
 
 export function Sidebar() {
   const { data: health } = useHealth();
+  const { data: requests } = useRequests();
+  const active = activeRequestCount(requests);
   const lib = health?.library;
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-ink-900/80 px-4 pt-6 pb-[calc(88px+1.5rem)] backdrop-blur-xl md:flex">
@@ -60,6 +62,25 @@ export function Sidebar() {
             )}
           </NavLink>
         ))}
+        {(requests?.length ?? 0) > 0 && (
+          <NavLink
+            to="/requests"
+            className={({ isActive }) =>
+              cn(
+                'relative mt-4 flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
+                isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
+              )
+            }
+          >
+            <Download className="size-[18px]" strokeWidth={1.75} />
+            Requests
+            {active > 0 && (
+              <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10px] leading-5 text-accent-ink">
+                {active}
+              </span>
+            )}
+          </NavLink>
+        )}
       </nav>
 
       <div className="mt-auto space-y-3 px-3">

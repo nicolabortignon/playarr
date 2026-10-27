@@ -49,6 +49,7 @@ describe('Playarr web against live server', () => {
     ['/search', 'Try an artist'],
     ['/queue', /Nothing queued/],
     ['/nope', 'This groove is empty.'],
+    ['/requests', 'Requests'],
   ] as [string, string | RegExp][])('renders %s', async (path, text) => {
     if (!reachable) return;
     renderAt(path);
@@ -71,6 +72,23 @@ describe('Playarr web against live server', () => {
     renderAt('/search?q=daft');
     await screen.findByText('Top result');
     await screen.findByText('One More Time');
+    expect(errors).toEqual([]);
+  });
+
+  it('shows music that is not in the library, with request buttons', async () => {
+    if (!reachable) return;
+    renderAt('/search?q=massive%20attack');
+    await screen.findByRole('heading', { name: /Not in your library/ });
+    const buttons = await screen.findAllByRole('button', { name: /Request/ }, { timeout: 20_000 });
+    expect(buttons.length).toBeGreaterThan(0);
+    expect(errors).toEqual([]);
+  });
+
+  it('renders a discover artist page with a discography', async () => {
+    if (!reachable) return;
+    renderAt('/discover/artists/10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8'); // Massive Attack
+    await screen.findByRole('heading', { name: 'Massive Attack' }, { timeout: 20_000 });
+    expect(screen.getByText('Mezzanine')).toBeTruthy();
     expect(errors).toEqual([]);
   });
 
