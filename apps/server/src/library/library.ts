@@ -9,6 +9,8 @@ import type {
   SearchResults,
   Track,
 } from '@playarr/shared';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { LidarrAlbum, LidarrArtist, LidarrImage, LidarrTrackFile } from '../lidarr/types.ts';
 import { formatFromTrackFile, formatKey } from './format.ts';
@@ -40,17 +42,79 @@ interface Snapshot {
   albumIdByKey: Map<string, number>;
 }
 
+/** Bump when the snapshot shape changes so stale files on disk are ignored. */
+const SNAPSHOT_VERSION = 1;
+
+interface StoredSnapshot {
+  version: number;
+  artists: Artist[];
+  albums: AlbumDetail[];
+  files: FileRecord[];
+  albumsByMbid: [string, LidarrAlbumRef][];
+  artistIdByMbid: [string, number][];
+  stats: LibraryStats;
+}
+
 export class Library {
   private snapshot: Snapshot | null = null;
   private inflight: Promise<void> | null = null;
   private timer: NodeJS.Timeout | null = null;
   private refreshTimer: NodeJS.Timeout | null = null;
+  private listeners: ((library: Library) => void)[] = [];
   lastError: string | null = null;
 
   constructor(
     private readonly lidarr: LidarrClient,
     private readonly log: { info: (msg: string) => void; error: (msg: string) => void },
+    /** Where the last snapshot is saved, so a restart can serve instantly instead of waiting on Lidarr. */
+    private readonly cacheFile?: string,
   ) {}
+
+  /** Called after every successful refresh. */
+  onRefresh(listener: (library: Library) => void) {
+    this.listeners.push(listener);
+  }
+
+  /** Load the snapshot saved by a previous run, if any. Returns true when one was loaded. */
+  async loadCached(): Promise<boolean> {
+    if (!this.cacheFile) return false;
+    try {
+      const stored = JSON.parse(await readFile(this.cacheFile, 'utf8')) as StoredSnapshot;
+      if (stored.version !== SNAPSHOT_VERSION) return false;
+      this.snapshot = fromStored(stored);
+      this.log.info(`Library loaded from cache (${stored.stats.refreshedAt}): ${stored.stats.albums} albums`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async saveCached(snap: Snapshot) {
+    if (!this.cacheFile) return;
+    const stored: StoredSnapshot = {
+      version: SNAPSHOT_VERSION,
+      artists: [...snap.artists.values()],
+      albums: [...snap.albums.values()],
+      files: [...snap.files.values()],
+      albumsByMbid: [...snap.albumsByMbid],
+      artistIdByMbid: [...snap.artistIdByMbid],
+      stats: snap.stats,
+    };
+    await mkdir(dirname(this.cacheFile), { recursive: true });
+    await writeFile(`${this.cacheFile}.tmp`, JSON.stringify(stored));
+    await rename(`${this.cacheFile}.tmp`, this.cacheFile);
+  }
+
+  /** Every artwork URL the library references (for cache warming). */
+  artworkUrls(): string[] {
+    const snap = this.snapshot;
+    if (!snap) return [];
+    const urls = [
+      ...[...snap.albums.values()].map((a) => a.coverUrl),
+      ...[...snap.artists.values()].flatMap((a) => [a.imageUrl, a.fanartUrl, a.logoUrl]),
+    ];
+    return [...new Set(urls.filter((u): u is string => !!u))];
+  }
 
   startAutoRefresh(minutes: number) {
     this.timer = setInterval(() => void this.refresh().catch(() => {}), minutes * 60_000);
@@ -69,6 +133,8 @@ export class Library {
         this.lastError = null;
         const s = snap.stats;
         this.log.info(`Library refreshed: ${s.artists} artists, ${s.albums} albums, ${s.tracks} tracks`);
+        void this.saveCached(snap).catch((err: Error) => this.log.error(`Saving library cache failed: ${err.message}`));
+        for (const listener of this.listeners) listener(this);
       })
       .catch((err: Error) => {
         this.lastError = err.message;
@@ -399,4 +465,18 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   });
   await Promise.all(workers);
   return results;
+}
+
+function fromStored(stored: StoredSnapshot): Snapshot {
+  const albums = new Map(stored.albums.map((a) => [a.id, a]));
+  return {
+    artists: new Map(stored.artists.map((a) => [a.id, a])),
+    albums,
+    tracks: stored.albums.flatMap((a) => a.tracks),
+    files: new Map(stored.files.map((f) => [f.id, f])),
+    stats: stored.stats,
+    albumsByMbid: new Map(stored.albumsByMbid),
+    artistIdByMbid: new Map(stored.artistIdByMbid),
+    albumIdByKey: new Map(stored.albums.map((a) => [albumKey(a.artistName, a.title), a.id])),
+  };
 }

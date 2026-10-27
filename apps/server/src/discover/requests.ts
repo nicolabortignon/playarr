@@ -35,7 +35,8 @@ export class RequestError extends Error {
   }
 }
 
-const STATUS_TTL_MS = 3000;
+/** Lidarr's queue can be megabytes and Lidarr is often busy; don't ask more than this often. */
+const STATUS_TTL_MS = 15_000;
 
 /**
  * Turns "I want this album" into Lidarr actions (add → monitor → AlbumSearch)

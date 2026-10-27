@@ -11,7 +11,7 @@ import { LidarrClient } from './lidarr/client.ts';
 import { Library } from './library/library.ts';
 import { createMediaSource } from './media/index.ts';
 import { apiRoutes } from './routes/api.ts';
-import { artRoutes } from './routes/art.ts';
+import { artRoutes, LocalArt } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { streamRoutes } from './routes/stream.ts';
 
@@ -22,10 +22,14 @@ const app = Fastify({
 });
 
 const lidarr = new LidarrClient(config.LIDARR_URL, config.LIDARR_API_KEY);
-const library = new Library(lidarr, {
-  info: (m) => app.log.info(m),
-  error: (m) => app.log.error(m),
-});
+const library = new Library(
+  lidarr,
+  { info: (m) => app.log.info(m), error: (m) => app.log.error(m) },
+  resolve(config.CACHE_DIR, 'library.json'),
+);
+const art = new LocalArt(lidarr, resolve(config.CACHE_DIR, 'art'));
+// Keep every cover cached locally so browsing never waits on Lidarr.
+library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
 const media = createMediaSource(config);
 const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
 const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), {
@@ -36,7 +40,7 @@ const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE
 const discover = new Discover(lidarr, musicbrainz, library, requests);
 
 apiRoutes(app, { config, lidarr, library, media });
-artRoutes(app, { lidarr, cacheDir: resolve(config.CACHE_DIR) });
+artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR) });
 streamRoutes(app, { config, library, media });
 discoverRoutes(app, { discover, requests });
 
@@ -65,6 +69,7 @@ process.on('SIGINT', shutdown).on('SIGTERM', shutdown);
 await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(`Lidarr: ${config.LIDARR_URL} · media source: ${media.kind}`);
 
-// Warm the library in the background; requests will await it if it's not ready yet.
+// Serve the last saved snapshot immediately, then refresh from Lidarr in the background.
+await library.loadCached();
 library.refresh().catch(() => {});
 library.startAutoRefresh(config.LIBRARY_REFRESH_MINUTES);

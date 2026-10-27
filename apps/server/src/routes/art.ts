@@ -15,17 +15,86 @@ const TYPES: Record<string, { file: string; square: boolean; mime: string }> = {
   'artist/clearlogo': { file: 'clearlogo.png', square: false, mime: 'image/png' },
 };
 
-/** Proxies Lidarr artwork, resizing to WebP and caching on disk. */
-export function artRoutes(app: FastifyInstance, deps: { lidarr: LidarrClient; cacheDir: string }) {
+interface ArtKey {
+  kind: 'artist' | 'album';
+  id: number;
+  type: string;
+  version: string;
+}
+
+/**
+ * Original Lidarr artwork, cached on disk so each image is fetched from Lidarr once.
+ * Lidarr can be slow (seconds per image under load); resized variants are made locally.
+ */
+export class LocalArt {
+  private inflight = new Map<string, Promise<{ body: Buffer; mime: string }>>();
+
+  constructor(
+    private readonly lidarr: LidarrClient,
+    private readonly dir: string,
+  ) {}
+
+  static parse(url: string): ArtKey | undefined {
+    const m = url.match(/^\/art\/(artist|album)\/(\d+)\/(\w+)(?:\?v=(\d+))?/);
+    if (!m || !TYPES[`${m[1]}/${m[3]}`]) return undefined;
+    return { kind: m[1] as ArtKey['kind'], id: Number(m[2]), type: m[3]!, version: m[4] ?? '0' };
+  }
+
+  original({ kind, id, type, version }: ArtKey): Promise<{ body: Buffer; mime: string }> {
+    const key = createHash('sha1').update(`orig/${kind}/${id}/${type}/${version}`).digest('hex');
+    let job = this.inflight.get(key);
+    if (job) return job;
+    job = (async () => {
+      const file = join(this.dir, key);
+      try {
+        const [body, mime] = await Promise.all([readFile(file), readFile(`${file}.mime`, 'utf8')]);
+        return { body, mime };
+      } catch {
+        // not cached yet
+      }
+      const spec = TYPES[`${kind}/${type}`]!;
+      const res = await this.lidarr.mediaCover(kind, id, spec.file);
+      const body = Buffer.from(await res.arrayBuffer());
+      const mime = res.headers.get('content-type') ?? spec.mime;
+      await mkdir(this.dir, { recursive: true });
+      await writeFile(`${file}.tmp`, body);
+      await writeFile(`${file}.mime`, mime);
+      await rename(`${file}.tmp`, file);
+      return { body, mime };
+    })().finally(() => this.inflight.delete(key));
+    this.inflight.set(key, job);
+    return job;
+  }
+
+  /** Fetch originals in the background, gently (Lidarr is shared with everything else). */
+  async warm(urls: string[], log: { info: (m: string) => void }) {
+    const keys = urls.flatMap((u) => LocalArt.parse(u) ?? []);
+    let fetched = 0;
+    const started = Date.now();
+    for (let i = 0; i < keys.length; i += 2) {
+      await Promise.all(
+        keys.slice(i, i + 2).map((k) =>
+          this.original(k).then(
+            () => fetched++,
+            () => {},
+          ),
+        ),
+      );
+    }
+    log.info(`Artwork cache warm: ${fetched}/${keys.length} images in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  }
+}
+
+/** Serves Lidarr artwork (resized to WebP, cached) and allowlisted remote artwork. */
+export function artRoutes(app: FastifyInstance, deps: { art: LocalArt; cacheDir: string }) {
   const dir = join(deps.cacheDir, 'art');
   const inflight = new Map<string, Promise<{ body: Buffer; mime: string }>>();
 
-  async function produce(kind: 'artist' | 'album', id: number, type: string, size?: number) {
-    const spec = TYPES[`${kind}/${type}`]!;
-    const res = await deps.lidarr.mediaCover(kind, id, spec.file);
-    const original = Buffer.from(await res.arrayBuffer());
-    if (!size) return { body: original, mime: res.headers.get('content-type') ?? spec.mime };
-    const body = await sharp(original)
+  async function produce(key: ArtKey, size?: number) {
+    const original = await deps.art.original(key);
+    if (!size) return original;
+    const spec = TYPES[`${key.kind}/${key.type}`]!;
+    const body = await sharp(original.body)
       .resize(size, spec.square ? size : undefined, { fit: 'cover', withoutEnlargement: true })
       .webp({ quality: 82 })
       .toBuffer();
@@ -105,7 +174,7 @@ export function artRoutes(app: FastifyInstance, deps: { lidarr: LidarrClient; ca
 
       let job = inflight.get(key);
       if (!job) {
-        job = produce(kind, id, type, size).finally(() => inflight.delete(key));
+        job = produce({ kind, id, type, version }, size).finally(() => inflight.delete(key));
         inflight.set(key, job);
       }
       try {

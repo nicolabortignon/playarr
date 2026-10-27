@@ -64,8 +64,8 @@ export function useRequests() {
   const query = useQuery({
     queryKey: ['requests'],
     queryFn: api.requests,
-    refetchInterval: (q) => (q.state.data?.some((r) => ACTIVE.includes(r.availability.state)) ? 4000 : 30_000),
-    staleTime: 2000,
+    refetchInterval: (q) => (q.state.data?.some((r) => ACTIVE.includes(r.availability.state)) ? 10_000 : 60_000),
+    staleTime: 5000,
   });
   const previous = useRef<Map<string, AvailabilityState>>(new Map());
   useEffect(() => {
