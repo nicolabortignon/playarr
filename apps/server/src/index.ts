@@ -1,0 +1,70 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import fastifyStatic from '@fastify/static';
+import Fastify, { LogController } from 'fastify';
+import { loadConfig } from './config.ts';
+import { Discover } from './discover/discover.ts';
+import { MusicBrainz } from './discover/musicbrainz.ts';
+import { Requests } from './discover/requests.ts';
+import { LidarrClient } from './lidarr/client.ts';
+import { Library } from './library/library.ts';
+import { createMediaSource } from './media/index.ts';
+import { apiRoutes } from './routes/api.ts';
+import { artRoutes } from './routes/art.ts';
+import { discoverRoutes } from './routes/discover.ts';
+import { streamRoutes } from './routes/stream.ts';
+
+const config = loadConfig();
+const app = Fastify({
+  logger: { level: process.env.LOG_LEVEL ?? 'info' },
+  logController: new LogController({ disableRequestLogging: process.env.LOG_REQUESTS !== '1' }),
+});
+
+const lidarr = new LidarrClient(config.LIDARR_URL, config.LIDARR_API_KEY);
+const library = new Library(lidarr, {
+  info: (m) => app.log.info(m),
+  error: (m) => app.log.error(m),
+});
+const media = createMediaSource(config);
+const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
+const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), {
+  rootFolderPath: config.LIDARR_ROOT_FOLDER,
+  qualityProfileId: config.LIDARR_QUALITY_PROFILE_ID,
+  metadataProfileId: config.LIDARR_METADATA_PROFILE_ID,
+});
+const discover = new Discover(lidarr, musicbrainz, library, requests);
+
+apiRoutes(app, { config, lidarr, library, media });
+artRoutes(app, { lidarr, cacheDir: resolve(config.CACHE_DIR) });
+streamRoutes(app, { config, library, media });
+discoverRoutes(app, { discover, requests });
+
+// In production, serve the built web app from the same origin.
+const webDist = config.WEB_DIST
+  ? resolve(config.WEB_DIST)
+  : fileURLToPath(new URL('../../web/dist', import.meta.url));
+if (existsSync(webDist)) {
+  await app.register(fastifyStatic, { root: webDist, wildcard: false });
+  app.setNotFoundHandler((req, reply) => {
+    const isApi = /^\/(api|stream|art)\//.test(req.url);
+    return isApi || req.method !== 'GET'
+      ? reply.code(404).send({ error: 'Not found' })
+      : reply.sendFile('index.html');
+  });
+}
+
+const shutdown = async () => {
+  library.stop();
+  await media.close();
+  await app.close();
+  process.exit(0);
+};
+process.on('SIGINT', shutdown).on('SIGTERM', shutdown);
+
+await app.listen({ port: config.PORT, host: config.HOST });
+app.log.info(`Lidarr: ${config.LIDARR_URL} · media source: ${media.kind}`);
+
+// Warm the library in the background; requests will await it if it's not ready yet.
+library.refresh().catch(() => {});
+library.startAutoRefresh(config.LIBRARY_REFRESH_MINUTES);

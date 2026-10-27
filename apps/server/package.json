@@ -1,0 +1,27 @@
+{
+  "name": "@playarr/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "tsup",
+    "start": "node --env-file-if-exists=../../.env dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/ssh2": "^1.15.6",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.8",
+    "@playarr/shared": "workspace:*",
+    "fastify": "^5.12.7",
+    "sharp": "^0.35.5",
+    "ssh2": "^1.17.0",
+    "zod": "^4.6.7"
+  }
+}

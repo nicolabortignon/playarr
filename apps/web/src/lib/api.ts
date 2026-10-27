@@ -1,0 +1,49 @@
+import type {
+  Album,
+  AlbumDetail,
+  AlbumSort,
+  Artist,
+  ArtistDetail,
+  HealthStatus,
+  SearchResults,
+  Track,
+} from '@playarr/shared';
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(path, { signal, headers: { Accept: 'application/json' } });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(body?.error ?? `Request failed (${res.status})`, res.status);
+  }
+  return res.json() as Promise<T>;
+}
+
+export const api = {
+  health: () => get<HealthStatus>('/api/health'),
+  artists: () => get<Artist[]>('/api/artists'),
+  artist: (id: number) => get<ArtistDetail>(`/api/artists/${id}`),
+  artistTracks: (id: number) => get<Track[]>(`/api/artists/${id}/tracks`),
+  albums: (sort: AlbumSort, limit?: number) =>
+    get<Album[]>(`/api/albums?sort=${sort}${limit ? `&limit=${limit}` : ''}`),
+  randomAlbums: (limit = 12) => get<Album[]>(`/api/albums/random?limit=${limit}`),
+  album: (id: number) => get<AlbumDetail>(`/api/albums/${id}`),
+  randomTracks: (limit = 50) => get<Track[]>(`/api/tracks/random?limit=${limit}`),
+  search: (q: string, signal?: AbortSignal) =>
+    get<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`, signal),
+};
+
+/** Append a size hint to an /art URL so the server returns a resized WebP. */
+export function sized(url: string | undefined, size: number): string | undefined {
+  if (!url) return undefined;
+  const dpr = typeof window === 'undefined' ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+  return `${url}${url.includes('?') ? '&' : '?'}size=${Math.round(size * dpr)}`;
+}

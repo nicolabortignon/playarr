@@ -1,0 +1,14 @@
+{
+  "name": "playarr",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @playarr/server --filter @playarr/web dev",
+    "dev:server": "pnpm --filter @playarr/server dev",
+    "dev:web": "pnpm --filter @playarr/web dev",
+    "build": "pnpm --filter @playarr/web build && pnpm --filter @playarr/server build",
+    "start": "pnpm --filter @playarr/server start",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
