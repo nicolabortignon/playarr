@@ -43,9 +43,10 @@ export class MusicBrainz {
       signal?.throwIfAborted();
       this.lastRequest = Date.now();
 
-      let res = await this.fetch(path);
-      if (res.status === 503) {
-        // Rate limited: back off once.
+      // One retry on rate limiting (503) or a network hiccup, after a short back-off.
+      let res = await this.fetch(path).catch(() => null);
+      if (!res || res.status === 503) {
+        signal?.throwIfAborted();
         await new Promise((r) => setTimeout(r, 2000));
         this.lastRequest = Date.now();
         res = await this.fetch(path);

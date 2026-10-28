@@ -12,7 +12,7 @@ import { GRID } from './Albums';
 /** An artist's discography from MusicBrainz, with what's in the library and what can be requested. */
 export function DiscoverArtistPage() {
   const mbid = useParams().mbid ?? '';
-  const { data: artist, error, isPending } = useDiscoverArtist(mbid);
+  const { data: artist, error, isPending, refetch, isFetching } = useDiscoverArtist(mbid);
   const [bioOpen, setBioOpen] = useState(false);
 
   if (error) return <ErrorState error={error} />;
@@ -91,7 +91,22 @@ export function DiscoverArtistPage() {
               </div>
             </section>
           ))}
-        {!artist.albums.length && <p className="text-muted">MusicBrainz lists no albums or EPs for this artist.</p>}
+        {artist.discographyError ? (
+          <div className="max-w-md">
+            <p className="text-sm text-paper-dim">Couldn’t load the discography from MusicBrainz right now.</p>
+            <p className="mt-1 font-mono text-[11px] text-muted">{artist.discographyError}</p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="mt-4 rounded-full border border-line px-4 py-2 font-mono text-[11px] tracking-wider text-paper uppercase transition hover:border-paper/30 disabled:opacity-50"
+            >
+              {isFetching ? 'Retrying…' : 'Try again'}
+            </button>
+          </div>
+        ) : (
+          !artist.albums.length && <p className="text-muted">MusicBrainz lists no albums or EPs for this artist.</p>
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { healQueue } from './player/healQueue';
 import { usePlayer } from './player/store';
 import { routes } from './routes';
 
@@ -118,6 +119,23 @@ describe('Playarr web against live server', () => {
       const favs = (await (await fetch('/api/favorites')).json()) as { recordingId: string }[];
       expect(favs.some((f) => f.recordingId === song.recordingId)).toBe(false);
     });
+    expect(errors).toEqual([]);
+  });
+
+  it('refreshes queue tracks saved before favorites existed, so the player shows a heart', async () => {
+    if (!reachable) return;
+    const album = (await (await fetch('/api/albums/8')).json()) as { tracks: Record<string, unknown>[] };
+    // Simulate a queue persisted by an older version: tracks without recordingId.
+    const old = album.tracks.slice(0, 3).map(({ recordingId: _r, ...t }) => t) as never[];
+    usePlayer.setState({ queue: old, order: [0, 1, 2], pos: 1, playing: false });
+    await healQueue();
+    const { queue, pos } = usePlayer.getState();
+    expect(queue.every((t) => t.recordingId)).toBe(true);
+    expect(pos).toBe(1);
+
+    renderAt('/');
+    const current = queue[1]!;
+    await screen.findAllByRole('button', { name: `Add “${current.title}” to favorites` });
     expect(errors).toEqual([]);
   });
 

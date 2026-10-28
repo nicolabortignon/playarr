@@ -103,7 +103,12 @@ export class Discover {
     const base = lookup
       ? await this.toArtist(lookup)
       : { mbid, name, genres: [], artistId: await this.library.artistIdByMbid(mbid) };
-    return { ...base, overview: lookup?.overview || undefined, albums };
+    return {
+      ...base,
+      overview: lookup?.overview || undefined,
+      albums,
+      discographyError: groups.status === 'rejected' ? (groups.reason as Error).message : undefined,
+    };
   }
 
   private async toArtist(a: LidarrLookupArtist): Promise<DiscoverArtist> {

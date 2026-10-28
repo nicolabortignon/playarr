@@ -169,6 +169,8 @@ export interface DiscoverResults {
 export interface DiscoverArtistDetail extends DiscoverArtist {
   overview?: string;
   albums: DiscoverAlbum[];
+  /** Set when MusicBrainz couldn't be reached, so an empty list isn't mistaken for "no albums". */
+  discographyError?: string;
 }
 
 export interface AlbumRequest {

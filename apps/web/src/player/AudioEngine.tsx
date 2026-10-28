@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { sized } from '../lib/api';
 import { extractAccent } from '../lib/color';
 import { toast } from '../lib/toast';
+import { healQueue } from './healQueue';
 import { useClock, useCurrentTrack, usePlayer } from './store';
 
 const DEFAULT_ACCENT = '#ff7a1a';
@@ -17,6 +18,11 @@ export function AudioEngine() {
   const firstLoad = useRef(true);
   // True while a new source is loading; some browsers fire "pause" during a src swap.
   const switching = useRef(false);
+
+  // Refresh tracks from a queue saved by an older version (adds fields like recordingId).
+  useEffect(() => {
+    void healQueue();
+  }, []);
 
   // Load a new source when the track changes, or restart the current one.
   useEffect(() => {

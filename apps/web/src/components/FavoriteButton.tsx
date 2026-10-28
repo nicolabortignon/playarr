@@ -17,7 +17,7 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
   const toggle = useToggleFavorite();
   const [popping, setPopping] = useState(false);
   const box = { sm: 'size-8', md: 'size-9', lg: 'size-12' }[size];
-  // Tracks saved in an older queue (before favorites existed) have no recording id.
+  // Only until healQueue() has refreshed tracks saved by an older version.
   if (!track.recordingId) return null;
   const icon = { sm: 'size-4', md: 'size-[18px]', lg: 'size-6' }[size];
 
