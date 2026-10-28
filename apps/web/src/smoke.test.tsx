@@ -92,6 +92,55 @@ describe('Playarr web against live server', () => {
     expect(errors.join('\n')).toBe('');
   });
 
+  it('links artist and album names in both search song lists', async () => {
+    if (!reachable) return;
+    renderAt('/search?q=teardrop');
+
+    // Songs outside the library: every row links its artist; unknown ids go through the name lookup.
+    const songs = (await screen.findByRole('heading', { name: 'Songs' }, { timeout: 20_000 })).closest('section')!;
+    const rows = within(songs).getAllByRole('listitem');
+    for (const row of rows) {
+      expect(within(row).getAllByRole('link').length).toBeGreaterThanOrEqual(2);
+    }
+    const hrefs = within(songs).getAllByRole('link').map((a) => a.getAttribute('href') ?? '');
+    expect(hrefs.some((h) => h.startsWith('/discover/artists/') && h.includes('?album='))).toBe(true);
+    expect(hrefs.some((h) => h.startsWith('/discover/artist?name='))).toBe(true);
+    cleanup();
+
+    // Library songs: artist and album pages, and following a link doesn't play the song.
+    const router = renderAt('/search?q=daft');
+    await screen.findByText('One More Time');
+    const tracks = screen.getByRole('heading', { name: 'Tracks' }).closest('section')!;
+    const links = within(tracks).getAllByRole('link');
+    expect(links.some((a) => /^\/albums\/\d+$/.test(a.getAttribute('href') ?? ''))).toBe(true);
+    const artistLink = links.find((a) => /^\/artists\/\d+$/.test(a.getAttribute('href') ?? ''))!;
+    const href = artistLink.getAttribute('href')!;
+    await act(async () => fireEvent.click(artistLink));
+    await waitFor(() => expect(router.state.location.pathname).toBe(href));
+    expect(usePlayer.getState().queue).toHaveLength(0);
+    expect(errors.join('\n')).toBe('');
+  });
+
+  it('resolves an artist name to their discography and highlights the album', async () => {
+    if (!reachable) return;
+    const router = renderAt('/discover/artist?name=Portishead&album=Dummy');
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/discover\/artists\/[0-9a-f-]{36}$/), {
+      timeout: 15_000,
+    });
+    expect(router.state.location.search).toBe('?album=Dummy');
+    await screen.findByRole('heading', { name: 'Portishead' }, { timeout: 20_000 });
+    // Needs MusicBrainz; when it's unreachable the page must say so instead.
+    await waitFor(
+      () => {
+        const card = document.querySelector('[data-highlighted]');
+        const failed = screen.queryByText(/Couldn’t load the discography/);
+        expect(card?.textContent?.includes('Dummy') || failed).toBeTruthy();
+      },
+      { timeout: 20_000 },
+    );
+    expect(errors.join('\n')).toBe('');
+  });
+
   it('renders a discover artist page with a discography', async () => {
     if (!reachable) return;
     renderAt('/discover/artists/10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8'); // Massive Attack

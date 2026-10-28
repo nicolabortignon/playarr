@@ -79,6 +79,14 @@ export class MusicBrainz {
     ).then((r) => r['release-groups']);
   }
 
+  /** Artists by name, best match first. */
+  searchArtists(name: string, signal?: AbortSignal) {
+    return this.get<{ artists: { id: string; name: string; score: number }[] }>(
+      `/artist?query=${encodeURIComponent(`artist:"${luceneEscape(name)}"`)}&limit=5`,
+      signal,
+    ).then((r) => r.artists);
+  }
+
   /** The release group (album) a specific release (edition) belongs to. */
   releaseGroupOf(releaseMbid: string, signal?: AbortSignal) {
     return this.get<{ 'release-group'?: MbReleaseGroup }>(

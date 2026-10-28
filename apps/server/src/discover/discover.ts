@@ -1,4 +1,5 @@
 import type {
+  ArtistMatch,
   DiscoverAlbum,
   DiscoverArtist,
   DiscoverArtistDetail,
@@ -76,11 +77,31 @@ export class Discover {
 
     const albums = rankAlbums(lidarrHits.flatMap((h) => (h.album ? [h.album] : [])), nq).slice(0, 12);
 
+    // Songs only carry artist names; reuse any MusicBrainz ids this search already turned up.
+    const knownMbids = new Map<string, string>();
+    for (const a of [...lookupArtists, ...lidarrHits.flatMap((h) => [h.artist, h.album?.artist])]) {
+      if (a?.foreignArtistId) knownMbids.set(normalize(a.artistName), a.foreignArtistId);
+    }
+
     return {
       artists: await Promise.all(lookupArtists.slice(0, 6).map((a) => this.toArtist(a))),
       albums: await Promise.all(albums.map((a) => this.lookupAlbum(a))),
-      tracks: await Promise.all(songs.map((t) => this.deezerTrack(t))),
+      tracks: await Promise.all(songs.map((t) => this.deezerTrack(t, knownMbids))),
     };
+  }
+
+  /** Name → MusicBrainz artist, for links from songs that only know a name: library, Lidarr, then MusicBrainz. */
+  async findArtist(name: string, signal?: AbortSignal): Promise<ArtistMatch | undefined> {
+    const owned = await this.library.artistByName(name);
+    if (owned) return { mbid: owned.mbid, artistId: owned.id };
+    const want = normalize(name);
+    const hits = await this.lidarr.search(name).catch(() => []);
+    let mbid = hits.find((h) => h.artist && normalize(h.artist.artistName) === want)?.artist?.foreignArtistId;
+    if (!mbid) {
+      const found = await this.mb.searchArtists(name, signal).catch(() => []);
+      mbid = (found.find((a) => normalize(a.name) === want) ?? found.find((a) => a.score >= 95))?.id;
+    }
+    return mbid ? { mbid, artistId: await this.library.artistIdByMbid(mbid) } : undefined;
   }
 
   async artist(mbid: string, signal?: AbortSignal): Promise<DiscoverArtistDetail> {
@@ -150,7 +171,9 @@ export class Discover {
     };
   }
 
-  private async deezerTrack(t: DeezerTrack): Promise<DiscoverTrack> {
+  private async deezerTrack(t: DeezerTrack, knownMbids: Map<string, string>): Promise<DiscoverTrack> {
+    const artistMbid = knownMbids.get(normalize(t.artist.name));
+    const owned = artistMbid ? undefined : await this.library.artistByName(t.artist.name);
     return {
       id: `deezer:${t.id}`,
       title: t.title,
@@ -160,6 +183,8 @@ export class Discover {
       coverUrl: remoteArtUrl(t.album.cover_medium),
       album: { artistName: t.artist.name, albumTitle: t.album.title },
       availability: await this.requests.availabilityByName(t.artist.name, t.album.title),
+      artistMbid: artistMbid ?? owned?.mbid,
+      artistId: owned?.id ?? (artistMbid ? await this.library.artistIdByMbid(artistMbid) : undefined),
     };
   }
 }

@@ -1,11 +1,13 @@
 import type { AlbumRef, Availability, DiscoverAlbum, DiscoverArtist, DiscoverTrack } from '@playarr/shared';
 import { Check, Clock, Download, Loader2, Play, RotateCw, TriangleAlert } from 'lucide-react';
-import type { CSSProperties, MouseEvent } from 'react';
+import { useEffect, useRef, type CSSProperties, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
+import { albumHref, artistHref } from '../lib/links';
 import { useRequestAlbum } from '../lib/queries';
 import { Cover } from './Cover';
+import { InlineLink } from './InlineLink';
 
 /**
  * One control for every state of an album that may not be in the library yet:
@@ -102,12 +104,27 @@ export function RequestButton({
   }
 }
 
-export function DiscoverAlbumCard({ album, style, className }: { album: DiscoverAlbum; style?: CSSProperties; className?: string }) {
+export function DiscoverAlbumCard({
+  album,
+  style,
+  className,
+  highlighted,
+}: {
+  album: DiscoverAlbum;
+  style?: CSSProperties;
+  className?: string;
+  /** Arrived here from a song on this album: bring it into view and mark it. */
+  highlighted?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlighted) ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [highlighted]);
   const available = album.availability.state === 'available';
   const to = available ? `/albums/${album.availability.albumId}` : `/discover/artists/${album.artistMbid}`;
   const kind = album.secondaryTypes[0] ?? album.type;
   return (
-    <div className={cn('group animate-rise', className)} style={style}>
+    <div ref={ref} className={cn('group animate-rise', className)} style={style} data-highlighted={highlighted || undefined}>
       <Link to={to} className="block">
         <div className="relative">
           <Cover
@@ -117,6 +134,7 @@ export function DiscoverAlbumCard({ album, style, className }: { album: Discover
             className={cn(
               'rounded-[4px] ring-1 ring-paper/5 transition duration-500 ease-out-expo group-hover:-translate-y-1',
               !available && 'saturate-[0.85]',
+              highlighted && 'ring-2 ring-accent ring-offset-4 ring-offset-ink-900 saturate-100',
             )}
           />
           {!available && (
@@ -165,7 +183,13 @@ export function DiscoverTrackRow({ track }: { track: DiscoverTrack }) {
       <div className="min-w-0">
         <div className="truncate text-[15px] text-paper">{track.title}</div>
         <div className="truncate text-[13px] text-muted">
-          {track.artistName} <span className="text-ink-600">·</span> {track.albumTitle}
+          <InlineLink to={artistHref(track)}>{track.artistName}</InlineLink> <span className="text-ink-600">·</span>{' '}
+          <InlineLink
+            to={albumHref({ ...track, albumId: available ? track.availability.albumId : undefined })}
+            title={available ? undefined : `Find it in ${track.artistName}’s discography`}
+          >
+            {track.albumTitle}
+          </InlineLink>
         </div>
       </div>
       <span className="hidden font-mono text-[13px] text-muted tabular md:block">

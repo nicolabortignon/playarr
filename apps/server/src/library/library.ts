@@ -290,6 +290,16 @@ export class Library {
     return (await this.ready()).artistIdByMbid.get(mbid);
   }
 
+  /** Library artist by name (ignoring case and accents), with its MusicBrainz id. */
+  async artistByName(name: string): Promise<{ id: number; mbid: string } | undefined> {
+    const snap = await this.ready();
+    const want = normalize(name);
+    for (const [mbid, id] of snap.artistIdByMbid) {
+      if (normalize(snap.artists.get(id)?.name ?? '') === want) return { id, mbid };
+    }
+    return undefined;
+  }
+
   /** Refresh soon, coalescing bursts (e.g. several downloads finishing together). */
   refreshSoon(delayMs = 3000) {
     if (this.refreshTimer) return;

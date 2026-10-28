@@ -5,6 +5,7 @@ import type {
   AlbumRequest,
   AlbumSort,
   Artist,
+  ArtistMatch,
   ArtistDetail,
   DiscoverArtistDetail,
   DiscoverResults,
@@ -56,6 +57,8 @@ export const api = {
     get<DiscoverResults>(`/api/discover/search?q=${encodeURIComponent(q)}`, signal),
   discoverArtist: (mbid: string, signal?: AbortSignal) =>
     get<DiscoverArtistDetail>(`/api/discover/artists/${mbid}`, signal),
+  findArtist: (name: string, signal?: AbortSignal) =>
+    get<ArtistMatch>(`/api/discover/artist-lookup?name=${encodeURIComponent(name)}`, signal),
   requests: () => get<AlbumRequest[]>('/api/requests'),
   requestAlbum: (ref: AlbumRef) =>
     request<AlbumRequest>('/api/requests', { method: 'POST', body: JSON.stringify(ref) }),

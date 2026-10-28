@@ -10,6 +10,7 @@ import { useCurrentTrack, usePlayer } from '../player/store';
 import { Cover } from './Cover';
 import { Equalizer } from './Equalizer';
 import { FavoriteButton } from './FavoriteButton';
+import { InlineLink } from './InlineLink';
 import { Menu } from './Menu';
 
 interface TrackListProps {
@@ -73,7 +74,8 @@ export function TrackList({ tracks, variant = 'album', showDiscs }: TrackListPro
                 <div className={cn('truncate text-[15px]', isCurrent ? 'text-accent' : 'text-paper')}>{t.title}</div>
                 {variant === 'mixed' && (
                   <div className="truncate text-[13px] text-muted">
-                    {t.artistName} <span className="text-ink-600">·</span> {t.albumTitle}
+                    <InlineLink to={`/artists/${t.artistId}`}>{t.artistName}</InlineLink> <span className="text-ink-600">·</span>{' '}
+                    <InlineLink to={`/albums/${t.albumId}`}>{t.albumTitle}</InlineLink>
                   </div>
                 )}
               </div>

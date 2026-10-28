@@ -56,6 +56,14 @@ export const useDiscoverArtist = (mbid: string) =>
     staleTime: 60_000,
   });
 
+export const useArtistLookup = (name: string) =>
+  useQuery({
+    queryKey: ['artist-lookup', name],
+    queryFn: ({ signal }) => api.findArtist(name, signal),
+    enabled: !!name,
+    staleTime: Infinity,
+  });
+
 const ACTIVE: AvailabilityState[] = ['searching', 'downloading', 'importing'];
 
 /** Polls requests while any are in flight; refreshes the library when one becomes playable. */

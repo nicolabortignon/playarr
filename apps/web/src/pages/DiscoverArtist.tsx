@@ -1,11 +1,12 @@
 import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { ErrorState, SectionHeader, Skeleton } from '../components/Section';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
+import { titleKey } from '../lib/links';
 import { useDiscoverArtist } from '../lib/queries';
 import { GRID } from './Albums';
 
@@ -14,6 +15,7 @@ export function DiscoverArtistPage() {
   const mbid = useParams().mbid ?? '';
   const { data: artist, error, isPending, refetch, isFetching } = useDiscoverArtist(mbid);
   const [bioOpen, setBioOpen] = useState(false);
+  const wantedAlbum = useSearchParams()[0].get('album');
 
   if (error) return <ErrorState error={error} />;
   if (isPending || !artist) {
@@ -33,6 +35,7 @@ export function DiscoverArtistPage() {
   const owned = artist.albums.filter((a) => a.availability.state === 'available').length;
   const studio = artist.albums.filter((a) => a.type === 'Album');
   const eps = artist.albums.filter((a) => a.type !== 'Album');
+  const highlight = wantedAlbum ? artist.albums.find((a) => titleKey(a.title) === titleKey(wantedAlbum))?.mbid : undefined;
 
   return (
     <div>
@@ -76,6 +79,12 @@ export function DiscoverArtistPage() {
       </section>
 
       <div className="px-5 md:px-10">
+        {wantedAlbum && !highlight && artist.albums.length > 0 && (
+          <p className="-mt-2 mb-8 max-w-xl text-sm text-muted">
+            “{wantedAlbum}” isn’t among these albums and EPs; it’s probably a single or a compilation. You can still
+            request it from the song.
+          </p>
+        )}
         {[
           { title: 'Albums', items: studio },
           { title: 'EPs & soundtracks', items: eps },
@@ -86,7 +95,12 @@ export function DiscoverArtistPage() {
               <SectionHeader title={g.title} kicker={plural(g.items.length, 'release')} />
               <div className={GRID}>
                 {g.items.map((a, i) => (
-                  <DiscoverAlbumCard key={a.mbid} album={a} style={{ animationDelay: `${Math.min(i, 20) * 30}ms` }} />
+                  <DiscoverAlbumCard
+                    key={a.mbid}
+                    album={a}
+                    highlighted={a.mbid === highlight}
+                    style={{ animationDelay: `${Math.min(i, 20) * 30}ms` }}
+                  />
                 ))}
               </div>
             </section>

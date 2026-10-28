@@ -161,6 +161,15 @@ export interface DiscoverTrack {
   /** The album to request for this song. */
   album: AlbumRef;
   availability: Availability;
+  /** Known without extra lookups: `artistId` if in the library, `artistMbid` if search turned it up. */
+  artistId?: number;
+  artistMbid?: string;
+}
+
+/** An artist name resolved to MusicBrainz (and the library, when owned). */
+export interface ArtistMatch {
+  mbid: string;
+  artistId?: number;
 }
 
 export interface DiscoverResults {

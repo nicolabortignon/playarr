@@ -1,12 +1,13 @@
 import type { RecommendedTrack } from '@playarr/shared';
 import { Dices, Play, Plus } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router';
 import { cn } from '../lib/cn';
+import { albumHref, artistHref } from '../lib/links';
 import { usePlaylistMutations, usePlaylistRecommendations } from '../lib/queries';
 import { usePlayer } from '../player/store';
 import { Cover } from './Cover';
 import { RequestButton } from './Discover';
+import { InlineLink } from './InlineLink';
 import { SectionHeader, Skeleton } from './Section';
 
 const MISSING_PREVIEW = 8;
@@ -139,11 +140,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Row({ rec, index, onPlay, action }: { rec: RecommendedTrack; index: number; onPlay?: () => void; action: ReactNode }) {
-  const discography = rec.artistMbid && `/discover/artists/${rec.artistMbid}`;
-  const artistTo = rec.artistId ? `/artists/${rec.artistId}` : discography;
   const albumId = rec.track?.albumId ?? (rec.availability?.state === 'available' ? rec.availability.albumId : undefined);
-  // Albums not in the library have no page of their own; the artist's discography lists them with Request.
-  const albumTo = albumId ? `/albums/${albumId}` : discography;
   return (
     <li
       className={cn(
@@ -164,14 +161,17 @@ function Row({ rec, index, onPlay, action }: { rec: RecommendedTrack; index: num
       <div className="min-w-0">
         <div className="truncate text-[15px] text-paper">{rec.title}</div>
         <div className="truncate text-[13px] text-muted">
-          <MaybeLink to={artistTo}>{rec.artistName}</MaybeLink>
+          <InlineLink to={artistHref(rec)}>{rec.artistName}</InlineLink>
           {rec.albumTitle && (
             <>
               {' '}
               <span className="text-ink-600">·</span>{' '}
-              <MaybeLink to={albumTo} title={albumId ? undefined : `Find it in ${rec.artistName}’s discography`}>
+              <InlineLink
+                to={albumHref({ ...rec, albumId })}
+                title={albumId ? undefined : `Find it in ${rec.artistName}’s discography`}
+              >
                 {rec.albumTitle}
-              </MaybeLink>
+              </InlineLink>
             </>
           )}
         </div>
@@ -186,15 +186,5 @@ function Row({ rec, index, onPlay, action }: { rec: RecommendedTrack; index: num
       </div>
       {action}
     </li>
-  );
-}
-
-function MaybeLink({ to, title, children }: { to?: string; title?: string; children: ReactNode }) {
-  if (!to) return <>{children}</>;
-  return (
-    // Owned rows play on click; following a link shouldn't also start the song.
-    <Link to={to} title={title} onClick={(e) => e.stopPropagation()} className="transition hover:text-paper hover:underline">
-      {children}
-    </Link>
   );
 }

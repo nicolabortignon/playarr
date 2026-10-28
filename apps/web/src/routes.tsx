@@ -6,6 +6,7 @@ import { ArtistPage } from './pages/Artist';
 import { ArtistsPage } from './pages/Artists';
 import { DiscoverArtistPage } from './pages/DiscoverArtist';
 import { FavoritesPage } from './pages/Favorites';
+import { FindArtistPage } from './pages/FindArtist';
 import { LibraryPage } from './pages/Library';
 import { PlaylistPage } from './pages/Playlist';
 import { PlaylistsPage } from './pages/Playlists';
@@ -32,6 +33,7 @@ export const routes: RouteObject[] = [
       { path: 'queue', element: <QueuePage /> },
       { path: 'requests', element: <RequestsPage /> },
       { path: 'discover/artists/:mbid', element: <DiscoverArtistPage /> },
+      { path: 'discover/artist', element: <FindArtistPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
