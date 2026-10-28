@@ -4,8 +4,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# runtime caches (artwork, requests)
+# runtime caches (artwork, requests) and user data (favorites database)
 .cache/
+apps/server/data/
 
 # secrets: Lidarr API key, NAS password
 .env

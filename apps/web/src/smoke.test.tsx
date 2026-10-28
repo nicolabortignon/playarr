@@ -50,6 +50,7 @@ describe('Playarr web against live server', () => {
     ['/queue', /Nothing queued/],
     ['/nope', 'This groove is empty.'],
     ['/requests', 'Requests'],
+    ['/favorites', 'Favorites'],
   ] as [string, string | RegExp][])('renders %s', async (path, text) => {
     if (!reachable) return;
     renderAt(path);
@@ -89,6 +90,34 @@ describe('Playarr web against live server', () => {
     renderAt('/discover/artists/10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8'); // Massive Attack
     await screen.findByRole('heading', { name: 'Massive Attack' }, { timeout: 20_000 });
     expect(screen.getByText('Mezzanine')).toBeTruthy();
+    expect(errors).toEqual([]);
+  });
+
+  it('hearts a song on an album page and lists it under Favorites', async () => {
+    if (!reachable) return;
+    const album = (await (await fetch('/api/albums/8')).json()) as { tracks: { title: string; recordingId: string }[] };
+    const song = album.tracks[1]!;
+    await fetch(`/api/favorites/${song.recordingId}`, { method: 'DELETE' });
+
+    renderAt('/albums/8');
+    const heart = await screen.findByRole('button', { name: `Add “${song.title}” to favorites` });
+    await act(async () => fireEvent.click(heart));
+    // Optimistic: flips immediately, then the server confirms.
+    await screen.findByRole('button', { name: `Remove “${song.title}” from favorites` });
+    await waitFor(async () => {
+      const favs = (await (await fetch('/api/favorites')).json()) as { recordingId: string }[];
+      expect(favs.some((f) => f.recordingId === song.recordingId)).toBe(true);
+    });
+    cleanup();
+
+    renderAt('/favorites');
+    expect((await screen.findAllByText(song.title)).length).toBeGreaterThan(0);
+    const unheart = screen.getByRole('button', { name: `Remove “${song.title}” from favorites` });
+    await act(async () => fireEvent.click(unheart));
+    await waitFor(async () => {
+      const favs = (await (await fetch('/api/favorites')).json()) as { recordingId: string }[];
+      expect(favs.some((f) => f.recordingId === song.recordingId)).toBe(false);
+    });
     expect(errors).toEqual([]);
   });
 

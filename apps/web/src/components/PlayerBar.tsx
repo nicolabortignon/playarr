@@ -4,6 +4,7 @@ import { cn } from '../lib/cn';
 import { useUI } from '../lib/ui';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 import { Cover } from './Cover';
+import { FavoriteButton } from './FavoriteButton';
 import { FormatBadge } from './FormatBadge';
 import { Slider } from './Slider';
 import { PlayPauseButton, SeekBar, Transport } from './Transport';
@@ -38,6 +39,7 @@ export function PlayerBar() {
                   {track.artistName}
                 </Link>
               </div>
+              <FavoriteButton track={track} size="md" />
             </>
           ) : (
             <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Nothing playing</span>
@@ -120,6 +122,7 @@ export function MiniPlayer() {
           <div className="truncate text-[12px] text-muted">{track.artistName}</div>
         </div>
         <div className="relative flex items-center" onClick={(e) => e.stopPropagation()}>
+          <FavoriteButton track={track} size="md" />
           <PlayPauseButton size="sm" className="bg-transparent text-paper hover:scale-100" />
           <button type="button" aria-label="Next" onClick={() => next()} className="grid size-10 place-items-center text-paper">
             <SkipForward className="size-5 fill-current" />

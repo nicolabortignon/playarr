@@ -3,12 +3,12 @@ import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { sized } from '../lib/api';
-import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { useUI } from '../lib/ui';
 import { useShallow } from 'zustand/react/shallow';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { Cover } from './Cover';
+import { FavoriteButton } from './FavoriteButton';
 import { FormatBadge } from './FormatBadge';
 import { Menu } from './Menu';
 import { SeekBar, Transport } from './Transport';
@@ -118,21 +118,24 @@ function Sheet() {
           </div>
 
           <div className="flex flex-col gap-6 md:gap-8">
-            <div className="min-w-0">
-              <motion.h2
-                key={track.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="font-display text-[1.75rem] leading-[1.1] text-balance text-paper md:text-5xl"
-              >
-                {track.title}
-              </motion.h2>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <button type="button" onClick={() => go(`/artists/${track.artistId}`)} className="text-lg text-paper-dim hover:text-paper hover:underline">
-                  {track.artistName}
-                </button>
-                <FormatBadge format={track.format} />
+            <div className="flex items-start gap-4">
+              <div className="min-w-0 flex-1">
+                <motion.h2
+                  key={track.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="font-display text-[1.75rem] leading-[1.1] text-balance text-paper md:text-5xl"
+                >
+                  {track.title}
+                </motion.h2>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <button type="button" onClick={() => go(`/artists/${track.artistId}`)} className="text-lg text-paper-dim hover:text-paper hover:underline">
+                    {track.artistName}
+                  </button>
+                  <FormatBadge format={track.format} />
+                </div>
               </div>
+              <FavoriteButton track={track} size="lg" className="-mr-2" />
             </div>
             <SeekBar />
             <Transport size="lg" />
@@ -159,19 +162,21 @@ function UpNext({ onNavigate }: { onNavigate: () => void }) {
       </div>
       <ol>
         {upcoming.map((t, i) => (
-          <li key={`${t.id}-${i}`}>
-            <button
-              type="button"
-              onClick={() => jumpTo(pos + 1 + i)}
-              className={cn('flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition hover:bg-paper/[0.06]')}
-            >
-              <Cover src={t.coverUrl} size={36} alt="" className="size-9 shrink-0 rounded-[3px]" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm text-paper">{t.title}</span>
-                <span className="block truncate text-xs text-muted">{t.artistName}</span>
-              </span>
-              <span className="font-mono text-xs text-muted tabular">{formatTime(t.duration)}</span>
-            </button>
+          <li
+            key={`${t.id}-${i}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => jumpTo(pos + 1 + i)}
+            onKeyDown={(e) => e.key === 'Enter' && jumpTo(pos + 1 + i)}
+            className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left transition hover:bg-paper/[0.06]"
+          >
+            <Cover src={t.coverUrl} size={36} alt="" className="size-9 shrink-0 rounded-[3px]" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm text-paper">{t.title}</span>
+              <span className="block truncate text-xs text-muted">{t.artistName}</span>
+            </span>
+            <FavoriteButton track={t} reveal />
+            <span className="font-mono text-xs text-muted tabular">{formatTime(t.duration)}</span>
           </li>
         ))}
       </ol>

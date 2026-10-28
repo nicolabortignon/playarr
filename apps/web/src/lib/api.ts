@@ -8,6 +8,7 @@ import type {
   ArtistDetail,
   DiscoverArtistDetail,
   DiscoverResults,
+  FavoriteTrack,
   HealthStatus,
   SearchResults,
   Track,
@@ -56,6 +57,11 @@ export const api = {
   requestAlbum: (ref: AlbumRef) =>
     request<AlbumRequest>('/api/requests', { method: 'POST', body: JSON.stringify(ref) }),
   removeRequest: (mbid: string) => request<void>(`/api/requests/${mbid}`, { method: 'DELETE' }),
+  favorites: () => get<FavoriteTrack[]>('/api/favorites'),
+  addFavorite: (recordingId: string) =>
+    request<void>(`/api/favorites/${encodeURIComponent(recordingId)}`, { method: 'PUT' }),
+  removeFavorite: (recordingId: string) =>
+    request<void>(`/api/favorites/${encodeURIComponent(recordingId)}`, { method: 'DELETE' }),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */

@@ -40,10 +40,11 @@ interface Snapshot {
   albumsByMbid: Map<string, LidarrAlbumRef>;
   artistIdByMbid: Map<string, number>;
   albumIdByKey: Map<string, number>;
+  trackByRecording: Map<string, Track>;
 }
 
 /** Bump when the snapshot shape changes so stale files on disk are ignored. */
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 2;
 
 interface StoredSnapshot {
   version: number;
@@ -183,6 +184,7 @@ export class Library {
         if (!file || !album) continue;
         const track: Track = {
           id: t.id,
+          recordingId: t.foreignRecordingId || `track:${t.id}`,
           fileId: file.id,
           albumId: album.id,
           artistId: la.id,
@@ -251,6 +253,7 @@ export class Library {
       albumsByMbid,
       artistIdByMbid,
       albumIdByKey,
+      trackByRecording: indexByRecording(allTracks),
       stats: {
         artists: artists.size,
         albums: albums.size,
@@ -264,6 +267,10 @@ export class Library {
 
   async albumByMbid(mbid: string): Promise<LidarrAlbumRef | undefined> {
     return (await this.ready()).albumsByMbid.get(mbid);
+  }
+
+  async trackByRecording(recordingId: string): Promise<Track | undefined> {
+    return (await this.ready()).trackByRecording.get(recordingId);
   }
 
   /** Playable album matching an artist + title from another source (e.g. Deezer). */
@@ -478,5 +485,13 @@ function fromStored(stored: StoredSnapshot): Snapshot {
     albumsByMbid: new Map(stored.albumsByMbid),
     artistIdByMbid: new Map(stored.artistIdByMbid),
     albumIdByKey: new Map(stored.albums.map((a) => [albumKey(a.artistName, a.title), a.id])),
+    trackByRecording: indexByRecording(stored.albums.flatMap((a) => a.tracks)),
   };
+}
+
+/** First (album-ordered) track for each recording; the same song can sit on several albums. */
+function indexByRecording(tracks: Track[]): Map<string, Track> {
+  const map = new Map<string, Track>();
+  for (const t of tracks) if (!map.has(t.recordingId)) map.set(t.recordingId, t);
+  return map;
 }

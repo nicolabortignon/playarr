@@ -1,10 +1,15 @@
+import type { FavoriteTrack } from '@playarr/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { useClock, usePlayer } from './store';
+import { useToggleFavorite } from '../lib/queries';
+import { currentTrack, useClock, usePlayer } from './store';
 
-/** Space play/pause · ←/→ seek 10s · Shift+←/→ prev/next · ↑/↓ volume · M mute · S shuffle · / search */
+/** Space play/pause · ←/→ seek 10s · Shift+←/→ prev/next · ↑/↓ volume · M mute · S shuffle · L favorite · / search */
 export function useKeyboardShortcuts() {
   const navigate = useNavigate();
+  const client = useQueryClient();
+  const { mutate: toggleFavorite } = useToggleFavorite();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -48,6 +53,14 @@ export function useKeyboardShortcuts() {
         case 'S':
           p.toggleShuffle();
           break;
+        case 'l':
+        case 'L': {
+          const track = currentTrack(p);
+          if (!track?.recordingId) break;
+          const favs = client.getQueryData<FavoriteTrack[]>(['favorites']) ?? [];
+          toggleFavorite({ track, favorite: !favs.some((f) => f.recordingId === track.recordingId) });
+          break;
+        }
         case '/':
           e.preventDefault();
           navigate('/search');
@@ -56,5 +69,5 @@ export function useKeyboardShortcuts() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
+  }, [navigate, client, toggleFavorite]);
 }

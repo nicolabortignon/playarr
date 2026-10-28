@@ -1,4 +1,4 @@
-import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState } from '@playarr/shared';
+import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, FavoriteTrack, Track } from '@playarr/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
@@ -98,5 +98,38 @@ export function useRequestAlbum() {
       void client.invalidateQueries({ queryKey: ['discover-artist'] });
     },
     onError: (err) => toast((err as Error).message, 'error'),
+  });
+}
+
+export const useFavorites = () => useQuery({ queryKey: ['favorites'], queryFn: api.favorites, staleTime: 60_000 });
+
+export const useIsFavorite = (recordingId: string | undefined) =>
+  useQuery({
+    queryKey: ['favorites'],
+    queryFn: api.favorites,
+    staleTime: 60_000,
+    select: (favs) => !!recordingId && favs.some((f) => f.recordingId === recordingId),
+  }).data ?? false;
+
+/** Add/remove a favorite with an optimistic update, so the heart responds instantly. */
+export function useToggleFavorite() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ track, favorite }: { track: Track; favorite: boolean }) =>
+      favorite ? api.addFavorite(track.recordingId) : api.removeFavorite(track.recordingId),
+    onMutate: async ({ track, favorite }) => {
+      await client.cancelQueries({ queryKey: ['favorites'] });
+      const previous = client.getQueryData<FavoriteTrack[]>(['favorites']);
+      client.setQueryData<FavoriteTrack[]>(['favorites'], (old = []) => {
+        const rest = old.filter((t) => t.recordingId !== track.recordingId);
+        return favorite ? [{ ...track, favoritedAt: new Date().toISOString() }, ...rest] : rest;
+      });
+      return { previous };
+    },
+    onError: (err, _vars, ctx) => {
+      client.setQueryData(['favorites'], ctx?.previous);
+      toast(`Couldn't update favorites: ${(err as Error).message}`, 'error');
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['favorites'] }),
   });
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import { Cover } from '../components/Cover';
 import { Equalizer } from '../components/Equalizer';
+import { FavoriteButton } from '../components/FavoriteButton';
 import { FormatBadge } from '../components/FormatBadge';
 import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
@@ -48,6 +49,7 @@ export function QueuePage() {
             </div>
           </div>
           <FormatBadge format={track.format} className="hidden sm:inline-flex" />
+          <FavoriteButton track={track} size="md" />
         </div>
       </section>
 
@@ -69,7 +71,7 @@ export function QueuePage() {
             {upcoming.map((t, i) => (
               <li
                 key={`${t.id}-${pos + 1 + i}`}
-                className="group grid cursor-pointer grid-cols-[2.75rem_1fr_auto_auto] items-center gap-3 rounded-md px-3 py-2 transition hover:bg-paper/[0.045] md:gap-4"
+                className="group grid cursor-pointer grid-cols-[2.75rem_1fr_auto_auto_auto] items-center gap-3 rounded-md px-3 py-2 transition hover:bg-paper/[0.045] md:gap-4"
                 onClick={() => jumpTo(pos + 1 + i)}
               >
                 <Cover src={t.coverUrl} size={44} alt="" className="size-11 rounded-[3px]" />
@@ -77,6 +79,7 @@ export function QueuePage() {
                   <div className="truncate text-[15px] text-paper">{t.title}</div>
                   <div className="truncate text-[13px] text-muted">{t.artistName}</div>
                 </div>
+                <FavoriteButton track={t} reveal />
                 <span className="font-mono text-[13px] text-muted tabular">{formatTime(t.duration)}</span>
                 <button
                   type="button"

@@ -56,6 +56,7 @@ export interface LidarrTrack {
   explicit: boolean;
   hasFile: boolean;
   trackFileId: number;
+  foreignRecordingId?: string; // MusicBrainz recording id: the song itself, across releases
 }
 
 export interface LidarrMediaInfo {

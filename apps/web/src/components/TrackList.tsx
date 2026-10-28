@@ -8,6 +8,7 @@ import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { Cover } from './Cover';
 import { Equalizer } from './Equalizer';
+import { FavoriteButton } from './FavoriteButton';
 import { Menu } from './Menu';
 
 interface TrackListProps {
@@ -39,7 +40,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs }: TrackListPro
             <li
               className={cn(
                 'group grid cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-paper/[0.045] md:gap-4',
-                variant === 'album' ? 'grid-cols-[2rem_1fr_auto_auto]' : 'grid-cols-[2.75rem_1fr_auto_auto]',
+                variant === 'album' ? 'grid-cols-[2rem_1fr_auto_auto_auto]' : 'grid-cols-[2.75rem_1fr_auto_auto_auto]',
                 isCurrent && 'bg-paper/[0.035]',
               )}
               onClick={() => (isCurrent ? toggle() : playTracks(tracks, i))}
@@ -74,6 +75,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs }: TrackListPro
                   </div>
                 )}
               </div>
+              <FavoriteButton track={t} reveal />
               <span className="font-mono text-[13px] text-muted tabular">{formatTime(t.duration)}</span>
               <div onClick={(e) => e.stopPropagation()} className="opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
                 <Menu

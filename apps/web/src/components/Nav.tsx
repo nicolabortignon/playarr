@@ -1,14 +1,16 @@
-import { Disc3, Download, Home, Library, ListMusic, Search, type LucideIcon } from 'lucide-react';
+import { Disc3, Download, Heart, Home, Library, ListMusic, Search, type LucideIcon } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
 import { activeRequestCount, useHealth, useRequests } from '../lib/queries';
 
-const LINKS: { to: string; label: string; icon: LucideIcon }[] = [
+const LINKS: { to: string; label: string; icon: LucideIcon; desktopOnly?: boolean }[] = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/artists', label: 'Artists', icon: Library },
   { to: '/albums', label: 'Albums', icon: Disc3 },
+  // Five tabs fit on a phone; there, Favorites is reached from Home.
+  { to: '/favorites', label: 'Favorites', icon: Heart, desktopOnly: true },
   { to: '/queue', label: 'Queue', icon: ListMusic },
 ];
 
@@ -141,7 +143,7 @@ export function BottomNav() {
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-ink-900/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
     >
       <div className="grid h-[60px] grid-cols-5">
-        {LINKS.map(({ to, label, icon: Icon }) => (
+        {LINKS.filter((l) => !l.desktopOnly).map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}

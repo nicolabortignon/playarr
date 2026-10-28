@@ -5,8 +5,9 @@ import { AlbumCard, ArtistCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
+import { TrackList } from '../components/TrackList';
 import { formatDuration, greeting } from '../lib/format';
-import { useAlbums, useArtists, useHealth, useRandomAlbums } from '../lib/queries';
+import { useAlbums, useArtists, useFavorites, useHealth, useRandomAlbums } from '../lib/queries';
 import { shuffleLibrary } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 
@@ -14,6 +15,7 @@ export function HomePage() {
   const { data: health } = useHealth();
   const { data: recent } = useAlbums('added', 14);
   const { data: artists } = useArtists();
+  const { data: favorites } = useFavorites();
   const [seed, setSeed] = useState(0);
   const { data: random, isFetching: rolling } = useRandomAlbums(12, seed);
   const lib = health?.library;
@@ -55,6 +57,15 @@ export function HomePage() {
         </div>
         <CoverStack albums={recent?.slice(0, 3)} />
       </section>
+
+      {favorites && favorites.length > 0 && (
+        <section className="mb-14 max-w-4xl">
+          <SectionHeader kicker="Songs you love" title="Favorites" to="/favorites" />
+          <div className="-mx-3">
+            <TrackList tracks={favorites.slice(0, 5)} variant="mixed" />
+          </div>
+        </section>
+      )}
 
       <section className="mb-14">
         <SectionHeader kicker="Fresh from Lidarr" title="Recently added" to="/albums?sort=added" />

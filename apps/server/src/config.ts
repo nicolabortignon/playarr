@@ -7,6 +7,8 @@ const schema = z.object({
   HOST: z.string().default('0.0.0.0'),
   LIBRARY_REFRESH_MINUTES: z.coerce.number().positive().default(10),
   CACHE_DIR: z.string().default('.cache'),
+  // User data (favorites…). Unlike the cache, don't delete this.
+  DATA_DIR: z.string().default('data'),
   WEB_DIST: z.string().optional(),
 
   MEDIA_SOURCE: z.enum(['none', 'local', 'sftp', 'ssh']).default('none'),

@@ -43,6 +43,8 @@ export interface Album {
 
 export interface Track {
   id: number;
+  /** Stable song id (MusicBrainz recording, or "track:<id>"); used for favorites. */
+  recordingId: string;
   fileId: number;
   albumId: number;
   artistId: number;
@@ -92,6 +94,10 @@ export interface HealthStatus {
 }
 
 export type AlbumSort = 'title' | 'artist' | 'year' | 'added';
+
+export interface FavoriteTrack extends Track {
+  favoritedAt: string;
+}
 
 // ── Discover & requests: music that isn't in the library yet ────────────────
 
