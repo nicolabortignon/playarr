@@ -193,7 +193,7 @@ describe('Playarr web against live server', () => {
     expect(errors.join('\n')).toBe('');
   });
 
-  it('recommends similar songs under a playlist and adds an owned one', async () => {
+  it('recommends similar songs under a playlist, adds an owned one, and links artists and albums', async () => {
     if (!reachable) return;
     const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];
     const seedArtists = artists.filter((a) => ['Daft Punk', 'Moby', 'Air'].includes(a.name));
@@ -211,7 +211,7 @@ describe('Playarr web against live server', () => {
       });
       id = ((await created.json()) as { id: number }).id;
 
-      renderAt(`/playlists/${id}`);
+      const router = renderAt(`/playlists/${id}`);
       await screen.findByRole('heading', { name: 'Songs like these' });
       const section = await screen.findByRole('region', { name: 'Songs like these' });
       // ListenBrainz is a live dependency, so give it time.
@@ -228,6 +228,19 @@ describe('Playarr web against live server', () => {
         expect(p.trackCount).toBe(tracks.length + 1);
       });
       await waitFor(() => expect(within(section).queryByRole('button', { name: label })).toBeNull());
+
+      // Artist and album names are links. Albums you don't have point at the artist's discography.
+      const missingGroup = within(within(section).getByRole('heading', { name: 'Not in your library yet' }).parentElement!);
+      expect(missingGroup.getAllByRole('link').some((a) => a.getAttribute('href')?.startsWith('/discover/artists/'))).toBe(true);
+      // On an owned row, following the artist link navigates without also playing the song.
+      const ownedGroup = within(within(section).getByRole('heading', { name: 'Already in your library' }).parentElement!);
+      const ownedLinks = ownedGroup.getAllByRole('link').map((a) => a.getAttribute('href'));
+      expect(ownedLinks.some((h) => /^\/albums\/\d+$/.test(h ?? ''))).toBe(true);
+      const artistLink = ownedGroup.getAllByRole('link').find((a) => /^\/artists\/\d+$/.test(a.getAttribute('href') ?? ''))!;
+      const href = artistLink.getAttribute('href')!;
+      await act(async () => fireEvent.click(artistLink));
+      await waitFor(() => expect(router.state.location.pathname).toBe(href));
+      expect(usePlayer.getState().queue).toHaveLength(0);
     } finally {
       if (id) await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
     }

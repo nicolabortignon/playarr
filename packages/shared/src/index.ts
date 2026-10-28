@@ -228,6 +228,9 @@ export interface RecommendedTrack {
   /** Set when it isn't: request its album through Lidarr. */
   album?: AlbumRef;
   availability?: Availability;
+  /** Lead artist, for linking: `artistId` when they're in the library, else their discover page by `artistMbid`. */
+  artistId?: number;
+  artistMbid?: string;
 }
 
 export interface Recommendations {

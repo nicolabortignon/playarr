@@ -4,7 +4,7 @@ import { songKey } from '../library/library.ts';
 import { normalize, primaryArtist } from '../library/search.ts';
 import type { Playlists } from '../playlists.ts';
 import { remoteArtUrl } from './art.ts';
-import { similarRecordings, type LbSimilarRecording } from './listenbrainz.ts';
+import { recordingMetadata, similarRecordings, type LbSimilarRecording } from './listenbrainz.ts';
 import type { Requests } from './requests.ts';
 
 const MAX_SEEDS = 10;
@@ -84,7 +84,7 @@ export class Recommendations {
       if (track) {
         if (owned.length >= MAX_OWNED || (ownedPerArtist.get(artistKey) ?? 0) >= OWNED_PER_ARTIST) continue;
         if (inPlaylist.has(track.recordingId) || owned.some((o) => o.track!.id === track.id)) continue;
-        owned.push({ ...base, title: track.title, albumTitle: track.albumTitle, coverUrl: track.coverUrl, track });
+        owned.push({ ...base, title: track.title, albumTitle: track.albumTitle, coverUrl: track.coverUrl, track, artistId: track.artistId });
         ownedPerArtist.set(artistKey, (ownedPerArtist.get(artistKey) ?? 0) + 1);
       } else {
         if (missing.length >= MAX_MISSING || (missingPerArtist.get(artistKey) ?? 0) >= MISSING_PER_ARTIST) continue;
@@ -93,11 +93,29 @@ export class Recommendations {
           ...base,
           coverUrl: coverUrl(rec),
           album: { releaseMbid: rec.release_mbid, artistName: rec.artist_credit_name, albumTitle: rec.release_name },
-          availability: await this.requests.availabilityByName(rec.artist_credit_name, rec.release_name),
         });
         missingPerArtist.set(artistKey, (missingPerArtist.get(artistKey) ?? 0) + 1);
       }
     }
+
+    // Fill in the ids similar-recordings leaves out: the lead artist (for links) and the release
+    // group, which is the Lidarr album, so a request needs no extra MusicBrainz lookup.
+    const meta = await recordingMetadata(missing.map((m) => m.recordingId), signal);
+    await Promise.all(
+      missing.map(async (m) => {
+        const info = meta.get(m.recordingId);
+        const artistMbid = info?.artist?.artists?.[0]?.artist_mbid;
+        const groupMbid = info?.release?.release_group_mbid;
+        if (artistMbid) {
+          m.artistMbid = artistMbid;
+          m.artistId = await this.library.artistIdByMbid(artistMbid);
+        }
+        if (groupMbid) m.album!.mbid = groupMbid;
+        const byMbid = groupMbid ? await this.requests.availability(groupMbid) : undefined;
+        m.availability =
+          byMbid && byMbid.state !== 'none' ? byMbid : await this.requests.availabilityByName(m.artistName, m.albumTitle);
+      }),
+    );
     return { owned, missing, seedCount: seeds.length };
   }
 }
