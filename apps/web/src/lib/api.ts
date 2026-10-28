@@ -9,6 +9,8 @@ import type {
   DiscoverArtistDetail,
   DiscoverResults,
   FavoriteTrack,
+  PlaylistDetail,
+  PlaylistSummary,
   HealthStatus,
   SearchResults,
   Track,
@@ -62,6 +64,19 @@ export const api = {
     request<void>(`/api/favorites/${encodeURIComponent(recordingId)}`, { method: 'PUT' }),
   removeFavorite: (recordingId: string) =>
     request<void>(`/api/favorites/${encodeURIComponent(recordingId)}`, { method: 'DELETE' }),
+  playlists: () => get<PlaylistSummary[]>('/api/playlists'),
+  playlist: (id: number) => get<PlaylistDetail>(`/api/playlists/${id}`),
+  createPlaylist: (body: { name: string; description?: string; recordingIds?: string[] }) =>
+    request<PlaylistDetail>('/api/playlists', { method: 'POST', body: JSON.stringify(body) }),
+  updatePlaylist: (id: number, patch: { name?: string; description?: string }) =>
+    request<PlaylistDetail>(`/api/playlists/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deletePlaylist: (id: number) => request<void>(`/api/playlists/${id}`, { method: 'DELETE' }),
+  addToPlaylist: (id: number, recordingIds: string[]) =>
+    request<PlaylistDetail>(`/api/playlists/${id}/items`, { method: 'POST', body: JSON.stringify({ recordingIds }) }),
+  removeFromPlaylist: (id: number, itemId: number) =>
+    request<PlaylistDetail>(`/api/playlists/${id}/items/${itemId}`, { method: 'DELETE' }),
+  reorderPlaylist: (id: number, itemIds: number[]) =>
+    request<PlaylistDetail>(`/api/playlists/${id}/order`, { method: 'PUT', body: JSON.stringify({ itemIds }) }),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */

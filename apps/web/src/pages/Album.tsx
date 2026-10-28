@@ -1,4 +1,4 @@
-import { ListEnd, ListPlus, Mic2, Pause, Play, Shuffle } from 'lucide-react';
+import { ListEnd, ListMusic, ListPlus, Mic2, Pause, Play, Shuffle } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { AlbumCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
@@ -9,6 +9,7 @@ import { TrackList } from '../components/TrackList';
 import { useCoverAccent } from '../lib/color';
 import { formatDuration, plural } from '../lib/format';
 import { useAlbum, useArtist } from '../lib/queries';
+import { useUI } from '../lib/ui';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 
@@ -22,6 +23,7 @@ export function AlbumPage() {
   const playTracks = usePlayer((s) => s.playTracks);
   const toggle = usePlayer((s) => s.toggle);
   const navigate = useNavigate();
+  const openPicker = useUI((s) => s.openPlaylistPicker);
 
   if (error) return <ErrorState error={error} />;
   if (isPending || !album) return <AlbumSkeleton />;
@@ -95,6 +97,7 @@ export function AlbumPage() {
             items={[
               { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(album.tracks, 'next') },
               { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(album.tracks, 'end') },
+              { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker(album.tracks) },
               { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${album.artistId}`) },
             ]}
           />

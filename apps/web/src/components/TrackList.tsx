@@ -1,8 +1,9 @@
 import type { Track } from '@playarr/shared';
-import { Disc3, ListEnd, ListPlus, Mic2, Play } from 'lucide-react';
+import { Disc3, ListEnd, ListMusic, ListPlus, Mic2, Play } from 'lucide-react';
 import { Fragment } from 'react';
 import { useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
+import { useUI } from '../lib/ui';
 import { formatTime } from '../lib/format';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -24,6 +25,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs }: TrackListPro
   const playTracks = usePlayer((s) => s.playTracks);
   const toggle = usePlayer((s) => s.toggle);
   const navigate = useNavigate();
+  const openPicker = useUI((s) => s.openPlaylistPicker);
 
   return (
     <ol className="flex flex-col">
@@ -82,6 +84,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs }: TrackListPro
                   items={[
                     { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks([t], 'next') },
                     { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks([t], 'end') },
+                    { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker([t]) },
                     ...(variant === 'mixed'
                       ? [{ label: 'Go to album', icon: Disc3, onSelect: () => navigate(`/albums/${t.albumId}`) }]
                       : []),

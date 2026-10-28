@@ -6,6 +6,9 @@ import { ArtistPage } from './pages/Artist';
 import { ArtistsPage } from './pages/Artists';
 import { DiscoverArtistPage } from './pages/DiscoverArtist';
 import { FavoritesPage } from './pages/Favorites';
+import { LibraryPage } from './pages/Library';
+import { PlaylistPage } from './pages/Playlist';
+import { PlaylistsPage } from './pages/Playlists';
 import { HomePage } from './pages/Home';
 import { NotFoundPage } from './pages/NotFound';
 import { QueuePage } from './pages/Queue';
@@ -23,6 +26,9 @@ export const routes: RouteObject[] = [
       { path: 'albums', element: <AlbumsPage /> },
       { path: 'albums/:id', element: <AlbumPage /> },
       { path: 'favorites', element: <FavoritesPage /> },
+      { path: 'library', element: <LibraryPage /> },
+      { path: 'playlists', element: <PlaylistsPage /> },
+      { path: 'playlists/:id', element: <PlaylistPage /> },
       { path: 'queue', element: <QueuePage /> },
       { path: 'requests', element: <RequestsPage /> },
       { path: 'discover/artists/:mbid', element: <DiscoverArtistPage /> },

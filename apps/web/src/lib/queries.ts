@@ -1,4 +1,4 @@
-import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, FavoriteTrack, Track } from '@playarr/shared';
+import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, FavoriteTrack, PlaylistDetail, Track } from '@playarr/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
@@ -132,4 +132,73 @@ export function useToggleFavorite() {
     },
     onSettled: () => client.invalidateQueries({ queryKey: ['favorites'] }),
   });
+}
+
+export const usePlaylists = () => useQuery({ queryKey: ['playlists'], queryFn: api.playlists, staleTime: 60_000 });
+
+export const usePlaylist = (id: number) =>
+  useQuery({ queryKey: ['playlist', id], queryFn: () => api.playlist(id), enabled: Number.isFinite(id) });
+
+/** Playlist mutations: each returns the updated playlist, which refreshes both caches. */
+export function usePlaylistMutations() {
+  const client = useQueryClient();
+  const settle = (p: PlaylistDetail) => {
+    client.setQueryData(['playlist', p.id], p);
+    void client.invalidateQueries({ queryKey: ['playlists'] });
+  };
+  const onError = (err: Error) => toast(err.message, 'error');
+
+  return {
+    create: useMutation({
+      mutationFn: api.createPlaylist,
+      onSuccess: (p) => {
+        settle(p);
+        toast(p.trackCount ? `Created “${p.name}” with ${p.trackCount} ${p.trackCount === 1 ? 'song' : 'songs'}` : `Created “${p.name}”`);
+      },
+      onError,
+    }),
+    add: useMutation({
+      mutationFn: ({ id, tracks }: { id: number; tracks: Track[] }) => api.addToPlaylist(id, tracks.map((t) => t.recordingId)),
+      onSuccess: (p, { tracks }) => {
+        settle(p);
+        toast(`Added ${tracks.length === 1 ? `“${tracks[0]!.title}”` : `${tracks.length} songs`} to “${p.name}”`);
+      },
+      onError,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...patch }: { id: number; name?: string; description?: string }) => api.updatePlaylist(id, patch),
+      onSuccess: settle,
+      onError,
+    }),
+    remove: useMutation({
+      mutationFn: ({ id, itemId }: { id: number; itemId: number }) => api.removeFromPlaylist(id, itemId),
+      onSuccess: settle,
+      onError,
+    }),
+    reorder: useMutation({
+      mutationFn: ({ id, itemIds }: { id: number; itemIds: number[] }) => api.reorderPlaylist(id, itemIds),
+      // Optimistic: the list already moved under the user's finger.
+      onMutate: ({ id, itemIds }) => {
+        const previous = client.getQueryData<PlaylistDetail>(['playlist', id]);
+        if (previous) {
+          const byId = new Map(previous.items.map((i) => [i.itemId, i]));
+          client.setQueryData(['playlist', id], { ...previous, items: itemIds.map((i) => byId.get(i)!).filter(Boolean) });
+        }
+        return { previous };
+      },
+      onSuccess: settle,
+      onError: (err: Error, { id }, ctx) => {
+        if (ctx?.previous) client.setQueryData(['playlist', id], ctx.previous);
+        onError(err);
+      },
+    }),
+    destroy: useMutation({
+      mutationFn: (id: number) => api.deletePlaylist(id),
+      onSuccess: (_r, id) => {
+        client.removeQueries({ queryKey: ['playlist', id] });
+        void client.invalidateQueries({ queryKey: ['playlists'] });
+      },
+      onError,
+    }),
+  };
 }

@@ -9,6 +9,7 @@ import { Discover } from './discover/discover.ts';
 import { MusicBrainz } from './discover/musicbrainz.ts';
 import { Requests } from './discover/requests.ts';
 import { Favorites } from './favorites.ts';
+import { Playlists } from './playlists.ts';
 import { LidarrClient } from './lidarr/client.ts';
 import { Library } from './library/library.ts';
 import { createMediaSource } from './media/index.ts';
@@ -16,6 +17,7 @@ import { apiRoutes } from './routes/api.ts';
 import { artRoutes, LocalArt } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
+import { playlistRoutes } from './routes/playlists.ts';
 import { streamRoutes } from './routes/stream.ts';
 
 const config = loadConfig();
@@ -36,6 +38,7 @@ library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
 const media = createMediaSource(config);
 const db = openDatabase(resolve(config.DATA_DIR));
 const favorites = new Favorites(db, library);
+const playlists = new Playlists(db, library);
 const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
 const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), {
   rootFolderPath: config.LIDARR_ROOT_FOLDER,
@@ -49,6 +52,7 @@ artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR) });
 streamRoutes(app, { config, library, media });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
+playlistRoutes(app, { playlists });
 
 // In production, serve the built web app from the same origin.
 const webDist = config.WEB_DIST

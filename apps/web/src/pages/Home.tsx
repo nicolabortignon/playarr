@@ -7,7 +7,8 @@ import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, greeting } from '../lib/format';
-import { useAlbums, useArtists, useFavorites, useHealth, useRandomAlbums } from '../lib/queries';
+import { useAlbums, useArtists, useFavorites, useHealth, usePlaylists, useRandomAlbums } from '../lib/queries';
+import { PlaylistCard } from './Playlists';
 import { shuffleLibrary } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 
@@ -16,6 +17,7 @@ export function HomePage() {
   const { data: recent } = useAlbums('added', 14);
   const { data: artists } = useArtists();
   const { data: favorites } = useFavorites();
+  const { data: playlists } = usePlaylists();
   const [seed, setSeed] = useState(0);
   const { data: random, isFetching: rolling } = useRandomAlbums(12, seed);
   const lib = health?.library;
@@ -64,6 +66,17 @@ export function HomePage() {
           <div className="-mx-3">
             <TrackList tracks={favorites.slice(0, 5)} variant="mixed" />
           </div>
+        </section>
+      )}
+
+      {playlists && playlists.length > 0 && (
+        <section className="mb-14">
+          <SectionHeader kicker="Made by you" title="Playlists" to="/playlists" />
+          <Shelf>
+            {playlists.map((p, i) => (
+              <PlaylistCard key={p.id} playlist={p} className="w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52" style={{ animationDelay: `${i * 40}ms` }} />
+            ))}
+          </Shelf>
         </section>
       )}
 

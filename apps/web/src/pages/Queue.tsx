@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { ListPlus, X } from 'lucide-react';
 import { Link } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import { Cover } from '../components/Cover';
@@ -7,6 +7,7 @@ import { FavoriteButton } from '../components/FavoriteButton';
 import { FormatBadge } from '../components/FormatBadge';
 import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
+import { useUI } from '../lib/ui';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { PageTitle } from './Albums';
 
@@ -17,6 +18,7 @@ export function QueuePage() {
   const upcoming = usePlayer(useShallow((s) => s.order.slice(s.pos + 1).map((i) => s.queue[i]!)));
   const { jumpTo, removeAt, clearUpcoming } = usePlayer.getState();
   const total = upcoming.reduce((sum, t) => sum + t.duration, 0);
+  const openPicker = useUI((s) => s.openPlaylistPicker);
 
   if (!track) {
     return (
@@ -31,7 +33,15 @@ export function QueuePage() {
 
   return (
     <div className="max-w-4xl px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Queue" />
+      <PageTitle title="Queue">
+        <button
+          type="button"
+          onClick={() => openPicker([track, ...upcoming])}
+          className="inline-flex h-9 items-center gap-2 rounded-full border border-line px-4 font-mono text-[11px] tracking-wider text-paper-dim uppercase transition hover:border-paper/30 hover:text-paper"
+        >
+          <ListPlus className="size-4" /> Save as playlist
+        </button>
+      </PageTitle>
 
       <section className="mb-12">
         <div className="mb-3 font-mono text-[11px] tracking-[0.25em] text-muted uppercase">Now playing</div>

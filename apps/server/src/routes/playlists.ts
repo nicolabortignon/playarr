@@ -1,0 +1,64 @@
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import { PlaylistError, type Playlists } from '../playlists.ts';
+
+const RECORDING_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|track:\d+)$/i;
+
+function recordingIds(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 1000) return null;
+  return value.every((v) => typeof v === 'string' && RECORDING_ID.test(v)) ? (value as string[]) : null;
+}
+
+async function handle<T>(reply: FastifyReply, fn: () => T | Promise<T>) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof PlaylistError) return reply.code(err.status).send({ error: err.message });
+    throw err;
+  }
+}
+
+export function playlistRoutes(app: FastifyInstance, deps: { playlists: Playlists }) {
+  const { playlists } = deps;
+  type Id = { Params: { id: string } };
+  const id = (raw: string) => Number.parseInt(raw, 10);
+
+  app.get('/api/playlists', () => playlists.list());
+
+  app.post<{ Body: { name?: string; description?: string; recordingIds?: string[] } }>('/api/playlists', (req, reply) => {
+    const ids = recordingIds(req.body?.recordingIds);
+    if (!ids) return reply.code(400).send({ error: 'recordingIds must be a list of song ids' });
+    return handle(reply, async () => reply.code(201).send(await playlists.create(req.body?.name ?? '', req.body?.description, ids)));
+  });
+
+  app.get<Id>('/api/playlists/:id', (req, reply) => handle(reply, () => playlists.get(id(req.params.id))));
+
+  app.patch<Id & { Body: { name?: string; description?: string } }>('/api/playlists/:id', (req, reply) =>
+    handle(reply, () => playlists.update(id(req.params.id), req.body ?? {})),
+  );
+
+  app.delete<Id>('/api/playlists/:id', (req, reply) =>
+    handle(reply, () => {
+      playlists.remove(id(req.params.id));
+      return reply.code(204).send();
+    }),
+  );
+
+  app.post<Id & { Body: { recordingIds?: string[] } }>('/api/playlists/:id/items', (req, reply) => {
+    const ids = recordingIds(req.body?.recordingIds);
+    if (!ids?.length) return reply.code(400).send({ error: 'recordingIds must be a non-empty list of song ids' });
+    return handle(reply, () => playlists.addItems(id(req.params.id), ids));
+  });
+
+  app.delete<{ Params: { id: string; itemId: string } }>('/api/playlists/:id/items/:itemId', (req, reply) =>
+    handle(reply, () => playlists.removeItem(id(req.params.id), id(req.params.itemId))),
+  );
+
+  app.put<Id & { Body: { itemIds?: number[] } }>('/api/playlists/:id/order', (req, reply) => {
+    const itemIds = req.body?.itemIds;
+    if (!Array.isArray(itemIds) || !itemIds.every(Number.isInteger)) {
+      return reply.code(400).send({ error: 'itemIds must be a list of item ids' });
+    }
+    return handle(reply, () => playlists.reorder(id(req.params.id), itemIds));
+  });
+}

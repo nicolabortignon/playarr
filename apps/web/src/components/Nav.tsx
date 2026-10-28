@@ -1,16 +1,26 @@
-import { Disc3, Download, Heart, Home, Library, ListMusic, Search, type LucideIcon } from 'lucide-react';
+import { Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, type LucideIcon } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
-import { activeRequestCount, useHealth, useRequests } from '../lib/queries';
+import { activeRequestCount, useHealth, usePlaylists, useRequests } from '../lib/queries';
+import { useUI } from '../lib/ui';
 
-const LINKS: { to: string; label: string; icon: LucideIcon; desktopOnly?: boolean }[] = [
+type NavItem = { to: string; label: string; icon: LucideIcon };
+
+const LINKS: NavItem[] = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/artists', label: 'Artists', icon: Library },
   { to: '/albums', label: 'Albums', icon: Disc3 },
-  // Five tabs fit on a phone; there, Favorites is reached from Home.
-  { to: '/favorites', label: 'Favorites', icon: Heart, desktopOnly: true },
+  { to: '/favorites', label: 'Favorites', icon: Heart },
+  { to: '/queue', label: 'Queue', icon: ListMusic },
+];
+
+/** Phones get four roomy tabs; Library gathers playlists, favorites, artists and albums. */
+const MOBILE_LINKS: NavItem[] = [
+  { to: '/', label: 'Home', icon: Home },
+  { to: '/search', label: 'Search', icon: Search },
+  { to: '/library', label: 'Library', icon: LibraryBig },
   { to: '/queue', label: 'Queue', icon: ListMusic },
 ];
 
@@ -85,6 +95,8 @@ export function Sidebar() {
         )}
       </nav>
 
+      <SidebarPlaylists />
+
       <div className="mt-auto space-y-3 px-3">
         {lib && (
           <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-line pt-4 font-mono text-[11px] text-muted">
@@ -109,6 +121,52 @@ export function Sidebar() {
         <ConnectionStatus />
       </div>
     </aside>
+  );
+}
+
+function SidebarPlaylists() {
+  const { data: playlists } = usePlaylists();
+  const openPicker = useUI((s) => s.openPlaylistPicker);
+  return (
+    <div className="mt-6 flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center justify-between px-3 pb-2">
+        <NavLink
+          to="/playlists"
+          end
+          className={({ isActive }) =>
+            cn('font-mono text-[11px] tracking-[0.2em] uppercase transition', isActive ? 'text-paper' : 'text-muted hover:text-paper')
+          }
+        >
+          Playlists
+        </NavLink>
+        <button
+          type="button"
+          aria-label="New playlist"
+          title="New playlist"
+          onClick={() => openPicker([])}
+          className="grid size-7 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper"
+        >
+          <Plus className="size-4" />
+        </button>
+      </div>
+      <div className="scrollbar-none -mx-1 min-h-0 flex-1 overflow-y-auto px-1">
+        {playlists?.map((p) => (
+          <NavLink
+            key={p.id}
+            to={`/playlists/${p.id}`}
+            className={({ isActive }) =>
+              cn(
+                'block truncate rounded-md px-3 py-1.5 text-[14px] transition-colors',
+                isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
+              )
+            }
+          >
+            {p.name}
+          </NavLink>
+        ))}
+        {playlists?.length === 0 && <p className="px-3 text-[13px] text-muted">No playlists yet.</p>}
+      </div>
+    </div>
   );
 }
 
@@ -142,8 +200,8 @@ export function BottomNav() {
       aria-label="Main"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-ink-900/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
     >
-      <div className="grid h-[60px] grid-cols-5">
-        {LINKS.filter((l) => !l.desktopOnly).map(({ to, label, icon: Icon }) => (
+      <div className="grid h-[60px] grid-cols-4">
+        {MOBILE_LINKS.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}

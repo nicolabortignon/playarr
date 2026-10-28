@@ -181,3 +181,31 @@ export interface AlbumRequest {
   requestedAt: string;
   availability: Availability;
 }
+
+// ── Playlists ───────────────────────────────────────────────────────────────
+
+export interface PlaylistSummary {
+  id: number;
+  name: string;
+  description: string;
+  trackCount: number;
+  duration: number; // seconds, playable tracks only
+  /** Up to four distinct album covers, for the mosaic. */
+  covers: string[];
+  updatedAt: string;
+}
+
+export interface PlaylistItem {
+  itemId: number;
+  recordingId: string;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  addedAt: string;
+  /** The playable track, or undefined if the song is no longer in the library. */
+  track?: Track;
+}
+
+export interface PlaylistDetail extends PlaylistSummary {
+  items: PlaylistItem[];
+}

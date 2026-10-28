@@ -1,6 +1,7 @@
 import { Outlet, ScrollRestoration } from 'react-router';
 import { AudioEngine } from '../player/AudioEngine';
 import { useKeyboardShortcuts } from '../player/useKeyboardShortcuts';
+import { AddToPlaylistDialog } from './AddToPlaylistDialog';
 import { BottomNav, Sidebar } from './Nav';
 import { NowPlaying } from './NowPlaying';
 import { MiniPlayer, PlayerBar } from './PlayerBar';
@@ -18,6 +19,7 @@ export function AppShell() {
       <MiniPlayer />
       <BottomNav />
       <NowPlaying />
+      <AddToPlaylistDialog />
       <Toasts />
       <AudioEngine />
       <ScrollRestoration />

@@ -1,4 +1,4 @@
-import { ChevronDown, Disc3, ListMusic, Mic2 } from 'lucide-react';
+import { ChevronDown, Disc3, ListMusic, ListPlus, Mic2 } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -21,6 +21,7 @@ export function NowPlaying() {
 
 function Sheet() {
   const setOpen = useUI((s) => s.setNowPlaying);
+  const openPicker = useUI((s) => s.openPlaylistPicker);
   const track = useCurrentTrack()!;
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
@@ -88,6 +89,7 @@ function Sheet() {
           <Menu
             className="text-paper"
             items={[
+              { label: 'Add to playlist…', icon: ListPlus, onSelect: () => openPicker([track]) },
               { label: 'Go to album', icon: Disc3, onSelect: () => go(`/albums/${track.albumId}`) },
               { label: 'Go to artist', icon: Mic2, onSelect: () => go(`/artists/${track.artistId}`) },
               { label: 'Open queue', icon: ListMusic, onSelect: () => go('/queue') },

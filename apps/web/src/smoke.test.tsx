@@ -3,11 +3,12 @@
  * Renders every route with real data and drives the player store.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { healQueue } from './player/healQueue';
 import { usePlayer } from './player/store';
+import { useToasts } from './lib/toast';
 import { routes } from './routes';
 
 // happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
@@ -21,6 +22,9 @@ beforeAll(async () => {
 afterEach(() => {
   cleanup();
   usePlayer.setState({ queue: [], order: [], pos: -1, playing: false });
+  useToasts.setState({ toasts: [] });
+  // Each test asserts on its own console errors only.
+  errors.length = 0;
 });
 
 function renderAt(path: string) {
@@ -52,11 +56,13 @@ describe('Playarr web against live server', () => {
     ['/nope', 'This groove is empty.'],
     ['/requests', 'Requests'],
     ['/favorites', 'Favorites'],
+    ['/playlists', 'New playlist'],
+    ['/library', 'Library'],
   ] as [string, string | RegExp][])('renders %s', async (path, text) => {
     if (!reachable) return;
     renderAt(path);
     expect((await screen.findAllByText(text)).length).toBeGreaterThan(0);
-    expect(errors).toEqual([]);
+    expect(errors.join('\n')).toBe('');
   });
 
   it('renders an artist page with discography', async () => {
@@ -66,7 +72,7 @@ describe('Playarr web against live server', () => {
     renderAt(`/artists/${daft.id}`);
     await screen.findByRole('heading', { name: 'Albums' });
     expect(screen.getAllByRole('link').some((l) => l.getAttribute('href')?.startsWith('/albums/'))).toBe(true);
-    expect(errors).toEqual([]);
+    expect(errors.join('\n')).toBe('');
   });
 
   it('searches the library', async () => {
@@ -74,7 +80,7 @@ describe('Playarr web against live server', () => {
     renderAt('/search?q=daft');
     await screen.findByText('Top result');
     await screen.findByText('One More Time');
-    expect(errors).toEqual([]);
+    expect(errors.join('\n')).toBe('');
   });
 
   it('shows music that is not in the library, with request buttons', async () => {
@@ -83,15 +89,18 @@ describe('Playarr web against live server', () => {
     await screen.findByRole('heading', { name: /Not in your library/ });
     const buttons = await screen.findAllByRole('button', { name: /Request/ }, { timeout: 20_000 });
     expect(buttons.length).toBeGreaterThan(0);
-    expect(errors).toEqual([]);
+    expect(errors.join('\n')).toBe('');
   });
 
   it('renders a discover artist page with a discography', async () => {
     if (!reachable) return;
     renderAt('/discover/artists/10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8'); // Massive Attack
     await screen.findByRole('heading', { name: 'Massive Attack' }, { timeout: 20_000 });
-    expect(screen.getByText('Mezzanine')).toBeTruthy();
-    expect(errors).toEqual([]);
+    // Needs MusicBrainz over the internet; when it's unreachable the page must say so, not "no albums".
+    const loaded = screen.queryByText('Mezzanine');
+    const failed = screen.queryByText(/Couldn’t load the discography/);
+    expect(loaded ?? failed).toBeTruthy();
+    expect(errors.join('\n')).toBe('');
   });
 
   it('hearts a song on an album page and lists it under Favorites', async () => {
@@ -119,7 +128,7 @@ describe('Playarr web against live server', () => {
       const favs = (await (await fetch('/api/favorites')).json()) as { recordingId: string }[];
       expect(favs.some((f) => f.recordingId === song.recordingId)).toBe(false);
     });
-    expect(errors).toEqual([]);
+    expect(errors.join('\n')).toBe('');
   });
 
   it('refreshes queue tracks saved before favorites existed, so the player shows a heart', async () => {
@@ -136,7 +145,48 @@ describe('Playarr web against live server', () => {
     renderAt('/');
     const current = queue[1]!;
     await screen.findAllByRole('button', { name: `Add “${current.title}” to favorites` });
-    expect(errors).toEqual([]);
+    expect(errors.join('\n')).toBe('');
+  });
+
+  it('creates a playlist, adds an album to it from the album menu, and shows it', async () => {
+    if (!reachable) return;
+    const name = `Smoke test ${Date.now()}`;
+
+    // Create from the Playlists page; the dialog navigates to the new playlist.
+    const router = renderAt('/playlists');
+    const newButtons = await screen.findAllByRole('button', { name: /New playlist/ });
+    await act(async () => fireEvent.click(newButtons[newButtons.length - 1]!));
+    const input = await screen.findByRole('textbox', { name: 'Playlist name' });
+    fireEvent.change(input, { target: { value: name } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Create' })));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/playlists\/\d+$/));
+    const id = Number(router.state.location.pathname.split('/').pop());
+    await screen.findByRole('heading', { name });
+    cleanup();
+
+    // Add a whole album via its ⋯ menu → Add to playlist… → pick the playlist.
+    const album = (await (await fetch('/api/albums/8')).json()) as { title: string; tracks: { title: string }[] };
+    renderAt('/albums/8');
+    await screen.findByRole('heading', { name: album.title });
+    const [albumMenu] = screen.getAllByRole('button', { name: 'More actions' });
+    await act(async () => fireEvent.click(albumMenu!));
+    const addItem = await screen.findByRole('menuitem', { name: 'Add to playlist…' });
+    await act(async () => fireEvent.click(addItem));
+    const picker = await screen.findByRole('dialog', { name: /^Add/ });
+    await act(async () => fireEvent.click(within(picker).getByRole('button', { name: new RegExp(name) })));
+    await waitFor(async () => {
+      const p = (await (await fetch(`/api/playlists/${id}`)).json()) as { trackCount: number };
+      expect(p.trackCount).toBe(album.tracks.length);
+    });
+    cleanup();
+
+    renderAt(`/playlists/${id}`);
+    await screen.findByRole('heading', { name });
+    expect((await screen.findAllByText(album.tracks[0]!.title)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: `Play ${name}` })).toBeTruthy();
+
+    await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+    expect(errors.join('\n')).toBe('');
   });
 
   it('plays an album, queues, shuffles, and opens Now Playing', async () => {
@@ -177,6 +227,6 @@ describe('Playarr web against live server', () => {
     await act(async () => fireEvent.click(open[0]!));
     await screen.findByRole('dialog', { name: 'Now playing' });
     expect(screen.getAllByText(s.queue[0]!.title).length).toBeGreaterThan(0);
-    expect(errors).toEqual([]);
+    expect(errors.join('\n')).toBe('');
   });
 });
