@@ -75,7 +75,7 @@ export function useRequests() {
     );
     previous.current = new Map(query.data.map((r) => [r.mbid, r.availability.state]));
     if (landed.length) {
-      for (const key of ['albums', 'artists', 'artist', 'health', 'search', 'discover', 'discover-artist']) {
+      for (const key of ['albums', 'artists', 'artist', 'health', 'search', 'discover', 'discover-artist', 'recommendations']) {
         void client.invalidateQueries({ queryKey: [key] });
       }
       toast(landed.length === 1 ? `“${landed[0]!.title}” is ready to play` : `${landed.length} albums are ready to play`);
@@ -96,6 +96,7 @@ export function useRequestAlbum() {
       void client.invalidateQueries({ queryKey: ['requests'] });
       void client.invalidateQueries({ queryKey: ['discover'] });
       void client.invalidateQueries({ queryKey: ['discover-artist'] });
+      void client.invalidateQueries({ queryKey: ['recommendations'] });
     },
     onError: (err) => toast((err as Error).message, 'error'),
   });
@@ -133,6 +134,16 @@ export function useToggleFavorite() {
     onSettled: () => client.invalidateQueries({ queryKey: ['favorites'] }),
   });
 }
+
+/** ListenBrainz "songs like these"; `variant` > 0 is a reshuffled mix. Slow-moving, so cache generously. */
+export const usePlaylistRecommendations = (id: number, variant: number, enabled: boolean) =>
+  useQuery({
+    queryKey: ['recommendations', id, variant],
+    queryFn: () => api.playlistRecommendations(id, variant),
+    enabled,
+    staleTime: 10 * 60_000,
+    placeholderData: keepPreviousData,
+  });
 
 export const usePlaylists = () => useQuery({ queryKey: ['playlists'], queryFn: api.playlists, staleTime: 60_000 });
 

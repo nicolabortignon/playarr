@@ -82,7 +82,11 @@ export class Requests {
 
   async request(ref: AlbumRef): Promise<AlbumRequest> {
     await this.loaded;
-    const lookup = ref.mbid ? await this.lookupByMbid(ref.mbid) : await this.lookupByName(ref);
+    const lookup = ref.mbid
+      ? await this.lookupByMbid(ref.mbid)
+      : ref.releaseMbid
+        ? await this.lookupByRelease(ref)
+        : await this.lookupByName(ref);
     const mbid = lookup.foreignAlbumId;
     const known = await this.library.albumByMbid(mbid);
     if (known?.playable) {
@@ -124,6 +128,12 @@ export class Requests {
     });
     if (!lookup) throw new RequestError('Album not found in Lidarr’s metadata', 404);
     return lookup;
+  }
+
+  /** A specific release (e.g. from ListenBrainz) → its release group; falls back to the name. */
+  private async lookupByRelease(ref: AlbumRef): Promise<LidarrLookupAlbum> {
+    const group = await this.mb.releaseGroupOf(ref.releaseMbid!).catch(() => undefined);
+    return group ? this.lookupByMbid(group.id) : this.lookupByName(ref);
   }
 
   /**

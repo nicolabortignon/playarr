@@ -35,3 +35,8 @@ export function baseTitle(title: string): string {
 export function albumKey(artistName: string, albumTitle: string): string {
   return `${normalize(artistName)}|${normalize(baseTitle(albumTitle) || albumTitle)}`;
 }
+
+/** Lead artist of a credit: "Daft Punk feat. Pharrell Williams" → "Daft Punk". */
+export function primaryArtist(credit: string): string {
+  return credit.split(/\s+(?:feat\.?|featuring|ft\.)\s+|\s+&\s+|,\s+/i)[0]!.trim() || credit;
+}

@@ -9,6 +9,7 @@ import { Equalizer } from '../components/Equalizer';
 import { FavoriteButton } from '../components/FavoriteButton';
 import { Menu } from '../components/Menu';
 import { PlaylistCover } from '../components/PlaylistCover';
+import { PlaylistRecommendations } from '../components/PlaylistRecommendations';
 import { ErrorState, Skeleton } from '../components/Section';
 import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
@@ -148,6 +149,8 @@ export function PlaylistPage() {
           ))}
         </Reorder.Group>
       )}
+
+      <PlaylistRecommendations playlistId={id} enabled={items.length > 0} />
 
       <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete playlist?">
         <div className="p-5">

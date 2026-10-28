@@ -7,6 +7,7 @@ import { loadConfig } from './config.ts';
 import { openDatabase } from './db.ts';
 import { Discover } from './discover/discover.ts';
 import { MusicBrainz } from './discover/musicbrainz.ts';
+import { Recommendations } from './discover/recommendations.ts';
 import { Requests } from './discover/requests.ts';
 import { Favorites } from './favorites.ts';
 import { Playlists } from './playlists.ts';
@@ -46,13 +47,14 @@ const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE
   metadataProfileId: config.LIDARR_METADATA_PROFILE_ID,
 });
 const discover = new Discover(lidarr, musicbrainz, library, requests);
+const recommendations = new Recommendations(playlists, library, requests);
 
 apiRoutes(app, { config, lidarr, library, media });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR) });
 streamRoutes(app, { config, library, media });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
-playlistRoutes(app, { playlists });
+playlistRoutes(app, { playlists, recommendations });
 
 // In production, serve the built web app from the same origin.
 const webDist = config.WEB_DIST

@@ -14,7 +14,7 @@ import { dirname } from 'node:path';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { LidarrAlbum, LidarrArtist, LidarrImage, LidarrTrackFile } from '../lidarr/types.ts';
 import { formatFromTrackFile, formatKey } from './format.ts';
-import { albumKey, normalize, scoreMatch } from './search.ts';
+import { albumKey, normalize, primaryArtist, scoreMatch } from './search.ts';
 
 export interface FileRecord {
   id: number;
@@ -41,6 +41,7 @@ interface Snapshot {
   artistIdByMbid: Map<string, number>;
   albumIdByKey: Map<string, number>;
   trackByRecording: Map<string, Track>;
+  trackByName: Map<string, Track>;
 }
 
 /** Bump when the snapshot shape changes so stale files on disk are ignored. */
@@ -254,6 +255,7 @@ export class Library {
       artistIdByMbid,
       albumIdByKey,
       trackByRecording: indexByRecording(allTracks),
+      trackByName: indexByName(allTracks),
       stats: {
         artists: artists.size,
         albums: albums.size,
@@ -271,6 +273,12 @@ export class Library {
 
   async trackByRecording(recordingId: string): Promise<Track | undefined> {
     return (await this.ready()).trackByRecording.get(recordingId);
+  }
+
+  /** A library track for this song by name, e.g. a different recording (single vs. album version). */
+  async trackByName(artistName: string, title: string): Promise<Track | undefined> {
+    const index = (await this.ready()).trackByName;
+    return index.get(songKey(artistName, title)) ?? index.get(songKey(primaryArtist(artistName), title));
   }
 
   /** Playable album matching an artist + title from another source (e.g. Deezer). */
@@ -486,7 +494,20 @@ function fromStored(stored: StoredSnapshot): Snapshot {
     artistIdByMbid: new Map(stored.artistIdByMbid),
     albumIdByKey: new Map(stored.albums.map((a) => [albumKey(a.artistName, a.title), a.id])),
     trackByRecording: indexByRecording(stored.albums.flatMap((a) => a.tracks)),
+    trackByName: indexByName(stored.albums.flatMap((a) => a.tracks)),
   };
+}
+
+export const songKey = (artistName: string, title: string) => `${normalize(artistName)}|${normalize(title)}`;
+
+function indexByName(tracks: Track[]): Map<string, Track> {
+  const map = new Map<string, Track>();
+  for (const t of tracks) {
+    for (const key of new Set([songKey(t.artistName, t.title), songKey(primaryArtist(t.artistName), t.title)])) {
+      if (!map.has(key)) map.set(key, t);
+    }
+  }
+  return map;
 }
 
 /** First (album-ordered) track for each recording; the same song can sit on several albums. */

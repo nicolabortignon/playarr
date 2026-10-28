@@ -46,15 +46,15 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
   app.get('/api/requests', () => requests.list());
 
   app.post<{ Body: Partial<AlbumRef> }>('/api/requests', async (req, reply) => {
-    const { mbid, artistName, albumTitle } = req.body ?? {};
-    if (mbid !== undefined && !MBID.test(mbid)) {
-      return reply.code(400).send({ error: 'Invalid MusicBrainz release-group id' });
+    const { mbid, releaseMbid, artistName, albumTitle } = req.body ?? {};
+    if ((mbid !== undefined && !MBID.test(mbid)) || (releaseMbid !== undefined && !MBID.test(releaseMbid))) {
+      return reply.code(400).send({ error: 'Invalid MusicBrainz id' });
     }
     if (!mbid && (!artistName?.trim() || !albumTitle?.trim())) {
       return reply.code(400).send({ error: 'Provide mbid, or artistName and albumTitle' });
     }
     try {
-      return await requests.request({ mbid, artistName: artistName ?? '', albumTitle: albumTitle ?? '' });
+      return await requests.request({ mbid, releaseMbid, artistName: artistName ?? '', albumTitle: albumTitle ?? '' });
     } catch (err) {
       req.log.warn({ err, mbid, artistName, albumTitle }, 'album request failed');
       return fail(reply, err);

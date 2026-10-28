@@ -79,6 +79,14 @@ export class MusicBrainz {
     ).then((r) => r['release-groups']);
   }
 
+  /** The release group (album) a specific release (edition) belongs to. */
+  releaseGroupOf(releaseMbid: string, signal?: AbortSignal) {
+    return this.get<{ 'release-group'?: MbReleaseGroup }>(
+      `/release/${encodeURIComponent(releaseMbid)}?inc=release-groups`,
+      signal,
+    ).then((r) => r['release-group']);
+  }
+
   /** An artist's albums and EPs (singles would drown them out). Browse returns up to 100 per page. */
   artistReleaseGroups(artistMbid: string, signal?: AbortSignal) {
     return this.get<{ 'release-groups': MbReleaseGroup[] }>(

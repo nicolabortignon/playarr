@@ -143,7 +143,10 @@ export interface DiscoverArtist {
 
 /** Identifies an album by name; the server resolves it to a MusicBrainz release group on request. */
 export interface AlbumRef {
+  /** MusicBrainz release-group id, when known. */
   mbid?: string;
+  /** A specific MusicBrainz release (edition); resolved to its release group on request. */
+  releaseMbid?: string;
   artistName: string;
   albumTitle: string;
 }
@@ -208,4 +211,29 @@ export interface PlaylistItem {
 
 export interface PlaylistDetail extends PlaylistSummary {
   items: PlaylistItem[];
+}
+
+// ── Recommendations ─────────────────────────────────────────────────────────
+
+export interface RecommendedTrack {
+  recordingId: string;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  coverUrl?: string;
+  /** Title of the playlist song it's most similar to. */
+  because: string;
+  /** Set when the song is in the library: play it or add it directly. */
+  track?: Track;
+  /** Set when it isn't: request its album through Lidarr. */
+  album?: AlbumRef;
+  availability?: Availability;
+}
+
+export interface Recommendations {
+  /** Similar songs you already have. */
+  owned: RecommendedTrack[];
+  /** Similar songs you don't have yet. */
+  missing: RecommendedTrack[];
+  seedCount: number;
 }

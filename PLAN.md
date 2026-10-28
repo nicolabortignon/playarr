@@ -121,6 +121,7 @@ GET  /stream/:trackFileId            → audio (Range); ?format=opus|aac|mp3&bit
 GET  /art/:kind/:id?size=            → cached, resized artwork
 POST /api/history                    → scrobble a play
 CRUD /api/playlists, /api/favorites
+GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned + missing)
 ```
 
 **Security:** `/stream` only serves paths that come back from Lidarr for a known `trackFileId` *and* that resolve inside a configured music root (no path traversal). Playarr gets its own login. Never expose the Lidarr API key to the client.
@@ -185,6 +186,7 @@ CRUD /api/playlists, /api/favorites
 - [ ] ReplayGain, crossfade, EQ (Web Audio)
 - [ ] Offline downloads (cache tracks in the service worker / IndexedDB)
 - [x] **Discover & request** (built 2026-10-27, see §11): search beyond the library, request albums, live download progress
+- [x] **Playlist recommendations** (built 2026-10-28, see §11): "Songs like these" under each playlist, with Add for songs you own and Request for songs you don't. *Next: the same for Favorites, and a "radio" built from one song.*
 - [ ] Lidarr actions: show an in-library artist's missing albums, interactive release picking
 - [ ] Live library updates through Lidarr SignalR
 - [ ] Cast / AirPlay (Remote Playback API), Last.fm / ListenBrainz scrobbling
@@ -242,6 +244,8 @@ pnpm --filter @playarr/web test   # smoke tests against the running server
 
 **Ranking tweaks:** title/artist match on top of popularity, versions (remix/live/edit) pushed down, and when the query names an artist, that artist's top tracks are checked too ("teardrop massive attack" → *Mezzanine*). Remote artwork goes through `/art/remote` (allowlisted hosts, checked on every redirect); release-group covers use Lidarr's image CDN.
 
+**Playlist recommendations:** ListenBrainz's labs `similar-recordings` API (no key; built from real listening sessions, keyed by MusicBrainz recording id, which every playlist entry already has). Up to 10 playlist songs are used as seeds (evenly spread; "New mix" picks a random set and shakes up the ranking). Each seed's scores are scaled to its own best match, then summed, so songs similar to several playlist songs rise. Songs already in the playlist are dropped, as are extra songs by the same lead artist ("feat." credits count as the lead: 3 per artist for owned songs, 2 for missing). Owned? Recording id in the library, then artist + title. Missing songs carry their **release** id; at request time MusicBrainz maps release → release group (the Lidarr album), with name lookup as the fallback. Covers come from Cover Art Archive through Lidarr's CDN. Results are cached for 1 h on the server and 10 min in the browser.
+
 **Lidarr setup seen:** quality profiles Any/Lossless/Standard (root default: Any), metadata profile Standard = Album/Studio/Official. Indexers: Knaben + The Pirate Bay via Prowlarr; download client: qBittorrent. Overridable via `LIDARR_ROOT_FOLDER`, `LIDARR_QUALITY_PROFILE_ID`, `LIDARR_METADATA_PROFILE_ID`.
 
 ## 12. Decisions log
@@ -257,6 +261,7 @@ pnpm --filter @playarr/web test   # smoke tests against the running server
 | 2026-10-28 | Playlists: entries keyed by recording id plus a title/artist/album snapshot, so songs that leave the library stay visible (greyed out) instead of vanishing; duplicates allowed; order kept as integer positions rewritten on reorder. Mobile tab bar became Home · Search · Library · Queue, with Library collecting playlists, favorites, artists, albums and requests. |
 | 2026-10-28 | Favicon is redrawn in the accent color of the playing track (canvas → PNG, since Safari ignores SVG favicons). |
 | 2026-10-28 | Favorites are keyed by MusicBrainz **recording id** (Lidarr `foreignRecordingId`), not Lidarr track id, so they survive re-imports and quality upgrades. Stored server-side in SQLite so every device shares them. Uses Node's built-in `node:sqlite` (no native dependency); `--disable-warning=ExperimentalWarning` in the scripts. User data lives in `DATA_DIR` (default `apps/server/data`), separate from the deletable `.cache`. |
+| 2026-10-28 | Recommendations come from ListenBrainz (open data, no key, MusicBrainz ids end to end) rather than Last.fm (needs an API key; matches by name) or Deezer radio (popularity-driven, weaker for niche music). The labs API only takes one seed per call, so we make up to 10 calls in parallel (about 0.5 s total). |
 | 2026-10-27 | Single `<audio>` element (not two swapped ones) so iOS background playback keeps working. Gapless/crossfade come later via Web Audio. |
 | 2026-10-27 | Visual direction "liner notes": warm near-black, Gloock display serif, Schibsted Grotesk UI, DM Mono for specs and durations. The accent color comes from the current cover art; there's a subtle film grain. |
 | 2026-10-27 | Stack versions: React 19, Vite 8, Tailwind 4, React Router 7 (pinned below v8), TanStack Query 5, Zustand 5, Motion 14, Fastify 5, zod 4, TypeScript 7. |

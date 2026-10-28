@@ -193,6 +193,47 @@ describe('Playarr web against live server', () => {
     expect(errors.join('\n')).toBe('');
   });
 
+  it('recommends similar songs under a playlist and adds an owned one', async () => {
+    if (!reachable) return;
+    const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];
+    const seedArtists = artists.filter((a) => ['Daft Punk', 'Moby', 'Air'].includes(a.name));
+    const tracks = (
+      await Promise.all(seedArtists.map(async (a) => (await (await fetch(`/api/artists/${a.id}/tracks`)).json()) as { recordingId: string }[]))
+    ).flatMap((t) => t.slice(0, 4));
+    if (!tracks.length) return;
+
+    let id: number | undefined;
+    try {
+      const created = await fetch('/api/playlists', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: `Smoke recs ${Date.now()}`, recordingIds: tracks.map((t) => t.recordingId) }),
+      });
+      id = ((await created.json()) as { id: number }).id;
+
+      renderAt(`/playlists/${id}`);
+      await screen.findByRole('heading', { name: 'Songs like these' });
+      const section = await screen.findByRole('region', { name: 'Songs like these' });
+      // ListenBrainz is a live dependency, so give it time.
+      await within(section).findByRole('heading', { name: 'Already in your library' }, { timeout: 15_000 });
+      within(section).getByRole('heading', { name: 'Not in your library yet' });
+      // Missing songs get request buttons (not clicked: that would really ask Lidarr to download).
+      expect(within(section).getAllByRole('button', { name: /Request|In library|Search again|Retry/ }).length).toBeGreaterThan(0);
+
+      const [addFirst] = within(section).getAllByRole('button', { name: /^Add .* to playlist$/ });
+      const label = addFirst!.getAttribute('aria-label')!;
+      await act(async () => fireEvent.click(addFirst!));
+      await waitFor(async () => {
+        const p = (await (await fetch(`/api/playlists/${id}`)).json()) as { trackCount: number };
+        expect(p.trackCount).toBe(tracks.length + 1);
+      });
+      await waitFor(() => expect(within(section).queryByRole('button', { name: label })).toBeNull());
+    } finally {
+      if (id) await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+    }
+    expect(errors.join('\n')).toBe('');
+  });
+
   it('plays an album, queues, shuffles, and opens Now Playing', async () => {
     if (!reachable) return;
     const albums = (await (await fetch('/api/albums')).json()) as { id: number; title: string; trackCount: number }[];

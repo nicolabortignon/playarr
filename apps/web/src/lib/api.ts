@@ -12,6 +12,7 @@ import type {
   PlaylistDetail,
   PlaylistSummary,
   HealthStatus,
+  Recommendations,
   SearchResults,
   Track,
 } from '@playarr/shared';
@@ -77,6 +78,8 @@ export const api = {
     request<PlaylistDetail>(`/api/playlists/${id}/items/${itemId}`, { method: 'DELETE' }),
   reorderPlaylist: (id: number, itemIds: number[]) =>
     request<PlaylistDetail>(`/api/playlists/${id}/order`, { method: 'PUT', body: JSON.stringify({ itemIds }) }),
+  playlistRecommendations: (id: number, variant = 0) =>
+    get<Recommendations>(`/api/playlists/${id}/recommendations?variant=${variant}`),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */

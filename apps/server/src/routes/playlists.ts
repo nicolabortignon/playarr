@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { Recommendations } from '../discover/recommendations.ts';
 import { PlaylistError, type Playlists } from '../playlists.ts';
 
 const RECORDING_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|track:\d+)$/i;
@@ -18,8 +19,8 @@ async function handle<T>(reply: FastifyReply, fn: () => T | Promise<T>) {
   }
 }
 
-export function playlistRoutes(app: FastifyInstance, deps: { playlists: Playlists }) {
-  const { playlists } = deps;
+export function playlistRoutes(app: FastifyInstance, deps: { playlists: Playlists; recommendations: Recommendations }) {
+  const { playlists, recommendations } = deps;
   type Id = { Params: { id: string } };
   const id = (raw: string) => Number.parseInt(raw, 10);
 
@@ -53,6 +54,18 @@ export function playlistRoutes(app: FastifyInstance, deps: { playlists: Playlist
   app.delete<{ Params: { id: string; itemId: string } }>('/api/playlists/:id/items/:itemId', (req, reply) =>
     handle(reply, () => playlists.removeItem(id(req.params.id), id(req.params.itemId))),
   );
+
+  app.get<Id & { Querystring: { variant?: string } }>('/api/playlists/:id/recommendations', async (req, reply) => {
+    const ctrl = new AbortController();
+    reply.raw.once('close', () => !reply.raw.writableFinished && ctrl.abort());
+    try {
+      return await handle(reply, () =>
+        recommendations.forPlaylist(id(req.params.id), Number(req.query.variant) || 0, ctrl.signal),
+      );
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
+  });
 
   app.put<Id & { Body: { itemIds?: number[] } }>('/api/playlists/:id/order', (req, reply) => {
     const itemIds = req.body?.itemIds;
