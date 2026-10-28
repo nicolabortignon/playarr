@@ -152,40 +152,44 @@ describe('Playarr web against live server', () => {
     if (!reachable) return;
     const name = `Smoke test ${Date.now()}`;
 
-    // Create from the Playlists page; the dialog navigates to the new playlist.
-    const router = renderAt('/playlists');
-    const newButtons = await screen.findAllByRole('button', { name: /New playlist/ });
-    await act(async () => fireEvent.click(newButtons[newButtons.length - 1]!));
-    const input = await screen.findByRole('textbox', { name: 'Playlist name' });
-    fireEvent.change(input, { target: { value: name } });
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Create' })));
-    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/playlists\/\d+$/));
-    const id = Number(router.state.location.pathname.split('/').pop());
-    await screen.findByRole('heading', { name });
-    cleanup();
+    let id: number | undefined;
+    try {
+      // Create from the Playlists page; the dialog navigates to the new playlist.
+      const router = renderAt('/playlists');
+      const newButtons = await screen.findAllByRole('button', { name: /New playlist/ });
+      await act(async () => fireEvent.click(newButtons[newButtons.length - 1]!));
+      const input = await screen.findByRole('textbox', { name: 'Playlist name' });
+      fireEvent.change(input, { target: { value: name } });
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Create' })));
+      await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/playlists\/\d+$/));
+      id = Number(router.state.location.pathname.split('/').pop());
+      await screen.findByRole('heading', { name });
+      cleanup();
 
-    // Add a whole album via its ⋯ menu → Add to playlist… → pick the playlist.
-    const album = (await (await fetch('/api/albums/8')).json()) as { title: string; tracks: { title: string }[] };
-    renderAt('/albums/8');
-    await screen.findByRole('heading', { name: album.title });
-    const [albumMenu] = screen.getAllByRole('button', { name: 'More actions' });
-    await act(async () => fireEvent.click(albumMenu!));
-    const addItem = await screen.findByRole('menuitem', { name: 'Add to playlist…' });
-    await act(async () => fireEvent.click(addItem));
-    const picker = await screen.findByRole('dialog', { name: /^Add/ });
-    await act(async () => fireEvent.click(within(picker).getByRole('button', { name: new RegExp(name) })));
-    await waitFor(async () => {
-      const p = (await (await fetch(`/api/playlists/${id}`)).json()) as { trackCount: number };
-      expect(p.trackCount).toBe(album.tracks.length);
-    });
-    cleanup();
+      // Add a whole album via its ⋯ menu → Add to playlist… → pick the playlist.
+      const album = (await (await fetch('/api/albums/8')).json()) as { title: string; tracks: { title: string }[] };
+      renderAt('/albums/8');
+      await screen.findByRole('heading', { name: album.title });
+      const [albumMenu] = screen.getAllByRole('button', { name: 'More actions' });
+      await act(async () => fireEvent.click(albumMenu!));
+      const addItem = await screen.findByRole('menuitem', { name: 'Add to playlist…' });
+      await act(async () => fireEvent.click(addItem));
+      const picker = await screen.findByRole('dialog', { name: /^Add/ });
+      await act(async () => fireEvent.click(within(picker).getByRole('button', { name: new RegExp(name) })));
+      await waitFor(async () => {
+        const p = (await (await fetch(`/api/playlists/${id}`)).json()) as { trackCount: number };
+        expect(p.trackCount).toBe(album.tracks.length);
+      });
+      cleanup();
 
-    renderAt(`/playlists/${id}`);
-    await screen.findByRole('heading', { name });
-    expect((await screen.findAllByText(album.tracks[0]!.title)).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: `Play ${name}` })).toBeTruthy();
-
-    await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+      renderAt(`/playlists/${id}`);
+      await screen.findByRole('heading', { name });
+      expect((await screen.findAllByText(album.tracks[0]!.title)).length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: `Play ${name}` })).toBeTruthy();
+    } finally {
+      // Clean up even when an assertion fails, so test playlists don't pile up.
+      if (id) await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+    }
     expect(errors.join('\n')).toBe('');
   });
 
