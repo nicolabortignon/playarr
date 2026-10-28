@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { sized } from '../lib/api';
 import { extractAccent } from '../lib/color';
+import { setFaviconAccent } from '../lib/favicon';
 import { toast } from '../lib/toast';
 import { healQueue } from './healQueue';
 import { useClock, useCurrentTrack, usePlayer } from './store';
@@ -147,17 +148,20 @@ export function AudioEngine() {
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
   }, [playing]);
 
-  // Tab title and accent color follow the current track.
+  // Tab title, accent color and favicon follow the current track.
   useEffect(() => {
     document.title = track ? `${track.title} · ${track.artistName}` : 'Playarr';
-    const root = document.documentElement;
+    const apply = (color: string) => {
+      document.documentElement.style.setProperty('--accent', color);
+      setFaviconAccent(color);
+    };
     if (!track?.coverUrl) {
-      root.style.setProperty('--accent', DEFAULT_ACCENT);
+      apply(DEFAULT_ACCENT);
       return;
     }
     let cancelled = false;
     void extractAccent(sized(track.coverUrl, 96)!).then((color) => {
-      if (!cancelled) root.style.setProperty('--accent', color ?? DEFAULT_ACCENT);
+      if (!cancelled) apply(color ?? DEFAULT_ACCENT);
     });
     return () => {
       cancelled = true;
