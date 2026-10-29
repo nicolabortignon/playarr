@@ -1,6 +1,6 @@
-import type { PlaylistDetail, PlaylistItem, PlaylistSummary, Track } from '@playarr/shared';
+import type { CoverLayout, PlaylistDetail, PlaylistItem, PlaylistSummary, Track } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
-import type { PlaylistCovers } from './cover/index.ts';
+import type { CoverArt, CoverSnapshot, PlaylistCovers } from './cover/index.ts';
 import type { Library } from './library/library.ts';
 
 interface PlaylistRow {
@@ -8,6 +8,7 @@ interface PlaylistRow {
   name: string;
   description: string;
   updated_at: string;
+  cover_snapshot: string | null;
 }
 
 interface ItemRow {
@@ -42,7 +43,7 @@ export class Playlists {
 
   async list(): Promise<PlaylistSummary[]> {
     const playlists = this.db
-      .prepare('SELECT id, name, description, updated_at FROM playlists ORDER BY updated_at DESC')
+      .prepare('SELECT id, name, description, updated_at, cover_snapshot FROM playlists ORDER BY updated_at DESC')
       .all() as unknown as PlaylistRow[];
     const items = this.db
       .prepare('SELECT * FROM playlist_items ORDER BY playlist_id, position')
@@ -61,10 +62,35 @@ export class Playlists {
     return { ...(await this.summarize(p, items)), items };
   }
 
-  /** The generated cover's DNA and version, for the artwork route. */
-  async cover(id: number) {
+  /** The cover to draw (frozen art, or provisional while songs are still being heard) and the title. */
+  async cover(id: number): Promise<{ art: CoverArt; name: string; version: string }> {
+    const p = this.row(id);
+    const { art, freeze, version } = await this.covers.describe(this.coverInput(p, await this.items(id)));
+    if (freeze) this.saveCover(id, freeze);
+    return { art, name: p.name, version };
+  }
+
+  /** Candidate art from the songs as they are now, for the cover picker. */
+  async coverCandidate(id: number, layout: CoverLayout, variant: number): Promise<{ art: CoverArt; name: string }> {
+    const p = this.row(id);
+    return { art: { dna: await this.covers.liveDna(id, await this.items(id)), layout, variant }, name: p.name };
+  }
+
+  /** Give the playlist a new cover, drawn from its current songs. */
+  async setCover(id: number, layout: CoverLayout, variant: number): Promise<PlaylistDetail> {
     this.row(id);
-    return this.covers.describe(id, await this.items(id));
+    const dna = await this.covers.liveDna(id, await this.items(id));
+    this.saveCover(id, this.covers.snapshot(dna, layout, variant));
+    return this.get(id);
+  }
+
+  private saveCover(id: number, snapshot: CoverSnapshot) {
+    this.db.prepare('UPDATE playlists SET cover_snapshot = ? WHERE id = ?').run(JSON.stringify(snapshot), id);
+  }
+
+  private coverInput(p: PlaylistRow, items: PlaylistItem[]) {
+    const snapshot = p.cover_snapshot ? (JSON.parse(p.cover_snapshot) as CoverSnapshot) : undefined;
+    return { id: p.id, name: p.name, items, snapshot };
   }
 
   private async items(id: number): Promise<PlaylistItem[]> {
@@ -77,7 +103,8 @@ export class Playlists {
 
   private async summarize(p: PlaylistRow, items: PlaylistItem[]): Promise<PlaylistSummary> {
     const duration = items.reduce((s, { track }) => s + (track?.duration ?? 0), 0);
-    const { info } = await this.covers.describe(p.id, items);
+    const { info, freeze } = await this.covers.describe(this.coverInput(p, items));
+    if (freeze) this.saveCover(p.id, freeze);
     return { id: p.id, name: p.name, description: p.description, trackCount: items.length, duration, cover: info, updatedAt: p.updated_at };
   }
 
@@ -161,7 +188,7 @@ export class Playlists {
 
   private row(id: number): PlaylistRow {
     const row = this.db
-      .prepare('SELECT id, name, description, updated_at FROM playlists WHERE id = ?')
+      .prepare('SELECT id, name, description, updated_at, cover_snapshot FROM playlists WHERE id = ?')
       .get(id) as unknown as PlaylistRow | undefined;
     if (!row) throw new PlaylistError('Playlist not found', 404);
     return row;

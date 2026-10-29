@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { cn } from '../lib/cn';
 
 /** Modal dialog: a bottom sheet on phones, a centered card on larger screens. */
 export function Dialog({
@@ -9,11 +10,14 @@ export function Dialog({
   onClose,
   title,
   children,
+  wide,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** A larger card on desktop, for grids. */
+  wide?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
 
@@ -50,7 +54,10 @@ export function Dialog({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
             transition={{ type: 'spring', damping: 32, stiffness: 380 }}
-            className="relative flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-ink-850 pb-[env(safe-area-inset-bottom)] shadow-2xl shadow-black/60 sm:max-w-md sm:rounded-2xl sm:pb-0"
+            className={cn(
+              'relative flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-ink-850 pb-[env(safe-area-inset-bottom)] shadow-2xl shadow-black/60 sm:rounded-2xl sm:pb-0',
+              wide ? 'sm:max-w-3xl' : 'sm:max-w-md',
+            )}
           >
             <header className="flex items-center justify-between border-b border-line px-5 py-4">
               <h2 className="font-display text-2xl leading-none text-paper">{title}</h2>

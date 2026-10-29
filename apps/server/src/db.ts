@@ -44,6 +44,8 @@ const MIGRATIONS = [
      year         INTEGER,
      fetched_at   TEXT NOT NULL
    );`,
+  // The cover a playlist was given: frozen until the user picks another (JSON CoverSnapshot).
+  `ALTER TABLE playlists ADD COLUMN cover_snapshot TEXT;`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

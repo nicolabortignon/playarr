@@ -1,5 +1,5 @@
 import type { CoverLayout, PlaylistCoverInfo, PlaylistItem } from '@playarr/shared';
-import { Disc3, GripVertical, ListEnd, ListPlus, Mic2, Pencil, Play, Shuffle, Trash2, X } from 'lucide-react';
+import { Disc3, GripVertical, ListEnd, ListPlus, Mic2, Palette, Pencil, Play, Shuffle, Trash2, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -8,6 +8,7 @@ import { Dialog } from '../components/Dialog';
 import { Equalizer } from '../components/Equalizer';
 import { FavoriteButton } from '../components/FavoriteButton';
 import { Menu } from '../components/Menu';
+import { CoverPicker } from '../components/CoverPicker';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { PlaylistRecommendations } from '../components/PlaylistRecommendations';
 import { ErrorState, Skeleton } from '../components/Section';
@@ -26,6 +27,7 @@ export function PlaylistPage() {
   const [items, setItems] = useState<PlaylistItem[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [pickingCover, setPickingCover] = useState(false);
 
   // Local copy so drag-reordering is instant; resync whenever the server copy changes.
   useEffect(() => {
@@ -58,12 +60,25 @@ export function PlaylistPage() {
   return (
     <div className="px-5 pt-6 md:px-10 md:pt-14">
       <header className="flex flex-col gap-6 md:flex-row md:items-end md:gap-10">
-        <PlaylistCover
-          cover={playlist.cover}
-          size={256}
-          name={playlist.name}
-          className="mx-auto w-[min(64vw,256px)] shrink-0 animate-rise rounded-[4px] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.9)] ring-1 ring-paper/10 md:mx-0 md:w-56 lg:w-64"
-        />
+        <button
+          type="button"
+          onClick={() => items.length > 0 && setPickingCover(true)}
+          aria-label="New cover"
+          disabled={!items.length}
+          className="group relative mx-auto w-[min(64vw,256px)] shrink-0 animate-rise md:mx-0 md:w-56 lg:w-64"
+        >
+          <PlaylistCover
+            cover={playlist.cover}
+            size={256}
+            name={playlist.name}
+            className="w-full rounded-[4px] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.9)] ring-1 ring-paper/10"
+          />
+          {items.length > 0 && (
+            <span className="absolute right-2.5 bottom-2.5 inline-flex items-center gap-1.5 rounded-full bg-ink-950/80 px-3 py-1.5 font-mono text-[10px] tracking-[0.15em] text-paper uppercase opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
+              <Palette className="size-3.5" /> New cover
+            </span>
+          )}
+        </button>
         <div className="min-w-0 flex-1 animate-rise [animation-delay:80ms]">
           <div className="font-mono text-[11px] tracking-[0.25em] text-paper-dim/70 uppercase">Playlist</div>
           {editing ? (
@@ -93,7 +108,7 @@ export function PlaylistPage() {
             {plural(items.length, 'song')} · {formatDuration(playlist.duration)}
             {unavailable > 0 && ` · ${unavailable} not in library`}
           </div>
-          {items.length > 0 && <CoverNote cover={playlist.cover} />}
+          {items.length > 0 && <CoverNote cover={playlist.cover} onNewCover={() => setPickingCover(true)} />}
         </div>
       </header>
 
@@ -127,6 +142,7 @@ export function PlaylistPage() {
                   { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(playable, 'end') },
                 ]
               : []),
+            ...(items.length ? [{ label: 'New cover…', icon: Palette, onSelect: () => setPickingCover(true) }] : []),
             { label: 'Delete playlist', icon: Trash2, onSelect: () => setConfirmDelete(true) },
           ]}
         />
@@ -152,6 +168,8 @@ export function PlaylistPage() {
       )}
 
       <PlaylistRecommendations playlistId={id} enabled={items.length > 0} />
+
+      <CoverPicker playlist={playlist} open={pickingCover} onClose={() => setPickingCover(false)} />
 
       <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete playlist?">
         <div className="p-5">
@@ -271,7 +289,7 @@ const COVER_STORY: Record<CoverLayout, string> = {
 };
 
 /** What the generated cover is made of, so it reads as a portrait of the music rather than decoration. */
-function CoverNote({ cover }: { cover: PlaylistCoverInfo }) {
+function CoverNote({ cover, onNewCover }: { cover: PlaylistCoverInfo; onNewCover: () => void }) {
   const facts = [
     cover.tempo && `${cover.tempo} BPM`,
     cover.styles.length && cover.styles.join(' / '),
@@ -280,7 +298,7 @@ function CoverNote({ cover }: { cover: PlaylistCoverInfo }) {
   ].filter(Boolean);
   return (
     <div className="mt-3 max-w-xl text-[13px] leading-snug text-muted">
-      {cover.pending ? (
+      {cover.pending && !cover.frozen ? (
         <span className="inline-flex items-center gap-2">
           <span className="size-1.5 animate-pulse rounded-full bg-accent" />
           Listening to the songs to draw the cover… {cover.analyzed} of {cover.total}
@@ -289,6 +307,15 @@ function CoverNote({ cover }: { cover: PlaylistCoverInfo }) {
         <>
           <span className="text-paper-dim/80">{COVER_STORY[cover.layout]}</span>
           <span className="mt-1 block font-mono text-[11px] tracking-wide uppercase">{facts.join(' · ')}</span>
+          {cover.stale ? (
+            <button type="button" onClick={onNewCover} className="mt-2 text-left text-paper-dim hover:text-paper">
+              The playlist has changed a lot since this cover was drawn. <span className="text-accent underline-offset-2 hover:underline">New cover</span>
+            </button>
+          ) : (
+            <button type="button" onClick={onNewCover} className="mt-2 font-mono text-[11px] tracking-[0.15em] text-accent uppercase hover:underline">
+              New cover
+            </button>
+          )}
         </>
       )}
     </div>

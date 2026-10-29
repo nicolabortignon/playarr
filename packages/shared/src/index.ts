@@ -198,11 +198,17 @@ export interface AlbumRequest {
 
 export type CoverLayout = 'ridges' | 'grooves' | 'blocks' | 'horizon' | 'currents' | 'colonies';
 
-/** Artwork generated from what the playlist's songs sound like. */
+/** Artwork generated from what the playlist's songs sound like, pinned once drawn. */
 export interface PlaylistCoverInfo {
-  /** Versioned: changes whenever the songs, or what's known about them, change. */
+  /** Versioned: changes when the cover or the playlist's name changes. */
   url: string;
   layout: CoverLayout;
+  /** Which variation of the layout (the picker's Shuffle). */
+  variant: number;
+  /** Drawn and pinned: it changes only when the user picks a new cover. */
+  frozen: boolean;
+  /** The songs have changed a lot since the cover was drawn. */
+  stale: boolean;
   /** Typical tempo of the songs with a clear beat. */
   tempo?: number;
   /** 0–1. */
@@ -213,7 +219,7 @@ export interface PlaylistCoverInfo {
   /** Songs whose audio has been analyzed, of `total`. */
   analyzed: number;
   total: number;
-  /** Still listening to some songs: the cover will refine. */
+  /** Still listening to some songs (before the cover is pinned, it refines as they land). */
   pending: boolean;
 }
 

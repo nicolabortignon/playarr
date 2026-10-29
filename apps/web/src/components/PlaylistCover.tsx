@@ -3,12 +3,16 @@ import { useState } from 'react';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
 
+/** Below this size the title would be unreadable, and lists show the name next to the cover anyway. */
+const TITLE_MIN_SIZE = 120;
+
 /**
- * The playlist's generated artwork (drawn by the server from what its songs sound like).
- * The URL changes as songs get analyzed; the previous version stays up until the next has loaded.
+ * The playlist's generated artwork (drawn by the server from what its songs sound like), with
+ * its title on cards and headers. When the URL changes (a new cover, a rename), the previous
+ * image stays up until the next has loaded.
  */
 export function PlaylistCover({ cover, size, name, className }: { cover: PlaylistCoverInfo; size: number; name: string; className?: string }) {
-  const url = sized(cover.url, size)!;
+  const url = `${sized(cover.url, size)!}${size < TITLE_MIN_SIZE ? '&title=0' : ''}`;
   const [shown, setShown] = useState<string>();
   return (
     <div role="img" aria-label={name} className={cn('relative aspect-square overflow-hidden bg-ink-800', className)}>

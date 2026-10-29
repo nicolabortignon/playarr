@@ -1,8 +1,9 @@
 import { hex } from './color.ts';
 import type { Dna } from './dna.ts';
 import { LAYOUTS, S, type Layout } from './layouts.ts';
-import { makePalette } from './palette.ts';
-import { Rng } from './random.ts';
+import { makePalette, type Palette } from './palette.ts';
+import { hash32, Rng } from './random.ts';
+import { titleLayer } from './title.ts';
 
 /** Bump when the artwork changes, so cached covers are redrawn. */
 export const RENDER_VERSION = 2;
@@ -33,25 +34,49 @@ export function chooseLayout(dna: Dna, rng: Rng): Layout {
   return scores.map(([l, s]): [Layout, number] => [l, s + r.range(-0.12, 0.12)]).sort((a, b) => b[1] - a[1])[0]![0];
 }
 
-export async function renderCover(dna: Dna, layout?: Layout): Promise<{ svg: string; layout: Layout; palette: string }> {
-  const rng = new Rng(dna.seed);
-  const chosen = layout ?? chooseLayout(dna, rng);
-  const pal = makePalette(dna, rng);
-  const defs: string[] = [];
-  const body = await LAYOUTS[chosen]({ dna, pal, rng: rng.fork(chosen), defs });
+export interface Art {
+  layout: Layout;
+  palette: Palette;
+  /** SVG markup of the artwork itself (no background, title or grain). */
+  body: string;
+  defs: string[];
+  seed: number;
+}
 
-  // Print grain: specks of ink on paper, or of paper on night.
+/** The artwork: the expensive part, drawn once per (DNA, layout, variant) and cached. */
+export async function drawArt(dna: Dna, layout?: Layout, variant = 0): Promise<Art> {
+  // Variants re-roll every random choice while keeping the same music.
+  const seed = variant ? hash32(`${dna.seed}:v${variant}`) : dna.seed;
+  const rng = new Rng(seed);
+  const chosen = layout ?? chooseLayout(dna, new Rng(dna.seed));
+  const palette = makePalette(dna, rng);
+  const defs: string[] = [];
+  const body = await LAYOUTS[chosen]({ dna, pal: palette, rng: rng.fork(chosen), defs });
+  return { layout: chosen, palette, body, defs, seed };
+}
+
+/** The finished cover: background, artwork, the (live) title, then print grain over everything. */
+export function composeCover(art: Art, title?: string): string {
+  const { palette: pal } = art;
   const speck = pal.dark ? 1 : 0;
-  defs.push(
-    `<filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="${dna.seed % 1000}" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0 0 0 0 ${speck} 0 0 0 0 ${speck} 0 0 0 0 ${speck} 3.2 0 0 0 -1.45"/></filter>`,
-  );
-  const svg = [
+  const grain = `<filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="${art.seed % 1000}" stitchTiles="stitch"/><feColorMatrix type="matrix" values="0 0 0 0 ${speck} 0 0 0 0 ${speck} 0 0 0 0 ${speck} 3.2 0 0 0 -1.45"/></filter>`;
+  return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}" width="${S}" height="${S}">`,
-    `<defs>${defs.join('')}</defs>`,
+    `<defs>${art.defs.join('')}${grain}</defs>`,
     `<rect width="${S}" height="${S}" fill="${hex(pal.bg)}"/>`,
-    body,
+    art.body,
+    title ? titleLayer(title, pal, art.layout) : '',
     `<rect width="${S}" height="${S}" filter="url(#grain)" opacity="${(Math.round(pal.grain * 100) / 100).toString()}"/>`,
     '</svg>',
   ].join('');
-  return { svg, layout: chosen, palette: pal.name };
+}
+
+/** Art and composition in one go (for tests and previews). */
+export async function renderCover(
+  dna: Dna,
+  layout?: Layout,
+  opts: { variant?: number; title?: string } = {},
+): Promise<{ svg: string; layout: Layout; palette: string }> {
+  const art = await drawArt(dna, layout, opts.variant);
+  return { svg: composeCover(art, opts.title), layout: art.layout, palette: art.palette.name };
 }

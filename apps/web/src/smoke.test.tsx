@@ -274,6 +274,53 @@ describe('Playarr web against live server', () => {
     expect(errors.join('\n')).toBe('');
   });
 
+  it('picks a new cover in the picker and pins it; small thumbnails leave the title off', async () => {
+    if (!reachable) return;
+    const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];
+    const air = artists.find((a) => a.name === 'Air');
+    if (!air) return;
+    const tracks = ((await (await fetch(`/api/artists/${air.id}/tracks`)).json()) as { recordingId: string }[]).slice(0, 3);
+
+    let id: number | undefined;
+    try {
+      const name = `Smoke picker ${Date.now()}`;
+      const created = await fetch('/api/playlists', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, recordingIds: tracks.map((t) => t.recordingId) }),
+      });
+      id = ((await created.json()) as { id: number }).id;
+
+      renderAt(`/playlists/${id}`);
+      await screen.findByRole('heading', { name });
+      // The header shows the cover with its title; the picker offers one candidate per style.
+      const header = screen.getByRole('img', { name });
+      expect(header.querySelector('img')!.getAttribute('src')).not.toContain('title=0');
+      await act(async () => fireEvent.click(screen.getAllByRole('button', { name: 'New cover' })[0]!));
+      const picker = await screen.findByRole('dialog', { name: 'New cover' });
+      const candidates = within(picker).getAllByRole('button', { name: / cover$/ });
+      expect(candidates).toHaveLength(6);
+      for (const c of candidates) expect(c.querySelector('img')!.getAttribute('src')).toMatch(new RegExp(`^/art/playlist/${id}/preview\\?layout=\\w+&variant=\\d+`));
+
+      await act(async () => fireEvent.click(within(picker).getByRole('button', { name: 'Ridges cover' })));
+      await act(async () => fireEvent.click(within(picker).getByRole('button', { name: 'Use this' })));
+      await waitFor(async () => {
+        const p = (await (await fetch(`/api/playlists/${id}`)).json()) as { cover: { layout: string; frozen: boolean; variant: number } };
+        expect(p.cover).toMatchObject({ layout: 'ridges', frozen: true });
+        expect(p.cover.variant).toBeGreaterThan(0);
+      });
+      cleanup();
+
+      // In lists the name sits next to a small thumbnail, so the cover drops its title there.
+      renderAt('/library');
+      const thumb = await screen.findByRole('img', { name });
+      expect(thumb.querySelector('img')!.getAttribute('src')).toContain('title=0');
+    } finally {
+      if (id) await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+    }
+    expect(errors.join('\n')).toBe('');
+  });
+
   it('recommends similar songs under a playlist, adds an owned one, and links artists and albums', async () => {
     if (!reachable) return;
     const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import type { PlaylistCovers } from '../cover/index.ts';
+import type { CoverLayout } from '@playarr/shared';
+import type { CoverArt, PlaylistCovers } from '../cover/index.ts';
 import type { Recommendations } from '../discover/recommendations.ts';
 import { PlaylistError, type Playlists } from '../playlists.ts';
 
@@ -10,6 +11,9 @@ function recordingIds(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.length > 1000) return null;
   return value.every((v) => typeof v === 'string' && RECORDING_ID.test(v)) ? (value as string[]) : null;
 }
+
+const LAYOUTS: CoverLayout[] = ['currents', 'colonies', 'horizon', 'ridges', 'grooves', 'blocks'];
+const coverLayout = (value: unknown) => LAYOUTS.find((l) => l === value);
 
 async function handle<T>(reply: FastifyReply, fn: () => T | Promise<T>) {
   try {
@@ -28,22 +32,41 @@ export function playlistRoutes(
   type Id = { Params: { id: string } };
   const id = (raw: string) => Number.parseInt(raw, 10);
 
-  /** Generated cover: WebP at `size` (default 600), or the source with `format=svg`. */
-  app.get<Id & { Querystring: { size?: string; v?: string; format?: string } }>('/art/playlist/:id', (req, reply) =>
+  type ArtQuery = { size?: string; v?: string; format?: string; title?: string };
+  // Snap to a few sizes so the image cache stays small.
+  const snap = (raw?: string) => [64, 96, 128, 192, 256, 384, 512, 768, 1024].find((b) => b >= (Number(raw) || 600)) ?? 1024;
+  const sendCover = async (reply: FastifyReply, cover: { art: CoverArt; name: string }, query: ArtQuery, immutable: boolean) => {
+    const title = query.title === '0' ? undefined : cover.name;
+    // Versioned URLs never change (the version covers art and title); the bare URL revalidates.
+    reply.header('Cache-Control', immutable ? 'public, max-age=31536000, immutable' : 'no-cache');
+    if (query.format === 'svg') return reply.type('image/svg+xml').send(await covers.svg(cover.art, title));
+    return reply.type('image/webp').send(await covers.image(cover.art, title, snap(query.size)));
+  };
+
+  /** The playlist's cover: WebP at `size` (default 600), `title=0` without the title, `format=svg` for the source. */
+  app.get<Id & { Querystring: ArtQuery }>('/art/playlist/:id', (req, reply) =>
     handle(reply, async () => {
-      const { dna, hash } = await playlists.cover(id(req.params.id));
-      const svg = req.query.format === 'svg';
-      // Snap to a few sizes so the image cache stays small.
-      const wanted = Number(req.query.size) || 600;
-      const size = [64, 96, 128, 192, 256, 384, 512, 768, 1024].find((b) => b >= wanted) ?? 1024;
-      // Versioned URLs never change; the bare URL always revalidates.
-      reply
-        .header('Cache-Control', req.query.v === hash ? 'public, max-age=31536000, immutable' : 'no-cache')
-        .header('ETag', `"${hash}-${svg ? 'svg' : size}"`);
-      if (svg) return reply.type('image/svg+xml').send((await covers.svg(dna, hash)).svg);
-      return reply.type('image/webp').send(await covers.image(dna, hash, size));
+      const cover = await playlists.cover(id(req.params.id));
+      return sendCover(reply, cover, req.query, req.query.v === cover.version);
     }),
   );
+
+  /** A candidate cover from the playlist's current songs, for the picker. */
+  app.get<Id & { Querystring: ArtQuery & { layout?: string; variant?: string } }>('/art/playlist/:id/preview', (req, reply) =>
+    handle(reply, async () => {
+      const layout = coverLayout(req.query.layout);
+      if (!layout) return reply.code(400).send({ error: 'Unknown layout' });
+      const variant = Math.max(0, Math.min(1_000_000, Number.parseInt(req.query.variant ?? '0', 10) || 0));
+      return sendCover(reply, await playlists.coverCandidate(id(req.params.id), layout, variant), req.query, false);
+    }),
+  );
+
+  app.put<Id & { Body: { layout?: string; variant?: number } }>('/api/playlists/:id/cover', (req, reply) => {
+    const layout = coverLayout(req.body?.layout);
+    const variant = req.body?.variant ?? 0;
+    if (!layout || !Number.isInteger(variant) || variant < 0) return reply.code(400).send({ error: 'layout and variant are required' });
+    return handle(reply, () => playlists.setCover(id(req.params.id), layout, variant));
+  });
 
   app.get('/api/playlists', () => playlists.list());
 

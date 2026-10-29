@@ -6,6 +6,7 @@ import type {
   AlbumSort,
   Artist,
   ArtistMatch,
+  CoverLayout,
   ArtistDetail,
   DiscoverArtistDetail,
   DiscoverResults,
@@ -81,6 +82,10 @@ export const api = {
     request<PlaylistDetail>(`/api/playlists/${id}/items/${itemId}`, { method: 'DELETE' }),
   reorderPlaylist: (id: number, itemIds: number[]) =>
     request<PlaylistDetail>(`/api/playlists/${id}/order`, { method: 'PUT', body: JSON.stringify({ itemIds }) }),
+  setPlaylistCover: (id: number, layout: CoverLayout, variant: number) =>
+    request<PlaylistDetail>(`/api/playlists/${id}/cover`, { method: 'PUT', body: JSON.stringify({ layout, variant }) }),
+  /** A candidate cover drawn from the playlist's current songs (for the picker). */
+  playlistCoverPreview: (id: number, layout: CoverLayout, variant: number) => `/art/playlist/${id}/preview?layout=${layout}&variant=${variant}`,
   playlistRecommendations: (id: number, variant = 0) =>
     get<Recommendations>(`/api/playlists/${id}/recommendations?variant=${variant}`),
 };

@@ -1,4 +1,4 @@
-import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, FavoriteTrack, PlaylistDetail, Track } from '@playarr/shared';
+import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, CoverLayout, FavoriteTrack, PlaylistDetail, Track } from '@playarr/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
@@ -196,6 +196,11 @@ export function usePlaylistMutations() {
         settle(p);
         toast(`Added ${tracks.length === 1 ? `“${tracks[0]!.title}”` : `${tracks.length} songs`} to “${p.name}”`);
       },
+      onError,
+    }),
+    setCover: useMutation({
+      mutationFn: ({ id, layout, variant }: { id: number; layout: CoverLayout; variant: number }) => api.setPlaylistCover(id, layout, variant),
+      onSuccess: settle,
       onError,
     }),
     update: useMutation({
