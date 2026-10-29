@@ -242,6 +242,38 @@ describe('Playarr web against live server', () => {
     expect(errors.join('\n')).toBe('');
   });
 
+  it('generates a playlist cover from its songs and explains it', async () => {
+    if (!reachable) return;
+    const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];
+    const daft = artists.find((a) => a.name === 'Daft Punk');
+    if (!daft) return;
+    const tracks = ((await (await fetch(`/api/artists/${daft.id}/tracks`)).json()) as { recordingId: string }[]).slice(0, 3);
+
+    let id: number | undefined;
+    try {
+      const created = await fetch('/api/playlists', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: `Smoke cover ${Date.now()}`, recordingIds: tracks.map((t) => t.recordingId) }),
+      });
+      id = ((await created.json()) as { id: number }).id;
+
+      renderAt(`/playlists/${id}`);
+      const cover = await screen.findByRole('img', { name: /^Smoke cover/ });
+      const src = cover.querySelector('img')!.getAttribute('src')!;
+      expect(src).toMatch(new RegExp(`^/art/playlist/${id}\\?v=\\w+&size=\\d+$`));
+      const image = await fetch(src);
+      expect(image.headers.get('content-type')).toBe('image/webp');
+      expect((await image.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+
+      // Either still listening to the songs, or the story of the finished cover.
+      await screen.findByText(/Listening to the songs|Each line is a song|A record of the playlist|A tile per song|Each hill is a song/);
+    } finally {
+      if (id) await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+    }
+    expect(errors.join('\n')).toBe('');
+  });
+
   it('recommends similar songs under a playlist, adds an owned one, and links artists and albums', async () => {
     if (!reachable) return;
     const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];

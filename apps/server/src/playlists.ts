@@ -1,5 +1,6 @@
 import type { PlaylistDetail, PlaylistItem, PlaylistSummary, Track } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
+import type { PlaylistCovers } from './cover/index.ts';
 import type { Library } from './library/library.ts';
 
 interface PlaylistRow {
@@ -36,6 +37,7 @@ export class Playlists {
   constructor(
     private readonly db: DatabaseSync,
     private readonly library: Library,
+    private readonly covers: PlaylistCovers,
   ) {}
 
   async list(): Promise<PlaylistSummary[]> {
@@ -48,19 +50,35 @@ export class Playlists {
     return Promise.all(
       playlists.map(async (p) => {
         const resolved = await this.resolve(items.filter((i) => i.playlist_id === p.id));
-        return summarize(p, resolved);
+        return this.summarize(p, resolved);
       }),
     );
   }
 
   async get(id: number): Promise<PlaylistDetail> {
     const p = this.row(id);
-    const items = await this.resolve(
+    const items = await this.items(id);
+    return { ...(await this.summarize(p, items)), items };
+  }
+
+  /** The generated cover's DNA and version, for the artwork route. */
+  async cover(id: number) {
+    this.row(id);
+    return this.covers.describe(id, await this.items(id));
+  }
+
+  private async items(id: number): Promise<PlaylistItem[]> {
+    return this.resolve(
       this.db
         .prepare('SELECT * FROM playlist_items WHERE playlist_id = ? ORDER BY position')
         .all(id) as unknown as ItemRow[],
     );
-    return { ...summarize(p, items), items };
+  }
+
+  private async summarize(p: PlaylistRow, items: PlaylistItem[]): Promise<PlaylistSummary> {
+    const duration = items.reduce((s, { track }) => s + (track?.duration ?? 0), 0);
+    const { info } = await this.covers.describe(p.id, items);
+    return { id: p.id, name: p.name, description: p.description, trackCount: items.length, duration, cover: info, updatedAt: p.updated_at };
   }
 
   async create(name: string, description = '', recordingIds: string[] = []): Promise<PlaylistDetail> {
@@ -177,17 +195,6 @@ export class Playlists {
       })),
     );
   }
-}
-
-function summarize(p: PlaylistRow, items: PlaylistItem[]): PlaylistSummary {
-  const covers: string[] = [];
-  let duration = 0;
-  for (const { track } of items) {
-    if (!track) continue;
-    duration += track.duration;
-    if (track.coverUrl && covers.length < 4 && !covers.includes(track.coverUrl)) covers.push(track.coverUrl);
-  }
-  return { id: p.id, name: p.name, description: p.description, trackCount: items.length, duration, covers, updatedAt: p.updated_at };
 }
 
 function cleanName(name: string): string {

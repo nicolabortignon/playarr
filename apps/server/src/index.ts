@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
+import { Analyzer } from './analysis/analyzer.ts';
+import { PlaylistCovers } from './cover/index.ts';
 import { openDatabase } from './db.ts';
 import { Discover } from './discover/discover.ts';
 import { MusicBrainz } from './discover/musicbrainz.ts';
@@ -39,7 +41,13 @@ library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
 const media = createMediaSource(config);
 const db = openDatabase(resolve(config.DATA_DIR));
 const favorites = new Favorites(db, library);
-const playlists = new Playlists(db, library);
+const analyzer = new Analyzer(db, library, media, {
+  enabled: config.ANALYSIS === 'on',
+  pathMap: config.pathMap,
+  log: app.log,
+});
+const covers = new PlaylistCovers(analyzer, library);
+const playlists = new Playlists(db, library, covers);
 const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
 const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), {
   rootFolderPath: config.LIDARR_ROOT_FOLDER,
@@ -54,7 +62,7 @@ artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR) });
 streamRoutes(app, { config, library, media });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
-playlistRoutes(app, { playlists, recommendations });
+playlistRoutes(app, { playlists, recommendations, covers });
 
 // In production, serve the built web app from the same origin.
 const webDist = config.WEB_DIST

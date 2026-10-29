@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import type { Readable } from 'node:stream';
 import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
-import type { ByteRange, FileStat, MediaSource } from './source.ts';
+import { ffmpegPcmArgs, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
 
 export interface SshOptions {
   host: string;
@@ -73,7 +73,10 @@ export function shellQuote(s: string): string {
 export class SshExecMediaSource implements MediaSource {
   readonly kind = 'ssh' as const;
 
-  constructor(private readonly conn: SshConnection) {}
+  constructor(
+    private readonly conn: SshConnection,
+    private readonly ffmpeg = 'ffmpeg',
+  ) {}
 
   private async exec(command: string): Promise<ClientChannel> {
     const client = await this.conn.get();
@@ -120,6 +123,27 @@ export class SshExecMediaSource implements MediaSource {
   async check(probePath?: string) {
     await this.conn.get();
     if (probePath) await this.stat(probePath);
+  }
+
+  /** Decode on the host (niced, so playback stays smooth); only small mono PCM crosses the network. */
+  async pcm(path: string, opts: PcmOptions): Promise<Buffer> {
+    const args = ffmpegPcmArgs(path, opts).map(shellQuote).join(' ');
+    const channel = await this.exec(`nice -n 10 ${shellQuote(this.ffmpeg)} ${args}`);
+    const abort = () => channel.close();
+    opts.signal?.addEventListener('abort', abort, { once: true });
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let err = '';
+      channel.on('data', (d: Buffer) => chunks.push(d));
+      channel.stderr.on('data', (d: Buffer) => (err += d));
+      channel.on('close', (code: number | null) => {
+        opts.signal?.removeEventListener('abort', abort);
+        if (opts.signal?.aborted) return reject(opts.signal.reason);
+        if (code === 0) return resolve(Buffer.concat(chunks));
+        const msg = err.replace(/^Could not chdir to home directory.*\n?/m, '').trim();
+        reject(new Error(`ffmpeg: ${msg || `exit code ${code}`}`));
+      });
+    });
   }
 
   async close() {

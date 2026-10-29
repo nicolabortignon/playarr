@@ -22,6 +22,11 @@ const schema = z.object({
   // MusicBrainz asks API clients to identify themselves with a contact (URL or email).
   MUSICBRAINZ_CONTACT: z.string().default('self-hosted'),
 
+  // Audio analysis (tempo, energy, …) for generated playlist covers. ffmpeg runs where the
+  // files are: on the SSH host for MEDIA_SOURCE=ssh, locally for MEDIA_SOURCE=local.
+  ANALYSIS: z.enum(['on', 'off']).default('on'),
+  FFMPEG_PATH: z.string().default('ffmpeg'),
+
   // Used by MEDIA_SOURCE=sftp and MEDIA_SOURCE=ssh.
   SSH_HOST: z.string().optional(),
   SSH_PORT: z.coerce.number().int().default(22),

@@ -87,7 +87,7 @@ function Picker() {
             onClick={() => add.mutate({ id: p.id, tracks }, { onSuccess: close })}
             className="flex w-full items-center gap-3 rounded-lg p-3 text-left transition hover:bg-paper/[0.05] disabled:opacity-50"
           >
-            <PlaylistCover covers={p.covers} size={48} name={p.name} className="size-12 shrink-0 rounded-md" />
+            <PlaylistCover cover={p.cover} size={48} name={p.name} className="size-12 shrink-0 rounded-md" />
             <span className="min-w-0">
               <span className="block truncate text-paper">{p.name}</span>
               <span className="block font-mono text-[11px] text-muted">{plural(p.trackCount, 'song')}</span>

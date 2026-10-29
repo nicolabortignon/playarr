@@ -7,7 +7,7 @@ import { SshConnection, SshExecMediaSource } from './ssh.ts';
 export function createMediaSource(config: Config): MediaSource {
   switch (config.MEDIA_SOURCE) {
     case 'local':
-      return new LocalMediaSource();
+      return new LocalMediaSource(config.FFMPEG_PATH);
     case 'sftp':
     case 'ssh': {
       if (!config.SSH_HOST || !config.SSH_USER) {
@@ -20,7 +20,7 @@ export function createMediaSource(config: Config): MediaSource {
         privateKeyPath: config.SSH_PRIVATE_KEY_PATH,
         password: config.SSH_PASSWORD,
       });
-      return config.MEDIA_SOURCE === 'sftp' ? new SftpMediaSource(conn) : new SshExecMediaSource(conn);
+      return config.MEDIA_SOURCE === 'sftp' ? new SftpMediaSource(conn) : new SshExecMediaSource(conn, config.FFMPEG_PATH);
     }
     case 'none':
       return new NoMediaSource();

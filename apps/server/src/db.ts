@@ -30,6 +30,20 @@ const MIGRATIONS = [
      added_at     TEXT NOT NULL
    );
    CREATE INDEX playlist_items_by_position ON playlist_items (playlist_id, position);`,
+  // What each song sounds like (measured from the audio) and how it's tagged (ListenBrainz).
+  `CREATE TABLE track_features (
+     recording_id TEXT PRIMARY KEY,
+     version      INTEGER NOT NULL,
+     features     TEXT,
+     error        TEXT,
+     analyzed_at  TEXT NOT NULL
+   );
+   CREATE TABLE track_meta (
+     recording_id TEXT PRIMARY KEY,
+     tags         TEXT NOT NULL,
+     year         INTEGER,
+     fetched_at   TEXT NOT NULL
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

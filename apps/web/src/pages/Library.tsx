@@ -53,7 +53,7 @@ export function LibraryPage() {
         </button>
         {playlists?.map((p) => (
           <Link key={p.id} to={`/playlists/${p.id}`} className="flex items-center gap-4 rounded-lg px-2 py-2.5 transition hover:bg-paper/[0.04]">
-            <PlaylistCover covers={p.covers} size={56} name={p.name} className="size-14 shrink-0 rounded-md" />
+            <PlaylistCover cover={p.cover} size={56} name={p.name} className="size-14 shrink-0 rounded-md" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[16px] text-paper">{p.name}</span>
               <span className="block font-mono text-[12px] text-muted">{plural(p.trackCount, 'song')}</span>

@@ -187,6 +187,7 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
 - [ ] Offline downloads (cache tracks in the service worker / IndexedDB)
 - [x] **Discover & request** (built 2026-10-27, see §11): search beyond the library, request albums, live download progress
 - [x] **Playlist recommendations** (built 2026-10-28, see §11): "Songs like these" under each playlist, with Add for songs you own and Request for songs you don't. *Next: the same for Favorites, and a "radio" built from one song.*
+- [x] **Generated playlist covers** (built 2026-10-29, see §13): artwork drawn from what the songs sound like, measured from the audio. *Next: use the same audio features for smart shuffle / mood sorting, and a song "radio".*
 - [ ] Lidarr actions: show an in-library artist's missing albums, interactive release picking
 - [ ] Live library updates through Lidarr SignalR
 - [ ] Cast / AirPlay (Remote Playback API), Last.fm / ListenBrainz scrobbling
@@ -250,6 +251,34 @@ pnpm --filter @playarr/web test   # smoke tests against the running server
 
 **Lidarr setup seen:** quality profiles Any/Lossless/Standard (root default: Any), metadata profile Standard = Album/Studio/Official. Indexers: Knaben + The Pirate Bay via Prowlarr; download client: qBittorrent. Overridable via `LIDARR_ROOT_FOLDER`, `LIDARR_QUALITY_PROFILE_ID`, `LIDARR_METADATA_PROFILE_ID`.
 
+## 13. Generated playlist covers
+
+Each playlist gets artwork drawn from its music, not a collage of album art. Same songs → same cover.
+
+**1. Listen (server, once per song, cached in SQLite `track_features`).** `ffmpeg` runs where the files are (over SSH on the NAS, `nice`d) and decodes up to 7 min to 11 kHz mono PCM (~5 MB, ~0.5 s per song). `analysis/dsp.ts` then measures, all in plain TypeScript:
+- **tempo**: spectral-flux onset envelope → autocorrelation, with a log-normal prior around 120 BPM, refined over several beat multiples, folded into 70–180
+- **pulse**: how clearly the beat stands out (the autocorrelation peak's prominence above its neighbouring dips; a slow crescendo doesn't count as a beat)
+- **loudness**, **dynamics** (p95−p10 range), **brightness** (spectral centroid), **busyness** (onsets/s), **bass** (energy share < 150 Hz)
+- **envelope**: 48-point loudness curve, the song's shape
+
+Calibrated against known tempos in the library (Da Funk 111, Around the World 121, One More Time 123, Something About Us 100, Porcelain 95: all within 0.3 BPM) and beatless pieces (Jan Garbarek's *Officium* → pulse 0). Raw measurements are stored too, so scales can be recalibrated without re-decoding. `ANALYSIS=off` disables it; `FFMPEG_PATH` overrides the binary.
+
+**2. Read.** ListenBrainz metadata (batched, `track_meta`): crowd tags (recording ×1, release group ×0.6, artist ×0.4) plus first-release year; Lidarr artist genres as a fallback. Tags map to 13 style families (`analysis/styles.ts`), each with a hue and a paper-vs-night bias; families under 12% of a song's tags are noise and dropped. Mood words nudge warmth and calm.
+
+**3. DNA** (`cover/dna.ts`): typical tempo and its spread, mean pulse/intensity/brightness/bass, organic-ness, style mix, **diversity** (entropy of each song's *main* style + spread of sound; averaging every tag made focused playlists look eclectic), era. Seeded from the sorted recording ids.
+
+**4. Draw** (`cover/layouts.ts`, SVG, then WebP via sharp at snapped sizes; versioned URL `?v=<hash of DNA + RENDER_VERSION>`). The layout follows the character:
+| Layout | Chosen for | Each song is… |
+|---|---|---|
+| **Ridges** (after *Unknown Pleasures*) | driving, bright (rock, metal, dance) | a band of lines tracing its loudness, rippling with tempo and busyness |
+| **Grooves** (a record) | heavy steady low end, the vinyl era | a band of grooves as wide as the song is long, wobbling with its loudness |
+| **Blocks** (Bauhaus) | eclectic mixes, mid-century jazz | a tile sized by length; the shape comes from how it sounds (rings = steady beat, stripes = busy, disc = calm, half-circle = dynamic, dots = crisp, wave = its loudness) |
+| **Horizon** | calm, beatless (ambient, choral, folk) | a hill whose ridge is its loudness; slower music → bigger sun, cut into stripes if there's a beat |
+
+Palette (OKLCH): hues from the style mix, as many inks as there are distinct styles; chroma from energy; paper or night from calm, brightness and the styles' own feel; older eras warmer, faded and grainier (print grain via feTurbulence). Rendering is server-side so every browser shows the same pixels.
+
+**UI:** covers everywhere playlists appear (crossfading to the refined version); playlists poll while songs are still being analyzed; the playlist page explains the cover ("Each line is a song…") with the facts behind it (BPM, styles, era, energy).
+
 ## 12. Decisions log
 
 | Date | Decision |
@@ -264,6 +293,7 @@ pnpm --filter @playarr/web test   # smoke tests against the running server
 | 2026-10-28 | Favicon is redrawn in the accent color of the playing track (canvas → PNG, since Safari ignores SVG favicons). |
 | 2026-10-28 | Favorites are keyed by MusicBrainz **recording id** (Lidarr `foreignRecordingId`), not Lidarr track id, so they survive re-imports and quality upgrades. Stored server-side in SQLite so every device shares them. Uses Node's built-in `node:sqlite` (no native dependency); `--disable-warning=ExperimentalWarning` in the scripts. User data lives in `DATA_DIR` (default `apps/server/data`), separate from the deletable `.cache`. |
 | 2026-10-28 | Recommendations come from ListenBrainz (open data, no key, MusicBrainz ids end to end) rather than Last.fm (needs an API key; matches by name) or Deezer radio (popularity-driven, weaker for niche music). The labs API only takes one seed per call, so we make up to 10 calls in parallel (about 0.5 s total). |
+| 2026-10-29 | Playlist covers are generated from **measured audio** (ffmpeg on the NAS + our own DSP), not metadata: Deezer's BPM is often 0, AcousticBrainz is gone, and analysis covers every song including obscure ones. Only ~5 MB of low-rate mono PCM per song crosses the network, once. Tests: `pnpm -C apps/server test` (DSP on synthetic click tracks/tones/noise; cover determinism and layout choice). |
 | 2026-10-27 | Single `<audio>` element (not two swapped ones) so iOS background playback keeps working. Gapless/crossfade come later via Web Audio. |
 | 2026-10-27 | Visual direction "liner notes": warm near-black, Gloock display serif, Schibsted Grotesk UI, DM Mono for specs and durations. The accent color comes from the current cover art; there's a subtle film grain. |
 | 2026-10-27 | Stack versions: React 19, Vite 8, Tailwind 4, React Router 7 (pinned below v8), TanStack Query 5, Zustand 5, Motion 14, Fastify 5, zod 4, TypeScript 7. |

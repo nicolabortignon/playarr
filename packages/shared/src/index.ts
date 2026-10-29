@@ -196,14 +196,34 @@ export interface AlbumRequest {
 
 // ── Playlists ───────────────────────────────────────────────────────────────
 
+export type CoverLayout = 'ridges' | 'grooves' | 'blocks' | 'horizon';
+
+/** Artwork generated from what the playlist's songs sound like. */
+export interface PlaylistCoverInfo {
+  /** Versioned: changes whenever the songs, or what's known about them, change. */
+  url: string;
+  layout: CoverLayout;
+  /** Typical tempo of the songs with a clear beat. */
+  tempo?: number;
+  /** 0–1. */
+  energy: number;
+  /** Main styles, strongest first. */
+  styles: string[];
+  era?: [from: number, to: number];
+  /** Songs whose audio has been analyzed, of `total`. */
+  analyzed: number;
+  total: number;
+  /** Still listening to some songs: the cover will refine. */
+  pending: boolean;
+}
+
 export interface PlaylistSummary {
   id: number;
   name: string;
   description: string;
   trackCount: number;
   duration: number; // seconds, playable tracks only
-  /** Up to four distinct album covers, for the mosaic. */
-  covers: string[];
+  cover: PlaylistCoverInfo;
   updatedAt: string;
 }
 

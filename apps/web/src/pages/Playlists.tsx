@@ -52,7 +52,7 @@ export function PlaylistCard({ playlist: p, style, className }: { playlist: Play
     <div className={cn('group relative animate-rise', className)} style={style}>
       <Link to={`/playlists/${p.id}`} className="block">
         <PlaylistCover
-          covers={p.covers}
+          cover={p.cover}
           size={220}
           name={p.name}
           className="rounded-[4px] shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)] ring-1 ring-paper/5 transition duration-500 ease-out-expo group-hover:-translate-y-1"

@@ -153,10 +153,24 @@ export const usePlaylistRecommendations = (id: number, variant: number, enabled:
     placeholderData: keepPreviousData,
   });
 
-export const usePlaylists = () => useQuery({ queryKey: ['playlists'], queryFn: api.playlists, staleTime: 60_000 });
+/** While the server is still listening to new songs, poll so the generated covers refine. */
+const COVER_POLL_MS = 4000;
+
+export const usePlaylists = () =>
+  useQuery({
+    queryKey: ['playlists'],
+    queryFn: api.playlists,
+    staleTime: 60_000,
+    refetchInterval: (q) => (q.state.data?.some((p) => p.cover.pending) ? COVER_POLL_MS : false),
+  });
 
 export const usePlaylist = (id: number) =>
-  useQuery({ queryKey: ['playlist', id], queryFn: () => api.playlist(id), enabled: Number.isFinite(id) });
+  useQuery({
+    queryKey: ['playlist', id],
+    queryFn: () => api.playlist(id),
+    enabled: Number.isFinite(id),
+    refetchInterval: (q) => (q.state.data?.cover.pending ? COVER_POLL_MS : false),
+  });
 
 /** Playlist mutations: each returns the updated playlist, which refreshes both caches. */
 export function usePlaylistMutations() {

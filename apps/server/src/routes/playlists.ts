@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { PlaylistCovers } from '../cover/index.ts';
 import type { Recommendations } from '../discover/recommendations.ts';
 import { PlaylistError, type Playlists } from '../playlists.ts';
 
@@ -19,10 +20,30 @@ async function handle<T>(reply: FastifyReply, fn: () => T | Promise<T>) {
   }
 }
 
-export function playlistRoutes(app: FastifyInstance, deps: { playlists: Playlists; recommendations: Recommendations }) {
-  const { playlists, recommendations } = deps;
+export function playlistRoutes(
+  app: FastifyInstance,
+  deps: { playlists: Playlists; recommendations: Recommendations; covers: PlaylistCovers },
+) {
+  const { playlists, recommendations, covers } = deps;
   type Id = { Params: { id: string } };
   const id = (raw: string) => Number.parseInt(raw, 10);
+
+  /** Generated cover: WebP at `size` (default 600), or the source with `format=svg`. */
+  app.get<Id & { Querystring: { size?: string; v?: string; format?: string } }>('/art/playlist/:id', (req, reply) =>
+    handle(reply, async () => {
+      const { dna, hash } = await playlists.cover(id(req.params.id));
+      const svg = req.query.format === 'svg';
+      // Snap to a few sizes so the image cache stays small.
+      const wanted = Number(req.query.size) || 600;
+      const size = [64, 96, 128, 192, 256, 384, 512, 768, 1024].find((b) => b >= wanted) ?? 1024;
+      // Versioned URLs never change; the bare URL always revalidates.
+      reply
+        .header('Cache-Control', req.query.v === hash ? 'public, max-age=31536000, immutable' : 'no-cache')
+        .header('ETag', `"${hash}-${svg ? 'svg' : size}"`);
+      if (svg) return reply.type('image/svg+xml').send(covers.svg(dna, hash).svg);
+      return reply.type('image/webp').send(await covers.image(dna, hash, size));
+    }),
+  );
 
   app.get('/api/playlists', () => playlists.list());
 

@@ -1,4 +1,4 @@
-import type { PlaylistItem } from '@playarr/shared';
+import type { CoverLayout, PlaylistCoverInfo, PlaylistItem } from '@playarr/shared';
 import { Disc3, GripVertical, ListEnd, ListPlus, Mic2, Pencil, Play, Shuffle, Trash2, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
@@ -59,7 +59,7 @@ export function PlaylistPage() {
     <div className="px-5 pt-6 md:px-10 md:pt-14">
       <header className="flex flex-col gap-6 md:flex-row md:items-end md:gap-10">
         <PlaylistCover
-          covers={playlist.covers}
+          cover={playlist.cover}
           size={256}
           name={playlist.name}
           className="mx-auto w-[min(64vw,256px)] shrink-0 animate-rise rounded-[4px] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.9)] ring-1 ring-paper/10 md:mx-0 md:w-56 lg:w-64"
@@ -93,6 +93,7 @@ export function PlaylistPage() {
             {plural(items.length, 'song')} · {formatDuration(playlist.duration)}
             {unavailable > 0 && ` · ${unavailable} not in library`}
           </div>
+          {items.length > 0 && <CoverNote cover={playlist.cover} />}
         </div>
       </header>
 
@@ -257,6 +258,38 @@ function PlaylistRow({
         />
       </div>
     </Reorder.Item>
+  );
+}
+
+const COVER_STORY: Record<CoverLayout, string> = {
+  ridges: 'Each line is a song, traced from its loudness over time.',
+  grooves: 'A record of the playlist: each band of grooves is a song, as wide as it is long.',
+  blocks: 'A tile per song, sized by its length; each shape follows how it sounds.',
+  horizon: 'Each hill is a song’s loudness over time. The slower the music, the bigger the sun.',
+};
+
+/** What the generated cover is made of, so it reads as a portrait of the music rather than decoration. */
+function CoverNote({ cover }: { cover: PlaylistCoverInfo }) {
+  const facts = [
+    cover.tempo && `${cover.tempo} BPM`,
+    cover.styles.length && cover.styles.join(' / '),
+    cover.era && (cover.era[0] === cover.era[1] ? String(cover.era[0]) : `${cover.era[0]}–${cover.era[1]}`),
+    `energy ${Math.round(cover.energy * 100)}%`,
+  ].filter(Boolean);
+  return (
+    <div className="mt-3 max-w-xl text-[13px] leading-snug text-muted">
+      {cover.pending ? (
+        <span className="inline-flex items-center gap-2">
+          <span className="size-1.5 animate-pulse rounded-full bg-accent" />
+          Listening to the songs to draw the cover… {cover.analyzed} of {cover.total}
+        </span>
+      ) : (
+        <>
+          <span className="text-paper-dim/80">{COVER_STORY[cover.layout]}</span>
+          <span className="mt-1 block font-mono text-[11px] tracking-wide uppercase">{facts.join(' · ')}</span>
+        </>
+      )}
+    </div>
   );
 }
 

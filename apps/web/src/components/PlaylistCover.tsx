@@ -1,25 +1,28 @@
-import { ListMusic } from 'lucide-react';
+import type { PlaylistCoverInfo } from '@playarr/shared';
+import { useState } from 'react';
+import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
-import { Cover } from './Cover';
 
-/** 2×2 mosaic of album covers (a single cover with fewer than four), or a placeholder. */
-export function PlaylistCover({ covers, size, name, className }: { covers: string[]; size: number; name: string; className?: string }) {
-  if (covers.length >= 4) {
-    return (
-      <div className={cn('grid aspect-square grid-cols-2 overflow-hidden bg-ink-800', className)}>
-        {covers.slice(0, 4).map((c) => (
-          <Cover key={c} src={c} size={size / 2} alt="" className="rounded-none" />
-        ))}
-      </div>
-    );
-  }
-  if (covers.length) return <Cover src={covers[0]} size={size} alt={name} className={className} />;
+/**
+ * The playlist's generated artwork (drawn by the server from what its songs sound like).
+ * The URL changes as songs get analyzed; the previous version stays up until the next has loaded.
+ */
+export function PlaylistCover({ cover, size, name, className }: { cover: PlaylistCoverInfo; size: number; name: string; className?: string }) {
+  const url = sized(cover.url, size)!;
+  const [shown, setShown] = useState<string>();
   return (
-    <div
-      className={cn('grid aspect-square place-items-center bg-gradient-to-br from-ink-700 to-ink-800 text-accent', className)}
-      aria-label={name}
-    >
-      <ListMusic className="size-1/3" strokeWidth={1.5} />
+    <div role="img" aria-label={name} className={cn('relative aspect-square overflow-hidden bg-ink-800', className)}>
+      {shown && shown !== url && <img src={shown} alt="" draggable={false} className="absolute inset-0 size-full" />}
+      <img
+        key={url}
+        src={url}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+        onLoad={() => setShown(url)}
+        className={cn('absolute inset-0 size-full transition-opacity duration-700', shown === url ? 'opacity-100' : 'opacity-0')}
+      />
     </div>
   );
 }

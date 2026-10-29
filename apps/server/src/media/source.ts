@@ -19,7 +19,25 @@ export interface MediaSource {
   open(path: string, range?: ByteRange): Promise<Readable>;
   /** Throws with a human-readable message if the source is unusable. */
   check(probePath?: string): Promise<void>;
+  /** Decode a file to mono s16le PCM with ffmpeg, where the files live. Absent if this source can't. */
+  pcm?(path: string, opts: PcmOptions): Promise<Buffer>;
   close(): Promise<void>;
+}
+
+export interface PcmOptions {
+  sampleRate: number;
+  /** Decode at most this many seconds from the start. */
+  maxSeconds: number;
+  signal?: AbortSignal;
+}
+
+/** ffmpeg arguments that decode `path` to mono s16le PCM on stdout. */
+export function ffmpegPcmArgs(path: string, { sampleRate, maxSeconds }: PcmOptions): string[] {
+  return [
+    ...['-hide_banner', '-loglevel', 'error', '-nostdin'],
+    ...['-t', String(maxSeconds), '-i', path],
+    ...['-vn', '-ac', '1', '-ar', String(sampleRate), '-f', 's16le', '-'],
+  ];
 }
 
 export class MediaUnavailableError extends Error {}

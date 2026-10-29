@@ -42,9 +42,16 @@ export async function similarRecordings(recordingMbid: string, signal?: AbortSig
   return cache.get(recordingMbid)!.data;
 }
 
+export interface LbTag {
+  tag: string;
+  count: number;
+}
+
 export interface LbRecordingMetadata {
   artist?: { name: string; artists?: { artist_mbid: string; name: string; join_phrase: string }[] };
-  release?: { mbid: string; name: string; release_group_mbid?: string; album_artist_name?: string };
+  release?: { mbid: string; name: string; release_group_mbid?: string; album_artist_name?: string; year?: number };
+  recording?: { name: string; first_release_date?: string; length?: number };
+  tag?: { recording?: LbTag[]; release_group?: LbTag[]; artist?: LbTag[] };
 }
 
 /**
@@ -76,4 +83,15 @@ export async function recordingMetadata(mbids: string[], signal?: AbortSignal): 
     signal?.throwIfAborted();
   }
   return out;
+}
+
+/** Genre/mood tags and release info for many recordings. Throws when ListenBrainz can't be reached. */
+export async function recordingTags(mbids: string[], signal?: AbortSignal): Promise<Record<string, LbRecordingMetadata>> {
+  const url = `https://api.listenbrainz.org/1/metadata/recording/?recording_mbids=${mbids.join(',')}&inc=tag%20release`;
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json' },
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`ListenBrainz HTTP ${res.status}`);
+  return (await res.json()) as Record<string, LbRecordingMetadata>;
 }
