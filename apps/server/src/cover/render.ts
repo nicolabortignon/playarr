@@ -5,14 +5,16 @@ import { makePalette } from './palette.ts';
 import { Rng } from './random.ts';
 
 /** Bump when the artwork changes, so cached covers are redrawn. */
-export const RENDER_VERSION = 1;
+export const RENDER_VERSION = 2;
 
 /**
  * Which visual language suits the playlist:
+ * - currents: the default hero; flowing ribbons, most at home with legato, organic music
+ * - colonies: eclectic mixes, styles as species carving out territories
  * - horizon: calm, beatless, organic (ambient, choral, folk)
  * - ridges: driving and bright (rock, metal, dance)
  * - grooves: the record; heavy, steady low end (hip hop, house) and the vinyl era
- * - blocks: eclectic mixes, and a nod to mid-century jazz sleeves
+ * - blocks: a nod to mid-century sleeves, for older and varied playlists
  * A little seeded jitter decides close calls.
  */
 export function chooseLayout(dna: Dna, rng: Rng): Layout {
@@ -21,20 +23,22 @@ export function chooseLayout(dna: Dna, rng: Rng): Layout {
   const calm = 1 - dna.intensity;
   const vintage = dna.era ? Math.min(1, Math.max(0, (1992 - dna.era.median) / 30)) : 0;
   const scores: [Layout, number][] = [
+    ['currents', 0.55 + 0.2 * (1 - dna.busyness) + 0.1 * dna.organic],
+    ['colonies', 0.15 + Math.max(0, dna.diversity - 0.3) * 1.4 + 0.15 * dna.dynamics],
     ['horizon', calm * (1 - dna.pulse) * 1.7 + dna.calm * 0.2 + dna.organic * 0.15],
-    ['ridges', dna.pulse * 0.45 + (1 - dna.diversity) * 0.2 + dna.intensity * 0.25 + dna.brightness * 0.1],
-    ['grooves', 0.5 + dna.bass * dna.pulse * 0.3 + vintage * 0.15],
-    ['blocks', Math.max(0, dna.diversity - 0.3) * 1.5 + dna.busyness * 0.1 + vintage * 0.1],
+    ['ridges', dna.pulse * 0.45 + (1 - dna.diversity) * 0.2 + dna.intensity * 0.25 + dna.brightness * 0.1 - 0.1],
+    ['grooves', 0.4 + dna.bass * dna.pulse * 0.3 + vintage * 0.25],
+    ['blocks', 0.15 + vintage * 0.35 + Math.max(0, dna.diversity - 0.4) * 0.6 + dna.busyness * 0.1],
   ];
   return scores.map(([l, s]): [Layout, number] => [l, s + r.range(-0.12, 0.12)]).sort((a, b) => b[1] - a[1])[0]![0];
 }
 
-export function renderCover(dna: Dna, layout?: Layout): { svg: string; layout: Layout } {
+export async function renderCover(dna: Dna, layout?: Layout): Promise<{ svg: string; layout: Layout; palette: string }> {
   const rng = new Rng(dna.seed);
   const chosen = layout ?? chooseLayout(dna, rng);
   const pal = makePalette(dna, rng);
   const defs: string[] = [];
-  const body = LAYOUTS[chosen]({ dna, pal, rng: rng.fork(chosen), defs });
+  const body = await LAYOUTS[chosen]({ dna, pal, rng: rng.fork(chosen), defs });
 
   // Print grain: specks of ink on paper, or of paper on night.
   const speck = pal.dark ? 1 : 0;
@@ -49,5 +53,5 @@ export function renderCover(dna: Dna, layout?: Layout): { svg: string; layout: L
     `<rect width="${S}" height="${S}" filter="url(#grain)" opacity="${(Math.round(pal.grain * 100) / 100).toString()}"/>`,
     '</svg>',
   ].join('');
-  return { svg, layout: chosen };
+  return { svg, layout: chosen, palette: pal.name };
 }

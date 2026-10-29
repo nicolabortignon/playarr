@@ -46,7 +46,7 @@ const analyzer = new Analyzer(db, library, media, {
   pathMap: config.pathMap,
   log: app.log,
 });
-const covers = new PlaylistCovers(analyzer, library);
+const covers = new PlaylistCovers(analyzer, library, resolve(config.CACHE_DIR, 'covers'));
 const playlists = new Playlists(db, library, covers);
 const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
 const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), {

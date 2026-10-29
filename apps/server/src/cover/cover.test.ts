@@ -3,6 +3,7 @@ import type { TrackMeta } from '../analysis/analyzer.ts';
 import { ANALYSIS_VERSION, ENVELOPE_POINTS, type AudioFeatures } from '../analysis/dsp.ts';
 import { styleProfile } from '../analysis/styles.ts';
 import { buildDna, type DnaInput } from './dna.ts';
+import { makePalette } from './palette.ts';
 import { chooseLayout, renderCover } from './render.ts';
 import { Rng } from './random.ts';
 
@@ -64,9 +65,9 @@ describe('styleProfile', () => {
 });
 
 describe('playlist DNA and covers', () => {
-  it('is deterministic, and depends on which songs are in the playlist', () => {
+  it('is deterministic, and depends on which songs are in the playlist', async () => {
     const songs = dance(8);
-    expect(renderCover(dnaOf(songs)).svg).toBe(renderCover(dnaOf(songs)).svg);
+    expect((await renderCover(dnaOf(songs))).svg).toBe((await renderCover(dnaOf(songs))).svg);
     expect(dnaOf([...songs].reverse()).seed).toBe(dnaOf(songs).seed);
     expect(dnaOf(songs.slice(1)).seed).not.toBe(dnaOf(songs).seed);
   });
@@ -82,30 +83,53 @@ describe('playlist DNA and covers', () => {
       return chooseLayout(dna, new Rng(dna.seed));
     };
     expect(layout(calm(8))).toBe('horizon');
-    expect(layout(eclectic)).toBe('blocks');
-    expect(['ridges', 'grooves']).toContain(layout(dance(10)));
+    expect(layout(eclectic)).toBe('colonies');
+    expect(['ridges', 'grooves', 'currents']).toContain(layout(dance(10)));
   });
 
-  it('draws every song: a tile per song in blocks, a band of lines per song in ridges', () => {
-    const blocks = renderCover(dnaOf(eclectic), 'blocks').svg;
+  it('draws every song: a tile per song in blocks, a band of lines per song in ridges', async () => {
+    const blocks = (await renderCover(dnaOf(eclectic), 'blocks')).svg;
     expect(blocks.match(/<clipPath /g)).toHaveLength(eclectic.length);
-    const ridges = renderCover(dnaOf(dance(6)), 'ridges').svg;
+    const ridges = (await renderCover(dnaOf(dance(6)), 'ridges')).svg;
     // Every song gets the same number of lines (a band), several each.
     const lines = ridges.match(/stroke-linejoin="round"/g)!.length;
     expect(lines % 6).toBe(0);
     expect(lines).toBeGreaterThan(6);
   });
 
-  it('shapes the picture from each song’s loudness over time', () => {
+  it('shapes the picture from each song’s loudness over time', async () => {
     const flat = dance(4);
     const swelling = flat.map((s, i) => (i === 0 ? { ...s, envelope: Array.from({ length: ENVELOPE_POINTS }, (_, k) => k / ENVELOPE_POINTS) } : s));
     for (const layout of ['ridges', 'grooves', 'horizon'] as const) {
-      expect(renderCover(dnaOf(swelling), layout).svg).not.toBe(renderCover(dnaOf(flat), layout).svg);
+      expect((await renderCover(dnaOf(swelling), layout)).svg).not.toBe((await renderCover(dnaOf(flat), layout)).svg);
     }
   });
 
-  it('renders an empty playlist', () => {
+  it('chooses a curated palette that fits the styles and the mood', () => {
+    const folk = dnaOf(Array.from({ length: 6 }, (_, i): Song => ({ id: `folk-${i}`, tags: ['folk', 'acoustic'], pulse: 0.3, loudness: 0.3 })));
+    const green = makePalette(folk, new Rng(folk.seed)).inkFor('folk');
+    expect(Math.abs(((green.h - 138 + 540) % 360) - 180)).toBeLessThan(50);
+    expect(green.c).toBeGreaterThan(0.05);
+
+    const loud = dnaOf(Array.from({ length: 6 }, (_, i): Song => ({ id: `metal-${i}`, tags: ['metal'], loudness: 1, busyness: 1, bpm: 170 })));
+    const night = makePalette(loud, new Rng(loud.seed));
+    expect(night.dark).toBe(true);
+    expect(night.bg.l).toBeLessThan(0.45);
+  });
+
+  it('draws currents as packed ribbons, one song per ribbon', async () => {
+    const svg = (await renderCover(dnaOf(dance(8)), 'currents')).svg;
+    expect(svg).toBe((await renderCover(dnaOf(dance(8)), 'currents')).svg);
+    expect(svg.match(/<path d="M/g)!.length).toBeGreaterThan(50);
+  });
+
+  it('grows colonies even when the playlist has a single style', async () => {
+    const svg = (await renderCover(dnaOf(dance(4)), 'colonies')).svg;
+    expect(svg).toMatch(/<image href="data:image\/png;base64,[A-Za-z0-9+/=]{1000,}"/);
+  }, 20_000);
+
+  it('renders an empty playlist', async () => {
     const dna = buildDna([], new Map(), new Map(), '7');
-    expect(renderCover(dna).svg).toMatch(/^<svg [^>]+>.*<\/svg>$/);
+    expect((await renderCover(dna)).svg).toMatch(/^<svg [^>]+>.*<\/svg>$/);
   });
 });

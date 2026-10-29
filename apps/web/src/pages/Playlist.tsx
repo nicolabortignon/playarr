@@ -266,6 +266,8 @@ const COVER_STORY: Record<CoverLayout, string> = {
   grooves: 'A record of the playlist: each band of grooves is a song, as wide as it is long.',
   blocks: 'A tile per song, sized by its length; each shape follows how it sounds.',
   horizon: 'Each hill is a song’s loudness over time. The slower the music, the bigger the sun.',
+  currents: 'Each ribbon belongs to a song: a steady beat flows smoothly, free time swirls; louder songs run wider.',
+  colonies: 'Each style is a slime-mould species in its own colour, growing with its songs’ tempo and beat.',
 };
 
 /** What the generated cover is made of, so it reads as a portrait of the music rather than decoration. */

@@ -196,7 +196,7 @@ export interface AlbumRequest {
 
 // ── Playlists ───────────────────────────────────────────────────────────────
 
-export type CoverLayout = 'ridges' | 'grooves' | 'blocks' | 'horizon';
+export type CoverLayout = 'ridges' | 'grooves' | 'blocks' | 'horizon' | 'currents' | 'colonies';
 
 /** Artwork generated from what the playlist's songs sound like. */
 export interface PlaylistCoverInfo {

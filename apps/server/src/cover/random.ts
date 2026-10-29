@@ -57,3 +57,33 @@ export function smoothNoise(rng: Rng, points = 12): (t: number) => number {
     return knots[i]! * (1 - s) + knots[i + 1]! * s;
   };
 }
+
+/** Seeded 2-D gradient (Perlin) noise in about −1…1. */
+export function perlin(rng: Rng): (x: number, y: number) => number {
+  const perm = Array.from({ length: 256 }, (_, i) => i);
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    [perm[i], perm[j]] = [perm[j]!, perm[i]!];
+  }
+  const p = [...perm, ...perm];
+  const grad = (h: number, x: number, y: number) => {
+    const a = (h & 7) * (Math.PI / 4);
+    return Math.cos(a) * x + Math.sin(a) * y;
+  };
+  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+  return (x: number, y: number) => {
+    const xi = Math.floor(x) & 255;
+    const yi = Math.floor(y) & 255;
+    const xf = x - Math.floor(x);
+    const yf = y - Math.floor(y);
+    const u = fade(xf);
+    const v = fade(yf);
+    const aa = p[p[xi]! + yi]!;
+    const ab = p[p[xi]! + yi + 1]!;
+    const ba = p[p[xi + 1]! + yi]!;
+    const bb = p[p[xi + 1]! + yi + 1]!;
+    const x1 = grad(aa, xf, yf) + u * (grad(ba, xf - 1, yf) - grad(aa, xf, yf));
+    const x2 = grad(ab, xf, yf - 1) + u * (grad(bb, xf - 1, yf - 1) - grad(ab, xf, yf - 1));
+    return (x1 + v * (x2 - x1)) * 1.4;
+  };
+}

@@ -21,6 +21,7 @@
   "dependencies": {
     "@fastify/static": "^10.1.8",
     "@playarr/shared": "workspace:*",
+    "chromotome": "^1.21.4",
     "fastify": "^5.12.7",
     "sharp": "^0.35.5",
     "ssh2": "^1.17.0",

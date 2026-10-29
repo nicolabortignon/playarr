@@ -1,5 +1,6 @@
+import { getAll } from 'chromotome';
 import { FAMILIES, type StyleFamily } from '../analysis/styles.ts';
-import { hex, lch, mix, type Lch } from './color.ts';
+import { fromHex, hex, lch, mix, type Lch } from './color.ts';
 import type { Dna } from './dna.ts';
 import type { Rng } from './random.ts';
 
@@ -9,87 +10,141 @@ export interface Palette {
   bg: Lch;
   /** Main line color: paper on dark, ink on light. */
   fg: Lch;
-  /** One per style in the palette, strongest style first. */
+  /** One per style in the palette, strongest style first, then the palette's other colors. */
   inks: { family?: StyleFamily; color: Lch }[];
   accent: Lch;
   /** Deep near-black, for records and silhouettes. */
   deep: Lch;
   /** 0–1 strength of the print grain. */
   grain: number;
+  /** Which curated palette this came from. */
+  name: string;
   inkFor(family?: StyleFamily): Lch;
 }
 
+/** A curated palette from chromotome (Kjetil Golid et al., MIT), read as OKLCH. */
+interface Candidate {
+  name: string;
+  bg: Lch;
+  colors: Lch[];
+  dark: boolean;
+}
+
 /**
- * Colors from the playlist's character:
- * - hue from its styles (each family owns a hue), as many inks as it has distinct styles
- * - chroma from energy; light paper vs night from calm, brightness and the styles' own feel
- * - era: older music is warmer, more faded, and grainier, like old print
+ * Hand-picked palettes beat computed ones, so the playlist *chooses* a palette rather than
+ * inventing one. Each palette is also offered inverted (its darkest ink as night, its paper
+ * as line color), because most curated palettes are light.
+ */
+const CANDIDATES: Candidate[] = getAll().flatMap((p): Candidate[] => {
+  if (!p.background || p.colors.length < 2) return [];
+  const bg = fromHex(p.background);
+  const colors = p.colors.map(fromHex);
+  const out: Candidate[] = [{ name: p.name, bg, colors: colors.filter((c) => contrast(c, bg) > 0.12), dark: bg.l < 0.45 }];
+  const darkest = [...colors].sort((a, b) => a.l - b.l)[0]!;
+  if (bg.l >= 0.45 && darkest.l < 0.3) {
+    const rest = [...colors.filter((c) => c !== darkest), bg].filter((c) => contrast(c, darkest) > 0.12);
+    out.push({ name: `${p.name} (night)`, bg: darkest, colors: rest, dark: true });
+  }
+  return out.filter((c) => c.colors.length >= 2);
+});
+
+/**
+ * The palette that fits the playlist best:
+ * - paper vs night from calm, brightness and the styles' own feel
+ * - hues close to the playlist's style hues (each family owns a hue)
+ * - vividness close to its energy (muted for older eras)
+ * - enough colors for its diversity, not many more
  */
 export function makePalette(dna: Dna, rng: Rng): Palette {
   const r = rng.fork('palette');
   const inkCount = Math.min(4, 1 + Math.round(dna.diversity * 3));
   const top = dna.styles.slice(0, inkCount);
-  const hueOf = (family?: StyleFamily) => (family ? FAMILIES[family].hue : r.fork('nohue').range(0, 360));
-  const dominant = hueOf(top[0]?.family);
-
-  const vintage = dna.era ? clamp((1992 - dna.era.median) / 30) : 0;
-  const modern = dna.era ? clamp((dna.era.median - 2005) / 15) : 0.3;
-  // Old music drifts toward warm amber, like aged paper and faded inks.
-  const age = (h: number) => h + dna.warmth * 12 + vintage * 0.25 * hueDistance(h, 70);
-
-  const familyLight = top.reduce((s, t) => s + t.weight * FAMILIES[t.family].light, 0) / (top.reduce((s, t) => s + t.weight, 0) || 1);
+  const weightSum = top.reduce((s, t) => s + t.weight, 0) || 1;
+  const familyLight = top.reduce((s, t) => s + t.weight * FAMILIES[t.family].light, 0) / weightSum;
   const lightness = 0.5 * (1 - dna.intensity) + 0.2 * dna.brightness + 0.15 * dna.calm + 0.25 * familyLight + r.range(-0.05, 0.05);
   const dark = lightness < 0.42;
+  const vintage = dna.era ? clamp((1992 - dna.era.median) / 30) : 0;
+  const targetChroma = (0.08 + 0.12 * dna.intensity) * (1 - 0.35 * vintage);
+  const wanted = top.length ? top : [{ family: undefined, weight: 1 }];
 
-  const chroma = (0.075 + 0.13 * dna.intensity + 0.03 * modern) * (1 - 0.35 * vintage);
-  const bg = dark
-    ? lch(0.17 + 0.05 * dna.brightness, 0.035 * (1 - 0.5 * vintage), age(dominant + r.range(-10, 10)))
-    : mix(lch(0.945 - 0.035 * vintage, 0.012 + 0.03 * vintage, 82), lch(0.93, 0.03, dominant), 0.18);
-  const fg = dark ? lch(0.93, 0.02, 85) : lch(0.23, 0.035, age(dominant));
-  const inkL = dark ? 0.75 : 0.57;
+  const scored = CANDIDATES.map((c) => {
+    let hue = 0;
+    for (const t of wanted) {
+      const h = t.family ? FAMILIES[t.family].hue : r.fork('nohue').range(0, 360);
+      const best = Math.max(...c.colors.map((col) => hueMatch(col, h)));
+      hue += (t.weight / weightSum) * best;
+    }
+    const meanChroma = c.colors.reduce((s, col) => s + col.c, 0) / c.colors.length;
+    const score =
+      1.3 * hue -
+      (c.dark === dark ? 0 : 1) -
+      2.2 * Math.abs(meanChroma - targetChroma) -
+      0.06 * Math.max(0, inkCount + 1 - c.colors.length) -
+      0.03 * Math.max(0, c.colors.length - (inkCount + 3)) +
+      r.fork(c.name).range(0, 0.06);
+    return { c, score };
+  }).sort((a, b) => b.score - a.score);
+  const chosen = scored[0]!.c;
 
-  const inks: Palette['inks'] = top.length
-    ? top.map((t, i) => ({
-        family: t.family,
-        color: lch(inkL + (i % 2 ? -0.06 : 0), chroma * (i ? 0.92 : 1), age(hueOf(t.family) + r.fork(`ink${i}`).range(-8, 8))),
-      }))
-    : [{ family: undefined, color: lch(inkL, chroma, age(dominant)) }];
-  // One style only: add a tonal partner so there's still depth.
-  if (inks.length === 1) {
-    const c = inks[0]!.color;
-    inks.push({ family: inks[0]!.family, color: lch(c.l + (dark ? -0.2 : 0.18), c.c * 0.75, c.h + 6) });
+  // Older music: the same palette, a little faded and warmer.
+  const age = (col: Lch) => lch(col.l, col.c * (1 - 0.25 * vintage), col.h + vintage * 0.15 * hueDistance(col.h, 70));
+  const pool = chosen.colors.map(age);
+
+  // Give each style the palette color nearest its hue; the rest stay available as extra inks.
+  const inks: Palette['inks'] = [];
+  const free = [...pool];
+  for (const t of wanted) {
+    const h = t.family ? FAMILIES[t.family].hue : undefined;
+    const pick = h === undefined ? free[0] : [...free].sort((a, b) => hueMatch(b, h) - hueMatch(a, h))[0];
+    if (!pick) break;
+    inks.push({ family: t.family, color: pick });
+    free.splice(free.indexOf(pick), 1);
   }
+  for (const col of free) inks.push({ family: undefined, color: col });
 
-  // Accent: the complement when the palette is all one hue, else the second style, pushed.
-  const accent =
-    top.length >= 2
-      ? lch(inkL + 0.04, Math.min(0.24, chroma * 1.35), inks[1]!.color.h)
-      : lch(dark ? 0.78 : 0.62, Math.min(0.22, chroma * 1.4), age(dominant + 180 + r.range(-25, 25)));
+  const byChroma = [...free].sort((a, b) => b.c - a.c);
+  const accent = byChroma[0] ?? [...pool].sort((a, b) => Math.abs(hueDistance(b.h, inks[0]!.color.h)) - Math.abs(hueDistance(a.h, inks[0]!.color.h)))[0]!;
+  const lightest = [...pool, chosen.bg].sort((a, b) => b.l - a.l)[0]!;
+  const darkest = [...pool].sort((a, b) => a.l - b.l)[0]!;
+  const fg = dark
+    ? lightest.l > 0.8 ? lightest : lch(0.93, 0.02, 85)
+    : darkest.l < 0.35 ? darkest : lch(0.23, 0.03, chosen.bg.h);
 
   return {
     dark,
-    bg,
+    bg: chosen.bg,
     fg,
     inks,
     accent,
-    deep: lch(dark ? 0.11 : 0.18, 0.015, dominant),
+    deep: darkest.l < 0.3 ? mix(darkest, lch(0.1, 0, 0), 0.3) : lch(dark ? 0.1 : 0.17, 0.015, chosen.bg.h),
     grain: 0.05 + 0.13 * vintage + 0.05 * dna.organic,
+    name: chosen.name,
     inkFor(family) {
       if (!family) return inks[0]!.color;
       const exact = inks.find((i) => i.family === family);
       if (exact) return exact.color;
       // Not one of the palette's styles: the ink closest in hue.
       const h = FAMILIES[family].hue;
-      return [...inks].sort((a, b) => Math.abs(hueDistance(a.color.h, h)) - Math.abs(hueDistance(b.color.h, h)))[0]!.color;
+      return [...inks].sort((a, b) => hueMatch(b.color, h) - hueMatch(a.color, h))[0]!.color;
     },
   };
 }
 
 export { hex };
 
+/** 0–1: how well a color stands for a hue (greys stand for none). */
+function hueMatch(col: Lch, hue: number): number {
+  const closeness = (1 + Math.cos((hueDistance(col.h, hue) * Math.PI) / 180)) / 2;
+  return closeness ** 3 * clamp(col.c / 0.08);
+}
+
 /** Signed shortest rotation from `from` to `to`, in degrees. */
 function hueDistance(from: number, to: number): number {
   return ((to - from + 540) % 360) - 180;
+}
+
+function contrast(a: Lch, b: Lch) {
+  return Math.abs(a.l - b.l) + Math.min(0.15, Math.abs(a.c - b.c));
 }
 
 const clamp = (v: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));

@@ -3,11 +3,13 @@
  * song sounds like: its loudness over time (envelope), tempo, energy, busyness and style.
  */
 import { hex, mix, lch, type Lch } from './color.ts';
+import { colonies } from './colonies.ts';
+import { currents } from './currents.ts';
 import type { Dna, Glyph } from './dna.ts';
 import type { Palette } from './palette.ts';
 import { Rng, smoothNoise } from './random.ts';
 
-export type Layout = 'ridges' | 'grooves' | 'blocks' | 'horizon';
+export type Layout = 'ridges' | 'grooves' | 'blocks' | 'horizon' | 'currents' | 'colonies';
 
 export const S = 1000;
 
@@ -19,7 +21,14 @@ interface Ctx {
   defs: string[];
 }
 
-export const LAYOUTS: Record<Layout, (ctx: Ctx) => string> = { ridges, grooves, blocks, horizon };
+export const LAYOUTS: Record<Layout, (ctx: Ctx) => string | Promise<string>> = {
+  ridges,
+  grooves,
+  blocks,
+  horizon,
+  currents,
+  colonies,
+};
 
 /**
  * Ridges, after Joy Division's *Unknown Pleasures*: stacked lines, a band of them per song.

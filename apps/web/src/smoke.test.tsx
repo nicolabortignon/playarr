@@ -266,8 +266,8 @@ describe('Playarr web against live server', () => {
       expect(image.headers.get('content-type')).toBe('image/webp');
       expect((await image.arrayBuffer()).byteLength).toBeGreaterThan(1000);
 
-      // Either still listening to the songs, or the story of the finished cover.
-      await screen.findByText(/Listening to the songs|Each line is a song|A record of the playlist|A tile per song|Each hill is a song/);
+      // Either still listening to the songs, or the facts behind the finished cover.
+      await screen.findByText(/Listening to the songs|energy \d+%/);
     } finally {
       if (id) await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
     }

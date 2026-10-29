@@ -40,7 +40,7 @@ export function playlistRoutes(
       reply
         .header('Cache-Control', req.query.v === hash ? 'public, max-age=31536000, immutable' : 'no-cache')
         .header('ETag', `"${hash}-${svg ? 'svg' : size}"`);
-      if (svg) return reply.type('image/svg+xml').send(covers.svg(dna, hash).svg);
+      if (svg) return reply.type('image/svg+xml').send((await covers.svg(dna, hash)).svg);
       return reply.type('image/webp').send(await covers.image(dna, hash, size));
     }),
   );
