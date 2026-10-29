@@ -5,18 +5,25 @@ import '@fontsource/dm-mono/500.css';
 import './index.css';
 
 import { QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
-import { queryClient } from './lib/queryClient';
+import { persistOptions, queryClient } from './lib/queryClient';
 import { routes } from './routes';
 
 const router = createBrowserRouter(routes);
 
+const app = <RouterProvider router={router} />;
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    {persistOptions ? (
+      <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
+        {app}
+      </PersistQueryClientProvider>
+    ) : (
+      <QueryClientProvider client={queryClient}>{app}</QueryClientProvider>
+    )}
   </StrictMode>,
 );

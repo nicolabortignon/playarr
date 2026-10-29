@@ -10,6 +10,7 @@ import { useCurrentTrack, usePlayer } from '../player/store';
 import { Cover } from './Cover';
 import { Equalizer } from './Equalizer';
 import { FavoriteButton } from './FavoriteButton';
+import { OfflineMark } from './OfflineMark';
 import { InlineLink } from './InlineLink';
 import { Menu } from './Menu';
 
@@ -71,7 +72,10 @@ export function TrackList({ tracks, variant = 'album', showDiscs }: TrackListPro
                 )}
               </div>
               <div className="min-w-0">
-                <div className={cn('truncate text-[15px]', isCurrent ? 'text-accent' : 'text-paper')}>{t.title}</div>
+                <div className="flex items-center gap-2">
+                  <span className={cn('truncate text-[15px]', isCurrent ? 'text-accent' : 'text-paper')}>{t.title}</span>
+                  <OfflineMark fileId={t.fileId} />
+                </div>
                 {variant === 'mixed' && (
                   <div className="truncate text-[13px] text-muted">
                     <InlineLink to={`/artists/${t.artistId}`}>{t.artistName}</InlineLink> <span className="text-ink-600">·</span>{' '}

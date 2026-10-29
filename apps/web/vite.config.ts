@@ -6,6 +6,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 const server = process.env.PLAYARR_SERVER ?? 'http://localhost:4000';
 
 export default defineConfig({
+  define: {
+    // Changes with every build: persisted data from an older build is discarded, not misread.
+    __BUILD_ID__: JSON.stringify(Date.now().toString(36)),
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -27,28 +31,11 @@ export default defineConfig({
           { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        navigateFallback: '/index.html',
-        // Audio must bypass the service worker: Range requests and huge bodies don't belong in a cache.
-        navigateFallbackDenylist: [/^\/api\//, /^\/stream\//, /^\/art\//],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith('/art/'),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'playarr-art',
-              expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 60 },
-              cacheableResponse: { statuses: [200] },
-            },
-          },
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
-            handler: 'NetworkFirst',
-            options: { cacheName: 'playarr-api', networkTimeoutSeconds: 4, expiration: { maxEntries: 200 } },
-          },
-        ],
-      },
+      // Our own service worker (src/sw.ts): it plays kept songs from disk with byte-range support.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
     }),
   ],
   server: {

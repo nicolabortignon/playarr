@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router';
 import { AlbumCard } from '../components/Cards';
 import { ErrorState, SectionHeader, Skeleton } from '../components/Section';
-import { sized } from '../lib/api';
+import { artistHero } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { useArtist } from '../lib/queries';
@@ -55,7 +55,7 @@ export function ArtistPage() {
       <section className="relative isolate flex h-[52vh] min-h-[360px] items-end overflow-hidden md:h-[60vh]">
         {hero && (
           <img
-            src={sized(hero, artist.fanartUrl ? 1200 : 480)}
+            src={artistHero(artist)}
             alt=""
             className={cn(
               'absolute inset-0 -z-10 h-full w-full animate-fade object-cover object-[center_30%]',

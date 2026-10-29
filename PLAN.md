@@ -171,7 +171,7 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
 - [x] Context menus (⋯ menus on tracks and albums). *Long-press still to do.*
 
 ### Phase 4: PWA and mobile
-- [x] Manifest, icons, service worker (app shell precached, artwork CacheFirst, API NetworkFirst, `/stream` bypassed)
+- [x] Manifest, icons, service worker (app shell precached, artwork CacheFirst, API NetworkFirst). Since 2026-10-29 it's our own worker (`src/sw.ts`, injectManifest) that also plays kept songs from disk (§14)
 - [ ] iOS standalone quirks (background audio, safe areas, splash)
 - [x] Gestures on Now Playing (drag down to close). *Swipe for next/prev still to do.*
 
@@ -184,7 +184,7 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
 ### Phase 6: Nice-to-haves
 - [ ] Lyrics (embedded tags / `.lrc` sidecars, synced display)
 - [ ] ReplayGain, crossfade, EQ (Web Audio)
-- [ ] Offline downloads (cache tracks in the service worker / IndexedDB)
+- [x] **Load-ahead and offline songs** (built 2026-10-29, see §14): the next songs in the queue are kept on the device (LRU, size limit in Library), played by the service worker with byte ranges; library data persisted in IndexedDB; pages prefetched on hover/tap. *Next: "Download" pins for whole albums/playlists that never get evicted, and an offline view.*
 - [x] **Discover & request** (built 2026-10-27, see §11): search beyond the library, request albums, live download progress
 - [x] **Playlist recommendations** (built 2026-10-28, see §11): "Songs like these" under each playlist, with Add for songs you own and Request for songs you don't. *Next: the same for Favorites, and a "radio" built from one song.*
 - [x] **Generated playlist covers** (built 2026-10-29, see §13): artwork drawn from what the songs sound like, measured from the audio. *Next: use the same audio features for smart shuffle / mood sorting, and a song "radio".*
@@ -289,6 +289,20 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 
 **How Apple Music does it (for comparison):** default artwork is a live 2×2 mosaic of the first four songs' album art; since iOS 17.1 the user can swipe through 8 preset designs (geometric shapes and gradients, colors from the first song's artwork, title top-left) and pick one; iOS 18 adds an on-device image generator from a text prompt. Playarr borrows the user-picks-and-it-stays model and the title placement; its art is drawn from how every song sounds rather than one song's colors.
 
+## 14. Client-side caching and load-ahead
+
+**Audio.** `player/loadAhead.ts` plans which songs to have ready: the next 3 in play order (wrapping with repeat-all; on repeat-one the current song comes first), then the one playing (worth keeping for seeks, replays and offline). It waits 2.5 s for the queue to settle, so skipping through tracks doesn't download each one, and downloads one song at a time. A download that drops out of the plan is aborted. Data saver/2G: nothing; cellular: one song, not the current one. `player/offline.ts` fetches the whole file (200, not ranges) and writes it to Cache Storage (`playarr-audio`), with an index in localStorage (bytes, last used). Space: default 2 GB, capped at half the browser quota, least recently played dropped first; songs in the current plan are never dropped. It asks for persistent storage once.
+
+**Playback.** The service worker answers `/stream/:id` from `playarr-audio` when the song is kept: the whole file, or the one byte range `<audio>` asks for, sliced from the stored blob by the same `parseRange` the server uses (`@playarr/shared`). Workbox's range helper was dropped: it answered 416 to ranges ending past the file instead of clamping. Songs that aren't kept go straight to the network; the worker never stores audio itself. Load-ahead only runs while a service worker controls the page. The Vite dev server has none, so try it with `pnpm -C apps/web build && pnpm -C apps/web preview` (:4173, proxied to the server).
+
+**Data.** TanStack Query's cache is persisted to IndexedDB (`idb-keyval`): health, artists, albums, album/artist/playlist details and favorites (not search, discover, requests or the random shelf). It's dropped after 7 days or on any new build (`__BUILD_ID__` buster), so old shapes are never misread. The app opens with the last data on screen and refreshes in the background.
+
+**Prefetch.** A mouse resting 80 ms on an album/artist/playlist link, a pointer going down on one, or keyboard focus loads the page's data (an album also loads its artist) and its header image. The next song's cover is preloaded at the player's sizes.
+
+**UI.** A small ⤓ after the title marks songs on the device (track lists, queue, Now Playing). The song downloading shows a progress ring. Library → "On this device" shows songs/space, the limit (Off · 512 MB … 10 GB) and Remove all.
+
+**Requires a secure context.** Cache Storage and service workers only exist on HTTPS or localhost. Over plain `http://192.168.x.x` (a phone on the LAN) none of this runs: songs stream as before, and Library explains why. Ties into the remote-access question (§9): Tailscale Serve or a reverse proxy with a certificate would enable it on phones.
+
 ## 12. Decisions log
 
 | Date | Decision |
@@ -307,6 +321,7 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 | 2026-10-29 | Production build fix: tsup stripped the `node:` prefix (`node:sqlite` → `sqlite`), so `pnpm start` crashed since favorites landed; `removeNodeProtocol: false`. Dev (tsx) was unaffected, which hid it. |
 | 2026-10-29 | Covers v2: curated palettes (chromotome) instead of computed ones; new Currents (flow field) and Colonies (Physarum) layouts. AI image models ruled out: no GPU on the NAS, external services would receive listening data, and results aren't deterministic. |
 | 2026-10-29 | Playlist covers are generated from **measured audio** (ffmpeg on the NAS + our own DSP), not metadata: Deezer's BPM is often 0, AcousticBrainz is gone, and analysis covers every song including obscure ones. Only ~5 MB of low-rate mono PCM per song crosses the network, once. Tests: `pnpm -C apps/server test` (DSP on synthetic click tracks/tones/noise; cover determinism and layout choice). |
+| 2026-10-29 | Client-side caching: the page downloads whole songs into Cache Storage and the service worker serves byte ranges from them (rather than the worker caching what `<audio>` streams, which is only ever partial 206 responses). The page owns the budget/LRU, so the worker stays dumb. Needs HTTPS/localhost; plain-HTTP LAN access gets no offline features. Verified with unit tests (planner, LRU, downloader with fake Cache API, range slicing) and smoke tests; not yet exercised in a real browser from this machine (browser automation unavailable). |
 | 2026-10-27 | Single `<audio>` element (not two swapped ones) so iOS background playback keeps working. Gapless/crossfade come later via Web Audio. |
 | 2026-10-27 | Visual direction "liner notes": warm near-black, Gloock display serif, Schibsted Grotesk UI, DM Mono for specs and durations. The accent color comes from the current cover art; there's a subtle film grain. |
 | 2026-10-27 | Stack versions: React 19, Vite 8, Tailwind 4, React Router 7 (pinned below v8), TanStack Query 5, Zustand 5, Motion 14, Fastify 5, zod 4, TypeScript 7. |

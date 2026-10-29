@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { Cover } from './Cover';
 import { FavoriteButton } from './FavoriteButton';
+import { OfflineMark } from './OfflineMark';
 import { FormatBadge } from './FormatBadge';
 import { Menu } from './Menu';
 import { SeekBar, Transport } from './Transport';
@@ -174,7 +175,10 @@ function UpNext({ onNavigate }: { onNavigate: () => void }) {
           >
             <Cover src={t.coverUrl} size={36} alt="" className="size-9 shrink-0 rounded-[3px]" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm text-paper">{t.title}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="truncate text-sm text-paper">{t.title}</span>
+                <OfflineMark fileId={t.fileId} />
+              </span>
               <span className="block truncate text-xs text-muted">{t.artistName}</span>
             </span>
             <FavoriteButton track={t} reveal />

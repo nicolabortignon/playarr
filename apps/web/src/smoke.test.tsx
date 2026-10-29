@@ -2,13 +2,16 @@
  * End-to-end smoke test against a running Playarr server (pnpm dev:server).
  * Renders every route with real data and drives the player store.
  */
+import type { Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { healQueue } from './player/healQueue';
+import { useOffline } from './player/offline';
 import { usePlayer } from './player/store';
 import { useToasts } from './lib/toast';
+import { useUI } from './lib/ui';
 import { routes } from './routes';
 
 // happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
@@ -23,6 +26,8 @@ afterEach(() => {
   cleanup();
   usePlayer.setState({ queue: [], order: [], pos: -1, playing: false });
   useToasts.setState({ toasts: [] });
+  useOffline.setState({ songs: {}, active: null });
+  useUI.setState({ nowPlayingOpen: false });
   // Each test asserts on its own console errors only.
   errors.length = 0;
 });
@@ -413,6 +418,31 @@ describe('Playarr web against live server', () => {
     await act(async () => fireEvent.click(open[0]!));
     await screen.findByRole('dialog', { name: 'Now playing' });
     expect(screen.getAllByText(s.queue[0]!.title).length).toBeGreaterThan(0);
+    expect(errors.join('\n')).toBe('');
+  });
+
+  it('marks songs kept on this device in the queue, and shows the space they take', async () => {
+    if (!reachable) return;
+    const albums = (await (await fetch('/api/albums')).json()) as { id: number; trackCount: number }[];
+    const album = (await (await fetch(`/api/albums/${albums.find((a) => a.trackCount > 3)!.id}`)).json()) as { tracks: Track[] };
+    const [first, second, third] = album.tracks as [Track, Track, Track];
+    usePlayer.setState({ queue: album.tracks, order: album.tracks.map((_, i) => i), pos: 0, playing: false });
+    // As the load-ahead leaves it: the playing song kept, the next one half downloaded.
+    useOffline.setState({
+      songs: { [first.fileId]: { url: first.streamUrl, bytes: first.size, usedAt: Date.now() } },
+      active: { fileId: second.fileId, loaded: second.size / 2, total: second.size },
+    });
+
+    renderAt('/queue');
+    await screen.findByText('Up next', { exact: false });
+    expect(screen.getAllByRole('img', { name: 'On this device' })).toHaveLength(1);
+    expect(screen.getByRole('img', { name: 'Downloading, 50%' })).toBeTruthy();
+    const row = screen.getAllByText(third.title).at(-1)!.closest('li')!;
+    expect(within(row).queryByRole('img', { name: /On this device|Downloading/ })).toBeNull();
+
+    cleanup();
+    renderAt('/library');
+    expect(await screen.findByRole('heading', { name: 'On this device' })).toBeTruthy();
     expect(errors.join('\n')).toBe('');
   });
 });

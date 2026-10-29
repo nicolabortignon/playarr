@@ -1,4 +1,5 @@
 import { Outlet, ScrollRestoration } from 'react-router';
+import { usePrefetchOnIntent } from '../lib/prefetch';
 import { AudioEngine } from '../player/AudioEngine';
 import { useKeyboardShortcuts } from '../player/useKeyboardShortcuts';
 import { AddToPlaylistDialog } from './AddToPlaylistDialog';
@@ -9,6 +10,7 @@ import { Toasts } from './Toasts';
 
 export function AppShell() {
   useKeyboardShortcuts();
+  usePrefetchOnIntent();
   return (
     <>
       <Sidebar />

@@ -1,3 +1,4 @@
+import type { ByteRange } from '@playarr/shared';
 import { posix } from 'node:path';
 import type { Readable } from 'node:stream';
 
@@ -6,11 +7,7 @@ export interface FileStat {
   mtimeMs: number;
 }
 
-/** Inclusive byte range, like fs.createReadStream's start/end. */
-export interface ByteRange {
-  start: number;
-  end: number;
-}
+export type { ByteRange };
 
 /** Where audio bytes come from: local disk in production, SSH/SFTP from a dev machine. */
 export interface MediaSource {

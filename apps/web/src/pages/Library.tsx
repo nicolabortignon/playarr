@@ -1,5 +1,6 @@
 import { ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
+import { OfflineStorage } from '../components/OfflineStorage';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { SectionHeader } from '../components/Section';
 import { plural } from '../lib/format';
@@ -61,6 +62,8 @@ export function LibraryPage() {
           </Link>
         ))}
       </div>
+
+      <OfflineStorage />
     </div>
   );
 }

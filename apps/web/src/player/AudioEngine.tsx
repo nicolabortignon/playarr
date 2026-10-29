@@ -4,6 +4,7 @@ import { extractAccent } from '../lib/color';
 import { setFaviconAccent } from '../lib/favicon';
 import { toast } from '../lib/toast';
 import { healQueue } from './healQueue';
+import { useLoadAhead } from './loadAhead';
 import { useClock, useCurrentTrack, usePlayer } from './store';
 
 const DEFAULT_ACCENT = '#ff7a1a';
@@ -24,6 +25,8 @@ export function AudioEngine() {
   useEffect(() => {
     void healQueue();
   }, []);
+
+  useLoadAhead();
 
   // Load a new source when the track changes, or restart the current one.
   useEffect(() => {

@@ -5,6 +5,7 @@ import { Cover } from '../components/Cover';
 import { Equalizer } from '../components/Equalizer';
 import { FavoriteButton } from '../components/FavoriteButton';
 import { FormatBadge } from '../components/FormatBadge';
+import { OfflineMark } from '../components/OfflineMark';
 import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
 import { useUI } from '../lib/ui';
@@ -51,6 +52,7 @@ export function QueuePage() {
             <div className="flex items-center gap-2.5">
               <Equalizer playing={playing} />
               <span className="truncate text-lg text-accent">{track.title}</span>
+              <OfflineMark fileId={track.fileId} />
             </div>
             <div className="truncate text-sm text-muted">
               <Link to={`/artists/${track.artistId}`} className="hover:text-paper hover:underline">{track.artistName}</Link>
@@ -86,7 +88,10 @@ export function QueuePage() {
               >
                 <Cover src={t.coverUrl} size={44} alt="" className="size-11 rounded-[3px]" />
                 <div className="min-w-0">
-                  <div className="truncate text-[15px] text-paper">{t.title}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[15px] text-paper">{t.title}</span>
+                    <OfflineMark fileId={t.fileId} />
+                  </div>
                   <div className="truncate text-[13px] text-muted">{t.artistName}</div>
                 </div>
                 <FavoriteButton track={t} reveal />

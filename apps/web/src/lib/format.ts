@@ -34,6 +34,13 @@ export function isHiRes(f: AudioFormat | undefined): boolean {
   return !!f?.lossless && ((f.bits ?? 0) > 16 || (f.sampleRate ?? 0) > 48_000);
 }
 
+/** 356515840 → "340 MB", 1610612736 → "1.5 GB" */
+export function formatBytes(bytes: number): string {
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${gb >= 10 || Number.isInteger(gb) ? Math.round(gb) : gb.toFixed(1)} GB`;
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
 export function plural(n: number, word: string, pluralWord = `${word}s`) {
   return `${n} ${n === 1 ? word : pluralWord}`;
 }

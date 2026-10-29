@@ -96,3 +96,7 @@ export function sized(url: string | undefined, size: number): string | undefined
   const dpr = typeof window === 'undefined' ? 1 : Math.min(window.devicePixelRatio || 1, 2);
   return `${url}${url.includes('?') ? '&' : '?'}size=${Math.round(size * dpr)}`;
 }
+
+/** The artist page's backdrop: the wide fanart, or else the square photo (shown blown up and blurred). */
+export const artistHero = (artist: { fanartUrl?: string; imageUrl?: string }) =>
+  sized(artist.fanartUrl ?? artist.imageUrl, artist.fanartUrl ? 1200 : 480);

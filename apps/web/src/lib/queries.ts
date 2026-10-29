@@ -1,5 +1,5 @@
 import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, CoverLayout, FavoriteTrack, PlaylistDetail, Track } from '@playarr/shared';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
 import { toast } from './toast';
@@ -9,8 +9,8 @@ export const useHealth = () =>
 
 export const useArtists = () => useQuery({ queryKey: ['artists'], queryFn: api.artists });
 
-export const useArtist = (id: number) =>
-  useQuery({ queryKey: ['artist', id], queryFn: () => api.artist(id), enabled: Number.isFinite(id) });
+export const artistQuery = (id: number) => queryOptions({ queryKey: ['artist', id], queryFn: () => api.artist(id) });
+export const useArtist = (id: number) => useQuery({ ...artistQuery(id), enabled: Number.isFinite(id) });
 
 export const useAlbums = (sort: AlbumSort, limit?: number) =>
   useQuery({
@@ -28,8 +28,8 @@ export const useRandomAlbums = (limit = 12, seed = 0) =>
     placeholderData: keepPreviousData,
   });
 
-export const useAlbum = (id: number) =>
-  useQuery({ queryKey: ['album', id], queryFn: () => api.album(id), enabled: Number.isFinite(id) });
+export const albumQuery = (id: number) => queryOptions({ queryKey: ['album', id], queryFn: () => api.album(id) });
+export const useAlbum = (id: number) => useQuery({ ...albumQuery(id), enabled: Number.isFinite(id) });
 
 export const useSearch = (q: string) =>
   useQuery({
@@ -164,10 +164,10 @@ export const usePlaylists = () =>
     refetchInterval: (q) => (q.state.data?.some((p) => p.cover.pending) ? COVER_POLL_MS : false),
   });
 
+export const playlistQuery = (id: number) => queryOptions({ queryKey: ['playlist', id], queryFn: () => api.playlist(id) });
 export const usePlaylist = (id: number) =>
   useQuery({
-    queryKey: ['playlist', id],
-    queryFn: () => api.playlist(id),
+    ...playlistQuery(id),
     enabled: Number.isFinite(id),
     refetchInterval: (q) => (q.state.data?.cover.pending ? COVER_POLL_MS : false),
   });
