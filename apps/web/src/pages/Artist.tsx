@@ -17,10 +17,12 @@ function groupAlbums(albums: Album[]) {
     { title: 'Soundtracks', albums: [] },
     { title: 'EPs & Singles', albums: [] },
     { title: 'Live & Compilations', albums: [] },
+    { title: 'Loose songs', albums: [] },
   ];
   for (const a of albums) {
     const secondary = a.secondaryTypes.map((t) => t.toLowerCase());
-    if (secondary.includes('soundtrack')) groups[1]!.albums.push(a);
+    if (a.albumType === 'Loose') groups[4]!.albums.push(a);
+    else if (secondary.includes('soundtrack')) groups[1]!.albums.push(a);
     else if (secondary.some((t) => ['live', 'compilation', 'remix', 'dj-mix', 'mixtape/street'].includes(t))) groups[3]!.albums.push(a);
     else if (a.albumType === 'EP' || a.albumType === 'Single') groups[2]!.albums.push(a);
     else groups[0]!.albums.push(a);

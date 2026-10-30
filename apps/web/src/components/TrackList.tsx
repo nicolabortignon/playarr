@@ -1,4 +1,4 @@
-import type { Track } from '@playarr/shared';
+import type { MissingTrack, Track } from '@playarr/shared';
 import { Disc3, ListEnd, ListMusic, ListPlus, Mic2, Play } from 'lucide-react';
 import { Fragment } from 'react';
 import { useNavigate } from 'react-router';
@@ -19,9 +19,15 @@ interface TrackListProps {
   /** Show cover + artist for mixed lists (search, random); album pages show numbers instead. */
   variant?: 'album' | 'mixed';
   showDiscs?: boolean;
+  /** Songs on the album that aren't in the library, shown greyed out in their place. */
+  missing?: MissingTrack[];
 }
 
-export function TrackList({ tracks, variant = 'album', showDiscs }: TrackListProps) {
+type Row = { track: Track; index: number } | { missing: MissingTrack };
+const disc = (r: Row) => ('track' in r ? r.track.discNumber : r.missing.discNumber);
+const num = (r: Row) => ('track' in r ? r.track.trackNumber : r.missing.trackNumber);
+
+export function TrackList({ tracks, variant = 'album', showDiscs, missing }: TrackListProps) {
   const current = useCurrentTrack();
   const playing = usePlayer((s) => s.playing);
   const playTracks = usePlayer((s) => s.playTracks);
@@ -29,18 +35,42 @@ export function TrackList({ tracks, variant = 'album', showDiscs }: TrackListPro
   const navigate = useNavigate();
   const openPicker = useUI((s) => s.openPlaylistPicker);
 
+  const rows: Row[] = tracks.map((track, index) => ({ track, index }));
+  if (missing?.length) {
+    rows.push(...missing.map((m) => ({ missing: m })));
+    rows.sort((a, b) => disc(a) - disc(b) || num(a) - num(b));
+  }
+
   return (
     <ol className="flex flex-col">
-      {tracks.map((t, i) => {
+      {rows.map((row, r) => {
+        const discStart = showDiscs && (r === 0 || disc(rows[r - 1]!) !== disc(row));
+        const discHeader = discStart && (
+          <li className="mt-6 mb-2 flex items-center gap-2 px-3 font-mono text-[11px] tracking-[0.2em] text-muted uppercase first:mt-0">
+            <Disc3 className="size-3.5" /> Disc {disc(row)}
+          </li>
+        );
+        if ('missing' in row) {
+          return (
+            <Fragment key={`missing-${row.missing.recordingId}-${r}`}>
+              {discHeader}
+              <li
+                className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-md px-3 py-2 opacity-40 md:gap-4"
+                title="Not in your library"
+              >
+                <span className="text-center font-mono text-sm text-muted tabular">{row.missing.trackNumber}</span>
+                <span className="truncate text-[15px] text-paper">{row.missing.title}</span>
+                <span className="font-mono text-[13px] text-muted tabular">{formatTime(row.missing.duration)}</span>
+              </li>
+            </Fragment>
+          );
+        }
+        const t = row.track;
+        const i = row.index;
         const isCurrent = current?.fileId === t.fileId;
-        const discStart = showDiscs && (i === 0 || tracks[i - 1]!.discNumber !== t.discNumber);
         return (
           <Fragment key={`${t.id}-${i}`}>
-            {discStart && (
-              <li className="mt-6 mb-2 flex items-center gap-2 px-3 font-mono text-[11px] tracking-[0.2em] text-muted uppercase first:mt-0">
-                <Disc3 className="size-3.5" /> Disc {t.discNumber}
-              </li>
-            )}
+            {discHeader}
             <li
               className={cn(
                 'group grid cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-paper/[0.045] md:gap-4',

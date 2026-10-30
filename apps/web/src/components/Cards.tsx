@@ -30,6 +30,12 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
           <div className="truncate text-[13px] text-muted">
             {album.artistName}
             {album.year && <span className="font-mono text-[12px]"> · {album.year}</span>}
+            {album.trackCount < album.totalTrackCount && (
+              <span className="font-mono text-[12px]">
+                {' '}
+                · {album.trackCount} of {album.totalTrackCount}
+              </span>
+            )}
           </div>
         </div>
       </Link>

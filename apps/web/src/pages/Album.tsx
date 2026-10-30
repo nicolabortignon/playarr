@@ -104,7 +104,7 @@ export function AlbumPage() {
         </div>
 
         <div className="mt-8 -mx-3 max-w-5xl md:mt-10">
-          <TrackList tracks={album.tracks} showDiscs={album.discCount > 1} />
+          <TrackList tracks={album.tracks} missing={album.missingTracks} showDiscs={album.discCount > 1} />
         </div>
 
         {album.overview && (
