@@ -6,6 +6,7 @@ import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { albumHref, artistHref } from '../lib/links';
 import { useHasLidarr, useRequestAlbum } from '../lib/queries';
+import { useDelayedFlag } from '../lib/useDelayedFlag';
 import { Cover } from './Cover';
 import { InlineLink } from './InlineLink';
 
@@ -27,6 +28,8 @@ export function RequestButton({
   const request = useRequestAlbum();
   const navigate = useNavigate();
   const hasLidarr = useHasLidarr();
+  // Finding an album can wait on MusicBrainz (about one request per second): say so after a moment.
+  const slow = useDelayedFlag(request.isPending, 2000);
   const base = cn(
     'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full font-mono uppercase tracking-wider transition',
     size === 'sm' ? 'h-7 px-2.5 text-[10px]' : 'h-8 px-3.5 text-[11px]',
@@ -44,8 +47,11 @@ export function RequestButton({
 
   if (request.isPending) {
     return (
-      <span className={cn(base, 'border border-line text-paper-dim')}>
-        <Loader2 className="size-3 animate-spin" /> Requesting
+      <span
+        title={slow ? 'Finding this album on MusicBrainz, which answers about one request per second' : undefined}
+        className={cn(base, 'border border-line text-paper-dim')}
+      >
+        <Loader2 className="size-3 animate-spin" /> {slow ? 'Looking up' : 'Requesting'}
       </span>
     );
   }

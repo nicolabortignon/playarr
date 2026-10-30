@@ -1,5 +1,6 @@
 import { Navigate, Link, useSearchParams } from 'react-router';
 import { Skeleton } from '../components/Section';
+import { SlowLookup } from '../components/SlowLookup';
 import { albumHref, artistHref } from '../lib/links';
 import { useArtistLookup } from '../lib/queries';
 
@@ -30,6 +31,7 @@ export function FindArtistPage() {
       ) : (
         <>
           <p className="mt-5 font-mono text-[12px] text-muted">Looking them up on MusicBrainz…</p>
+          <SlowLookup active what={`“${name}”`} className="mt-3" />
           <Skeleton className="mt-10 h-48 w-full max-w-3xl" />
         </>
       )}

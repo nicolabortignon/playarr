@@ -4,7 +4,7 @@ import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
-import { plural } from '../lib/format';
+import { plural, formatWait } from '../lib/format';
 import { useFolders, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
 import { Dialog } from './Dialog';
 import { ReviewDialog } from './ReviewDialog';
@@ -166,7 +166,8 @@ function SourceStatus({ source: s }: { source: SourceInfo }) {
   const [text, tone] = s.syncing
     ? ['Syncing…', 'text-accent']
     : s.matching > 0
-      ? [`Matching… ${plural(s.matching, 'album')} left`, 'text-accent']
+      ? // Each album takes a few MusicBrainz lookups at about one per second.
+        [`Matching… ${plural(s.matching, 'album')} left · about ${formatWait(s.matching * 3.3)}`, 'text-accent']
       : s.error
         ? [s.error, 'text-red-300/80']
         : !s.enabled

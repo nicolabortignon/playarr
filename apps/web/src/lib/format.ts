@@ -52,3 +52,8 @@ export function greeting(date = new Date()): string {
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
 }
+
+/** A rough wait: "4 s", "2 min". */
+export function formatWait(seconds: number): string {
+  return seconds < 60 ? `${Math.max(1, Math.round(seconds))} s` : `${Math.round(seconds / 60)} min`;
+}

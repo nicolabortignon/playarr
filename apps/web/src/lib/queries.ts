@@ -7,6 +7,15 @@ import { toast } from './toast';
 export const useHealth = () =>
   useQuery({ queryKey: ['health'], queryFn: api.health, staleTime: 30_000, refetchInterval: 60_000 });
 
+/** How busy MusicBrainz is. Polled quickly while lookups wait, slowly otherwise; off when `enabled` is false. */
+export const useMusicBrainzStatus = (enabled = true) =>
+  useQuery({
+    queryKey: ['musicbrainz-status'],
+    queryFn: api.musicbrainzStatus,
+    enabled,
+    refetchInterval: (q) => (q.state.data?.queued ? 1500 : 15_000),
+  });
+
 export const useArtists = () => useQuery({ queryKey: ['artists'], queryFn: api.artists });
 
 export const artistQuery = (id: number) => queryOptions({ queryKey: ['artist', id], queryFn: () => api.artist(id) });

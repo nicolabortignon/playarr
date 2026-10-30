@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { ErrorState, SectionHeader, Skeleton } from '../components/Section';
+import { SlowLookup } from '../components/SlowLookup';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
@@ -23,6 +24,7 @@ export function DiscoverArtistPage() {
       <div className="px-5 pt-10 md:px-10 md:pt-16">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="mt-4 h-16 w-80" />
+        <SlowLookup active what="this artist’s albums" className="mt-6" />
         <div className={cn(GRID, 'mt-12')}>
           {Array.from({ length: 8 }, (_, i) => (
             <Skeleton key={i} className="aspect-square" />

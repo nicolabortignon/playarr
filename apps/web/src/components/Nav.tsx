@@ -1,8 +1,8 @@
 import { Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, Settings, type LucideIcon } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { cn } from '../lib/cn';
-import { formatDuration } from '../lib/format';
-import { activeRequestCount, useHealth, usePlaylists, useRequests } from '../lib/queries';
+import { formatDuration, formatWait } from '../lib/format';
+import { activeRequestCount, useHealth, useMusicBrainzStatus, usePlaylists, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
 
 type NavItem = { to: string; label: string; icon: LucideIcon };
@@ -184,6 +184,7 @@ function SidebarPlaylists() {
 
 function ConnectionStatus() {
   const { data, isError } = useHealth();
+  const { data: mb } = useMusicBrainzStatus();
   const items = [
     ...(data?.lidarr
       ? [
@@ -210,6 +211,19 @@ function ConnectionStatus() {
           {!i.ok && data && <span className="truncate text-red-300/80">offline</span>}
         </div>
       ))}
+      {/* Only while lookups wait: MusicBrainz answers about once a second. */}
+      {mb && mb.queued > 0 && (
+        <div
+          className="flex items-center gap-2"
+          title={`About ${formatWait(mb.etaSeconds)} of MusicBrainz lookups waiting (it answers about once a second)${
+            mb.background ? `; ${mb.background} of them identifying your folder music` : ''
+          }`}
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-accent" />
+          MusicBrainz
+          <span className="truncate text-paper-dim/70">{mb.queued} queued</span>
+        </div>
+      )}
     </div>
   );
 }

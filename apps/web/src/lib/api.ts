@@ -15,6 +15,7 @@ import type {
   PlaylistDetail,
   PlaylistSummary,
   HealthStatus,
+  MusicBrainzStatus,
   MatchingSettings,
   Recommendations,
   ReviewAction,
@@ -52,6 +53,7 @@ const get = <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal
 
 export const api = {
   health: () => get<HealthStatus>('/api/health'),
+  musicbrainzStatus: () => get<MusicBrainzStatus>('/api/musicbrainz/status'),
   artists: () => get<Artist[]>('/api/artists'),
   artist: (id: number) => get<ArtistDetail>(`/api/artists/${id}`),
   artistTracks: (id: number) => get<Track[]>(`/api/artists/${id}/tracks`),
