@@ -2,6 +2,7 @@ import type { MatchingSettings, SourcesResponse } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Matcher } from '../catalog/matcher.ts';
+import { OrganizeError, type Organizer } from '../catalog/organizer.ts';
 import { SourceError, type SourceManager } from '../catalog/sources.ts';
 import type { CatalogStore } from '../catalog/store.ts';
 import type { Library } from '../library/library.ts';
@@ -31,6 +32,8 @@ const reviewInput = z.object({
   search: z.object({ artist: z.string().trim().min(1).max(200), album: z.string().trim().min(1).max(200) }).optional(),
 });
 const matchingInput = z.object({ acoustidKey: z.string().trim().max(100) });
+const organizeInput = z.object({ moves: z.array(z.string()).max(10_000) });
+const undoInput = z.object({ batchId: z.number().int() });
 
 /** Where the AcoustID key is saved (app settings). */
 export const ACOUSTID_KEY = 'acoustid.key';
@@ -58,6 +61,7 @@ async function handle(reply: FastifyReply, fn: () => unknown) {
     return await fn();
   } catch (err) {
     if (err instanceof SourceError) return reply.code(err.status).send({ error: err.message });
+    if (err instanceof OrganizeError) return reply.code(err.status).send({ error: err.message });
     throw err;
   }
 }
@@ -69,11 +73,12 @@ export function settingsRoutes(
     library: LibraryControl;
     matcher: Pick<Matcher, 'reviewGroups' | 'applyRelease' | 'ignore' | 'search' | 'enqueue'>;
     store: Pick<CatalogStore, 'clearMatches' | 'appSetting' | 'setAppSetting'>;
+    organizer: Pick<Organizer, 'plan' | 'apply' | 'undo'>;
     /** fpcalc is installed. */
     fingerprints: boolean;
   },
 ) {
-  const { sources, library, matcher } = deps;
+  const { sources, library, matcher, organizer } = deps;
   // Sync errors are shown per source in the panel, so a failed background sync needs no handling here.
   const syncInBackground = () => void library.refresh().catch(() => {});
   const editable = { onRequest: requireLocal };
@@ -157,6 +162,36 @@ export function settingsRoutes(
       deps.store.clearMatches(id);
       matcher.enqueue(id);
       return reply.code(202).send({});
+    }),
+  );
+
+  // Organizing: the plan lists the server's file names, so reading it is local-only too.
+  app.get<Id>('/api/settings/sources/:id/organize', editable, (req, reply) =>
+    handle(reply, () => organizer.plan(Number(req.params.id))),
+  );
+
+  // A scan writes the file list it saw; moving files under it would leave the catalog pointing at old paths.
+  const notWhileScanning = () => {
+    if (library.refreshing) throw new OrganizeError('A scan is running; try again when it finishes', 409);
+  };
+
+  app.post<Id>('/api/settings/sources/:id/organize', editable, (req, reply) =>
+    handle(reply, async () => {
+      const { moves } = parse(organizeInput, req.body);
+      notWhileScanning();
+      const result = await organizer.apply(Number(req.params.id), moves);
+      library.reload();
+      return result;
+    }),
+  );
+
+  app.post<Id>('/api/settings/sources/:id/organize/undo', editable, (req, reply) =>
+    handle(reply, async () => {
+      const { batchId } = parse(undoInput, req.body);
+      notWhileScanning();
+      const result = await organizer.undo(Number(req.params.id), batchId);
+      library.reload();
+      return result;
     }),
   );
 

@@ -135,6 +135,7 @@ describe('SourceManager', () => {
           kind: 'folder',
           name: 'Music',
           settings: { path: join(dir, 'Music') },
+          writable: true,
         });
         expect(manager.add({ kind: 'folder', name: 'Extra', settings: { path: join(dir, 'More') } }).name).toBe('Extra');
       } finally {

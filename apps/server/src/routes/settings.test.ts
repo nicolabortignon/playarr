@@ -1,8 +1,11 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
+import { Organizer } from '../catalog/organizer.ts';
 import { SourceManager } from '../catalog/sources.ts';
 import { CatalogStore } from '../catalog/store.ts';
-import { freshDb } from '../catalog/testFixtures.ts';
+import { flacBytes, freshDb, mezzanine, tempDir } from '../catalog/testFixtures.ts';
 import { LidarrClient } from '../lidarr/client.ts';
 import { settingsRoutes } from './settings.ts';
 
@@ -15,7 +18,7 @@ function setup(matcher = fakeMatcher()) {
   const sources = new SourceManager(store, new LidarrClient(), { info: () => {} });
   const library = { refresh: vi.fn(async () => {}), reload: vi.fn(), refreshing: false };
   const app = Fastify();
-  settingsRoutes(app, { sources, library, matcher, store, fingerprints: true });
+  settingsRoutes(app, { sources, library, matcher, store, organizer: new Organizer(store), fingerprints: true });
   return { app, store, library, matcher };
 }
 
@@ -138,4 +141,40 @@ describe('settings routes', () => {
     expect(put.body).not.toContain('secret');
     expect((await app.inject({ method: 'PUT', url: '/api/settings/matching', payload: { acoustidKey: 'x' }, remoteAddress: AWAY })).statusCode).toBe(403);
   });
+
+  it('plans, applies and undoes organizing from the home network only', async () => {
+    const t = tempDir();
+    try {
+      mkdirSync(join(t.dir, 'misc'));
+      writeFileSync(join(t.dir, 'misc/a.flac'), flacBytes());
+      const { app, store, library } = setup();
+      const id = store.addSource('folder', 'Music', { path: t.dir });
+      const sync = mezzanine();
+      sync.copies = [{ ...sync.copies[0]!, ref: 'misc/a.flac', path: join(t.dir, 'misc/a.flac'), preferredId: undefined }];
+      store.applySync(id, sync);
+
+      expect((await app.inject({ method: 'GET', url: `/api/settings/sources/${id}/organize`, remoteAddress: AWAY })).statusCode).toBe(403);
+      const plan = (await app.inject({ method: 'GET', url: `/api/settings/sources/${id}/organize`, remoteAddress: HOME })).json();
+      expect(plan.moves).toEqual([expect.objectContaining({ from: 'misc/a.flac', to: 'Massive Attack/Mezzanine/01 Angel.flac' })]);
+
+      const applied = await app.inject({ method: 'POST', url: `/api/settings/sources/${id}/organize`, payload: { moves: ['misc/a.flac'] }, remoteAddress: HOME });
+      expect(applied.json()).toMatchObject({ moved: 1 });
+      expect(library.reload).toHaveBeenCalled();
+
+      const undone = await app.inject({ method: 'POST', url: `/api/settings/sources/${id}/organize/undo`, payload: { batchId: applied.json().batchId }, remoteAddress: HOME });
+      expect(undone.json()).toMatchObject({ restored: 1 });
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it('organizes folder sources only, and not while a scan runs', async () => {
+    const { app, store, library } = setup();
+    const lidarrId = store.addSource('lidarr', 'Lidarr', { url: 'http://lidarr:8686', apiKey: 'k' });
+    expect((await app.inject({ method: 'GET', url: `/api/settings/sources/${lidarrId}/organize`, remoteAddress: HOME })).statusCode).toBe(404);
+    library.refreshing = true;
+    const busy = await app.inject({ method: 'POST', url: `/api/settings/sources/${lidarrId}/organize`, payload: { moves: [] }, remoteAddress: HOME });
+    expect(busy.statusCode).toBe(409);
+  });
 });
+

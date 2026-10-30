@@ -9,6 +9,7 @@ import { AcoustId, fpcalc, hasFpcalc } from './catalog/acoustid.ts';
 import { FileResolver } from './catalog/files.ts';
 import { Matcher } from './catalog/matcher.ts';
 import { toReleaseInfo } from './catalog/mbRelease.ts';
+import { Organizer } from './catalog/organizer.ts';
 import { SourceManager } from './catalog/sources.ts';
 import { CatalogStore } from './catalog/store.ts';
 import { PlaylistCovers } from './cover/index.ts';
@@ -66,6 +67,8 @@ const matcher = new Matcher({
   log: { warn: (m) => app.log.warn(m) },
 });
 sources.useMatcher(matcher);
+// Moves folder files into Artist/Album/NN Title on request (Settings → Sources → Organize files).
+const organizer = new Organizer(store);
 const art = new LocalArt(lidarr, resolve(config.CACHE_DIR, 'art'));
 // Keep every cover cached locally so browsing never waits on Lidarr.
 library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
@@ -90,7 +93,7 @@ streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
-settingsRoutes(app, { sources, library, matcher, store, fingerprints });
+settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints });
 statusRoutes(app, {
   musicbrainz,
   matching: () => store.listSources().reduce((n, s) => n + matcher.pendingGroups(s.id), 0),

@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { LidarrClient } from '../lidarr/client.ts';
 import { FolderSource } from './folderSource.ts';
 import { LidarrSource } from './lidarr.ts';
+import { isWritable } from './organizer.ts';
 import { checkFolder, listFolders } from './paths.ts';
 import type { CatalogStore, SourceRecord } from './store.ts';
 import type { CatalogSource } from './types.ts';
@@ -207,6 +208,7 @@ function toInfo(
   matching: { review: number; matching: number },
   opts: { includeSettings: boolean; syncing: boolean },
 ): SourceInfo {
+  const folderPath = s.kind === 'folder' ? (s.settings as FolderSettings).path : undefined;
   return {
     id: s.id,
     kind: s.kind,
@@ -222,6 +224,7 @@ function toInfo(
     albums: counts?.albums ?? 0,
     review: matching.review,
     matching: matching.matching,
+    ...(folderPath ? { writable: isWritable(folderPath) } : {}),
   };
 }
 
