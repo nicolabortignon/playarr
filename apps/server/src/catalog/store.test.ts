@@ -297,3 +297,45 @@ describe('CatalogStore: matching', () => {
     expect(one('SELECT recording_id FROM track_features').recording_id).toBe('rec-1');
   });
 });
+
+describe('CatalogStore: organizing', () => {
+  function folderWithMezzanine() {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('folder', 'Music', { path: '/music' });
+    const sync = mezzanine();
+    sync.copies = sync.copies.map((c, i) => ({ ...c, ref: `misc/${i}.flac`, path: `/music/misc/${i}.flac`, preferredId: undefined }));
+    store.applySync(id, sync);
+    return { store, id };
+  }
+
+  it('lists each folder file with where the catalog puts it', () => {
+    const { store, id } = folderWithMezzanine();
+    expect(store.organizeFiles(id, '/music')).toEqual([
+      { rel: 'misc/0.flac', artist: 'Massive Attack', album: 'Mezzanine', title: 'Angel', trackNumber: 1, discNumber: 1, multiDisc: false, confident: true },
+      { rel: 'misc/1.flac', artist: 'Massive Attack', album: 'Mezzanine', title: 'Risingson', trackNumber: 2, discNumber: 1, multiDisc: false, confident: true },
+    ]);
+  });
+
+  it('follows a renamed file everywhere, keeping its copy id', () => {
+    const { store, id } = folderWithMezzanine();
+    const tags = { genres: [], duration: 1, format: { codec: 'FLAC', container: 'flac', lossless: true } };
+    store.saveFolderFiles(id, [{ rel: 'misc/0.flac', size: 1, mtimeMs: 1, tags }], ['misc/0.flac', 'misc/1.flac']);
+    store.saveMatches(id, [{ rel: 'misc/0.flac', groupKey: 'g', state: 'manual', size: 1, mtimeMs: 1 }]);
+    const copyId = store.load().copies.find((c) => c.path === '/music/misc/0.flac')!.id;
+    store.renameFolderFile(id, 'misc/0.flac', 'Massive Attack/Mezzanine/01 Angel.flac', '/music/Massive Attack/Mezzanine/01 Angel.flac');
+    expect(store.load().copies.find((c) => c.id === copyId)!.path).toBe('/music/Massive Attack/Mezzanine/01 Angel.flac');
+    expect(store.folderFiles(id).has('Massive Attack/Mezzanine/01 Angel.flac')).toBe(true);
+    expect(store.matches(id).has('Massive Attack/Mezzanine/01 Angel.flac')).toBe(true);
+  });
+
+  it('journals moves by batch', () => {
+    const { store, id } = folderWithMezzanine();
+    const batch = store.nextMoveBatch();
+    store.logMove(id, batch, 'a', 'b');
+    store.logMove(id, batch, 'c', 'd');
+    expect(store.lastMoveBatch(id)).toMatchObject({ id: batch, files: 2 });
+    expect(store.movesOf(id, batch).map((m) => m.from)).toEqual(['a', 'c']);
+    store.markUndone(store.movesOf(id, batch).map((m) => m.id));
+    expect(store.lastMoveBatch(id)).toBeUndefined();
+  });
+});

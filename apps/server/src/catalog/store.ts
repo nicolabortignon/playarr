@@ -1,8 +1,10 @@
 import type { AudioFormat } from '@playarr/shared';
+import { relative } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { albumKey as albumNameKey, normalize } from '../library/search.ts';
 import { songNameKey } from './keys.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
+import type { OrganizeFile } from './organize.ts';
 import type { MatchRecord, TagInfo } from './tags.ts';
 import type {
   KnownTrack,
@@ -155,6 +157,7 @@ export class CatalogStore {
       this.db.prepare('DELETE FROM source_tracks WHERE source_id = ?').run(id);
       this.db.prepare('DELETE FROM folder_files WHERE source_id = ?').run(id);
       this.db.prepare('DELETE FROM folder_matches WHERE source_id = ?').run(id);
+      this.db.prepare('DELETE FROM file_moves WHERE source_id = ?').run(id);
       this.db.prepare('DELETE FROM sources WHERE id = ?').run(id);
       this.db.exec('COMMIT');
     } catch (err) {
@@ -547,6 +550,98 @@ export class CatalogStore {
     this.db
       .prepare('INSERT OR REPLACE INTO mb_releases (release_id, data, fetched_at) VALUES (?, ?, ?)')
       .run(release.id, JSON.stringify(release), new Date().toISOString());
+  }
+
+  /** Each audio file of a folder source with where the merged catalog puts it. */
+  organizeFiles(sourceId: number, root: string): OrganizeFile[] {
+    const rows = this.load();
+    const tracks = new Map(rows.tracks.map((t) => [t.id, t]));
+    const albums = new Map(rows.albums.map((a) => [a.id, a]));
+    const artists = new Map(rows.artists.map((a) => [a.id, a]));
+    const discsOf = new Map<number, Set<number>>();
+    for (const t of rows.tracks) {
+      const set = discsOf.get(t.albumId) ?? new Set<number>();
+      set.add(t.meta.discNumber);
+      discsOf.set(t.albumId, set);
+    }
+    return rows.copies
+      .filter((c) => c.sourceId === sourceId)
+      .flatMap((c) => {
+        const track = tracks.get(c.trackId);
+        const album = track && albums.get(track.albumId);
+        const artist = album && artists.get(album.artistId);
+        if (!track || !album || !artist) return [];
+        const loose = album.key.startsWith('loose:');
+        return [
+          {
+            rel: relative(root, c.path).split('\\').join('/'),
+            artist: artist.meta.name,
+            album: loose ? undefined : album.meta.title,
+            title: track.meta.title,
+            trackNumber: track.meta.trackNumber,
+            discNumber: track.meta.discNumber,
+            multiDisc: (discsOf.get(album.id)?.size ?? 1) > 1,
+            confident: !track.recordingId.startsWith('local:') && album.key.startsWith('mb:'),
+          },
+        ];
+      })
+      .sort((a, b) => a.rel.localeCompare(b.rel));
+  }
+
+  /** A folder file was moved: its copy, tag cache and match follow it (the copy keeps its id). */
+  renameFolderFile(sourceId: number, fromRel: string, toRel: string, toPath: string) {
+    this.db.exec('BEGIN');
+    try {
+      this.db
+        .prepare('UPDATE copies SET source_ref = ?, path = ? WHERE source_id = ? AND source_ref = ?')
+        .run(toRel, toPath, sourceId, fromRel);
+      this.db
+        .prepare('UPDATE folder_files SET rel_path = ? WHERE source_id = ? AND rel_path = ?')
+        .run(toRel, sourceId, fromRel);
+      this.db
+        .prepare('UPDATE folder_matches SET rel_path = ? WHERE source_id = ? AND rel_path = ?')
+        .run(toRel, sourceId, fromRel);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  nextMoveBatch(): number {
+    return (this.db.prepare('SELECT COALESCE(MAX(batch), 0) + 1 AS next FROM file_moves').get() as { next: number }).next;
+  }
+
+  logMove(sourceId: number, batch: number, fromRel: string, toRel: string) {
+    this.db
+      .prepare('INSERT INTO file_moves (batch, source_id, from_rel, to_rel, moved_at) VALUES (?, ?, ?, ?, ?)')
+      .run(batch, sourceId, fromRel, toRel, new Date().toISOString());
+  }
+
+  /** A batch's moves not undone yet, in the order they happened. */
+  movesOf(sourceId: number, batch: number): { id: number; from: string; to: string }[] {
+    return this.db
+      .prepare(
+        'SELECT id, from_rel AS "from", to_rel AS "to" FROM file_moves WHERE source_id = ? AND batch = ? AND undone_at IS NULL ORDER BY id',
+      )
+      .all(sourceId, batch) as { id: number; from: string; to: string }[];
+  }
+
+  markUndone(ids: number[]) {
+    const now = new Date().toISOString();
+    const mark = this.db.prepare('UPDATE file_moves SET undone_at = ? WHERE id = ?');
+    for (const id of ids) mark.run(now, id);
+  }
+
+  /** The newest batch with moves left to undo. */
+  lastMoveBatch(sourceId: number): { id: number; files: number; at: string } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT batch AS id, COUNT(*) AS files, MAX(moved_at) AS at FROM file_moves
+         WHERE source_id = ? AND undone_at IS NULL GROUP BY batch ORDER BY batch DESC LIMIT 1`,
+      )
+      .get(sourceId) as { id: number; files: number; at: string } | undefined;
+    return row ?? undefined;
   }
 
   /** Insert or update a catalog row by key; returns its id. Metadata changes only if `rank` is at least as trusted. */
