@@ -50,9 +50,11 @@ try {
   if (local) {
     step(`Shipping ${revision} to ${env.SSH_HOST}:${DIR}`);
     await run(
-      `mkdir -p ${DIR}/config ${DIR}/cache && rm -rf ${DIR}/src.new && mkdir ${DIR}/src.new` +
+      `mkdir -p ${DIR}/config ${DIR}/cache ${DIR}/update && chmod 775 ${DIR}/update && rm -rf ${DIR}/src.new && mkdir ${DIR}/src.new` +
         ` && tar -x -C ${DIR}/src.new && echo ${revision} > ${DIR}/src.new/REVISION` +
         ` && rm -rf ${DIR}/src && mv ${DIR}/src.new ${DIR}/src && cp ${DIR}/src/docker/compose.yaml ${DIR}/` +
+        // The updater (Settings → Updates) runs update.sh from the deploy folder.
+        ` && cp ${DIR}/src/docker/update.sh ${DIR}/update.sh.new && mv ${DIR}/update.sh.new ${DIR}/update.sh` +
         // The NAS's update.sh would otherwise think GitHub's commit is still the one running.
         ` && rm -f ${DIR}/DEPLOYED`,
       { stdin: git('archive', '--format=tar', 'HEAD') },
@@ -67,6 +69,8 @@ try {
     `LIDARR_URL=${LIDARR_URL}`,
     `LIDARR_API_KEY=${env.LIDARR_API_KEY}`,
     `MUSIC_DIR=${MUSIC_DIR}`,
+    // Where the updater container mounts this folder (the same path as here: see compose.yaml).
+    `PLAYARR_DIR=${DIR}`,
   ];
   // chmod as well as umask: the NAS's inherited ACLs otherwise leave it readable by everyone.
   await run(`umask 077 && cat > ${DIR}/.env && chmod 600 ${DIR}/.env`, { stdin: `${settings.join('\n')}\n` });

@@ -18,13 +18,34 @@ services:
       # Music is mounted where Lidarr sees it, so its paths work as they are; reads stay inside it.
       PATH_MAP: /data/media/music=/data/media/music
       TZ: ${TZ:-Europe/London}
+      UPDATE_DIR: /update
     volumes:
       - ${MUSIC_DIR}:/data/media/music:ro
       - ./config:/config # favorites, playlists, song analysis (keep)
       - ./cache:/cache # artwork and covers (safe to delete)
+      - ./update:/update # Settings → Updates talks to the updater through this folder
       # Host folders for Settings → Sources → Folder → This server go under /host. Don't add them here
       # (update.sh replaces this file): put them in compose.override.yaml next to it, see
       # compose.override.example.yaml.
     ports:
       - "4000:4000"
+    restart: unless-stopped
+
+  # Settings → Updates: rebuilds Playarr from GitHub main when asked (docker/updater.sh).
+  # The only container with the Docker socket; it has no ports.
+  updater:
+    build:
+      context: ./src
+      dockerfile: docker/updater.Dockerfile
+    image: playarr-updater:latest
+    container_name: playarr-updater
+    init: true
+    environment:
+      PLAYARR_DIR: ${PLAYARR_DIR:-/volume1/docker/playarr}
+      PLAYARR_REPO: ${PLAYARR_REPO:-nicolabortignon/playarr}
+      TZ: ${TZ:-Europe/London}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The deploy folder at the same path as on the host, so compose's relative paths stay right.
+      - .:${PLAYARR_DIR:-/volume1/docker/playarr}
     restart: unless-stopped
