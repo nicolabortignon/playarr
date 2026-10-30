@@ -1,3 +1,4 @@
+import { posix } from 'node:path';
 import { z } from 'zod';
 
 const schema = z.object({
@@ -18,6 +19,9 @@ const schema = z.object({
   MEDIA_SOURCE: z.enum(['none', 'local', 'sftp', 'ssh']).default('none'),
   // Comma-separated "lidarrPrefix=playarrPrefix" pairs.
   PATH_MAP: z.string().default(''),
+  // Folders that folder sources may use and Settings may browse (comma-separated absolute paths).
+  // The Docker image sets /host, where a broad read-only mount of the host goes.
+  FOLDER_ROOTS: z.string().default('/'),
 
   // Requests: where new artists go in Lidarr (defaults: the root folder's own defaults).
   LIDARR_ROOT_FOLDER: z.string().optional(),
@@ -39,7 +43,7 @@ const schema = z.object({
   SSH_PASSWORD: z.string().optional(),
 });
 
-export type Config = z.infer<typeof schema> & { pathMap: [from: string, to: string][] };
+export type Config = z.infer<typeof schema> & { pathMap: [from: string, to: string][]; folderRoots: string[] };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // Treat empty strings in .env as "unset" so defaults and optionals apply.
@@ -57,5 +61,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       if (idx <= 0) throw new Error(`Invalid PATH_MAP entry "${pair}" (expected from=to)`);
       return [pair.slice(0, idx), pair.slice(idx + 1)] as [string, string];
     });
-  return { ...parsed.data, pathMap };
+  const folderRoots = parsed.data.FOLDER_ROOTS.split(',')
+    .map((r) => r.trim())
+    .filter((r) => r.startsWith('/'))
+    .map((r) => posix.normalize(r).replace(/(.)\/+$/, '$1'));
+  return { ...parsed.data, pathMap, folderRoots: folderRoots.length ? folderRoots : ['/'] };
 }
