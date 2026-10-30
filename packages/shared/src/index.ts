@@ -310,6 +310,10 @@ export interface SourceInfo {
   syncing: boolean;
   songs: number;
   albums: number;
+  /** Folder sources: album groups waiting for the user's review. */
+  review: number;
+  /** Folder sources: album groups still being matched. */
+  matching: number;
 }
 
 export interface SourcesResponse {
@@ -341,4 +345,49 @@ export interface FolderListing {
   folders: { name: string; path: string }[];
   /** Audio files directly in this folder. */
   audioFiles: number;
+}
+
+// ── Matching: identifying folder music on MusicBrainz ───────────────────────
+
+export interface ReviewFile {
+  rel: string;
+  title: string;
+  trackNumber: number;
+  discNumber: number;
+  duration: number;
+}
+
+export interface ReviewCandidate {
+  releaseId: string;
+  title: string;
+  artistName: string;
+  year?: number;
+  /** 0..1 */
+  score: number;
+  tracks: { disc: number; position: number; title: string; duration: number }[];
+  /** File (rel) → index in `tracks` it was matched to. */
+  matches: Record<string, number>;
+}
+
+export interface ReviewGroup {
+  groupKey: string;
+  artistName: string;
+  albumTitle?: string;
+  files: ReviewFile[];
+  candidates: ReviewCandidate[];
+}
+
+export interface ReviewAction {
+  groupKey: string;
+  /** A candidate to use; null: leave this group unmatched for good. */
+  releaseId?: string | null;
+  /** Look for other candidates. */
+  search?: { artist: string; album: string };
+}
+
+export interface MatchingSettings {
+  /** An AcoustID key is saved (the key itself is never sent). */
+  acoustid: boolean;
+  /** fpcalc (Chromaprint) is installed, so fingerprints can be computed. */
+  fingerprints: boolean;
 }
