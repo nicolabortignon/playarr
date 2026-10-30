@@ -24,6 +24,7 @@ services:
       - ./cache:/cache # artwork and covers (safe to delete)
       # Folders to offer as sources in Settings → Sources: mount a broad host folder read-only at /host.
       # - /volume1:/host:ro
+      # Folders you want Playarr to organize must be mounted read-write, e.g. - /volume1/music-inbox:/host/inbox
     ports:
       - "4000:4000"
     restart: unless-stopped
