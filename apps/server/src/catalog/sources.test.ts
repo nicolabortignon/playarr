@@ -1,8 +1,10 @@
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LidarrClient } from '../lidarr/client.ts';
 import { SourceError, SourceManager } from './sources.ts';
 import { CatalogStore } from './store.ts';
-import { freshDb } from './testFixtures.ts';
+import { freshDb, tempDir } from './testFixtures.ts';
 
 const ENV = { url: 'http://lidarr:8686', apiKey: 'secret-key' };
 
@@ -84,8 +86,8 @@ describe('SourceManager', () => {
     expect(() => manager.add({ kind: 'lidarr', settings: ENV })).toThrow(SourceError);
   });
 
-  it('only accepts Lidarr sources for now', () => {
-    expect(() => setup().manager.add({ kind: 'folder' })).toThrow(/Only Lidarr/);
+  it('rejects unknown kinds', () => {
+    expect(() => setup().manager.add({ kind: 'cloud' as never })).toThrow(/Unknown source kind/);
   });
 
   it('rejects an order that misses a source', () => {
@@ -112,6 +114,66 @@ describe('SourceManager', () => {
     await expect(setup().manager.test({ url: ENV.url, apiKey: 'wrong' })).resolves.toEqual({
       ok: false,
       error: 'Lidarr rejected the API key',
+    });
+  });
+
+  describe('folders', () => {
+    function withFolders() {
+      const t = tempDir();
+      mkdirSync(join(t.dir, 'Music'));
+      mkdirSync(join(t.dir, 'More'));
+      const store = new CatalogStore(freshDb());
+      const lidarr = new LidarrClient();
+      const manager = new SourceManager(store, lidarr, { info: () => {} }, [t.dir]);
+      return { ...t, store, lidarr, manager };
+    }
+
+    it('adds folders inside the allowed roots, several of them', () => {
+      const { dir, manager, cleanup } = withFolders();
+      try {
+        expect(manager.add({ kind: 'folder', settings: { path: join(dir, 'Music') } })).toMatchObject({
+          kind: 'folder',
+          name: 'Music',
+          settings: { path: join(dir, 'Music') },
+        });
+        expect(manager.add({ kind: 'folder', name: 'Extra', settings: { path: join(dir, 'More') } }).name).toBe('Extra');
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('rejects folders that are missing or outside the roots', () => {
+      const { dir, manager, cleanup } = withFolders();
+      try {
+        expect(() => manager.add({ kind: 'folder', settings: { path: join(dir, 'Nope') } })).toThrow(SourceError);
+        expect(() => manager.add({ kind: 'folder', settings: { path: '/etc' } })).toThrow(/outside/);
+        expect(() => manager.add({ kind: 'folder' })).toThrow(/needs a folder/);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('turns enabled sources into adapters in Settings order', () => {
+      const { dir, store, manager, cleanup } = withFolders();
+      try {
+        const music = manager.add({ kind: 'folder', settings: { path: join(dir, 'Music') } });
+        manager.add({ kind: 'lidarr', settings: { url: 'http://lidarr:8686', apiKey: 'k' } });
+        expect(manager.active().map((a) => a.source.kind)).toEqual(['folder', 'lidarr']);
+        store.updateSource(music.id, { enabled: false });
+        expect(manager.active().map((a) => a.source.kind)).toEqual(['lidarr']);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('browses only inside the roots', async () => {
+      const { dir, manager, cleanup } = withFolders();
+      try {
+        expect((await manager.listFolders(dir)).folders.map((f) => f.name)).toEqual(['More', 'Music']);
+        await expect(manager.listFolders('/etc')).rejects.toThrow(SourceError);
+      } finally {
+        cleanup();
+      }
     });
   });
 });
