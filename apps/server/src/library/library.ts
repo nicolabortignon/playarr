@@ -31,8 +31,8 @@ export class Library {
 
   constructor(
     private readonly store: CatalogStore,
-    /** Where the catalog comes from, each with its row in the sources table. */
-    private readonly sources: { id: number; source: CatalogSource }[],
+    /** The sources to sync, read on every refresh (Settings can change them). */
+    private readonly sources: () => { id: number; source: CatalogSource }[],
     private readonly log: { info: (msg: string) => void; error: (msg: string) => void },
   ) {}
 
@@ -47,6 +47,17 @@ export class Library {
     this.snapshot = toSnapshot(buildCatalog(this.store.load()));
     this.log.info(`Library loaded from the database: ${this.snapshot.stats.albums} albums`);
     return true;
+  }
+
+  /** True while the sources are syncing. */
+  get refreshing(): boolean {
+    return this.inflight !== null;
+  }
+
+  /** Rebuild from the stored catalog without syncing, e.g. after a source was removed or reordered. */
+  reload() {
+    this.snapshot = toSnapshot(buildCatalog(this.store.load()));
+    for (const listener of this.listeners) listener(this);
   }
 
   /** Every artwork URL the library references (for cache warming). */
@@ -97,7 +108,15 @@ export class Library {
 
   private async build(): Promise<Snapshot> {
     const results = await Promise.allSettled(
-      this.sources.map(async ({ id, source }) => this.store.applySync(id, await source.sync())),
+      this.sources().map(async ({ id, source }) => {
+        try {
+          this.store.applySync(id, await source.sync());
+          this.store.setSyncError(id, null);
+        } catch (err) {
+          this.store.setSyncError(id, (err as Error).message);
+          throw err;
+        }
+      }),
     );
     const failures = results.flatMap((r) => (r.status === 'rejected' ? [r.reason as Error] : []));
     // One unreachable source shouldn't hide the others: its last sync stays in the catalog.
