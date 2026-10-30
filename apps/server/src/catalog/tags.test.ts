@@ -1,7 +1,8 @@
-import { writeFileSync } from 'node:fs';
+import { statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { readTags } from './tags.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LocalMediaSource } from '../media/local.ts';
+import { readTags, readTagsFrom } from './tags.ts';
 import { flacBytes, tempDir } from './testFixtures.ts';
 
 let cleanup = () => {};
@@ -60,5 +61,14 @@ describe('readTags', () => {
 
   it('returns null for a file that is not audio', async () => {
     expect(await readTags(file('broken.mp3', Buffer.from('not audio at all')))).toBeNull();
+  });
+
+  it('reads tags from byte ranges through any media source', async () => {
+    const path = file('01.flac', flacBytes({ TITLE: 'Angel', MUSICBRAINZ_TRACKID: 'rec-1' }));
+    const media = new LocalMediaSource();
+    const open = vi.spyOn(media, 'open');
+    const tags = await readTagsFrom(media, path, statSync(path).size);
+    expect(tags).toMatchObject({ title: 'Angel', recordingMbid: 'rec-1', duration: 200, format: { codec: 'FLAC', container: 'flac' } });
+    expect(open.mock.calls.every(([, range]) => range !== undefined)).toBe(true);
   });
 });
