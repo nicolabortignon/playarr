@@ -10,13 +10,23 @@ const HOME = '192.168.1.20';
 const AWAY = '203.0.113.5';
 const lidarr = { kind: 'lidarr', name: 'Lidarr', settings: { url: 'http://lidarr:8686', apiKey: 'secret-key' } };
 
-function setup() {
+function setup(matcher = fakeMatcher()) {
   const store = new CatalogStore(freshDb());
   const sources = new SourceManager(store, new LidarrClient(), { info: () => {} });
   const library = { refresh: vi.fn(async () => {}), reload: vi.fn(), refreshing: false };
   const app = Fastify();
-  settingsRoutes(app, { sources, library });
-  return { app, store, library };
+  settingsRoutes(app, { sources, library, matcher, store, fingerprints: true });
+  return { app, store, library, matcher };
+}
+
+function fakeMatcher() {
+  return {
+    reviewGroups: vi.fn(() => [{ groupKey: 'g', artistName: 'A', files: [], candidates: [] }]),
+    applyRelease: vi.fn(async () => {}),
+    ignore: vi.fn(),
+    search: vi.fn(async () => {}),
+    enqueue: vi.fn(),
+  };
 }
 
 describe('settings routes', () => {
@@ -94,5 +104,38 @@ describe('settings routes', () => {
       remoteAddress: HOME,
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('lists and resolves review groups from the home network', async () => {
+    const { app, matcher } = setup();
+    expect((await app.inject({ method: 'GET', url: '/api/settings/sources/1/review', remoteAddress: AWAY })).statusCode).toBe(403);
+    const list = await app.inject({ method: 'GET', url: '/api/settings/sources/1/review', remoteAddress: HOME });
+    expect(list.json()).toEqual([{ groupKey: 'g', artistName: 'A', files: [], candidates: [] }]);
+    const apply = await app.inject({ method: 'POST', url: '/api/settings/sources/1/review', payload: { groupKey: 'g', releaseId: 'rel-1' }, remoteAddress: HOME });
+    expect(apply.statusCode).toBe(204);
+    expect(matcher.applyRelease).toHaveBeenCalledWith(1, 'g', 'rel-1');
+    await app.inject({ method: 'POST', url: '/api/settings/sources/1/review', payload: { groupKey: 'g', releaseId: null }, remoteAddress: HOME });
+    expect(matcher.ignore).toHaveBeenCalledWith(1, 'g');
+    await app.inject({ method: 'POST', url: '/api/settings/sources/1/review', payload: { groupKey: 'g', search: { artist: 'A', album: 'B' } }, remoteAddress: HOME });
+    expect(matcher.search).toHaveBeenCalledWith(1, 'g', 'A', 'B');
+  });
+
+  it('matches a source again on request', async () => {
+    const { app, matcher, store } = setup();
+    const id = store.addSource('folder', 'Music', { path: '/m' });
+    store.saveMatches(id, [{ rel: 'a', groupKey: 'g', state: 'auto', size: 1, mtimeMs: 1 }]);
+    const res = await app.inject({ method: 'POST', url: `/api/settings/sources/${id}/rematch`, remoteAddress: HOME });
+    expect(res.statusCode).toBe(202);
+    expect(store.matches(id).size).toBe(0);
+    expect(matcher.enqueue).toHaveBeenCalledWith(id);
+  });
+
+  it('saves the AcoustID key without ever sending it back', async () => {
+    const { app } = setup();
+    expect((await app.inject({ method: 'GET', url: '/api/settings/matching', remoteAddress: HOME })).json()).toEqual({ acoustid: false, fingerprints: true });
+    const put = await app.inject({ method: 'PUT', url: '/api/settings/matching', payload: { acoustidKey: 'secret' }, remoteAddress: HOME });
+    expect(put.json()).toEqual({ acoustid: true, fingerprints: true });
+    expect(put.body).not.toContain('secret');
+    expect((await app.inject({ method: 'PUT', url: '/api/settings/matching', payload: { acoustidKey: 'x' }, remoteAddress: AWAY })).statusCode).toBe(403);
   });
 });

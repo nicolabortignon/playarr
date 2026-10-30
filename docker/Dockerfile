@@ -23,7 +23,8 @@ RUN pnpm build \
 
 FROM node:24-alpine
 # ffmpeg measures each song (tempo, energy…) for the generated playlist covers.
-RUN apk add --no-cache ffmpeg
+# chromaprint provides fpcalc, for identifying songs by their sound.
+RUN apk add --no-cache ffmpeg chromaprint
 WORKDIR /app
 COPY --from=build /out/server ./server
 COPY --from=build /out/web ./web

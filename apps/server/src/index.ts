@@ -5,7 +5,10 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
 import { Analyzer } from './analysis/analyzer.ts';
+import { AcoustId, fpcalc, hasFpcalc } from './catalog/acoustid.ts';
 import { FileResolver } from './catalog/files.ts';
+import { Matcher } from './catalog/matcher.ts';
+import { toReleaseInfo } from './catalog/mbRelease.ts';
 import { SourceManager } from './catalog/sources.ts';
 import { CatalogStore } from './catalog/store.ts';
 import { PlaylistCovers } from './cover/index.ts';
@@ -25,7 +28,7 @@ import { artRoutes, LocalArt } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
 import { playlistRoutes } from './routes/playlists.ts';
-import { settingsRoutes } from './routes/settings.ts';
+import { ACOUSTID_KEY, settingsRoutes } from './routes/settings.ts';
 import { streamRoutes } from './routes/stream.ts';
 
 const config = loadConfig();
@@ -45,6 +48,22 @@ const library = new Library(store, () => sources.active(), {
   info: (m) => app.log.info(m),
   error: (m) => app.log.error(m),
 });
+// One MusicBrainz queue (~1 request/s) shared by matching and Discover.
+const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
+// Identifies untagged folder music in the background after each scan.
+const fingerprints = await hasFpcalc(config.FPCALC_PATH);
+const matcher = new Matcher({
+  store,
+  mb: {
+    searchReleases: (artist, album) => musicbrainz.searchReleases(artist, album),
+    release: async (id) => toReleaseInfo(await musicbrainz.release(id)),
+  },
+  acoustid: new AcoustId(() => store.appSetting(ACOUSTID_KEY) || undefined),
+  fingerprint: fingerprints ? fpcalc(config.FPCALC_PATH) : undefined,
+  onMatched: () => library.refreshSoon(),
+  log: { warn: (m) => app.log.warn(m) },
+});
+sources.useMatcher(matcher);
 const art = new LocalArt(lidarr, resolve(config.CACHE_DIR, 'art'));
 // Keep every cover cached locally so browsing never waits on Lidarr.
 library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
@@ -55,7 +74,6 @@ const favorites = new Favorites(db, library);
 const analyzer = new Analyzer(db, library, files, { enabled: config.ANALYSIS === 'on', log: app.log });
 const covers = new PlaylistCovers(analyzer, library, resolve(config.CACHE_DIR, 'covers'));
 const playlists = new Playlists(db, library, covers);
-const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
 const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), {
   rootFolderPath: config.LIDARR_ROOT_FOLDER,
   qualityProfileId: config.LIDARR_QUALITY_PROFILE_ID,
@@ -70,7 +88,7 @@ streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
-settingsRoutes(app, { sources, library });
+settingsRoutes(app, { sources, library, matcher, store, fingerprints });
 
 // In production, serve the built web app from the same origin.
 const webDist = config.WEB_DIST

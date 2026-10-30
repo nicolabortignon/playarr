@@ -34,6 +34,8 @@ const schema = z.object({
   // files are: on the SSH host for MEDIA_SOURCE=ssh, locally for MEDIA_SOURCE=local.
   ANALYSIS: z.enum(['on', 'off']).default('on'),
   FFMPEG_PATH: z.string().default('ffmpeg'),
+  /** Chromaprint's fpcalc, for identifying songs by their sound (optional). */
+  FPCALC_PATH: z.string().default('fpcalc'),
 
   // Used by MEDIA_SOURCE=sftp and MEDIA_SOURCE=ssh.
   SSH_HOST: z.string().optional(),
