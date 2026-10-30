@@ -15,7 +15,10 @@ import type {
   PlaylistDetail,
   PlaylistSummary,
   HealthStatus,
+  MatchingSettings,
   Recommendations,
+  ReviewAction,
+  ReviewGroup,
   SearchResults,
   SourceInfo,
   SourceInput,
@@ -106,6 +109,13 @@ export const api = {
   rescanSource: (id: number) => request<void>(`/api/settings/sources/${id}/rescan`, { method: 'POST' }),
   folders: (path?: string) =>
     get<FolderListing>(`/api/settings/folders${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+  review: (id: number) => get<ReviewGroup[]>(`/api/settings/sources/${id}/review`),
+  reviewAction: (id: number, action: ReviewAction) =>
+    request<void>(`/api/settings/sources/${id}/review`, { method: 'POST', body: JSON.stringify(action) }),
+  rematchSource: (id: number) => request<void>(`/api/settings/sources/${id}/rematch`, { method: 'POST' }),
+  matching: () => get<MatchingSettings>('/api/settings/matching'),
+  saveMatching: (acoustidKey: string) =>
+    request<MatchingSettings>('/api/settings/matching', { method: 'PUT', body: JSON.stringify({ acoustidKey }) }),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */

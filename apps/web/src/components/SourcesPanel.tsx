@@ -1,12 +1,13 @@
 import type { SourceInfo, SourceTestResult } from '@playarr/shared';
-import { Check, Folder, FolderOpen, GripVertical, Loader2, Pencil, Plus, RefreshCw, Server, Trash2, TriangleAlert } from 'lucide-react';
+import { Check, Folder, FolderOpen, GripVertical, Loader2, Pencil, Plus, RefreshCw, RotateCw, Server, Trash2, TriangleAlert } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
-import { useFolders, useSourceActions, useSources } from '../lib/queries';
+import { useFolders, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
 import { Dialog } from './Dialog';
+import { ReviewDialog } from './ReviewDialog';
 
 const INPUT =
   'h-11 w-full rounded-lg border border-line bg-ink-900 px-3 text-[15px] text-paper outline-none transition focus:border-accent';
@@ -21,6 +22,7 @@ export function SourcesPanel() {
   const actions = useSourceActions();
   const [order, setOrder] = useState<SourceInfo[]>([]);
   const [editing, setEditing] = useState<SourceInfo | 'new' | null>(null);
+  const [reviewing, setReviewing] = useState<number | null>(null);
 
   useEffect(() => {
     if (data) setOrder(data.sources);
@@ -52,7 +54,14 @@ export function SourcesPanel() {
 
       <Reorder.Group axis="y" values={order} onReorder={setOrder} as="ol" className="-mx-2">
         {order.map((s) => (
-          <SourceRow key={s.id} source={s} canEdit={canEdit} onDragEnd={commitOrder} onEdit={() => setEditing(s)} />
+          <SourceRow
+            key={s.id}
+            source={s}
+            canEdit={canEdit}
+            onDragEnd={commitOrder}
+            onEdit={() => setEditing(s)}
+            onReview={() => setReviewing(s.id)}
+          />
         ))}
       </Reorder.Group>
 
@@ -62,11 +71,14 @@ export function SourcesPanel() {
         </button>
       )}
 
+      {canEdit && data.sources.some((s) => s.kind === 'folder') && <MatchingSection />}
+
       <SourceDialog
         target={editing}
         hasLidarr={data.sources.some((s) => s.kind === 'lidarr')}
         onClose={() => setEditing(null)}
       />
+      <ReviewDialog sourceId={reviewing} onClose={() => setReviewing(null)} />
     </section>
   );
 }
@@ -76,11 +88,13 @@ function SourceRow({
   canEdit,
   onDragEnd,
   onEdit,
+  onReview,
 }: {
   source: SourceInfo;
   canEdit: boolean;
   onDragEnd: () => void;
   onEdit: () => void;
+  onReview: () => void;
 }) {
   const controls = useDragControls();
   const actions = useSourceActions();
@@ -120,12 +134,22 @@ function SourceRow({
         </div>
         <div className="truncate font-mono text-[12px] text-muted">{details}</div>
         <SourceStatus source={s} />
+        {s.kind === 'folder' && s.review > 0 && canEdit && (
+          <button type="button" onClick={onReview} className="mt-1 text-[13px] text-accent hover:underline">
+            {plural(s.review, 'album')} to review
+          </button>
+        )}
       </div>
       {canEdit && (
         <div className="flex items-center gap-1">
           <IconButton label="Rescan" onClick={() => actions.rescan.mutate(s.id)} disabled={s.syncing}>
             {s.syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           </IconButton>
+          {s.kind === 'folder' && (
+            <IconButton label="Match again" onClick={() => actions.rematch.mutate(s.id)} disabled={actions.rematch.isPending}>
+              <RotateCw className="size-4" />
+            </IconButton>
+          )}
           <IconButton label="Edit" onClick={onEdit}>
             <Pencil className="size-4" />
           </IconButton>
@@ -141,17 +165,79 @@ function SourceRow({
 function SourceStatus({ source: s }: { source: SourceInfo }) {
   const [text, tone] = s.syncing
     ? ['Syncing…', 'text-accent']
-    : s.error
-      ? [s.error, 'text-red-300/80']
-      : !s.enabled
-        ? ['Turned off', 'text-muted']
-        : s.lastSyncAt
-          ? [`Synced ${new Date(s.lastSyncAt).toLocaleString()}`, 'text-muted']
-          : ['Not synced yet', 'text-muted'];
+    : s.matching > 0
+      ? [`Matching… ${plural(s.matching, 'album')} left`, 'text-accent']
+      : s.error
+        ? [s.error, 'text-red-300/80']
+        : !s.enabled
+          ? ['Turned off', 'text-muted']
+          : s.lastSyncAt
+            ? [`Synced ${new Date(s.lastSyncAt).toLocaleString()}`, 'text-muted']
+            : ['Not synced yet', 'text-muted'];
   return (
     <div className={cn('mt-0.5 truncate text-[12px]', tone)} title={text}>
       {text}
     </div>
+  );
+}
+
+/** The AcoustID key, for identifying songs by their sound. */
+function MatchingSection() {
+  const { data } = useMatching();
+  const save = useSaveMatching();
+  const [replacing, setReplacing] = useState(false);
+  const [key, setKey] = useState('');
+  if (!data) return null;
+  const editing = replacing || !data.acoustid;
+  return (
+    <section className="mt-12 max-w-prose">
+      <h2 className="mb-2 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Identifying songs</h2>
+      <p className="mb-4 text-sm text-muted">
+        Playarr matches folder albums on MusicBrainz by their names, track titles and lengths. For songs whose names don’t help,
+        it can identify them by their sound with AcoustID. A free key comes from{' '}
+        <a href="https://acoustid.org/new-application" target="_blank" rel="noreferrer" className="text-accent hover:underline">
+          acoustid.org
+        </a>
+        .
+      </p>
+      {!data.fingerprints && (
+        <p className="mb-4 text-sm text-paper-dim">Fingerprints need fpcalc (Chromaprint) on the server. The Docker image includes it.</p>
+      )}
+      {editing ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            save.mutate(key, {
+              onSuccess: () => {
+                setReplacing(false);
+                setKey('');
+              },
+            });
+          }}
+          className="flex gap-2"
+        >
+          <input
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            aria-label="AcoustID key"
+            placeholder="AcoustID application key"
+            autoComplete="off"
+            spellCheck={false}
+            className={cn(INPUT, 'font-mono')}
+          />
+          <button type="submit" disabled={!key || save.isPending} className={PRIMARY}>
+            Save
+          </button>
+        </form>
+      ) : (
+        <div className="flex items-center gap-3 text-[14px]">
+          <span className="font-mono text-paper-dim">AcoustID key saved</span>
+          <button type="button" onClick={() => setReplacing(true)} className="text-accent hover:underline">
+            Replace
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 

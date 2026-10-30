@@ -1,4 +1,4 @@
-import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, CoverLayout, FavoriteTrack, PlaylistDetail, SourceInput, Track } from '@playarr/shared';
+import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, CoverLayout, FavoriteTrack, PlaylistDetail, ReviewAction, SourceInput, Track } from '@playarr/shared';
 import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
@@ -247,7 +247,7 @@ export function useSources() {
   const query = useQuery({
     queryKey: ['sources'],
     queryFn: api.sources,
-    refetchInterval: (q) => (q.state.data?.sources.some((s) => s.syncing) ? 2000 : 30_000),
+    refetchInterval: (q) => (q.state.data?.sources.some((s) => s.syncing || s.matching > 0) ? 2000 : 30_000),
   });
   const syncing = !!query.data?.sources.some((s) => s.syncing);
   const wasSyncing = useRef(false);
@@ -296,5 +296,33 @@ export function useSourceActions() {
       },
     }),
     rescan: useMutation({ mutationFn: api.rescanSource, onSuccess: changed, onError: fail }),
+    rematch: useMutation({ mutationFn: api.rematchSource, onSuccess: changed, onError: fail }),
   };
+}
+
+/** A folder source's albums waiting for review (doubtful matches). */
+export const useReview = (id: number | null) =>
+  useQuery({ queryKey: ['review', id], queryFn: () => api.review(id!), enabled: id !== null });
+
+export function useReviewAction(id: number) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (action: ReviewAction) => api.reviewAction(id, action),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['review', id] });
+      void client.invalidateQueries({ queryKey: ['sources'] });
+    },
+    onError: (err: Error) => toast(err.message, 'error'),
+  });
+}
+
+export const useMatching = () => useQuery({ queryKey: ['matching'], queryFn: api.matching });
+
+export function useSaveMatching() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.saveMatching,
+    onSuccess: (data) => client.setQueryData(['matching'], data),
+    onError: (err: Error) => toast(err.message, 'error'),
+  });
 }
