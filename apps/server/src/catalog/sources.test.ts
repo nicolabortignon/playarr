@@ -175,5 +175,17 @@ describe('SourceManager', () => {
         cleanup();
       }
     });
+
+    it('reports review and matching progress for folder sources', () => {
+      const { dir, store, manager, cleanup } = withFolders();
+      try {
+        const music = manager.add({ kind: 'folder', settings: { path: join(dir, 'Music') } });
+        store.saveMatches(music.id, [{ rel: 'a.flac', groupKey: 'g', state: 'review', candidates: [], size: 1, mtimeMs: 1 }]);
+        manager.useMatcher({ pendingGroups: () => 3, enqueue: () => {} });
+        expect(manager.list({ includeSettings: true, syncing: false })[0]).toMatchObject({ review: 1, matching: 3 });
+      } finally {
+        cleanup();
+      }
+    });
   });
 });

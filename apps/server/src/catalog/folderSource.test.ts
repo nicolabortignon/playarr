@@ -62,4 +62,36 @@ describe('FolderSource', () => {
     const source = new FolderSource({ sourceId, root: '/nonexistent/playarr', store });
     await expect(source.sync()).rejects.toThrow(/Folder not found/);
   });
+
+  it('lays matches over tags and tells the matcher a scan happened', async () => {
+    const { store, sourceId, dir } = setup();
+    store.saveRelease({
+      id: 'rel-1',
+      title: 'Mezzanine',
+      artistName: 'Massive Attack',
+      artistId: 'art-1',
+      releaseGroup: { id: 'rg-1', title: 'Mezzanine', primaryType: 'Album', secondaryTypes: [] },
+      tracks: [
+        { disc: 1, position: 1, title: 'Angel', length: 200, recordingId: 'rec-1' },
+        { disc: 1, position: 2, title: 'Risingson', length: 299, recordingId: 'rec-2' },
+      ],
+    });
+    const onScanned = vi.fn();
+    const source = new FolderSource({ sourceId, root: dir, store, onScanned });
+    await source.sync(); // fills the tag cache
+    store.saveMatches(sourceId, [
+      {
+        rel: 'Massive Attack/Mezzanine/01 Angel.flac',
+        groupKey: 'g',
+        state: 'auto',
+        overlay: { recordingMbid: 'rec-1', releaseGroupMbid: 'rg-1', releaseId: 'rel-1', album: 'Mezzanine', albumArtistMbid: 'art-1' },
+        size: 0,
+        mtimeMs: 0,
+      },
+    ]);
+    const sync = await source.sync();
+    expect(sync.copies.find((c) => c.ref.endsWith('Angel.flac'))!.trackKey).toBe('mb:rg-1#rec-1');
+    expect(sync.tracks.map((t) => t.key)).toContain('mb:rg-1#rec-2'); // the rest of the release, missing
+    expect(onScanned).toHaveBeenCalledWith(sourceId);
+  });
 });

@@ -30,7 +30,14 @@ export class SourceError extends Error {
 }
 
 /** Sources as Settings manages them: rows in the database, turned into catalog adapters. */
+interface MatcherHandle {
+  pendingGroups(sourceId: number): number;
+  enqueue(sourceId: number): void;
+}
+
 export class SourceManager {
+  private matcher?: MatcherHandle;
+
   constructor(
     private readonly store: CatalogStore,
     /** The one Lidarr client the rest of the server shares (artwork, requests, Discover). */
@@ -39,6 +46,11 @@ export class SourceManager {
     /** Folders that folder sources may use (FOLDER_ROOTS). */
     private readonly folderRoots: string[] = ['/'],
   ) {}
+
+  /** Folder scans hand new files to the matcher; Settings shows its progress. */
+  useMatcher(matcher: MatcherHandle) {
+    this.matcher = matcher;
+  }
 
   /** Copy .env's Lidarr settings into the database, once. After that, Settings owns them. */
   seedFromEnv(env: { url?: string; apiKey?: string }) {
@@ -73,7 +85,15 @@ export class SourceManager {
         lidarrSet = true;
       } else if (s.kind === 'folder') {
         const root = (s.settings as FolderSettings).path;
-        if (root) list.push({ id: s.id, source: new FolderSource({ sourceId: s.id, root, store: this.store }) });
+        if (root) {
+          const source = new FolderSource({
+            sourceId: s.id,
+            root,
+            store: this.store,
+            onScanned: (id) => this.matcher?.enqueue(id),
+          });
+          list.push({ id: s.id, source });
+        }
       }
     }
     if (!lidarrSet) this.lidarr.configure('', '');
@@ -82,7 +102,10 @@ export class SourceManager {
 
   list(opts: { includeSettings: boolean; syncing: boolean }): SourceInfo[] {
     const counts = this.store.sourceCounts();
-    return this.store.listSources().map((s) => toInfo(s, counts.get(s.id), opts));
+    const matchCounts = this.store.matchCounts();
+    return this.store
+      .listSources()
+      .map((s) => toInfo(s, counts.get(s.id), this.matching(s.id, matchCounts), opts));
   }
 
   add(input: SourceInput): SourceInfo {
@@ -167,13 +190,21 @@ export class SourceManager {
   }
 
   private info(id: number): SourceInfo {
-    return toInfo(this.store.source(id)!, this.store.sourceCounts().get(id), { includeSettings: true, syncing: false });
+    return toInfo(this.store.source(id)!, this.store.sourceCounts().get(id), this.matching(id, this.store.matchCounts()), {
+      includeSettings: true,
+      syncing: false,
+    });
+  }
+
+  private matching(id: number, matchCounts: Map<number, { review: number }>) {
+    return { review: matchCounts.get(id)?.review ?? 0, matching: this.matcher?.pendingGroups(id) ?? 0 };
   }
 }
 
 function toInfo(
   s: SourceRecord,
   counts: { songs: number; albums: number } | undefined,
+  matching: { review: number; matching: number },
   opts: { includeSettings: boolean; syncing: boolean },
 ): SourceInfo {
   return {
@@ -189,6 +220,8 @@ function toInfo(
     syncing: opts.syncing && s.enabled,
     songs: counts?.songs ?? 0,
     albums: counts?.albums ?? 0,
+    review: matching.review,
+    matching: matching.matching,
   };
 }
 

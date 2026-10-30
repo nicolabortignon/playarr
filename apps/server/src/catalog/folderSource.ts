@@ -2,6 +2,7 @@ import type { Dirent } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { folderSync, type FolderEntry } from './folder.ts';
+import type { MbReleaseInfo } from './mbRelease.ts';
 import type { CatalogStore } from './store.ts';
 import { readTags, type TagInfo } from './tags.ts';
 import type { CatalogSource, SourceSync } from './types.ts';
@@ -28,6 +29,8 @@ export class FolderSource implements CatalogSource {
       store: CatalogStore;
       readTags?: (path: string) => Promise<TagInfo | null>;
       concurrency?: number;
+      /** After each scan: hand new and changed files to the matcher. */
+      onScanned?: (sourceId: number) => void;
     },
   ) {}
 
@@ -53,7 +56,20 @@ export class FolderSource implements CatalogSource {
       if (tags) entries.push({ ...f, tags });
     });
     store.saveFolderFiles(sourceId, changed, files.map((f) => f.rel));
-    return folderSync(entries, store.nameIndex());
+    // Matches lay MusicBrainz ids over the files' own tags; matched releases bring their track lists.
+    const matches = store.matches(sourceId);
+    const releases = new Map<string, MbReleaseInfo>();
+    for (const e of entries) {
+      const m = matches.get(e.rel);
+      if (!m?.overlay || (m.state !== 'auto' && m.state !== 'manual')) continue;
+      e.tags = { ...e.tags, ...m.overlay };
+      const id = m.overlay.releaseId;
+      const release = id && !releases.has(id) ? store.cachedRelease(id) : undefined;
+      if (release) releases.set(release.id, release);
+    }
+    const sync = folderSync(entries, store.nameIndex(), releases);
+    this.opts.onScanned?.(sourceId);
+    return sync;
   }
 }
 
