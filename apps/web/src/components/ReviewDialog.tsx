@@ -1,5 +1,5 @@
-import type { ReviewGroup } from '@playarr/shared';
-import { Check, Search } from 'lucide-react';
+import type { ReviewCandidate, ReviewGroup } from '@playarr/shared';
+import { Check, Disc3, ExternalLink, Search } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
@@ -58,20 +58,26 @@ function ReviewGroupView({ sourceId, group, remaining }: { sourceId: number; gro
               aria-checked={c.releaseId === chosen}
               onClick={() => setChosen(c.releaseId)}
               className={cn(
-                'flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition',
+                'flex w-full items-start gap-3 rounded-lg border px-3 py-2 text-left transition',
                 c.releaseId === chosen ? 'border-accent bg-accent/5' : 'border-line hover:bg-paper/[0.03]',
               )}
             >
-              <span className="min-w-0 flex-1 truncate text-[15px] text-paper">
-                {c.title} <span className="text-muted">· {c.artistName}{c.year ? ` · ${c.year}` : ''}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] text-paper">
+                  {c.title}
+                  {c.disambiguation && <span className="text-muted"> ({c.disambiguation})</span>}
+                </span>
+                <span className="block text-[13px] text-muted">{summary(c).join(' · ')}</span>
               </span>
-              <span className="font-mono text-[12px] text-muted">{Math.round(c.score * 100)}% · {c.tracks.length} tracks</span>
+              <span className="shrink-0 pt-0.5 font-mono text-[12px] text-muted tabular">{Math.round(c.score * 100)}%</span>
             </button>
           ))}
         </div>
       ) : (
         <p className="text-sm text-muted">No albums found on MusicBrainz for these names. Try other names below.</p>
       )}
+
+      {candidate && <CandidateDetails candidate={candidate} />}
 
       {candidate && (
         <table className="w-full text-[14px]">
@@ -130,6 +136,106 @@ function ReviewGroupView({ sourceId, group, remaining }: { sourceId: number; gro
         >
           <Check className="size-4" /> Use this album
         </button>
+      </div>
+    </div>
+  );
+}
+
+const regions = (() => {
+  try {
+    return new Intl.DisplayNames(undefined, { type: 'region' });
+  } catch {
+    return undefined;
+  }
+})();
+
+/** MusicBrainz country codes, including its own XE (Europe) and XW (worldwide). */
+function countryName(code: string | undefined): string | undefined {
+  if (!code) return undefined;
+  if (code === 'XE') return 'Europe';
+  if (code === 'XW') return 'Worldwide';
+  if (code === 'XU') return undefined;
+  try {
+    return regions?.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** "1998-04-20" → "20 Apr 1998", "1998-04" → "Apr 1998", "1998" stays. */
+function releaseDate(date: string | undefined): string | undefined {
+  if (!date) return undefined;
+  const [y, m, d] = date.split('-').map(Number);
+  if (!y) return date;
+  if (!m) return String(y);
+  const value = new Date(Date.UTC(y, m - 1, d || 1));
+  return value.toLocaleDateString(undefined, { timeZone: 'UTC', year: 'numeric', month: 'short', ...(d ? { day: 'numeric' } : {}) });
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** The second line of a candidate: who, when, where, on what. */
+function summary(c: ReviewCandidate): string[] {
+  const label = c.labels?.find((l) => l.name)?.name;
+  return [
+    c.artistName,
+    releaseDate(c.date) ?? (c.year ? String(c.year) : undefined),
+    countryName(c.country),
+    label,
+    c.format,
+    c.type,
+    plural(c.tracks.length, 'track'),
+    c.status && c.status !== 'Official' ? c.status : undefined,
+  ].filter((x): x is string => !!x);
+}
+
+/** Everything MusicBrainz says about the chosen edition, with a link to check it there. */
+function CandidateDetails({ candidate: c }: { candidate: ReviewCandidate }) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  useEffect(() => setCoverFailed(false), [c.coverUrl]);
+  const firstYear = c.year && releaseDate(c.date)?.slice(-4) !== String(c.year) ? String(c.year) : undefined;
+  const rows: [string, string | undefined][] = [
+    ['Artist', c.artistName],
+    ['Album', c.title],
+    ['Edition', [c.releaseTitle, c.disambiguation].filter(Boolean).join(' · ') || undefined],
+    ['Released', releaseDate(c.date)],
+    ['First released', firstYear ?? (c.date ? undefined : c.year ? String(c.year) : undefined)],
+    ['Country', countryName(c.country)],
+    ['Label', c.labels?.map((l) => [l.name, l.catalogNumber].filter(Boolean).join(' · ')).join(', ') || undefined],
+    ['Format', c.format],
+    ['Type', c.type],
+    ['Status', c.status],
+    ['Tracks', String(c.tracks.length)],
+    ['Barcode', c.barcode],
+  ];
+  return (
+    <div className="flex gap-4 rounded-lg border border-line p-3">
+      <div className="grid size-24 shrink-0 place-items-center overflow-hidden rounded-md bg-ink-800 text-muted">
+        {c.coverUrl && !coverFailed ? (
+          <img src={c.coverUrl} alt="" loading="lazy" className="size-full object-cover" onError={() => setCoverFailed(true)} />
+        ) : (
+          <Disc3 className="size-8" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]">
+          {rows
+            .filter(([, value]) => value)
+            .map(([label, value]) => (
+              <div key={label} className="contents">
+                <dt className="font-mono text-[11px] leading-5 tracking-[0.12em] text-muted uppercase">{label}</dt>
+                <dd className="min-w-0 break-words text-paper-dim">{value}</dd>
+              </div>
+            ))}
+        </dl>
+        <a
+          href={`https://musicbrainz.org/release/${encodeURIComponent(c.releaseId)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-accent hover:underline"
+        >
+          Open on MusicBrainz <ExternalLink className="size-3.5" />
+        </a>
       </div>
     </div>
   );
