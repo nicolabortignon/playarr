@@ -1,6 +1,7 @@
 import type { FolderListing, SourceInfo, SourceInput, SourceTestResult } from '@playarr/shared';
 import { basename } from 'node:path';
 import { LidarrClient } from '../lidarr/client.ts';
+import { LocalFolderFs } from './folderFs.ts';
 import { FolderSource } from './folderSource.ts';
 import { LidarrSource } from './lidarr.ts';
 import { isWritable } from './organizer.ts';
@@ -91,6 +92,7 @@ export class SourceManager {
             sourceId: s.id,
             root,
             store: this.store,
+            fs: new LocalFolderFs(),
             onScanned: (id) => this.matcher?.enqueue(id),
           });
           list.push({ id: s.id, source });

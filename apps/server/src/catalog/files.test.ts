@@ -12,7 +12,9 @@ function setup() {
   const store = new CatalogStore(freshDb());
   const lidarr = store.addSource('lidarr', 'Lidarr');
   const folder = store.addSource('folder', 'Music', { path: '/host/Music' });
-  const files = new FileResolver(store, { media: remote, pathMap: [['/data/media/music', '/volume2/music']] }, local);
+  const files = new FileResolver(store, { media: remote, pathMap: [['/data/media/music', '/volume2/music']] }, {
+    get: () => ({ media: local }) as never,
+  });
   const record = (sourceId: number, path: string) => ({ id: 1, sourceId, path, size: 1, format: FLAC });
   return { files, lidarr, folder, record };
 }
@@ -38,7 +40,7 @@ describe('FileResolver', () => {
     expect(() => files.resolve(record(lidarr, '/etc/passwd'))).toThrow(FileAccessError);
   });
 
-  it('reads folder files from local disk, inside the folder only', () => {
+  it('reads folder files through their filesystem, inside the folder only', () => {
     const { files, folder, record } = setup();
     expect(files.resolve(record(folder, '/host/Music/A/1.flac'))).toEqual({ media: local, path: '/host/Music/A/1.flac' });
     expect(() => files.resolve(record(folder, '/host/Music/../../etc/passwd'))).toThrow(FileAccessError);

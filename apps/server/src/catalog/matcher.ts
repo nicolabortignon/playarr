@@ -1,5 +1,5 @@
 import type { ReviewCandidate, ReviewGroup } from '@playarr/shared';
-import { join } from 'node:path';
+import { posix } from 'node:path';
 import type { MbReleaseHit } from '../discover/musicbrainz.ts';
 import { normalize } from '../library/search.ts';
 import type { AcoustIdMatch, Fingerprint } from './acoustid.ts';
@@ -29,7 +29,8 @@ export interface MatcherDeps {
     release(id: string): Promise<MbReleaseInfo>;
   };
   acoustid?: { enabled: boolean; lookup(fp: Fingerprint): Promise<AcoustIdMatch | null> };
-  fingerprint?: (path: string) => Promise<Fingerprint | null>;
+  /** A file's fingerprint, computed where the source's files are; null where it can't be. */
+  fingerprint?: (sourceId: number, path: string) => Promise<Fingerprint | null>;
   /** Matches changed: rebuild the library (debounced by the caller). */
   onMatched: () => void;
   log: { warn: (msg: string) => void };
@@ -57,7 +58,7 @@ export function groupFiles(
       : `dir:${f.rel.split('/').slice(0, -1).join('/')}`;
     let group = groups.get(key);
     if (!group) groups.set(key, (group = { key, artistName: d.artistName, albumTitle: d.albumTitle, files: [] }));
-    group.files.push({ rel: f.rel, path: join(root, f.rel), size: f.size, mtimeMs: f.mtimeMs, ...pick(d) });
+    group.files.push({ rel: f.rel, path: posix.join(root, f.rel), size: f.size, mtimeMs: f.mtimeMs, ...pick(d) });
   }
   return [...groups.values()];
 }
@@ -108,7 +109,7 @@ export class Matcher {
     let unsaved = 0;
     for (const group of groups) {
       try {
-        this.deps.store.saveMatches(sourceId, await this.matchGroup(group));
+        this.deps.store.saveMatches(sourceId, await this.matchGroup(sourceId, group));
         unsaved++;
       } catch (err) {
         // Left without a row: tried again after the next scan.
@@ -193,12 +194,12 @@ export class Matcher {
     return [...this.deps.store.folderFiles(sourceId)].map(([rel, f]) => ({ rel, ...f }));
   }
 
-  private async matchGroup(group: FileGroup): Promise<MatchRecord[]> {
+  private async matchGroup(sourceId: number, group: FileGroup): Promise<MatchRecord[]> {
     const scored = group.albumTitle ? await this.candidates(group, group.artistName, group.albumTitle) : [];
     const best = scored[0];
     const outcome = verdict(best);
     if (outcome === 'auto') return this.fromAlignment(group, best!, 'auto');
-    const byFingerprint = await this.byFingerprint(group);
+    const byFingerprint = await this.byFingerprint(sourceId, group);
     if (byFingerprint) return byFingerprint;
     if (outcome === 'review') {
       const ids = scored.slice(0, CANDIDATES).map((s) => s.release.id);
@@ -222,13 +223,13 @@ export class Matcher {
     return release;
   }
 
-  private async byFingerprint(group: FileGroup): Promise<MatchRecord[] | null> {
+  private async byFingerprint(sourceId: number, group: FileGroup): Promise<MatchRecord[] | null> {
     const { acoustid, fingerprint } = this.deps;
     if (!acoustid?.enabled || !fingerprint) return null;
     const records: MatchRecord[] = [];
     let found = 0;
     for (const f of group.files) {
-      const fp = await fingerprint(f.path);
+      const fp = await fingerprint(sourceId, f.path);
       const m = fp && (await acoustid.lookup(fp));
       const rg = m && m.score >= FINGERPRINT_MIN_SCORE ? originalReleaseGroup(m.releaseGroups) : undefined;
       if (!m || !rg) {

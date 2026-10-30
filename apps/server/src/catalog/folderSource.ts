@@ -2,17 +2,17 @@ import type { Dirent } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { folderSync, type FolderEntry } from './folder.ts';
-import type { FoundFile } from './folderFs.ts';
+import type { FolderFs, FoundFile } from './folderFs.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
 import type { CatalogStore } from './store.ts';
-import { readTags, type TagInfo } from './tags.ts';
+import type { TagInfo } from './tags.ts';
 import type { CatalogSource, SourceSync } from './types.ts';
 
 export const AUDIO_EXTENSIONS = new Set(['flac', 'mp3', 'm4a', 'm4b', 'aac', 'ogg', 'oga', 'opus', 'wav', 'aif', 'aiff']);
 
 export const isAudioFile = (name: string) => AUDIO_EXTENSIONS.has(name.split('.').pop()?.toLowerCase() ?? '');
 
-/** A folder on this server as a catalog source. Tags are re-read only for files that changed. */
+/** A folder (on this server or another machine) as a catalog source. Tags are re-read only for files that changed. */
 export class FolderSource implements CatalogSource {
   readonly kind = 'folder' as const;
 
@@ -21,7 +21,10 @@ export class FolderSource implements CatalogSource {
       sourceId: number;
       root: string;
       store: CatalogStore;
-      readTags?: (path: string) => Promise<TagInfo | null>;
+      /** The folder's filesystem: this server's disk, or another machine over SSH or SFTP. */
+      fs: FolderFs;
+      readTags?: (path: string, size: number) => Promise<TagInfo | null>;
+      /** How many files to read at once; defaults to what the filesystem handles. */
       concurrency?: number;
       /** After each scan: hand new and changed files to the matcher. */
       onScanned?: (sourceId: number) => void;
@@ -29,22 +32,22 @@ export class FolderSource implements CatalogSource {
   ) {}
 
   async sync(): Promise<SourceSync> {
-    const { sourceId, root, store } = this.opts;
-    const read = this.opts.readTags ?? readTags;
-    // A missing folder usually means a drive or mount is offline: fail, so the last scan stays.
-    if (!(await stat(root).catch(() => null))?.isDirectory()) throw new Error(`Folder not found: ${root}`);
+    const { sourceId, root, store, fs } = this.opts;
+    const read = this.opts.readTags ?? ((p: string, size: number) => fs.readTags(p, size));
+    // A missing folder usually means a drive, mount or host is offline: fail, so the last scan stays.
+    if (!(await fs.stat(root))?.dir) throw new Error(`Folder not found: ${root}`);
 
-    const files = await listAudioFiles(root);
+    const files = await fs.listAudio(root);
     const cache = store.folderFiles(sourceId);
     const changed: { rel: string; size: number; mtimeMs: number; tags: TagInfo | null }[] = [];
     const entries: FolderEntry[] = [];
-    await forEachLimit(files, this.opts.concurrency ?? 8, async (f) => {
+    await forEachLimit(files, this.opts.concurrency ?? fs.concurrency, async (f) => {
       const cached = cache.get(f.rel);
       let tags: TagInfo | null;
       if (cached && cached.size === f.size && cached.mtimeMs === f.mtimeMs) {
         tags = cached.tags;
       } else {
-        tags = await read(f.path).catch(() => null);
+        tags = await read(f.path, f.size).catch(() => null);
         changed.push({ ...f, tags });
       }
       if (tags) entries.push({ ...f, tags });

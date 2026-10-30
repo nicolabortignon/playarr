@@ -108,7 +108,7 @@ describe('Matcher', () => {
       },
     );
     await matcher.matchSource(sourceId);
-    expect(fingerprint).toHaveBeenCalledWith('/music/Massive Attack/Angel.flac');
+    expect(fingerprint).toHaveBeenCalledWith(sourceId, '/music/Massive Attack/Angel.flac');
     expect(store.matches(sourceId).get('Massive Attack/Angel.flac')).toMatchObject({
       state: 'auto',
       overlay: { recordingMbid: 'rec-1', releaseGroupMbid: 'rg-1', album: 'Mezzanine', title: 'Angel' },

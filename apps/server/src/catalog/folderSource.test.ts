@@ -1,10 +1,11 @@
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { LocalFolderFs, type FolderFs } from './folderFs.ts';
 import { FolderSource } from './folderSource.ts';
 import { CatalogStore } from './store.ts';
 import { readTags } from './tags.ts';
-import { flacBytes, freshDb, tempDir } from './testFixtures.ts';
+import { FLAC, flacBytes, freshDb, tempDir } from './testFixtures.ts';
 
 let cleanup = () => {};
 afterEach(() => cleanup());
@@ -23,8 +24,8 @@ function setup() {
   put('broken.mp3', Buffer.from('not audio'));
   const store = new CatalogStore(freshDb());
   const sourceId = store.addSource('folder', 'Music', { path: t.dir });
-  const read = vi.fn(readTags);
-  const source = new FolderSource({ sourceId, root: t.dir, store, readTags: read });
+  const read = vi.fn((path: string) => readTags(path));
+  const source = new FolderSource({ sourceId, root: t.dir, store, fs: new LocalFolderFs(), readTags: read });
   return { dir: t.dir, put, store, sourceId, read, source };
 }
 
@@ -59,7 +60,7 @@ describe('FolderSource', () => {
 
   it('fails when the folder is gone, so the last scan stays in the catalog', async () => {
     const { store, sourceId } = setup();
-    const source = new FolderSource({ sourceId, root: '/nonexistent/playarr', store });
+    const source = new FolderSource({ sourceId, root: '/nonexistent/playarr', store, fs: new LocalFolderFs() });
     await expect(source.sync()).rejects.toThrow(/Folder not found/);
   });
 
@@ -77,7 +78,7 @@ describe('FolderSource', () => {
       ],
     });
     const onScanned = vi.fn();
-    const source = new FolderSource({ sourceId, root: dir, store, onScanned });
+    const source = new FolderSource({ sourceId, root: dir, store, fs: new LocalFolderFs(), onScanned });
     await source.sync(); // fills the tag cache
     store.saveMatches(sourceId, [
       {
@@ -93,5 +94,26 @@ describe('FolderSource', () => {
     expect(sync.copies.find((c) => c.ref.endsWith('Angel.flac'))!.trackKey).toBe('mb:rg-1#rec-1');
     expect(sync.tracks.map((t) => t.key)).toContain('mb:rg-1#rec-2'); // the rest of the release, missing
     expect(onScanned).toHaveBeenCalledWith(sourceId);
+  });
+
+  it('scans a folder on another machine through its filesystem alone', async () => {
+    const store = new CatalogStore(freshDb());
+    const sourceId = store.addSource('folder', 'NAS', { path: '/volume1/music', access: 'ssh', host: 'nas', user: 'me' });
+    const fs: FolderFs = {
+      kind: 'ssh',
+      media: { kind: 'ssh' } as FolderFs['media'],
+      concurrency: 3,
+      stat: async (p) => (p === '/volume1/music' ? { size: 0, mtimeMs: 0, dir: true } : null),
+      readdir: async () => [],
+      listAudio: async () => [{ rel: 'Burial/Archangel.flac', path: '/volume1/music/Burial/Archangel.flac', size: 1200, mtimeMs: 1 }],
+      readTags: vi.fn(async () => ({ title: 'Archangel', artist: 'Burial', genres: [], duration: 238, format: FLAC })),
+      picture: async () => null,
+      readFile: async () => Buffer.alloc(0),
+      close: async () => {},
+    };
+    const sync = await new FolderSource({ sourceId, root: '/volume1/music', store, fs }).sync();
+    expect(sync.copies.map((c) => c.ref)).toEqual(['Burial/Archangel.flac']);
+    expect(sync.copies[0]!.path).toBe('/volume1/music/Burial/Archangel.flac');
+    expect(fs.readTags).toHaveBeenCalledWith('/volume1/music/Burial/Archangel.flac', 1200);
   });
 });

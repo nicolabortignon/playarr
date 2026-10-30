@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
 import type { FileResolver } from '../catalog/files.ts';
 import { copyCover } from '../catalog/folderArt.ts';
+import type { FolderFs } from '../catalog/folderFs.ts';
 import { fetchRemoteImage, isAllowedRemote } from '../discover/art.ts';
 import type { Library } from '../library/library.ts';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
@@ -91,7 +92,13 @@ export class LocalArt {
 /** Serves Lidarr artwork (resized to WebP, cached), folder files' artwork and allowlisted remote artwork. */
 export function artRoutes(
   app: FastifyInstance,
-  deps: { art: LocalArt; cacheDir: string; library: Pick<Library, 'file'>; files: FileResolver },
+  deps: {
+    art: LocalArt;
+    cacheDir: string;
+    library: Pick<Library, 'file'>;
+    files: FileResolver;
+    folders: { get(sourceId: number): FolderFs | undefined };
+  },
 ) {
   const dir = join(deps.cacheDir, 'art');
   const inflight = new Map<string, Promise<{ body: Buffer; mime: string }>>();
@@ -152,19 +159,19 @@ export function artRoutes(
     }
   });
 
-  // Artwork drawn from a folder file (embedded picture or an image beside it).
+  // Artwork drawn from a folder file (embedded picture or an image beside it), wherever the folder is.
   app.get<{ Params: { id: string }; Querystring: { size?: string } }>('/art/copy/:id', async (req, reply) => {
     const id = Number(req.params.id);
     const file = Number.isInteger(id) ? await deps.library.file(id) : undefined;
     if (!file) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'Unknown file' });
     let path: string;
     try {
-      const resolved = deps.files.resolve(file);
-      if (resolved.media.kind !== 'local') throw new Error('not local');
-      path = resolved.path;
+      path = deps.files.resolve(file).path;
     } catch {
       return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
     }
+    const fs = deps.folders.get(file.sourceId);
+    if (!fs) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
     const requested = Number(req.query.size);
     const size = requested > 0 ? (SIZES.find((s) => s >= requested) ?? SIZES.at(-1)) : undefined;
     const key = createHash('sha1').update(`copy/${id}/${file.size}/${size ?? 'orig'}`).digest('hex');
@@ -176,7 +183,7 @@ export function artRoutes(
     } catch {
       // cache miss
     }
-    const original = await copyCover(path);
+    const original = await copyCover(fs, path, file.size).catch(() => null);
     if (!original) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
     const out = size
       ? {

@@ -111,5 +111,13 @@ describe('Organizer', () => {
     expect(existsSync(join(dir, 'Massive Attack/Mezzanine/01 Angel.flac'))).toBe(true);
     expect(organizer.plan(id).lastBatch).toMatchObject({ id: batchId, files: 1 });
   });
-});
 
+  it('leaves folders on other machines alone, saying why', async () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('folder', 'NAS', { path: '/volume1/music', access: 'ssh', host: 'nas', user: 'me' });
+    const organizer = new Organizer(store);
+    expect(organizer.plan(id)).toEqual({ writable: false, reason: 'Organizing works for folders on this server only.', moves: [], skipped: [] });
+    await expect(organizer.apply(id, ['a.flac'])).rejects.toMatchObject({ status: 409 });
+    await expect(organizer.undo(id, 1)).rejects.toMatchObject({ status: 409 });
+  });
+});

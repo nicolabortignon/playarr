@@ -1,6 +1,7 @@
 import { posix } from 'node:path';
 import { mapPath, type MediaSource } from '../media/index.ts';
 import type { FileRecord } from './build.ts';
+import type { FolderFs } from './folderFs.ts';
 import { isInside } from './paths.ts';
 import type { CatalogStore } from './store.ts';
 
@@ -20,13 +21,13 @@ export interface ResolvedFile {
 
 /**
  * Where a copy's bytes are and how to read them: Lidarr files through MEDIA_SOURCE and PATH_MAP,
- * folder files from local disk. Never outside the configured folders.
+ * folder files through their source's filesystem (this server, SSH or SFTP). Never outside the configured folders.
  */
 export class FileResolver {
   constructor(
     private readonly store: CatalogStore,
     private readonly lidarr: { media: MediaSource; pathMap: [string, string][] },
-    private readonly local: MediaSource,
+    private readonly folders: { get(sourceId: number): FolderFs | undefined },
   ) {}
 
   resolve(file: FileRecord): ResolvedFile {
@@ -36,7 +37,9 @@ export class FileResolver {
       const root = (source.settings as { path?: string }).path;
       const path = posix.normalize(file.path);
       if (!root || !isInside(path, root)) throw new FileAccessError('File is outside the source folder', 403);
-      return { media: this.local, path };
+      const fs = this.folders.get(file.sourceId);
+      if (!fs) throw new FileAccessError('This file’s source was removed', 404);
+      return { media: fs.media, path };
     }
     const path = mapPath(file.path, this.lidarr.pathMap);
     const roots = this.lidarr.pathMap.map(([, to]) => to);

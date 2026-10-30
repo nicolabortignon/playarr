@@ -8,6 +8,7 @@ import { isInside } from './paths.ts';
 import type { CatalogStore } from './store.ts';
 
 const COMPANION = /\.(jpe?g|png|webp|gif|cue|log|nfo|txt|m3u8?)$/i;
+const LOCAL_ONLY = 'Organizing works for folders on this server only';
 
 export class OrganizeError extends Error {
   constructor(
@@ -52,13 +53,15 @@ export class Organizer {
   constructor(private readonly store: CatalogStore) {}
 
   plan(sourceId: number): OrganizePlan {
-    const root = this.root(sourceId);
+    const { root, local } = this.folder(sourceId);
+    const lastBatch = this.store.lastMoveBatch(sourceId);
+    if (!local) return { writable: false, reason: `${LOCAL_ONLY}.`, moves: [], skipped: [], lastBatch };
     const { moves, skipped } = planMoves(this.store.organizeFiles(sourceId, root), (rel) => entry(join(root, rel)) !== null);
-    return { writable: isWritable(root), moves, skipped, lastBatch: this.store.lastMoveBatch(sourceId) };
+    return { writable: isWritable(root), moves, skipped, lastBatch };
   }
 
   async apply(sourceId: number, fromRels: string[]): Promise<OrganizeResult> {
-    const root = this.root(sourceId);
+    const root = this.localRoot(sourceId);
     if (!isWritable(root)) throw new OrganizeError('Playarr can’t write to this folder', 409);
     const wanted = new Set(fromRels);
     // The server decides where files go: the client only picks which of the planned moves to make.
@@ -101,7 +104,7 @@ export class Organizer {
   }
 
   async undo(sourceId: number, batchId: number): Promise<{ restored: number; skipped: OrganizeSkip[] }> {
-    const root = this.root(sourceId);
+    const root = this.localRoot(sourceId);
     if (!isWritable(root)) throw new OrganizeError('Playarr can’t write to this folder', 409);
     const moves = this.store.movesOf(sourceId, batchId).reverse();
     const done: number[] = [];
@@ -160,10 +163,17 @@ export class Organizer {
     }
   }
 
-  private root(sourceId: number): string {
+  /** The folder's root, and whether it is on this server (only those can be organized). */
+  private folder(sourceId: number): { root: string; local: boolean } {
     const source = this.store.source(sourceId);
-    const root = source?.kind === 'folder' ? (source.settings as { path?: string }).path : undefined;
-    if (!root) throw new OrganizeError('Not a folder source', 404);
+    const settings = source?.kind === 'folder' ? (source.settings as { path?: string; access?: string }) : undefined;
+    if (!settings?.path) throw new OrganizeError('Not a folder source', 404);
+    return { root: settings.path, local: (settings.access ?? 'local') === 'local' };
+  }
+
+  private localRoot(sourceId: number): string {
+    const { root, local } = this.folder(sourceId);
+    if (!local) throw new OrganizeError(LOCAL_ONLY, 409);
     return root;
   }
 }
