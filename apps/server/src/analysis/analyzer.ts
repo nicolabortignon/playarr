@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
+import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
-import { mapPath, type MediaSource } from '../media/index.ts';
 import { ANALYSIS_VERSION, analyzePcm, pcmToFloat, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
 
 export interface TrackMeta {
@@ -29,18 +29,17 @@ export class Analyzer {
   constructor(
     private readonly db: DatabaseSync,
     private readonly library: Library,
-    private readonly media: MediaSource,
+    private readonly files: FileResolver,
     private readonly opts: {
       enabled: boolean;
-      pathMap: [string, string][];
       log: { warn: (obj: object, msg: string) => void };
       concurrency?: number;
     },
   ) {}
 
-  /** Whether audio can be analyzed at all (needs ffmpeg through the media source). */
+  /** Whether audio analysis is on. Each song's source must also be able to decode it (ffmpeg). */
   get canAnalyzeAudio(): boolean {
-    return this.opts.enabled && !!this.media.pcm;
+    return this.opts.enabled;
   }
 
   features(ids: string[]): Map<string, AudioFeatures> {
@@ -115,10 +114,9 @@ export class Analyzer {
       const track = await this.library.trackByRecording(id);
       const file = track && (await this.library.file(track.fileId));
       if (!file) throw new Error('Not in the library');
-      const path = mapPath(file.path, this.opts.pathMap);
-      const roots = this.opts.pathMap.map(([, to]) => (to.endsWith('/') ? to : `${to}/`));
-      if (roots.length && !roots.some((root) => path.startsWith(root))) throw new Error('Outside the music folders');
-      const pcm = await this.media.pcm!(path, { sampleRate: SAMPLE_RATE, maxSeconds: MAX_SECONDS });
+      const { media, path } = this.files.resolve(file);
+      if (!media.pcm) throw new Error('This source can’t decode audio for analysis');
+      const pcm = await media.pcm(path, { sampleRate: SAMPLE_RATE, maxSeconds: MAX_SECONDS });
       const features = analyzePcm(pcmToFloat(pcm));
       save.run(id, ANALYSIS_VERSION, JSON.stringify(features), null, new Date().toISOString());
     } catch (err) {

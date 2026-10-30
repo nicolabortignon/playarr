@@ -1,12 +1,12 @@
 import { parseRange } from '@playarr/shared';
 import type { FastifyInstance } from 'fastify';
-import type { Config } from '../config.ts';
+import { FileAccessError, type FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
 import { mimeForPath } from '../library/format.ts';
-import { mapPath, MediaUnavailableError, type MediaSource } from '../media/index.ts';
+import { MediaUnavailableError, type MediaSource } from '../media/index.ts';
 
-export function streamRoutes(app: FastifyInstance, deps: { config: Config; library: Library; media: MediaSource }) {
-  const { config, library, media } = deps;
+export function streamRoutes(app: FastifyInstance, deps: { library: Library; files: FileResolver }) {
+  const { library } = deps;
 
   app.route<{ Params: { fileId: string } }>({
     method: ['GET', 'HEAD'],
@@ -17,12 +17,15 @@ export function streamRoutes(app: FastifyInstance, deps: { config: Config; libra
       const file = Number.isInteger(fileId) ? await library.file(fileId) : undefined;
       if (!file) return reply.code(404).send({ error: 'Unknown track file' });
 
-      const path = mapPath(file.path, config.pathMap);
-      // Defense in depth: when roots are configured, never read outside them.
-      const roots = config.pathMap.map(([, to]) => (to.endsWith('/') ? to : `${to}/`));
-      if (roots.length && !roots.some((root) => path.startsWith(root))) {
-        req.log.warn({ path }, 'refusing to stream outside configured roots');
-        return reply.code(403).send({ error: 'File is outside the configured music folders' });
+      // Defense in depth: never read outside the source's folder or the configured roots.
+      let media: MediaSource;
+      let path: string;
+      try {
+        ({ media, path } = deps.files.resolve(file));
+      } catch (err) {
+        if (!(err instanceof FileAccessError)) throw err;
+        req.log.warn({ path: file.path }, err.message);
+        return reply.code(err.status).send({ error: err.message });
       }
       let size: number;
       let mtimeMs: number;
