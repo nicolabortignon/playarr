@@ -5,7 +5,10 @@
 #   sudo sh update.sh            update to the latest commit on main (does nothing if already there)
 #   sudo sh update.sh --force    rebuild and restart even if already up to date
 #   sudo sh update.sh --ref X    deploy branch, tag or commit X instead of main
-#   sudo sh update.sh --quiet    print only when something changes or fails (for cron)
+#   sudo sh update.sh --quiet    print only when something changes or fails
+#
+# Settings → Updates runs it on a schedule through the updater container (docker/updater.sh), which
+# sets PLAYARR_UPDATER=1 (rebuild only the playarr service) and PLAYARR_HEALTH_URL.
 #
 # First time on a machine that already runs Playarr:
 #   cd /volume1/docker/playarr && sudo wget -qO update.sh https://raw.githubusercontent.com/nicolabortignon/playarr/main/docker/update.sh && sudo sh update.sh
@@ -16,6 +19,8 @@
 set -eu
 
 REPO="${PLAYARR_REPO:-nicolabortignon/playarr}"
+# Inside the updater container 127.0.0.1 is the updater itself: it passes http://playarr:4000/api/health.
+HEALTH_URL="${PLAYARR_HEALTH_URL:-http://127.0.0.1:4000/api/health}"
 REF=main
 FORCE=0
 QUIET=0
@@ -39,7 +44,31 @@ fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
 # One update at a time (a scheduled run and a manual one, say).
 LOCK="$DIR/.update.lock"
 mkdir "$LOCK" 2>/dev/null || fail "Another update is running (remove $LOCK if it isn't)"
-trap 'rm -rf "$LOCK" "$DIR/src.new" "$DIR/src.tar.gz"' EXIT
+trap 'rm -rf "$LOCK" "$DIR/src.new" "$DIR/src.tar.gz" "$DIR/.env.new"' EXIT
+
+# Run as root, keep the files owned by whoever owns this folder (so a later non-root deploy can replace them).
+OWNER=""
+if [ "$(id -u)" -eq 0 ]; then OWNER="$(stat -c '%u:%g' "$DIR" 2>/dev/null || true)"; fi
+
+# compose.yaml mounts this folder into the updater at the same path (PLAYARR_DIR, read from .env).
+export PLAYARR_DIR="$DIR"
+if ! grep -Fqx "PLAYARR_DIR=$DIR" "$DIR/.env" 2>/dev/null; then
+  (
+    umask 077
+    { grep -v '^PLAYARR_DIR=' "$DIR/.env" 2>/dev/null || true; printf 'PLAYARR_DIR=%s\n' "$DIR"; } > "$DIR/.env.new"
+  ) || fail "Couldn't write $DIR/.env"
+  # Same owner as before (deploy.mjs rewrites .env without root).
+  ENV_OWNER="$OWNER"
+  if [ -f "$DIR/.env" ] && [ -n "$OWNER" ]; then ENV_OWNER="$(stat -c '%u:%g' "$DIR/.env" 2>/dev/null || printf '%s' "$OWNER")"; fi
+  if [ -n "$ENV_OWNER" ]; then chown "$ENV_OWNER" "$DIR/.env.new" 2>/dev/null || true; fi
+  mv "$DIR/.env.new" "$DIR/.env" || fail "Couldn't write $DIR/.env"
+fi
+
+# Settings → Updates and the updater share ./update: made here, owned like this folder, so Docker
+# doesn't create it as root-only when compose mounts it.
+mkdir -p "$DIR/update" || fail "Couldn't create $DIR/update"
+chmod 0775 "$DIR/update" 2>/dev/null || true
+if [ -n "$OWNER" ]; then chown "$OWNER" "$DIR/update" 2>/dev/null || true; fi
 
 # fetch URL [header]: the body on stdout, with curl or wget.
 fetch() {
@@ -58,6 +87,8 @@ case "$SHA" in
 esac
 [ "${#SHA}" -eq 40 ] || fail "GitHub answered something unexpected for $REF"
 SHORT="$(printf '%s' "$SHA" | cut -c1-7)"
+# The newest commit, for Settings → Updates (written every time, also when already up to date).
+printf '%s\n' "$SHA" > "$DIR/LATEST.new" && mv "$DIR/LATEST.new" "$DIR/LATEST"
 
 DEPLOYED="$(cat "$DIR/DEPLOYED" 2>/dev/null || true)"
 if [ "$DEPLOYED" = "$SHA" ] && [ "$FORCE" = 0 ]; then
@@ -80,21 +111,23 @@ cp "$DIR/src/docker/compose.yaml" "$DIR/compose.yaml"
 # The deployed commit's own copy of this script, for next time (older commits don't have one).
 if [ -f "$DIR/src/docker/update.sh" ]; then cp "$DIR/src/docker/update.sh" "$DIR/update.sh.new" && mv "$DIR/update.sh.new" "$DIR/update.sh"; fi
 mkdir -p "$DIR/config" "$DIR/cache"
-# Run as root, keep the files owned by whoever owns this folder (so a later non-root deploy can replace them).
-if [ "$(id -u)" -eq 0 ]; then
-  OWNER="$(stat -c '%u:%g' "$DIR" 2>/dev/null || true)"
-  [ -n "$OWNER" ] && chown -R "$OWNER" "$DIR/src" "$DIR/compose.yaml" "$DIR/update.sh" 2>/dev/null || true
-fi
+if [ -n "$OWNER" ]; then chown -R "$OWNER" "$DIR/src" "$DIR/compose.yaml" "$DIR/update.sh" 2>/dev/null || true; fi
 
 step "Building and restarting (the first build takes a few minutes)"
 # No -f: compose picks up compose.yaml and, if present, compose.override.yaml.
-$DOCKER compose up -d --build --remove-orphans || fail "Build or start failed; the previous container is still running"
+if [ "${PLAYARR_UPDATER:-}" = 1 ]; then
+  # From the updater: rebuild Playarr only; the updater refreshes itself afterwards.
+  $DOCKER compose up -d --build --no-deps --remove-orphans playarr || fail "Build or start failed; the previous container is still running"
+else
+  # Also builds and starts the updater (Settings → Updates).
+  $DOCKER compose up -d --build --remove-orphans || fail "Build or start failed; the previous container is still running"
+fi
 $DOCKER image prune -f --filter label=com.docker.compose.project=playarr >/dev/null 2>&1 || true
 
 step "Checking"
 i=0
 while [ $i -lt 40 ]; do
-  HEALTH="$(fetch http://127.0.0.1:4000/api/health 2>/dev/null || true)"
+  HEALTH="$(fetch "$HEALTH_URL" 2>/dev/null || true)"
   case "$HEALTH" in
     "{"*)
       printf '%s\n' "$SHA" > "$DIR/DEPLOYED"
