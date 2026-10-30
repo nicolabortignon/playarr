@@ -36,4 +36,14 @@ describe('migrate', () => {
     expect(cols('source_tracks')).toEqual(['source_id', 'track_id']);
     expect(cols('folder_files')).toEqual(['source_id', 'rel_path', 'size', 'mtime_ms', 'tags']);
   });
+
+  it('adds folder matches and the release cache', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db);
+    const cols = (t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
+    expect(cols('folder_matches')).toEqual([
+      'source_id', 'rel_path', 'group_key', 'state', 'overlay', 'candidates', 'score', 'file_size', 'file_mtime', 'updated_at',
+    ]);
+    expect(cols('mb_releases')).toEqual(['release_id', 'data', 'fetched_at']);
+  });
 });

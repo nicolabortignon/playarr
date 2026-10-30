@@ -118,6 +118,27 @@ const MIGRATIONS = [
      tags      TEXT,
      PRIMARY KEY (source_id, rel_path)
    );`,
+  // Matching folder files to MusicBrainz: one row per file (the overlay to lay over its tags),
+  // and fetched releases (track lists) so matches and missing songs need no refetching.
+  `CREATE TABLE folder_matches (
+     source_id  INTEGER NOT NULL REFERENCES sources (id) ON DELETE CASCADE,
+     rel_path   TEXT NOT NULL,
+     group_key  TEXT NOT NULL,
+     state      TEXT NOT NULL,
+     overlay    TEXT,
+     candidates TEXT,
+     score      REAL,
+     file_size  INTEGER NOT NULL,
+     file_mtime INTEGER NOT NULL,
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY (source_id, rel_path)
+   );
+   CREATE INDEX folder_matches_by_group ON folder_matches (source_id, group_key);
+   CREATE TABLE mb_releases (
+     release_id TEXT PRIMARY KEY,
+     data       TEXT NOT NULL,
+     fetched_at TEXT NOT NULL
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
