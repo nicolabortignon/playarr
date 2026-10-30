@@ -8,6 +8,15 @@ import type { CatalogStore } from '../catalog/store.ts';
 import type { Library } from '../library/library.ts';
 import { isLocalAddress } from '../net.ts';
 
+/** Where a folder is, and how to reach it over SSH or SFTP. */
+const connectionFields = {
+  host: z.string().trim().max(255).optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+  user: z.string().trim().max(100).optional(),
+  password: z.string().max(500).optional(),
+  privateKeyPath: z.string().trim().max(4096).optional(),
+};
+const folderAccess = z.enum(['local', 'ssh', 'sftp']);
 const sourceInput = z.object({
   kind: z.enum(['lidarr', 'folder']).optional(),
   name: z.string().trim().max(80).optional(),
@@ -17,8 +26,15 @@ const sourceInput = z.object({
       url: z.url().optional(),
       apiKey: z.string().trim().max(200).optional(),
       path: z.string().trim().max(4096).optional(),
+      access: folderAccess.optional(),
+      ...connectionFields,
     })
     .optional(),
+});
+const browseInput = z.object({
+  path: z.string().max(4096).optional(),
+  id: z.number().int().optional(),
+  connection: z.object({ access: folderAccess, ...connectionFields }).optional(),
 });
 const testInput = z.object({
   id: z.number().int().optional(),
@@ -89,16 +105,22 @@ export function settingsRoutes(
   });
 
   app.post('/api/settings/sources', editable, (req, reply) =>
-    handle(reply, () => {
-      const info = sources.add(parse(sourceInput, req.body));
+    handle(reply, async () => {
+      const input = parse(sourceInput, req.body);
+      // A folder on another machine is checked over its connection before it's saved.
+      await sources.verify(input);
+      const info = sources.add(input);
       syncInBackground();
       return reply.code(201).send(info);
     }),
   );
 
   app.patch<Id>('/api/settings/sources/:id', editable, (req, reply) =>
-    handle(reply, () => {
-      const info = sources.update(Number(req.params.id), parse(sourceInput, req.body));
+    handle(reply, async () => {
+      const id = Number(req.params.id);
+      const input = parse(sourceInput, req.body);
+      await sources.verify(input, id);
+      const info = sources.update(id, input);
       syncInBackground();
       return info;
     }),
@@ -127,6 +149,11 @@ export function settingsRoutes(
   // Browsing reveals the server's folder names, so it's local-only too.
   app.get<{ Querystring: { path?: string } }>('/api/settings/folders', editable, (req, reply) =>
     handle(reply, () => sources.listFolders(req.query.path || undefined)),
+  );
+
+  // On this server, or over a (possibly unsaved) SSH/SFTP connection; the saved password never leaves the server.
+  app.post('/api/settings/folders/browse', editable, (req, reply) =>
+    handle(reply, () => sources.browse(parse(browseInput, req.body))),
   );
 
   app.post<Id>('/api/settings/sources/:id/rescan', editable, (_req, reply) =>

@@ -41,6 +41,24 @@ describe('settings routes', () => {
     expect(home.json()).toMatchObject({ path: null, folders: [{ path: '/' }] });
   });
 
+  it('browses over a connection from the home network only', async () => {
+    const { app } = setup();
+    const away = await app.inject({ method: 'POST', url: '/api/settings/folders/browse', payload: {}, remoteAddress: AWAY });
+    expect(away.statusCode).toBe(403);
+    const home = await app.inject({ method: 'POST', url: '/api/settings/folders/browse', payload: {}, remoteAddress: HOME });
+    expect(home.json()).toMatchObject({ path: null });
+  });
+
+  it('validates remote connection fields', async () => {
+    const res = await setup().app.inject({
+      method: 'POST',
+      url: '/api/settings/sources',
+      payload: { kind: 'folder', settings: { access: 'ssh', host: 'nas', user: 'me', port: 99999, path: '/m' } },
+      remoteAddress: HOME,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('accepts a folder path', async () => {
     const res = await setup().app.inject({
       method: 'POST',
