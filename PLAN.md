@@ -323,6 +323,8 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 
 **Deploy (`pnpm deploy:nas`, `docker/deploy.mjs`):** `git archive HEAD` goes over SSH into `src/` (only committed code: no `.env`, no local data). Then it writes `.env`, runs `sudo docker compose up -d --build` (the image is built on the NAS, natively x86_64), and waits for `/api/health`. `--with-data` copies this machine's database once (a `VACUUM INTO` snapshot, safe while the local server runs); `--force-data` replaces the NAS's.
 
+**UGOS gotcha:** inherited ACLs on `/volume1/docker` make unpacked files 770 and new files readable by everyone. The image runs `chmod -R a+rX` on its build output (the app runs as uid 1000, not root), and the deploy `chmod 600`s `.env` (umask alone isn't enough).
+
 **Updating:** commit, then `pnpm deploy:nas`. **Logs:** `sudo docker compose -f /volume1/docker/playarr/compose.yaml logs -f`. **Backup:** `config/`.
 
 ## 12. Decisions log
