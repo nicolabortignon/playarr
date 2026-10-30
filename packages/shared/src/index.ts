@@ -314,6 +314,8 @@ export interface SourceInfo {
   review: number;
   /** Folder sources: album groups still being matched. */
   matching: number;
+  /** Folder sources: Playarr can write to the folder (needed to organize it). */
+  writable?: boolean;
 }
 
 export interface SourcesResponse {
@@ -402,4 +404,36 @@ export interface MusicBrainzStatus {
   etaSeconds: number;
   /** Folder album groups still waiting to be matched. */
   matching: number;
+}
+
+// ── Organizing folder files ─────────────────────────────────────────────────
+
+export interface OrganizeMove {
+  /** Current path, relative to the folder. Also the move's id. */
+  from: string;
+  to: string;
+  artist: string;
+  album?: string;
+  /** Album and song known on MusicBrainz; guesses start unchecked. */
+  confident: boolean;
+}
+
+export interface OrganizeSkip {
+  from: string;
+  to?: string;
+  reason: string;
+}
+
+export interface OrganizePlan {
+  writable: boolean;
+  moves: OrganizeMove[];
+  skipped: OrganizeSkip[];
+  /** The newest batch that can still be undone. */
+  lastBatch?: { id: number; files: number; at: string };
+}
+
+export interface OrganizeResult {
+  batchId: number;
+  moved: number;
+  skipped: OrganizeSkip[];
 }
