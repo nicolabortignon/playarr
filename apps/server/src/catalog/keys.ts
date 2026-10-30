@@ -11,3 +11,6 @@ export const albumKeyFor = (mbid: string | undefined, artistName: string, title:
 
 /** A song on an album. Keyed by recording, so editions of an album share their songs. */
 export const trackKeyFor = (albumKeyValue: string, recordingId: string) => `${albumKeyValue}#${recordingId}`;
+
+/** A song by artist and title, ignoring case, accents and punctuation. */
+export const songNameKey = (artistName: string, title: string) => `${normalize(artistName)}|${normalize(title)}`;

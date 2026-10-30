@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { albumKey, normalize } from '../library/search.ts';
+import { songNameKey } from './keys.ts';
 import { CatalogStore } from './store.ts';
 import { freshDb, mezzanine } from './testFixtures.ts';
 
@@ -150,5 +152,79 @@ describe('CatalogStore: managing sources', () => {
     store.setAppSetting('x', '1');
     store.setAppSetting('x', '2');
     expect(store.appSetting('x')).toBe('2');
+  });
+});
+
+describe('CatalogStore: several sources', () => {
+  function folderSyncOf(title: string) {
+    const s = mezzanine();
+    s.metaRank = 2;
+    s.albums[0]!.title = title;
+    s.copies = s.copies.map((c) => ({ ...c, ref: `folder/${c.ref}`, preferredId: undefined }));
+    return s;
+  }
+
+  it('keeps the most trusted metadata', () => {
+    const store = new CatalogStore(freshDb());
+    const lidarr = store.addSource('lidarr', 'Lidarr');
+    const folder = store.addSource('folder', 'Music');
+    store.applySync(lidarr, mezzanine());
+    store.applySync(folder, folderSyncOf('mezzanine (rip)'));
+    expect(store.load().albums[0]!.meta.title).toBe('Mezzanine');
+    // The other way round: Lidarr arriving later takes over.
+    const store2 = new CatalogStore(freshDb());
+    const l2 = store2.addSource('lidarr', 'Lidarr');
+    const f2 = store2.addSource('folder', 'Music');
+    store2.applySync(f2, folderSyncOf('mezzanine (rip)'));
+    store2.applySync(l2, mezzanine());
+    expect(store2.load().albums[0]!.meta.title).toBe('Mezzanine');
+  });
+
+  it('records the songs each source reported, with or without files', () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('lidarr', 'Lidarr');
+    const sync = mezzanine();
+    sync.tracks.push({ ...sync.tracks[0]!, key: 'mb:rg-1#rec-3', preferredId: 702, recordingId: 'rec-3', title: 'Teardrop', trackNumber: 3 });
+    store.applySync(id, sync);
+    expect(store.load().sourceTracks.map((s) => s.trackId).sort()).toEqual([700, 701, 702]);
+    store.applySync(id, mezzanine());
+    expect(store.load().sourceTracks.map((s) => s.trackId).sort()).toEqual([700, 701]);
+  });
+
+  it('caches folder files and forgets the ones that are gone', () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('folder', 'Music');
+    const tags = { genres: [], duration: 200, format: { codec: 'FLAC', container: 'flac', lossless: true } };
+    store.saveFolderFiles(id, [
+      { rel: 'a.flac', size: 1, mtimeMs: 10, tags },
+      { rel: 'b.mp3', size: 2, mtimeMs: 20, tags: null },
+    ], ['a.flac', 'b.mp3']);
+    expect(store.folderFiles(id).get('a.flac')).toEqual({ size: 1, mtimeMs: 10, tags });
+    expect(store.folderFiles(id).get('b.mp3')!.tags).toBeNull();
+    store.saveFolderFiles(id, [], ['a.flac']);
+    expect([...store.folderFiles(id).keys()]).toEqual(['a.flac']);
+    store.removeSource(id);
+    expect(store.folderFiles(id).size).toBe(0);
+  });
+
+  it('indexes the catalog by name, preferring MusicBrainz rows', () => {
+    const store = new CatalogStore(freshDb());
+    const folder = store.addSource('folder', 'Music');
+    const lidarr = store.addSource('lidarr', 'Lidarr');
+    // A folder album under name keys first, then the same album from Lidarr under MusicBrainz keys.
+    const named = mezzanine();
+    named.metaRank = 2;
+    named.artists[0] = { ...named.artists[0]!, key: 'name:massive attack', mbid: undefined, preferredId: undefined };
+    named.albums[0] = { ...named.albums[0]!, key: 'name:x', artistKey: 'name:massive attack', mbid: undefined, preferredId: undefined };
+    named.tracks = named.tracks.map((t) => ({ ...t, key: `name:x#${t.recordingId}`, albumKey: 'name:x', preferredId: undefined }));
+    named.copies = named.copies.map((c) => ({ ...c, trackKey: `name:x#${c.trackKey.split('#')[1]}`, preferredId: undefined }));
+    store.applySync(folder, named);
+    store.applySync(lidarr, mezzanine());
+
+    const index = store.nameIndex();
+    expect(index.artists.get(normalize('Massive Attack'))!.key).toBe('mb:art-1');
+    expect(index.albums.get(albumKey('Massive Attack', 'Mezzanine'))!.key).toBe('mb:rg-1');
+    expect(index.tracks.get(`mb:rg-1|${normalize('Angel')}`)).toMatchObject({ key: 'mb:rg-1#rec-1', recordingId: 'rec-1' });
+    expect(index.songs.get(songNameKey('Massive Attack', 'Angel'))).toMatchObject({ albumKey: 'mb:rg-1', albumTitle: 'Mezzanine' });
   });
 });

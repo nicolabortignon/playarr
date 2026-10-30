@@ -74,10 +74,34 @@ export interface SourceSync {
   tracks: SourceTrack[];
   copies: SourceCopy[];
   lidarrAlbums?: LidarrAlbumState[];
+  /** How much this source's metadata is trusted: lower wins (Lidarr 0, folder tags 2). Default 0. */
+  metaRank?: number;
 }
 
 export interface CatalogSource {
   readonly kind: SourceKind;
   /** Everything the source currently has. Copies it no longer reports are removed. */
   sync(): Promise<SourceSync>;
+}
+
+/** A song already in the catalog, as the name index finds it. */
+export interface KnownTrack {
+  key: string;
+  recordingId: string;
+  albumKey: string;
+  albumTitle: string;
+  artistKey: string;
+  artistName: string;
+}
+
+/** The catalog by name, so untagged folder files can join what's already there. */
+export interface NameIndex {
+  /** normalize(artist name) → artist */
+  artists: Map<string, { key: string; name: string }>;
+  /** albumKey(artist, title) from library/search.ts → album */
+  albums: Map<string, { key: string; title: string }>;
+  /** `${album key}|${normalize(title)}` → song on that album */
+  tracks: Map<string, KnownTrack>;
+  /** songNameKey(artist, title) → the song on its most "original" album (studio album first) */
+  songs: Map<string, KnownTrack>;
 }

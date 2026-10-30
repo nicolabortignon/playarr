@@ -1,6 +1,19 @@
 import type { AudioFormat } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
-import type { LidarrAlbumState, SourceAlbum, SourceArtist, SourceCopy, SourceKind, SourceSync, SourceTrack } from './types.ts';
+import { albumKey as albumNameKey, normalize } from '../library/search.ts';
+import { songNameKey } from './keys.ts';
+import type { TagInfo } from './tags.ts';
+import type {
+  KnownTrack,
+  LidarrAlbumState,
+  NameIndex,
+  SourceAlbum,
+  SourceArtist,
+  SourceCopy,
+  SourceKind,
+  SourceSync,
+  SourceTrack,
+} from './types.ts';
 
 export type ArtistInfo = Omit<SourceArtist, 'key' | 'preferredId'>;
 export type AlbumInfo = Omit<SourceAlbum, 'key' | 'preferredId' | 'artistKey'>;
@@ -58,6 +71,8 @@ export interface CatalogRows {
   albums: AlbumRow[];
   tracks: TrackRow[];
   copies: CopyRow[];
+  /** Songs each source reported in its last sync (with or without a file). */
+  sourceTracks: { sourceId: number; trackId: number }[];
 }
 
 type CatalogTable = 'catalog_artists' | 'catalog_albums' | 'catalog_tracks';
@@ -136,6 +151,8 @@ export class CatalogStore {
     this.db.exec('BEGIN');
     try {
       this.db.prepare('DELETE FROM copies WHERE source_id = ?').run(id);
+      this.db.prepare('DELETE FROM source_tracks WHERE source_id = ?').run(id);
+      this.db.prepare('DELETE FROM folder_files WHERE source_id = ?').run(id);
       this.db.prepare('DELETE FROM sources WHERE id = ?').run(id);
       this.db.exec('COMMIT');
     } catch (err) {
@@ -194,17 +211,18 @@ export class CatalogStore {
   /** Replace what this source has with `sync`, all or nothing. */
   applySync(sourceId: number, sync: SourceSync) {
     const now = new Date().toISOString();
+    const rank = sync.metaRank ?? 0;
     this.db.exec('BEGIN');
     try {
       const artistIds = new Map<string, number>();
       for (const { key, preferredId, ...meta } of sync.artists) {
-        artistIds.set(key, this.upsert('catalog_artists', key, preferredId, {}, meta, now));
+        artistIds.set(key, this.upsert('catalog_artists', key, preferredId, {}, meta, now, rank));
       }
       const albumIds = new Map<string, number>();
       for (const { key, preferredId, artistKey, ...meta } of sync.albums) {
         const artistId = artistIds.get(artistKey);
         if (artistId === undefined) throw new Error(`Album ${key} refers to unknown artist ${artistKey}`);
-        albumIds.set(key, this.upsert('catalog_albums', key, preferredId, { artist_id: artistId }, meta, now));
+        albumIds.set(key, this.upsert('catalog_albums', key, preferredId, { artist_id: artistId }, meta, now, rank));
       }
       const trackIds = new Map<string, number>();
       for (const { key, preferredId, albumKey, recordingId, ...meta } of sync.tracks) {
@@ -212,7 +230,15 @@ export class CatalogStore {
         if (albumId === undefined) throw new Error(`Track ${key} refers to unknown album ${albumKey}`);
         trackIds.set(
           key,
-          this.upsert('catalog_tracks', key, preferredId, { album_id: albumId, recording_id: recordingId }, meta, now),
+          this.upsert(
+            'catalog_tracks',
+            key,
+            preferredId,
+            { album_id: albumId, recording_id: recordingId },
+            meta,
+            now,
+            rank,
+          ),
         );
       }
       const seen = new Set<number>();
@@ -221,6 +247,10 @@ export class CatalogStore {
         if (trackId === undefined) throw new Error(`Copy ${copy.ref} refers to unknown track ${copy.trackKey}`);
         seen.add(this.upsertCopy(sourceId, copy, trackId, now));
       }
+      // The songs this source reports, including ones it has no file for (missing songs).
+      this.db.prepare('DELETE FROM source_tracks WHERE source_id = ?').run(sourceId);
+      const report = this.db.prepare('INSERT OR IGNORE INTO source_tracks (source_id, track_id) VALUES (?, ?)');
+      for (const trackId of new Set(trackIds.values())) report.run(sourceId, trackId);
       // Files the source no longer has. Catalog rows stay, so their ids are never reused.
       const remove = this.db.prepare('DELETE FROM copies WHERE id = ?');
       for (const { id } of this.db.prepare('SELECT id FROM copies WHERE source_id = ?').all(sourceId) as {
@@ -293,10 +323,100 @@ export class CatalogStore {
         format: JSON.parse(r.format) as AudioFormat,
         addedAt: r.added_at ?? undefined,
       })),
+      sourceTracks: all<{ source_id: number; track_id: number }>('SELECT source_id, track_id FROM source_tracks').map(
+        (r) => ({ sourceId: r.source_id, trackId: r.track_id }),
+      ),
     };
   }
 
-  /** Insert or update a catalog row by key; returns its id. */
+  /** The last scan's view of a folder source's files, by path relative to the folder. */
+  folderFiles(sourceId: number): Map<string, { size: number; mtimeMs: number; tags: TagInfo | null }> {
+    const rows = this.db
+      .prepare('SELECT rel_path, size, mtime_ms, tags FROM folder_files WHERE source_id = ?')
+      .all(sourceId) as { rel_path: string; size: number; mtime_ms: number; tags: string | null }[];
+    return new Map(
+      rows.map((r) => [r.rel_path, { size: r.size, mtimeMs: r.mtime_ms, tags: r.tags ? (JSON.parse(r.tags) as TagInfo) : null }]),
+    );
+  }
+
+  /** Save newly read files and forget files that are no longer `present`. */
+  saveFolderFiles(
+    sourceId: number,
+    changed: { rel: string; size: number; mtimeMs: number; tags: TagInfo | null }[],
+    present: string[],
+  ) {
+    this.db.exec('BEGIN');
+    try {
+      const save = this.db.prepare(
+        `INSERT INTO folder_files (source_id, rel_path, size, mtime_ms, tags) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (source_id, rel_path) DO UPDATE SET size = excluded.size, mtime_ms = excluded.mtime_ms, tags = excluded.tags`,
+      );
+      for (const f of changed) save.run(sourceId, f.rel, f.size, f.mtimeMs, f.tags ? JSON.stringify(f.tags) : null);
+      const keep = new Set(present);
+      const remove = this.db.prepare('DELETE FROM folder_files WHERE source_id = ? AND rel_path = ?');
+      for (const rel of this.folderFiles(sourceId).keys()) if (!keep.has(rel)) remove.run(sourceId, rel);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /** The catalog by name. MusicBrainz-keyed rows win over name-keyed ones; songs prefer studio albums. */
+  nameIndex(): NameIndex {
+    const rows = this.load();
+    const artists = new Map(rows.artists.map((a) => [a.id, a]));
+    const albums = new Map(rows.albums.map((a) => [a.id, a]));
+    const index: NameIndex = { artists: new Map(), albums: new Map(), tracks: new Map(), songs: new Map() };
+    const better = (key: string, current?: { key: string }) => !current || (key.startsWith('mb:') && !current.key.startsWith('mb:'));
+
+    for (const a of rows.artists) {
+      const k = normalize(a.meta.name);
+      if (better(a.key, index.artists.get(k))) index.artists.set(k, { key: a.key, name: a.meta.name });
+    }
+    const albumRank = (a: (typeof rows.albums)[number]) =>
+      a.key.startsWith('loose:')
+        ? 9
+        : a.meta.albumType === 'Album' && !a.meta.secondaryTypes.length
+          ? 0
+          : a.meta.albumType === 'EP'
+            ? 1
+            : a.meta.albumType === 'Single'
+              ? 2
+              : 3;
+    for (const al of rows.albums) {
+      const artist = artists.get(al.artistId);
+      if (!artist || al.key.startsWith('loose:')) continue;
+      const k = albumNameKey(artist.meta.name, al.meta.title);
+      if (better(al.key, index.albums.get(k))) index.albums.set(k, { key: al.key, title: al.meta.title });
+    }
+    const songRank = new Map<string, number>();
+    for (const t of rows.tracks) {
+      const album = albums.get(t.albumId);
+      const artist = album && artists.get(album.artistId);
+      if (!album || !artist) continue;
+      const known: KnownTrack = {
+        key: t.key,
+        recordingId: t.recordingId,
+        albumKey: album.key,
+        albumTitle: album.meta.title,
+        artistKey: artist.key,
+        artistName: artist.meta.name,
+      };
+      const tk = `${album.key}|${normalize(t.meta.title)}`;
+      if (!index.tracks.has(tk)) index.tracks.set(tk, known);
+      if (album.key.startsWith('loose:')) continue;
+      const sk = songNameKey(artist.meta.name, t.meta.title);
+      const rank = albumRank(album) * 10 + (album.key.startsWith('mb:') ? 0 : 5);
+      if (!index.songs.has(sk) || rank < songRank.get(sk)!) {
+        index.songs.set(sk, known);
+        songRank.set(sk, rank);
+      }
+    }
+    return index;
+  }
+
+  /** Insert or update a catalog row by key; returns its id. Metadata changes only if `rank` is at least as trusted. */
   private upsert(
     table: CatalogTable,
     key: string,
@@ -304,19 +424,26 @@ export class CatalogStore {
     columns: Record<string, string | number>,
     meta: object,
     now: string,
+    rank: number,
   ): number {
     const names = Object.keys(columns);
     const values = Object.values(columns);
-    const existing = this.db.prepare(`SELECT id FROM ${table} WHERE key = ?`).get(key) as { id: number } | undefined;
+    const existing = this.db.prepare(`SELECT id, meta_rank FROM ${table} WHERE key = ?`).get(key) as
+      | { id: number; meta_rank: number }
+      | undefined;
     if (existing) {
-      const sets = [...names.map((n) => `${n} = ?`), 'meta = ?', 'updated_at = ?'].join(', ');
-      this.db.prepare(`UPDATE ${table} SET ${sets} WHERE id = ?`).run(...values, JSON.stringify(meta), now, existing.id);
+      if (rank <= existing.meta_rank) {
+        const sets = [...names.map((n) => `${n} = ?`), 'meta = ?', 'meta_rank = ?', 'updated_at = ?'].join(', ');
+        this.db
+          .prepare(`UPDATE ${table} SET ${sets} WHERE id = ?`)
+          .run(...values, JSON.stringify(meta), rank, now, existing.id);
+      }
       return existing.id;
     }
-    const cols = ['id', 'key', ...names, 'meta', 'updated_at'];
+    const cols = ['id', 'key', ...names, 'meta', 'meta_rank', 'updated_at'];
     const res = this.db
       .prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
-      .run(this.freeId(table, preferredId), key, ...values, JSON.stringify(meta), now);
+      .run(this.freeId(table, preferredId), key, ...values, JSON.stringify(meta), rank, now);
     return Number(res.lastInsertRowid);
   }
 
