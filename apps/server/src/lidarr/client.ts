@@ -22,15 +22,28 @@ export class LidarrError extends Error {
 }
 
 export class LidarrClient {
-  constructor(
-    private readonly baseUrl: string,
-    private readonly apiKey: string,
-  ) {}
+  private baseUrl = '';
+  private apiKey = '';
+
+  constructor(baseUrl = '', apiKey = '') {
+    this.configure(baseUrl, apiKey);
+  }
+
+  /** Point the client at a Lidarr. Empty values leave it unconfigured. */
+  configure(baseUrl: string, apiKey: string) {
+    this.baseUrl = baseUrl.trim().replace(/\/+$/, '');
+    this.apiKey = apiKey;
+  }
+
+  get configured(): boolean {
+    return !!this.baseUrl && !!this.apiKey;
+  }
 
   private async request(
     path: string,
     init: { method?: string; body?: unknown; timeoutMs?: number } = {},
   ): Promise<Response> {
+    if (!this.configured) throw new LidarrError('No Lidarr source is set up. Add one in Settings → Sources.', 503);
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
