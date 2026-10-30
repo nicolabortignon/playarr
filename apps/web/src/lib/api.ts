@@ -11,6 +11,7 @@ import type {
   DiscoverArtistDetail,
   DiscoverResults,
   FavoriteTrack,
+  FolderAccessOptions,
   FolderBrowseRequest,
   FolderListing,
   PlaylistDetail,
@@ -112,9 +113,11 @@ export const api = {
   testSource: (body: { id?: number; url?: string; apiKey?: string }) =>
     request<SourceTestResult>('/api/settings/sources/test', { method: 'POST', body: JSON.stringify(body) }),
   rescanSource: (id: number) => request<void>(`/api/settings/sources/${id}/rescan`, { method: 'POST' }),
-  /** Folders on this server, or over a (possibly unsaved) SSH/SFTP connection. */
+  /** Folders on this server, or over a (possibly unsaved) SSH, SFTP or SMB connection. */
   browseFolders: (req: FolderBrowseRequest) =>
     request<FolderListing>('/api/settings/folders/browse', { method: 'POST', body: JSON.stringify(req) }),
+  /** Which folder locations this server can reach (SMB needs rclone). */
+  folderAccess: () => get<FolderAccessOptions>('/api/settings/folders/access'),
   review: (id: number) => get<ReviewGroup[]>(`/api/settings/sources/${id}/review`),
   reviewAction: (id: number, action: ReviewAction) =>
     request<void>(`/api/settings/sources/${id}/review`, { method: 'POST', body: JSON.stringify(action) }),

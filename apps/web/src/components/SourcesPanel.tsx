@@ -20,7 +20,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural, formatWait } from '../lib/format';
-import { useFolderListing, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
+import { useFolderAccess, useFolderListing, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
 import { Dialog } from './Dialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { ReviewDialog } from './ReviewDialog';
@@ -125,7 +125,11 @@ function SourceRow({
     }
   };
   const remote = s.kind === 'folder' && !!s.settings?.access && s.settings.access !== 'local';
-  const where = remote ? `${s.settings!.user}@${s.settings!.host}:${s.settings!.path}` : (s.settings?.url ?? s.settings?.path);
+  const where = !remote
+    ? (s.settings?.url ?? s.settings?.path)
+    : s.settings!.access === 'smb'
+      ? `smb://${s.settings!.user}@${s.settings!.host}${s.settings!.path}`
+      : `${s.settings!.user}@${s.settings!.host}:${s.settings!.path}`;
   const details = [where, `${plural(s.songs, 'song')} · ${plural(s.albums, 'album')}`].filter(Boolean).join(' · ');
 
   return (
@@ -328,7 +332,7 @@ function SourceDialog({
           <KindOption
             icon={<FolderOpen className="size-5" />}
             title="Folder"
-            detail="Music in a folder, on this server or another machine over SSH or SFTP. Playarr only reads it."
+            detail="Music in a folder: on this server, another machine over SSH or SFTP, or an SMB share. Playarr only reads it."
             onClick={() => setKind('folder')}
           />
         </div>
@@ -461,7 +465,12 @@ const ACCESS: { id: FolderAccessKind; label: string }[] = [
   { id: 'local', label: 'This server' },
   { id: 'ssh', label: 'SSH' },
   { id: 'sftp', label: 'SFTP' },
+  { id: 'smb', label: 'SMB share' },
 ];
+
+const SMB_OFF = 'SMB shares need rclone on the server';
+/** SMB listens on 445, SSH and SFTP on 22. */
+const defaultPort = (access: FolderAccessKind) => (access === 'smb' ? 445 : 22);
 
 function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => void }) {
   const actions = useSourceActions();
@@ -472,13 +481,17 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
   const [access, setAccess] = useState<FolderAccessKind>(savedAccess);
   const [path, setPath] = useState<string | undefined>(saved?.path);
   const [host, setHost] = useState(saved?.host ?? '');
-  const [port, setPort] = useState(saved?.port ?? 22);
+  const [port, setPort] = useState(saved?.port ?? defaultPort(savedAccess));
   const [user, setUser] = useState(saved?.user ?? '');
   const [password, setPassword] = useState('');
   const [replacingPassword, setReplacingPassword] = useState(!passwordSaved);
   const [keyPath, setKeyPath] = useState(saved?.privateKeyPath ?? '');
+  const [domain, setDomain] = useState(saved?.domain ?? '');
   const [enabled, setEnabled] = useState(source?.enabled ?? true);
   const remote = access !== 'local';
+  const smb = access === 'smb';
+  // Without rclone on the server, SMB can't be chosen for a new folder (a saved one stays editable).
+  const smbOff = useFolderAccess().data?.smb === false;
   // What the folder browser connects with: taken when Connect is pressed, so typing doesn't open connections.
   const connectionNow = (): FolderBrowseRequest => ({
     id: source?.id,
@@ -488,7 +501,7 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
       port,
       user: user.trim(),
       password: replacingPassword ? password || undefined : undefined,
-      privateKeyPath: keyPath.trim() || undefined,
+      ...(access === 'smb' ? { domain: domain.trim() || undefined } : { privateKeyPath: keyPath.trim() || undefined }),
     },
   });
   const [browsing, setBrowsing] = useState<{ request: FolderBrowseRequest; attempt: number } | null>(() =>
@@ -499,6 +512,9 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
   const chooseAccess = (next: FolderAccessKind) => {
     if (next === access) return;
     setAccess(next);
+    // SMB and SSH listen on different ports: swap the default, keep a port the user chose.
+    if (next === 'smb' && port === 22) setPort(445);
+    if (access === 'smb' && next !== 'smb' && port === 445) setPort(22);
     // A path on one machine means nothing on another.
     setPath(next === savedAccess ? saved?.path : undefined);
     setBrowsing(null);
@@ -506,14 +522,24 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
 
   const connect = () => setBrowsing((b) => ({ request: connectionNow(), attempt: (b?.attempt ?? 0) + 1 }));
 
+  // An SMB folder lives on a share: the list of shares itself can't be chosen.
+  const pathOk = !!path && !(smb && path === '/');
+
   const save = (e: FormEvent) => {
     e.preventDefault();
-    if (!path) return;
+    if (!path || !pathOk) return;
     const settings = {
       path,
       access,
       ...(remote
-        ? { host: host.trim(), port, user: user.trim(), privateKeyPath: keyPath.trim(), ...(replacingPassword && password ? { password } : {}) }
+        ? {
+            host: host.trim(),
+            port,
+            user: user.trim(),
+            // An empty value clears the saved one.
+            ...(smb ? { domain: domain.trim() } : { privateKeyPath: keyPath.trim() }),
+            ...(replacingPassword && password ? { password } : {}),
+          }
         : {}),
     };
     const input = { name: name.trim() || undefined, enabled, settings };
@@ -524,22 +550,28 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
   return (
     <form onSubmit={save} className="space-y-4 p-5">
       <div role="radiogroup" aria-label="Where the folder is" className="flex gap-6 border-b border-line">
-        {ACCESS.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            role="radio"
-            aria-checked={access === a.id}
-            onClick={() => chooseAccess(a.id)}
-            className={cn(
-              '-mb-px border-b-2 pb-2.5 text-[15px] whitespace-nowrap transition-colors',
-              access === a.id ? 'border-accent text-paper' : 'border-transparent text-paper-dim/70 hover:text-paper',
-            )}
-          >
-            {a.label}
-          </button>
-        ))}
+        {ACCESS.map((a) => {
+          const off = a.id === 'smb' && smbOff && savedAccess !== 'smb';
+          return (
+            <button
+              key={a.id}
+              type="button"
+              role="radio"
+              aria-checked={access === a.id}
+              disabled={off}
+              title={off ? SMB_OFF : undefined}
+              onClick={() => chooseAccess(a.id)}
+              className={cn(
+                '-mb-px border-b-2 pb-2.5 text-[15px] whitespace-nowrap transition-colors disabled:opacity-40 disabled:hover:text-paper-dim/70',
+                access === a.id ? 'border-accent text-paper' : 'border-transparent text-paper-dim/70 hover:text-paper',
+              )}
+            >
+              {a.label}
+            </button>
+          );
+        })}
       </div>
+      {smb && smbOff && <p className="text-[13px] text-red-300/80">{SMB_OFF}.</p>}
       {remote && (
         <div className="space-y-4">
           <div className="flex gap-3">
@@ -563,17 +595,17 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
                   min={1}
                   max={65535}
                   value={port}
-                  onChange={(e) => setPort(Number(e.target.value) || 22)}
+                  onChange={(e) => setPort(Number(e.target.value) || defaultPort(access))}
                   className={INPUT}
                   required
                 />
               </Field>
             </div>
           </div>
-          <Field label="User">
+          <Field label="User" hint={smb ? 'guest for guest access' : undefined}>
             <input value={user} onChange={(e) => setUser(e.target.value)} className={INPUT} autoComplete="off" spellCheck={false} required />
           </Field>
-          <Field label="Password" hint="Optional with a key file or ssh-agent">
+          <Field label="Password" hint={smb ? 'Leave empty for guest access' : 'Optional with a key file or ssh-agent'}>
             {replacingPassword ? (
               <input
                 type="password"
@@ -592,18 +624,36 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
               </div>
             )}
           </Field>
-          <Field label="Key file on the server" hint="Optional: a private key on the Playarr server">
-            <input
-              value={keyPath}
-              onChange={(e) => setKeyPath(e.target.value)}
-              placeholder="~/.ssh/id_ed25519"
-              className={cn(INPUT, 'font-mono')}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </Field>
+          {smb ? (
+            <Field label="Domain" hint="Optional">
+              <input
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="WORKGROUP"
+                className={INPUT}
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={100}
+              />
+            </Field>
+          ) : (
+            <Field label="Key file on the server" hint="Optional: a private key on the Playarr server">
+              <input
+                value={keyPath}
+                onChange={(e) => setKeyPath(e.target.value)}
+                placeholder="~/.ssh/id_ed25519"
+                className={cn(INPUT, 'font-mono')}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </Field>
+          )}
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[13px] text-muted">SSH also runs song analysis and fingerprints on that machine. SFTP only reads files.</p>
+            <p className="text-[13px] text-muted">
+              {smb
+                ? 'Playarr reads the share with rclone. Song analysis and fingerprints run on this server.'
+                : 'SSH also runs song analysis and fingerprints on that machine. SFTP only reads files.'}
+            </p>
             <button type="button" onClick={connect} disabled={!host.trim() || !user.trim()} className={cn(SECONDARY, 'shrink-0')}>
               Connect
             </button>
@@ -614,7 +664,13 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
         <div>
           <span className="mb-1.5 block font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Folder</span>
           {remote ? (
-            <FolderBrowser key={browsing!.attempt} value={path} onChange={setPath} request={browsing!.request} />
+            <FolderBrowser
+              key={browsing!.attempt}
+              value={path}
+              onChange={setPath}
+              request={browsing!.request}
+              rootLabel={smb ? `Shares on ${browsing!.request.connection?.host || saved?.host || ''}` : undefined}
+            />
           ) : (
             <FolderBrowser value={path} onChange={setPath} request={{}} />
           )}
@@ -636,7 +692,7 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
       )}
       <p className="text-[13px] text-muted">Playarr only reads this folder. Songs appear after the first scan.</p>
       <div className="flex justify-end pt-2">
-        <button type="submit" disabled={!path || pending} className={PRIMARY}>
+        <button type="submit" disabled={!pathOk || pending} className={PRIMARY}>
           {pending ? 'Saving…' : 'Save'}
         </button>
       </div>
@@ -648,11 +704,14 @@ function FolderBrowser({
   value,
   onChange,
   request,
+  rootLabel,
 }: {
   value?: string;
   onChange: (path: string) => void;
   /** The connection and/or saved source to browse; empty for this server. */
   request: Omit<FolderBrowseRequest, 'path'>;
+  /** What "/" is called, when it isn't a folder you can choose (an SMB server's list of shares). */
+  rootLabel?: string;
 }) {
   const [at, setAt] = useState<string | undefined>(value);
   const { data, error, isFetching } = useFolderListing({ ...request, path: at });
@@ -672,7 +731,9 @@ function FolderBrowser({
             ..
           </button>
         )}
-        <span className="truncate">{data?.path ?? (remote ? (isFetching ? 'Connecting…' : '') : 'Folders Playarr may use')}</span>
+        <span className="truncate">
+          {data?.path === '/' && rootLabel ? rootLabel : (data?.path ?? (remote ? (isFetching ? 'Connecting…' : '') : 'Folders Playarr may use'))}
+        </span>
       </div>
       <ul className="max-h-60 overflow-y-auto py-1">
         {data?.folders.map((f) => (
@@ -687,10 +748,12 @@ function FolderBrowser({
             </button>
           </li>
         ))}
-        {data && data.folders.length === 0 && <li className="px-3 py-2 text-[13px] text-muted">No folders inside.</li>}
+        {data && data.folders.length === 0 && (
+          <li className="px-3 py-2 text-[13px] text-muted">{rootLabel && data.path === '/' ? 'No shares found.' : 'No folders inside.'}</li>
+        )}
       </ul>
       {error && <p className="px-3 py-2 text-[13px] text-red-300/80">{(error as Error).message}</p>}
-      {data?.path && (
+      {data?.path && !(rootLabel && data.path === '/') && (
         <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2">
           <span className="text-[12px] text-muted">
             {plural(data.audioFiles, 'audio file')} here{value === data.path ? ' · selected' : ''}

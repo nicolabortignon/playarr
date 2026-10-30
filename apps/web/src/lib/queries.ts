@@ -280,7 +280,7 @@ export function useSources() {
   return query;
 }
 
-/** Folders to choose from: on this server, or over a (possibly unsaved) SSH/SFTP connection. */
+/** Folders to choose from: on this server, or over a (possibly unsaved) SSH, SFTP or SMB connection. */
 export const useFolderListing = (req: FolderBrowseRequest, enabled = true) =>
   useQuery({
     // The password itself stays out of the cache key.
@@ -289,6 +289,9 @@ export const useFolderListing = (req: FolderBrowseRequest, enabled = true) =>
     enabled,
     retry: false,
   });
+
+/** Which folder locations this server can reach: SMB shares need rclone on the server. */
+export const useFolderAccess = () => useQuery({ queryKey: ['folder-access'], queryFn: api.folderAccess, staleTime: 5 * 60_000 });
 
 /** False once we know there's no Lidarr source: requests and Discover are hidden then. */
 export function useHasLidarr() {
