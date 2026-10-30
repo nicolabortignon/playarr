@@ -22,6 +22,9 @@ importers:
       '@playarr/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@tokenizer/range':
+        specifier: ^0.13.1
+        version: 0.13.1
       chromotome:
         specifier: ^1.21.4
         version: 1.21.4
@@ -1510,6 +1513,10 @@ packages:
   '@tokenizer/inflate@0.6.0':
     resolution: {integrity: sha512-+0RDxhBkyT9xMnGdJAwmats9yxRLR8ypJrQgrnLqOu4Gv/aHlnxYgdGVy2QTwvBl6IF/w2Hr+ZNirH+iMUbVZA==}
     engines: {node: '>=18'}
+
+  '@tokenizer/range@0.13.1':
+    resolution: {integrity: sha512-WEIogJmV0pqZqC7aMScum/BTwqMTcamVO10MGcDzzS2PHO/Lv24XaigeVsEyP+h77t09QwFrQpVPOWl3V900Bw==}
+    engines: {node: '>=16'}
 
   '@tokenizer/token@0.3.0':
     resolution: {integrity: sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A==}
@@ -4662,6 +4669,13 @@ snapshots:
       debug: 4.4.3
       strtok3: 10.6.3
       token-types: 6.1.2
+    transitivePeerDependencies:
+      - supports-color
+
+  '@tokenizer/range@0.13.1':
+    dependencies:
+      debug: 4.4.3
+      strtok3: 10.6.3
     transitivePeerDependencies:
       - supports-color
 

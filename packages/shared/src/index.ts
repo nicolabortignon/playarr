@@ -294,6 +294,8 @@ export * from './range.ts';
 
 export type SourceKind = 'lidarr' | 'folder';
 
+export type FolderAccessKind = 'local' | 'ssh' | 'sftp';
+
 export interface SourceInfo {
   id: number;
   kind: SourceKind;
@@ -302,7 +304,16 @@ export interface SourceInfo {
   position: number;
   enabled: boolean;
   /** Connection settings without secrets. Absent for visitors outside the local network. */
-  settings?: { url?: string; path?: string };
+  settings?: {
+    url?: string;
+    path?: string;
+    /** Folder sources: where the folder is. Absent means this server. */
+    access?: FolderAccessKind;
+    host?: string;
+    port?: number;
+    user?: string;
+    privateKeyPath?: string;
+  };
   /** Secret fields that have a saved value. The values themselves are never sent. */
   secrets: string[];
   lastSyncAt?: string;
@@ -328,8 +339,18 @@ export interface SourceInput {
   kind?: SourceKind;
   name?: string;
   enabled?: boolean;
-  /** Lidarr: url and apiKey (leaving apiKey out keeps the saved one). Folder: path. */
-  settings?: { url?: string; apiKey?: string; path?: string };
+  /** Lidarr: url, apiKey. Folder: path, plus access/host/port/user/password/privateKeyPath for SSH or SFTP. Leaving a secret out keeps the saved one. */
+  settings?: {
+    url?: string;
+    apiKey?: string;
+    path?: string;
+    access?: FolderAccessKind;
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    privateKeyPath?: string;
+  };
 }
 
 export interface SourceTestResult {
@@ -426,6 +447,8 @@ export interface OrganizeSkip {
 
 export interface OrganizePlan {
   writable: boolean;
+  /** Why files can't be organized here, when they can't. */
+  reason?: string;
   moves: OrganizeMove[];
   skipped: OrganizeSkip[];
   /** The newest batch that can still be undone. */
@@ -436,4 +459,19 @@ export interface OrganizeResult {
   batchId: number;
   moved: number;
   skipped: OrganizeSkip[];
+}
+
+/** Browse folders on this server, or over a (possibly unsaved) SSH/SFTP connection. */
+export interface FolderBrowseRequest {
+  path?: string;
+  /** A saved source whose connection (and saved password) to use. */
+  id?: number;
+  connection?: {
+    access: FolderAccessKind;
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    privateKeyPath?: string;
+  };
 }
