@@ -175,7 +175,7 @@ describe('planMoves', () => {
 
   it('lets one file have a target that two files want, preferring a confident one', () => {
     const { moves, skipped } = planMoves([file('b.flac', { confident: false }), file('a.mp3', {}), file('c.flac')], () => false);
-    expect(moves.map((m) => m.from)).toEqual(['c.flac', 'a.mp3']);
+    expect(moves.map((m) => m.from)).toEqual(['a.mp3', 'c.flac']);
     expect(skipped).toEqual([{ from: 'b.flac', to: 'Massive Attack/Mezzanine/01 Angel.flac', reason: 'Another file is going there' }]);
   });
 
