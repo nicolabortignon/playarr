@@ -1,6 +1,6 @@
 // Deploy Playarr to the NAS as a standalone Docker service (docker/compose.yaml), from this machine.
 //
-//   pnpm deploy:nas              ship the last commit, build on the NAS, (re)start, report the URLs
+//   pnpm deploy:nas              ship the last commit, build on the NAS, (re)start, check it's up
 //   pnpm deploy:nas --with-data  also copy this machine's favorites, playlists and song analysis,
 //                                if the NAS has none yet (add --force-data to replace them)
 //
@@ -39,17 +39,15 @@ const conn = await connect();
 try {
   step(`Shipping ${revision} to ${env.SSH_HOST}:${DIR}`);
   await run(
-    `mkdir -p ${DIR}/config ${DIR}/cache ${DIR}/tailscale && rm -rf ${DIR}/src.new && mkdir ${DIR}/src.new` +
+    `mkdir -p ${DIR}/config ${DIR}/cache && rm -rf ${DIR}/src.new && mkdir ${DIR}/src.new` +
       ` && tar -x -C ${DIR}/src.new && echo ${revision} > ${DIR}/src.new/REVISION` +
-      ` && rm -rf ${DIR}/src && mv ${DIR}/src.new ${DIR}/src && cp ${DIR}/src/docker/compose.yaml ${DIR}/src/docker/serve.json ${DIR}/`,
+      ` && rm -rf ${DIR}/src && mv ${DIR}/src.new ${DIR}/src && cp ${DIR}/src/docker/compose.yaml ${DIR}/`,
     { stdin: git('archive', '--format=tar', 'HEAD') },
   );
   const settings = [
     `LIDARR_URL=${LIDARR_URL}`,
     `LIDARR_API_KEY=${env.LIDARR_API_KEY}`,
     `MUSIC_DIR=${MUSIC_DIR}`,
-    ...(env.TS_AUTHKEY ? [`TS_AUTHKEY=${env.TS_AUTHKEY}`] : []),
-    ...(env.TS_HOSTNAME ? [`TS_HOSTNAME=${env.TS_HOSTNAME}`] : []),
   ];
   await run(`umask 077 && cat > ${DIR}/.env`, { stdin: `${settings.join('\n')}\n` });
 
@@ -62,8 +60,7 @@ try {
   step('Checking');
   const health = await waitForHealth();
   console.log(`  Lidarr ${health.lidarr?.ok ? 'ok' : 'NOT reachable'} · music ${health.media?.ok ? 'ok' : 'NOT readable'} · ${health.library?.tracks ?? 0} tracks`);
-  console.log(`  LAN:       http://${env.SSH_HOST}:4000`);
-  await reportTailscale();
+  console.log(`  Playarr ${(await run(`cat ${DIR}/src/REVISION`, { quiet: true })).trim()} is up at http://${env.SSH_HOST}:4000`);
 } finally {
   conn.end();
 }
@@ -97,23 +94,6 @@ async function waitForHealth() {
     await new Promise((r) => setTimeout(r, 3000));
   }
   fail(`Playarr didn't come up. Logs: ssh to the NAS and run: sudo ${COMPOSE} logs playarr`);
-}
-
-async function reportTailscale() {
-  for (let i = 0; i < 20; i++) {
-    const out = await run('docker exec playarr-tailscale tailscale status --json 2>/dev/null || true', { sudo: true, quiet: true });
-    const status = out.trim().startsWith('{') ? JSON.parse(out) : undefined;
-    if (status?.BackendState === 'Running') {
-      return console.log(`  Tailscale: https://${status.Self.DNSName.replace(/\.$/, '')}  (from any device on your tailnet)`);
-    }
-    if (status?.BackendState === 'NeedsLogin') {
-      const logs = await run('docker logs playarr-tailscale 2>&1 | tail -50', { sudo: true, quiet: true });
-      const link = logs.match(/https:\/\/login\.tailscale\.com\/\S+/g)?.at(-1);
-      if (link) return console.log(`  Tailscale: open ${link} to add this node to your tailnet, then run this again.`);
-    }
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  console.log(`  Tailscale isn't up yet. Check: sudo docker logs playarr-tailscale`);
 }
 
 function connect() {

@@ -1,11 +1,5 @@
-# Playarr as a standalone service on the NAS (deployed by docker/deploy.mjs into /volume1/docker/playarr).
-#
-#   LAN:      http://<nas>:4000
-#   Anywhere: https://playarr.<your-tailnet>.ts.net, through a Tailscale node of its own. Only devices on
-#             your tailnet can reach it (no Funnel, no router ports). HTTPS also turns on the web app's
-#             install, offline songs and load-ahead, which browsers only allow on secure origins.
-#
-# Settings come from .env next to this file: LIDARR_URL, LIDARR_API_KEY, MUSIC_DIR, TS_AUTHKEY.
+# Playarr as a standalone service on the NAS (deployed by docker/deploy.mjs into /volume1/docker/playarr),
+# at http://<nas>:4000. Settings come from .env next to this file: LIDARR_URL, LIDARR_API_KEY, MUSIC_DIR.
 name: playarr
 
 services:
@@ -30,22 +24,4 @@ services:
       - ./cache:/cache # artwork and covers (safe to delete)
     ports:
       - "4000:4000"
-    restart: unless-stopped
-
-  tailscale:
-    image: tailscale/tailscale:stable
-    container_name: playarr-tailscale
-    hostname: ${TS_HOSTNAME:-playarr}
-    environment:
-      # Only needed for the first login; the node's identity is then kept in ./tailscale.
-      TS_AUTHKEY: ${TS_AUTHKEY:-}
-      TS_STATE_DIR: /var/lib/tailscale
-      TS_SERVE_CONFIG: /serve.json
-      # Userspace networking: no /dev/net/tun or NET_ADMIN needed just to serve one app.
-      TS_USERSPACE: "true"
-    volumes:
-      - ./tailscale:/var/lib/tailscale
-      - ./serve.json:/serve.json:ro
-    depends_on:
-      - playarr
     restart: unless-stopped

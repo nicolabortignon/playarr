@@ -179,7 +179,7 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
 - [ ] ffmpeg transcoding with format negotiation (detect `canPlayType`, fall back for ALAC/WMA/etc. and mobile data)
 - [ ] Playarr auth (single admin user to start)
 - [x] SQLite (`node:sqlite`, `apps/server/data/playarr.db`): **favorites** and **playlists** (2026-10-28). *Still to do: play history, "recently played".*
-- [x] **Docker image + NAS deployment with Tailscale** (2026-10-30, see §15): `pnpm deploy:nas` builds and runs Playarr on the NAS as its own compose stack, with a Tailscale node for HTTPS access from anywhere on the tailnet
+- [x] **Docker image + NAS deployment** (2026-10-30, see §15): `pnpm deploy:nas` builds and runs Playarr on the NAS as its own compose stack
 
 ### Phase 6: Nice-to-haves
 - [ ] Lyrics (embedded tags / `.lrc` sidecars, synced display)
@@ -217,7 +217,7 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
    - d) Copy a small sample of albums locally for dev.
 2. ~~Lidarr API key~~ ✅ done (in the root `.env`).
 3. **Users:** one user (you) or multiple users with separate playlists and history?
-4. ~~**Remote access**~~ ✅ **Tailscale** (2026-10-30), in line with the NAS's "no router ports, Tailscale only" rule: a dedicated `playarr` node serves HTTPS to the tailnet (Serve, not Funnel). Still open: Playarr auth if the tailnet is ever shared, and transcoding for mobile data.
+4. **Remote access:** router port forwarding (2026-10-30; Tailscale was set up, then dropped). Exposing Playarr to the internet needs a login first (it has none: anyone could stream, edit playlists and request downloads through Lidarr) and HTTPS (passwords in the clear otherwise, and browsers only allow install/offline on secure origins). Transcoding for mobile data is still open.
 5. **Design preference:** any reference apps you like (Apple Music, Spotify, Plexamp, Feishin…)?
 
 ---
@@ -302,26 +302,23 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 
 **UI.** A small ⤓ after the title marks songs on the device (track lists, queue, Now Playing). The song downloading shows a progress ring. Library → "On this device" shows songs/space, the limit (Off · 512 MB … 10 GB) and Remove all.
 
-**Requires a secure context.** Cache Storage and service workers only exist on HTTPS or localhost. Over plain `http://192.168.x.x` (a phone on the LAN) none of this runs: songs stream as before, and Library explains why. Ties into the remote-access question (§9): Tailscale Serve or a reverse proxy with a certificate would enable it on phones.
+**Requires a secure context.** Cache Storage and service workers only exist on HTTPS or localhost. Over plain `http://192.168.x.x` (a phone on the LAN) none of this runs: songs stream as before, and Library explains why. Ties into the remote-access question (§9): a reverse proxy with a certificate would enable it on phones.
 
-## 15. Deploying to the NAS (standalone, with Tailscale)
+## 15. Deploying to the NAS (standalone)
 
 **Layout on the NAS** (`/volume1/docker/playarr`, owned by Nicola):
 
 | Path | What |
 |---|---|
-| `compose.yaml`, `serve.json` | copied from `docker/` on each deploy |
-| `.env` (mode 600) | `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR`, optional `TS_AUTHKEY`; written by the deploy |
+| `compose.yaml` | copied from `docker/` on each deploy |
+| `.env` (mode 600) | `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR`; written by the deploy |
 | `src/` | the deployed commit (`src/REVISION`), the build context |
 | `config/` | favorites, playlists, song analysis (SQLite): keep and back up |
 | `cache/` | artwork and covers: safe to delete |
-| `tailscale/` | the Tailscale node's identity |
 
-**Containers:** `playarr` (Node 24 Alpine with ffmpeg, runs as 1000:10 like the rest of the stack, music mounted read-only at `/data/media/music`, the same path Lidarr uses, so no path mapping) and `playarr-tailscale` (official image, userspace networking: no `/dev/net/tun` or `NET_ADMIN`). Tailscale Serve terminates HTTPS with a Let's Encrypt certificate for `playarr.<tailnet>.ts.net` and proxies to `http://playarr:4000`. Funnel stays off, so only tailnet devices can connect. Port 4000 is also published for plain-HTTP LAN use.
+**Container:** `playarr` (Node 24 Alpine with ffmpeg) runs as 1000:10 like the rest of the stack. Music is mounted read-only at `/data/media/music`, the same path Lidarr uses, so no path mapping is needed. It listens on port 4000.
 
-**Deploy (`pnpm deploy:nas`, `docker/deploy.mjs`):** `git archive HEAD` goes over SSH into `src/` (only committed code: no `.env`, no local data). Then it writes `.env`, runs `sudo docker compose up -d --build` (the image is built on the NAS, natively x86_64), waits for `/api/health`, and prints the LAN and Tailscale URLs. On the first run without `TS_AUTHKEY` it prints the Tailscale login link instead. `--with-data` copies this machine's database once (a `VACUUM INTO` snapshot, safe while the local server runs); `--force-data` replaces the NAS's.
-
-**One-time Tailscale setup (admin console):** enable MagicDNS and HTTPS certificates (DNS page), then either approve the login link or create an auth key. Install Tailscale on the phone and laptop to reach it from outside.
+**Deploy (`pnpm deploy:nas`, `docker/deploy.mjs`):** `git archive HEAD` goes over SSH into `src/` (only committed code: no `.env`, no local data). Then it writes `.env`, runs `sudo docker compose up -d --build` (the image is built on the NAS, natively x86_64), and waits for `/api/health`. `--with-data` copies this machine's database once (a `VACUUM INTO` snapshot, safe while the local server runs); `--force-data` replaces the NAS's.
 
 **Updating:** commit, then `pnpm deploy:nas`. **Logs:** `sudo docker compose -f /volume1/docker/playarr/compose.yaml logs -f`. **Backup:** `config/`.
 
@@ -344,7 +341,7 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 | 2026-10-29 | Covers v2: curated palettes (chromotome) instead of computed ones; new Currents (flow field) and Colonies (Physarum) layouts. AI image models ruled out: no GPU on the NAS, external services would receive listening data, and results aren't deterministic. |
 | 2026-10-29 | Playlist covers are generated from **measured audio** (ffmpeg on the NAS + our own DSP), not metadata: Deezer's BPM is often 0, AcousticBrainz is gone, and analysis covers every song including obscure ones. Only ~5 MB of low-rate mono PCM per song crosses the network, once. Tests: `pnpm -C apps/server test` (DSP on synthetic click tracks/tones/noise; cover determinism and layout choice). |
 | 2026-10-29 | Client-side caching: the page downloads whole songs into Cache Storage and the service worker serves byte ranges from them (rather than the worker caching what `<audio>` streams, which is only ever partial 206 responses). The page owns the budget/LRU, so the worker stays dumb. Needs HTTPS/localhost; plain-HTTP LAN access gets no offline features. Verified with unit tests (planner, LRU, downloader with fake Cache API, range slicing) and smoke tests; not yet exercised in a real browser from this machine (browser automation unavailable). |
-| 2026-10-30 | NAS deployment: its own compose stack in `/volume1/docker/playarr`, not added to `media-stack`, so deploys never touch Lidarr and friends. Built on the NAS from `git archive` (no registry, no cross-building from an arm64 Mac). Lidarr reached through the NAS's LAN address. Remote access through a dedicated Tailscale node with Serve (HTTPS on the tailnet only), which also gives the web app the secure origin it needs for install/offline. Docker needs sudo for Nicola; the deploy uses it rather than adding Nicola to the `docker` group. |
+| 2026-10-30 | NAS deployment: its own compose stack in `/volume1/docker/playarr`, not added to `media-stack`, so deploys never touch Lidarr and friends. Built on the NAS from `git archive` (no registry, no cross-building from an arm64 Mac). Lidarr reached through the NAS's LAN address. Docker needs sudo for Nicola; the deploy uses it rather than adding Nicola to the `docker` group. |
 | 2026-10-27 | Single `<audio>` element (not two swapped ones) so iOS background playback keeps working. Gapless/crossfade come later via Web Audio. |
 | 2026-10-27 | Visual direction "liner notes": warm near-black, Gloock display serif, Schibsted Grotesk UI, DM Mono for specs and durations. The accent color comes from the current cover art; there's a subtle film grain. |
 | 2026-10-27 | Stack versions: React 19, Vite 8, Tailwind 4, React Router 7 (pinned below v8), TanStack Query 5, Zustand 5, Motion 14, Fastify 5, zod 4, TypeScript 7. |
