@@ -22,9 +22,9 @@ services:
       - ${MUSIC_DIR}:/data/media/music:ro
       - ./config:/config # favorites, playlists, song analysis (keep)
       - ./cache:/cache # artwork and covers (safe to delete)
-      # Folders to offer as sources in Settings → Sources: mount a broad host folder read-only at /host.
-      # - /volume1:/host:ro
-      # Folders you want Playarr to organize must be mounted read-write, e.g. - /volume1/music-inbox:/host/inbox
+      # Host folders for Settings → Sources → Folder → This server go under /host. Don't add them here
+      # (update.sh replaces this file): put them in compose.override.yaml next to it, see
+      # compose.override.example.yaml.
     ports:
       - "4000:4000"
     restart: unless-stopped

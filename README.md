@@ -95,7 +95,7 @@ sudo sh update.sh --force    # rebuild anyway
 sudo sh update.sh --ref X    # deploy a branch, tag or commit
 ```
 
-It downloads the source from GitHub (no git needed), builds with `docker compose up -d --build`, and waits until Playarr answers. `config`, `cache` and `.env` are kept, and a failed build leaves the running container alone. Each update replaces `compose.yaml` with the deployed commit's copy, so put your own mounts in `compose.override.yaml` next to it. `--quiet` makes it suitable for cron, for example every 15 minutes.
+It downloads the source from GitHub (no git needed), builds with `docker compose up -d --build`, and waits until Playarr answers. `config`, `cache` and `.env` are kept, and a failed build leaves the running container alone. Each update replaces `compose.yaml` with the deployed commit's copy, so put your own mounts in `compose.override.yaml` next to it (start from `docker/compose.override.example.yaml`). That's where host folders for Settings → Sources → Folder → This server go: mounting `/volume2` at `/host/volume2` makes `/volume2/data` browsable as `/host/volume2/data`. Run `update.sh --force` (or `docker compose up -d`) after changing it. `--quiet` makes it suitable for cron, for example every 15 minutes.
 
 From a development machine with the SSH settings in `.env`, `pnpm deploy:nas` does the same over SSH; `pnpm deploy:nas --local` ships the local last commit instead, for work that isn't pushed.
 

@@ -747,8 +747,18 @@ function FolderBrowser({
             </button>
           </li>
         ))}
-        {data && data.folders.length === 0 && (
+        {data && data.folders.length === 0 && !data.emptyRoot && (
           <li className="px-3 py-2 text-[13px] text-muted">{rootLabel && data.path === '/' ? 'No shares found.' : 'No folders inside.'}</li>
+        )}
+        {data?.emptyRoot && (
+          <li className="space-y-1.5 px-3 py-2 text-[13px] text-muted">
+            <p className="text-paper-dim">Nothing is shared with Playarr at {data.path} yet.</p>
+            <p>
+              In Docker, Playarr only sees the host folders you mount inside {data.path}. Mount them read-only in a compose.override.yaml
+              next to compose.yaml, for example <code className="font-mono text-[12px] text-paper-dim">/volume2:{data.path}/volume2:ro</code>,
+              then restart Playarr.
+            </p>
+          </li>
         )}
       </ul>
       {error && <p className="px-3 py-2 text-[13px] text-red-300/80">{(error as Error).message}</p>}

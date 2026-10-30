@@ -57,6 +57,14 @@ describe('listFolders', () => {
     const dir = tree();
     expect((await listFolders(dir, [dir])).parent).toBeNull();
   });
+  it('flags a root that is missing or empty, as in Docker with nothing mounted', async () => {
+    const dir = tree();
+    mkdirSync(join(dir, 'empty'));
+    expect(await listFolders(`${dir}/empty`, [`${dir}/empty`])).toEqual({ path: `${dir}/empty`, parent: null, folders: [], audioFiles: 0, emptyRoot: true });
+    expect(await listFolders(`${dir}/gone`, [`${dir}/gone`])).toEqual({ path: `${dir}/gone`, parent: null, folders: [], audioFiles: 0, emptyRoot: true });
+    expect((await listFolders(`${dir}/Other`, [dir, `${dir}/Other`])).emptyRoot).toBe(true);
+    expect((await listFolders(dir, [dir])).emptyRoot).toBeUndefined();
+  });
   it('refuses folders outside the roots', async () => {
     const dir = tree();
     await expect(listFolders('/etc', [dir])).rejects.toThrow(/outside/);

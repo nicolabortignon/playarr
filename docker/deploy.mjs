@@ -23,7 +23,8 @@ const DIR = env.NAS_DIR || '/volume1/docker/playarr';
 const MUSIC_DIR = env.NAS_MUSIC_DIR || '/volume2/data/media/music';
 const LIDARR_URL = env.NAS_LIDARR_URL || env.LIDARR_URL;
 const SUDO_PASSWORD = env.NAS_SUDO_PASSWORD || env.SSH_PASSWORD;
-const COMPOSE = `docker compose --project-directory ${DIR} -f ${DIR}/compose.yaml`;
+// From the deploy folder and without -f, so compose also merges compose.override.yaml (your own mounts).
+const COMPOSE = `cd ${DIR} && docker compose`;
 
 for (const [name, value] of Object.entries({ NAS_DIR: DIR, NAS_MUSIC_DIR: MUSIC_DIR })) {
   if (!/^\/[\w./-]+$/.test(value)) fail(`${name} must be a plain absolute path, got "${value}"`);
@@ -116,7 +117,7 @@ async function waitForHealth() {
     if (out.trim().startsWith('{')) return JSON.parse(out);
     await new Promise((r) => setTimeout(r, 3000));
   }
-  fail(`Playarr didn't come up. Logs: ssh to the NAS and run: sudo ${COMPOSE} logs playarr`);
+  fail(`Playarr didn't come up. Logs: ssh to the NAS and run: cd ${DIR} && sudo docker compose logs playarr`);
 }
 
 function connect() {

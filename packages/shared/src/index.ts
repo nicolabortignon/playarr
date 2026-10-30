@@ -406,6 +406,8 @@ export interface FolderListing {
   folders: { name: string; path: string }[];
   /** Audio files directly in this folder. */
   audioFiles: number;
+  /** A folder sources may use that is missing or completely empty: in Docker, nothing is mounted there yet. */
+  emptyRoot?: boolean;
 }
 
 // ── Matching: identifying folder music on MusicBrainz ───────────────────────

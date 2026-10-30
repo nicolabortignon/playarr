@@ -1,0 +1,13 @@
+# Copy to compose.override.yaml next to compose.yaml (e.g. /volume1/docker/playarr) and adjust.
+# Docker Compose merges it into compose.yaml; update.sh never touches it.
+#
+# Settings → Sources → Add source → Folder → This server browses /host inside the container. Mount
+# the host folders you want to offer there, read-only, keeping their names so paths stay recognisable:
+# /volume2/data on the NAS then shows up as /host/volume2/data.
+services:
+  playarr:
+    volumes:
+      - /volume2:/host/volume2:ro
+      # - /volume1:/host/volume1:ro
+      # A folder you want Playarr to organize (move files into Artist/Album folders) must be read-write:
+      # - /volume1/music-inbox:/host/inbox
