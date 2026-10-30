@@ -49,7 +49,8 @@ try {
     `LIDARR_API_KEY=${env.LIDARR_API_KEY}`,
     `MUSIC_DIR=${MUSIC_DIR}`,
   ];
-  await run(`umask 077 && cat > ${DIR}/.env`, { stdin: `${settings.join('\n')}\n` });
+  // chmod as well as umask: the NAS's inherited ACLs otherwise leave it readable by everyone.
+  await run(`umask 077 && cat > ${DIR}/.env && chmod 600 ${DIR}/.env`, { stdin: `${settings.join('\n')}\n` });
 
   if (args.has('--with-data') || args.has('--force-data')) await copyData();
 

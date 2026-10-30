@@ -16,7 +16,10 @@ COPY . .
 RUN pnpm build \
  && pnpm --filter @playarr/server deploy --prod --legacy /out/server \
  && rm -rf /out/server/dist && cp -r apps/server/dist /out/server/dist \
- && cp -r apps/web/dist /out/web
+ && cp -r apps/web/dist /out/web \
+ && chmod -R a+rX /out
+# (Readable by any user whatever the source's permissions: the NAS's ACLs leave files 770, and the
+# app runs as the NAS user, not root.)
 
 FROM node:24-alpine
 # ffmpeg measures each song (tempo, energy…) for the generated playlist covers.
