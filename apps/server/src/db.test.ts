@@ -27,4 +27,13 @@ describe('migrate', () => {
     expect(columns).toContain('last_error');
     expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'app_settings'").get()).toBeTruthy();
   });
+
+  it('adds metadata trust, reported songs and the folder file cache', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db);
+    const cols = (t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
+    for (const t of ['catalog_artists', 'catalog_albums', 'catalog_tracks']) expect(cols(t)).toContain('meta_rank');
+    expect(cols('source_tracks')).toEqual(['source_id', 'track_id']);
+    expect(cols('folder_files')).toEqual(['source_id', 'rel_path', 'size', 'mtime_ms', 'tags']);
+  });
 });

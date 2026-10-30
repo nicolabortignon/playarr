@@ -100,6 +100,24 @@ const MIGRATIONS = [
      key   TEXT PRIMARY KEY,
      value TEXT NOT NULL
    );`,
+  // How trusted each catalog row's metadata is (lower wins: Lidarr 0, folder tags 2), which songs
+  // each source reported in its last sync (to list missing songs), and folder scans' tag cache.
+  `ALTER TABLE catalog_artists ADD COLUMN meta_rank INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE catalog_albums ADD COLUMN meta_rank INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE catalog_tracks ADD COLUMN meta_rank INTEGER NOT NULL DEFAULT 0;
+   CREATE TABLE source_tracks (
+     source_id INTEGER NOT NULL REFERENCES sources (id) ON DELETE CASCADE,
+     track_id  INTEGER NOT NULL REFERENCES catalog_tracks (id),
+     PRIMARY KEY (source_id, track_id)
+   );
+   CREATE TABLE folder_files (
+     source_id INTEGER NOT NULL REFERENCES sources (id) ON DELETE CASCADE,
+     rel_path  TEXT NOT NULL,
+     size      INTEGER NOT NULL,
+     mtime_ms  INTEGER NOT NULL,
+     tags      TEXT,
+     PRIMARY KEY (source_id, rel_path)
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
