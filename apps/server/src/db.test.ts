@@ -19,4 +19,12 @@ describe('migrate', () => {
     migrate(db);
     expect(() => migrate(db)).not.toThrow();
   });
+
+  it('adds sync errors to sources and an app settings table', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db);
+    const columns = (db.prepare('PRAGMA table_info(sources)').all() as { name: string }[]).map((c) => c.name);
+    expect(columns).toContain('last_error');
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'app_settings'").get()).toBeTruthy();
+  });
 });

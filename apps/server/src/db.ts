@@ -94,6 +94,12 @@ const MIGRATIONS = [
      UNIQUE (source_id, source_ref)
    );
    CREATE INDEX copies_by_track ON copies (track_id);`,
+  // Sources managed in Settings: the last sync error, and app-wide flags (e.g. ".env seeded").
+  `ALTER TABLE sources ADD COLUMN last_error TEXT;
+   CREATE TABLE app_settings (
+     key   TEXT PRIMARY KEY,
+     value TEXT NOT NULL
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
