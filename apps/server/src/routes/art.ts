@@ -3,7 +3,10 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
+import type { FileResolver } from '../catalog/files.ts';
+import { copyCover } from '../catalog/folderArt.ts';
 import { fetchRemoteImage, isAllowedRemote } from '../discover/art.ts';
+import type { Library } from '../library/library.ts';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
 
 const SIZES = [96, 160, 240, 320, 480, 640, 960, 1200];
@@ -85,8 +88,11 @@ export class LocalArt {
   }
 }
 
-/** Serves Lidarr artwork (resized to WebP, cached) and allowlisted remote artwork. */
-export function artRoutes(app: FastifyInstance, deps: { art: LocalArt; cacheDir: string }) {
+/** Serves Lidarr artwork (resized to WebP, cached), folder files' artwork and allowlisted remote artwork. */
+export function artRoutes(
+  app: FastifyInstance,
+  deps: { art: LocalArt; cacheDir: string; library: Pick<Library, 'file'>; files: FileResolver },
+) {
   const dir = join(deps.cacheDir, 'art');
   const inflight = new Map<string, Promise<{ body: Buffer; mime: string }>>();
 
@@ -144,6 +150,45 @@ export function artRoutes(app: FastifyInstance, deps: { art: LocalArt; cacheDir:
       req.log.warn({ err, url: target.href }, 'remote artwork failed');
       return reply.code(502).header('Cache-Control', 'no-store').send({ error: 'Artwork unavailable' });
     }
+  });
+
+  // Artwork drawn from a folder file (embedded picture or an image beside it).
+  app.get<{ Params: { id: string }; Querystring: { size?: string } }>('/art/copy/:id', async (req, reply) => {
+    const id = Number(req.params.id);
+    const file = Number.isInteger(id) ? await deps.library.file(id) : undefined;
+    if (!file) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'Unknown file' });
+    let path: string;
+    try {
+      const resolved = deps.files.resolve(file);
+      if (resolved.media.kind !== 'local') throw new Error('not local');
+      path = resolved.path;
+    } catch {
+      return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
+    }
+    const requested = Number(req.query.size);
+    const size = requested > 0 ? (SIZES.find((s) => s >= requested) ?? SIZES.at(-1)) : undefined;
+    const key = createHash('sha1').update(`copy/${id}/${file.size}/${size ?? 'orig'}`).digest('hex');
+    const cached = join(dir, key);
+    try {
+      const body = await readFile(cached);
+      const mime = (await readFile(`${cached}.mime`, 'utf8').catch(() => null)) ?? 'image/webp';
+      return reply.header('Cache-Control', 'public, max-age=86400').type(mime).send(body);
+    } catch {
+      // cache miss
+    }
+    const original = await copyCover(path);
+    if (!original) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
+    const out = size
+      ? {
+          body: await sharp(original.body).resize(size, size, { fit: 'cover', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer(),
+          mime: 'image/webp',
+        }
+      : original;
+    await mkdir(dir, { recursive: true });
+    await writeFile(`${cached}.tmp`, out.body);
+    await writeFile(`${cached}.mime`, out.mime);
+    await rename(`${cached}.tmp`, cached);
+    return reply.header('Cache-Control', 'public, max-age=86400').type(out.mime).send(out.body);
   });
 
   app.get<{ Params: { kind: string; id: string; type: string }; Querystring: { size?: string; v?: string } }>(
