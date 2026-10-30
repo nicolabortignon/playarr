@@ -9,6 +9,7 @@
     "dev:web": "pnpm --filter @playarr/web dev",
     "build": "pnpm --filter @playarr/web build && pnpm --filter @playarr/server build",
     "start": "pnpm --filter @playarr/server start",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "deploy:nas": "node --env-file=.env --disable-warning=ExperimentalWarning docker/deploy.mjs"
   }
 }
