@@ -89,11 +89,11 @@ export class Requests {
         : await this.lookupByName(ref);
     const mbid = lookup.foreignAlbumId;
     const known = await this.library.albumByMbid(mbid);
-    if (known?.playable) {
+    if (known?.albumId !== undefined) {
       throw new RequestError('This album is already in your library', 409);
     }
 
-    let albumId = known?.id ?? lookup.id;
+    let albumId = known?.lidarrId ?? lookup.id;
     if (albumId) {
       // Lidarr already tracks it (e.g. part of a monitored artist's discography): just want it.
       await this.lidarr.monitorAlbums([albumId], true);
@@ -227,7 +227,7 @@ export class Requests {
   async availability(mbid: string): Promise<Availability> {
     await this.loaded;
     const known = await this.library.albumByMbid(mbid);
-    if (known?.playable) return { state: 'available', albumId: known.id };
+    if (known?.albumId !== undefined) return { state: 'available', albumId: known.albumId };
     if (this.requests.has(mbid)) return (await this.statuses()).get(mbid) ?? { state: 'waiting' };
     if (known?.monitored) return { state: 'waiting', message: 'Wanted in Lidarr' };
     return { state: 'none' };
@@ -253,7 +253,7 @@ export class Requests {
     const pending: StoredRequest[] = [];
     for (const r of this.requests.values()) {
       const known = await this.library.albumByMbid(r.mbid);
-      if (known?.playable) result.set(r.mbid, { state: 'available', albumId: known.id });
+      if (known?.albumId !== undefined) result.set(r.mbid, { state: 'available', albumId: known.albumId });
       else pending.push(r);
     }
     if (!pending.length) return result;

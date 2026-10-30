@@ -4,57 +4,21 @@ import type {
   AlbumSort,
   Artist,
   ArtistDetail,
-  AudioFormat,
   LibraryStats,
   SearchResults,
   Track,
 } from '@playarr/shared';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import type { LidarrClient } from '../lidarr/client.ts';
-import type { LidarrAlbum, LidarrArtist, LidarrImage, LidarrTrackFile } from '../lidarr/types.ts';
-import { formatFromTrackFile, formatKey } from './format.ts';
+import { buildCatalog, type Catalog, type FileRecord, type LidarrAlbumRef } from '../catalog/build.ts';
+import type { CatalogStore } from '../catalog/store.ts';
+import type { CatalogSource } from '../catalog/types.ts';
 import { albumKey, normalize, primaryArtist, scoreMatch } from './search.ts';
 
-export interface FileRecord {
-  id: number;
-  path: string; // as reported by Lidarr
-  size: number;
-  format: AudioFormat;
-}
+export type { FileRecord, LidarrAlbumRef };
 
-/** What Lidarr knows about an album, keyed by MusicBrainz release-group id. */
-export interface LidarrAlbumRef {
-  id: number;
-  monitored: boolean;
-  /** True when Playarr can play it (it's in the snapshot with files). */
-  playable: boolean;
-}
-
-interface Snapshot {
-  artists: Map<number, Artist>;
-  albums: Map<number, AlbumDetail>;
-  tracks: Track[];
-  files: Map<number, FileRecord>;
-  stats: LibraryStats;
-  albumsByMbid: Map<string, LidarrAlbumRef>;
-  artistIdByMbid: Map<string, number>;
+interface Snapshot extends Catalog {
   albumIdByKey: Map<string, number>;
   trackByRecording: Map<string, Track>;
   trackByName: Map<string, Track>;
-}
-
-/** Bump when the snapshot shape changes so stale files on disk are ignored. */
-const SNAPSHOT_VERSION = 2;
-
-interface StoredSnapshot {
-  version: number;
-  artists: Artist[];
-  albums: AlbumDetail[];
-  files: FileRecord[];
-  albumsByMbid: [string, LidarrAlbumRef][];
-  artistIdByMbid: [string, number][];
-  stats: LibraryStats;
 }
 
 export class Library {
@@ -66,10 +30,10 @@ export class Library {
   lastError: string | null = null;
 
   constructor(
-    private readonly lidarr: LidarrClient,
+    private readonly store: CatalogStore,
+    /** Where the catalog comes from, each with its row in the sources table. */
+    private readonly sources: { id: number; source: CatalogSource }[],
     private readonly log: { info: (msg: string) => void; error: (msg: string) => void },
-    /** Where the last snapshot is saved, so a restart can serve instantly instead of waiting on Lidarr. */
-    private readonly cacheFile?: string,
   ) {}
 
   /** Called after every successful refresh. */
@@ -77,34 +41,12 @@ export class Library {
     this.listeners.push(listener);
   }
 
-  /** Load the snapshot saved by a previous run, if any. Returns true when one was loaded. */
-  async loadCached(): Promise<boolean> {
-    if (!this.cacheFile) return false;
-    try {
-      const stored = JSON.parse(await readFile(this.cacheFile, 'utf8')) as StoredSnapshot;
-      if (stored.version !== SNAPSHOT_VERSION) return false;
-      this.snapshot = fromStored(stored);
-      this.log.info(`Library loaded from cache (${stored.stats.refreshedAt}): ${stored.stats.albums} albums`);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async saveCached(snap: Snapshot) {
-    if (!this.cacheFile) return;
-    const stored: StoredSnapshot = {
-      version: SNAPSHOT_VERSION,
-      artists: [...snap.artists.values()],
-      albums: [...snap.albums.values()],
-      files: [...snap.files.values()],
-      albumsByMbid: [...snap.albumsByMbid],
-      artistIdByMbid: [...snap.artistIdByMbid],
-      stats: snap.stats,
-    };
-    await mkdir(dirname(this.cacheFile), { recursive: true });
-    await writeFile(`${this.cacheFile}.tmp`, JSON.stringify(stored));
-    await rename(`${this.cacheFile}.tmp`, this.cacheFile);
+  /** Serve the catalog saved by a previous run, so a restart doesn't wait on the sources. */
+  loadStored(): boolean {
+    if (!this.store.hasData()) return false;
+    this.snapshot = toSnapshot(buildCatalog(this.store.load()));
+    this.log.info(`Library loaded from the database: ${this.snapshot.stats.albums} albums`);
+    return true;
   }
 
   /** Every artwork URL the library references (for cache warming). */
@@ -127,7 +69,7 @@ export class Library {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** Rebuild the snapshot from Lidarr. Concurrent callers share one refresh. */
+  /** Sync every source into the catalog and rebuild. Concurrent callers share one refresh. */
   refresh(): Promise<void> {
     this.inflight ??= this.build()
       .then((snap) => {
@@ -135,7 +77,6 @@ export class Library {
         this.lastError = null;
         const s = snap.stats;
         this.log.info(`Library refreshed: ${s.artists} artists, ${s.albums} albums, ${s.tracks} tracks`);
-        void this.saveCached(snap).catch((err: Error) => this.log.error(`Saving library cache failed: ${err.message}`));
         for (const listener of this.listeners) listener(this);
       })
       .catch((err: Error) => {
@@ -155,116 +96,14 @@ export class Library {
   }
 
   private async build(): Promise<Snapshot> {
-    const [lArtists, lAlbums] = await Promise.all([this.lidarr.artists(), this.lidarr.albums()]);
-    const withFiles = lArtists.filter((a) => (a.statistics?.trackFileCount ?? 0) > 0);
-
-    const perArtist = await mapLimit(withFiles, 4, async (artist) => {
-      const [tracks, files] = await Promise.all([
-        this.lidarr.tracksForArtist(artist.id),
-        this.lidarr.trackFilesForArtist(artist.id),
-      ]);
-      return { artist, tracks, files };
-    });
-
-    const albumsById = new Map(lAlbums.map((a) => [a.id, a]));
-    const artists = new Map<number, Artist>();
-    const albums = new Map<number, AlbumDetail>();
-    const files = new Map<number, FileRecord>();
-    const allTracks: Track[] = [];
-
-    for (const { artist: la, tracks: lTracks, files: lFiles } of perArtist) {
-      const fileById = new Map<number, LidarrTrackFile>(lFiles.map((f) => [f.id, f]));
-      for (const f of lFiles) {
-        files.set(f.id, { id: f.id, path: f.path, size: f.size, format: formatFromTrackFile(f) });
-      }
-
-      const tracksByAlbum = new Map<number, Track[]>();
-      for (const t of lTracks) {
-        const file = t.hasFile ? fileById.get(t.trackFileId) : undefined;
-        const album = albumsById.get(t.albumId);
-        if (!file || !album) continue;
-        const track: Track = {
-          id: t.id,
-          recordingId: t.foreignRecordingId || `track:${t.id}`,
-          fileId: file.id,
-          albumId: album.id,
-          artistId: la.id,
-          title: t.title,
-          artistName: la.artistName,
-          albumTitle: album.title,
-          trackNumber: Number.parseInt(t.trackNumber, 10) || t.absoluteTrackNumber,
-          discNumber: t.mediumNumber || 1,
-          duration: Math.round(t.duration / 1000),
-          explicit: t.explicit,
-          format: files.get(file.id)!.format,
-          size: file.size,
-          streamUrl: `/stream/${file.id}`,
-          coverUrl: artUrl('album', album.id, 'cover', album.images),
-        };
-        let list = tracksByAlbum.get(album.id);
-        if (!list) tracksByAlbum.set(album.id, (list = []));
-        list.push(track);
-      }
-
-      let artistTrackCount = 0;
-      for (const [albumId, tracks] of tracksByAlbum) {
-        tracks.sort((a, b) => a.discNumber - b.discNumber || a.trackNumber - b.trackNumber);
-        const la2 = albumsById.get(albumId)!;
-        const albumFiles = tracks.map((t) => fileById.get(t.fileId)!);
-        albums.set(albumId, toAlbumDetail(la2, la, tracks, albumFiles));
-        allTracks.push(...tracks);
-        artistTrackCount += tracks.length;
-      }
-
-      const artistAlbumCount = tracksByAlbum.size;
-      if (artistAlbumCount > 0) {
-        const artist = toArtist(la, artistAlbumCount, artistTrackCount);
-        // Lidarr's metadata has no photo for some artists; fall back to their newest album cover.
-        artist.imageUrl ??= [...tracksByAlbum.keys()]
-          .map((id) => albums.get(id)!)
-          .sort((a, b) => (b.releaseDate ?? '').localeCompare(a.releaseDate ?? ''))
-          .find((a) => a.coverUrl)?.coverUrl;
-        artists.set(la.id, artist);
-      }
-    }
-
-    const albumsByMbid = new Map<string, LidarrAlbumRef>(
-      lAlbums.map((a) => [a.foreignAlbumId, { id: a.id, monitored: a.monitored, playable: albums.has(a.id) }]),
+    const results = await Promise.allSettled(
+      this.sources.map(async ({ id, source }) => this.store.applySync(id, await source.sync())),
     );
-    const artistIdByMbid = new Map<string, number>(
-      lArtists.filter((a) => artists.has(a.id)).map((a) => [a.foreignArtistId, a.id]),
-    );
-
-    const albumIdByKey = new Map<string, number>(
-      [...albums.values()].map((a) => [albumKey(a.artistName, a.title), a.id]),
-    );
-
-    let durationSeconds = 0;
-    let sizeBytes = 0;
-    for (const t of allTracks) {
-      durationSeconds += t.duration;
-      sizeBytes += t.size;
-    }
-
-    return {
-      artists,
-      albums,
-      tracks: allTracks,
-      files,
-      albumsByMbid,
-      artistIdByMbid,
-      albumIdByKey,
-      trackByRecording: indexByRecording(allTracks),
-      trackByName: indexByName(allTracks),
-      stats: {
-        artists: artists.size,
-        albums: albums.size,
-        tracks: allTracks.length,
-        durationSeconds,
-        sizeBytes,
-        refreshedAt: new Date().toISOString(),
-      },
-    };
+    const failures = results.flatMap((r) => (r.status === 'rejected' ? [r.reason as Error] : []));
+    // One unreachable source shouldn't hide the others: its last sync stays in the catalog.
+    if (failures.length && failures.length === results.length) throw failures[0];
+    for (const err of failures) this.log.error(`A source failed to sync: ${err.message}`);
+    return toSnapshot(buildCatalog(this.store.load()));
   }
 
   async albumByMbid(mbid: string): Promise<LidarrAlbumRef | undefined> {
@@ -395,71 +234,12 @@ export class Library {
   }
 }
 
-function artUrl(
-  kind: 'artist' | 'album',
-  id: number,
-  type: string,
-  images: LidarrImage[],
-): string | undefined {
-  const img = images.find((i) => i.coverType === type);
-  if (!img) return undefined;
-  // Lidarr appends ?lastWrite=… to local artwork URLs; reuse it for cache busting.
-  const version = img.url?.match(/lastWrite=(\d+)/)?.[1];
-  return `/art/${kind}/${id}/${type}${version ? `?v=${version}` : ''}`;
-}
-
-function toArtist(la: LidarrArtist, albumCount: number, trackCount: number): Artist {
+function toSnapshot(catalog: Catalog): Snapshot {
   return {
-    id: la.id,
-    name: la.artistName,
-    sortName: la.sortName || la.artistName,
-    genres: la.genres ?? [],
-    overview: la.overview || undefined,
-    albumCount,
-    trackCount,
-    imageUrl: artUrl('artist', la.id, 'poster', la.images),
-    fanartUrl: artUrl('artist', la.id, 'fanart', la.images),
-    logoUrl: artUrl('artist', la.id, 'clearlogo', la.images),
-  };
-}
-
-function toAlbumDetail(
-  la: LidarrAlbum,
-  artist: LidarrArtist,
-  tracks: Track[],
-  files: LidarrTrackFile[],
-): AlbumDetail {
-  // Pick the most common format so mixed-quality albums still get a sensible badge.
-  const counts = new Map<string, { format: AudioFormat; n: number }>();
-  for (const t of tracks) {
-    const key = formatKey(t.format);
-    const entry = counts.get(key) ?? { format: t.format, n: 0 };
-    entry.n++;
-    counts.set(key, entry);
-  }
-  const format = [...counts.values()].sort((a, b) => b.n - a.n)[0]?.format;
-  const addedAt = files.map((f) => f.dateAdded).sort().at(-1);
-  const year = la.releaseDate ? new Date(la.releaseDate).getUTCFullYear() : undefined;
-
-  return {
-    id: la.id,
-    title: la.title,
-    artistId: artist.id,
-    artistName: artist.artistName,
-    year: year && year > 1000 ? year : undefined,
-    releaseDate: la.releaseDate,
-    albumType: la.albumType,
-    secondaryTypes: la.secondaryTypes ?? [],
-    genres: la.genres?.length ? la.genres : (artist.genres ?? []).slice(0, 3),
-    duration: tracks.reduce((sum, t) => sum + t.duration, 0),
-    trackCount: tracks.length,
-    totalTrackCount: la.statistics?.totalTrackCount ?? tracks.length,
-    coverUrl: artUrl('album', la.id, 'cover', la.images),
-    addedAt,
-    format,
-    overview: la.overview || undefined,
-    tracks,
-    discCount: new Set(tracks.map((t) => t.discNumber)).size,
+    ...catalog,
+    albumIdByKey: new Map([...catalog.albums.values()].map((a) => [albumKey(a.artistName, a.title), a.id])),
+    trackByRecording: indexByRecording(catalog.tracks),
+    trackByName: indexByName(catalog.tracks),
   };
 }
 
@@ -477,35 +257,6 @@ function shuffle<T>(arr: T[]): T[] {
     [arr[i], arr[j]] = [arr[j]!, arr[i]!];
   }
   return arr;
-}
-
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]!);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
-function fromStored(stored: StoredSnapshot): Snapshot {
-  const albums = new Map(stored.albums.map((a) => [a.id, a]));
-  return {
-    artists: new Map(stored.artists.map((a) => [a.id, a])),
-    albums,
-    tracks: stored.albums.flatMap((a) => a.tracks),
-    files: new Map(stored.files.map((f) => [f.id, f])),
-    stats: stored.stats,
-    albumsByMbid: new Map(stored.albumsByMbid),
-    artistIdByMbid: new Map(stored.artistIdByMbid),
-    albumIdByKey: new Map(stored.albums.map((a) => [albumKey(a.artistName, a.title), a.id])),
-    trackByRecording: indexByRecording(stored.albums.flatMap((a) => a.tracks)),
-    trackByName: indexByName(stored.albums.flatMap((a) => a.tracks)),
-  };
 }
 
 export const songKey = (artistName: string, title: string) => `${normalize(artistName)}|${normalize(title)}`;

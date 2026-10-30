@@ -5,6 +5,8 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
 import { Analyzer } from './analysis/analyzer.ts';
+import { LidarrSource } from './catalog/lidarr.ts';
+import { CatalogStore } from './catalog/store.ts';
 import { PlaylistCovers } from './cover/index.ts';
 import { openDatabase } from './db.ts';
 import { Discover } from './discover/discover.ts';
@@ -30,16 +32,17 @@ const app = Fastify({
 });
 
 const lidarr = new LidarrClient(config.LIDARR_URL, config.LIDARR_API_KEY);
-const library = new Library(
-  lidarr,
-  { info: (m) => app.log.info(m), error: (m) => app.log.error(m) },
-  resolve(config.CACHE_DIR, 'library.json'),
-);
+const db = openDatabase(resolve(config.DATA_DIR));
+const store = new CatalogStore(db);
+// Phase 1: one Lidarr source, configured from .env. Settings manages sources from phase 2.
+const library = new Library(store, [{ id: store.ensureSource('lidarr', 'Lidarr'), source: new LidarrSource(lidarr) }], {
+  info: (m) => app.log.info(m),
+  error: (m) => app.log.error(m),
+});
 const art = new LocalArt(lidarr, resolve(config.CACHE_DIR, 'art'));
 // Keep every cover cached locally so browsing never waits on Lidarr.
 library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
 const media = createMediaSource(config);
-const db = openDatabase(resolve(config.DATA_DIR));
 const favorites = new Favorites(db, library);
 const analyzer = new Analyzer(db, library, media, {
   enabled: config.ANALYSIS === 'on',
@@ -90,7 +93,7 @@ process.on('SIGINT', shutdown).on('SIGTERM', shutdown);
 await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(`Lidarr: ${config.LIDARR_URL} · media source: ${media.kind}`);
 
-// Serve the last saved snapshot immediately, then refresh from Lidarr in the background.
-await library.loadCached();
+// Serve the catalog saved by the last run immediately, then sync the sources in the background.
+library.loadStored();
 library.refresh().catch(() => {});
 library.startAutoRefresh(config.LIBRARY_REFRESH_MINUTES);
