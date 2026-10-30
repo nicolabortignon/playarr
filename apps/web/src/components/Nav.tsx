@@ -131,6 +131,10 @@ export function Sidebar() {
           </dl>
         )}
         <ConnectionStatus />
+        <p className="font-mono text-[11px] text-muted/60" title={`Playarr ${__APP_VERSION__}${__APP_REVISION__ ? `, commit ${__APP_REVISION__}` : ''}`}>
+          v{__APP_VERSION__}
+          {__APP_REVISION__ && <span className="text-muted/40"> · {__APP_REVISION__}</span>}
+        </p>
       </div>
     </aside>
   );

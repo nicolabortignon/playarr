@@ -1,0 +1,9 @@
+#!/bin/sh
+# Every commit raises the patch version (scripts/bump-version.mjs). Skipped while rebasing, merging or
+# cherry-picking, and with PLAYARR_NO_BUMP=1.
+[ "${PLAYARR_NO_BUMP:-}" = 1 ] && exit 0
+GIT_DIR="$(git rev-parse --git-dir)"
+for state in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD; do
+  [ -e "$GIT_DIR/$state" ] && exit 0
+done
+exec node "$(git rev-parse --show-toplevel)/scripts/bump-version.mjs"
