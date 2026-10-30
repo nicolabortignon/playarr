@@ -20,6 +20,25 @@ function setup() {
 }
 
 describe('settings routes', () => {
+  it('browses folders from the home network only', async () => {
+    const { app } = setup();
+    const away = await app.inject({ method: 'GET', url: '/api/settings/folders', remoteAddress: AWAY });
+    expect(away.statusCode).toBe(403);
+    const home = await app.inject({ method: 'GET', url: '/api/settings/folders', remoteAddress: HOME });
+    expect(home.json()).toMatchObject({ path: null, folders: [{ path: '/' }] });
+  });
+
+  it('accepts a folder path', async () => {
+    const res = await setup().app.inject({
+      method: 'POST',
+      url: '/api/settings/sources',
+      payload: { kind: 'folder', settings: { path: '/definitely/not/here' } },
+      remoteAddress: HOME,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/doesn’t exist/);
+  });
+
   it('adds a source from the home network and starts a sync', async () => {
     const { app, library } = setup();
     const res = await app.inject({ method: 'POST', url: '/api/settings/sources', payload: lidarr, remoteAddress: HOME });

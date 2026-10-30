@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
 import { Analyzer } from './analysis/analyzer.ts';
+import { FileResolver } from './catalog/files.ts';
 import { SourceManager } from './catalog/sources.ts';
 import { CatalogStore } from './catalog/store.ts';
 import { PlaylistCovers } from './cover/index.ts';
@@ -18,6 +19,7 @@ import { Playlists } from './playlists.ts';
 import { LidarrClient } from './lidarr/client.ts';
 import { Library } from './library/library.ts';
 import { createMediaSource } from './media/index.ts';
+import { LocalMediaSource } from './media/local.ts';
 import { apiRoutes } from './routes/api.ts';
 import { artRoutes, LocalArt } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
@@ -36,7 +38,7 @@ const app = Fastify({
 const lidarr = new LidarrClient();
 const db = openDatabase(resolve(config.DATA_DIR));
 const store = new CatalogStore(db);
-const sources = new SourceManager(store, lidarr, { info: (m) => app.log.info(m) });
+const sources = new SourceManager(store, lidarr, { info: (m) => app.log.info(m) }, config.folderRoots);
 sources.seedFromEnv({ url: config.LIDARR_URL, apiKey: config.LIDARR_API_KEY });
 sources.active(); // configure the Lidarr client before anything uses it
 const library = new Library(store, () => sources.active(), {
@@ -47,12 +49,10 @@ const art = new LocalArt(lidarr, resolve(config.CACHE_DIR, 'art'));
 // Keep every cover cached locally so browsing never waits on Lidarr.
 library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
 const media = createMediaSource(config);
+// Lidarr's files through MEDIA_SOURCE + PATH_MAP; folder sources are always on this server's disk.
+const files = new FileResolver(store, { media, pathMap: config.pathMap }, new LocalMediaSource(config.FFMPEG_PATH));
 const favorites = new Favorites(db, library);
-const analyzer = new Analyzer(db, library, media, {
-  enabled: config.ANALYSIS === 'on',
-  pathMap: config.pathMap,
-  log: app.log,
-});
+const analyzer = new Analyzer(db, library, files, { enabled: config.ANALYSIS === 'on', log: app.log });
 const covers = new PlaylistCovers(analyzer, library, resolve(config.CACHE_DIR, 'covers'));
 const playlists = new Playlists(db, library, covers);
 const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
@@ -65,8 +65,8 @@ const discover = new Discover(lidarr, musicbrainz, library, requests);
 const recommendations = new Recommendations(playlists, library, requests);
 
 apiRoutes(app, { config, lidarr, library, media });
-artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR) });
-streamRoutes(app, { config, library, media });
+artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files });
+streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });

@@ -10,7 +10,11 @@ const sourceInput = z.object({
   name: z.string().trim().max(80).optional(),
   enabled: z.boolean().optional(),
   settings: z
-    .object({ url: z.url().optional(), apiKey: z.string().trim().max(200).optional() })
+    .object({
+      url: z.url().optional(),
+      apiKey: z.string().trim().max(200).optional(),
+      path: z.string().trim().max(4096).optional(),
+    })
     .optional(),
 });
 const testInput = z.object({
@@ -92,6 +96,11 @@ export function settingsRoutes(app: FastifyInstance, deps: { sources: SourceMana
 
   app.post('/api/settings/sources/test', editable, (req, reply) =>
     handle(reply, () => sources.test(parse(testInput, req.body))),
+  );
+
+  // Browsing reveals the server's folder names, so it's local-only too.
+  app.get<{ Querystring: { path?: string } }>('/api/settings/folders', editable, (req, reply) =>
+    handle(reply, () => sources.listFolders(req.query.path || undefined)),
   );
 
   app.post<Id>('/api/settings/sources/:id/rescan', editable, (_req, reply) =>
