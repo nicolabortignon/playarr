@@ -77,7 +77,7 @@ export function Dialog({
                 <X className="size-5" />
               </button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+            <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto">{children}</div>
           </motion.div>
         </div>
       )}

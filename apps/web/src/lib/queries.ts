@@ -10,6 +10,7 @@ import type {
   RequestSettingsInfo,
   RequestSettingsPatch,
   ReviewAction,
+  ReviewGroup,
   SourceInput,
   Track,
 } from '@playarr/shared';
@@ -381,18 +382,46 @@ export function useSourceActions() {
 }
 
 /** A folder source's albums waiting for review (doubtful matches). */
-export const useReview = (id: number | null) =>
-  useQuery({ queryKey: ['review', id], queryFn: () => api.review(id!), enabled: id !== null });
+/** How many times to ask again while MusicBrainz details are still coming (every 2 s: about a minute). */
+const REVIEW_DETAIL_POLLS = 30;
 
+export const useReview = (id: number | null) =>
+  useQuery({
+    queryKey: ['review', id],
+    queryFn: () => api.review(id!),
+    enabled: id !== null,
+    // The server fetches edition details in the background for the album on screen and the next one.
+    refetchInterval: (q) =>
+      q.state.dataUpdateCount < REVIEW_DETAIL_POLLS && q.state.data?.slice(0, 2).some((g) => g.candidates.some((c) => !c.detailed))
+        ? 2000
+        : false,
+  });
+
+/**
+ * Review actions. Choosing an album or leaving it unmatched takes the album off the list at once (and
+ * puts it back if saving fails); a search keeps its pending state until the new candidates are in.
+ */
 export function useReviewAction(id: number) {
   const client = useQueryClient();
+  const key = ['review', id];
   return useMutation({
+    mutationKey: ['review-action', id],
     mutationFn: (action: ReviewAction) => api.reviewAction(id, action),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['review', id] });
-      void client.invalidateQueries({ queryKey: ['sources'] });
+    onMutate: async (action) => {
+      if (action.search) return {};
+      await client.cancelQueries({ queryKey: key });
+      const previous = client.getQueryData<ReviewGroup[]>(key);
+      client.setQueryData<ReviewGroup[]>(key, (groups) => groups?.filter((g) => g.groupKey !== action.groupKey));
+      return { previous };
     },
-    onError: (err: Error) => toast(err.message, 'error'),
+    onError: (_err, _action, context) => {
+      if (context?.previous) client.setQueryData(key, context.previous);
+    },
+    onSuccess: async (_data, action) => {
+      void client.invalidateQueries({ queryKey: ['sources'] });
+      if (action.search) await client.invalidateQueries({ queryKey: key });
+      else void client.invalidateQueries({ queryKey: key });
+    },
   });
 }
 
