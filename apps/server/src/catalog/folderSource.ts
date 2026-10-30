@@ -2,6 +2,7 @@ import type { Dirent } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { folderSync, type FolderEntry } from './folder.ts';
+import type { FoundFile } from './folderFs.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
 import type { CatalogStore } from './store.ts';
 import { readTags, type TagInfo } from './tags.ts';
@@ -10,13 +11,6 @@ import type { CatalogSource, SourceSync } from './types.ts';
 export const AUDIO_EXTENSIONS = new Set(['flac', 'mp3', 'm4a', 'm4b', 'aac', 'ogg', 'oga', 'opus', 'wav', 'aif', 'aiff']);
 
 export const isAudioFile = (name: string) => AUDIO_EXTENSIONS.has(name.split('.').pop()?.toLowerCase() ?? '');
-
-interface FoundFile {
-  rel: string;
-  path: string;
-  size: number;
-  mtimeMs: number;
-}
 
 /** A folder on this server as a catalog source. Tags are re-read only for files that changed. */
 export class FolderSource implements CatalogSource {
