@@ -33,6 +33,7 @@ ENV NODE_ENV=production \
     WEB_DIST=/app/web \
     DATA_DIR=/config \
     CACHE_DIR=/cache \
+    FOLDER_ROOTS=/host \
     MEDIA_SOURCE=local
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -q -O /dev/null http://127.0.0.1:4000/ || exit 1

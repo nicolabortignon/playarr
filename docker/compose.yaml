@@ -22,6 +22,8 @@ services:
       - ${MUSIC_DIR}:/data/media/music:ro
       - ./config:/config # favorites, playlists, song analysis (keep)
       - ./cache:/cache # artwork and covers (safe to delete)
+      # Folders to offer as sources in Settings → Sources: mount a broad host folder read-only at /host.
+      # - /volume1:/host:ro
     ports:
       - "4000:4000"
     restart: unless-stopped
