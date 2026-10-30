@@ -94,3 +94,61 @@ describe('CatalogStore', () => {
     expect(store.load().artists).toEqual([]);
   });
 });
+
+describe('CatalogStore: managing sources', () => {
+  it('lists sources with their settings and sync errors', () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('lidarr', 'Lidarr', { url: 'http://lidarr:8686', apiKey: 'k' });
+    store.setSyncError(id, 'Cannot reach Lidarr');
+    expect(store.source(id)).toMatchObject({
+      kind: 'lidarr',
+      enabled: true,
+      settings: { url: 'http://lidarr:8686', apiKey: 'k' },
+      lastError: 'Cannot reach Lidarr',
+    });
+    store.setSyncError(id, null);
+    expect(store.source(id)!.lastError).toBeUndefined();
+  });
+
+  it('updates name, enabled and settings', () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('lidarr', 'Lidarr');
+    store.updateSource(id, { name: 'Home', enabled: false, settings: { url: 'http://nas:8686' } });
+    expect(store.source(id)).toMatchObject({ name: 'Home', enabled: false, settings: { url: 'http://nas:8686' } });
+  });
+
+  it('removes a source with its copies, keeping catalog rows', () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.ensureSource('lidarr', 'Lidarr');
+    store.applySync(id, mezzanine());
+    store.removeSource(id);
+    const rows = store.load();
+    expect(rows.sources).toEqual([]);
+    expect(rows.copies).toEqual([]);
+    expect(rows.tracks).toHaveLength(2);
+  });
+
+  it('reorders sources and rejects an incomplete order', () => {
+    const store = new CatalogStore(freshDb());
+    const a = store.addSource('lidarr', 'A');
+    const b = store.addSource('folder', 'B');
+    store.reorderSources([b, a]);
+    expect(store.listSources().map((s) => s.id)).toEqual([b, a]);
+    expect(() => store.reorderSources([a])).toThrow(/every source/);
+  });
+
+  it('counts the songs and albums each source has', () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.ensureSource('lidarr', 'Lidarr');
+    store.applySync(id, mezzanine());
+    expect(store.sourceCounts().get(id)).toEqual({ songs: 2, albums: 1 });
+  });
+
+  it('keeps app settings', () => {
+    const store = new CatalogStore(freshDb());
+    expect(store.appSetting('x')).toBeUndefined();
+    store.setAppSetting('x', '1');
+    store.setAppSetting('x', '2');
+    expect(store.appSetting('x')).toBe('2');
+  });
+});

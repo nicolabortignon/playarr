@@ -19,6 +19,11 @@ export interface SourceRow {
   lastSyncAt?: string;
   state: SourceState;
 }
+/** A source as Settings manages it. `settings` holds secrets: never send it to the browser as is. */
+export interface SourceRecord extends SourceRow {
+  settings: Record<string, unknown>;
+  lastError?: string;
+}
 export interface ArtistRow {
   id: number;
   key: string;
@@ -61,13 +66,13 @@ type CatalogTable = 'catalog_artists' | 'catalog_albums' | 'catalog_tracks';
 export class CatalogStore {
   constructor(private readonly db: DatabaseSync) {}
 
-  addSource(kind: SourceKind, name: string): number {
+  addSource(kind: SourceKind, name: string, settings: Record<string, unknown> = {}): number {
     const { next } = this.db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM sources').get() as {
       next: number;
     };
     const res = this.db
-      .prepare('INSERT INTO sources (kind, name, position, created_at) VALUES (?, ?, ?, ?)')
-      .run(kind, name, next, new Date().toISOString());
+      .prepare('INSERT INTO sources (kind, name, position, settings, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(kind, name, next, JSON.stringify(settings), new Date().toISOString());
     return Number(res.lastInsertRowid);
   }
 
@@ -81,6 +86,109 @@ export class CatalogStore {
 
   hasData(): boolean {
     return !!this.db.prepare('SELECT 1 FROM copies LIMIT 1').get();
+  }
+
+  listSources(): SourceRecord[] {
+    const rows = this.db
+      .prepare(
+        'SELECT id, kind, name, position, enabled, settings, state, last_sync_at, last_error FROM sources ORDER BY position',
+      )
+      .all() as {
+      id: number;
+      kind: SourceKind;
+      name: string;
+      position: number;
+      enabled: number;
+      settings: string;
+      state: string | null;
+      last_sync_at: string | null;
+      last_error: string | null;
+    }[];
+    return rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      name: r.name,
+      position: r.position,
+      enabled: r.enabled === 1,
+      lastSyncAt: r.last_sync_at ?? undefined,
+      lastError: r.last_error ?? undefined,
+      state: r.state ? (JSON.parse(r.state) as SourceState) : {},
+      settings: JSON.parse(r.settings) as Record<string, unknown>,
+    }));
+  }
+
+  source(id: number): SourceRecord | undefined {
+    return this.listSources().find((s) => s.id === id);
+  }
+
+  updateSource(id: number, patch: { name?: string; enabled?: boolean; settings?: Record<string, unknown> }) {
+    if (patch.name !== undefined) this.db.prepare('UPDATE sources SET name = ? WHERE id = ?').run(patch.name, id);
+    if (patch.enabled !== undefined) {
+      this.db.prepare('UPDATE sources SET enabled = ? WHERE id = ?').run(patch.enabled ? 1 : 0, id);
+    }
+    if (patch.settings !== undefined) {
+      this.db.prepare('UPDATE sources SET settings = ? WHERE id = ?').run(JSON.stringify(patch.settings), id);
+    }
+  }
+
+  /** Delete a source and its copies. Catalog rows stay, so their ids are never reused. */
+  removeSource(id: number) {
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare('DELETE FROM copies WHERE source_id = ?').run(id);
+      this.db.prepare('DELETE FROM sources WHERE id = ?').run(id);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /** Rewrite positions in this order. `ids` must list every source exactly once. */
+  reorderSources(ids: number[]) {
+    const current = this.listSources()
+      .map((s) => s.id)
+      .sort((a, b) => a - b);
+    const wanted = [...ids].sort((a, b) => a - b);
+    if (wanted.length !== current.length || wanted.some((id, i) => id !== current[i])) {
+      throw new Error('The new order must list every source exactly once');
+    }
+    this.db.exec('BEGIN');
+    try {
+      const update = this.db.prepare('UPDATE sources SET position = ? WHERE id = ?');
+      ids.forEach((id, i) => update.run(i, id));
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  setSyncError(id: number, error: string | null) {
+    this.db.prepare('UPDATE sources SET last_error = ? WHERE id = ?').run(error, id);
+  }
+
+  /** How many songs and albums each source has a copy of. */
+  sourceCounts(): Map<number, { songs: number; albums: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT c.source_id AS id, COUNT(DISTINCT c.track_id) AS songs, COUNT(DISTINCT t.album_id) AS albums
+         FROM copies c JOIN catalog_tracks t ON t.id = c.track_id
+         GROUP BY c.source_id`,
+      )
+      .all() as { id: number; songs: number; albums: number }[];
+    return new Map(rows.map((r) => [r.id, { songs: r.songs, albums: r.albums }]));
+  }
+
+  appSetting(key: string): string | undefined {
+    const row = this.db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as { value: string } | undefined;
+    return row?.value;
+  }
+
+  setAppSetting(key: string, value: string) {
+    this.db
+      .prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+      .run(key, value);
   }
 
   /** Replace what this source has with `sync`, all or nothing. */
