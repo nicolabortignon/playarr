@@ -1,8 +1,9 @@
-import type { FolderListing, SourceInfo, SourceInput, SourceTestResult } from '@playarr/shared';
-import { basename } from 'node:path';
+import type { FolderBrowseRequest, FolderListing, SourceInfo, SourceInput, SourceTestResult } from '@playarr/shared';
+import { posix } from 'node:path';
 import { LidarrClient } from '../lidarr/client.ts';
-import { LocalFolderFs } from './folderFs.ts';
-import { FolderSource } from './folderSource.ts';
+import type { FolderAccess, FolderSettings } from './folderAccess.ts';
+import { LocalFolderFs, type FolderFs } from './folderFs.ts';
+import { FolderSource, isAudioFile } from './folderSource.ts';
 import { LidarrSource } from './lidarr.ts';
 import { isWritable } from './organizer.ts';
 import { checkFolder, listFolders } from './paths.ts';
@@ -14,12 +15,8 @@ interface LidarrSettings {
   apiKey?: string;
 }
 
-interface FolderSettings {
-  path?: string;
-}
-
 /** Settings fields that are never sent to the browser. */
-const SECRET_FIELDS = ['apiKey'];
+const SECRET_FIELDS = ['apiKey', 'password'];
 const SEEDED = 'sources.seeded_from_env';
 
 export class SourceError extends Error {
@@ -39,6 +36,7 @@ interface MatcherHandle {
 
 export class SourceManager {
   private matcher?: MatcherHandle;
+  private folders?: Pick<FolderAccess, 'create' | 'get' | 'release'>;
 
   constructor(
     private readonly store: CatalogStore,
@@ -52,6 +50,11 @@ export class SourceManager {
   /** Folder scans hand new files to the matcher; Settings shows its progress. */
   useMatcher(matcher: MatcherHandle) {
     this.matcher = matcher;
+  }
+
+  /** Folder sources reach their files (on this server, or over SSH/SFTP) through this. */
+  useFolderAccess(access: Pick<FolderAccess, 'create' | 'get' | 'release'>) {
+    this.folders = access;
   }
 
   /** Copy .env's Lidarr settings into the database, once. After that, Settings owns them. */
@@ -87,12 +90,13 @@ export class SourceManager {
         lidarrSet = true;
       } else if (s.kind === 'folder') {
         const root = (s.settings as FolderSettings).path;
-        if (root) {
+        const fs = root ? this.folderFs(s) : undefined;
+        if (root && fs) {
           const source = new FolderSource({
             sourceId: s.id,
             root,
             store: this.store,
-            fs: new LocalFolderFs(),
+            fs,
             onScanned: (id) => this.matcher?.enqueue(id),
           });
           list.push({ id: s.id, source });
@@ -122,9 +126,9 @@ export class SourceManager {
       }
       id = this.store.addSource('lidarr', input.name?.trim() || 'Lidarr', { url: trimUrl(url), apiKey });
     } else if (kind === 'folder') {
-      if (!input.settings?.path) throw new SourceError('A folder source needs a folder', 400);
-      const path = this.checkFolder(input.settings.path);
-      id = this.store.addSource('folder', input.name?.trim() || basename(path) || path, { path });
+      const settings = this.folderSettings(input.settings);
+      const path = settings.path!;
+      id = this.store.addSource('folder', input.name?.trim() || posix.basename(path) || path, withoutUndefined(settings));
     } else {
       throw new SourceError(`Unknown source kind: ${String(kind)}`, 400);
     }
@@ -136,14 +140,16 @@ export class SourceManager {
   update(id: number, input: SourceInput): SourceInfo {
     const source = this.store.source(id);
     if (!source) throw new SourceError('Source not found', 404);
-    const { url, apiKey, path } = input.settings ?? {};
+    const { url, apiKey } = input.settings ?? {};
     let settings: Record<string, unknown> | undefined;
     if (input.settings && source.kind === 'folder') {
-      settings = path ? { ...source.settings, path: this.checkFolder(path) } : undefined;
+      settings = withoutUndefined(this.folderSettings(input.settings, source.settings as FolderSettings));
     } else if (input.settings) {
       settings = { ...source.settings, ...(url ? { url: trimUrl(url) } : {}), ...(apiKey ? { apiKey } : {}) };
     }
     this.store.updateSource(id, { name: input.name?.trim() || undefined, enabled: input.enabled, settings });
+    // New settings, new connection.
+    if (settings) this.folders?.release(id);
     this.active();
     return this.info(id);
   }
@@ -151,7 +157,72 @@ export class SourceManager {
   remove(id: number) {
     if (!this.store.source(id)) throw new SourceError('Source not found', 404);
     this.store.removeSource(id);
+    this.folders?.release(id);
     this.active();
+  }
+
+  /**
+   * Before saving a folder on another machine: connect and check the folder is there.
+   * With an id, the source's saved settings fill in what the input leaves out. Local folders are checked by add/update.
+   */
+  async verify(input: SourceInput, id?: number): Promise<void> {
+    const source = id !== undefined ? this.store.source(id) : undefined;
+    if (id !== undefined && !source) throw new SourceError('Source not found', 404);
+    const kind = source?.kind ?? input.kind ?? 'lidarr';
+    if (kind !== 'folder' || !input.settings) return;
+    const saved = (source?.settings ?? {}) as FolderSettings;
+    if ((input.settings.access ?? saved.access ?? 'local') === 'local') return;
+    const settings = this.folderSettings(input.settings, saved);
+    const fs = this.openFolderFs(settings);
+    try {
+      await fs.media.check();
+      const s = await fs.stat(settings.path!);
+      if (!s?.dir) throw new SourceError(`Can’t open ${settings.path} on ${settings.host}`, 400);
+    } catch (err) {
+      throw err instanceof SourceError ? err : new SourceError((err as Error).message, 400);
+    } finally {
+      await fs.close().catch(() => {});
+    }
+  }
+
+  /** Folders to choose from: on this server (inside FOLDER_ROOTS), or over a (possibly unsaved) SSH/SFTP connection. */
+  async browse(req: FolderBrowseRequest): Promise<FolderListing> {
+    const source = req.id !== undefined ? this.store.source(req.id) : undefined;
+    const saved = (source?.kind === 'folder' ? source.settings : {}) as FolderSettings;
+    const access = req.connection?.access ?? saved.access ?? 'local';
+    if (access === 'local') return this.listFolders(req.path);
+    const c = req.connection ?? { access };
+    const host = c.host?.trim() || saved.host;
+    const user = c.user?.trim() || saved.user;
+    if (!host || !user) throw new SourceError('A remote folder needs a host and a user', 400);
+    const path = posix.normalize(req.path || '/');
+    if (!path.startsWith('/')) throw new SourceError('The folder must be an absolute path on that host', 400);
+    const settings: FolderSettings = {
+      access,
+      host,
+      user,
+      port: c.port ?? saved.port ?? 22,
+      path,
+      // A saved password only ever goes back to the host and account it was saved for.
+      password: c.password || (host === saved.host && user === saved.user ? saved.password : undefined),
+      privateKeyPath: c.privateKeyPath?.trim() || saved.privateKeyPath,
+    };
+    const fs = this.openFolderFs(settings);
+    try {
+      await fs.media.check();
+      if (!(await fs.stat(path))?.dir) throw new SourceError(`Can’t open ${path} on ${host}`, 400);
+      const entries = await fs.readdir(path);
+      const folders = entries
+        .filter((e) => e.dir && !e.name.startsWith('.'))
+        .map((e) => ({ name: e.name, path: posix.join(path, e.name) }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+      const audioFiles = entries.filter((e) => e.file && isAudioFile(e.name)).length;
+      return { path, parent: path === '/' ? null : posix.dirname(path), folders, audioFiles };
+    } catch (err) {
+      throw err instanceof SourceError ? err : new SourceError((err as Error).message, 400);
+    } finally {
+      await fs.close().catch(() => {});
+    }
   }
 
   reorder(ids: number[]) {
@@ -184,6 +255,48 @@ export class SourceManager {
     }
   }
 
+  /** A folder source's filesystem, or none if it can't be reached as configured. */
+  private folderFs(s: SourceRecord): FolderFs | undefined {
+    try {
+      if (this.folders) return this.folders.get(s.id);
+    } catch (err) {
+      this.log.info(`Folder source “${s.name}”: ${(err as Error).message}`);
+      return undefined;
+    }
+    return ((s.settings as FolderSettings).access ?? 'local') === 'local' ? new LocalFolderFs() : undefined;
+  }
+
+  private openFolderFs(settings: FolderSettings): FolderFs {
+    if (!this.folders) throw new SourceError('Folders on other machines aren’t available', 400);
+    try {
+      return this.folders.create(settings);
+    } catch (err) {
+      throw new SourceError((err as Error).message, 400);
+    }
+  }
+
+  /** Folder settings from the input, with the saved ones (when editing) filling in what it leaves out. */
+  private folderSettings(input: SourceInput['settings'] = {}, saved: FolderSettings = {}): FolderSettings {
+    const access = input.access ?? saved.access ?? 'local';
+    const path = input.path ?? saved.path;
+    if (!path) throw new SourceError('A folder source needs a folder', 400);
+    if (access === 'local') return { path: this.checkFolder(path) };
+    const host = (input.host ?? saved.host)?.trim();
+    const user = (input.user ?? saved.user)?.trim();
+    if (!host || !user) throw new SourceError('A remote folder needs a host and a user', 400);
+    if (!path.startsWith('/')) throw new SourceError('The folder must be an absolute path on that host', 400);
+    return {
+      access,
+      host,
+      user,
+      port: input.port ?? saved.port ?? 22,
+      path: posix.normalize(path).replace(/(.)\/+$/, '$1'),
+      // A saved password only ever goes back to the host and account it was saved for.
+      password: input.password || (host === saved.host && user === saved.user ? saved.password : undefined) || undefined,
+      privateKeyPath: (input.privateKeyPath ?? saved.privateKeyPath)?.trim() || undefined,
+    };
+  }
+
   private checkFolder(path: string): string {
     try {
       return checkFolder(path, this.folderRoots);
@@ -210,14 +323,15 @@ function toInfo(
   matching: { review: number; matching: number },
   opts: { includeSettings: boolean; syncing: boolean },
 ): SourceInfo {
-  const folderPath = s.kind === 'folder' ? (s.settings as FolderSettings).path : undefined;
+  const folder = s.kind === 'folder' ? (s.settings as FolderSettings) : undefined;
+  const localPath = folder && (folder.access ?? 'local') === 'local' ? folder.path : undefined;
   return {
     id: s.id,
     kind: s.kind,
     name: s.name,
     position: s.position,
     enabled: s.enabled,
-    ...(opts.includeSettings ? { settings: { url: (s.settings as LidarrSettings).url, path: (s.settings as FolderSettings).path } } : {}),
+    ...(opts.includeSettings ? { settings: publicSettings(s) } : {}),
     secrets: SECRET_FIELDS.filter((f) => !!s.settings[f]),
     lastSyncAt: s.lastSyncAt,
     error: s.lastError,
@@ -226,8 +340,19 @@ function toInfo(
     albums: counts?.albums ?? 0,
     review: matching.review,
     matching: matching.matching,
-    ...(folderPath ? { writable: isWritable(folderPath) } : {}),
+    ...(localPath ? { writable: isWritable(localPath) } : {}),
   };
 }
+
+/** Connection settings the browser may see: never a secret. */
+function publicSettings(s: SourceRecord): SourceInfo['settings'] {
+  if (s.kind !== 'folder') return { url: (s.settings as LidarrSettings).url };
+  const { path, access, host, port, user, privateKeyPath } = s.settings as FolderSettings;
+  if ((access ?? 'local') === 'local') return { path };
+  return { path, access, host, port, user, privateKeyPath };
+}
+
+/** Drop undefined fields before storing settings as JSON. */
+const withoutUndefined = (o: object): Record<string, unknown> => JSON.parse(JSON.stringify(o)) as Record<string, unknown>;
 
 const trimUrl = (url: string) => url.trim().replace(/\/+$/, '');
