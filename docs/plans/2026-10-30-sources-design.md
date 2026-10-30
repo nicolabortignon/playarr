@@ -45,7 +45,7 @@ New SQLite tables:
 
 **In memory.** The `Library` snapshot is built from the database instead of directly from Lidarr. Its public methods stay as they are, so routes, search, playlists, covers, recommendations and Discover keep working.
 
-**Migration.** Lidarr numeric ids appear in URLs, saved queues and the offline song cache. The first start assigns Playarr ids and stores a map from old ids. Old album and artist links redirect, and saved queues heal as they do today (`healQueue`). On first start, the `.env` Lidarr settings become a Lidarr source.
+**Migration.** New catalog rows take the Lidarr id (artists, albums, tracks) or Lidarr track-file id (copies) as their Playarr id when it's free. On an existing install every id stays the same, so links, saved queues and the offline song cache need no migration. Catalog rows are never deleted and ids are never reused. On first start, the `.env` Lidarr settings become a Lidarr source.
 
 Favorites and playlists are already keyed by MusicBrainz recording id. Unmatched songs use a fingerprint-based key, so moving files doesn't orphan them.
 
