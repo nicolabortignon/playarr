@@ -17,6 +17,8 @@ import type {
   HealthStatus,
   MusicBrainzStatus,
   MatchingSettings,
+  OrganizePlan,
+  OrganizeResult,
   Recommendations,
   ReviewAction,
   ReviewGroup,
@@ -115,6 +117,11 @@ export const api = {
   reviewAction: (id: number, action: ReviewAction) =>
     request<void>(`/api/settings/sources/${id}/review`, { method: 'POST', body: JSON.stringify(action) }),
   rematchSource: (id: number) => request<void>(`/api/settings/sources/${id}/rematch`, { method: 'POST' }),
+  organizePlan: (id: number) => get<OrganizePlan>(`/api/settings/sources/${id}/organize`),
+  organize: (id: number, moves: string[]) =>
+    request<OrganizeResult>(`/api/settings/sources/${id}/organize`, { method: 'POST', body: JSON.stringify({ moves }) }),
+  undoOrganize: (id: number, batchId: number) =>
+    request<{ restored: number }>(`/api/settings/sources/${id}/organize/undo`, { method: 'POST', body: JSON.stringify({ batchId }) }),
   matching: () => get<MatchingSettings>('/api/settings/matching'),
   saveMatching: (acoustidKey: string) =>
     request<MatchingSettings>('/api/settings/matching', { method: 'PUT', body: JSON.stringify({ acoustidKey }) }),

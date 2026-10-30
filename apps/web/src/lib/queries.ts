@@ -2,6 +2,7 @@ import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, CoverLayout,
 import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
+import { plural } from './format';
 import { toast } from './toast';
 
 export const useHealth = () =>
@@ -323,6 +324,33 @@ export function useReviewAction(id: number) {
     },
     onError: (err: Error) => toast(err.message, 'error'),
   });
+}
+
+/** A folder source's proposed moves into Artist/Album/NN Title (Settings → Sources → Organize files). */
+export const useOrganizePlan = (id: number | null) =>
+  useQuery({ queryKey: ['organize', id], queryFn: () => api.organizePlan(id!), enabled: id !== null, staleTime: 0 });
+
+export function useOrganizeActions(id: number) {
+  const client = useQueryClient();
+  const done = () => void client.invalidateQueries(); // paths and covers changed everywhere
+  return {
+    apply: useMutation({
+      mutationFn: (moves: string[]) => api.organize(id, moves),
+      onSuccess: (r) => {
+        toast(`Moved ${plural(r.moved, 'file')}${r.skipped.length ? `; ${r.skipped.length} skipped` : ''}`);
+        done();
+      },
+      onError: (err: Error) => toast(err.message, 'error'),
+    }),
+    undo: useMutation({
+      mutationFn: (batchId: number) => api.undoOrganize(id, batchId),
+      onSuccess: (r) => {
+        toast(`Put ${plural(r.restored, 'file')} back`);
+        done();
+      },
+      onError: (err: Error) => toast(err.message, 'error'),
+    }),
+  };
 }
 
 export const useMatching = () => useQuery({ queryKey: ['matching'], queryFn: api.matching });

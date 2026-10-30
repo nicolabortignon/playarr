@@ -1,5 +1,5 @@
 import type { SourceInfo, SourceTestResult } from '@playarr/shared';
-import { Check, Folder, FolderOpen, GripVertical, Loader2, Pencil, Plus, RefreshCw, RotateCw, Server, Trash2, TriangleAlert } from 'lucide-react';
+import { Check, Folder, FolderOpen, FolderTree, GripVertical, Loader2, Pencil, Plus, RefreshCw, RotateCw, Server, Trash2, TriangleAlert } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../lib/api';
@@ -7,6 +7,7 @@ import { cn } from '../lib/cn';
 import { plural, formatWait } from '../lib/format';
 import { useFolders, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
 import { Dialog } from './Dialog';
+import { OrganizeDialog } from './OrganizeDialog';
 import { ReviewDialog } from './ReviewDialog';
 
 const INPUT =
@@ -23,6 +24,7 @@ export function SourcesPanel() {
   const [order, setOrder] = useState<SourceInfo[]>([]);
   const [editing, setEditing] = useState<SourceInfo | 'new' | null>(null);
   const [reviewing, setReviewing] = useState<number | null>(null);
+  const [organizing, setOrganizing] = useState<number | null>(null);
 
   useEffect(() => {
     if (data) setOrder(data.sources);
@@ -61,6 +63,7 @@ export function SourcesPanel() {
             onDragEnd={commitOrder}
             onEdit={() => setEditing(s)}
             onReview={() => setReviewing(s.id)}
+            onOrganize={() => setOrganizing(s.id)}
           />
         ))}
       </Reorder.Group>
@@ -79,6 +82,7 @@ export function SourcesPanel() {
         onClose={() => setEditing(null)}
       />
       <ReviewDialog sourceId={reviewing} onClose={() => setReviewing(null)} />
+      <OrganizeDialog sourceId={organizing} onClose={() => setOrganizing(null)} />
     </section>
   );
 }
@@ -89,12 +93,14 @@ function SourceRow({
   onDragEnd,
   onEdit,
   onReview,
+  onOrganize,
 }: {
   source: SourceInfo;
   canEdit: boolean;
   onDragEnd: () => void;
   onEdit: () => void;
   onReview: () => void;
+  onOrganize: () => void;
 }) {
   const controls = useDragControls();
   const actions = useSourceActions();
@@ -148,6 +154,12 @@ function SourceRow({
           {s.kind === 'folder' && (
             <IconButton label="Match again" onClick={() => actions.rematch.mutate(s.id)} disabled={actions.rematch.isPending}>
               <RotateCw className="size-4" />
+            </IconButton>
+          )}
+          {s.kind === 'folder' && (
+            // Shown even when the folder isn't writable: the dialog explains why nothing can move.
+            <IconButton label="Organize files" onClick={onOrganize}>
+              <FolderTree className="size-4" />
             </IconButton>
           )}
           <IconButton label="Edit" onClick={onEdit}>
