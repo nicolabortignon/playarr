@@ -114,11 +114,13 @@ export function PillGroup<T extends string | number>({
   options,
   value,
   onChange,
+  disabled,
 }: {
   label: string;
   options: readonly { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  disabled?: boolean;
 }) {
   const keys = radioKeys(
     options.map((o) => o.value),
@@ -126,7 +128,13 @@ export function PillGroup<T extends string | number>({
     onChange,
   );
   return (
-    <div role="radiogroup" aria-label={label} onKeyDown={keys.onKeyDown} className="flex flex-wrap gap-1.5">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      onKeyDown={disabled ? undefined : keys.onKeyDown}
+      className={cn('flex flex-wrap gap-1.5', disabled && 'opacity-50')}
+    >
       {options.map((o, i) => (
         <button
           key={o.value}
@@ -134,6 +142,7 @@ export function PillGroup<T extends string | number>({
           role="radio"
           aria-checked={value === o.value}
           tabIndex={keys.tabIndexFor(i)}
+          disabled={disabled}
           onClick={() => onChange(o.value)}
           className={cn(
             'h-8 rounded-full border px-3.5 font-mono text-[11px] tracking-wider uppercase transition',

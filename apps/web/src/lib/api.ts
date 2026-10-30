@@ -32,6 +32,8 @@ import type {
   SourcesResponse,
   SourceTestResult,
   Track,
+  UpdateInfo,
+  UpdateSettings,
 } from '@playarr/shared';
 
 export class ApiError extends Error {
@@ -135,6 +137,10 @@ export const api = {
   requestSettings: () => get<RequestSettingsInfo>('/api/settings/requests'),
   saveRequestSettings: (patch: RequestSettingsPatch) =>
     request<RequestSettingsInfo>('/api/settings/requests', { method: 'PUT', body: JSON.stringify(patch) }),
+  updates: () => get<UpdateInfo>('/api/settings/updates'),
+  saveUpdates: (patch: Partial<UpdateSettings>) =>
+    request<UpdateInfo>('/api/settings/updates', { method: 'PUT', body: JSON.stringify(patch) }),
+  checkForUpdates: () => request<UpdateInfo>('/api/settings/updates/check', { method: 'POST' }),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */

@@ -3,6 +3,7 @@ import { AppearancePanel } from '../components/AppearancePanel';
 import { PlaybackPanel } from '../components/PlaybackPanel';
 import { RequestsPanel } from '../components/RequestsPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
+import { UpdatesPanel } from '../components/UpdatesPanel';
 import { cn } from '../lib/cn';
 import { PageTitle } from './Albums';
 
@@ -11,6 +12,7 @@ const PANELS = [
   { id: 'playback', label: 'Playback', scope: 'These settings are for this device.', Panel: PlaybackPanel },
   { id: 'requests', label: 'Requests', scope: 'These settings apply to everyone.', Panel: RequestsPanel },
   { id: 'appearance', label: 'Appearance', scope: 'These settings are for this device.', Panel: AppearancePanel },
+  { id: 'updates', label: 'Updates', scope: 'These settings apply to everyone.', Panel: UpdatesPanel },
 ] as const;
 
 export function SettingsPage() {

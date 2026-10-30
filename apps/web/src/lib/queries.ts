@@ -13,6 +13,8 @@ import type {
   ReviewGroup,
   SourceInput,
   Track,
+  UpdateInfo,
+  UpdateSettings,
 } from '@playarr/shared';
 import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
@@ -346,6 +348,48 @@ export function useSaveRequestSettings() {
     },
     // Request buttons follow health.requests.
     onSettled: () => void client.invalidateQueries({ queryKey: ['health'] }),
+  });
+}
+
+/** Settings → Updates: polled every 5 s while a check is waiting or running, every minute otherwise. */
+export const useUpdates = () =>
+  useQuery({
+    queryKey: ['updates'],
+    queryFn: api.updates,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 403) && count < 2,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data && (data.requested || data.status?.state === 'checking') ? 5_000 : 60_000;
+    },
+  });
+
+/** Turns automatic updates on or off, or changes how often; shown at once. */
+export function useSaveUpdates() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<UpdateSettings>) => api.saveUpdates(patch),
+    onMutate: async (patch) => {
+      await client.cancelQueries({ queryKey: ['updates'] });
+      const previous = client.getQueryData<UpdateInfo>(['updates']);
+      if (previous) client.setQueryData<UpdateInfo>(['updates'], { ...previous, ...patch });
+      return { previous };
+    },
+    onSuccess: (data) => client.setQueryData(['updates'], data),
+    onError: (err: Error, _patch, ctx) => {
+      if (ctx?.previous) client.setQueryData(['updates'], ctx.previous);
+      void client.invalidateQueries({ queryKey: ['updates'] });
+      toast(`Couldn’t save: ${err.message}`, 'error');
+    },
+  });
+}
+
+/** Check now: the updater picks it up within half a minute. */
+export function useCheckForUpdates() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.checkForUpdates,
+    onSuccess: (data) => client.setQueryData(['updates'], data),
+    onError: (err: Error) => toast(`Couldn’t check for updates: ${err.message}`, 'error'),
   });
 }
 
