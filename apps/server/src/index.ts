@@ -30,7 +30,7 @@ import { artRoutes, LocalArt } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
 import { playlistRoutes } from './routes/playlists.ts';
-import { ACOUSTID_KEY, settingsRoutes } from './routes/settings.ts';
+import { ACOUSTID_KEY, readRequestSettings, settingsRoutes } from './routes/settings.ts';
 import { statusRoutes } from './routes/status.ts';
 import { streamRoutes } from './routes/stream.ts';
 
@@ -92,7 +92,9 @@ const favorites = new Favorites(db, library);
 const analyzer = new Analyzer(db, library, files, { enabled: config.ANALYSIS === 'on', log: app.log });
 const covers = new PlaylistCovers(analyzer, library, resolve(config.CACHE_DIR, 'covers'));
 const playlists = new Playlists(db, library, covers);
-const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), {
+// Settings → Requests, read fresh each time so a change applies at once; .env values are the fallback.
+const requestSettings = () => readRequestSettings(store);
+const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), requestSettings, {
   rootFolderPath: config.LIDARR_ROOT_FOLDER,
   qualityProfileId: config.LIDARR_QUALITY_PROFILE_ID,
   metadataProfileId: config.LIDARR_METADATA_PROFILE_ID,
@@ -100,13 +102,13 @@ const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE
 const discover = new Discover(lidarr, musicbrainz, library, requests);
 const recommendations = new Recommendations(playlists, library, requests);
 
-apiRoutes(app, { config, lidarr, library, media });
+apiRoutes(app, { config, lidarr, library, media, requestSettings });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
 streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
-settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares });
+settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares, lidarr });
 statusRoutes(app, {
   musicbrainz,
   matching: () => store.listSources().reduce((n, s) => n + matcher.pendingGroups(s.id), 0),

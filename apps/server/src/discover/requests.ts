@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { AlbumRef, AlbumRequest, Availability } from '@playarr/shared';
+import type { AlbumRef, AlbumRequest, Availability, RequestSettings } from '@playarr/shared';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
 import type { LidarrAlbum, LidarrCommand, LidarrLookupAlbum, LidarrQueueItem } from '../lidarr/types.ts';
 import type { Library } from '../library/library.ts';
@@ -53,7 +53,10 @@ export class Requests {
     private readonly mb: MusicBrainz,
     private readonly library: Library,
     private readonly file: string,
-    private readonly overrides: RequestDefaults,
+    /** Settings → Requests, read on every request so changes apply at once. */
+    private readonly settings: () => RequestSettings,
+    /** .env values: used when nothing is chosen in Settings. */
+    private readonly env: RequestDefaults = {},
   ) {
     this.loaded = readFile(file, 'utf8')
       .then((raw) => {
@@ -68,15 +71,21 @@ export class Requests {
     await rename(`${this.file}.tmp`, this.file);
   }
 
-  /** Root folder and profiles for new artists: env overrides, else the root folder's defaults. */
-  private async defaults(): Promise<Required<RequestDefaults>> {
+  /**
+   * Root folder and profiles for new artists: Settings, then .env, then the root folder's defaults.
+   * A chosen root folder Lidarr no longer has is skipped.
+   */
+  private async defaults(settings: RequestSettings): Promise<Required<RequestDefaults>> {
     const roots = await this.lidarr.rootFolders();
-    const root = roots.find((r) => r.path === this.overrides.rootFolderPath) ?? roots[0];
+    const root =
+      roots.find((r) => r.path === settings.rootFolderPath) ??
+      roots.find((r) => r.path === this.env.rootFolderPath) ??
+      roots[0];
     if (!root) throw new RequestError('Lidarr has no root folder configured', 500);
     return {
       rootFolderPath: root.path,
-      qualityProfileId: this.overrides.qualityProfileId ?? root.defaultQualityProfileId ?? 1,
-      metadataProfileId: this.overrides.metadataProfileId ?? root.defaultMetadataProfileId ?? 1,
+      qualityProfileId: settings.qualityProfileId ?? this.env.qualityProfileId ?? root.defaultQualityProfileId ?? 1,
+      metadataProfileId: settings.metadataProfileId ?? this.env.metadataProfileId ?? root.defaultMetadataProfileId ?? 1,
     };
   }
 
@@ -85,6 +94,8 @@ export class Requests {
     if (!this.lidarr.configured) {
       throw new RequestError('Requests need a Lidarr source. Add one in Settings → Sources.', 409);
     }
+    const settings = this.settings();
+    if (!settings.enabled) throw new RequestError('Requests are turned off in Settings', 403);
     const lookup = ref.mbid
       ? await this.lookupByMbid(ref.mbid)
       : ref.releaseMbid
@@ -101,10 +112,13 @@ export class Requests {
       // Lidarr already tracks it (e.g. part of a monitored artist's discography): just want it.
       await this.lidarr.monitorAlbums([albumId], true);
     } else {
-      albumId = (await this.addToLidarr(lookup)).id;
+      albumId = (await this.addToLidarr(lookup, settings)).id;
     }
 
-    const command = await this.lidarr.command('AlbumSearch', { albumIds: [albumId] });
+    // Off: only added and monitored; Lidarr searches on its own schedule.
+    const command = settings.searchOnAdd
+      ? await this.lidarr.command('AlbumSearch', { albumIds: [albumId] })
+      : undefined;
     const cover = lookup.images.find((i) => i.coverType === 'cover')?.remoteUrl;
     const keys = [albumKey(lookup.artist.artistName, lookup.title)];
     if (!ref.mbid) keys.push(albumKey(ref.artistName, ref.albumTitle));
@@ -116,13 +130,16 @@ export class Requests {
       artistName: lookup.artist.artistName,
       coverUrl: remoteArtUrl(cover) ?? remoteArtUrl(coverArtArchive(mbid, 500)),
       requestedAt: new Date().toISOString(),
-      commandId: command.id,
+      commandId: command?.id,
     };
     this.requests.set(mbid, stored);
     this.statusCache = null;
     await this.save();
     this.library.refreshSoon();
-    return { ...this.publicFields(stored), availability: { state: 'searching', message: 'Searching indexers…' } };
+    const availability: Availability = command
+      ? { state: 'searching', message: 'Searching indexers…' }
+      : { state: 'waiting', message: 'Added to Lidarr; it will search on its schedule' };
+    return { ...this.publicFields(stored), availability };
   }
 
   private async lookupByMbid(mbid: string): Promise<LidarrLookupAlbum> {
@@ -173,7 +190,7 @@ export class Requests {
     throw new RequestError(`Couldn't find “${title}” by ${ref.artistName} on MusicBrainz`, 404);
   }
 
-  private async addToLidarr(lookup: LidarrLookupAlbum): Promise<LidarrAlbum> {
+  private async addToLidarr(lookup: LidarrLookupAlbum, settings: RequestSettings): Promise<LidarrAlbum> {
     const album: LidarrLookupAlbum = {
       ...lookup,
       monitored: true,
@@ -182,7 +199,7 @@ export class Requests {
       addOptions: { searchForNewAlbum: false },
     };
     if (!lookup.artist.id) {
-      const d = await this.defaults();
+      const d = await this.defaults(settings);
       album.artist = {
         ...lookup.artist,
         ...d,

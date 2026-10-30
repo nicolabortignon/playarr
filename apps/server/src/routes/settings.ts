@@ -1,10 +1,17 @@
-import type { FolderAccessOptions, MatchingSettings, SourcesResponse } from '@playarr/shared';
+import type {
+  FolderAccessOptions,
+  MatchingSettings,
+  RequestSettings,
+  RequestSettingsInfo,
+  SourcesResponse,
+} from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Matcher } from '../catalog/matcher.ts';
 import { OrganizeError, type Organizer } from '../catalog/organizer.ts';
 import { SourceError, type SourceManager } from '../catalog/sources.ts';
 import type { CatalogStore } from '../catalog/store.ts';
+import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { isLocalAddress } from '../net.ts';
 
@@ -51,9 +58,44 @@ const reviewInput = z.object({
 const matchingInput = z.object({ acoustidKey: z.string().trim().max(100) });
 const organizeInput = z.object({ moves: z.array(z.string()).max(10_000) });
 const undoInput = z.object({ batchId: z.number().int() });
+const profileId = z.number().int().positive();
+const requestsInput = z.object({
+  enabled: z.boolean().optional(),
+  searchOnAdd: z.boolean().optional(),
+  // null clears a choice: back to .env, else Lidarr's default.
+  rootFolderPath: z.string().trim().min(1).max(4096).nullable().optional(),
+  qualityProfileId: profileId.nullable().optional(),
+  metadataProfileId: profileId.nullable().optional(),
+});
 
 /** Where the AcoustID key is saved (app settings). */
 export const ACOUSTID_KEY = 'acoustid.key';
+/** Where Settings → Requests is saved (app settings), as one JSON value. */
+export const REQUESTS_KEY = 'requests';
+
+const REQUEST_DEFAULTS: RequestSettings = { enabled: true, searchOnAdd: true };
+/** Lidarr's lists are only for the panel: don't keep it waiting on a slow Lidarr. */
+const OPTIONS_TIMEOUT_MS = 5000;
+
+/** Settings → Requests as saved, keeping only well-formed values. */
+export function readRequestSettings(store: Pick<CatalogStore, 'appSetting'>): RequestSettings {
+  let raw: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(store.appSetting(REQUESTS_KEY) ?? '{}');
+    if (parsed && typeof parsed === 'object') raw = parsed as Record<string, unknown>;
+  } catch {
+    // A damaged value reads as the defaults.
+  }
+  const settings: RequestSettings = {
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : REQUEST_DEFAULTS.enabled,
+    searchOnAdd: typeof raw.searchOnAdd === 'boolean' ? raw.searchOnAdd : REQUEST_DEFAULTS.searchOnAdd,
+  };
+  if (typeof raw.rootFolderPath === 'string' && raw.rootFolderPath) settings.rootFolderPath = raw.rootFolderPath;
+  for (const key of ['qualityProfileId', 'metadataProfileId'] as const) {
+    if (profileId.safeParse(raw[key]).success) settings[key] = raw[key] as number;
+  }
+  return settings;
+}
 
 type LibraryControl = Pick<Library, 'refresh' | 'reload' | 'refreshing'>;
 type Id = { Params: { id: string } };
@@ -95,6 +137,7 @@ export function settingsRoutes(
     fingerprints: boolean;
     /** rclone is installed, so folders can be on SMB shares. */
     shares: boolean;
+    lidarr: Pick<LidarrClient, 'configured' | 'rootFolders' | 'qualityProfiles' | 'metadataProfiles'>;
   },
 ) {
   const { sources, library, matcher, organizer } = deps;
@@ -238,6 +281,46 @@ export function settingsRoutes(
     handle(reply, () => {
       deps.store.setAppSetting(ACOUSTID_KEY, parse(matchingInput, req.body).acoustidKey);
       return matchingSettings();
+    }),
+  );
+
+  const requestSettingsInfo = async (): Promise<RequestSettingsInfo> => {
+    const settings = readRequestSettings(deps.store);
+    const { lidarr } = deps;
+    if (!lidarr.configured) return { ...settings, lidarr: false };
+    try {
+      const [roots, quality, metadata] = await Promise.all([
+        lidarr.rootFolders(OPTIONS_TIMEOUT_MS),
+        lidarr.qualityProfiles(OPTIONS_TIMEOUT_MS),
+        lidarr.metadataProfiles(OPTIONS_TIMEOUT_MS),
+      ]);
+      const profiles = (list: { id: number; name: string }[]) => list.map(({ id, name }) => ({ id, name }));
+      return {
+        ...settings,
+        lidarr: true,
+        options: {
+          rootFolders: roots.map(({ path, freeSpace }) => ({ path, freeSpace })),
+          qualityProfiles: profiles(quality),
+          metadataProfiles: profiles(metadata),
+        },
+      };
+    } catch (err) {
+      return { ...settings, lidarr: true, error: (err as Error).message };
+    }
+  };
+
+  app.get('/api/settings/requests', editable, () => requestSettingsInfo());
+
+  app.put('/api/settings/requests', editable, (req, reply) =>
+    handle(reply, () => {
+      const patch = parse(requestsInput, req.body);
+      const next: Record<string, unknown> = { ...readRequestSettings(deps.store) };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) delete next[key];
+        else if (value !== undefined) next[key] = value;
+      }
+      deps.store.setAppSetting(REQUESTS_KEY, JSON.stringify(next));
+      return requestSettingsInfo();
     }),
   );
 }

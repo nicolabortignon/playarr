@@ -87,8 +87,15 @@ export interface LidarrRootFolder {
   id: number;
   path: string;
   accessible: boolean;
+  freeSpace?: number;
   defaultQualityProfileId?: number;
   defaultMetadataProfileId?: number;
+}
+
+/** Quality and metadata profiles: only what Playarr shows. */
+export interface LidarrProfile {
+  id: number;
+  name: string;
 }
 
 export interface LidarrLookupArtist {

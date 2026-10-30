@@ -7,19 +7,39 @@ import { SourceManager } from '../catalog/sources.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { flacBytes, freshDb, mezzanine, tempDir } from '../catalog/testFixtures.ts';
 import { LidarrClient } from '../lidarr/client.ts';
-import { settingsRoutes } from './settings.ts';
+import { readRequestSettings, REQUESTS_KEY, settingsRoutes } from './settings.ts';
 
 const HOME = '192.168.1.20';
 const AWAY = '203.0.113.5';
 const lidarr = { kind: 'lidarr', name: 'Lidarr', settings: { url: 'http://lidarr:8686', apiKey: 'secret-key' } };
 
-function setup(matcher = fakeMatcher()) {
+function setup(matcher = fakeMatcher(), lidarrClient = fakeLidarr()) {
   const store = new CatalogStore(freshDb());
   const sources = new SourceManager(store, new LidarrClient(), { info: () => {} });
   const library = { refresh: vi.fn(async () => {}), reload: vi.fn(), refreshing: false };
   const app = Fastify();
-  settingsRoutes(app, { sources, library, matcher, store, organizer: new Organizer(store), fingerprints: true, shares: false });
-  return { app, store, library, matcher };
+  settingsRoutes(app, {
+    sources,
+    library,
+    matcher,
+    store,
+    organizer: new Organizer(store),
+    fingerprints: true,
+    shares: false,
+    lidarr: lidarrClient,
+  });
+  return { app, store, library, matcher, lidarr: lidarrClient };
+}
+
+function fakeLidarr(configured = true) {
+  return {
+    configured,
+    rootFolders: vi.fn(async () => [
+      { id: 1, path: '/music', accessible: true, freeSpace: 1000, defaultQualityProfileId: 1, defaultMetadataProfileId: 1 },
+    ]),
+    qualityProfiles: vi.fn(async () => [{ id: 1, name: 'Lossless', items: [] }]),
+    metadataProfiles: vi.fn(async () => [{ id: 1, name: 'Standard' }]),
+  };
 }
 
 function fakeMatcher() {
@@ -222,5 +242,79 @@ describe('settings routes', () => {
     const busy = await app.inject({ method: 'POST', url: `/api/settings/sources/${lidarrId}/organize`, payload: { moves: [] }, remoteAddress: HOME });
     expect(busy.statusCode).toBe(409);
   });
-});
 
+  describe('requests', () => {
+    const url = '/api/settings/requests';
+    const options = {
+      rootFolders: [{ path: '/music', freeSpace: 1000 }],
+      qualityProfiles: [{ id: 1, name: 'Lossless' }],
+      metadataProfiles: [{ id: 1, name: 'Standard' }],
+    };
+
+    it('starts with requests on and searching right away, with Lidarr’s choices', async () => {
+      const res = await setup().app.inject({ method: 'GET', url, remoteAddress: HOME });
+      expect(res.json()).toEqual({ enabled: true, searchOnAdd: true, lidarr: true, options });
+    });
+
+    it('saves, reads back and clears choices', async () => {
+      const { app, store } = setup();
+      const put = await app.inject({
+        method: 'PUT',
+        url,
+        payload: { enabled: false, searchOnAdd: false, rootFolderPath: '/music', qualityProfileId: 1, metadataProfileId: 1 },
+        remoteAddress: HOME,
+      });
+      expect(put.statusCode).toBe(200);
+      expect(put.json()).toMatchObject({ enabled: false, searchOnAdd: false, rootFolderPath: '/music', qualityProfileId: 1 });
+      expect(readRequestSettings(store)).toEqual({
+        enabled: false,
+        searchOnAdd: false,
+        rootFolderPath: '/music',
+        qualityProfileId: 1,
+        metadataProfileId: 1,
+      });
+      // A partial change leaves the rest; null clears a choice.
+      const cleared = await app.inject({ method: 'PUT', url, payload: { qualityProfileId: null, enabled: true }, remoteAddress: HOME });
+      expect(cleared.json()).toMatchObject({ enabled: true, searchOnAdd: false, rootFolderPath: '/music' });
+      expect(cleared.json().qualityProfileId).toBeUndefined();
+      expect((await app.inject({ method: 'GET', url, remoteAddress: HOME })).json().qualityProfileId).toBeUndefined();
+    });
+
+    it('is for the home network only', async () => {
+      const { app, store } = setup();
+      expect((await app.inject({ method: 'GET', url, remoteAddress: AWAY })).statusCode).toBe(403);
+      const put = await app.inject({ method: 'PUT', url, payload: { enabled: false }, remoteAddress: AWAY });
+      expect(put.statusCode).toBe(403);
+      expect(readRequestSettings(store).enabled).toBe(true);
+    });
+
+    it('validates input', async () => {
+      const { app } = setup();
+      for (const payload of [{ enabled: 'yes' }, { qualityProfileId: 0 }, { metadataProfileId: 1.5 }, { rootFolderPath: 'x'.repeat(4097) }]) {
+        expect((await app.inject({ method: 'PUT', url, payload, remoteAddress: HOME })).statusCode).toBe(400);
+      }
+    });
+
+    it('says why Lidarr’s choices are missing', async () => {
+      const lidarr = fakeLidarr();
+      lidarr.qualityProfiles.mockRejectedValue(new Error('Cannot reach Lidarr'));
+      const res = await setup(fakeMatcher(), lidarr).app.inject({ method: 'GET', url, remoteAddress: HOME });
+      expect(res.json()).toEqual({ enabled: true, searchOnAdd: true, lidarr: true, error: 'Cannot reach Lidarr' });
+    });
+
+    it('asks nothing of Lidarr when there is none', async () => {
+      const lidarr = fakeLidarr(false);
+      const res = await setup(fakeMatcher(), lidarr).app.inject({ method: 'GET', url, remoteAddress: HOME });
+      expect(res.json()).toEqual({ enabled: true, searchOnAdd: true, lidarr: false });
+      expect(lidarr.rootFolders).not.toHaveBeenCalled();
+    });
+
+    it('ignores a damaged stored value', () => {
+      const { store } = setup();
+      store.setAppSetting(REQUESTS_KEY, '{not json');
+      expect(readRequestSettings(store)).toEqual({ enabled: true, searchOnAdd: true });
+      store.setAppSetting(REQUESTS_KEY, JSON.stringify({ enabled: 'no', qualityProfileId: -1, rootFolderPath: 5 }));
+      expect(readRequestSettings(store)).toEqual({ enabled: true, searchOnAdd: true });
+    });
+  });
+});

@@ -1,4 +1,4 @@
-import type { AlbumSort, HealthStatus } from '@playarr/shared';
+import type { AlbumSort, HealthStatus, RequestSettings } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Config } from '../config.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
@@ -16,7 +16,13 @@ const notFound = (reply: FastifyReply, what: string) => reply.code(404).send({ e
 
 export function apiRoutes(
   app: FastifyInstance,
-  deps: { config: Config; lidarr: LidarrClient; library: Library; media: MediaSource },
+  deps: {
+    config: Config;
+    lidarr: LidarrClient;
+    library: Library;
+    media: MediaSource;
+    requestSettings: () => RequestSettings;
+  },
 ) {
   const { config, lidarr, library, media } = deps;
 
@@ -44,6 +50,7 @@ export function apiRoutes(
         ? { source: media.kind, ok: true }
         : { source: media.kind, ok: false, error: (mediaResult.reason as Error).message },
       library: await library.stats(),
+      requests: lidarr.configured && deps.requestSettings().enabled,
     };
   });
 

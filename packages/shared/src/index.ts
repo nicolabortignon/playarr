@@ -103,12 +103,47 @@ export interface HealthStatus {
   lidarr?: { ok: boolean; version?: string; error?: string };
   media: { source: 'none' | 'local' | 'sftp' | 'ssh' | 'smb'; ok: boolean; error?: string };
   library?: LibraryStats;
+  /** A Lidarr source is set up and requests are allowed in Settings. */
+  requests: boolean;
 }
 
 export type AlbumSort = 'title' | 'artist' | 'year' | 'added';
 
 export interface FavoriteTrack extends Track {
   favoritedAt: string;
+}
+
+// ── Settings → Requests: what Lidarr does when someone requests an album ────
+
+export interface RequestSettings {
+  enabled: boolean;
+  /** Run Lidarr's album search right after adding; off leaves it to Lidarr's schedule. */
+  searchOnAdd: boolean;
+  /** Unset: .env, else Lidarr's default. */
+  rootFolderPath?: string;
+  qualityProfileId?: number;
+  metadataProfileId?: number;
+}
+
+/** PUT /api/settings/requests: a partial change; null clears a choice. */
+export type RequestSettingsPatch = Partial<{
+  enabled: boolean;
+  searchOnAdd: boolean;
+  rootFolderPath: string | null;
+  qualityProfileId: number | null;
+  metadataProfileId: number | null;
+}>;
+
+/** GET /api/settings/requests: the settings, and Lidarr's choices (absent when Lidarr isn't set up or can't be reached). */
+export interface RequestSettingsInfo extends RequestSettings {
+  lidarr: boolean;
+  options?: {
+    rootFolders: { path: string; freeSpace?: number }[];
+    qualityProfiles: { id: number; name: string }[];
+    metadataProfiles: { id: number; name: string }[];
+  };
+  /** Why the options are missing, when Lidarr is set up. */
+  error?: string;
 }
 
 // ── Discover & requests: music that isn't in the library yet ────────────────

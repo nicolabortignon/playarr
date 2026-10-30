@@ -23,3 +23,18 @@ describe('LidarrClient', () => {
     expect(String(fetchMock.mock.calls[0]![0])).toBe('http://lidarr:8686/api/v1/system/status');
   });
 });
+
+describe('LidarrClient profiles', () => {
+  it('lists quality and metadata profiles', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify([{ id: 1, name: 'Lossless' }]), { status: 200 }));
+    const client = new LidarrClient('http://lidarr:8686', 'key');
+    await expect(client.qualityProfiles()).resolves.toEqual([{ id: 1, name: 'Lossless' }]);
+    await expect(client.metadataProfiles()).resolves.toEqual([{ id: 1, name: 'Lossless' }]);
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toEqual([
+      'http://lidarr:8686/api/v1/qualityprofile',
+      'http://lidarr:8686/api/v1/metadataprofile',
+    ]);
+  });
+});

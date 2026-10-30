@@ -4,6 +4,7 @@ import type {
   LidarrCommand,
   LidarrLookupAlbum,
   LidarrLookupArtist,
+  LidarrProfile,
   LidarrQueueItem,
   LidarrRootFolder,
   LidarrSearchHit,
@@ -72,8 +73,8 @@ export class LidarrClient {
     return res;
   }
 
-  private async get<T>(path: string): Promise<T> {
-    return (await this.request(path)).json() as Promise<T>;
+  private async get<T>(path: string, timeoutMs?: number): Promise<T> {
+    return (await this.request(path, { timeoutMs })).json() as Promise<T>;
   }
 
   private async send<T>(method: 'POST' | 'PUT', path: string, body: unknown): Promise<T> {
@@ -84,8 +85,16 @@ export class LidarrClient {
     return this.get<LidarrSystemStatus>('/api/v1/system/status');
   }
 
-  rootFolders() {
-    return this.get<LidarrRootFolder[]>('/api/v1/rootfolder');
+  rootFolders(timeoutMs?: number) {
+    return this.get<LidarrRootFolder[]>('/api/v1/rootfolder', timeoutMs);
+  }
+
+  qualityProfiles(timeoutMs?: number) {
+    return this.get<LidarrProfile[]>('/api/v1/qualityprofile', timeoutMs);
+  }
+
+  metadataProfiles(timeoutMs?: number) {
+    return this.get<LidarrProfile[]>('/api/v1/metadataprofile', timeoutMs);
   }
 
   artists() {
