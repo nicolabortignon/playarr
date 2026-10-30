@@ -422,9 +422,30 @@ export interface ReviewFile {
 
 export interface ReviewCandidate {
   releaseId: string;
+  releaseGroupId: string;
+  /** The album (release group) title. */
   title: string;
+  /** This edition's own title, when it differs from the album's ("Mezzanine (Deluxe)"). */
+  releaseTitle?: string;
   artistName: string;
+  /** The album's first release year. */
   year?: number;
+  /** This edition's release date: "1998", "1998-04" or "1998-04-20". */
+  date?: string;
+  /** ISO country code, or XE (Europe) / XW (worldwide). */
+  country?: string;
+  /** Official, Promotion, Bootleg… */
+  status?: string;
+  /** MusicBrainz's note telling editions apart ("deluxe", "remaster"). */
+  disambiguation?: string;
+  /** "Album", "Album · Compilation", "EP"… */
+  type?: string;
+  /** "2×CD", "Digital Media"… */
+  format?: string;
+  labels?: { name?: string; catalogNumber?: string }[];
+  barcode?: string;
+  /** The album cover (Cover Art Archive, through /art/remote). */
+  coverUrl?: string;
   /** 0..1 */
   score: number;
   tracks: { disc: number; position: number; title: string; duration: number }[];

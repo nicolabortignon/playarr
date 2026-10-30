@@ -130,7 +130,7 @@ export function settingsRoutes(
   deps: {
     sources: SourceManager;
     library: LibraryControl;
-    matcher: Pick<Matcher, 'reviewGroups' | 'applyRelease' | 'ignore' | 'search' | 'enqueue'>;
+    matcher: Pick<Matcher, 'reviewGroups' | 'refreshReviewDetails' | 'applyRelease' | 'ignore' | 'search' | 'enqueue'>;
     store: Pick<CatalogStore, 'clearMatches' | 'appSetting' | 'setAppSetting'>;
     organizer: Pick<Organizer, 'plan' | 'apply' | 'undo'>;
     /** fpcalc is installed. */
@@ -212,7 +212,12 @@ export function settingsRoutes(
   );
 
   // The review list shows the server's file names, so reading it is local-only too.
-  app.get<Id>('/api/settings/sources/:id/review', editable, (req) => matcher.reviewGroups(Number(req.params.id)));
+  app.get<Id>('/api/settings/sources/:id/review', editable, async (req) => {
+    const id = Number(req.params.id);
+    // Labels, country, formats… of the albums about to be shown, if they were cached without them.
+    await matcher.refreshReviewDetails(id);
+    return matcher.reviewGroups(id);
+  });
 
   app.post<Id>('/api/settings/sources/:id/review', editable, (req, reply) =>
     handle(reply, async () => {

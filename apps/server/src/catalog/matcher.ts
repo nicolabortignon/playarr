@@ -1,11 +1,12 @@
 import type { ReviewCandidate, ReviewGroup } from '@playarr/shared';
 import { posix } from 'node:path';
 import type { MbReleaseHit } from '../discover/musicbrainz.ts';
+import { coverArtArchive, remoteArtUrl } from '../discover/art.ts';
 import { normalize } from '../library/search.ts';
 import type { AcoustIdMatch, Fingerprint } from './acoustid.ts';
 import { describeFile } from './folder.ts';
 import { scoreRelease, verdict, type FileFacts, type ReleaseScore } from './match.ts';
-import type { MbReleaseInfo } from './mbRelease.ts';
+import { formatSummary, type MbReleaseInfo } from './mbRelease.ts';
 import type { CatalogStore } from './store.ts';
 import type { MatchOverlay, MatchRecord, TagInfo } from './tags.ts';
 
@@ -153,6 +154,26 @@ export class Matcher {
     );
   }
 
+  /**
+   * Fetch the edition details (labels, country, formats…) of the candidates the review list is about to
+   * show, for releases cached before those were fetched. Only the first `groups` groups: the dialog shows
+   * one at a time, and each release is fetched once.
+   */
+  async refreshReviewDetails(sourceId: number, groups = 1): Promise<void> {
+    const review = [...this.deps.store.matches(sourceId).values()].filter((m) => m.state === 'review');
+    const keys = [...new Set(review.map((m) => m.groupKey))].slice(0, groups);
+    const ids = new Set(keys.flatMap((key) => review.find((m) => m.groupKey === key)?.candidates ?? []));
+    for (const id of ids) {
+      if (this.deps.store.cachedRelease(id)?.detailed) continue;
+      try {
+        this.deps.store.saveRelease(await this.deps.mb.release(id));
+      } catch (err) {
+        // The list still works with what's cached.
+        this.deps.log.warn(`MusicBrainz release ${id}: ${(err as Error).message}`);
+      }
+    }
+  }
+
   reviewGroups(sourceId: number): ReviewGroup[] {
     const matches = this.deps.store.matches(sourceId);
     const review = [...matches.values()].filter((m) => m.state === 'review');
@@ -288,11 +309,24 @@ function originalReleaseGroup(groups: AcoustIdMatch['releaseGroups']) {
 
 function toCandidate(s: ReleaseScore): ReviewCandidate {
   const { release } = s;
+  const rg = release.releaseGroup;
+  const type = [rg.primaryType, ...rg.secondaryTypes].filter(Boolean).join(' · ');
   return {
     releaseId: release.id,
-    title: release.releaseGroup.title,
+    releaseGroupId: rg.id,
+    title: rg.title,
+    ...(release.title !== rg.title ? { releaseTitle: release.title } : {}),
     artistName: release.artistName,
-    year: Number(release.releaseGroup.firstReleaseDate?.slice(0, 4)) || undefined,
+    year: Number(rg.firstReleaseDate?.slice(0, 4)) || undefined,
+    ...(release.date ? { date: release.date } : {}),
+    ...(release.country ? { country: release.country } : {}),
+    ...(release.status ? { status: release.status } : {}),
+    ...(release.disambiguation ? { disambiguation: release.disambiguation } : {}),
+    ...(type ? { type } : {}),
+    ...(formatSummary(release.formats) ? { format: formatSummary(release.formats) } : {}),
+    ...(release.labels?.length ? { labels: release.labels } : {}),
+    ...(release.barcode ? { barcode: release.barcode } : {}),
+    coverUrl: remoteArtUrl(coverArtArchive(rg.id)),
     score: Math.round(s.score * 100) / 100,
     tracks: release.tracks.map((t) => ({ disc: t.disc, position: t.position, title: t.title, duration: t.length })),
     matches: Object.fromEntries(s.alignment.map((a) => [a.rel, release.tracks.indexOf(a.track)])),

@@ -146,4 +146,45 @@ describe('Matcher', () => {
     expect(group!.candidates[0]!.matches['Massive Attack/Mezzanine/01 Angel.flac']).toBe(0);
     expect(store.matchCounts().get(sourceId)).toEqual({ review: 1 });
   });
+
+  it('shows what MusicBrainz knows about each edition, fetching details missing from the cache', async () => {
+    const { matcher, mb, sourceId } = setup({
+      'Massive Attack/Mezzanine/01 Angel.flac': { duration: 200 },
+      'Massive Attack/Mezzanine/02 Risingson.flac': { duration: 120 },
+    });
+    await matcher.matchSource(sourceId);
+    expect(matcher.reviewGroups(sourceId)[0]!.candidates[0]).not.toHaveProperty('country');
+    mb.release.mockResolvedValueOnce({
+      ...release,
+      title: 'Mezzanine (Deluxe)',
+      date: '2019-04-19',
+      country: 'GB',
+      status: 'Official',
+      disambiguation: '21st anniversary',
+      labels: [{ name: 'Virgin', catalogNumber: 'WBRX4' }],
+      formats: ['CD', 'CD'],
+      releaseGroup: { ...release.releaseGroup, secondaryTypes: ['Remix'] },
+      detailed: true,
+    });
+    await matcher.refreshReviewDetails(sourceId);
+    expect(matcher.reviewGroups(sourceId)[0]!.candidates[0]).toMatchObject({
+      releaseGroupId: 'rg-1',
+      title: 'Mezzanine',
+      releaseTitle: 'Mezzanine (Deluxe)',
+      artistName: 'Massive Attack',
+      year: 1998,
+      date: '2019-04-19',
+      country: 'GB',
+      status: 'Official',
+      disambiguation: '21st anniversary',
+      type: 'Album · Remix',
+      format: '2×CD',
+      labels: [{ name: 'Virgin', catalogNumber: 'WBRX4' }],
+      coverUrl: expect.stringContaining('/art/remote?url='),
+    });
+    // Cached with details now: no second fetch.
+    const calls = mb.release.mock.calls.length;
+    await matcher.refreshReviewDetails(sourceId);
+    expect(mb.release.mock.calls.length).toBe(calls);
+  });
 });

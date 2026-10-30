@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toReleaseInfo, type MbReleaseRaw } from './mbRelease.ts';
+import { formatSummary, toReleaseInfo, type MbReleaseRaw } from './mbRelease.ts';
 
 const raw: MbReleaseRaw = {
   id: '0d33ef7a-1f5d-4365-b807-b412271b99c3',
@@ -31,6 +31,39 @@ describe('toReleaseInfo', () => {
         { disc: 1, position: 1, title: 'Angel', length: 381, recordingId: '8e74dd9d-e5a3-4acd-918a-c36a0f8cda84' },
         { disc: 1, position: 2, title: 'Risingson', length: 299, recordingId: '02011500-814c-461c-b3a6-f24fe68ee5a1' },
       ],
+      labels: [],
+      formats: ['Unknown format'],
+      detailed: true,
     });
+  });
+
+  it('keeps the edition details: country, status, labels, formats, barcode', () => {
+    const info = toReleaseInfo({
+      ...raw,
+      country: 'GB',
+      status: 'Official',
+      disambiguation: 'deluxe',
+      barcode: '724384559920',
+      'label-info': [{ 'catalog-number': 'WBRCD4', label: { name: 'Virgin' } }, { 'catalog-number': null, label: null }],
+      media: [{ ...raw.media[0]!, format: 'CD' }, { position: 2, format: 'CD', tracks: [] }],
+    });
+    expect(info).toMatchObject({
+      country: 'GB',
+      status: 'Official',
+      disambiguation: 'deluxe',
+      barcode: '724384559920',
+      labels: [{ name: 'Virgin', catalogNumber: 'WBRCD4' }],
+      formats: ['CD', 'CD'],
+    });
+  });
+});
+
+describe('formatSummary', () => {
+  it('counts media', () => {
+    expect(formatSummary(['CD', 'CD'])).toBe('2×CD');
+    expect(formatSummary(['CD', 'DVD-Video'])).toBe('CD + DVD-Video');
+    expect(formatSummary(['Digital Media'])).toBe('Digital Media');
+    expect(formatSummary([])).toBeUndefined();
+    expect(formatSummary(undefined)).toBeUndefined();
   });
 });

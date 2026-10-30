@@ -45,6 +45,7 @@ function fakeLidarr(configured = true) {
 function fakeMatcher() {
   return {
     reviewGroups: vi.fn(() => [{ groupKey: 'g', artistName: 'A', files: [], candidates: [] }]),
+    refreshReviewDetails: vi.fn(async () => {}),
     applyRelease: vi.fn(async () => {}),
     ignore: vi.fn(),
     search: vi.fn(async () => {}),

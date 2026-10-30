@@ -142,7 +142,7 @@ export class MusicBrainz {
   /** One release with its track list. */
   release(releaseMbid: string, signal?: AbortSignal, opts?: { background?: boolean }) {
     return this.get<MbReleaseRaw>(
-      `/release/${encodeURIComponent(releaseMbid)}?inc=recordings+artist-credits+release-groups`,
+      `/release/${encodeURIComponent(releaseMbid)}?inc=recordings+artist-credits+release-groups+labels`,
       signal,
       opts,
     );
