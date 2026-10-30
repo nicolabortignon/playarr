@@ -446,6 +446,8 @@ export interface ReviewCandidate {
   barcode?: string;
   /** The album cover (Cover Art Archive, through /art/remote). */
   coverUrl?: string;
+  /** False while the edition details above are still being fetched from MusicBrainz. */
+  detailed: boolean;
   /** 0..1 */
   score: number;
   tracks: { disc: number; position: number; title: string; duration: number }[];

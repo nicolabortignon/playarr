@@ -154,6 +154,7 @@ describe('Matcher', () => {
     });
     await matcher.matchSource(sourceId);
     expect(matcher.reviewGroups(sourceId)[0]!.candidates[0]).not.toHaveProperty('country');
+    expect(matcher.reviewGroups(sourceId)[0]!.candidates[0]!.detailed).toBe(false);
     mb.release.mockResolvedValueOnce({
       ...release,
       title: 'Mezzanine (Deluxe)',
@@ -182,9 +183,27 @@ describe('Matcher', () => {
       labels: [{ name: 'Virgin', catalogNumber: 'WBRX4' }],
       coverUrl: expect.stringContaining('/art/remote?url='),
     });
+    expect(matcher.reviewGroups(sourceId)[0]!.candidates[0]!.detailed).toBe(true);
     // Cached with details now: no second fetch.
     const calls = mb.release.mock.calls.length;
     await matcher.refreshReviewDetails(sourceId);
     expect(mb.release.mock.calls.length).toBe(calls);
+  });
+
+  it('fetches details in the background, one refresh at a time per source', async () => {
+    const { matcher, mb, sourceId } = setup({
+      'Massive Attack/Mezzanine/01 Angel.flac': { duration: 200 },
+      'Massive Attack/Mezzanine/02 Risingson.flac': { duration: 120 },
+    });
+    await matcher.matchSource(sourceId);
+    let finish: (r: MbReleaseInfo) => void = () => {};
+    mb.release.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    const before = mb.release.mock.calls.length;
+    matcher.refreshReviewDetailsSoon(sourceId);
+    matcher.refreshReviewDetailsSoon(sourceId);
+    expect(mb.release.mock.calls.length).toBe(before + 1);
+    expect(matcher.reviewGroups(sourceId)[0]!.candidates[0]!.detailed).toBe(false);
+    finish({ ...release, detailed: true });
+    await vi.waitFor(() => expect(matcher.reviewGroups(sourceId)[0]!.candidates[0]!.detailed).toBe(true));
   });
 });

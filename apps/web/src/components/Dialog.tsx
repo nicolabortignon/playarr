@@ -20,19 +20,26 @@ export function Dialog({
   wide?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  // Callers often pass a new onClose on every render (polling parents re-render every few seconds).
+  // Keep the latest in a ref so the effect below runs only when the dialog opens or closes: re-running
+  // it would move focus back to the first field and scroll the dialog to the top.
+  const close = useRef(onClose);
+  close.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
     window.addEventListener('keydown', onKey);
     // Focus the first field or button inside, and restore focus when closing.
-    requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>('input, button:not([aria-label="Close"])')?.focus());
+    requestAnimationFrame(() =>
+      panel.current?.querySelector<HTMLElement>('input, button:not([aria-label="Close"])')?.focus({ preventScroll: true }),
+    );
     return () => {
       window.removeEventListener('keydown', onKey);
-      previous?.focus?.();
+      previous?.focus?.({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open]);
 
   return createPortal(
     <AnimatePresence>

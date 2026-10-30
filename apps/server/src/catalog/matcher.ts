@@ -174,6 +174,19 @@ export class Matcher {
     }
   }
 
+  private readonly refreshing = new Map<number, Promise<void>>();
+
+  /**
+   * refreshReviewDetails in the background, once at a time per source, for the album on screen and the
+   * next one (so it's ready when the user moves on). The review list answers at once from the cache and
+   * marks candidates still waiting for details.
+   */
+  refreshReviewDetailsSoon(sourceId: number, groups = 2): void {
+    if (this.refreshing.has(sourceId)) return;
+    const run = this.refreshReviewDetails(sourceId, groups).finally(() => this.refreshing.delete(sourceId));
+    this.refreshing.set(sourceId, run);
+  }
+
   reviewGroups(sourceId: number): ReviewGroup[] {
     const matches = this.deps.store.matches(sourceId);
     const review = [...matches.values()].filter((m) => m.state === 'review');
@@ -327,6 +340,7 @@ function toCandidate(s: ReleaseScore): ReviewCandidate {
     ...(release.labels?.length ? { labels: release.labels } : {}),
     ...(release.barcode ? { barcode: release.barcode } : {}),
     coverUrl: remoteArtUrl(coverArtArchive(rg.id)),
+    detailed: !!release.detailed,
     score: Math.round(s.score * 100) / 100,
     tracks: release.tracks.map((t) => ({ disc: t.disc, position: t.position, title: t.title, duration: t.length })),
     matches: Object.fromEntries(s.alignment.map((a) => [a.rel, release.tracks.indexOf(a.track)])),
