@@ -124,7 +124,7 @@ Each phase ships on its own and leaves the app working.
 4. **Matching.** MusicBrainz album lookup, fingerprints with AcoustID, review list.
 4b. **Organizing files.** Proposals, review and apply, the move journal and undo. After matching, so moves follow verified albums.
 5. **SSH and SFTP folder sources.**
-6. **Network shares.** SMB if a client proves reliable; NFS via host mount and docs.
+6. **Network shares.** SMB if a client proves reliable; NFS via host mount and docs. Done: SMB through rclone (the Node clients speak only SMB 2.1 without signing); NFS via host mount.
 
 ## Error handling
 
