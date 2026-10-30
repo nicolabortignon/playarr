@@ -545,3 +545,33 @@ export interface FolderAccessOptions {
   /** rclone is installed, so SMB shares work. */
   smb: boolean;
 }
+
+/** Settings → Updates: how often the updater container checks GitHub main. */
+export type UpdateInterval = 15 | 60 | 360 | 1440;
+
+/** What Settings → Updates can change. Not the repository, branch or commit: only main of the configured repository is deployed. */
+export interface UpdateSettings {
+  enabled: boolean;
+  intervalMinutes: UpdateInterval;
+}
+
+export interface UpdateInfo extends UpdateSettings {
+  /** Updates can be managed here (Docker setup with the updater running). */
+  available: boolean;
+  /** Why not, when not. */
+  reason?: string;
+  status?: {
+    state: 'idle' | 'checking' | 'failed';
+    /** Unix seconds. 0: never. */
+    lastCheck: number;
+    lastUpdate: number;
+    /** Commit running (full SHA), and the newest on GitHub main, when known. */
+    deployed?: string;
+    latest?: string;
+    error?: string;
+  };
+  /** A Check now is waiting for the updater. */
+  requested: boolean;
+  /** The last run's output (update.sh), last 60 lines. */
+  log?: string;
+}

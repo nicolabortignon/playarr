@@ -14,6 +14,7 @@ import type { CatalogStore } from '../catalog/store.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { isLocalAddress } from '../net.ts';
+import { UpdateError, type UpdateBridge } from '../update/bridge.ts';
 
 /** Where a folder is, and how to reach it over SSH, SFTP or SMB. */
 const connectionFields = {
@@ -66,6 +67,11 @@ const requestsInput = z.object({
   rootFolderPath: z.string().trim().min(1).max(4096).nullable().optional(),
   qualityProfileId: profileId.nullable().optional(),
   metadataProfileId: profileId.nullable().optional(),
+});
+// Only these two: never the repository, branch or commit (only GitHub main of the configured repository is deployed).
+const updatesInput = z.object({
+  enabled: z.boolean().optional(),
+  intervalMinutes: z.union([z.literal(15), z.literal(60), z.literal(360), z.literal(1440)]).optional(),
 });
 
 /** Where the AcoustID key is saved (app settings). */
@@ -121,6 +127,7 @@ async function handle(reply: FastifyReply, fn: () => unknown) {
   } catch (err) {
     if (err instanceof SourceError) return reply.code(err.status).send({ error: err.message });
     if (err instanceof OrganizeError) return reply.code(err.status).send({ error: err.message });
+    if (err instanceof UpdateError) return reply.code(err.status).send({ error: err.message });
     throw err;
   }
 }
@@ -138,6 +145,8 @@ export function settingsRoutes(
     /** rclone is installed, so folders can be on SMB shares. */
     shares: boolean;
     lidarr: Pick<LidarrClient, 'configured' | 'rootFolders' | 'qualityProfiles' | 'metadataProfiles'>;
+    /** Settings → Updates, through the folder shared with the updater container. */
+    updates: Pick<UpdateBridge, 'info' | 'save' | 'requestCheck'>;
   },
 ) {
   const { sources, library, matcher, organizer } = deps;
@@ -327,6 +336,25 @@ export function settingsRoutes(
       }
       deps.store.setAppSetting(REQUESTS_KEY, JSON.stringify(next));
       return requestSettingsInfo();
+    }),
+  );
+
+  // Settings → Updates. Rebuilding Playarr is for the home network only, like every setting.
+  const { updates } = deps;
+
+  app.get('/api/settings/updates', editable, () => updates.info());
+
+  app.put('/api/settings/updates', editable, (req, reply) =>
+    handle(reply, async () => {
+      await updates.save(parse(updatesInput, req.body));
+      return updates.info();
+    }),
+  );
+
+  app.post('/api/settings/updates/check', editable, (_req, reply) =>
+    handle(reply, async () => {
+      await updates.requestCheck();
+      return updates.info();
     }),
   );
 }

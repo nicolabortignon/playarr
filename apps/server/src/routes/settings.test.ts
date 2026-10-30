@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,13 +7,14 @@ import { SourceManager } from '../catalog/sources.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { flacBytes, freshDb, mezzanine, tempDir } from '../catalog/testFixtures.ts';
 import { LidarrClient } from '../lidarr/client.ts';
+import { UpdateBridge } from '../update/bridge.ts';
 import { readRequestSettings, REQUESTS_KEY, settingsRoutes } from './settings.ts';
 
 const HOME = '192.168.1.20';
 const AWAY = '203.0.113.5';
 const lidarr = { kind: 'lidarr', name: 'Lidarr', settings: { url: 'http://lidarr:8686', apiKey: 'secret-key' } };
 
-function setup(matcher = fakeMatcher(), lidarrClient = fakeLidarr()) {
+function setup(matcher = fakeMatcher(), lidarrClient = fakeLidarr(), updates = new UpdateBridge(undefined)) {
   const store = new CatalogStore(freshDb());
   const sources = new SourceManager(store, new LidarrClient(), { info: () => {} });
   const library = { refresh: vi.fn(async () => {}), reload: vi.fn(), refreshing: false };
@@ -27,6 +28,7 @@ function setup(matcher = fakeMatcher(), lidarrClient = fakeLidarr()) {
     fingerprints: true,
     shares: false,
     lidarr: lidarrClient,
+    updates,
   });
   return { app, store, library, matcher, lidarr: lidarrClient };
 }
@@ -316,6 +318,69 @@ describe('settings routes', () => {
       expect(readRequestSettings(store)).toEqual({ enabled: true, searchOnAdd: true });
       store.setAppSetting(REQUESTS_KEY, JSON.stringify({ enabled: 'no', qualityProfileId: -1, rootFolderPath: 5 }));
       expect(readRequestSettings(store)).toEqual({ enabled: true, searchOnAdd: true });
+    });
+  });
+
+  describe('updates', () => {
+    const url = '/api/settings/updates';
+    const withFolder = () => {
+      const { dir, cleanup } = tempDir();
+      const heartbeat = Math.floor(Date.now() / 1000);
+      writeFileSync(join(dir, 'status.json'), JSON.stringify({ state: 'idle', heartbeat, lastCheck: 0, lastUpdate: 0 }));
+      return { dir, cleanup, ...setup(fakeMatcher(), fakeLidarr(), new UpdateBridge(dir)) };
+    };
+
+    it('is for the home network only', async () => {
+      const { app, dir, cleanup } = withFolder();
+      try {
+        expect((await app.inject({ method: 'GET', url, remoteAddress: AWAY })).statusCode).toBe(403);
+        expect((await app.inject({ method: 'PUT', url, payload: { enabled: true }, remoteAddress: AWAY })).statusCode).toBe(403);
+        expect((await app.inject({ method: 'POST', url: `${url}/check`, remoteAddress: AWAY })).statusCode).toBe(403);
+        expect(existsSync(join(dir, 'settings.json'))).toBe(false);
+        expect(existsSync(join(dir, 'request'))).toBe(false);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('turns automatic updates on and asks for a check', async () => {
+      const { app, dir, cleanup } = withFolder();
+      try {
+        const get = await app.inject({ method: 'GET', url, remoteAddress: HOME });
+        expect(get.json()).toMatchObject({ available: true, enabled: false, intervalMinutes: 60, requested: false });
+        const put = await app.inject({ method: 'PUT', url, payload: { enabled: true, intervalMinutes: 360 }, remoteAddress: HOME });
+        expect(put.statusCode).toBe(200);
+        expect(put.json()).toMatchObject({ enabled: true, intervalMinutes: 360 });
+        expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 360 });
+        const check = await app.inject({ method: 'POST', url: `${url}/check`, remoteAddress: HOME });
+        expect(check.json()).toMatchObject({ requested: true });
+        expect(existsSync(join(dir, 'request'))).toBe(true);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('validates input, and takes nothing but enabled and the interval', async () => {
+      const { app, dir, cleanup } = withFolder();
+      try {
+        for (const payload of [{ intervalMinutes: 30 }, { enabled: 'yes' }, { intervalMinutes: '60' }]) {
+          expect((await app.inject({ method: 'PUT', url, payload, remoteAddress: HOME })).statusCode).toBe(400);
+        }
+        await app.inject({ method: 'PUT', url, payload: { enabled: true, branch: 'evil', repo: 'x/y' }, remoteAddress: HOME });
+        expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 60 });
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('says why without the Docker setup', async () => {
+      const { app } = setup();
+      const get = await app.inject({ method: 'GET', url, remoteAddress: HOME });
+      expect(get.json()).toMatchObject({ available: false, reason: expect.stringMatching(/Docker/) });
+      const put = await app.inject({ method: 'PUT', url, payload: { enabled: true }, remoteAddress: HOME });
+      expect(put.statusCode).toBe(409);
+      expect(put.json().error).toMatch(/Docker/);
+      expect((await app.inject({ method: 'POST', url: `${url}/check`, remoteAddress: HOME })).statusCode).toBe(409);
     });
   });
 });

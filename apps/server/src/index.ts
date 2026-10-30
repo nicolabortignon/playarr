@@ -33,6 +33,7 @@ import { playlistRoutes } from './routes/playlists.ts';
 import { ACOUSTID_KEY, readRequestSettings, settingsRoutes } from './routes/settings.ts';
 import { statusRoutes } from './routes/status.ts';
 import { streamRoutes } from './routes/stream.ts';
+import { UpdateBridge } from './update/bridge.ts';
 
 const config = loadConfig();
 const app = Fastify({
@@ -108,7 +109,9 @@ streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
-settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares, lidarr });
+// Settings → Updates: files shared with the updater container (UPDATE_DIR, set by docker/compose.yaml).
+const updates = new UpdateBridge(config.UPDATE_DIR);
+settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares, lidarr, updates });
 statusRoutes(app, {
   musicbrainz,
   matching: () => store.listSources().reduce((n, s) => n + matcher.pendingGroups(s.id), 0),

@@ -15,6 +15,8 @@ const schema = z.object({
   // User data (favorites…). Unlike the cache, don't delete this.
   DATA_DIR: z.string().default('data'),
   WEB_DIST: z.string().optional(),
+  // The folder shared with the updater container (Settings → Updates). docker/compose.yaml sets /update.
+  UPDATE_DIR: z.string().optional(),
 
   MEDIA_SOURCE: z.enum(['none', 'local', 'sftp', 'ssh']).default('none'),
   // Comma-separated "lidarrPrefix=playarrPrefix" pairs.
