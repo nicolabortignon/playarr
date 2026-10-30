@@ -1,11 +1,11 @@
 import type { SourceInfo, SourceTestResult } from '@playarr/shared';
-import { Check, FolderOpen, GripVertical, Loader2, Pencil, Plus, RefreshCw, Server, Trash2, TriangleAlert } from 'lucide-react';
+import { Check, Folder, FolderOpen, GripVertical, Loader2, Pencil, Plus, RefreshCw, Server, Trash2, TriangleAlert } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
-import { useSourceActions, useSources } from '../lib/queries';
+import { useFolders, useSourceActions, useSources } from '../lib/queries';
 import { Dialog } from './Dialog';
 
 const INPUT =
@@ -47,7 +47,7 @@ export function SourcesPanel() {
         </p>
       )}
       {data.sources.length === 0 && (
-        <p className="mb-6 text-[15px] text-paper-dim">No sources yet. Add Lidarr to start your library.</p>
+        <p className="mb-6 text-[15px] text-paper-dim">No sources yet. Add Lidarr or a folder to start your library.</p>
       )}
 
       <Reorder.Group axis="y" values={order} onReorder={setOrder} as="ol" className="-mx-2">
@@ -89,7 +89,7 @@ function SourceRow({
       actions.remove.mutate(s.id);
     }
   };
-  const details = [s.settings?.url, `${plural(s.songs, 'song')} · ${plural(s.albums, 'album')}`].filter(Boolean).join(' · ');
+  const details = [s.settings?.url ?? s.settings?.path, `${plural(s.songs, 'song')} · ${plural(s.albums, 'album')}`].filter(Boolean).join(' · ');
 
   return (
     <Reorder.Item
@@ -111,7 +111,7 @@ function SourceRow({
         </span>
       )}
       <span className="grid size-11 shrink-0 place-items-center rounded-md bg-ink-800 text-accent">
-        <Server className="size-5" />
+        {s.kind === 'folder' ? <FolderOpen className="size-5" /> : <Server className="size-5" />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -190,13 +190,16 @@ function SourceDialog({
   onClose: () => void;
 }) {
   const editing = target && target !== 'new' ? target : undefined;
-  const [kind, setKind] = useState<'lidarr' | null>(null);
+  const [kind, setKind] = useState<'lidarr' | 'folder' | null>(null);
   useEffect(() => setKind(null), [target]);
+  const formKind = editing?.kind ?? kind;
 
   return (
     <Dialog open={target !== null} onClose={onClose} title={editing ? `Edit ${editing.name}` : 'Add source'}>
-      {editing || kind === 'lidarr' ? (
+      {formKind === 'lidarr' ? (
         <LidarrForm key={editing?.id ?? 'new'} source={editing} onDone={onClose} />
+      ) : formKind === 'folder' ? (
+        <FolderForm key={editing?.id ?? 'new'} source={editing} onDone={onClose} />
       ) : (
         <div className="space-y-2 p-5">
           <KindOption
@@ -209,8 +212,8 @@ function SourceDialog({
           <KindOption
             icon={<FolderOpen className="size-5" />}
             title="Folder"
-            detail="Music in a folder on this server. Coming in a later update."
-            disabled
+            detail="Music in a folder on this server. Playarr only reads it."
+            onClick={() => setKind('folder')}
           />
         </div>
       )}
@@ -335,6 +338,99 @@ function LidarrForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
         </button>
       </div>
     </form>
+  );
+}
+
+function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => void }) {
+  const actions = useSourceActions();
+  const [name, setName] = useState(source?.name ?? '');
+  const [path, setPath] = useState<string | undefined>(source?.settings?.path);
+  const [enabled, setEnabled] = useState(source?.enabled ?? true);
+  const pending = actions.add.isPending || actions.update.isPending;
+
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    if (!path) return;
+    const input = { name: name.trim() || undefined, enabled, settings: { path } };
+    if (source) actions.update.mutate({ id: source.id, input }, { onSuccess: onDone });
+    else actions.add.mutate({ kind: 'folder', ...input }, { onSuccess: onDone });
+  };
+
+  return (
+    <form onSubmit={save} className="space-y-4 p-5">
+      <div>
+        <span className="mb-1.5 block font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Folder</span>
+        <FolderBrowser value={path} onChange={setPath} />
+      </div>
+      <Field label="Name">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={path?.split('/').pop() || 'Music'}
+          className={INPUT}
+          maxLength={80}
+        />
+      </Field>
+      {source && (
+        <label className="flex items-center gap-2 text-sm text-paper-dim">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Use this source
+        </label>
+      )}
+      <p className="text-[13px] text-muted">Playarr only reads this folder. Songs appear after the first scan.</p>
+      <div className="flex justify-end pt-2">
+        <button type="submit" disabled={!path || pending} className={PRIMARY}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function FolderBrowser({ value, onChange }: { value?: string; onChange: (path: string) => void }) {
+  const [at, setAt] = useState<string | undefined>(value);
+  const { data, error } = useFolders(at);
+  return (
+    <div className="overflow-hidden rounded-lg border border-line">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 font-mono text-[12px] text-paper-dim">
+        {data && data.path !== null && (
+          <button
+            type="button"
+            onClick={() => setAt(data.parent ?? undefined)}
+            className="rounded px-1.5 text-muted hover:bg-paper/8 hover:text-paper"
+            aria-label="Up one folder"
+          >
+            ..
+          </button>
+        )}
+        <span className="truncate">{data?.path ?? 'Folders Playarr may use'}</span>
+      </div>
+      <ul className="max-h-60 overflow-y-auto py-1">
+        {data?.folders.map((f) => (
+          <li key={f.path}>
+            <button
+              type="button"
+              onClick={() => setAt(f.path)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[14px] text-paper hover:bg-paper/5"
+            >
+              <Folder className="size-4 shrink-0 text-muted" />
+              <span className="truncate">{f.name}</span>
+            </button>
+          </li>
+        ))}
+        {data && data.folders.length === 0 && <li className="px-3 py-2 text-[13px] text-muted">No folders inside.</li>}
+      </ul>
+      {error && <p className="px-3 py-2 text-[13px] text-red-300/80">{(error as Error).message}</p>}
+      {data?.path && (
+        <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2">
+          <span className="text-[12px] text-muted">
+            {plural(data.audioFiles, 'audio file')} here{value === data.path ? ' · selected' : ''}
+          </span>
+          <button type="button" onClick={() => onChange(data.path!)} className="text-[13px] text-accent hover:underline">
+            Use this folder
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

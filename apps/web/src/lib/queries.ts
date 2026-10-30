@@ -258,6 +258,10 @@ export function useSources() {
   return query;
 }
 
+/** Folders on the server, for choosing a folder source. */
+export const useFolders = (path: string | undefined) =>
+  useQuery({ queryKey: ['folders', path ?? ''], queryFn: () => api.folders(path), retry: false });
+
 /** False once we know there's no Lidarr source: requests and Discover are hidden then. */
 export function useHasLidarr() {
   const { data } = useHealth();

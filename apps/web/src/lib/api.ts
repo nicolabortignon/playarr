@@ -11,6 +11,7 @@ import type {
   DiscoverArtistDetail,
   DiscoverResults,
   FavoriteTrack,
+  FolderListing,
   PlaylistDetail,
   PlaylistSummary,
   HealthStatus,
@@ -103,6 +104,8 @@ export const api = {
   testSource: (body: { id?: number; url?: string; apiKey?: string }) =>
     request<SourceTestResult>('/api/settings/sources/test', { method: 'POST', body: JSON.stringify(body) }),
   rescanSource: (id: number) => request<void>(`/api/settings/sources/${id}/rescan`, { method: 'POST' }),
+  folders: (path?: string) =>
+    get<FolderListing>(`/api/settings/folders${path ? `?path=${encodeURIComponent(path)}` : ''}`),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */
