@@ -1,4 +1,4 @@
-import type { AlbumDetail, Artist, AudioFormat, LibraryStats, Track } from '@playarr/shared';
+import type { AlbumDetail, Artist, AudioFormat, LibraryStats, MissingTrack, Track } from '@playarr/shared';
 import { formatKey } from '../library/format.ts';
 import { albumKeyFor } from './keys.ts';
 import type { AlbumRow, ArtistRow, CatalogRows, CopyRow } from './store.ts';
@@ -62,6 +62,23 @@ export function buildCatalog(rows: CatalogRows): Catalog {
     else copiesByTrack.set(c.trackId, [c]);
   }
 
+  const kindOf = new Map(rows.sources.map((s) => [s.id, s.kind]));
+  // Songs an enabled source reported but nobody has a file for.
+  const reported = new Set(rows.sourceTracks.filter((st) => position.has(st.sourceId)).map((st) => st.trackId));
+  const missingByAlbum = new Map<number, MissingTrack[]>();
+  for (const t of rows.tracks) {
+    if (!reported.has(t.id) || copiesByTrack.has(t.id)) continue;
+    const list = missingByAlbum.get(t.albumId) ?? [];
+    list.push({
+      recordingId: t.recordingId,
+      title: t.meta.title,
+      trackNumber: t.meta.trackNumber,
+      discNumber: t.meta.discNumber,
+      duration: t.meta.duration,
+    });
+    missingByAlbum.set(t.albumId, list);
+  }
+
   const artistRows = new Map(rows.artists.map((a) => [a.id, a]));
   const albumRows = new Map(rows.albums.map((a) => [a.id, a]));
 
@@ -103,7 +120,15 @@ export function buildCatalog(rows: CatalogRows): Catalog {
     entry.tracks.sort((a, b) => a.discNumber - b.discNumber || a.trackNumber - b.trackNumber);
     const row = albumRows.get(albumId)!;
     const artist = artistRows.get(row.artistId)!;
-    albums.set(albumId, toAlbumDetail(row, artist, entry.tracks, entry.added));
+    const missing = (missingByAlbum.get(albumId) ?? []).sort(
+      (a, b) => a.discNumber - b.discNumber || a.trackNumber - b.trackNumber,
+    );
+    const first = entry.tracks[0]!;
+    // Folder albums have no artwork URL of their own: draw it from the first song's file.
+    const fallbackCover = kindOf.get(files.get(first.fileId)!.sourceId) === 'folder' ? `/art/copy/${first.fileId}` : undefined;
+    const detail = toAlbumDetail(row, artist, entry.tracks, entry.added, missing, fallbackCover);
+    for (const t of entry.tracks) t.coverUrl ??= detail.coverUrl;
+    albums.set(albumId, detail);
     tracks.push(...entry.tracks);
     const ids = albumIdsByArtist.get(artist.id) ?? [];
     ids.push(albumId);
@@ -184,7 +209,14 @@ function toArtist(row: ArtistRow, albums: AlbumDetail[]): Artist {
   };
 }
 
-function toAlbumDetail(row: AlbumRow, artist: ArtistRow, tracks: Track[], added: string[]): AlbumDetail {
+function toAlbumDetail(
+  row: AlbumRow,
+  artist: ArtistRow,
+  tracks: Track[],
+  added: string[],
+  missingTracks: MissingTrack[],
+  fallbackCover: string | undefined,
+): AlbumDetail {
   const m = row.meta;
   const year = m.releaseDate ? new Date(m.releaseDate).getUTCFullYear() : undefined;
   return {
@@ -199,12 +231,13 @@ function toAlbumDetail(row: AlbumRow, artist: ArtistRow, tracks: Track[], added:
     genres: m.genres.length ? m.genres : artist.meta.genres.slice(0, 3),
     duration: tracks.reduce((sum, t) => sum + t.duration, 0),
     trackCount: tracks.length,
-    totalTrackCount: m.totalTrackCount ?? tracks.length,
-    coverUrl: m.coverUrl,
+    totalTrackCount: Math.max(m.totalTrackCount ?? 0, tracks.length + missingTracks.length),
+    coverUrl: m.coverUrl ?? fallbackCover,
     addedAt: added.sort().at(-1),
     format: mostCommonFormat(tracks),
     overview: m.overview,
     tracks,
+    missingTracks,
     discCount: new Set(tracks.map((t) => t.discNumber)).size,
   };
 }

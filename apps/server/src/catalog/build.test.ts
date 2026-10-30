@@ -27,6 +27,7 @@ describe('buildCatalog', () => {
       discCount: 1,
       addedAt: '2026-10-02T10:00:00Z',
       format: FLAC,
+      missingTracks: [],
     });
     expect(album.tracks.map((t) => t.title)).toEqual(['Angel', 'Risingson']); // sorted by number
     expect(album.tracks[0]).toEqual({
@@ -66,6 +67,32 @@ describe('buildCatalog', () => {
     store.applySync(1, sync);
     const c = buildCatalog(store.load());
     expect([c.artists.size, c.albums.size, c.tracks.length]).toEqual([0, 0, 0]);
+  });
+
+  it('lists the songs a source reports without a file', () => {
+    const { store } = lidarrOnly();
+    const sync = mezzanine();
+    sync.tracks.push({ ...sync.tracks[1]!, key: 'mb:rg-1#rec-3', preferredId: 702, recordingId: 'rec-3', title: 'Teardrop', trackNumber: 3, duration: 330 });
+    store.applySync(1, sync);
+    const album = buildCatalog(store.load()).albums.get(70)!;
+    expect(album.missingTracks).toEqual([{ recordingId: 'rec-3', title: 'Teardrop', trackNumber: 3, discNumber: 1, duration: 330 }]);
+    expect(album.trackCount).toBe(2);
+    // No longer reported: no longer missing.
+    store.applySync(1, mezzanine());
+    expect(buildCatalog(store.load()).albums.get(70)!.missingTracks).toEqual([]);
+  });
+
+  it('draws folder albums without artwork from their files', () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    const folder = store.addSource('folder', 'Music');
+    const sync = mezzanine();
+    sync.copies = sync.copies.map((c) => ({ ...c, preferredId: undefined }));
+    store.applySync(folder, sync);
+    const album = buildCatalog(store.load()).albums.get(70)!;
+    const first = album.tracks[0]!;
+    expect(album.coverUrl).toBe(`/art/copy/${first.fileId}`);
+    expect(first.coverUrl).toBe(album.coverUrl);
   });
 
   describe('best copy', () => {
