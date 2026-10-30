@@ -177,7 +177,10 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
 
 ### Phase 5: Server features
 - [ ] ffmpeg transcoding with format negotiation (detect `canPlayType`, fall back for ALAC/WMA/etc. and mobile data)
-- [ ] Playarr auth (single admin user to start)
+- [ ] **Login + HTTPS before relying on the internet exposure** (decided 2026-10-30: exposed as is for now through the router's forward to NAS port 4000; this comes later):
+  - *Login:* one password (`PLAYARR_PASSWORD`, stored hashed) and a sign-in screen. A signed, HttpOnly, Secure, SameSite=Lax session cookie, valid for months, guards `/api`, `/stream` and `/art` (the app shell and `/api/health` stay public). Login attempts are rate-limited, and the server returns 401s that the web app turns into the sign-in screen. Optionally trust the LAN (192.168.1.0/24) without a login.
+  - *HTTPS:* a Caddy container in the compose stack terminates TLS and proxies to `playarr:4000`. The router forward moves from NAS:4000 to Caddy (e.g. external 443 → NAS 8443; UGOS already owns 80/443), and Playarr's own port goes back to LAN-only. With a static IP and no domain, either a Let's Encrypt certificate for the IP address (short-lived, renewed automatically by Caddy, if available by then) or a free DuckDNS name pointing at the IP with a normal certificate. HTTPS also unlocks the app install and offline songs on phones (§14).
+  - *Until then:* anyone who finds the port can stream the library, edit playlists and favorites, and request albums through Lidarr (which downloads them). A quick interim option: a setting that turns requests off on the exposed instance.
 - [x] SQLite (`node:sqlite`, `apps/server/data/playarr.db`): **favorites** and **playlists** (2026-10-28). *Still to do: play history, "recently played".*
 - [x] **Docker image + NAS deployment** (2026-10-30, see §15): `pnpm deploy:nas` builds and runs Playarr on the NAS as its own compose stack
 
@@ -217,7 +220,7 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
    - d) Copy a small sample of albums locally for dev.
 2. ~~Lidarr API key~~ ✅ done (in the root `.env`).
 3. **Users:** one user (you) or multiple users with separate playlists and history?
-4. **Remote access:** router port forwarding (2026-10-30; Tailscale was set up, then dropped). Exposing Playarr to the internet needs a login first (it has none: anyone could stream, edit playlists and request downloads through Lidarr) and HTTPS (passwords in the clear otherwise, and browsers only allow install/offline on secure origins). Transcoding for mobile data is still open.
+4. **Remote access:** router port forwarding to NAS port 4000 on the home static IP (2026-10-30; Tailscale was set up, then dropped). Exposed without a login for now, by the user's choice; login + HTTPS are planned (Phase 5). Transcoding for mobile data is still open.
 5. **Design preference:** any reference apps you like (Apple Music, Spotify, Plexamp, Feishin…)?
 
 ---
@@ -341,6 +344,7 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 | 2026-10-29 | Covers v2: curated palettes (chromotome) instead of computed ones; new Currents (flow field) and Colonies (Physarum) layouts. AI image models ruled out: no GPU on the NAS, external services would receive listening data, and results aren't deterministic. |
 | 2026-10-29 | Playlist covers are generated from **measured audio** (ffmpeg on the NAS + our own DSP), not metadata: Deezer's BPM is often 0, AcousticBrainz is gone, and analysis covers every song including obscure ones. Only ~5 MB of low-rate mono PCM per song crosses the network, once. Tests: `pnpm -C apps/server test` (DSP on synthetic click tracks/tones/noise; cover determinism and layout choice). |
 | 2026-10-29 | Client-side caching: the page downloads whole songs into Cache Storage and the service worker serves byte ranges from them (rather than the worker caching what `<audio>` streams, which is only ever partial 206 responses). The page owns the budget/LRU, so the worker stays dumb. Needs HTTPS/localhost; plain-HTTP LAN access gets no offline features. Verified with unit tests (planner, LRU, downloader with fake Cache API, range slicing) and smoke tests; not yet exercised in a real browser from this machine (browser automation unavailable). |
+| 2026-10-30 | Remote access through router port forwarding (static IP → NAS:4000) instead of Tailscale, exposed without a login for now (user's call, with the risks spelled out); login + HTTPS via Caddy are on the roadmap. |
 | 2026-10-30 | NAS deployment: its own compose stack in `/volume1/docker/playarr`, not added to `media-stack`, so deploys never touch Lidarr and friends. Built on the NAS from `git archive` (no registry, no cross-building from an arm64 Mac). Lidarr reached through the NAS's LAN address. Docker needs sudo for Nicola; the deploy uses it rather than adding Nicola to the `docker` group. |
 | 2026-10-27 | Single `<audio>` element (not two swapped ones) so iOS background playback keeps working. Gapless/crossfade come later via Web Audio. |
 | 2026-10-27 | Visual direction "liner notes": warm near-black, Gloock display serif, Schibsted Grotesk UI, DM Mono for specs and durations. The accent color comes from the current cover art; there's a subtle film grain. |
