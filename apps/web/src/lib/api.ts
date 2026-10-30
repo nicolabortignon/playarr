@@ -22,6 +22,8 @@ import type {
   OrganizePlan,
   OrganizeResult,
   Recommendations,
+  RequestSettingsInfo,
+  RequestSettingsPatch,
   ReviewAction,
   ReviewGroup,
   SearchResults,
@@ -130,6 +132,9 @@ export const api = {
   matching: () => get<MatchingSettings>('/api/settings/matching'),
   saveMatching: (acoustidKey: string) =>
     request<MatchingSettings>('/api/settings/matching', { method: 'PUT', body: JSON.stringify({ acoustidKey }) }),
+  requestSettings: () => get<RequestSettingsInfo>('/api/settings/requests'),
+  saveRequestSettings: (patch: RequestSettingsPatch) =>
+    request<RequestSettingsInfo>('/api/settings/requests', { method: 'PUT', body: JSON.stringify(patch) }),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */

@@ -7,13 +7,15 @@ import type {
   FavoriteTrack,
   FolderBrowseRequest,
   PlaylistDetail,
+  RequestSettingsInfo,
+  RequestSettingsPatch,
   ReviewAction,
   SourceInput,
   Track,
 } from '@playarr/shared';
 import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import { api } from './api';
+import { api, ApiError } from './api';
 import { plural } from './format';
 import { toast } from './toast';
 
@@ -122,7 +124,11 @@ export function useRequestAlbum() {
   return useMutation({
     mutationFn: (ref: AlbumRef) => api.requestAlbum(ref),
     onSuccess: (req) => {
-      toast(`Requested “${req.title}”. Lidarr is searching for it`);
+      toast(
+        req.availability.state === 'searching'
+          ? `Requested “${req.title}”. Lidarr is searching for it`
+          : `Requested “${req.title}”. Lidarr will search for it on its schedule`,
+      );
       void client.invalidateQueries({ queryKey: ['requests'] });
       void client.invalidateQueries({ queryKey: ['discover'] });
       void client.invalidateQueries({ queryKey: ['discover-artist'] });
@@ -297,6 +303,49 @@ export const useFolderAccess = () => useQuery({ queryKey: ['folder-access'], que
 export function useHasLidarr() {
   const { data } = useHealth();
   return data === undefined || data.lidarr !== undefined;
+}
+
+/** False once we know requests are off in Settings (or there's no Lidarr): Request buttons are hidden then. */
+export function useRequestsEnabled() {
+  const { data } = useHealth();
+  return data === undefined || data.requests;
+}
+
+/** Settings → Requests. Outside the home network the server answers 403: no point retrying. */
+export const useRequestSettings = () =>
+  useQuery({
+    queryKey: ['request-settings'],
+    queryFn: api.requestSettings,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 403) && count < 2,
+  });
+
+/** Saves a change at once, showing it before the server answers. */
+export function useSaveRequestSettings() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: RequestSettingsPatch) => api.saveRequestSettings(patch),
+    onMutate: async (patch) => {
+      await client.cancelQueries({ queryKey: ['request-settings'] });
+      const previous = client.getQueryData<RequestSettingsInfo>(['request-settings']);
+      if (previous) {
+        const next: RequestSettingsInfo = { ...previous };
+        for (const [key, value] of Object.entries(patch)) {
+          if (value === null) delete next[key as keyof RequestSettingsPatch];
+          else if (value !== undefined) Object.assign(next, { [key]: value });
+        }
+        client.setQueryData(['request-settings'], next);
+      }
+      return { previous };
+    },
+    onSuccess: (data) => client.setQueryData(['request-settings'], data),
+    onError: (err: Error, _patch, ctx) => {
+      if (ctx?.previous) client.setQueryData(['request-settings'], ctx.previous);
+      void client.invalidateQueries({ queryKey: ['request-settings'] });
+      toast(`Couldn’t save: ${err.message}`, 'error');
+    },
+    // Request buttons follow health.requests.
+    onSettled: () => void client.invalidateQueries({ queryKey: ['health'] }),
+  });
 }
 
 export function useSourceActions() {

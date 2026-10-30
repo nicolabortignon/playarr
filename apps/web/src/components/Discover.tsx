@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { albumHref, artistHref } from '../lib/links';
-import { useHasLidarr, useRequestAlbum } from '../lib/queries';
+import { useRequestAlbum, useRequestsEnabled } from '../lib/queries';
 import { useDelayedFlag } from '../lib/useDelayedFlag';
 import { Cover } from './Cover';
 import { InlineLink } from './InlineLink';
@@ -27,7 +27,7 @@ export function RequestButton({
 }) {
   const request = useRequestAlbum();
   const navigate = useNavigate();
-  const hasLidarr = useHasLidarr();
+  const requestsOn = useRequestsEnabled();
   // Finding an album can wait on MusicBrainz (about one request per second): say so after a moment.
   const slow = useDelayedFlag(request.isPending, 2000);
   const base = cn(
@@ -42,8 +42,9 @@ export function RequestButton({
   };
   const ask = stop(() => request.mutate(album));
   const { state, progress, message, albumId } = availability;
-  // Without Lidarr nothing can be requested; "In library" still links to the album.
-  if (!hasLidarr && state !== 'available') return null;
+  // Without Lidarr, or with requests off in Settings, nothing can be asked for: hide every button that would.
+  // Progress on earlier requests still shows, and "In library" still links to the album.
+  if (!requestsOn && !request.isPending && (state === 'none' || state === 'waiting' || state === 'failed')) return null;
 
   if (request.isPending) {
     return (

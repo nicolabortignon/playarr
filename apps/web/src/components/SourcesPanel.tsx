@@ -24,6 +24,7 @@ import { useFolderAccess, useFolderListing, useMatching, useSaveMatching, useSou
 import { Dialog } from './Dialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { ReviewDialog } from './ReviewDialog';
+import { AwayNotice, Field } from './SettingsControls';
 
 const INPUT =
   'h-11 w-full rounded-lg border border-line bg-ink-900 px-3 text-[15px] text-paper outline-none transition focus:border-accent';
@@ -61,9 +62,7 @@ export function SourcesPanel() {
         copies, the source higher in this list wins.
       </p>
       {!canEdit && (
-        <p className="mb-6 rounded-lg border border-line px-4 py-3 text-sm text-paper-dim">
-          You’re using Playarr from outside your home network, so settings are read-only.
-        </p>
+        <AwayNotice />
       )}
       {data.sources.length === 0 && (
         <p className="mb-6 text-[15px] text-paper-dim">No sources yet. Add Lidarr or a folder to start your library.</p>
@@ -764,15 +763,5 @@ function FolderBrowser({
         </div>
       )}
     </div>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block font-mono text-[11px] tracking-[0.2em] text-muted uppercase">{label}</span>
-      {children}
-      {hint && <span className="mt-1 block text-[12px] text-muted">{hint}</span>}
-    </label>
   );
 }

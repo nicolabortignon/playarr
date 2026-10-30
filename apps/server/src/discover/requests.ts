@@ -115,10 +115,12 @@ export class Requests {
       albumId = (await this.addToLidarr(lookup, settings)).id;
     }
 
-    // Off: only added and monitored; Lidarr searches on its own schedule.
-    const command = settings.searchOnAdd
-      ? await this.lidarr.command('AlbumSearch', { albumIds: [albumId] })
-      : undefined;
+    // "Search right away" off: a new request is only added and monitored, and Lidarr searches on its schedule.
+    // Asking again for one Playarr already requested ("Search again", "Retry") always searches.
+    const command =
+      settings.searchOnAdd || this.requests.has(mbid)
+        ? await this.lidarr.command('AlbumSearch', { albumIds: [albumId] })
+        : undefined;
     const cover = lookup.images.find((i) => i.coverType === 'cover')?.remoteUrl;
     const keys = [albumKey(lookup.artist.artistName, lookup.title)];
     if (!ref.mbid) keys.push(albumKey(ref.artistName, ref.albumTitle));

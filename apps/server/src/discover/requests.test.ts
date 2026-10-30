@@ -86,6 +86,16 @@ describe('Requests', () => {
     expect(result.availability).toEqual({ state: 'waiting', message: 'Added to Lidarr; it will search on its schedule' });
   });
 
+  it('searches when asked again for an album already requested, even when searching right away is off', async () => {
+    const { requests, lidarr } = setup({ searchOnAdd: false });
+    await requests.request(ref);
+    lidarr.albumByMbid.mockResolvedValue({ ...lookup(), id: 42 });
+    const again = await requests.request(ref);
+    expect(lidarr.monitorAlbums).toHaveBeenCalledWith([42], true);
+    expect(lidarr.command).toHaveBeenCalledWith('AlbumSearch', { albumIds: [42] });
+    expect(again.availability.state).toBe('searching');
+  });
+
   it('uses the root folder defaults when nothing is chosen', async () => {
     const { requests, lidarr } = setup();
     await requests.request(ref);
