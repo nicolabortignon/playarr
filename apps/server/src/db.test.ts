@@ -46,4 +46,11 @@ describe('migrate', () => {
     ]);
     expect(cols('mb_releases')).toEqual(['release_id', 'data', 'fetched_at']);
   });
+
+  it('adds the file move journal', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db);
+    const cols = (db.prepare('PRAGMA table_info(file_moves)').all() as { name: string }[]).map((c) => c.name);
+    expect(cols).toEqual(['id', 'batch', 'source_id', 'from_rel', 'to_rel', 'moved_at', 'undone_at']);
+  });
 });

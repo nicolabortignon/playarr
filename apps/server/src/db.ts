@@ -139,6 +139,17 @@ const MIGRATIONS = [
      data       TEXT NOT NULL,
      fetched_at TEXT NOT NULL
    );`,
+  // Files moved by "Organize files", so a batch can be undone.
+  `CREATE TABLE file_moves (
+     id        INTEGER PRIMARY KEY AUTOINCREMENT,
+     batch     INTEGER NOT NULL,
+     source_id INTEGER NOT NULL REFERENCES sources (id) ON DELETE CASCADE,
+     from_rel  TEXT NOT NULL,
+     to_rel    TEXT NOT NULL,
+     moved_at  TEXT NOT NULL,
+     undone_at TEXT
+   );
+   CREATE INDEX file_moves_by_batch ON file_moves (source_id, batch);`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
