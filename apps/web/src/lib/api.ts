@@ -16,6 +16,10 @@ import type {
   HealthStatus,
   Recommendations,
   SearchResults,
+  SourceInfo,
+  SourceInput,
+  SourcesResponse,
+  SourceTestResult,
   Track,
 } from '@playarr/shared';
 
@@ -88,6 +92,17 @@ export const api = {
   playlistCoverPreview: (id: number, layout: CoverLayout, variant: number) => `/art/playlist/${id}/preview?layout=${layout}&variant=${variant}`,
   playlistRecommendations: (id: number, variant = 0) =>
     get<Recommendations>(`/api/playlists/${id}/recommendations?variant=${variant}`),
+  sources: () => get<SourcesResponse>('/api/settings/sources'),
+  addSource: (input: SourceInput) =>
+    request<SourceInfo>('/api/settings/sources', { method: 'POST', body: JSON.stringify(input) }),
+  updateSource: (id: number, input: SourceInput) =>
+    request<SourceInfo>(`/api/settings/sources/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  removeSource: (id: number) => request<void>(`/api/settings/sources/${id}`, { method: 'DELETE' }),
+  reorderSources: (ids: number[]) =>
+    request<SourcesResponse>('/api/settings/sources/order', { method: 'PUT', body: JSON.stringify({ ids }) }),
+  testSource: (body: { id?: number; url?: string; apiKey?: string }) =>
+    request<SourceTestResult>('/api/settings/sources/test', { method: 'POST', body: JSON.stringify(body) }),
+  rescanSource: (id: number) => request<void>(`/api/settings/sources/${id}/rescan`, { method: 'POST' }),
 };
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */

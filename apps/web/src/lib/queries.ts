@@ -1,4 +1,4 @@
-import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, CoverLayout, FavoriteTrack, PlaylistDetail, Track } from '@playarr/shared';
+import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, CoverLayout, FavoriteTrack, PlaylistDetail, SourceInput, Track } from '@playarr/shared';
 import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
@@ -238,5 +238,59 @@ export function usePlaylistMutations() {
       },
       onError,
     }),
+  };
+}
+
+/** Sources for Settings. Polls while they sync, and refreshes everything once a sync finishes. */
+export function useSources() {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: ['sources'],
+    queryFn: api.sources,
+    refetchInterval: (q) => (q.state.data?.sources.some((s) => s.syncing) ? 2000 : 30_000),
+  });
+  const syncing = !!query.data?.sources.some((s) => s.syncing);
+  const wasSyncing = useRef(false);
+  useEffect(() => {
+    if (wasSyncing.current && !syncing) void client.invalidateQueries();
+    wasSyncing.current = syncing;
+  }, [syncing, client]);
+  return query;
+}
+
+/** False once we know there's no Lidarr source: requests and Discover are hidden then. */
+export function useHasLidarr() {
+  const { data } = useHealth();
+  return data === undefined || data.lidarr !== undefined;
+}
+
+export function useSourceActions() {
+  const client = useQueryClient();
+  const changed = () => {
+    void client.invalidateQueries({ queryKey: ['sources'] });
+    void client.invalidateQueries({ queryKey: ['health'] });
+  };
+  const fail = (err: Error) => toast(err.message, 'error');
+  return {
+    add: useMutation({ mutationFn: api.addSource, onSuccess: changed, onError: fail }),
+    update: useMutation({
+      mutationFn: ({ id, input }: { id: number; input: SourceInput }) => api.updateSource(id, input),
+      onSuccess: changed,
+      onError: fail,
+    }),
+    remove: useMutation({
+      mutationFn: api.removeSource,
+      onSuccess: () => void client.invalidateQueries(), // its songs leave every list
+      onError: fail,
+    }),
+    reorder: useMutation({
+      mutationFn: api.reorderSources,
+      onSuccess: (data) => client.setQueryData(['sources'], data),
+      onError: (err: Error) => {
+        fail(err);
+        changed();
+      },
+    }),
+    rescan: useMutation({ mutationFn: api.rescanSource, onSuccess: changed, onError: fail }),
   };
 }
