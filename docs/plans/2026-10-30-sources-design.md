@@ -16,6 +16,7 @@ Add a Settings panel to Playarr. Its first subpanel, **Sources**, manages where 
 | Editions | Albums merge by MusicBrainz release group. The album shows the union of tracks from all copies. |
 | Metadata | Tags first. Files without MusicBrainz IDs are auto-matched (MusicBrainz lookup, then AcoustID fingerprints). Doubtful matches go to a review list. |
 | Manual fixes | Stored in Playarr only. Music files are never modified; folders can be mounted read-only. |
+| Organizing files (added 2026-10-30) | Opt-in per folder source: Playarr proposes moving files to `Artist/Album/NN Title.ext`, you review the list and apply all, some or none. Files only move within their own source, never into Lidarr's folders. Tags are never rewritten. |
 | Scanning | Periodic scan (size + mtime, only changed files re-read) plus a Rescan button. No live watching. |
 | Folder locations | The server's disk, folders on the Docker host, SSH/SFTP, and SMB/NFS shares. |
 | Docker host access | One broad read-only mount (e.g. home folder or `/Volumes`) at `/host`, with a folder browser in Settings. Running natively with Node is also supported and sees the whole disk. |
@@ -94,6 +95,25 @@ MusicBrainz allows about one request per second, so a large collection takes an 
 
 **Network shares (risk).** Mounting SMB or NFS inside a container needs extra privileges, so Playarr would need its own client. Node's SMB libraries are immature and there is no practical pure-Node NFS client. SMB gets a userspace client only if one proves reliable; NFS is documented as "mount it on the host and use This server".
 
+## Organizing files (opt-in)
+
+Added after the original design, at the user's request: a folder source can have its files moved into a tidy layout. This is the one exception to "Playarr only reads folders", and it is off unless turned on for a source.
+
+**Layout.** `Artist/Album/NN Title.ext`, with `D-NN Title.ext` on multi-disc albums. Artist is the album artist. Loose songs whose album the library knows go into that album's folder; songs with no known album go to `Artist/Title.ext`. Names are made safe for every filesystem (no `/ \ : * ? " < > |`, no trailing dots or spaces, length-limited).
+
+**Scope.** Every file whose path doesn't match the layout gets a proposal, not only loose songs. Files never leave their source's folder: a song that belongs to a Lidarr album goes to `Artist/Album` inside the folder source, so Lidarr never finds stray files to import, rename or delete.
+
+**Review, then apply.** Settings → Sources → (folder) → Organize shows the proposed moves as a from → to list, grouped by album, with a reason when a file is skipped. You apply all, some, or none. Nothing moves on its own.
+
+**Safety.**
+- Needs write access: Playarr checks the folder is writable before offering Organize. In Docker the folder must come from a read-write mount (the broad `/host` mount stays read-only; mount the folders you want organized separately).
+- Moves are renames within the same filesystem. If a rename would cross filesystems, or the destination already exists, that file is skipped and reported, never overwritten.
+- Proposals are only made for songs whose album is known: tagged with MusicBrainz ids, matched (phase 4), or confirmed in the review list. Name-only guesses are listed separately and unchecked by default.
+- Cover images and other non-audio files move with their album when every audio file in their folder moves; folders left empty are removed.
+- Every move is written to a journal (`file_moves`), so an apply can be undone from the same screen.
+- After applying, the source is rescanned; copies keep their songs because the catalog keys songs, not paths.
+
+
 ## Rollout
 
 Each phase ships on its own and leaves the app working.
@@ -102,6 +122,7 @@ Each phase ships on its own and leaves the app working.
 2. **Settings shell and Lidarr source.** Settings route and Sources panel. Lidarr settings move from `.env` into the database. Local-network guard.
 3. **Folder sources on this server.** Scanning, tags, artwork, same-file detection, loose songs, partial albums. Compose file gains the read-only host mount.
 4. **Matching.** MusicBrainz album lookup, fingerprints with AcoustID, review list.
+4b. **Organizing files.** Proposals, review and apply, the move journal and undo. After matching, so moves follow verified albums.
 5. **SSH and SFTP folder sources.**
 6. **Network shares.** SMB if a client proves reliable; NFS via host mount and docs.
 
