@@ -5,6 +5,8 @@ import { posix } from 'node:path';
 import type { SFTPWrapper } from 'ssh2';
 import { LocalMediaSource } from '../media/local.ts';
 import type { MediaSource } from '../media/index.ts';
+import { parseLsjson, type Rclone } from '../media/rclone.ts';
+import { RcloneMediaSource } from '../media/rcloneServe.ts';
 import type { SftpMediaSource } from '../media/sftp.ts';
 import { shellQuote, type Shell } from '../media/ssh.ts';
 import { fpcalc, type Fingerprint } from './acoustid.ts';
@@ -235,6 +237,76 @@ export class SftpFolderFs implements FolderFs {
   async readFile(path: string): Promise<Buffer> {
     const sftp = await this.session();
     return new Promise((resolve, reject) => sftp.readFile(path, (err, data) => (err ? reject(err) : resolve(data))));
+  }
+
+  close() {
+    return this.media.close();
+  }
+}
+
+/** A folder on an SMB share (any rclone remote), paths written /<share>/<folder>/<file>. */
+export class RcloneFolderFs implements FolderFs {
+  readonly kind = 'smb' as const;
+  readonly concurrency = 4;
+  readonly media: RcloneMediaSource;
+  readonly fingerprint?: (path: string) => Promise<Fingerprint | null>;
+
+  constructor(
+    private readonly rclone: Rclone,
+    private readonly prefix: string,
+    tools: { ffmpeg?: string; fpcalc?: string } = {},
+  ) {
+    this.media = new RcloneMediaSource(rclone, prefix, tools);
+    if (tools.fpcalc) {
+      const run = fpcalc(tools.fpcalc);
+      this.fingerprint = async (path) => run(await this.media.urlFor(path));
+    }
+  }
+
+  private remote(path: string) {
+    return `${this.prefix}${posix.normalize(path).replace(/^\/+/, '')}`;
+  }
+
+  async stat(path: string) {
+    if (posix.normalize(path) === '/') return { size: 0, mtimeMs: 0, dir: true };
+    try {
+      const [entry] = parseLsjson(`[${await this.rclone.run(['lsjson', '--stat', '--no-mimetype', this.remote(path)])}]`);
+      return entry ? { size: entry.size, mtimeMs: Math.floor(entry.mtimeMs), dir: entry.dir } : null;
+    } catch (err) {
+      const code = (err as { exitCode?: number }).exitCode;
+      if (code === 3 || code === 4) return null;
+      throw err;
+    }
+  }
+
+  async readdir(path: string): Promise<FsEntry[]> {
+    const out = await this.rclone.run(['lsjson', '--no-mimetype', '--no-modtime', this.remote(path)]);
+    return parseLsjson(out).map((e) => ({ name: e.name, dir: e.dir, file: !e.dir }));
+  }
+
+  async listAudio(root: string): Promise<FoundFile[]> {
+    const out = await this.rclone.run(
+      ['lsjson', '-R', '--files-only', '--no-mimetype', '--exclude', '.*', '--exclude', '.*/**', this.remote(root)],
+      30 * 60_000,
+    );
+    return parseLsjson(out)
+      .filter((e) => isAudioFile(e.name))
+      .map((e) => ({ rel: e.path, path: posix.join(root, e.path), size: e.size, mtimeMs: Math.floor(e.mtimeMs) }))
+      .sort((a, b) => a.rel.localeCompare(b.rel));
+  }
+
+  readTags(path: string, size: number) {
+    return readTagsFrom(this.media, path, size);
+  }
+
+  picture(path: string, size: number) {
+    return pictureFrom(this.media, path, size);
+  }
+
+  async readFile(path: string): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of await this.media.open(path)) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
   }
 
   close() {
