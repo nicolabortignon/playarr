@@ -29,6 +29,7 @@ import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
 import { playlistRoutes } from './routes/playlists.ts';
 import { ACOUSTID_KEY, settingsRoutes } from './routes/settings.ts';
+import { statusRoutes } from './routes/status.ts';
 import { streamRoutes } from './routes/stream.ts';
 
 const config = loadConfig();
@@ -55,8 +56,9 @@ const fingerprints = await hasFpcalc(config.FPCALC_PATH);
 const matcher = new Matcher({
   store,
   mb: {
-    searchReleases: (artist, album) => musicbrainz.searchReleases(artist, album),
-    release: async (id) => toReleaseInfo(await musicbrainz.release(id)),
+    // Background work: counted apart in the queue status, so the UI can say why Discover waits.
+    searchReleases: (artist, album) => musicbrainz.searchReleases(artist, album, undefined, { background: true }),
+    release: async (id) => toReleaseInfo(await musicbrainz.release(id, undefined, { background: true })),
   },
   acoustid: new AcoustId(() => store.appSetting(ACOUSTID_KEY) || undefined),
   fingerprint: fingerprints ? fpcalc(config.FPCALC_PATH) : undefined,
@@ -89,6 +91,10 @@ discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
 settingsRoutes(app, { sources, library, matcher, store, fingerprints });
+statusRoutes(app, {
+  musicbrainz,
+  matching: () => store.listSources().reduce((n, s) => n + matcher.pendingGroups(s.id), 0),
+});
 
 // In production, serve the built web app from the same origin.
 const webDist = config.WEB_DIST

@@ -39,12 +39,26 @@ export class MusicBrainz {
   private queue: Promise<unknown> = Promise.resolve();
   private lastRequest = 0;
   private cache = new Map<string, { at: number; data: unknown }>();
+  private waiting = 0;
+  private waitingBackground = 0;
 
   constructor(private readonly userAgent: string) {}
 
-  async get<T>(path: string, signal?: AbortSignal): Promise<T> {
+  /** How long the line is, so the UI can explain a slow lookup. */
+  status(): { queued: number; background: number; etaSeconds: number } {
+    return {
+      queued: this.waiting,
+      background: this.waitingBackground,
+      etaSeconds: Math.ceil((this.waiting * MIN_INTERVAL_MS) / 1000),
+    };
+  }
+
+  /** `background`: work nobody is waiting on (matching folder music), counted separately in `status()`. */
+  async get<T>(path: string, signal?: AbortSignal, opts: { background?: boolean } = {}): Promise<T> {
     const hit = this.cache.get(path);
     if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data as T;
+    this.waiting++;
+    if (opts.background) this.waitingBackground++;
 
     const run = async (): Promise<T> => {
       // A newer search may have superseded this one while it waited in line.
@@ -71,7 +85,10 @@ export class MusicBrainz {
 
     const result = this.queue.then(run, run);
     this.queue = result.catch(() => {});
-    return result;
+    return result.finally(() => {
+      this.waiting--;
+      if (opts.background) this.waitingBackground--;
+    });
   }
 
   private fetch(path: string) {
@@ -115,18 +132,19 @@ export class MusicBrainz {
   }
 
   /** Releases (editions) by album title and artist, best match first. */
-  searchReleases(artistName: string, albumTitle: string, signal?: AbortSignal) {
+  searchReleases(artistName: string, albumTitle: string, signal?: AbortSignal, opts?: { background?: boolean }) {
     const query = `release:"${luceneEscape(albumTitle)}" AND artist:"${luceneEscape(artistName)}"`;
-    return this.get<{ releases: MbReleaseHit[] }>(`/release?query=${encodeURIComponent(query)}&limit=10`, signal).then(
+    return this.get<{ releases: MbReleaseHit[] }>(`/release?query=${encodeURIComponent(query)}&limit=10`, signal, opts).then(
       (r) => r.releases,
     );
   }
 
   /** One release with its track list. */
-  release(releaseMbid: string, signal?: AbortSignal) {
+  release(releaseMbid: string, signal?: AbortSignal, opts?: { background?: boolean }) {
     return this.get<MbReleaseRaw>(
       `/release/${encodeURIComponent(releaseMbid)}?inc=recordings+artist-credits+release-groups`,
       signal,
+      opts,
     );
   }
 }

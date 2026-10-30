@@ -391,3 +391,15 @@ export interface MatchingSettings {
   /** fpcalc (Chromaprint) is installed, so fingerprints can be computed. */
   fingerprints: boolean;
 }
+
+/** MusicBrainz answers about one request per second; the UI explains waits with this. */
+export interface MusicBrainzStatus {
+  /** Lookups waiting in line (including the one running). */
+  queued: number;
+  /** Of those, how many are background work (identifying folder music). */
+  background: number;
+  /** Rough seconds until the queue is empty. */
+  etaSeconds: number;
+  /** Folder album groups still waiting to be matched. */
+  matching: number;
+}
