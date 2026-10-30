@@ -69,6 +69,17 @@ export interface AlbumDetail extends Album {
   overview?: string;
   tracks: Track[];
   discCount: number;
+  /** Songs on this album that aren't in the library (shown greyed out). */
+  missingTracks: MissingTrack[];
+}
+
+/** A song on an album that no source has a file for. */
+export interface MissingTrack {
+  recordingId: string;
+  title: string;
+  trackNumber: number;
+  discNumber: number;
+  duration: number; // seconds
 }
 
 export interface SearchResults {
@@ -291,7 +302,7 @@ export interface SourceInfo {
   position: number;
   enabled: boolean;
   /** Connection settings without secrets. Absent for visitors outside the local network. */
-  settings?: { url?: string };
+  settings?: { url?: string; path?: string };
   /** Secret fields that have a saved value. The values themselves are never sent. */
   secrets: string[];
   lastSyncAt?: string;
@@ -311,12 +322,23 @@ export interface SourceInput {
   kind?: SourceKind;
   name?: string;
   enabled?: boolean;
-  /** For Lidarr: url and apiKey. Leaving apiKey out keeps the saved one. */
-  settings?: { url?: string; apiKey?: string };
+  /** Lidarr: url and apiKey (leaving apiKey out keeps the saved one). Folder: path. */
+  settings?: { url?: string; apiKey?: string; path?: string };
 }
 
 export interface SourceTestResult {
   ok: boolean;
   version?: string;
   error?: string;
+}
+
+/** A folder on the server, for choosing a folder source. */
+export interface FolderListing {
+  /** null: the list of folders sources may use (FOLDER_ROOTS). */
+  path: string | null;
+  /** Where "up" goes; null: back to that list. */
+  parent: string | null;
+  folders: { name: string; path: string }[];
+  /** Audio files directly in this folder. */
+  audioFiles: number;
 }
