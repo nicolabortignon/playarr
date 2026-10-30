@@ -46,7 +46,7 @@ A pnpm monorepo, all TypeScript:
 ## Key design points
 
 - **Pluggable audio source.** The server reads music from local disk (the normal case, next to Lidarr), or over SSH or SFTP from another machine, which is handy in development. `PATH_MAP` translates Lidarr's paths to the ones Playarr sees.
-- **Folder sources.** Besides Lidarr, any folder on the server can be a source. Playarr reads its tags (falling back to "Artist/Album/01 Title" names), merges the songs with Lidarr's, and never modifies the files.
+- **Folder sources.** Besides Lidarr, any folder on the server can be a source. Playarr reads its tags (falling back to "Artist/Album/01 Title" names), merges the songs with Lidarr's, and never modifies the files. Untagged albums are matched on MusicBrainz automatically (and by their sound with an AcoustID key); doubtful matches wait for you in Settings.
 - **The browser never sends a file path.** `/stream/:id` only serves file IDs that Lidarr reports, and refuses anything outside the configured music folders.
 - **Discover and requests** combine several open sources: Deezer for finding songs by popularity, Lidarr for artists and albums, MusicBrainz for discographies and IDs, and ListenBrainz for "Songs like these" recommendations.
 - **Generated playlist covers.** Each playlist gets artwork drawn from how its songs actually sound. ffmpeg decodes each song once and Playarr's own DSP code measures tempo, beat strength, loudness, brightness and more. One of six layouts is drawn as SVG and served as WebP. A cover stays fixed until you pick a new one.
