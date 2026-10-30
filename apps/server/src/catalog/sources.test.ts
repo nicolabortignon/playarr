@@ -173,6 +173,52 @@ describe('SourceManager', () => {
       expect((await manager.browse({ connection: { access: 'ssh', host: 'nas', user: 'me' } })).path).toBe('/');
     });
 
+    it('adds a folder on an SMB share, keeping the password secret', async () => {
+      const { store, manager, cleanup } = withFolders();
+      onTestFinished(cleanup);
+      manager.useFolderAccess(fakeRemote({ '/music/Albums': [] }) as never);
+      const input = {
+        kind: 'folder' as const,
+        settings: { access: 'smb' as const, host: 'nas', user: 'me', password: 'pw', domain: 'HOME', path: '/music/Albums/', privateKeyPath: '/k' },
+      };
+      await manager.verify(input);
+      const info = manager.add(input);
+      expect(info).toMatchObject({
+        name: 'Albums',
+        settings: { access: 'smb', host: 'nas', user: 'me', port: 445, path: '/music/Albums', domain: 'HOME' },
+        secrets: ['password'],
+      });
+      expect(info.settings).not.toHaveProperty('privateKeyPath');
+      expect(JSON.stringify(info)).not.toContain('pw');
+      expect(store.source(info.id)!.settings).toMatchObject({ password: 'pw' });
+      expect(store.source(info.id)!.settings).not.toHaveProperty('privateKeyPath');
+    });
+
+    it('needs a share for an SMB folder', () => {
+      const { manager, cleanup } = withFolders();
+      onTestFinished(cleanup);
+      manager.useFolderAccess(fakeRemote({}) as never);
+      expect(() => manager.add({ kind: 'folder', settings: { access: 'smb', host: 'nas', user: 'me', path: '/' } })).toThrow(/Choose a share/);
+    });
+
+    it('browses the shares of an SMB server', async () => {
+      const { manager, cleanup } = withFolders();
+      onTestFinished(cleanup);
+      const access = fakeRemote({ '/': ['music', 'photos'] });
+      manager.useFolderAccess(access as never);
+      const listing = await manager.browse({ connection: { access: 'smb', host: 'nas', user: 'me' } });
+      expect(listing).toEqual({
+        path: '/',
+        parent: null,
+        folders: [
+          { name: 'music', path: '/music' },
+          { name: 'photos', path: '/photos' },
+        ],
+        audioFiles: 0,
+      });
+      expect(access.create).toHaveBeenCalledWith(expect.objectContaining({ access: 'smb', host: 'nas', user: 'me', port: 445 }));
+    });
+
     it('never sends a saved password to another host', async () => {
       const { manager, store, cleanup } = withFolders();
       onTestFinished(cleanup);

@@ -25,4 +25,15 @@ describe('FolderAccess', () => {
     const access = new FolderAccess(new CatalogStore(freshDb()), { ffmpeg: 'ffmpeg', fpcalc: 'fpcalc', localFingerprints: false });
     expect(() => access.create({ path: '/m', access: 'ssh' })).toThrow(/host and a user/);
   });
+
+  it('reads SMB shares through rclone, when it is there', async () => {
+    const store = new CatalogStore(freshDb());
+    const share = store.addSource('folder', 'Share', { path: '/music', access: 'smb', host: 'nas', user: 'guest' });
+    const withRclone = new FolderAccess(store, { ffmpeg: 'ffmpeg', fpcalc: 'fpcalc', localFingerprints: false, rclone: 'rclone' });
+    expect(withRclone.get(share)!.kind).toBe('smb');
+    await withRclone.closeAll();
+    const without = new FolderAccess(store, { ffmpeg: 'ffmpeg', fpcalc: 'fpcalc', localFingerprints: false });
+    expect(() => without.get(share)).toThrow(/need rclone/);
+    expect(() => without.create({ path: '/music', access: 'smb', host: 'nas', user: 'me' })).toThrow(/need rclone/);
+  });
 });

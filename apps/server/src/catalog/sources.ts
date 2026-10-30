@@ -1,4 +1,4 @@
-import type { FolderBrowseRequest, FolderListing, SourceInfo, SourceInput, SourceTestResult } from '@playarr/shared';
+import type { FolderAccessKind, FolderBrowseRequest, FolderListing, SourceInfo, SourceInput, SourceTestResult } from '@playarr/shared';
 import { posix } from 'node:path';
 import { LidarrClient } from '../lidarr/client.ts';
 import type { FolderAccess, FolderSettings } from './folderAccess.ts';
@@ -52,7 +52,7 @@ export class SourceManager {
     this.matcher = matcher;
   }
 
-  /** Folder sources reach their files (on this server, or over SSH/SFTP) through this. */
+  /** Folder sources reach their files (on this server, over SSH/SFTP, or on an SMB share) through this. */
   useFolderAccess(access: Pick<FolderAccess, 'create' | 'get' | 'release'>) {
     this.folders = access;
   }
@@ -185,7 +185,7 @@ export class SourceManager {
     }
   }
 
-  /** Folders to choose from: on this server (inside FOLDER_ROOTS), or over a (possibly unsaved) SSH/SFTP connection. */
+  /** Folders to choose from: on this server (inside FOLDER_ROOTS), or over a (possibly unsaved) SSH, SFTP or SMB connection (at / an SMB server lists its shares). */
   async browse(req: FolderBrowseRequest): Promise<FolderListing> {
     const source = req.id !== undefined ? this.store.source(req.id) : undefined;
     const saved = (source?.kind === 'folder' ? source.settings : {}) as FolderSettings;
@@ -197,15 +197,18 @@ export class SourceManager {
     if (!host || !user) throw new SourceError('A remote folder needs a host and a user', 400);
     const path = posix.normalize(req.path || '/');
     if (!path.startsWith('/')) throw new SourceError('The folder must be an absolute path on that host', 400);
+    const wasSmb = saved.access === 'smb';
     const settings: FolderSettings = {
       access,
       host,
       user,
-      port: c.port ?? saved.port ?? 22,
+      port: c.port ?? ((access === 'smb') === wasSmb ? saved.port : undefined) ?? defaultPort(access),
       path,
       // A saved password only ever goes back to the host and account it was saved for.
       password: c.password || (host === saved.host && user === saved.user ? saved.password : undefined),
-      privateKeyPath: c.privateKeyPath?.trim() || saved.privateKeyPath,
+      ...(access === 'smb'
+        ? { domain: c.domain?.trim() || (wasSmb ? saved.domain : undefined) }
+        : { privateKeyPath: c.privateKeyPath?.trim() || saved.privateKeyPath }),
     };
     const fs = this.openFolderFs(settings);
     try {
@@ -285,15 +288,21 @@ export class SourceManager {
     const user = (input.user ?? saved.user)?.trim();
     if (!host || !user) throw new SourceError('A remote folder needs a host and a user', 400);
     if (!path.startsWith('/')) throw new SourceError('The folder must be an absolute path on that host', 400);
+    const clean = posix.normalize(path).replace(/(.)\/+$/, '$1');
+    if (access === 'smb' && clean.split('/').filter(Boolean).length === 0) throw new SourceError('Choose a share', 400);
+    // Switching between SSH/SFTP and SMB starts from the new kind's port, not the old one's.
+    const wasSmb = saved.access === 'smb';
     return {
       access,
       host,
       user,
-      port: input.port ?? saved.port ?? 22,
-      path: posix.normalize(path).replace(/(.)\/+$/, '$1'),
+      port: input.port ?? ((access === 'smb') === wasSmb ? saved.port : undefined) ?? defaultPort(access),
+      path: clean,
       // A saved password only ever goes back to the host and account it was saved for.
       password: input.password || (host === saved.host && user === saved.user ? saved.password : undefined) || undefined,
-      privateKeyPath: (input.privateKeyPath ?? saved.privateKeyPath)?.trim() || undefined,
+      ...(access === 'smb'
+        ? { domain: (input.domain ?? (wasSmb ? saved.domain : undefined))?.trim() || undefined }
+        : { privateKeyPath: (input.privateKeyPath ?? saved.privateKeyPath)?.trim() || undefined }),
     };
   }
 
@@ -347,10 +356,14 @@ function toInfo(
 /** Connection settings the browser may see: never a secret. */
 function publicSettings(s: SourceRecord): SourceInfo['settings'] {
   if (s.kind !== 'folder') return { url: (s.settings as LidarrSettings).url };
-  const { path, access, host, port, user, privateKeyPath } = s.settings as FolderSettings;
+  const { path, access, host, port, user, privateKeyPath, domain } = s.settings as FolderSettings;
   if ((access ?? 'local') === 'local') return { path };
+  if (access === 'smb') return { path, access, host, port, user, domain };
   return { path, access, host, port, user, privateKeyPath };
 }
+
+/** SMB listens on 445, SSH and SFTP on 22. */
+const defaultPort = (access: FolderAccessKind) => (access === 'smb' ? 445 : 22);
 
 /** Drop undefined fields before storing settings as JSON. */
 const withoutUndefined = (o: object): Record<string, unknown> => JSON.parse(JSON.stringify(o)) as Record<string, unknown>;
