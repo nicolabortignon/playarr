@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { sized } from '../lib/api';
 import { extractAccent } from '../lib/color';
 import { setFaviconAccent } from '../lib/favicon';
+import { usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
 import { healQueue } from './healQueue';
 import { useLoadAhead } from './loadAhead';
@@ -13,6 +14,7 @@ const DEFAULT_ACCENT = '#ff7a1a';
 export function AudioEngine() {
   const ref = useRef<HTMLAudioElement>(null);
   const track = useCurrentTrack();
+  const accent = usePrefs((s) => s.accent);
   const playing = usePlayer((s) => s.playing);
   const restartToken = usePlayer((s) => s.restartToken);
   const volume = usePlayer((s) => s.volume);
@@ -151,13 +153,17 @@ export function AudioEngine() {
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
   }, [playing]);
 
-  // Tab title, accent color and favicon follow the current track.
+  // Tab title follows the current track; so do the accent color and favicon, unless Settings → Appearance fixes the color.
   useEffect(() => {
     document.title = track ? `${track.title} · ${track.artistName}` : 'Playarr';
     const apply = (color: string) => {
       document.documentElement.style.setProperty('--accent', color);
       setFaviconAccent(color);
     };
+    if (accent !== 'album') {
+      apply(accent);
+      return;
+    }
     if (!track?.coverUrl) {
       apply(DEFAULT_ACCENT);
       return;
@@ -169,7 +175,7 @@ export function AudioEngine() {
     return () => {
       cancelled = true;
     };
-  }, [track]);
+  }, [track, accent]);
 
   return (
     <audio

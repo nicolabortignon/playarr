@@ -1,10 +1,12 @@
 import type { AudioFormat } from '@playarr/shared';
 import { cn } from '../lib/cn';
 import { formatBadge, isHiRes } from '../lib/format';
+import { usePrefs } from '../lib/prefs';
 
 export function FormatBadge({ format, className }: { format?: AudioFormat; className?: string }) {
+  const shown = usePrefs((s) => s.formatBadges);
   const text = formatBadge(format);
-  if (!text) return null;
+  if (!text || !shown) return null;
   const hiRes = isHiRes(format);
   return (
     <span
