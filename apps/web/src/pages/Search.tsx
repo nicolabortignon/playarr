@@ -6,7 +6,7 @@ import { Cover } from '../components/Cover';
 import { DiscoverAlbumCard, DiscoverArtistCard, DiscoverTrackRow, RequestsPill } from '../components/Discover';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
-import { activeRequestCount, useArtists, useDiscover, useRequests, useSearch } from '../lib/queries';
+import { activeRequestCount, useArtists, useDiscover, useHasLidarr, useRequests, useSearch } from '../lib/queries';
 import { useDebounced } from '../lib/useDebounced';
 
 export function SearchPage() {
@@ -16,6 +16,7 @@ export function SearchPage() {
   const { data, isFetching } = useSearch(deferred);
   const input = useRef<HTMLInputElement>(null);
   const { data: requests } = useRequests();
+  const hasLidarr = useHasLidarr();
 
   useEffect(() => {
     input.current?.focus();
@@ -127,7 +128,7 @@ export function SearchPage() {
         </div>
       )}
 
-      {deferred && <DiscoverSection q={deferred} />}
+      {deferred && hasLidarr && <DiscoverSection q={deferred} />}
     </div>
   );
 }

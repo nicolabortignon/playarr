@@ -63,6 +63,7 @@ describe('Playarr web against live server', () => {
     ['/favorites', 'Favorites'],
     ['/playlists', 'New playlist'],
     ['/library', 'Library'],
+    ['/settings', /Where your music comes from/],
   ] as [string, string | RegExp][])('renders %s', async (path, text) => {
     if (!reachable) return;
     renderAt(path);

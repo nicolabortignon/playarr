@@ -40,7 +40,7 @@ export function HomePage() {
             {lib ? (
               <>
                 {lib.tracks} tracks across {lib.albums} albums, {formatDuration(lib.durationSeconds)} of music
-                waiting in your Lidarr library.
+                waiting in your library.
               </>
             ) : (
               <span className="invisible">Loading library</span>
@@ -81,7 +81,7 @@ export function HomePage() {
       )}
 
       <section className="mb-14">
-        <SectionHeader kicker="Fresh from Lidarr" title="Recently added" to="/albums?sort=added" />
+        <SectionHeader kicker="Just added" title="Recently added" to="/albums?sort=added" />
         <Shelf>
           {recent
             ? recent.map((a, i) => (

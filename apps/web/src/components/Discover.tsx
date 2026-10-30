@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { albumHref, artistHref } from '../lib/links';
-import { useRequestAlbum } from '../lib/queries';
+import { useHasLidarr, useRequestAlbum } from '../lib/queries';
 import { Cover } from './Cover';
 import { InlineLink } from './InlineLink';
 
@@ -26,6 +26,7 @@ export function RequestButton({
 }) {
   const request = useRequestAlbum();
   const navigate = useNavigate();
+  const hasLidarr = useHasLidarr();
   const base = cn(
     'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full font-mono uppercase tracking-wider transition',
     size === 'sm' ? 'h-7 px-2.5 text-[10px]' : 'h-8 px-3.5 text-[11px]',
@@ -38,6 +39,8 @@ export function RequestButton({
   };
   const ask = stop(() => request.mutate(album));
   const { state, progress, message, albumId } = availability;
+  // Without Lidarr nothing can be requested; "In library" still links to the album.
+  if (!hasLidarr && state !== 'available') return null;
 
   if (request.isPending) {
     return (
