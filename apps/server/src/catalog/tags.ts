@@ -16,9 +16,31 @@ export interface TagInfo {
   duration: number; // seconds
   recordingMbid?: string;
   releaseGroupMbid?: string;
+  /** The MusicBrainz release (edition) a match chose; its track list gives the album's missing songs. */
+  releaseId?: string;
   artistMbid?: string;
   albumArtistMbid?: string;
   format: AudioFormat;
+}
+
+/** What a match lays over a file's own tags. */
+export type MatchOverlay = Partial<
+  Pick<TagInfo, 'title' | 'album' | 'albumArtist' | 'albumArtistMbid' | 'trackNumber' | 'discNumber' | 'year' | 'recordingMbid' | 'releaseGroupMbid' | 'releaseId'>
+>;
+
+export type MatchState = 'auto' | 'manual' | 'review' | 'unmatched' | 'ignored';
+
+export interface MatchRecord {
+  rel: string;
+  groupKey: string;
+  state: MatchState;
+  overlay?: MatchOverlay;
+  /** Review: candidate release ids, best first. */
+  candidates?: string[];
+  score?: number;
+  /** The file version this was decided for. */
+  size: number;
+  mtimeMs: number;
 }
 
 const LOSSLESS = new Set(['FLAC', 'ALAC', 'PCM', 'WAV', 'AIFF', 'WAVPACK']);

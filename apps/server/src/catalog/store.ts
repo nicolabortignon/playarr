@@ -2,7 +2,8 @@ import type { AudioFormat } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
 import { albumKey as albumNameKey, normalize } from '../library/search.ts';
 import { songNameKey } from './keys.ts';
-import type { TagInfo } from './tags.ts';
+import type { MbReleaseInfo } from './mbRelease.ts';
+import type { MatchRecord, TagInfo } from './tags.ts';
 import type {
   KnownTrack,
   LidarrAlbumState,
@@ -153,6 +154,7 @@ export class CatalogStore {
       this.db.prepare('DELETE FROM copies WHERE source_id = ?').run(id);
       this.db.prepare('DELETE FROM source_tracks WHERE source_id = ?').run(id);
       this.db.prepare('DELETE FROM folder_files WHERE source_id = ?').run(id);
+      this.db.prepare('DELETE FROM folder_matches WHERE source_id = ?').run(id);
       this.db.prepare('DELETE FROM sources WHERE id = ?').run(id);
       this.db.exec('COMMIT');
     } catch (err) {
@@ -215,17 +217,20 @@ export class CatalogStore {
     this.db.exec('BEGIN');
     try {
       const artistIds = new Map<string, number>();
-      for (const { key, preferredId, ...meta } of sync.artists) {
-        artistIds.set(key, this.upsert('catalog_artists', key, preferredId, {}, meta, now, rank));
+      for (const { key, preferredId, metaRank, ...meta } of sync.artists) {
+        artistIds.set(key, this.upsert('catalog_artists', key, preferredId, {}, meta, now, metaRank ?? rank));
       }
       const albumIds = new Map<string, number>();
-      for (const { key, preferredId, artistKey, ...meta } of sync.albums) {
+      for (const { key, preferredId, artistKey, metaRank, ...meta } of sync.albums) {
         const artistId = artistIds.get(artistKey);
         if (artistId === undefined) throw new Error(`Album ${key} refers to unknown artist ${artistKey}`);
-        albumIds.set(key, this.upsert('catalog_albums', key, preferredId, { artist_id: artistId }, meta, now, rank));
+        albumIds.set(
+          key,
+          this.upsert('catalog_albums', key, preferredId, { artist_id: artistId }, meta, now, metaRank ?? rank),
+        );
       }
       const trackIds = new Map<string, number>();
-      for (const { key, preferredId, albumKey, recordingId, ...meta } of sync.tracks) {
+      for (const { key, preferredId, albumKey, recordingId, metaRank, ...meta } of sync.tracks) {
         const albumId = albumIds.get(albumKey);
         if (albumId === undefined) throw new Error(`Track ${key} refers to unknown album ${albumKey}`);
         trackIds.set(
@@ -237,16 +242,32 @@ export class CatalogStore {
             { album_id: albumId, recording_id: recordingId },
             meta,
             now,
-            rank,
+            metaRank ?? rank,
           ),
         );
       }
+      // Which song each of this source's files belonged to, to follow songs whose id changes.
+      const before = new Map(
+        (
+          this.db
+            .prepare(
+              'SELECT c.source_ref AS ref, t.recording_id AS rec FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE c.source_id = ?',
+            )
+            .all(sourceId) as { ref: string; rec: string }[]
+        ).map((r) => [r.ref, r.rec]),
+      );
+      const recordingOf = new Map(sync.tracks.map((t) => [t.key, t.recordingId]));
+      const moves = new Map<string, string>();
       const seen = new Set<number>();
       for (const copy of sync.copies) {
         const trackId = trackIds.get(copy.trackKey);
         if (trackId === undefined) throw new Error(`Copy ${copy.ref} refers to unknown track ${copy.trackKey}`);
+        const was = before.get(copy.ref);
+        const is = recordingOf.get(copy.trackKey);
+        if (was && is && was !== is && was.startsWith('local:') && !is.startsWith('local:')) moves.set(was, is);
         seen.add(this.upsertCopy(sourceId, copy, trackId, now));
       }
+      for (const [from, to] of moves) this.moveRecording(from, to);
       // The songs this source reports, including ones it has no file for (missing songs).
       this.db.prepare('DELETE FROM source_tracks WHERE source_id = ?').run(sourceId);
       const report = this.db.prepare('INSERT OR IGNORE INTO source_tracks (source_id, track_id) VALUES (?, ?)');
@@ -414,6 +435,118 @@ export class CatalogStore {
       }
     }
     return index;
+  }
+
+  /** A song got its real id: its favorites, playlist entries and analysis follow it. */
+  private moveRecording(from: string, to: string) {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO favorites (recording_id, track_id, title, artist_name, album_title, created_at)
+         SELECT ?, track_id, title, artist_name, album_title, created_at FROM favorites WHERE recording_id = ?`,
+      )
+      .run(to, from);
+    this.db.prepare('DELETE FROM favorites WHERE recording_id = ?').run(from);
+    this.db.prepare('UPDATE playlist_items SET recording_id = ? WHERE recording_id = ?').run(to, from);
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO track_features (recording_id, version, features, error, analyzed_at)
+         SELECT ?, version, features, error, analyzed_at FROM track_features WHERE recording_id = ?`,
+      )
+      .run(to, from);
+    this.db.prepare('DELETE FROM track_features WHERE recording_id = ?').run(from);
+  }
+
+  /** A folder source's match decisions, by path relative to the folder. */
+  matches(sourceId: number): Map<string, MatchRecord> {
+    const rows = this.db
+      .prepare(
+        'SELECT rel_path, group_key, state, overlay, candidates, score, file_size, file_mtime FROM folder_matches WHERE source_id = ?',
+      )
+      .all(sourceId) as {
+      rel_path: string;
+      group_key: string;
+      state: MatchRecord['state'];
+      overlay: string | null;
+      candidates: string | null;
+      score: number | null;
+      file_size: number;
+      file_mtime: number;
+    }[];
+    return new Map(
+      rows.map((r) => [
+        r.rel_path,
+        {
+          rel: r.rel_path,
+          groupKey: r.group_key,
+          state: r.state,
+          overlay: r.overlay ? JSON.parse(r.overlay) : undefined,
+          candidates: r.candidates ? JSON.parse(r.candidates) : undefined,
+          score: r.score ?? undefined,
+          size: r.file_size,
+          mtimeMs: r.file_mtime,
+        },
+      ]),
+    );
+  }
+
+  saveMatches(sourceId: number, records: MatchRecord[]) {
+    const now = new Date().toISOString();
+    const save = this.db.prepare(
+      `INSERT INTO folder_matches (source_id, rel_path, group_key, state, overlay, candidates, score, file_size, file_mtime, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (source_id, rel_path) DO UPDATE SET group_key = excluded.group_key, state = excluded.state,
+         overlay = excluded.overlay, candidates = excluded.candidates, score = excluded.score,
+         file_size = excluded.file_size, file_mtime = excluded.file_mtime, updated_at = excluded.updated_at`,
+    );
+    this.db.exec('BEGIN');
+    try {
+      for (const r of records) {
+        save.run(
+          sourceId,
+          r.rel,
+          r.groupKey,
+          r.state,
+          r.overlay ? JSON.stringify(r.overlay) : null,
+          r.candidates ? JSON.stringify(r.candidates) : null,
+          r.score ?? null,
+          r.size,
+          r.mtimeMs,
+          now,
+        );
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /** Forget automatic results (user decisions stay), so the source is matched again. */
+  clearMatches(sourceId: number) {
+    this.db.prepare("DELETE FROM folder_matches WHERE source_id = ? AND state NOT IN ('manual', 'ignored')").run(sourceId);
+  }
+
+  /** Album groups waiting for review, per source. */
+  matchCounts(): Map<number, { review: number }> {
+    const rows = this.db
+      .prepare(
+        "SELECT source_id AS id, COUNT(DISTINCT group_key) AS review FROM folder_matches WHERE state = 'review' GROUP BY source_id",
+      )
+      .all() as { id: number; review: number }[];
+    return new Map(rows.map((r) => [r.id, { review: r.review }]));
+  }
+
+  cachedRelease(releaseId: string): MbReleaseInfo | undefined {
+    const row = this.db.prepare('SELECT data FROM mb_releases WHERE release_id = ?').get(releaseId) as
+      | { data: string }
+      | undefined;
+    return row ? (JSON.parse(row.data) as MbReleaseInfo) : undefined;
+  }
+
+  saveRelease(release: MbReleaseInfo) {
+    this.db
+      .prepare('INSERT OR REPLACE INTO mb_releases (release_id, data, fetched_at) VALUES (?, ?, ?)')
+      .run(release.id, JSON.stringify(release), new Date().toISOString());
   }
 
   /** Insert or update a catalog row by key; returns its id. Metadata changes only if `rank` is at least as trusted. */

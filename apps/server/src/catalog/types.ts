@@ -18,6 +18,8 @@ export interface SourceArtist {
   imageUrl?: string;
   fanartUrl?: string;
   logoUrl?: string;
+  /** Overrides the sync's rank for this row. */
+  metaRank?: number;
 }
 
 export interface SourceAlbum {
@@ -34,6 +36,8 @@ export interface SourceAlbum {
   overview?: string;
   coverUrl?: string;
   totalTrackCount?: number;
+  /** Overrides the sync's rank for this row. */
+  metaRank?: number;
 }
 
 export interface SourceTrack {
@@ -47,6 +51,8 @@ export interface SourceTrack {
   discNumber: number;
   duration: number; // seconds
   explicit: boolean;
+  /** Overrides the sync's rank for this row. */
+  metaRank?: number;
 }
 
 export interface SourceCopy {

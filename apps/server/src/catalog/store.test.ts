@@ -228,3 +228,72 @@ describe('CatalogStore: several sources', () => {
     expect(index.songs.get(songNameKey('Massive Attack', 'Angel'))).toMatchObject({ albumKey: 'mb:rg-1', albumTitle: 'Mezzanine' });
   });
 });
+
+describe('CatalogStore: matching', () => {
+  it('saves, reads and clears matches, keeping user decisions', () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('folder', 'Music', { path: '/m' });
+    store.saveMatches(id, [
+      { rel: 'a.flac', groupKey: 'g', state: 'auto', overlay: { recordingMbid: 'rec-1' }, score: 0.9, size: 1, mtimeMs: 1 },
+      { rel: 'b.flac', groupKey: 'g', state: 'manual', overlay: { recordingMbid: 'rec-2' }, size: 1, mtimeMs: 1 },
+      { rel: 'c.flac', groupKey: 'h', state: 'review', candidates: ['rel-1', 'rel-2'], score: 0.6, size: 1, mtimeMs: 1 },
+    ]);
+    expect(store.matches(id).get('c.flac')).toMatchObject({ state: 'review', candidates: ['rel-1', 'rel-2'] });
+    expect(store.matchCounts().get(id)).toEqual({ review: 1 });
+    store.clearMatches(id);
+    expect([...store.matches(id).keys()]).toEqual(['b.flac']);
+  });
+
+  it('caches releases', () => {
+    const store = new CatalogStore(freshDb());
+    const release = { id: 'rel-1', title: 'X', artistName: 'Y', releaseGroup: { id: 'rg', title: 'X', secondaryTypes: [] }, tracks: [] };
+    expect(store.cachedRelease('rel-1')).toBeUndefined();
+    store.saveRelease(release);
+    expect(store.cachedRelease('rel-1')).toEqual(release);
+  });
+
+  it('lets a row carry its own trust', () => {
+    const store = new CatalogStore(freshDb());
+    const lidarr = store.addSource('lidarr', 'Lidarr');
+    const folder = store.addSource('folder', 'Music');
+    const matched = mezzanine();
+    matched.metaRank = 2;
+    matched.albums[0]!.metaRank = 1;
+    matched.albums[0]!.title = 'Mezzanine (from MusicBrainz)';
+    matched.copies = matched.copies.map((c) => ({ ...c, ref: `f/${c.ref}`, preferredId: undefined }));
+    store.applySync(folder, matched);
+    const plain = mezzanine();
+    plain.metaRank = 2;
+    plain.albums[0]!.title = 'mezzanine';
+    plain.copies = matched.copies;
+    store.applySync(folder, plain); // rank 2 can't overwrite rank 1
+    expect(store.load().albums[0]!.meta.title).toBe('Mezzanine (from MusicBrainz)');
+    store.applySync(lidarr, mezzanine()); // rank 0 can
+    expect(store.load().albums[0]!.meta.title).toBe('Mezzanine');
+    expect(JSON.stringify(store.load().albums[0]!.meta)).not.toContain('metaRank');
+  });
+
+  it('moves favorites, playlist entries and analysis when a song gets its real id', () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    const folder = store.addSource('folder', 'Music');
+    const local = mezzanine();
+    local.tracks = local.tracks.map((t) => ({ ...t, key: `name:x#local:${t.recordingId}`, recordingId: `local:${t.recordingId}`, preferredId: undefined }));
+    local.copies = local.copies.map((c) => ({ ...c, trackKey: `name:x#local:${c.trackKey.split('#')[1]}`, preferredId: undefined }));
+    store.applySync(folder, local);
+    const now = new Date().toISOString();
+    db.prepare('INSERT INTO favorites (recording_id, title, artist_name, album_title, created_at) VALUES (?, ?, ?, ?, ?)').run('local:rec-1', 'Angel', 'Massive Attack', 'Mezzanine', now);
+    db.prepare('INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)').run('P', now, now);
+    db.prepare('INSERT INTO playlist_items (playlist_id, position, recording_id, title, artist_name, album_title, added_at) VALUES (1, 0, ?, ?, ?, ?, ?)').run('local:rec-1', 'Angel', 'Massive Attack', 'Mezzanine', now);
+    db.prepare('INSERT INTO track_features (recording_id, version, features, analyzed_at) VALUES (?, 1, ?, ?)').run('local:rec-1', '{}', now);
+
+    const matched = mezzanine();
+    matched.copies = local.copies.map((c, i) => ({ ...c, trackKey: matched.tracks.find((t) => t.recordingId === `rec-${i + 1}`)!.key }));
+    store.applySync(folder, matched);
+
+    const one = (sql: string) => db.prepare(sql).get() as { recording_id: string };
+    expect(one('SELECT recording_id FROM favorites').recording_id).toBe('rec-1');
+    expect(one('SELECT recording_id FROM playlist_items').recording_id).toBe('rec-1');
+    expect(one('SELECT recording_id FROM track_features').recording_id).toBe('rec-1');
+  });
+});
