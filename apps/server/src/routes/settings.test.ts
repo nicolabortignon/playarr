@@ -18,7 +18,7 @@ function setup(matcher = fakeMatcher()) {
   const sources = new SourceManager(store, new LidarrClient(), { info: () => {} });
   const library = { refresh: vi.fn(async () => {}), reload: vi.fn(), refreshing: false };
   const app = Fastify();
-  settingsRoutes(app, { sources, library, matcher, store, organizer: new Organizer(store), fingerprints: true });
+  settingsRoutes(app, { sources, library, matcher, store, organizer: new Organizer(store), fingerprints: true, shares: false });
   return { app, store, library, matcher };
 }
 
@@ -57,6 +57,34 @@ describe('settings routes', () => {
       remoteAddress: HOME,
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('says which folder locations work, to the home network only', async () => {
+    const { app } = setup();
+    const home = await app.inject({ method: 'GET', url: '/api/settings/folders/access', remoteAddress: HOME });
+    expect(home.json()).toEqual({ smb: false });
+    const away = await app.inject({ method: 'GET', url: '/api/settings/folders/access', remoteAddress: AWAY });
+    expect(away.statusCode).toBe(403);
+  });
+
+  it('validates SMB connection fields', async () => {
+    const { app } = setup();
+    const badPort = await app.inject({
+      method: 'POST',
+      url: '/api/settings/sources',
+      payload: { kind: 'folder', settings: { access: 'smb', host: 'nas', user: 'me', port: 0, path: '/music' } },
+      remoteAddress: HOME,
+    });
+    expect(badPort.statusCode).toBe(400);
+    expect(badPort.json().error).toMatch(/port/);
+    const badDomain = await app.inject({
+      method: 'POST',
+      url: '/api/settings/folders/browse',
+      payload: { connection: { access: 'smb', host: 'nas', user: 'me', domain: 'x'.repeat(101) } },
+      remoteAddress: HOME,
+    });
+    expect(badDomain.statusCode).toBe(400);
+    expect(badDomain.json().error).toMatch(/domain/);
   });
 
   it('accepts a folder path', async () => {

@@ -24,6 +24,7 @@ import { Playlists } from './playlists.ts';
 import { LidarrClient } from './lidarr/client.ts';
 import { Library } from './library/library.ts';
 import { createMediaSource } from './media/index.ts';
+import { hasRclone } from './media/rclone.ts';
 import { apiRoutes } from './routes/api.ts';
 import { artRoutes, LocalArt } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
@@ -46,8 +47,16 @@ const store = new CatalogStore(db);
 const sources = new SourceManager(store, lidarr, { info: (m) => app.log.info(m) }, config.folderRoots);
 // fpcalc on this server fingerprints local folders; SSH folders run it on their own host.
 const fingerprints = await hasFpcalc(config.FPCALC_PATH);
-// One filesystem (this server's disk, or an SSH/SFTP connection) per folder source.
-const folders = new FolderAccess(store, { ffmpeg: config.FFMPEG_PATH, fpcalc: config.FPCALC_PATH, localFingerprints: fingerprints });
+// rclone reads folders on SMB shares; without it the SMB choice is off.
+const shares = await hasRclone(config.RCLONE_PATH);
+if (!shares) app.log.info('SMB shares are off: rclone isn’t installed');
+// One filesystem (this server's disk, an SSH/SFTP connection, or an SMB share) per folder source.
+const folders = new FolderAccess(store, {
+  ffmpeg: config.FFMPEG_PATH,
+  fpcalc: config.FPCALC_PATH,
+  localFingerprints: fingerprints,
+  rclone: shares ? config.RCLONE_PATH : undefined,
+});
 sources.useFolderAccess(folders);
 sources.seedFromEnv({ url: config.LIDARR_URL, apiKey: config.LIDARR_API_KEY });
 sources.active(); // configure the Lidarr client before anything uses it
@@ -97,7 +106,7 @@ streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
-settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints });
+settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares });
 statusRoutes(app, {
   musicbrainz,
   matching: () => store.listSources().reduce((n, s) => n + matcher.pendingGroups(s.id), 0),

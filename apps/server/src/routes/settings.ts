@@ -1,4 +1,4 @@
-import type { MatchingSettings, SourcesResponse } from '@playarr/shared';
+import type { FolderAccessOptions, MatchingSettings, SourcesResponse } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Matcher } from '../catalog/matcher.ts';
@@ -8,15 +8,16 @@ import type { CatalogStore } from '../catalog/store.ts';
 import type { Library } from '../library/library.ts';
 import { isLocalAddress } from '../net.ts';
 
-/** Where a folder is, and how to reach it over SSH or SFTP. */
+/** Where a folder is, and how to reach it over SSH, SFTP or SMB. */
 const connectionFields = {
   host: z.string().trim().max(255).optional(),
   port: z.number().int().min(1).max(65535).optional(),
   user: z.string().trim().max(100).optional(),
   password: z.string().max(500).optional(),
   privateKeyPath: z.string().trim().max(4096).optional(),
+  domain: z.string().trim().max(100).optional(),
 };
-const folderAccess = z.enum(['local', 'ssh', 'sftp']);
+const folderAccess = z.enum(['local', 'ssh', 'sftp', 'smb']);
 const sourceInput = z.object({
   kind: z.enum(['lidarr', 'folder']).optional(),
   name: z.string().trim().max(80).optional(),
@@ -92,6 +93,8 @@ export function settingsRoutes(
     organizer: Pick<Organizer, 'plan' | 'apply' | 'undo'>;
     /** fpcalc is installed. */
     fingerprints: boolean;
+    /** rclone is installed, so folders can be on SMB shares. */
+    shares: boolean;
   },
 ) {
   const { sources, library, matcher, organizer } = deps;
@@ -151,10 +154,12 @@ export function settingsRoutes(
     handle(reply, () => sources.listFolders(req.query.path || undefined)),
   );
 
-  // On this server, or over a (possibly unsaved) SSH/SFTP connection; the saved password never leaves the server.
+  // On this server, or over a (possibly unsaved) SSH, SFTP or SMB connection; the saved password never leaves the server.
   app.post('/api/settings/folders/browse', editable, (req, reply) =>
     handle(reply, () => sources.browse(parse(browseInput, req.body))),
   );
+
+  app.get('/api/settings/folders/access', editable, (): FolderAccessOptions => ({ smb: deps.shares }));
 
   app.post<Id>('/api/settings/sources/:id/rescan', editable, (_req, reply) =>
     handle(reply, () => {
