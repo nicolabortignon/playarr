@@ -1,4 +1,4 @@
-import { Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, type LucideIcon } from 'lucide-react';
+import { Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, Settings, type LucideIcon } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
@@ -98,6 +98,18 @@ export function Sidebar() {
       <SidebarPlaylists />
 
       <div className="mt-auto space-y-3 px-3">
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            cn(
+              '-mx-3 flex h-9 items-center gap-3 rounded-md px-3 text-[14px] transition-colors',
+              isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
+            )
+          }
+        >
+          <Settings className="size-[17px]" strokeWidth={1.75} />
+          Settings
+        </NavLink>
         {lib && (
           <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-line pt-4 font-mono text-[11px] text-muted">
             <div>
@@ -173,7 +185,15 @@ function SidebarPlaylists() {
 function ConnectionStatus() {
   const { data, isError } = useHealth();
   const items = [
-    { label: 'Lidarr', ok: !isError && data?.lidarr.ok, detail: data?.lidarr.ok ? `v${data.lidarr.version}` : data?.lidarr.error },
+    ...(data?.lidarr
+      ? [
+          {
+            label: 'Lidarr',
+            ok: !isError && data.lidarr.ok,
+            detail: data.lidarr.ok ? `v${data.lidarr.version}` : data.lidarr.error,
+          },
+        ]
+      : []),
     { label: 'Streaming', ok: !isError && data?.media.ok, detail: data?.media.ok ? data.media.source : data?.media.error },
   ];
   return (

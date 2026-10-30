@@ -1,4 +1,4 @@
-import { ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, type LucideIcon } from 'lucide-react';
+import { ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { OfflineStorage } from '../components/OfflineStorage';
 import { PlaylistCover } from '../components/PlaylistCover';
@@ -26,7 +26,15 @@ export function LibraryPage() {
 
   return (
     <div className="max-w-3xl px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Library" />
+      <PageTitle title="Library">
+        <Link
+          to="/settings"
+          aria-label="Settings"
+          className="grid size-10 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper md:hidden"
+        >
+          <Settings className="size-5" />
+        </Link>
+      </PageTitle>
       <nav className="-mx-2 mb-12">
         {rows.map(({ to, label, icon: Icon, detail }) => (
           <Link key={to} to={to} className="flex items-center gap-4 rounded-lg px-2 py-3 transition hover:bg-paper/[0.04]">

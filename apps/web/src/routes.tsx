@@ -15,6 +15,7 @@ import { NotFoundPage } from './pages/NotFound';
 import { QueuePage } from './pages/Queue';
 import { RequestsPage } from './pages/Requests';
 import { SearchPage } from './pages/Search';
+import { SettingsPage } from './pages/Settings';
 
 export const routes: RouteObject[] = [
   {
@@ -34,6 +35,7 @@ export const routes: RouteObject[] = [
       { path: 'requests', element: <RequestsPage /> },
       { path: 'discover/artists/:mbid', element: <DiscoverArtistPage /> },
       { path: 'discover/artist', element: <FindArtistPage /> },
+      { path: 'settings/:panel?', element: <SettingsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
