@@ -54,7 +54,7 @@ A pnpm monorepo, all TypeScript:
 
 ## Running it
 
-Copy `.env.example` to `.env` and set at least `LIDARR_URL`, `LIDARR_API_KEY` and `MEDIA_SOURCE` (plus `PATH_MAP` if Playarr sees the music at a different path than Lidarr).
+Copy `.env.example` to `.env`. `LIDARR_URL` and `LIDARR_API_KEY` are optional: on first start they become the Lidarr source in **Settings → Sources**, where it's managed from then on. Set `MEDIA_SOURCE` (plus `PATH_MAP` if Playarr sees the music at a different path than Lidarr).
 
 ```bash
 pnpm install
