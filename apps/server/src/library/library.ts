@@ -107,20 +107,20 @@ export class Library {
   }
 
   private async build(): Promise<Snapshot> {
-    const results = await Promise.allSettled(
-      this.sources().map(async ({ id, source }) => {
-        try {
-          this.store.applySync(id, await source.sync());
-          this.store.setSyncError(id, null);
-        } catch (err) {
-          this.store.setSyncError(id, (err as Error).message);
-          throw err;
-        }
-      }),
-    );
-    const failures = results.flatMap((r) => (r.status === 'rejected' ? [r.reason as Error] : []));
+    const sources = this.sources();
+    const failures: Error[] = [];
+    // In Settings order: later sources match their files against what earlier ones reported.
+    for (const { id, source } of sources) {
+      try {
+        this.store.applySync(id, await source.sync());
+        this.store.setSyncError(id, null);
+      } catch (err) {
+        this.store.setSyncError(id, (err as Error).message);
+        failures.push(err as Error);
+      }
+    }
     // One unreachable source shouldn't hide the others: its last sync stays in the catalog.
-    if (failures.length && failures.length === results.length) throw failures[0];
+    if (failures.length && failures.length === sources.length) throw failures[0];
     for (const err of failures) this.log.error(`A source failed to sync: ${err.message}`);
     return toSnapshot(buildCatalog(this.store.load()));
   }

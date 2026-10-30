@@ -44,4 +44,21 @@ describe('Library', () => {
     expect(await library.albums()).toEqual([]);
     expect(sync).toHaveBeenCalledTimes(1);
   });
+
+  it('syncs sources in order, so later ones see what earlier ones reported', async () => {
+    const store = new CatalogStore(freshDb());
+    const a = store.addSource('lidarr', 'Lidarr');
+    const b = store.addSource('folder', 'Drive');
+    const seen: number[] = [];
+    const later: CatalogSource = {
+      kind: 'folder',
+      sync: async () => {
+        seen.push(store.load().copies.length);
+        return { artists: [], albums: [], tracks: [], copies: [] };
+      },
+    };
+    const library = new Library(store, () => [{ id: a, source: ok }, { id: b, source: later }], log);
+    await library.refresh();
+    expect(seen).toEqual([2]);
+  });
 });
