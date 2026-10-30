@@ -25,7 +25,7 @@ describe('buildCatalog', () => {
       trackCount: 2,
       totalTrackCount: 11,
       discCount: 1,
-      addedAt: '2026-10-02T10:00:00Z',
+      addedAt: '2026-10-01T10:00:00.000Z', // when the album first arrived: its earliest file
       format: FLAC,
       missingTracks: [],
     });

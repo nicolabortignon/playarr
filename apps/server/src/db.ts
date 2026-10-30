@@ -150,6 +150,8 @@ const MIGRATIONS = [
      undone_at TEXT
    );
    CREATE INDEX file_moves_by_batch ON file_moves (source_id, batch);`,
+  // When each album first entered the library (the earliest date of any of its copies, ever).
+  `ALTER TABLE catalog_albums ADD COLUMN added_at TEXT;`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

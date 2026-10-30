@@ -50,6 +50,8 @@ export interface AlbumRow {
   key: string;
   artistId: number;
   meta: AlbumInfo;
+  /** When the album first entered the library: the earliest date any of its copies ever had. */
+  addedAt?: string;
 }
 export interface TrackRow {
   id: number;
@@ -79,6 +81,19 @@ export interface CatalogRows {
 }
 
 type CatalogTable = 'catalog_artists' | 'catalog_albums' | 'catalog_tracks';
+
+/** How a sync's copies are dated (SourceSync.addedAt), and whether the source had no copies before. */
+interface CopyDating {
+  mode: 'source' | 'firstSeen';
+  firstSync: boolean;
+}
+
+/** A date as a canonical ISO string (so dates from different sources compare correctly as text), or null. */
+function isoDate(value: string | undefined): string | null {
+  if (!value) return null;
+  const t = Date.parse(value);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
 
 /** The catalog in SQLite: what each source reported, with permanent Playarr ids. */
 export class CatalogStore {
@@ -262,13 +277,17 @@ export class CatalogStore {
       const recordingOf = new Map(sync.tracks.map((t) => [t.key, t.recordingId]));
       const moves = new Map<string, string>();
       const seen = new Set<number>();
+      const dating: CopyDating = {
+        mode: sync.addedAt ?? 'source',
+        firstSync: !this.db.prepare('SELECT 1 FROM copies WHERE source_id = ? LIMIT 1').get(sourceId),
+      };
       for (const copy of sync.copies) {
         const trackId = trackIds.get(copy.trackKey);
         if (trackId === undefined) throw new Error(`Copy ${copy.ref} refers to unknown track ${copy.trackKey}`);
         const was = before.get(copy.ref);
         const is = recordingOf.get(copy.trackKey);
         if (was && is && was !== is && was.startsWith('local:') && !is.startsWith('local:')) moves.set(was, is);
-        seen.add(this.upsertCopy(sourceId, copy, trackId, now));
+        seen.add(this.upsertCopy(sourceId, copy, trackId, now, dating));
       }
       for (const [from, to] of moves) this.moveRecording(from, to);
       // The songs this source reports, including ones it has no file for (missing songs).
@@ -282,6 +301,20 @@ export class CatalogStore {
       }[]) {
         if (!seen.has(id)) remove.run(id);
       }
+      // Albums remember the earliest date any of their copies ever had, so replaced files (upgrades,
+      // other sources, organizing) never make an old album look new.
+      this.db
+        .prepare(
+          `UPDATE catalog_albums SET added_at = (
+             SELECT MIN(v) FROM (
+               SELECT catalog_albums.added_at AS v
+               UNION ALL
+               SELECT MIN(c.added_at) FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE t.album_id = catalog_albums.id
+             )
+           )
+           WHERE id IN (SELECT t.album_id FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE c.source_id = ?)`,
+        )
+        .run(sourceId);
       const state: SourceState = { lidarrAlbums: sync.lidarrAlbums };
       this.db
         .prepare('UPDATE sources SET state = ?, last_sync_at = ? WHERE id = ?')
@@ -318,9 +351,15 @@ export class CatalogStore {
         key: r.key,
         meta: JSON.parse(r.meta) as ArtistInfo,
       })),
-      albums: all<{ id: number; key: string; artist_id: number; meta: string }>(
-        'SELECT id, key, artist_id, meta FROM catalog_albums',
-      ).map((r) => ({ id: r.id, key: r.key, artistId: r.artist_id, meta: JSON.parse(r.meta) as AlbumInfo })),
+      albums: all<{ id: number; key: string; artist_id: number; meta: string; added_at: string | null }>(
+        'SELECT id, key, artist_id, meta, added_at FROM catalog_albums',
+      ).map((r) => ({
+        id: r.id,
+        key: r.key,
+        artistId: r.artist_id,
+        meta: JSON.parse(r.meta) as AlbumInfo,
+        ...(r.added_at ? { addedAt: r.added_at } : {}),
+      })),
       tracks: all<{ id: number; key: string; album_id: number; recording_id: string; meta: string }>(
         'SELECT id, key, album_id, recording_id, meta FROM catalog_tracks',
       ).map((r) => ({
@@ -675,11 +714,22 @@ export class CatalogStore {
     return Number(res.lastInsertRowid);
   }
 
-  private upsertCopy(sourceId: number, copy: SourceCopy, trackId: number, now: string): number {
-    const fields = [trackId, copy.path, copy.size, JSON.stringify(copy.format), copy.addedAt ?? null, now] as const;
+  private upsertCopy(sourceId: number, copy: SourceCopy, trackId: number, now: string, dating: CopyDating): number {
+    const own = isoDate(copy.addedAt);
     const existing = this.db
-      .prepare('SELECT id FROM copies WHERE source_id = ? AND source_ref = ?')
-      .get(sourceId, copy.ref) as { id: number } | undefined;
+      .prepare('SELECT id, added_at FROM copies WHERE source_id = ? AND source_ref = ?')
+      .get(sourceId, copy.ref) as { id: number; added_at: string | null } | undefined;
+    // Folders: when Playarr first found the file (its own time only on the first scan, never ahead of now).
+    // Lidarr: when Lidarr imported it.
+    const addedAt =
+      dating.mode === 'source'
+        ? own
+        : existing
+          ? (existing.added_at ?? own ?? now)
+          : dating.firstSync && own && own < now
+            ? own
+            : now;
+    const fields = [trackId, copy.path, copy.size, JSON.stringify(copy.format), addedAt, now] as const;
     if (existing) {
       this.db
         .prepare('UPDATE copies SET track_id = ?, path = ?, size = ?, format = ?, added_at = ?, updated_at = ? WHERE id = ?')

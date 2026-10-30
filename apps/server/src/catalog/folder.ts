@@ -63,7 +63,7 @@ export function folderSync(
   const albums = new Map<string, SourceAlbum>();
   const tracks = new Map<string, SourceTrack>();
   const matchedAlbums = new Map<string, MbReleaseInfo>();
-  const sync: SourceSync = { artists: [], albums: [], tracks: [], copies: [], metaRank: FOLDER_META_RANK };
+  const sync: SourceSync = { artists: [], albums: [], tracks: [], copies: [], metaRank: FOLDER_META_RANK, addedAt: 'firstSeen' };
 
   for (const e of [...entries].sort((a, b) => a.rel.localeCompare(b.rel))) {
     const t = e.tags;

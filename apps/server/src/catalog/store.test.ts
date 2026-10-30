@@ -56,6 +56,54 @@ describe('CatalogStore', () => {
     expect(store.load().albums.find((a) => a.key === 'mb:rg-9')!.id).toBe(71);
   });
 
+  it('dates an album by when it first entered the library, across sources and file changes', () => {
+    const { store, sourceId } = setup();
+    store.applySync(sourceId, mezzanine());
+    const added = () => store.load().albums[0]!.addedAt;
+    // Lidarr imported the files on Oct 1 and 2: the album arrived on Oct 1.
+    expect(added()).toBe('2026-10-01T10:00:00.000Z');
+    // A quality upgrade replaces both files with newer ones: still Oct 1.
+    const upgraded = mezzanine();
+    upgraded.copies = upgraded.copies.map((c, i) => ({ ...c, ref: `90${10 + i}`, preferredId: undefined, addedAt: '2026-10-20T10:00:00Z' }));
+    store.applySync(sourceId, upgraded);
+    expect(added()).toBe('2026-10-01T10:00:00.000Z');
+    // A copy of the same album in a folder doesn't make it new either.
+    const folder = store.addSource('folder', 'Music');
+    const copy = mezzanine();
+    copy.addedAt = 'firstSeen';
+    copy.copies = copy.copies.map((c) => ({ ...c, ref: `x/${c.ref}`, preferredId: undefined, addedAt: '2026-10-25T10:00:00Z' }));
+    store.applySync(folder, copy);
+    expect(added()).toBe('2026-10-01T10:00:00.000Z');
+  });
+
+  it('dates folder files by when Playarr found them, using file times only on the first scan', () => {
+    const store = new CatalogStore(freshDb());
+    const folder = store.addSource('folder', 'Music');
+    const first = mezzanine();
+    first.addedAt = 'firstSeen';
+    first.copies = [{ ...first.copies[0]!, addedAt: '2020-01-01T00:00:00Z' }];
+    store.applySync(folder, first);
+    const copyAdded = (ref: string) => store.load().copies.find((c) => c.path.endsWith(ref))!.addedAt;
+    // The collection was already there: its own file time keeps its place in history.
+    expect(copyAdded('01.flac')).toBe('2020-01-01T00:00:00.000Z');
+    // Later: a retagged file (new mtime) keeps its date; a new file is dated now, whatever its mtime says.
+    const before = new Date().toISOString();
+    const later = mezzanine();
+    later.addedAt = 'firstSeen';
+    later.copies = later.copies.map((c) => ({ ...c, addedAt: '2021-06-01T00:00:00Z' }));
+    store.applySync(folder, later);
+    expect(copyAdded('01.flac')).toBe('2020-01-01T00:00:00.000Z');
+    expect(copyAdded('02.flac')! >= before).toBe(true);
+    // A file time in the future (clock skew) never puts a first-scan file ahead of now.
+    const other = new CatalogStore(freshDb());
+    const src = other.addSource('folder', 'Music');
+    const skewed = mezzanine();
+    skewed.addedAt = 'firstSeen';
+    skewed.copies = [{ ...skewed.copies[0]!, addedAt: '2999-01-01T00:00:00Z' }];
+    other.applySync(src, skewed);
+    expect(other.load().copies[0]!.addedAt! < '2999').toBe(true);
+  });
+
   it('removes copies the source no longer has, but keeps the song row', () => {
     const { store, sourceId } = setup();
     store.applySync(sourceId, mezzanine());

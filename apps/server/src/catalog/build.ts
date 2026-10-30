@@ -233,7 +233,8 @@ function toAlbumDetail(
     trackCount: tracks.length,
     totalTrackCount: Math.max(m.totalTrackCount ?? 0, tracks.length + missingTracks.length),
     coverUrl: m.coverUrl ?? fallbackCover,
-    addedAt: added.sort().at(-1),
+    // When the album first entered the library (kept by the store across file changes), else its earliest copy.
+    addedAt: row.addedAt ?? added.sort()[0],
     format: mostCommonFormat(tracks),
     overview: m.overview,
     tracks,

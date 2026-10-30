@@ -82,6 +82,13 @@ export interface SourceSync {
   lidarrAlbums?: LidarrAlbumState[];
   /** How much this source's metadata is trusted: lower wins (Lidarr 0, folder tags 2). Default 0. */
   metaRank?: number;
+  /**
+   * What copies' addedAt means. 'source' (default, Lidarr): when the source got the file, stored as is.
+   * 'firstSeen' (folders): only the file's own time. The catalog then dates each file by when Playarr
+   * first found it, keeping that date on later scans; the file time is used only on the source's first
+   * sync, so an existing collection keeps its order instead of all arriving "now".
+   */
+  addedAt?: 'source' | 'firstSeen';
 }
 
 export interface CatalogSource {
