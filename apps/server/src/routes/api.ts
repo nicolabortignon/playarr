@@ -22,7 +22,7 @@ export function apiRoutes(
 
   app.get('/api/health', async (): Promise<HealthStatus> => {
     const [lidarrResult, mediaResult] = await Promise.allSettled([
-      lidarr.systemStatus(),
+      lidarr.configured ? lidarr.systemStatus() : Promise.resolve(undefined),
       (async () => {
         // Probe a real file so a bad PATH_MAP shows up here, not on first play.
         const probe = (await library.albums('added', 1))[0];
@@ -35,9 +35,11 @@ export function apiRoutes(
     const mediaOk = mediaResult.status === 'fulfilled';
     return {
       ok: lidarrOk && mediaOk,
-      lidarr: lidarrOk
-        ? { ok: true, version: lidarrResult.value.version }
-        : { ok: false, error: (lidarrResult.reason as Error).message },
+      lidarr: !lidarr.configured
+        ? undefined
+        : lidarrOk
+          ? { ok: true, version: lidarrResult.value?.version }
+          : { ok: false, error: (lidarrResult.reason as Error).message },
       media: mediaOk
         ? { source: media.kind, ok: true }
         : { source: media.kind, ok: false, error: (mediaResult.reason as Error).message },

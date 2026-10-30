@@ -1,8 +1,12 @@
 import { z } from 'zod';
 
 const schema = z.object({
-  LIDARR_URL: z.url().transform((u) => u.replace(/\/+$/, '')),
-  LIDARR_API_KEY: z.string().min(1, 'LIDARR_API_KEY is required'),
+  // Optional: copied into Settings → Sources on first start, then managed there.
+  LIDARR_URL: z
+    .url()
+    .transform((u) => u.replace(/\/+$/, ''))
+    .optional(),
+  LIDARR_API_KEY: z.string().optional(),
   PORT: z.coerce.number().int().default(4000),
   HOST: z.string().default('0.0.0.0'),
   LIBRARY_REFRESH_MINUTES: z.coerce.number().positive().default(10),

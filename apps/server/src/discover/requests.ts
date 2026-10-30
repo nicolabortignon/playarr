@@ -82,6 +82,9 @@ export class Requests {
 
   async request(ref: AlbumRef): Promise<AlbumRequest> {
     await this.loaded;
+    if (!this.lidarr.configured) {
+      throw new RequestError('Requests need a Lidarr source. Add one in Settings → Sources.', 409);
+    }
     const lookup = ref.mbid
       ? await this.lookupByMbid(ref.mbid)
       : ref.releaseMbid

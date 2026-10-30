@@ -5,7 +5,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
 import { Analyzer } from './analysis/analyzer.ts';
-import { LidarrSource } from './catalog/lidarr.ts';
+import { SourceManager } from './catalog/sources.ts';
 import { CatalogStore } from './catalog/store.ts';
 import { PlaylistCovers } from './cover/index.ts';
 import { openDatabase } from './db.ts';
@@ -23,6 +23,7 @@ import { artRoutes, LocalArt } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
 import { playlistRoutes } from './routes/playlists.ts';
+import { settingsRoutes } from './routes/settings.ts';
 import { streamRoutes } from './routes/stream.ts';
 
 const config = loadConfig();
@@ -31,11 +32,14 @@ const app = Fastify({
   logController: new LogController({ disableRequestLogging: process.env.LOG_REQUESTS !== '1' }),
 });
 
-const lidarr = new LidarrClient(config.LIDARR_URL, config.LIDARR_API_KEY);
+// One Lidarr client for the whole server; the Lidarr source in Settings points it at a Lidarr (or not).
+const lidarr = new LidarrClient();
 const db = openDatabase(resolve(config.DATA_DIR));
 const store = new CatalogStore(db);
-// Phase 1: one Lidarr source, configured from .env. Settings manages sources from phase 2.
-const library = new Library(store, [{ id: store.ensureSource('lidarr', 'Lidarr'), source: new LidarrSource(lidarr) }], {
+const sources = new SourceManager(store, lidarr, { info: (m) => app.log.info(m) });
+sources.seedFromEnv({ url: config.LIDARR_URL, apiKey: config.LIDARR_API_KEY });
+sources.active(); // configure the Lidarr client before anything uses it
+const library = new Library(store, () => sources.active(), {
   info: (m) => app.log.info(m),
   error: (m) => app.log.error(m),
 });
@@ -66,6 +70,7 @@ streamRoutes(app, { config, library, media });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
+settingsRoutes(app, { sources, library });
 
 // In production, serve the built web app from the same origin.
 const webDist = config.WEB_DIST
@@ -91,7 +96,7 @@ const shutdown = async () => {
 process.on('SIGINT', shutdown).on('SIGTERM', shutdown);
 
 await app.listen({ port: config.PORT, host: config.HOST });
-app.log.info(`Lidarr: ${config.LIDARR_URL} · media source: ${media.kind}`);
+app.log.info(`Sources: ${store.listSources().map((s) => s.name).join(', ') || 'none'} · media source: ${media.kind}`);
 
 // Serve the catalog saved by the last run immediately, then sync the sources in the background.
 library.loadStored();
