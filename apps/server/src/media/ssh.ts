@@ -65,6 +65,45 @@ export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+/** Runs commands over a shared SSH connection. */
+export interface Shell {
+  run(command: string): Promise<string>;
+  runBuffer(command: string): Promise<Buffer>;
+}
+
+export class SshShell implements Shell {
+  constructor(private readonly conn: SshConnection) {}
+
+  async exec(command: string): Promise<ClientChannel> {
+    const client = await this.conn.get();
+    return new Promise((resolve, reject) => {
+      client.exec(command, (err, channel) => (err ? reject(err) : resolve(channel)));
+    });
+  }
+
+  async run(command: string): Promise<string> {
+    return (await this.runBuffer(command)).toString('utf8');
+  }
+
+  /** stdout of a command; rejects with stderr on a non-zero exit. */
+  async runBuffer(command: string): Promise<Buffer> {
+    const channel = await this.exec(command);
+    return new Promise((resolve, reject) => {
+      const out: Buffer[] = [];
+      let err = '';
+      channel.on('data', (d: Buffer) => out.push(d));
+      channel.stderr.on('data', (d: Buffer) => (err += d));
+      channel.on('close', (code: number | null) => {
+        if (code === 0) return resolve(Buffer.concat(out));
+        reject(new Error(cleanSshError(err) || `exit code ${code}`));
+      });
+    });
+  }
+}
+
+/** Drop sshd's noise about a missing home directory. */
+export const cleanSshError = (stderr: string) => stderr.replace(/^Could not chdir to home directory.*\n?/m, '').trim();
+
 /**
  * Reads files by running commands over SSH (`stat`, `tail | head`).
  * For hosts where SFTP is restricted but the account has a shell, e.g. UGREEN UGOS,
@@ -72,38 +111,17 @@ export function shellQuote(s: string): string {
  */
 export class SshExecMediaSource implements MediaSource {
   readonly kind = 'ssh' as const;
+  private readonly shell: SshShell;
 
   constructor(
     private readonly conn: SshConnection,
     private readonly ffmpeg = 'ffmpeg',
-  ) {}
-
-  private async exec(command: string): Promise<ClientChannel> {
-    const client = await this.conn.get();
-    return new Promise((resolve, reject) => {
-      client.exec(command, (err, channel) => (err ? reject(err) : resolve(channel)));
-    });
-  }
-
-  /** Run a command and collect stdout; rejects with stderr on a non-zero exit. */
-  private async run(command: string): Promise<string> {
-    const channel = await this.exec(command);
-    return new Promise((resolve, reject) => {
-      let out = '';
-      let err = '';
-      channel.on('data', (d: Buffer) => (out += d));
-      channel.stderr.on('data', (d: Buffer) => (err += d));
-      channel.on('close', (code: number | null) => {
-        if (code === 0) return resolve(out);
-        // Drop sshd's noise about a missing home directory.
-        const msg = err.replace(/^Could not chdir to home directory.*\n?/m, '').trim();
-        reject(new Error(msg || `exit code ${code}`));
-      });
-    });
+  ) {
+    this.shell = new SshShell(conn);
   }
 
   async stat(path: string): Promise<FileStat> {
-    const out = await this.run(`stat -L -c '%s %Y' -- ${shellQuote(path)}`);
+    const out = await this.shell.run(`stat -L -c '%s %Y' -- ${shellQuote(path)}`);
     const [size, mtime] = out.trim().split(' ').map(Number);
     if (!Number.isFinite(size) || !Number.isFinite(mtime)) throw new Error(`Unexpected stat output: ${out}`);
     return { size: size!, mtimeMs: mtime! * 1000 };
@@ -115,7 +133,7 @@ export class SshExecMediaSource implements MediaSource {
     const command = range
       ? `tail -c +${range.start + 1} -- ${file} | head -c ${range.end - range.start + 1}`
       : `cat -- ${file}`;
-    const channel = await this.exec(command);
+    const channel = await this.shell.exec(command);
     channel.stderr.resume();
     return channel;
   }
@@ -128,7 +146,7 @@ export class SshExecMediaSource implements MediaSource {
   /** Decode on the host (niced, so playback stays smooth); only small mono PCM crosses the network. */
   async pcm(path: string, opts: PcmOptions): Promise<Buffer> {
     const args = ffmpegPcmArgs(path, opts).map(shellQuote).join(' ');
-    const channel = await this.exec(`nice -n 10 ${shellQuote(this.ffmpeg)} ${args}`);
+    const channel = await this.shell.exec(`nice -n 10 ${shellQuote(this.ffmpeg)} ${args}`);
     const abort = () => channel.close();
     opts.signal?.addEventListener('abort', abort, { once: true });
     return new Promise((resolve, reject) => {
@@ -140,8 +158,7 @@ export class SshExecMediaSource implements MediaSource {
         opts.signal?.removeEventListener('abort', abort);
         if (opts.signal?.aborted) return reject(opts.signal.reason);
         if (code === 0) return resolve(Buffer.concat(chunks));
-        const msg = err.replace(/^Could not chdir to home directory.*\n?/m, '').trim();
-        reject(new Error(`ffmpeg: ${msg || `exit code ${code}`}`));
+        reject(new Error(`ffmpeg: ${cleanSshError(err) || `exit code ${code}`}`));
       });
     });
   }
