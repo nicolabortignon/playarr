@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FOLDER_META_RANK, folderSync, type FolderEntry } from './folder.ts';
+import { describeFile, FOLDER_META_RANK, folderSync, type FolderEntry } from './folder.ts';
+import type { MbReleaseInfo } from './mbRelease.ts';
 import { CatalogStore } from './store.ts';
 import type { TagInfo } from './tags.ts';
 import { FLAC, freshDb, mezzanine } from './testFixtures.ts';
@@ -99,5 +100,53 @@ describe('folderSync', () => {
     );
     expect(sync.albums).toHaveLength(1);
     expect(sync.albums[0]).toMatchObject({ genres: ['Rock', 'Indie', 'Shoegaze'], releaseDate: '2001-01-01T00:00:00Z' });
+  });
+
+  const mbMezzanine: MbReleaseInfo = {
+    id: 'rel-1',
+    title: 'Mezzanine',
+    artistName: 'Massive Attack',
+    artistId: 'art-1',
+    releaseGroup: { id: 'rg-1', title: 'Mezzanine', primaryType: 'Album', secondaryTypes: [], firstReleaseDate: '1998-04-17' },
+    tracks: [
+      { disc: 1, position: 1, title: 'Angel', length: 379, recordingId: 'rec-1' },
+      { disc: 1, position: 2, title: 'Risingson', length: 299, recordingId: 'rec-2' },
+    ],
+  };
+
+  it('describes a file from its tags or its name', () => {
+    expect(describeFile('Portishead/1994 - Dummy/03 - Sour Times.flac', { genres: [], duration: 250, format: FLAC })).toEqual({
+      artistName: 'Portishead',
+      albumTitle: 'Dummy',
+      title: 'Sour Times',
+      trackNumber: 3,
+      discNumber: 1,
+      duration: 250,
+    });
+  });
+
+  it('reports the rest of a matched release as missing songs, with MusicBrainz metadata', () => {
+    const sync = folderSync(
+      [
+        entry('x/01.flac', {
+          title: 'Angel',
+          album: 'Mezzanine',
+          albumArtist: 'Massive Attack',
+          albumArtistMbid: 'art-1',
+          recordingMbid: 'rec-1',
+          releaseGroupMbid: 'rg-1',
+          releaseId: 'rel-1',
+          trackNumber: 1,
+        }),
+      ],
+      EMPTY,
+      new Map([['rel-1', mbMezzanine]]),
+    );
+    expect(sync.albums[0]).toMatchObject({ key: 'mb:rg-1', title: 'Mezzanine', releaseDate: '1998-04-17', totalTrackCount: 2, metaRank: 1 });
+    expect(sync.tracks.map((t) => [t.key, t.metaRank])).toEqual([
+      ['mb:rg-1#rec-1', 1],
+      ['mb:rg-1#rec-2', 1],
+    ]);
+    expect(sync.copies).toHaveLength(1);
   });
 });
