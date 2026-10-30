@@ -84,6 +84,20 @@ Anything under /host can then be added in Settings → Sources → Folder.
 
 `/config` holds favorites, playlists and song analysis: keep it and back it up. `/cache` holds artwork and covers and is safe to delete.
 
+### Keeping a server up to date from GitHub
+
+`docker/compose.yaml` and `docker/update.sh` run Playarr as a compose service that rebuilds itself from the latest commit on GitHub. Put both in a folder on the server (for example `/volume1/docker/playarr`) with a `.env` holding `LIDARR_URL`, `LIDARR_API_KEY` and `MUSIC_DIR`, then:
+
+```bash
+sudo sh update.sh            # build and start the latest commit on main; does nothing if it's already running
+sudo sh update.sh --force    # rebuild anyway
+sudo sh update.sh --ref X    # deploy a branch, tag or commit
+```
+
+It downloads the source from GitHub (no git needed), builds with `docker compose up -d --build`, and waits until Playarr answers. `config`, `cache` and `.env` are kept, and a failed build leaves the running container alone. Each update replaces `compose.yaml` with the deployed commit's copy, so put your own mounts in `compose.override.yaml` next to it. `--quiet` makes it suitable for cron, for example every 15 minutes.
+
+From a development machine with the SSH settings in `.env`, `pnpm deploy:nas` does the same over SSH; `pnpm deploy:nas --local` ships the local last commit instead, for work that isn't pushed.
+
 ## Status and roadmap
 
 Playarr has no login yet, so don't expose it to the internet without something in front of it: anyone who can reach it can stream the library and request albums through Lidarr. Planned next:

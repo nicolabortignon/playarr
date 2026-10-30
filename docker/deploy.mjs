@@ -1,6 +1,7 @@
 // Deploy Playarr to the NAS as a standalone Docker service (docker/compose.yaml), from this machine.
 //
-//   pnpm deploy:nas              ship the last commit, build on the NAS, (re)start, check it's up
+//   pnpm deploy:nas              have the NAS build the latest commit on GitHub main (docker/update.sh), check it's up
+//   pnpm deploy:nas --local      ship this machine's last commit instead (for work that isn't pushed)
 //   pnpm deploy:nas --with-data  also copy this machine's favorites, playlists and song analysis,
 //                                if the NAS has none yet (add --force-data to replace them)
 //
@@ -32,18 +33,35 @@ if (!env.LIDARR_API_KEY || !LIDARR_URL) fail('Set LIDARR_URL (or NAS_LIDARR_URL)
 if (!SUDO_PASSWORD) fail('Docker on the NAS needs sudo: set NAS_SUDO_PASSWORD (or SSH_PASSWORD) in .env');
 
 const git = (...a) => execFileSync('git', a, { cwd: root, maxBuffer: 1 << 30 });
-if (git('status', '--porcelain').length) console.warn('! Uncommitted changes are not deployed: this ships the last commit.');
+const local = args.has('--local');
 const revision = git('rev-parse', '--short', 'HEAD').toString().trim();
+if (local && git('status', '--porcelain').length) console.warn('! Uncommitted changes are not deployed: this ships the last commit.');
+if (!local) {
+  const head = git('rev-parse', 'HEAD').toString().trim();
+  const remote = git('ls-remote', 'origin', 'refs/heads/main').toString().split('\t')[0];
+  if (remote && remote !== head) {
+    console.warn(`! GitHub main is at ${remote.slice(0, 7)}, this checkout at ${revision}: the NAS builds GitHub's. Push first, or use --local.`);
+  }
+}
 
 const conn = await connect();
 try {
-  step(`Shipping ${revision} to ${env.SSH_HOST}:${DIR}`);
-  await run(
-    `mkdir -p ${DIR}/config ${DIR}/cache && rm -rf ${DIR}/src.new && mkdir ${DIR}/src.new` +
-      ` && tar -x -C ${DIR}/src.new && echo ${revision} > ${DIR}/src.new/REVISION` +
-      ` && rm -rf ${DIR}/src && mv ${DIR}/src.new ${DIR}/src && cp ${DIR}/src/docker/compose.yaml ${DIR}/`,
-    { stdin: git('archive', '--format=tar', 'HEAD') },
-  );
+  if (local) {
+    step(`Shipping ${revision} to ${env.SSH_HOST}:${DIR}`);
+    await run(
+      `mkdir -p ${DIR}/config ${DIR}/cache && rm -rf ${DIR}/src.new && mkdir ${DIR}/src.new` +
+        ` && tar -x -C ${DIR}/src.new && echo ${revision} > ${DIR}/src.new/REVISION` +
+        ` && rm -rf ${DIR}/src && mv ${DIR}/src.new ${DIR}/src && cp ${DIR}/src/docker/compose.yaml ${DIR}/` +
+        // The NAS's update.sh would otherwise think GitHub's commit is still the one running.
+        ` && rm -f ${DIR}/DEPLOYED`,
+      { stdin: git('archive', '--format=tar', 'HEAD') },
+    );
+  } else {
+    step(`Updating ${env.SSH_HOST}:${DIR} from GitHub`);
+    await run(`mkdir -p ${DIR} && cat > ${DIR}/update.sh.new && mv ${DIR}/update.sh.new ${DIR}/update.sh`, {
+      stdin: readFileSync(join(root, 'docker/update.sh')),
+    });
+  }
   const settings = [
     `LIDARR_URL=${LIDARR_URL}`,
     `LIDARR_API_KEY=${env.LIDARR_API_KEY}`,
@@ -54,9 +72,13 @@ try {
 
   if (args.has('--with-data') || args.has('--force-data')) await copyData();
 
-  step('Building and starting (the first build takes a few minutes)');
-  await run(`${COMPOSE} up -d --build --remove-orphans`, { sudo: true });
-  await run(`docker image prune -f --filter label=com.docker.compose.project=playarr > /dev/null`, { sudo: true, quiet: true });
+  if (local) {
+    step('Building and starting (the first build takes a few minutes)');
+    await run(`${COMPOSE} up -d --build --remove-orphans`, { sudo: true });
+    await run(`docker image prune -f --filter label=com.docker.compose.project=playarr > /dev/null`, { sudo: true, quiet: true });
+  } else {
+    await run(`sh ${DIR}/update.sh`, { sudo: true });
+  }
 
   step('Checking');
   const health = await waitForHealth();
