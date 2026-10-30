@@ -101,7 +101,7 @@ export interface HealthStatus {
   ok: boolean;
   /** Absent when there is no Lidarr source. */
   lidarr?: { ok: boolean; version?: string; error?: string };
-  media: { source: 'none' | 'local' | 'sftp' | 'ssh'; ok: boolean; error?: string };
+  media: { source: 'none' | 'local' | 'sftp' | 'ssh' | 'smb'; ok: boolean; error?: string };
   library?: LibraryStats;
 }
 
@@ -294,7 +294,7 @@ export * from './range.ts';
 
 export type SourceKind = 'lidarr' | 'folder';
 
-export type FolderAccessKind = 'local' | 'ssh' | 'sftp';
+export type FolderAccessKind = 'local' | 'ssh' | 'sftp' | 'smb';
 
 export interface SourceInfo {
   id: number;
@@ -307,12 +307,14 @@ export interface SourceInfo {
   settings?: {
     url?: string;
     path?: string;
-    /** Folder sources: where the folder is. Absent means this server. */
+    /** Folder sources: where the folder is. Absent means this server. For SMB, `path` is /share/folder. */
     access?: FolderAccessKind;
     host?: string;
     port?: number;
     user?: string;
     privateKeyPath?: string;
+    /** SMB: the account's domain (rclone's default is WORKGROUP). */
+    domain?: string;
   };
   /** Secret fields that have a saved value. The values themselves are never sent. */
   secrets: string[];
@@ -339,7 +341,7 @@ export interface SourceInput {
   kind?: SourceKind;
   name?: string;
   enabled?: boolean;
-  /** Lidarr: url, apiKey. Folder: path, plus access/host/port/user/password/privateKeyPath for SSH or SFTP. Leaving a secret out keeps the saved one. */
+  /** Lidarr: url, apiKey. Folder: path, plus access/host/port/user/password for SSH, SFTP or SMB, with privateKeyPath (SSH, SFTP) or domain (SMB); for SMB, `path` is /share/folder. Leaving a secret out keeps the saved one. */
   settings?: {
     url?: string;
     apiKey?: string;
@@ -350,6 +352,7 @@ export interface SourceInput {
     user?: string;
     password?: string;
     privateKeyPath?: string;
+    domain?: string;
   };
 }
 
@@ -461,7 +464,7 @@ export interface OrganizeResult {
   skipped: OrganizeSkip[];
 }
 
-/** Browse folders on this server, or over a (possibly unsaved) SSH/SFTP connection. */
+/** Browse folders on this server, or over a (possibly unsaved) SSH, SFTP or SMB connection. For SMB, `/` lists the shares. */
 export interface FolderBrowseRequest {
   path?: string;
   /** A saved source whose connection (and saved password) to use. */
@@ -473,5 +476,12 @@ export interface FolderBrowseRequest {
     user?: string;
     password?: string;
     privateKeyPath?: string;
+    domain?: string;
   };
+}
+
+/** Which folder locations this server can reach. */
+export interface FolderAccessOptions {
+  /** rclone is installed, so SMB shares work. */
+  smb: boolean;
 }

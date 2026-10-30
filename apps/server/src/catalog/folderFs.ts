@@ -24,9 +24,9 @@ export interface FsEntry {
   file: boolean;
 }
 
-/** A folder source's filesystem: this server's disk, or another machine over SSH or SFTP. */
+/** A folder source's filesystem: this server's disk, another machine over SSH or SFTP, or an SMB share. */
 export interface FolderFs {
-  readonly kind: 'local' | 'ssh' | 'sftp';
+  readonly kind: 'local' | 'ssh' | 'sftp' | 'smb';
   /** Streams bytes (and decodes audio, where it can) for streaming and analysis. */
   readonly media: MediaSource;
   /** How many files to read at once. */

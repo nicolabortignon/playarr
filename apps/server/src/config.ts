@@ -36,6 +36,8 @@ const schema = z.object({
   FFMPEG_PATH: z.string().default('ffmpeg'),
   /** Chromaprint's fpcalc, for identifying songs by their sound (optional). */
   FPCALC_PATH: z.string().default('fpcalc'),
+  /** rclone, for folders on SMB shares (optional). */
+  RCLONE_PATH: z.string().default('rclone'),
 
   // Used by MEDIA_SOURCE=sftp and MEDIA_SOURCE=ssh.
   SSH_HOST: z.string().optional(),

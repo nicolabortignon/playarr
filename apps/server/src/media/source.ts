@@ -11,7 +11,7 @@ export type { ByteRange };
 
 /** Where audio bytes come from: local disk in production, SSH/SFTP from a dev machine. */
 export interface MediaSource {
-  readonly kind: 'none' | 'local' | 'sftp' | 'ssh';
+  readonly kind: 'none' | 'local' | 'sftp' | 'ssh' | 'smb';
   stat(path: string): Promise<FileStat>;
   open(path: string, range?: ByteRange): Promise<Readable>;
   /** Throws with a human-readable message if the source is unusable. */
