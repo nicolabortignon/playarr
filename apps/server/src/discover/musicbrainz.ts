@@ -4,6 +4,8 @@
  * https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting
  */
 
+import type { MbReleaseRaw } from '../catalog/mbRelease.ts';
+
 export interface MbArtistCredit {
   name: string;
   joinphrase?: string;
@@ -19,6 +21,15 @@ export interface MbReleaseGroup {
   'artist-credit'?: MbArtistCredit[];
 }
 
+export interface MbReleaseHit {
+  id: string;
+  score: number;
+  title: string;
+  'track-count': number;
+  date?: string;
+  'release-group'?: { id: string; 'primary-type'?: string; 'secondary-types'?: string[] | null };
+  'artist-credit'?: MbArtistCredit[];
+}
 
 const BASE = 'https://musicbrainz.org/ws/2';
 const MIN_INTERVAL_MS = 1100;
@@ -101,6 +112,22 @@ export class MusicBrainz {
       `/release-group?artist=${encodeURIComponent(artistMbid)}&type=album|ep&limit=100`,
       signal,
     ).then((r) => r['release-groups']);
+  }
+
+  /** Releases (editions) by album title and artist, best match first. */
+  searchReleases(artistName: string, albumTitle: string, signal?: AbortSignal) {
+    const query = `release:"${luceneEscape(albumTitle)}" AND artist:"${luceneEscape(artistName)}"`;
+    return this.get<{ releases: MbReleaseHit[] }>(`/release?query=${encodeURIComponent(query)}&limit=10`, signal).then(
+      (r) => r.releases,
+    );
+  }
+
+  /** One release with its track list. */
+  release(releaseMbid: string, signal?: AbortSignal) {
+    return this.get<MbReleaseRaw>(
+      `/release/${encodeURIComponent(releaseMbid)}?inc=recordings+artist-credits+release-groups`,
+      signal,
+    );
   }
 }
 
