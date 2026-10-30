@@ -13,6 +13,8 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A control already used the key (e.g. arrows moving between radio options in Settings).
+      if (e.defaultPrevented) return;
       const target = e.target as HTMLElement;
       if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;

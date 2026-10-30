@@ -1,11 +1,12 @@
 import { HardDriveDownload } from 'lucide-react';
-import { cn } from '../lib/cn';
 import { formatBytes, plural } from '../lib/format';
 import { canKeepOffline, clearOffline, keptBytes, OFFLINE_LIMITS, setOfflineLimit, useOffline, useWorkerReady } from '../player/offline';
-import { SectionHeader } from './Section';
+import { PillGroup, SettingsSection } from './SettingsControls';
 
-/** Library → On this device: what's kept, how much may be, and a way to free the space. */
-export function OfflineStorage() {
+const LIMIT_OPTIONS = OFFLINE_LIMITS.map((value) => ({ value, label: value ? formatBytes(value) : 'Off' }));
+
+/** Settings → Playback → On this device: what's kept, how much may be, and a way to free the space. */
+export function OfflineStorage({ className }: { className?: string }) {
   const songs = useOffline((s) => s.songs);
   const limit = useOffline((s) => s.limit);
   const count = Object.keys(songs).length;
@@ -13,8 +14,7 @@ export function OfflineStorage() {
   const ready = useWorkerReady();
 
   return (
-    <section className="mt-12">
-      <SectionHeader title="On this device" />
+    <SettingsSection title="On this device" className={className}>
       {!canKeepOffline ? (
         <p className="max-w-prose text-sm text-muted">
           Playarr can keep the next songs in your queue on this device, so they start instantly and play without a connection. Browsers only
@@ -57,23 +57,12 @@ export function OfflineStorage() {
 
           <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
             <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Keep up to</span>
-            <div role="radiogroup" aria-label="Space for songs on this device" className="flex flex-wrap gap-1.5">
-              {OFFLINE_LIMITS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={limit === value}
-                  onClick={() => void setOfflineLimit(value)}
-                  className={cn(
-                    'h-8 rounded-full border px-3.5 font-mono text-[11px] tracking-wider uppercase transition',
-                    limit === value ? 'border-accent bg-accent text-accent-ink' : 'border-line text-paper-dim hover:border-paper/25',
-                  )}
-                >
-                  {value ? formatBytes(value) : 'Off'}
-                </button>
-              ))}
-            </div>
+            <PillGroup
+              label="Space for songs on this device"
+              options={LIMIT_OPTIONS}
+              value={limit}
+              onChange={(value) => void setOfflineLimit(value)}
+            />
             {count > 0 && (
               <button
                 type="button"
@@ -86,6 +75,6 @@ export function OfflineStorage() {
           </div>
         </>
       )}
-    </section>
+    </SettingsSection>
   );
 }
