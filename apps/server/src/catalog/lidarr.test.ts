@@ -74,6 +74,20 @@ function fakeLidarr() {
 }
 
 describe('LidarrSource', () => {
+  it('reports missing songs of albums it has files for', async () => {
+    const { client } = fakeLidarr();
+    (client as unknown as { tracksForArtist: () => Promise<LidarrTrack[]> }).tracksForArtist = async () => [
+      track(100, 10, 'rec-1', '1', 1000),
+      track(104, 10, 'rec-4', '4', 0), // Mezzanine, no file
+      track(103, 11, 'rec-3', '1', 0), // Protection: no files at all
+    ];
+    const sync = await new LidarrSource(client).sync();
+    expect(sync.metaRank).toBe(0);
+    expect(sync.albums.map((a) => a.key)).toEqual(['mb:rg-1']);
+    expect(sync.tracks.map((t) => t.recordingId)).toEqual(['rec-1', 'rec-4']);
+    expect(sync.copies.map((c) => c.trackKey)).toEqual(['mb:rg-1#rec-1']);
+  });
+
   it('reports artists, albums, songs and files with Lidarr ids as preferred ids', async () => {
     const { client, tracksForArtist } = fakeLidarr();
     const sync = await new LidarrSource(client).sync();

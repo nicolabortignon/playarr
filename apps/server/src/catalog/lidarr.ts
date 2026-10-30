@@ -27,6 +27,7 @@ export class LidarrSource implements CatalogSource {
       albums: [],
       tracks: [],
       copies: [],
+      metaRank: 0,
       lidarrAlbums: lAlbums.map((a) => ({ mbid: a.foreignAlbumId, lidarrId: a.id, monitored: a.monitored })),
     };
 
@@ -36,10 +37,12 @@ export class LidarrSource implements CatalogSource {
       const albumsSeen = new Set<number>();
       const trackKeys = new Set<string>();
 
+      // Albums with at least one file; all their songs are reported, so the missing ones show greyed out.
+      const owned = new Set(tracks.filter((t) => t.hasFile && fileById.has(t.trackFileId)).map((t) => t.albumId));
       for (const t of tracks) {
-        const file = t.hasFile ? fileById.get(t.trackFileId) : undefined;
         const album = albumsById.get(t.albumId);
-        if (!file || !album) continue;
+        if (!album || !owned.has(album.id)) continue;
+        const file = t.hasFile ? fileById.get(t.trackFileId) : undefined;
         const albumKey = albumKeyFor(album.foreignAlbumId, la.artistName, album.title);
         if (!albumsSeen.has(album.id)) {
           albumsSeen.add(album.id);
@@ -71,15 +74,17 @@ export class LidarrSource implements CatalogSource {
           duration: Math.round(t.duration / 1000),
           explicit: t.explicit,
         });
-        sync.copies.push({
-          ref: String(file.id),
-          preferredId: file.id,
-          trackKey: key,
-          path: file.path,
-          size: file.size,
-          format: formatFromTrackFile(file),
-          addedAt: file.dateAdded,
-        });
+        if (file) {
+          sync.copies.push({
+            ref: String(file.id),
+            preferredId: file.id,
+            trackKey: key,
+            path: file.path,
+            size: file.size,
+            format: formatFromTrackFile(file),
+            addedAt: file.dateAdded,
+          });
+        }
       }
 
       if (albumsSeen.size) {
