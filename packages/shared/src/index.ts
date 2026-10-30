@@ -88,7 +88,8 @@ export interface LibraryStats {
 
 export interface HealthStatus {
   ok: boolean;
-  lidarr: { ok: boolean; version?: string; error?: string };
+  /** Absent when there is no Lidarr source. */
+  lidarr?: { ok: boolean; version?: string; error?: string };
   media: { source: 'none' | 'local' | 'sftp' | 'ssh'; ok: boolean; error?: string };
   library?: LibraryStats;
 }
@@ -277,3 +278,45 @@ export interface Recommendations {
 }
 
 export * from './range.ts';
+
+// ── Settings: catalog sources ───────────────────────────────────────────────
+
+export type SourceKind = 'lidarr' | 'folder';
+
+export interface SourceInfo {
+  id: number;
+  kind: SourceKind;
+  name: string;
+  /** Place in the priority list: equally good copies play from the source listed first. */
+  position: number;
+  enabled: boolean;
+  /** Connection settings without secrets. Absent for visitors outside the local network. */
+  settings?: { url?: string };
+  /** Secret fields that have a saved value. The values themselves are never sent. */
+  secrets: string[];
+  lastSyncAt?: string;
+  error?: string;
+  syncing: boolean;
+  songs: number;
+  albums: number;
+}
+
+export interface SourcesResponse {
+  sources: SourceInfo[];
+  /** False for visitors outside the local network: Settings is read-only for them. */
+  canEdit: boolean;
+}
+
+export interface SourceInput {
+  kind?: SourceKind;
+  name?: string;
+  enabled?: boolean;
+  /** For Lidarr: url and apiKey. Leaving apiKey out keeps the saved one. */
+  settings?: { url?: string; apiKey?: string };
+}
+
+export interface SourceTestResult {
+  ok: boolean;
+  version?: string;
+  error?: string;
+}
