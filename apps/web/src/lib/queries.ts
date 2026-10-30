@@ -1,4 +1,16 @@
-import type { AlbumRef, AlbumRequest, AlbumSort, AvailabilityState, CoverLayout, FavoriteTrack, PlaylistDetail, ReviewAction, SourceInput, Track } from '@playarr/shared';
+import type {
+  AlbumRef,
+  AlbumRequest,
+  AlbumSort,
+  AvailabilityState,
+  CoverLayout,
+  FavoriteTrack,
+  FolderBrowseRequest,
+  PlaylistDetail,
+  ReviewAction,
+  SourceInput,
+  Track,
+} from '@playarr/shared';
 import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { api } from './api';
@@ -268,9 +280,15 @@ export function useSources() {
   return query;
 }
 
-/** Folders on the server, for choosing a folder source. */
-export const useFolders = (path: string | undefined) =>
-  useQuery({ queryKey: ['folders', path ?? ''], queryFn: () => api.folders(path), retry: false });
+/** Folders to choose from: on this server, or over a (possibly unsaved) SSH/SFTP connection. */
+export const useFolderListing = (req: FolderBrowseRequest, enabled = true) =>
+  useQuery({
+    // The password itself stays out of the cache key.
+    queryKey: ['folders', req.path ?? '', req.id ?? null, req.connection ? { ...req.connection, password: !!req.connection.password } : null],
+    queryFn: () => api.browseFolders(req),
+    enabled,
+    retry: false,
+  });
 
 /** False once we know there's no Lidarr source: requests and Discover are hidden then. */
 export function useHasLidarr() {

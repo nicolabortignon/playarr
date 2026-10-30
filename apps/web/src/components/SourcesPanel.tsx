@@ -1,11 +1,26 @@
-import type { SourceInfo, SourceTestResult } from '@playarr/shared';
-import { Check, Folder, FolderOpen, FolderTree, GripVertical, Loader2, Pencil, Plus, RefreshCw, RotateCw, Server, Trash2, TriangleAlert } from 'lucide-react';
+import type { FolderAccessKind, FolderBrowseRequest, SourceInfo, SourceTestResult } from '@playarr/shared';
+import {
+  Check,
+  Folder,
+  FolderOpen,
+  FolderTree,
+  GripVertical,
+  Loader2,
+  Network,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Server,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural, formatWait } from '../lib/format';
-import { useFolders, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
+import { useFolderListing, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
 import { Dialog } from './Dialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { ReviewDialog } from './ReviewDialog';
@@ -109,7 +124,9 @@ function SourceRow({
       actions.remove.mutate(s.id);
     }
   };
-  const details = [s.settings?.url ?? s.settings?.path, `${plural(s.songs, 'song')} · ${plural(s.albums, 'album')}`].filter(Boolean).join(' · ');
+  const remote = s.kind === 'folder' && !!s.settings?.access && s.settings.access !== 'local';
+  const where = remote ? `${s.settings!.user}@${s.settings!.host}:${s.settings!.path}` : (s.settings?.url ?? s.settings?.path);
+  const details = [where, `${plural(s.songs, 'song')} · ${plural(s.albums, 'album')}`].filter(Boolean).join(' · ');
 
   return (
     <Reorder.Item
@@ -131,7 +148,7 @@ function SourceRow({
         </span>
       )}
       <span className="grid size-11 shrink-0 place-items-center rounded-md bg-ink-800 text-accent">
-        {s.kind === 'folder' ? <FolderOpen className="size-5" /> : <Server className="size-5" />}
+        {remote ? <Network className="size-5" /> : s.kind === 'folder' ? <FolderOpen className="size-5" /> : <Server className="size-5" />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -311,7 +328,7 @@ function SourceDialog({
           <KindOption
             icon={<FolderOpen className="size-5" />}
             title="Folder"
-            detail="Music in a folder on this server. Playarr only reads it."
+            detail="Music in a folder, on this server or another machine over SSH or SFTP. Playarr only reads it."
             onClick={() => setKind('folder')}
           />
         </div>
@@ -440,27 +457,169 @@ function LidarrForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
   );
 }
 
+const ACCESS: { id: FolderAccessKind; label: string }[] = [
+  { id: 'local', label: 'This server' },
+  { id: 'ssh', label: 'SSH' },
+  { id: 'sftp', label: 'SFTP' },
+];
+
 function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => void }) {
   const actions = useSourceActions();
+  const saved = source?.settings;
+  const savedAccess = saved?.access ?? 'local';
+  const passwordSaved = !!source?.secrets.includes('password');
   const [name, setName] = useState(source?.name ?? '');
-  const [path, setPath] = useState<string | undefined>(source?.settings?.path);
+  const [access, setAccess] = useState<FolderAccessKind>(savedAccess);
+  const [path, setPath] = useState<string | undefined>(saved?.path);
+  const [host, setHost] = useState(saved?.host ?? '');
+  const [port, setPort] = useState(saved?.port ?? 22);
+  const [user, setUser] = useState(saved?.user ?? '');
+  const [password, setPassword] = useState('');
+  const [replacingPassword, setReplacingPassword] = useState(!passwordSaved);
+  const [keyPath, setKeyPath] = useState(saved?.privateKeyPath ?? '');
   const [enabled, setEnabled] = useState(source?.enabled ?? true);
+  const remote = access !== 'local';
+  // What the folder browser connects with: taken when Connect is pressed, so typing doesn't open connections.
+  const connectionNow = (): FolderBrowseRequest => ({
+    id: source?.id,
+    connection: {
+      access,
+      host: host.trim(),
+      port,
+      user: user.trim(),
+      password: replacingPassword ? password || undefined : undefined,
+      privateKeyPath: keyPath.trim() || undefined,
+    },
+  });
+  const [browsing, setBrowsing] = useState<{ request: FolderBrowseRequest; attempt: number } | null>(() =>
+    savedAccess !== 'local' && source ? { request: connectionNow(), attempt: 0 } : null,
+  );
   const pending = actions.add.isPending || actions.update.isPending;
+
+  const chooseAccess = (next: FolderAccessKind) => {
+    if (next === access) return;
+    setAccess(next);
+    // A path on one machine means nothing on another.
+    setPath(next === savedAccess ? saved?.path : undefined);
+    setBrowsing(null);
+  };
+
+  const connect = () => setBrowsing((b) => ({ request: connectionNow(), attempt: (b?.attempt ?? 0) + 1 }));
 
   const save = (e: FormEvent) => {
     e.preventDefault();
     if (!path) return;
-    const input = { name: name.trim() || undefined, enabled, settings: { path } };
+    const settings = {
+      path,
+      access,
+      ...(remote
+        ? { host: host.trim(), port, user: user.trim(), privateKeyPath: keyPath.trim(), ...(replacingPassword && password ? { password } : {}) }
+        : {}),
+    };
+    const input = { name: name.trim() || undefined, enabled, settings };
     if (source) actions.update.mutate({ id: source.id, input }, { onSuccess: onDone });
     else actions.add.mutate({ kind: 'folder', ...input }, { onSuccess: onDone });
   };
 
   return (
     <form onSubmit={save} className="space-y-4 p-5">
-      <div>
-        <span className="mb-1.5 block font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Folder</span>
-        <FolderBrowser value={path} onChange={setPath} />
+      <div role="radiogroup" aria-label="Where the folder is" className="flex gap-6 border-b border-line">
+        {ACCESS.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            role="radio"
+            aria-checked={access === a.id}
+            onClick={() => chooseAccess(a.id)}
+            className={cn(
+              '-mb-px border-b-2 pb-2.5 text-[15px] whitespace-nowrap transition-colors',
+              access === a.id ? 'border-accent text-paper' : 'border-transparent text-paper-dim/70 hover:text-paper',
+            )}
+          >
+            {a.label}
+          </button>
+        ))}
       </div>
+      {remote && (
+        <div className="space-y-4">
+          <div className="flex gap-3">
+            <div className="min-w-0 flex-1">
+              <Field label="Host">
+                <input
+                  value={host}
+                  onChange={(e) => setHost(e.target.value)}
+                  placeholder="192.168.1.10"
+                  className={INPUT}
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                />
+              </Field>
+            </div>
+            <div className="w-28 shrink-0">
+              <Field label="Port">
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={port}
+                  onChange={(e) => setPort(Number(e.target.value) || 22)}
+                  className={INPUT}
+                  required
+                />
+              </Field>
+            </div>
+          </div>
+          <Field label="User">
+            <input value={user} onChange={(e) => setUser(e.target.value)} className={INPUT} autoComplete="off" spellCheck={false} required />
+          </Field>
+          <Field label="Password" hint="Optional with a key file or ssh-agent">
+            {replacingPassword ? (
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={INPUT}
+                autoComplete="new-password"
+                placeholder={passwordSaved ? 'New password' : undefined}
+              />
+            ) : (
+              <div className="flex h-11 items-center gap-3">
+                <span className="font-mono text-[13px] text-paper-dim">Saved</span>
+                <button type="button" onClick={() => setReplacingPassword(true)} className="text-[13px] text-accent hover:underline">
+                  Replace
+                </button>
+              </div>
+            )}
+          </Field>
+          <Field label="Key file on the server" hint="Optional: a private key on the Playarr server">
+            <input
+              value={keyPath}
+              onChange={(e) => setKeyPath(e.target.value)}
+              placeholder="~/.ssh/id_ed25519"
+              className={cn(INPUT, 'font-mono')}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </Field>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[13px] text-muted">SSH also runs song analysis and fingerprints on that machine. SFTP only reads files.</p>
+            <button type="button" onClick={connect} disabled={!host.trim() || !user.trim()} className={cn(SECONDARY, 'shrink-0')}>
+              Connect
+            </button>
+          </div>
+        </div>
+      )}
+      {(!remote || browsing) && (
+        <div>
+          <span className="mb-1.5 block font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Folder</span>
+          {remote ? (
+            <FolderBrowser key={browsing!.attempt} value={path} onChange={setPath} request={browsing!.request} />
+          ) : (
+            <FolderBrowser value={path} onChange={setPath} request={{}} />
+          )}
+        </div>
+      )}
       <Field label="Name">
         <input
           value={name}
@@ -485,13 +644,25 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
   );
 }
 
-function FolderBrowser({ value, onChange }: { value?: string; onChange: (path: string) => void }) {
+function FolderBrowser({
+  value,
+  onChange,
+  request,
+}: {
+  value?: string;
+  onChange: (path: string) => void;
+  /** The connection and/or saved source to browse; empty for this server. */
+  request: Omit<FolderBrowseRequest, 'path'>;
+}) {
   const [at, setAt] = useState<string | undefined>(value);
-  const { data, error } = useFolders(at);
+  const { data, error, isFetching } = useFolderListing({ ...request, path: at });
+  const remote = !!request.connection && request.connection.access !== 'local';
+  // On this server, "up" from a root goes back to the list of roots; on another machine, "/" is the top.
+  const canGoUp = data && data.path !== null && (data.parent !== null || !remote);
   return (
     <div className="overflow-hidden rounded-lg border border-line">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2 font-mono text-[12px] text-paper-dim">
-        {data && data.path !== null && (
+        {canGoUp && (
           <button
             type="button"
             onClick={() => setAt(data.parent ?? undefined)}
@@ -501,7 +672,7 @@ function FolderBrowser({ value, onChange }: { value?: string; onChange: (path: s
             ..
           </button>
         )}
-        <span className="truncate">{data?.path ?? 'Folders Playarr may use'}</span>
+        <span className="truncate">{data?.path ?? (remote ? (isFetching ? 'Connecting…' : '') : 'Folders Playarr may use')}</span>
       </div>
       <ul className="max-h-60 overflow-y-auto py-1">
         {data?.folders.map((f) => (

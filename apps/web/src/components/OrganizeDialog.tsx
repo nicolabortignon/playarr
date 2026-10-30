@@ -13,7 +13,15 @@ export function OrganizeDialog({ sourceId, onClose }: { sourceId: number | null;
       {isPending || !plan ? (
         <div className="m-5 h-40 animate-pulse rounded-lg bg-paper/5" />
       ) : (
-        <OrganizeBody key={sourceId} sourceId={sourceId!} moves={plan.moves} skipped={plan.skipped} writable={plan.writable} lastBatch={plan.lastBatch} />
+        <OrganizeBody
+          key={sourceId}
+          sourceId={sourceId!}
+          moves={plan.moves}
+          skipped={plan.skipped}
+          writable={plan.writable}
+          reason={plan.reason}
+          lastBatch={plan.lastBatch}
+        />
       )}
     </Dialog>
   );
@@ -24,12 +32,15 @@ function OrganizeBody({
   moves,
   skipped,
   writable,
+  reason,
   lastBatch,
 }: {
   sourceId: number;
   moves: OrganizeMove[];
   skipped: { from: string; to?: string; reason: string }[];
   writable: boolean;
+  /** Why files can't be organized here at all (e.g. a folder on another machine). */
+  reason?: string;
   lastBatch?: { id: number; files: number; at: string };
 }) {
   const actions = useOrganizeActions(sourceId);
@@ -50,6 +61,8 @@ function OrganizeBody({
       else next.add(from);
       return next;
     });
+
+  if (reason) return <p className="p-5 text-[15px] text-paper-dim">{reason}</p>;
 
   if (!writable) {
     return (
