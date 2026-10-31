@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { useUI } from '../lib/ui';
-import { describeFormat, TrackMetadataDialog } from './TrackMetadataDialog';
+import { describeFormat, primaryCopy, TrackMetadataDialog } from './TrackMetadataDialog';
 
 // happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
 Reflect.deleteProperty(Element.prototype, 'animate');
@@ -86,8 +86,25 @@ describe('TrackMetadataDialog', () => {
     open(away);
     expect(await screen.findByText(/shown on your home network only/)).toBeTruthy();
     expect(screen.queryByText(/\/host\/volume2/)).toBeNull();
-    // Matching again changes the catalog: offered on the home network only.
+    // Matching again changes the catalog: offered on the home network only, and the dialog says so.
     expect(screen.queryByRole('button', { name: /match again|refresh in lidarr/i })).toBeNull();
+    expect(screen.getByText(/Matching a song again on MusicBrainz works from your home network/)).toBeTruthy();
+  });
+
+  it('puts the main Match again button at the top, once per song', async () => {
+    const lidarrOnly = meta();
+    lidarrOnly.copies = [lidarrOnly.copies[0]!];
+    open(lidarrOnly);
+    expect(await screen.findAllByRole('button', { name: /refresh in lidarr/i })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /match again on musicbrainz/i })).toBeNull();
+  });
+
+  it('picks a folder file Playarr can match for the main button, preferring the one that plays', () => {
+    const [lidarr, folder] = meta().copies as [TrackMetadata['copies'][number], TrackMetadata['copies'][number]];
+    expect(primaryCopy([lidarr, folder])!.fileId).toBe(folder.fileId);
+    expect(primaryCopy([lidarr, { ...folder, fileId: 3 }, { ...folder, fileId: 4, playing: true }])!.fileId).toBe(4);
+    expect(primaryCopy([lidarr])!.fileId).toBe(lidarr.fileId);
+    expect(primaryCopy([])).toBeUndefined();
   });
 
   it('matches a folder file again and says what came of it', async () => {

@@ -35,8 +35,18 @@ export function TrackMetadataDialog() {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * The file "Match again" acts on for the whole song: a folder file Playarr matches itself (the one that
+ * plays, if it's one), else a Lidarr file (refreshed in Lidarr).
+ */
+export function primaryCopy(copies: TrackCopyMetadata[]): TrackCopyMetadata | undefined {
+  const folder = copies.filter((c) => c.source.kind === 'folder');
+  return folder.find((c) => c.playing) ?? folder[0] ?? copies.find((c) => c.playing) ?? copies[0];
+}
+
 function MetadataView({ meta: m }: { meta: TrackMetadata }) {
   const type = [m.albumType, ...m.secondaryTypes].filter(Boolean).join(' · ');
+  const primary = m.pathsHidden ? undefined : primaryCopy(m.copies);
   return (
     <div className="space-y-7 p-5">
       <div className="min-w-0">
@@ -44,6 +54,10 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
         <div className="text-[14px] text-muted">
           {m.artistName} · {m.albumTitle}
         </div>
+        {primary && <RematchButton key={primary.fileId} copy={primary} />}
+        {m.pathsHidden && (
+          <p className="mt-3 text-[13px] text-muted">Matching a song again on MusicBrainz works from your home network.</p>
+        )}
       </div>
 
       <Section title="Song">
@@ -71,7 +85,8 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
         )}
         <div className="space-y-3">
           {m.copies.map((c) => (
-            <CopyCard key={c.fileId} copy={c} />
+            // With several files, each can be matched again on its own; the main button above handles one.
+            <CopyCard key={c.fileId} copy={c} rematch={m.copies.length > 1 && c.fileId !== primary?.fileId} />
           ))}
         </div>
       </Section>
@@ -95,7 +110,7 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
   );
 }
 
-function CopyCard({ copy: c }: { copy: TrackCopyMetadata }) {
+function CopyCard({ copy: c, rematch }: { copy: TrackCopyMetadata; rematch: boolean }) {
   return (
     <div className="rounded-lg border border-line p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -117,7 +132,7 @@ function CopyCard({ copy: c }: { copy: TrackCopyMetadata }) {
           ['Identified', c.match ? describeMatch(c.match) : undefined],
         ]}
       />
-      {c.path !== undefined && <RematchButton copy={c} />}
+      {rematch && c.path !== undefined && <RematchButton copy={c} />}
       {c.tags && (
         <details className="mt-3">
           <summary className="cursor-pointer font-mono text-[11px] tracking-[0.15em] text-muted uppercase hover:text-paper">Tags in the file</summary>
