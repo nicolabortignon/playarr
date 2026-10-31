@@ -2,7 +2,9 @@ import { MotionConfig } from 'motion/react';
 import { useEffect } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router';
 import { usePrefetchOnIntent } from '../lib/prefetch';
+import { useWatchRequests } from '../lib/queries';
 import { usePrefs, type MotionPref } from '../lib/prefs';
+import { useDesktopLayout } from '../lib/useMediaQuery';
 import { AudioEngine } from '../player/AudioEngine';
 import { useKeyboardShortcuts } from '../player/useKeyboardShortcuts';
 import { AddToPlaylistDialog } from './AddToPlaylistDialog';
@@ -29,15 +31,23 @@ export function AppShell() {
   useKeyboardShortcuts();
   usePrefetchOnIntent();
   const reducedMotion = useMotionPref();
+  useWatchRequests();
+  // Only one layout's chrome is mounted: the hidden one would still poll and re-render every second.
+  const desktop = useDesktopLayout();
   return (
     <MotionConfig reducedMotion={reducedMotion}>
-      <Sidebar />
+      {desktop && <Sidebar />}
       <main className="min-h-dvh pb-[calc(60px+60px+env(safe-area-inset-bottom)+2rem)] md:pb-[120px] md:pl-60">
         <Outlet />
       </main>
-      <PlayerBar />
-      <MiniPlayer />
-      <BottomNav />
+      {desktop ? (
+        <PlayerBar />
+      ) : (
+        <>
+          <MiniPlayer />
+          <BottomNav />
+        </>
+      )}
       <NowPlaying />
       <AddToPlaylistDialog />
       <TrackMetadataDialog />

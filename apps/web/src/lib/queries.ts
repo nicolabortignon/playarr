@@ -94,15 +94,23 @@ export const useArtistLookup = (name: string) =>
 
 const ACTIVE: AvailabilityState[] = ['searching', 'downloading', 'importing'];
 
-/** Polls requests while any are in flight; refreshes the library when one becomes playable. */
+/** Requests, polled while any are in flight. Read-only: safe to use in many places (album cards, say). */
 export function useRequests() {
-  const client = useQueryClient();
-  const query = useQuery({
+  return useQuery({
     queryKey: ['requests'],
     queryFn: api.requests,
     refetchInterval: (q) => (q.state.data?.some((r) => ACTIVE.includes(r.availability.state)) ? 10_000 : 60_000),
     staleTime: 5000,
   });
+}
+
+/**
+ * When a request becomes playable: refresh the library and say so. Mounted once (AppShell), so the toast
+ * and the refresh happen once however many places show requests.
+ */
+export function useWatchRequests() {
+  const client = useQueryClient();
+  const query = useRequests();
   const previous = useRef<Map<string, AvailabilityState>>(new Map());
   useEffect(() => {
     if (!query.data) return;
@@ -117,7 +125,6 @@ export function useRequests() {
       toast(landed.length === 1 ? `“${landed[0]!.title}” is ready to play` : `${landed.length} albums are ready to play`);
     }
   }, [query.data, client]);
-  return query;
 }
 
 export const activeRequestCount = (requests: AlbumRequest[] | undefined) =>
