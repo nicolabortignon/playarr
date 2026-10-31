@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
+import { markLoaded, NEAR_SCREEN, ON_SCREEN, queueImage, wasLoaded } from '../lib/imageQueue';
+import { canObserve, useInView } from '../lib/viewport';
 
 interface CoverProps {
   src?: string;
@@ -10,11 +12,16 @@ interface CoverProps {
   className?: string;
   /** Text for the placeholder "record label" when there's no artwork. */
   label?: string;
+  /** Load at once, without waiting for a turn (the one big cover a page opens with). */
   eager?: boolean;
 }
 
+/** How far ahead of scrolling covers start loading. */
+const AHEAD = '50% 0px';
+
 export function Cover({ src, size, alt, className, label, eager }: CoverProps) {
   const url = sized(src, size);
+  const ref = useRef<HTMLDivElement>(null);
   // State is keyed by URL so a reused slot (player bar, queue) never inherits a previous image's failure.
   const [loadedUrl, setLoadedUrl] = useState<string>();
   const [errors, setErrors] = useState<{ url?: string; count: number }>({ count: 0 });
@@ -23,25 +30,56 @@ export function Cover({ src, size, alt, className, label, eager }: CoverProps) {
   // One automatic retry covers transient failures, e.g. the server restarting.
   const imgUrl = url && errorCount === 1 ? `${url}&retry=1` : url;
 
+  // Covers wait for a turn to load (see imageQueue): on screen first, then those about to scroll in.
+  const near = useInView(ref, AHEAD);
+  const onScreen = useInView(ref, '0px');
+  const [granted, setGranted] = useState<string>();
+  const done = useRef<(() => void) | undefined>(undefined);
+  const finish = () => {
+    done.current?.();
+    done.current = undefined;
+  };
+  const direct = !!imgUrl && (eager || !canObserve() || wasLoaded(imgUrl));
+  const show = !!imgUrl && !failed && (direct || granted === imgUrl);
+
+  useEffect(() => {
+    if (!imgUrl || failed || direct || granted === imgUrl || !near) return;
+    return queueImage(onScreen ? ON_SCREEN : NEAR_SCREEN, (release) => {
+      done.current = release;
+      setGranted(imgUrl);
+    });
+  }, [imgUrl, failed, direct, granted, near, onScreen]);
+  // Give the turn back if this image goes away before it finished (a new track, the card unmounting).
+  useEffect(() => finish, [imgUrl]);
+
   return (
-    <div className={cn('@container relative aspect-square overflow-hidden bg-ink-800', className)}>
+    <div ref={ref} className={cn('@container relative aspect-square overflow-hidden bg-ink-800', className)}>
       {(!url || failed) && <Placeholder label={label ?? alt} />}
-      {imgUrl && !failed && (
+      {show && (
         <img
           key={imgUrl}
           src={imgUrl}
           alt={alt}
-          loading={eager ? 'eager' : 'lazy'}
+          loading={canObserve() ? 'eager' : 'lazy'}
+          fetchPriority={eager || onScreen ? 'high' : 'low'}
           decoding="async"
           draggable={false}
-          onLoad={() => setLoadedUrl(url)}
+          onLoad={() => {
+            markLoaded(imgUrl);
+            setLoadedUrl(url);
+            finish();
+          }}
           onError={() => {
+            finish();
             const next = { url, count: errorCount + 1 };
             setTimeout(() => setErrors(next), errorCount === 0 ? 1500 : 0);
           }}
           className={cn(
-            'absolute inset-0 h-full w-full object-cover transition-opacity duration-500',
-            loadedUrl === url ? 'opacity-100' : 'opacity-0',
+            'absolute inset-0 h-full w-full object-cover',
+            // Loaded before in this visit (scrolling back, another page): shown at once, no fade.
+            wasLoaded(imgUrl) && loadedUrl !== url
+              ? 'opacity-100'
+              : cn('transition-opacity duration-500', loadedUrl === url ? 'opacity-100' : 'opacity-0'),
           )}
         />
       )}

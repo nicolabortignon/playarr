@@ -1,6 +1,6 @@
 import type { Album, HealthStatus } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
@@ -92,5 +92,39 @@ describe('AlbumCard', () => {
     renderCard(album({ title: 'Loose songs', albumType: 'Loose', trackCount: 3, totalTrackCount: 5 }));
     await screen.findByText('Loose songs');
     expect(screen.queryByRole('button', { name: /request/i })).toBeNull();
+  });
+
+  it('keeps only its size while far off screen, and comes back when scrolled near', () => {
+    const watched: { margin: string; callback: IntersectionObserverCallback; nodes: Element[] }[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        private o: (typeof watched)[number];
+        constructor(callback: IntersectionObserverCallback, opts?: IntersectionObserverInit) {
+          watched.push((this.o = { margin: opts?.rootMargin ?? '', callback, nodes: [] }));
+        }
+        observe(el: Element) {
+          this.o.nodes.push(el);
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    try {
+      renderCard(album({ trackCount: 11 }));
+      const far = watched.find((o) => o.margin === '300% 0px')!;
+      const card = far.nodes[0] as HTMLElement;
+      const report = (isIntersecting: boolean) =>
+        act(() => far.callback([{ target: card, isIntersecting, boundingClientRect: { height: 280 } } as unknown as IntersectionObserverEntry], {} as IntersectionObserver));
+      expect(screen.getByText('Mezzanine')).toBeTruthy();
+      report(false);
+      expect(screen.queryByText('Mezzanine')).toBeNull();
+      expect(card.style.height).toBe('280px');
+      report(true);
+      expect(screen.getByText('Mezzanine')).toBeTruthy();
+      expect(card.style.height).toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
