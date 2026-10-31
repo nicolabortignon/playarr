@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from 'react';
+import { createContext, useContext, useEffect, useState, type RefObject } from 'react';
 
 type Listener = (entry: IntersectionObserverEntry) => void;
 
@@ -43,17 +43,24 @@ export function useInView(ref: RefObject<Element | null>, margin: string, initia
 }
 
 /**
+ * Cards inside keep their content whatever their distance from the screen: short horizontal shelves, where
+ * scrolling sideways would otherwise drop and rebuild cards all the time.
+ */
+export const KeepMounted = createContext(false);
+
+/**
  * For cards in long grids: `near` turns false once the card is more than `margin` from the screen, so it
  * can drop its content (and its image) and keep just its `height`, measured as it left. Cards start near.
  */
 export function useNearScreen(ref: RefObject<HTMLElement | null>, margin = '300% 0px'): { near: boolean; height: number } {
+  const keep = useContext(KeepMounted);
   const [state, setState] = useState({ near: true, height: 0 });
   useEffect(() => {
     const el = ref.current;
-    if (!el || !canObserve()) return;
+    if (!el || keep || !canObserve()) return;
     return observe(el, margin, (e) =>
       setState((s) => (s.near === e.isIntersecting ? s : { near: e.isIntersecting, height: e.boundingClientRect.height || s.height })),
     );
-  }, [ref, margin]);
+  }, [ref, margin, keep]);
   return state;
 }

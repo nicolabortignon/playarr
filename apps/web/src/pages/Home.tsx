@@ -74,7 +74,7 @@ export function HomePage() {
           <SectionHeader kicker="Made by you" title="Playlists" to="/playlists" />
           <Shelf>
             {playlists.map((p, i) => (
-              <PlaylistCard key={p.id} playlist={p} className="w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52" style={{ animationDelay: `${i * 40}ms` }} />
+              <PlaylistCard key={p.id} playlist={p} className="w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52" style={stagger(i, 40)} />
             ))}
           </Shelf>
         </section>
@@ -85,7 +85,7 @@ export function HomePage() {
         <Shelf>
           {recent
             ? recent.map((a, i) => (
-                <AlbumCard key={a.id} album={a} size={200} className="w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52" style={{ animationDelay: `${i * 40}ms` }} />
+                <AlbumCard key={a.id} album={a} size={200} className="w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52" style={stagger(i, 40)} />
               ))
             : Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="aspect-square w-[42vw] max-w-52 shrink-0 sm:w-44 md:w-52" />)}
         </Shelf>
@@ -94,8 +94,8 @@ export function HomePage() {
       <section className="mb-14">
         <SectionHeader kicker="The roster" title="Artists" to="/artists" />
         <Shelf>
-          {artists?.map((a, i) => (
-            <ArtistCard key={a.id} artist={a} className="w-[40vw] max-w-48 shrink-0 snap-start sm:w-40 md:w-48" style={{ animationDelay: `${i * 50}ms` }} />
+          {shelfArtists(artists, recent).map((a, i) => (
+            <ArtistCard key={a.id} artist={a} className="w-[40vw] max-w-48 shrink-0 snap-start sm:w-40 md:w-48" style={stagger(i, 50)} />
           ))}
         </Shelf>
       </section>
@@ -117,13 +117,41 @@ export function HomePage() {
         />
         <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:gap-x-6 lg:grid-cols-4 xl:grid-cols-6">
           {random?.map((a, i) => (
-            <AlbumCard key={a.id} album={a} style={{ animationDelay: `${i * 35}ms` }} />
+            <AlbumCard key={a.id} album={a} style={stagger(i, 35)} />
           ))}
         </div>
       </section>
     </div>
   );
 }
+
+/** How many artists the home shelf shows; all of them are a tap away on Artists. */
+const SHELF_ARTISTS = 20;
+
+/**
+ * The artists for the home shelf: those of the latest albums first, then those with the most albums.
+ * The whole roster in one row meant hundreds of cards on the home page.
+ */
+export function shelfArtists<A extends { id: number; albumCount: number }>(artists: A[] | undefined, recent: { artistId: number }[] | undefined): A[] {
+  if (!artists) return [];
+  const byId = new Map(artists.map((a) => [a.id, a]));
+  const picked = new Map<number, A>();
+  for (const album of recent ?? []) {
+    const artist = byId.get(album.artistId);
+    if (artist) picked.set(artist.id, artist);
+  }
+  for (const a of [...artists].sort((x, y) => y.albumCount - x.albumCount)) {
+    if (picked.size >= SHELF_ARTISTS) break;
+    picked.set(a.id, a);
+  }
+  return [...picked.values()].slice(0, SHELF_ARTISTS);
+}
+
+/**
+ * Cards rise in one after another, but only the first few: a long stagger keeps content appearing for
+ * seconds, and phones take a tap while things appear as a hover, so the link needs a second tap.
+ */
+const stagger = (i: number, stepMs: number) => ({ animationDelay: `${Math.min(i, 8) * stepMs}ms` });
 
 /** Three recent covers fanned out like records on a table. */
 function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl?: string }[] }) {

@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
 import { Link } from 'react-router';
+import { KeepMounted } from '../lib/viewport';
 
 export function SectionHeader({ title, kicker, to, action }: { title: string; kicker?: string; to?: string; action?: ReactNode }) {
   return (
@@ -31,7 +32,7 @@ export function Shelf({ children }: { children: ReactNode }) {
         ref={ref}
         className="scrollbar-none flex snap-x snap-mandatory scroll-px-5 gap-4 overflow-x-auto px-5 pb-2 md:scroll-px-10 md:gap-6 md:px-10"
       >
-        {children}
+        <KeepMounted value>{children}</KeepMounted>
       </div>
       {[-1, 1].map((dir) => (
         <button

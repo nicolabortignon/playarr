@@ -79,7 +79,13 @@ export function Cover({ src, size, alt, className, label, eager }: CoverProps) {
             // Loaded before in this visit (scrolling back, another page): shown at once, no fade.
             wasLoaded(imgUrl) && loadedUrl !== url
               ? 'opacity-100'
-              : cn('transition-opacity duration-500', loadedUrl === url ? 'opacity-100' : 'opacity-0'),
+              : cn(
+                  'transition-opacity duration-500',
+                  loadedUrl === url ? 'opacity-100' : 'opacity-0',
+                  // No fade-in on touch screens: phones take a tap while something fades in as a hover,
+                  // and the link then needs a second tap.
+                  'pointer-coarse:opacity-100 pointer-coarse:transition-none',
+                ),
           )}
         />
       )}
