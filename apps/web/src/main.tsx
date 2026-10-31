@@ -9,10 +9,12 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
+import { watchForUpdates } from './lib/appUpdate';
 import { persistOptions, queryClient } from './lib/queryClient';
 import { routes } from './routes';
 
 const router = createBrowserRouter(routes);
+watchForUpdates();
 
 const app = <RouterProvider router={router} />;
 
