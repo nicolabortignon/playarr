@@ -1,11 +1,11 @@
-import type { AlbumRef, Availability, DiscoverAlbum, DiscoverArtist, DiscoverTrack } from '@playarr/shared';
+import type { Album, AlbumRef, Availability, DiscoverAlbum, DiscoverArtist, DiscoverTrack } from '@playarr/shared';
 import { Check, Clock, Download, Loader2, Play, RotateCw, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, type CSSProperties, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { albumHref, artistHref } from '../lib/links';
-import { useRequestAlbum, useRequestsEnabled } from '../lib/queries';
+import { useRequestAlbum, useRequests, useRequestsEnabled } from '../lib/queries';
 import { useDelayedFlag } from '../lib/useDelayedFlag';
 import { Cover } from './Cover';
 import { InlineLink } from './InlineLink';
@@ -271,5 +271,21 @@ export function RequestsPill({ count }: { count: number }) {
       <RotateCw className="size-3 animate-spin [animation-duration:2.5s]" />
       {count} {count === 1 ? 'request' : 'requests'} in progress
     </Link>
+  );
+}
+
+/** Only some of a library album is here: ask Lidarr for the whole of it, then show how that's going. */
+export function RequestRest({ album, size, className }: { album: Album; size?: 'sm' | 'md'; className?: string }) {
+  const { data: requests } = useRequests();
+  if (!album.mbid || album.trackCount >= album.totalTrackCount) return null;
+  const availability = requests?.find((r) => r.mbid === album.mbid)?.availability ?? { state: 'none' as const };
+  if (availability.state === 'available') return null;
+  return (
+    <RequestButton
+      album={{ mbid: album.mbid, artistName: album.artistName, albumTitle: album.title }}
+      availability={availability}
+      size={size}
+      className={className}
+    />
   );
 }
