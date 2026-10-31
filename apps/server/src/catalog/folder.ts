@@ -12,6 +12,8 @@ export interface FolderEntry {
   path: string;
   size: number;
   mtimeMs: number;
+  /** When the file appeared on this disk, where known (see FoundFile.createdMs). */
+  createdMs?: number;
   tags: TagInfo;
 }
 
@@ -152,7 +154,9 @@ export function folderSync(
       path: e.path,
       size: e.size,
       format: t.format,
-      addedAt: new Date(e.mtimeMs).toISOString(),
+      // The file's own "added" time, used for a folder's first scan: when it arrived on this disk, else
+      // its modification time. Later scans date new files by when Playarr found them (the store does that).
+      addedAt: new Date(e.createdMs ?? e.mtimeMs).toISOString(),
     });
   }
 

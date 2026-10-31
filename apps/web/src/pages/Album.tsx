@@ -70,6 +70,9 @@ export function AlbumPage() {
               <span className="font-mono text-[12px] text-muted">
                 {plural(album.trackCount, 'track')} · {formatDuration(album.duration)}
                 {album.trackCount < album.totalTrackCount && ` · ${album.totalTrackCount - album.trackCount} missing`}
+                {album.addedAt && (
+                  <span title={new Date(album.addedAt).toLocaleString()}> · added {addedAgo(album.addedAt)}</span>
+                )}
               </span>
               <FormatBadge format={album.format} />
             </div>
@@ -160,4 +163,15 @@ function RequestRest({ album }: { album: AlbumDetail }) {
   return (
     <RequestButton album={{ mbid: album.mbid, artistName: album.artistName, albumTitle: album.title }} availability={availability} />
   );
+}
+
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+
+/** "today", "3 days ago", "2 months ago": when the album entered the library. */
+function addedAgo(iso: string): string {
+  const days = Math.round((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  if (days > -1) return 'today';
+  if (days > -30) return relative.format(days, 'day');
+  if (days > -365) return relative.format(Math.round(days / 30), 'month');
+  return relative.format(Math.round(days / 365), 'year');
 }

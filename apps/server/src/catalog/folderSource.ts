@@ -82,7 +82,16 @@ export async function listAudioFiles(root: string): Promise<FoundFile[]> {
       if (item.isDirectory()) await walk(path, itemRel);
       else if (item.isFile() && isAudioFile(item.name)) {
         const s = await stat(path).catch(() => null);
-        if (s) found.push({ rel: itemRel, path, size: s.size, mtimeMs: Math.floor(s.mtimeMs) });
+        // birthtimeMs is 0 where the filesystem (or an old kernel) doesn't record it.
+        if (s) {
+          found.push({
+            rel: itemRel,
+            path,
+            size: s.size,
+            mtimeMs: Math.floor(s.mtimeMs),
+            ...(s.birthtimeMs > 0 ? { createdMs: Math.floor(s.birthtimeMs) } : {}),
+          });
+        }
       }
     }
   }

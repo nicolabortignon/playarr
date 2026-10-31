@@ -29,6 +29,9 @@ describe('LocalFolderFs', () => {
     writeFileSync(join(t.dir, 'A/cover.jpg'), Buffer.from([1]));
     const fs = new LocalFolderFs();
     expect((await fs.listAudio(t.dir)).map((f) => f.rel)).toEqual(['A/01.flac']);
+    // Where the filesystem records birth times (APFS, ext4, btrfs…), the listing carries them.
+    const [found] = await fs.listAudio(t.dir);
+    if (found!.createdMs !== undefined) expect(Math.abs(found!.createdMs - Date.now())).toBeLessThan(60_000);
     expect((await fs.stat(join(t.dir, 'A')))!.dir).toBe(true);
     expect(await fs.stat(join(t.dir, 'nope'))).toBeNull();
     expect((await fs.readdir(join(t.dir, 'A'))).map((e) => e.name).sort()).toEqual(['01.flac', 'cover.jpg']);

@@ -152,6 +152,10 @@ const MIGRATIONS = [
    CREATE INDEX file_moves_by_batch ON file_moves (source_id, batch);`,
   // When each album first entered the library (the earliest date of any of its copies, ever).
   `ALTER TABLE catalog_albums ADD COLUMN added_at TEXT;`,
+  // Re-date folder files by when they arrived on disk (birth time) rather than their modification time,
+  // which copies keep from wherever they came from; albums recompute from their copies on the next sync.
+  `UPDATE copies SET added_at = NULL WHERE source_id IN (SELECT id FROM sources WHERE kind = 'folder');
+   UPDATE catalog_albums SET added_at = NULL;`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

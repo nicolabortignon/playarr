@@ -104,6 +104,23 @@ describe('CatalogStore', () => {
     expect(other.load().copies[0]!.addedAt! < '2999').toBe(true);
   });
 
+  it('re-dates folder files whose date was cleared (the birth-time migration), keeping Lidarr dates', () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    const folder = store.addSource('folder', 'Music');
+    const first = mezzanine();
+    first.addedAt = 'firstSeen';
+    first.copies = first.copies.map((c) => ({ ...c, addedAt: '2020-01-01T00:00:00Z' }));
+    store.applySync(folder, first);
+    db.exec(`UPDATE copies SET added_at = NULL; UPDATE catalog_albums SET added_at = NULL;`);
+    const again = mezzanine();
+    again.addedAt = 'firstSeen';
+    again.copies = again.copies.map((c) => ({ ...c, addedAt: '2026-10-30T00:00:00Z' }));
+    store.applySync(folder, again);
+    expect(store.load().copies.map((c) => c.addedAt)).toEqual(['2026-10-30T00:00:00.000Z', '2026-10-30T00:00:00.000Z']);
+    expect(store.load().albums[0]!.addedAt).toBe('2026-10-30T00:00:00.000Z');
+  });
+
   it('removes copies the source no longer has, but keeps the song row', () => {
     const { store, sourceId } = setup();
     store.applySync(sourceId, mezzanine());

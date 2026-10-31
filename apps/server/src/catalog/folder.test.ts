@@ -25,6 +25,15 @@ function lidarrIndex() {
 }
 
 describe('folderSync', () => {
+  it('dates files by when they arrived on disk, else by their modification time', () => {
+    const copied = { ...entry('A/Album/01.flac', { title: 'One', album: 'Album', albumArtist: 'A' }), createdMs: Date.UTC(2026, 9, 30) };
+    const plain = entry('A/Album/02.flac', { title: 'Two', album: 'Album', albumArtist: 'A' });
+    const sync = folderSync([copied, plain], EMPTY, new Map());
+    expect(sync.addedAt).toBe('firstSeen');
+    expect(sync.copies.find((c) => c.ref === copied.rel)!.addedAt).toBe('2026-10-30T00:00:00.000Z');
+    expect(sync.copies.find((c) => c.ref === plain.rel)!.addedAt).toBe('2026-10-01T00:00:00.000Z');
+  });
+
   it('uses MusicBrainz ids from tags', () => {
     const sync = folderSync(
       [

@@ -18,6 +18,11 @@ export interface FoundFile {
   path: string;
   size: number;
   mtimeMs: number;
+  /**
+   * When the file appeared on this disk (its birth time), where the filesystem reports it. Copies keep
+   * their old modification time, so this is the better "added" date for a folder's first scan.
+   */
+  createdMs?: number;
 }
 
 export interface FsEntry {
