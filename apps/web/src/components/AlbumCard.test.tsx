@@ -63,13 +63,34 @@ describe('AlbumCard', () => {
     expect(router.state.location.pathname).toBe('/');
   });
 
-  it('has no Request for a complete album, or one MusicBrainz doesn’t know', async () => {
+  it('requests an album known only from its tags by artist and title', async () => {
+    const request = vi.spyOn(api, 'requestAlbum').mockResolvedValue({
+      mbid: 'rg-1',
+      title: 'Mezzanine',
+      artistName: 'Massive Attack',
+      requestedAt: new Date().toISOString(),
+      availability: { state: 'searching' },
+    });
+    renderCard(album({ mbid: undefined }));
+    fireEvent.click(await screen.findByRole('button', { name: /request/i }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ artistName: 'Massive Attack', albumTitle: 'Mezzanine' }));
+  });
+
+  it('shows the progress of a request made by name', async () => {
+    vi.mocked(api.requests).mockResolvedValue([
+      { mbid: 'rg-1', title: 'Mezzanine', artistName: 'Massive Attack', requestedAt: new Date().toISOString(), availability: { state: 'searching' } },
+    ]);
+    renderCard(album({ mbid: undefined }));
+    expect(await screen.findByText(/searching/i)).toBeTruthy();
+  });
+
+  it('has no Request for a complete album, or an artist’s loose songs', async () => {
     renderCard(album({ trackCount: 11 }));
     await screen.findByText('Mezzanine');
     expect(screen.queryByRole('button', { name: /request/i })).toBeNull();
     cleanup();
-    renderCard(album({ mbid: undefined }));
-    await screen.findByText('Mezzanine');
+    renderCard(album({ title: 'Loose songs', albumType: 'Loose', trackCount: 3, totalTrackCount: 5 }));
+    await screen.findByText('Loose songs');
     expect(screen.queryByRole('button', { name: /request/i })).toBeNull();
   });
 });

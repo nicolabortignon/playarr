@@ -7,14 +7,13 @@ import { plural } from '../lib/format';
 import { playAlbum } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { Cover } from './Cover';
-import { RequestRest } from './Discover';
+import { canRequestRest, RequestRest } from './Discover';
 
 export function AlbumCard({ album, size = 220, style, className }: { album: Album; size?: number; style?: CSSProperties; className?: string }) {
   const current = useCurrentTrack();
   const playing = usePlayer((s) => s.playing);
   const toggle = usePlayer((s) => s.toggle);
   const isCurrent = current?.albumId === album.id;
-  const incomplete = !!album.mbid && album.trackCount < album.totalTrackCount;
 
   return (
     <div className={cn('group relative animate-rise', className)} style={style}>
@@ -42,21 +41,23 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
         </div>
       </Link>
       {/* Only some of it is here: the rest can be asked for without opening the album. */}
-      {incomplete && <RequestRest album={album} size="sm" className="mt-2" />}
-      <button
-        type="button"
-        aria-label={isCurrent && playing ? `Pause ${album.title}` : `Play ${album.title}`}
-        onClick={() => (isCurrent ? toggle() : void playAlbum(album.id))}
-        className={cn(
-          incomplete ? 'bottom-[6.5rem]' : 'bottom-[4.25rem]',
-          'absolute right-2.5 grid size-11 place-items-center rounded-full bg-accent text-accent-ink shadow-xl shadow-black/40 transition duration-300 ease-out-expo hover:scale-105 active:scale-95',
-          isCurrent && playing
-            ? 'translate-y-0 opacity-100'
-            : 'translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100 max-md:hidden',
-        )}
-      >
-        {isCurrent && playing ? <Pause className="size-5 fill-current" /> : <Play className="ml-0.5 size-5 fill-current" />}
-      </button>
+      {canRequestRest(album) && <RequestRest album={album} size="sm" className="mt-2" />}
+      {/* The play button sits on the cover (a square as wide as the card), whatever is shown below it. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 aspect-square">
+        <button
+          type="button"
+          aria-label={isCurrent && playing ? `Pause ${album.title}` : `Play ${album.title}`}
+          onClick={() => (isCurrent ? toggle() : void playAlbum(album.id))}
+          className={cn(
+            'pointer-events-auto absolute right-2.5 bottom-2.5 grid size-11 place-items-center rounded-full bg-accent text-accent-ink shadow-xl shadow-black/40 transition duration-300 ease-out-expo hover:scale-105 active:scale-95',
+            isCurrent && playing
+              ? 'translate-y-0 opacity-100'
+              : 'translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100 max-md:hidden',
+          )}
+        >
+          {isCurrent && playing ? <Pause className="size-5 fill-current" /> : <Play className="ml-0.5 size-5 fill-current" />}
+        </button>
+      </div>
     </div>
   );
 }

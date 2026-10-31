@@ -4,7 +4,7 @@ import { useEffect, useRef, type CSSProperties, type MouseEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
-import { albumHref, artistHref } from '../lib/links';
+import { albumHref, artistHref, titleKey } from '../lib/links';
 import { useRequestAlbum, useRequests, useRequestsEnabled } from '../lib/queries';
 import { useDelayedFlag } from '../lib/useDelayedFlag';
 import { Cover } from './Cover';
@@ -274,15 +274,27 @@ export function RequestsPill({ count }: { count: number }) {
   );
 }
 
+/** A library album missing songs, which can be asked for (not the "Loose songs" bucket of an artist). */
+export function canRequestRest(album: Album): boolean {
+  return album.albumType !== 'Loose' && album.trackCount < album.totalTrackCount;
+}
+
 /** Only some of a library album is here: ask Lidarr for the whole of it, then show how that's going. */
 export function RequestRest({ album, size, className }: { album: Album; size?: 'sm' | 'md'; className?: string }) {
   const { data: requests } = useRequests();
-  if (!album.mbid || album.trackCount >= album.totalTrackCount) return null;
-  const availability = requests?.find((r) => r.mbid === album.mbid)?.availability ?? { state: 'none' as const };
+  if (!canRequestRest(album)) return null;
+  // Albums known only from their tags have no MusicBrainz id: the server finds them by artist and title,
+  // and their request is recognised the same way.
+  const request = requests?.find(
+    (r) =>
+      (album.mbid && r.mbid === album.mbid) ||
+      (titleKey(r.artistName) === titleKey(album.artistName) && titleKey(r.title) === titleKey(album.title)),
+  );
+  const availability = request?.availability ?? { state: 'none' as const };
   if (availability.state === 'available') return null;
   return (
     <RequestButton
-      album={{ mbid: album.mbid, artistName: album.artistName, albumTitle: album.title }}
+      album={{ ...(album.mbid ? { mbid: album.mbid } : {}), artistName: album.artistName, albumTitle: album.title }}
       availability={availability}
       size={size}
       className={className}
