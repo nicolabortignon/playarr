@@ -15,7 +15,9 @@ export interface LbSimilarRecording {
   reference_mbid: string; // the seed recording
 }
 
-const ALGORITHM = 'session_based_days_9000_session_300_contribution_5_threshold_15_limit_50_skip_30';
+// The days_9000 dataset stopped updating before 2024 (it has nothing for, say, "Espresso"); days_7500,
+// otherwise the same, is current. Some songs are in no dataset at all (too few sessions to count).
+const ALGORITHM = 'session_based_days_7500_session_300_contribution_5_threshold_15_limit_50_skip_30';
 const TTL_MS = 60 * 60_000;
 const cache = new Map<string, { at: number; data: LbSimilarRecording[] }>();
 const metadataCache = new Map<string, { at: number; data: LbRecordingMetadata }>();
