@@ -134,6 +134,22 @@ describe('Matcher', () => {
     expect(store.matches(sourceId).get('Massive Attack/Mezzanine/01 Angel.flac')!.state).toBe('ignored');
   });
 
+  it('matches a file’s album again from scratch, even over the user’s own decision', async () => {
+    const { matcher, store, sourceId, mb, onMatched } = setup(mezzanineFiles);
+    await matcher.matchSource(sourceId);
+    const rel = 'Massive Attack/Mezzanine/01 Angel.flac';
+    matcher.ignore(sourceId, store.matches(sourceId).get(rel)!.groupKey);
+    expect(store.matches(sourceId).get(rel)!.state).toBe('ignored');
+    const searches = mb.searchReleases.mock.calls.length;
+    onMatched.mockClear();
+    expect(await matcher.rematchFile(sourceId, rel)).toBe('auto');
+    expect(mb.searchReleases.mock.calls.length).toBe(searches + 1);
+    // The whole album group was matched again, not only the one file.
+    expect(store.matches(sourceId).get('Massive Attack/Mezzanine/02 Risingson.flac')).toMatchObject({ state: 'auto', overlay: { recordingMbid: 'rec-2' } });
+    expect(onMatched).toHaveBeenCalled();
+    await expect(matcher.rematchFile(sourceId, 'gone.flac')).rejects.toThrow(/isn’t in its folder/);
+  });
+
   it('describes review groups with scored candidates', async () => {
     const { matcher, store, sourceId } = setup({
       'Massive Attack/Mezzanine/01 Angel.flac': { duration: 200 },

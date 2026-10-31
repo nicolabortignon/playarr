@@ -134,6 +134,27 @@ export class Matcher {
     this.deps.onMatched();
   }
 
+  /**
+   * Match a file's album group again from scratch (Show metadata → Match again): forget what was decided
+   * for it, the user's own choices included, and run the match now. Says what became of that file.
+   */
+  async rematchFile(sourceId: number, rel: string): Promise<MatchRecord['state']> {
+    const root = (this.deps.store.source(sourceId)?.settings as { path?: string } | undefined)?.path;
+    if (!root) throw new Error('That folder source is gone');
+    const groupOf = () =>
+      groupFiles(root, this.files(sourceId), this.deps.store.matches(sourceId), () => true).find((g) => g.files.some((f) => f.rel === rel));
+    const before = groupOf();
+    if (!before) throw new Error('That file isn’t in its folder any more');
+    this.deps.store.forgetMatches(sourceId, before.files.map((f) => f.rel));
+    // Regroup from the files' own tags, now that the old match no longer shapes the group.
+    const group = groupOf();
+    if (!group) throw new Error('That file isn’t in its folder any more');
+    const records = await this.matchGroup(sourceId, group);
+    this.deps.store.saveMatches(sourceId, records);
+    this.deps.onMatched();
+    return records.find((r) => r.rel === rel)?.state ?? 'unmatched';
+  }
+
   /** Leave a group as its tags and names describe it, and never match it again. */
   ignore(sourceId: number, groupKey: string) {
     const group = this.groupByKey(sourceId, groupKey);

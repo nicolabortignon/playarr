@@ -158,6 +158,12 @@ export class Library {
     return undefined;
   }
 
+  /** Rebuild now, after any rebuild already running (which may have started before the latest change). */
+  async refreshNow(): Promise<void> {
+    await this.inflight?.catch(() => {});
+    await this.refresh();
+  }
+
   /** Refresh soon, coalescing bursts (e.g. several downloads finishing together). */
   refreshSoon(delayMs = 3000) {
     if (this.refreshTimer) return;

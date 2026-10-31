@@ -146,6 +146,11 @@ export class LidarrClient {
     return this.send<LidarrCommand>('POST', '/api/v1/command', { name, ...body });
   }
 
+  /** A track file, for the artist and album it belongs to. */
+  trackFile(id: number) {
+    return this.get<{ id: number; artistId: number; albumId: number }>(`/api/v1/trackfile/${id}`);
+  }
+
   commandStatus(id: number) {
     return this.get<LidarrCommand>(`/api/v1/command/${id}`);
   }

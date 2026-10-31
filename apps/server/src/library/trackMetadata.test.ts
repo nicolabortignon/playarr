@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CatalogStore } from '../catalog/store.ts';
 import { FLAC, freshDb, mezzanine } from '../catalog/testFixtures.ts';
 import type { Library } from './library.ts';
@@ -75,5 +75,46 @@ describe('trackMetadata', () => {
     expect(home.json().copies[1].path).toBe('/volume1/music/Massive Attack/01 Angel.mp3');
     expect((await app.inject({ url: '/api/tracks/99999/metadata', remoteAddress: '192.168.1.20' })).statusCode).toBe(404);
     expect((await app.inject({ url: '/api/tracks/abc/metadata', remoteAddress: '192.168.1.20' })).statusCode).toBe(400);
+  });
+});
+
+describe('POST /api/files/:fileId/rematch', () => {
+  function withRoutes() {
+    const { store, library } = setup();
+    const refreshNow = vi.fn(async () => {});
+    const lib = Object.assign(library, { refreshNow, refreshSoon: vi.fn() }) as unknown as Library;
+    const matcher = { rematchFile: vi.fn(async () => 'auto' as const) };
+    const lidarr = { configured: true, trackFile: vi.fn(async () => ({ id: 9000, artistId: 33, albumId: 44 })), command: vi.fn(async () => ({})) };
+    const app = Fastify();
+    metadataRoutes(app, { store, library: lib, pathMap: [], features: () => new Map(), matcher, lidarr: lidarr as never });
+    const folderCopy = store.load().copies.find((c) => c.path.startsWith('/volume1'))!;
+    return { app, store, matcher, lidarr, refreshNow, folderCopy };
+  }
+  const post = (app: ReturnType<typeof Fastify>, fileId: number | string, remoteAddress = '192.168.1.20') =>
+    app.inject({ method: 'POST', url: `/api/files/${fileId}/rematch`, remoteAddress });
+
+  it('matches a folder file again, rebuilds, and says which song it belongs to now', async () => {
+    const { app, matcher, refreshNow, folderCopy } = withRoutes();
+    const res = await post(app, folderCopy.id);
+    expect(res.json()).toEqual({ kind: 'folder', state: 'auto', trackId: folderCopy.trackId });
+    expect(matcher.rematchFile).toHaveBeenCalledWith(folderCopy.sourceId, 'Massive Attack/01 Angel.mp3');
+    expect(refreshNow).toHaveBeenCalled();
+  });
+
+  it('asks Lidarr to refresh the artist for a Lidarr file', async () => {
+    const { app, lidarr, matcher } = withRoutes();
+    const res = await post(app, 9000);
+    expect(res.json()).toMatchObject({ kind: 'lidarr' });
+    expect(lidarr.trackFile).toHaveBeenCalledWith(9000);
+    expect(lidarr.command).toHaveBeenCalledWith('RefreshArtist', { artistId: 33 });
+    expect(matcher.rematchFile).not.toHaveBeenCalled();
+  });
+
+  it('works from the home network only, and only for known files', async () => {
+    const { app, folderCopy, matcher } = withRoutes();
+    expect((await post(app, folderCopy.id, '203.0.113.9')).statusCode).toBe(403);
+    expect((await post(app, 424242)).statusCode).toBe(404);
+    expect((await post(app, 'x')).statusCode).toBe(404);
+    expect(matcher.rematchFile).not.toHaveBeenCalled();
   });
 });

@@ -105,7 +105,7 @@ const discover = new Discover(lidarr, musicbrainz, library, requests);
 const recommendations = new Recommendations(playlists, library, requests);
 
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
-metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids) });
+metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
 streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });

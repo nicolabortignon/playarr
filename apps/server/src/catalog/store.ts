@@ -618,6 +618,20 @@ export class CatalogStore {
     }
   }
 
+  /** Forget the matches of these files, user decisions included (Show metadata → Match again). */
+  forgetMatches(sourceId: number, rels: string[]) {
+    const forget = this.db.prepare('DELETE FROM folder_matches WHERE source_id = ? AND rel_path = ?');
+    for (const rel of rels) forget.run(sourceId, rel);
+  }
+
+  /** Which source and song a file (copy) belongs to. */
+  copy(fileId: number): { sourceId: number; ref: string; trackId: number } | undefined {
+    const row = this.db.prepare('SELECT source_id, source_ref, track_id FROM copies WHERE id = ?').get(fileId) as
+      | { source_id: number; source_ref: string; track_id: number }
+      | undefined;
+    return row ? { sourceId: row.source_id, ref: row.source_ref, trackId: row.track_id } : undefined;
+  }
+
   /** Forget automatic results (user decisions stay), so the source is matched again. */
   clearMatches(sourceId: number) {
     this.db.prepare("DELETE FROM folder_matches WHERE source_id = ? AND state NOT IN ('manual', 'ignored')").run(sourceId);

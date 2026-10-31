@@ -628,6 +628,21 @@ export interface TrackCopyMetadata {
   match?: { state: string; score?: number };
 }
 
+/** POST /api/files/:fileId/rematch: what matching a file on MusicBrainz again did. */
+export type RematchResult =
+  | {
+      kind: 'folder';
+      /** What became of the file: matched (auto), waiting for review, or left with its own tags. */
+      state: 'auto' | 'manual' | 'review' | 'unmatched' | 'ignored';
+      /** The song the file belongs to now (it changes when a match gives it its real MusicBrainz id). */
+      trackId?: number;
+    }
+  | {
+      kind: 'lidarr';
+      /** Lidarr is refreshing the artist from MusicBrainz; Playarr picks the changes up on its next sync. */
+      message: string;
+    };
+
 /** GET /api/tracks/:id/metadata: everything Playarr knows about a song. */
 export interface TrackMetadata {
   trackId: number;
