@@ -1,10 +1,13 @@
 import type { AudioFormat, FileTags, TrackCopyMetadata, TrackMetadata } from '@playarr/shared';
-import { Check, Copy, ExternalLink, Play } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, Play, RefreshCw } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
-import { useTrackMetadata } from '../lib/queries';
+import { useRematchFile, useTrackMetadata } from '../lib/queries';
+import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
 import { Dialog } from './Dialog';
+import { SlowLookup } from './SlowLookup';
 
 /** Track menu → Show metadata: everything Playarr knows about a song, and where each file of it is. */
 export function TrackMetadataDialog() {
@@ -114,6 +117,7 @@ function CopyCard({ copy: c }: { copy: TrackCopyMetadata }) {
           ['Identified', c.match ? describeMatch(c.match) : undefined],
         ]}
       />
+      {c.path !== undefined && <RematchButton copy={c} />}
       {c.tags && (
         <details className="mt-3">
           <summary className="cursor-pointer font-mono text-[11px] tracking-[0.15em] text-muted uppercase hover:text-paper">Tags in the file</summary>
@@ -121,6 +125,62 @@ function CopyCard({ copy: c }: { copy: TrackCopyMetadata }) {
             <Rows rows={tagRows(c.tags)} />
           </div>
         </details>
+      )}
+    </div>
+  );
+}
+
+const REMATCH_OUTCOME: Record<string, string> = {
+  auto: 'Matched on MusicBrainz. The metadata is up to date.',
+  manual: 'Matched on MusicBrainz. The metadata is up to date.',
+  review: 'MusicBrainz has a few possible albums: pick one in Settings → Sources → Review matches.',
+  unmatched: 'Not found on MusicBrainz: the song keeps the tags in its file.',
+  ignored: 'Left with the tags in its file.',
+};
+
+/**
+ * Match this file on MusicBrainz again. Folder files are matched by Playarr (the whole album they're in);
+ * Lidarr's files get their metadata from Lidarr, which is asked to refresh the artist.
+ */
+function RematchButton({ copy: c }: { copy: TrackCopyMetadata }) {
+  const rematch = useRematchFile();
+  const showMetadata = useUI((s) => s.showMetadata);
+  const [outcome, setOutcome] = useState<{ text: string; error?: boolean } | null>(null);
+  const lidarr = c.source.kind === 'lidarr';
+  const run = () => {
+    setOutcome(null);
+    rematch.mutate(c.fileId, {
+      onSuccess: (result) => {
+        if (result.kind === 'lidarr') return setOutcome({ text: result.message });
+        const text = REMATCH_OUTCOME[result.state] ?? 'Done.';
+        // A match can give the song its real MusicBrainz id, and with it another place in the catalog: follow
+        // it there (this view reloads, so the outcome goes to a toast).
+        if (result.trackId && result.trackId !== useUI.getState().metadataTrackId) {
+          toast(text);
+          showMetadata(result.trackId);
+        } else {
+          setOutcome({ text });
+        }
+      },
+      onError: (err) => setOutcome({ text: err.message, error: true }),
+    });
+  };
+  return (
+    <div className="mt-3 space-y-2">
+      <button
+        type="button"
+        onClick={run}
+        disabled={rematch.isPending}
+        className="inline-flex h-8 items-center gap-2 rounded-full border border-line px-3.5 text-[13px] text-paper transition hover:bg-paper/5 disabled:opacity-60"
+      >
+        {rematch.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+        {rematch.isPending ? (lidarr ? 'Asking Lidarr…' : 'Matching…') : lidarr ? 'Refresh in Lidarr' : 'Match again on MusicBrainz'}
+      </button>
+      {!lidarr && <SlowLookup active={rematch.isPending} what="this album" />}
+      {outcome && (
+        <p role="status" className={cn('text-[13px]', outcome.error ? 'text-red-300/90' : 'text-paper-dim')}>
+          {outcome.text}
+        </p>
       )}
     </div>
   );

@@ -430,6 +430,18 @@ export function useSourceActions() {
 export const useTrackMetadata = (id: number | null) =>
   useQuery({ queryKey: ['track-metadata', id], queryFn: () => api.trackMetadata(id!), enabled: id !== null, staleTime: 0 });
 
+/**
+ * Show metadata → Match again: a folder file is matched on MusicBrainz again (and the library rebuilt);
+ * a Lidarr file's artist is refreshed in Lidarr. Everything showing songs may change, so refresh it all.
+ */
+export function useRematchFile() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: number) => api.rematchFile(fileId),
+    onSuccess: () => void client.invalidateQueries(),
+  });
+}
+
 /** How many times to ask again while MusicBrainz details are still coming (every 2 s: about a minute). */
 const REVIEW_DETAIL_POLLS = 30;
 

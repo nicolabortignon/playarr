@@ -1,6 +1,6 @@
 import type { TrackMetadata } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { useUI } from '../lib/ui';
@@ -86,6 +86,27 @@ describe('TrackMetadataDialog', () => {
     open(away);
     expect(await screen.findByText(/shown on your home network only/)).toBeTruthy();
     expect(screen.queryByText(/\/host\/volume2/)).toBeNull();
+    // Matching again changes the catalog: offered on the home network only.
+    expect(screen.queryByRole('button', { name: /match again|refresh in lidarr/i })).toBeNull();
+  });
+
+  it('matches a folder file again and says what came of it', async () => {
+    const rematch = vi.spyOn(api, 'rematchFile').mockResolvedValue({ kind: 'folder', state: 'review', trackId: 700 });
+    open(meta());
+    fireEvent.click(await screen.findByRole('button', { name: /match again on musicbrainz/i }));
+    expect(await screen.findByText(/pick one in Settings → Sources → Review matches/)).toBeTruthy();
+    expect(rematch).toHaveBeenCalledWith(2);
+  });
+
+  it('follows the song when a match moves it, and asks Lidarr to refresh its own files', async () => {
+    vi.spyOn(api, 'rematchFile').mockImplementation(async (fileId) =>
+      fileId === 2 ? { kind: 'folder', state: 'auto', trackId: 701 } : { kind: 'lidarr', message: 'Lidarr is refreshing this artist.' },
+    );
+    open(meta());
+    fireEvent.click(await screen.findByRole('button', { name: /refresh in lidarr/i }));
+    expect(await screen.findByText('Lidarr is refreshing this artist.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /match again on musicbrainz/i }));
+    await waitFor(() => expect(useUI.getState().metadataTrackId).toBe(701));
   });
 
   it('describes formats', () => {

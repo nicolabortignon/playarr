@@ -27,6 +27,7 @@ import type {
   ReviewAction,
   ReviewGroup,
   TrackMetadata,
+  RematchResult,
   SearchResults,
   SourceInfo,
   SourceInput,
@@ -125,6 +126,7 @@ export const api = {
   folderAccess: () => get<FolderAccessOptions>('/api/settings/folders/access'),
   review: (id: number) => get<ReviewGroup[]>(`/api/settings/sources/${id}/review`),
   trackMetadata: (id: number) => get<TrackMetadata>(`/api/tracks/${id}/metadata`),
+  rematchFile: (fileId: number) => request<RematchResult>(`/api/files/${fileId}/rematch`, { method: 'POST' }),
   reviewAction: (id: number, action: ReviewAction) =>
     request<void>(`/api/settings/sources/${id}/review`, { method: 'POST', body: JSON.stringify(action) }),
   rematchSource: (id: number) => request<void>(`/api/settings/sources/${id}/rematch`, { method: 'POST' }),
