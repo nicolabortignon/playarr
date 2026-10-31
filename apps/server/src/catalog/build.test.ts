@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCatalog, compareCopies } from './build.ts';
+import { buildCatalog, compareCopies, looksIncomplete } from './build.ts';
 import { CatalogStore } from './store.ts';
 import { FLAC, FLAC_24, MP3, freshDb, mezzanine } from './testFixtures.ts';
 
@@ -137,5 +137,19 @@ describe('compareCopies', () => {
     expect(compareCopies(at(FLAC_24), at(FLAC))).toBeLessThan(0);
     expect(compareCopies(at(FLAC, 0), at(FLAC, 1))).toBeLessThan(0);
     expect(compareCopies(at(MP3, 0), at(FLAC, 1))).toBeGreaterThan(0);
+  });
+});
+
+describe('looksIncomplete', () => {
+  const t = (...numbers: number[]) => numbers.map((trackNumber) => ({ trackNumber, discNumber: 1 }));
+  it('takes one song, or songs with gaps in their numbers, for part of an album', () => {
+    expect(looksIncomplete(t(3))).toBe(true);
+    expect(looksIncomplete(t(1))).toBe(true);
+    expect(looksIncomplete(t(1, 2, 5))).toBe(true);
+    expect(looksIncomplete(t(2, 3))).toBe(true);
+  });
+  it('takes songs numbered 1, 2, 3… on each disc for a whole album', () => {
+    expect(looksIncomplete(t(1, 2, 3))).toBe(false);
+    expect(looksIncomplete([...t(1, 2), { trackNumber: 1, discNumber: 2 }, { trackNumber: 2, discNumber: 2 }])).toBe(false);
   });
 });

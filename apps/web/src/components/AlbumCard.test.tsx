@@ -63,6 +63,11 @@ describe('AlbumCard', () => {
     expect(router.state.location.pathname).toBe('/');
   });
 
+  it('offers the rest of an album whose length nobody knows when only some of it is here', async () => {
+    renderCard(album({ trackCount: 1, totalTrackCount: 1, mayBeIncomplete: true, mbid: undefined }));
+    expect(await screen.findByRole('button', { name: /request/i })).toBeTruthy();
+  });
+
   it('requests an album known only from its tags by artist and title', async () => {
     const request = vi.spyOn(api, 'requestAlbum').mockResolvedValue({
       mbid: 'rg-1',

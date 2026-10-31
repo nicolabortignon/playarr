@@ -43,6 +43,12 @@ export interface Album {
   format?: AudioFormat; // most common format among its tracks
   /** MusicBrainz release group, when known: what a request for the rest of the album asks Lidarr for. */
   mbid?: string;
+  /**
+   * No source knows how many songs the album has (folder files without a track total or a MusicBrainz
+   * match), and the songs here don't look like all of it (just one, or numbers with gaps): the rest can
+   * be requested.
+   */
+  mayBeIncomplete?: true;
 }
 
 export interface Track {

@@ -59,17 +59,19 @@ export function RequestButton({
   // Some of its songs are already here: say how many (opening the album), and offer the rest.
   if (state === 'partial') {
     const have = availability.have ?? 0;
-    const total = availability.total ?? 0;
+    // How long the album is may be unknown (folder files without a track total): then just how many are here.
+    const total = availability.total;
+    const summary = total ? `${have} of ${total} songs in your library` : `${have} ${have === 1 ? 'song' : 'songs'} in your library`;
     return (
       <span className={cn('inline-flex shrink-0 items-center gap-1.5', className)}>
         <button
           type="button"
-          title={`${have} of ${total} songs in your library`}
-          aria-label={`${have} of ${total} songs in your library: open the album`}
+          title={summary}
+          aria-label={`${summary}: open the album`}
           onClick={stop(() => albumId && navigate(`/albums/${albumId}`))}
           className={cn(pill, 'border border-emerald-400/30 text-emerald-300 tabular hover:bg-emerald-400/10')}
         >
-          {have}/{total}
+          {total ? `${have}/${total}` : `${have} here`}
         </button>
         {requestsOn && (
           <button
@@ -276,7 +278,7 @@ export function RequestsPill({ count }: { count: number }) {
 
 /** A library album missing songs, which can be asked for (not the "Loose songs" bucket of an artist). */
 export function canRequestRest(album: Album): boolean {
-  return album.albumType !== 'Loose' && album.trackCount < album.totalTrackCount;
+  return album.albumType !== 'Loose' && (album.trackCount < album.totalTrackCount || !!album.mayBeIncomplete);
 }
 
 /** Only some of a library album is here: ask Lidarr for the whole of it, then show how that's going. */

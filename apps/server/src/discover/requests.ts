@@ -241,8 +241,8 @@ export class Requests {
     const albumId = await this.library.albumIdByName(artistName, albumTitle);
     const album = albumId ? await this.library.album(albumId) : undefined;
     const songs: Songs | undefined =
-      albumId && album && album.trackCount < album.totalTrackCount
-        ? { albumId, have: album.trackCount, total: album.totalTrackCount }
+      albumId && album && (album.trackCount < album.totalTrackCount || album.mayBeIncomplete)
+        ? { albumId, have: album.trackCount, ...(album.mayBeIncomplete ? {} : { total: album.totalTrackCount }) }
         : undefined;
     if (albumId && !songs) return { state: 'available', albumId };
     const key = albumKey(artistName, albumTitle);
@@ -327,16 +327,16 @@ export class Requests {
   }
 }
 
-/** Some of an album's songs in the library: which album, how many, out of how many. */
+/** Some of an album's songs in the library: which album, how many, out of how many (where known). */
 interface Songs {
   albumId: number;
   have: number;
-  total: number;
+  total?: number;
 }
 
 function songsOf(known: LidarrAlbumRef | undefined): Songs | undefined {
-  return known?.albumId !== undefined && known.have !== undefined && known.total !== undefined
-    ? { albumId: known.albumId, have: known.have, total: known.total }
+  return known?.albumId !== undefined && known.have !== undefined
+    ? { albumId: known.albumId, have: known.have, ...(known.total !== undefined ? { total: known.total } : {}) }
     : undefined;
 }
 

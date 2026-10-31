@@ -23,7 +23,21 @@ export interface LidarrAlbumRef {
 
 /** have/total for an album missing songs, else nothing. */
 function completeness(album: AlbumDetail | undefined): Pick<LidarrAlbumRef, 'have' | 'total'> {
-  return album && album.trackCount < album.totalTrackCount ? { have: album.trackCount, total: album.totalTrackCount } : {};
+  if (!album) return {};
+  if (album.trackCount < album.totalTrackCount) return { have: album.trackCount, total: album.totalTrackCount };
+  return album.mayBeIncomplete ? { have: album.trackCount } : {};
+}
+
+/**
+ * Whether an album nobody knows the length of looks like only part of one: a single song, or track
+ * numbers that aren't 1, 2, 3… on each disc (one song of a folder album tagged "No Strings Attached",
+ * track 3, say). Untagged complete albums numbered 1…n don't.
+ */
+export function looksIncomplete(tracks: { trackNumber: number; discNumber: number }[]): boolean {
+  if (tracks.length === 1) return true;
+  const byDisc = new Map<number, number[]>();
+  for (const t of tracks) byDisc.set(t.discNumber, [...(byDisc.get(t.discNumber) ?? []), t.trackNumber]);
+  return [...byDisc.values()].some((numbers) => numbers.sort((a, b) => a - b).some((n, i) => n !== i + 1));
 }
 
 export interface Catalog {
@@ -242,6 +256,9 @@ function toAlbumDetail(
     duration: tracks.reduce((sum, t) => sum + t.duration, 0),
     trackCount: tracks.length,
     totalTrackCount: Math.max(m.totalTrackCount ?? 0, tracks.length + missingTracks.length),
+    ...(m.albumType !== 'Loose' && !m.totalTrackCount && !missingTracks.length && looksIncomplete(tracks)
+      ? { mayBeIncomplete: true as const }
+      : {}),
     coverUrl: m.coverUrl ?? fallbackCover,
     // When the album first entered the library (kept by the store across file changes), else its earliest copy.
     addedAt: row.addedAt ?? added.sort()[0],
