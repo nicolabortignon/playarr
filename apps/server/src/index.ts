@@ -104,7 +104,7 @@ const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE
   metadataProfileId: config.LIDARR_METADATA_PROFILE_ID,
 });
 const discover = new Discover(lidarr, musicbrainz, library, requests);
-const recommendations = new Recommendations(playlists, library, requests);
+const recommendations = new Recommendations(playlists, library, requests, musicbrainz);
 
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });

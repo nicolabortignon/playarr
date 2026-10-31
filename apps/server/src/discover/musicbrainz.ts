@@ -131,6 +131,15 @@ export class MusicBrainz {
     ).then((r) => r['release-groups']);
   }
 
+  /** Recordings (songs) by title and artist, best match first. */
+  searchRecordings(artistName: string, title: string, signal?: AbortSignal) {
+    const query = `recording:"${luceneEscape(title)}" AND artist:"${luceneEscape(artistName)}"`;
+    return this.get<{ recordings: { id: string; title: string; score: number }[] }>(
+      `/recording?query=${encodeURIComponent(query)}&limit=5`,
+      signal,
+    ).then((r) => r.recordings);
+  }
+
   /** Releases (editions) by album title and artist, best match first. */
   searchReleases(artistName: string, albumTitle: string, signal?: AbortSignal, opts?: { background?: boolean }) {
     const query = `release:"${luceneEscape(albumTitle)}" AND artist:"${luceneEscape(artistName)}"`;

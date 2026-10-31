@@ -14,20 +14,47 @@ const MAX_MISSING = 20;
 const OWNED_PER_ARTIST = 3;
 const MISSING_PER_ARTIST = 2;
 
+const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** How sure a MusicBrainz search must be before a song without an id is taken for its result. */
+const SEARCH_MIN_SCORE = 90;
+
 /** "Songs like these": ListenBrainz similar recordings, pooled across a playlist's songs. */
 export class Recommendations {
+  /** MusicBrainz ids found by name for songs that have none, by artist|title (null: none found). */
+  private readonly found = new Map<string, string | null>();
+
   constructor(
     private readonly playlists: Playlists,
     private readonly library: Library,
     private readonly requests: Requests,
+    /** Finds a song's MusicBrainz recording by name, for songs known only from their tags. */
+    private readonly mb?: { searchRecordings(artistName: string, title: string, signal?: AbortSignal): Promise<{ id: string; score: number }[]> },
   ) {}
+
+  /**
+   * The MusicBrainz recording ListenBrainz knows a song by. Folder songs that matching hasn't identified
+   * have only a local id, which ListenBrainz knows nothing about: look those up by artist and title.
+   */
+  private async recordingMbid(song: { recordingId: string; artistName: string; title: string }, signal?: AbortSignal) {
+    if (MBID.test(song.recordingId)) return song.recordingId;
+    if (!this.mb) return undefined;
+    const key = songKey(song.artistName, song.title);
+    if (!this.found.has(key)) {
+      const hits = await this.mb.searchRecordings(primaryArtist(song.artistName), song.title, signal).catch(() => undefined);
+      if (!hits) return undefined; // MusicBrainz unreachable: try again next time
+      this.found.set(key, hits.find((h) => h.score >= SEARCH_MIN_SCORE)?.id ?? null);
+    }
+    return this.found.get(key) ?? undefined;
+  }
 
   /** `variant` picks a different random set of seeds (0 = evenly spread through the playlist). */
   async forPlaylist(playlistId: number, variant = 0, signal?: AbortSignal): Promise<RecommendationsResult> {
     const playlist = await this.playlists.get(playlistId);
-    const songs = uniqueBy(playlist.items, (i) => i.recordingId).filter((i) => !i.recordingId.startsWith('track:'));
+    const songs = uniqueBy(playlist.items, (i) => i.recordingId);
     const random = seededRandom(variant);
-    const seeds = pickSeeds(songs, MAX_SEEDS, variant, random);
+    const picked = pickSeeds(songs, MAX_SEEDS, variant, random);
+    const resolved = await Promise.all(picked.map(async (s) => ({ ...s, recordingId: await this.recordingMbid(s, signal) })));
+    const seeds = resolved.filter((s): s is typeof s & { recordingId: string } => !!s.recordingId);
     const seedTitle = new Map(seeds.map((s) => [s.recordingId, s.title]));
 
     const results = await Promise.allSettled(seeds.map((s) => similarRecordings(s.recordingId, signal)));
@@ -39,7 +66,7 @@ export class Recommendations {
 
     // Pool: normalize each seed's scores so one seed with huge numbers doesn't drown the rest;
     // songs similar to several playlist songs accumulate and rise.
-    const inPlaylist = new Set(playlist.items.map((i) => i.recordingId));
+    const inPlaylist = new Set([...playlist.items.map((i) => i.recordingId), ...seeds.map((s) => s.recordingId)]);
     const inPlaylistByName = new Set(playlist.items.map((i) => songKey(primaryArtist(i.artistName), i.title)));
     const pooled = new Map<string, { rec: LbSimilarRecording; score: number; best: number; because: string }>();
     for (const list of lists) {
