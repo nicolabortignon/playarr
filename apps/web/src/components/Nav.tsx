@@ -236,7 +236,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Main"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-ink-900/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-ink-900/[0.97] pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       <div className="grid h-[60px] grid-cols-4">
         {MOBILE_LINKS.map(({ to, label, icon: Icon }) => (

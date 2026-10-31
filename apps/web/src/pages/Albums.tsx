@@ -1,10 +1,11 @@
 import type { AlbumSort } from '@playarr/shared';
 import { useSearchParams } from 'react-router';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { AlbumCard } from '../components/Cards';
 import { ErrorState, Skeleton } from '../components/Section';
 import { cn } from '../lib/cn';
 import { useAlbums } from '../lib/queries';
+import { useIncremental } from '../lib/useIncremental';
 
 const SORTS: { value: AlbumSort; label: string }[] = [
   { value: 'artist', label: 'Artist' },
@@ -14,6 +15,18 @@ const SORTS: { value: AlbumSort; label: string }[] = [
 ];
 
 export const GRID = 'grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:gap-x-6 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
+
+/** How many grid cards rise in when a page opens: the first screenful. The rest just appear. */
+const ANIMATED = 18;
+
+/**
+ * Props for the i-th card of a long grid: a short staggered entrance for the first screenful only (a delay
+ * per card across hundreds of them left cards blank for seconds), and off-screen cards skipped by the browser.
+ */
+export function gridItem(i: number, { lift = false } = {}): { className: string; style?: CSSProperties } {
+  const base = lift ? 'offscreen-skip offscreen-skip-lift' : 'offscreen-skip';
+  return i < ANIMATED ? { className: base, style: { animationDelay: `${i * 25}ms` } } : { className: `${base} animate-none` };
+}
 
 export function PageTitle({ title, count, children }: { title: string; count?: number; children?: ReactNode }) {
   return (
@@ -31,6 +44,7 @@ export function AlbumsPage() {
   const [params, setParams] = useSearchParams();
   const sort = (SORTS.find((s) => s.value === params.get('sort'))?.value ?? 'artist') as AlbumSort;
   const { data, error, isPending } = useAlbums(sort);
+  const { visible, more, sentinel } = useIncremental(data, { resetKey: sort });
 
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
@@ -56,11 +70,14 @@ export function AlbumsPage() {
       {error ? (
         <ErrorState error={error} />
       ) : (
-        <div className={GRID}>
-          {isPending
-            ? Array.from({ length: 12 }, (_, i) => <Skeleton key={i} className="aspect-square" />)
-            : data?.map((a, i) => <AlbumCard key={a.id} album={a} style={{ animationDelay: `${Math.min(i, 24) * 25}ms` }} />)}
-        </div>
+        <>
+          <div className={GRID}>
+            {isPending
+              ? Array.from({ length: 12 }, (_, i) => <Skeleton key={i} className="aspect-square" />)
+              : visible.map((a, i) => <AlbumCard key={a.id} album={a} {...gridItem(i, { lift: true })} />)}
+          </div>
+          {more && <div ref={sentinel} aria-hidden className="h-px" />}
+        </>
       )}
     </div>
   );

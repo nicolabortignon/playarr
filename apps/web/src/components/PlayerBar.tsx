@@ -112,7 +112,7 @@ export function MiniPlayer() {
         aria-label="Open now playing"
         onClick={() => open(true)}
         onKeyDown={(e) => e.key === 'Enter' && open(true)}
-        className="relative flex h-[60px] items-center gap-3 overflow-hidden rounded-xl border border-paper/[0.07] bg-ink-800/90 pr-2 pl-2 shadow-2xl shadow-black/60 backdrop-blur-2xl"
+        className="relative flex h-[60px] items-center gap-3 overflow-hidden rounded-xl border border-paper/[0.07] bg-ink-800 pr-2 pl-2 shadow-2xl shadow-black/60"
       >
         {/* Tinted wash from the accent color. */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-accent/15 to-transparent" />

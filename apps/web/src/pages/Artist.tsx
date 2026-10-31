@@ -11,7 +11,7 @@ import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { useArtist, useDiscoverArtist } from '../lib/queries';
 import { playArtist } from '../player/actions';
-import { GRID } from './Albums';
+import { gridItem, GRID } from './Albums';
 
 function groupAlbums(albums: Album[]) {
   const groups: { title: string; albums: Album[] }[] = [
@@ -178,7 +178,7 @@ export function ArtistPage() {
             <SectionHeader title={g.title} kicker={plural(g.albums.length, 'release')} />
             <div className={GRID}>
               {g.albums.map((a, i) => (
-                <AlbumCard key={a.id} album={a} style={{ animationDelay: `${i * 35}ms` }} />
+                <AlbumCard key={a.id} album={a} {...gridItem(i, { lift: true })} />
               ))}
             </div>
           </section>
