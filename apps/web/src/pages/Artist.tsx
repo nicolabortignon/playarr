@@ -3,11 +3,13 @@ import { Play, Shuffle } from 'lucide-react';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 import { AlbumCard } from '../components/Cards';
+import { DiscoverAlbumCard } from '../components/Discover';
 import { ErrorState, SectionHeader, Skeleton } from '../components/Section';
+import { SlowLookup } from '../components/SlowLookup';
 import { artistHero } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
-import { useArtist } from '../lib/queries';
+import { useArtist, useDiscoverArtist } from '../lib/queries';
 import { playArtist } from '../player/actions';
 import { GRID } from './Albums';
 
@@ -28,6 +30,66 @@ function groupAlbums(albums: Album[]) {
     else groups[0]!.albums.push(a);
   }
   return groups.filter((g) => g.albums.length);
+}
+
+/**
+ * The artist's albums and EPs that aren't in the library at all, from their MusicBrainz discography, each
+ * with Request. (Albums partly here are in the sections above, with their own Request.)
+ */
+function NotInLibrary({ artistMbid, owned }: { artistMbid: string; owned: Album[] }) {
+  const { data, error, isPending, isFetching, refetch } = useDiscoverArtist(artistMbid);
+  const ownedMbids = new Set(owned.map((a) => a.mbid).filter(Boolean));
+  const missing = (data?.albums ?? []).filter(
+    (a) => !ownedMbids.has(a.mbid) && a.availability.state !== 'available' && a.availability.state !== 'partial',
+  );
+  const groups = [
+    { title: 'Albums not in your library', items: missing.filter((a) => a.type === 'Album') },
+    { title: 'EPs & soundtracks not in your library', items: missing.filter((a) => a.type !== 'Album') },
+  ].filter((g) => g.items.length);
+
+  if (isPending) {
+    return (
+      <section className="mb-14" aria-busy="true">
+        <SectionHeader title="Not in your library" />
+        <div className={GRID}>
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="aspect-square" />
+          ))}
+        </div>
+        <SlowLookup active what="the rest of this artist’s albums" className="mt-4" />
+      </section>
+    );
+  }
+  if (error || data?.discographyError) {
+    return (
+      <section className="mb-14 max-w-md">
+        <SectionHeader title="Not in your library" />
+        <p className="text-sm text-paper-dim">Couldn’t load the rest of this artist’s albums from MusicBrainz right now.</p>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          className="mt-4 rounded-full border border-line px-4 py-2 font-mono text-[11px] tracking-wider text-paper uppercase transition hover:border-paper/30 disabled:opacity-50"
+        >
+          {isFetching ? 'Retrying…' : 'Try again'}
+        </button>
+      </section>
+    );
+  }
+  return (
+    <>
+      {groups.map((g) => (
+        <section key={g.title} className="mb-14">
+          <SectionHeader title={g.title} kicker={plural(g.items.length, 'release')} />
+          <div className={GRID}>
+            {g.items.map((a, i) => (
+              <DiscoverAlbumCard key={a.mbid} album={a} style={{ animationDelay: `${Math.min(i, 20) * 30}ms` }} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </>
+  );
 }
 
 export function ArtistPage() {
@@ -121,6 +183,8 @@ export function ArtistPage() {
             </div>
           </section>
         ))}
+
+        {artist.mbid && <NotInLibrary artistMbid={artist.mbid} owned={artist.albums} />}
 
         {artist.overview && (
           <section className="max-w-3xl">

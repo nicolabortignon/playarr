@@ -76,10 +76,11 @@ export const useDiscover = (q: string) =>
     retry: false,
   });
 
-export const useDiscoverArtist = (mbid: string) =>
+export const useDiscoverArtist = (mbid: string | undefined) =>
   useQuery({
     queryKey: ['discover-artist', mbid],
-    queryFn: ({ signal }) => api.discoverArtist(mbid, signal),
+    queryFn: ({ signal }) => api.discoverArtist(mbid!, signal),
+    enabled: !!mbid,
     staleTime: 60_000,
   });
 

@@ -207,6 +207,7 @@ function toArtist(row: ArtistRow, albums: AlbumDetail[]): Artist {
     overview: m.overview,
     albumCount: albums.length,
     trackCount: albums.reduce((n, a) => n + a.tracks.length, 0),
+    ...(m.mbid ? { mbid: m.mbid } : {}),
     // Lidarr's metadata has no photo for some artists; fall back to their newest album cover.
     imageUrl:
       m.imageUrl ??

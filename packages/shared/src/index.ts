@@ -21,6 +21,8 @@ export interface Artist {
   imageUrl?: string; // square-ish poster
   fanartUrl?: string; // wide background
   logoUrl?: string; // transparent PNG logo
+  /** MusicBrainz artist, when known: the artist page uses it to list albums not in the library. */
+  mbid?: string;
 }
 
 export interface Album {
