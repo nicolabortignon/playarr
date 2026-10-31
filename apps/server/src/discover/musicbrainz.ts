@@ -107,10 +107,11 @@ export class MusicBrainz {
     ).then((r) => r['release-groups']);
   }
 
-  /** Artists by name, best match first. */
+  /** Artists by name or by another name they go by ("N Sync" finds *NSYNC), best match first. */
   searchArtists(name: string, signal?: AbortSignal) {
+    const q = luceneEscape(name);
     return this.get<{ artists: { id: string; name: string; score: number }[] }>(
-      `/artist?query=${encodeURIComponent(`artist:"${luceneEscape(name)}"`)}&limit=5`,
+      `/artist?query=${encodeURIComponent(`artist:"${q}" OR alias:"${q}"`)}&limit=5`,
       signal,
     ).then((r) => r.artists);
   }

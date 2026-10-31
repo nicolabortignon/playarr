@@ -181,6 +181,15 @@ export class Requests {
         .filter((g) => sameTitle(g.title) && sameArtist(creditName(g['artist-credit'])))
         .sort((a, b) => releaseGroupRank(a) - releaseGroupRank(b))[0];
       if (match) return this.lookupByMbid(match.id);
+      // The files may call the artist by another name MusicBrainz knows them by ("N Sync" for *NSYNC),
+      // which album search doesn't look at: find the artist, then the album in their discography.
+      const artist = (await this.mb.searchArtists(ref.artistName)).find((a) => a.score >= 90);
+      if (artist) {
+        const theirs = (await this.mb.artistReleaseGroups(artist.id))
+          .filter((g) => sameTitle(g.title))
+          .sort((a, b) => releaseGroupRank(a) - releaseGroupRank(b))[0];
+        if (theirs) return this.lookupByMbid(theirs.id);
+      }
     } catch (err) {
       mbError = err as Error;
     }

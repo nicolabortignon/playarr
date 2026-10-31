@@ -41,7 +41,7 @@ function fakeLidarr() {
 const cleanups: (() => void)[] = [];
 afterEach(() => cleanups.splice(0).forEach((c) => c()));
 
-function setup(settings: Partial<RequestSettings> = {}, env: RequestDefaults = {}) {
+function setup(settings: Partial<RequestSettings> = {}, env: RequestDefaults = {}, mb: Partial<MusicBrainz> = {}) {
   const t = tempDir();
   cleanups.push(t.cleanup);
   const lidarr = fakeLidarr();
@@ -54,7 +54,7 @@ function setup(settings: Partial<RequestSettings> = {}, env: RequestDefaults = {
   const current: RequestSettings = { enabled: true, searchOnAdd: true, ...settings };
   const requests = new Requests(
     lidarr as unknown as LidarrClient,
-    {} as MusicBrainz,
+    mb as MusicBrainz,
     library as unknown as Library,
     join(t.dir, 'requests.json'),
     () => current,
@@ -181,5 +181,20 @@ describe('Requests', () => {
       library.album.mockResolvedValue({ trackCount: 10, totalTrackCount: 10 });
       expect(await requests.availabilityByName('Massive Attack', 'Mezzanine')).toEqual({ state: 'available', albumId: 5 });
     });
+  });
+
+  it('finds an album whose files call the artist by another name MusicBrainz knows them by', async () => {
+    const mb = {
+      searchReleaseGroups: vi.fn(async () => []),
+      searchArtists: vi.fn(async () => [{ id: 'nsync', name: '*NSYNC', score: 100 }]),
+      artistReleaseGroups: vi.fn(async () => [
+        { id: 'other', title: 'Celebrity', 'primary-type': 'Album' },
+        { id: MBID, title: 'No Strings Attached', 'primary-type': 'Album' },
+      ]),
+    } as unknown as Partial<MusicBrainz>;
+    const { requests, lidarr } = setup({}, {}, mb);
+    await requests.request({ artistName: 'N Sync', albumTitle: 'No Strings Attached' });
+    expect(mb.searchArtists).toHaveBeenCalledWith('N Sync');
+    expect(lidarr.albumByMbid).toHaveBeenCalledWith(MBID);
   });
 });
