@@ -1,5 +1,5 @@
 import type { MissingTrack, Track } from '@playarr/shared';
-import { Disc3, ListEnd, ListMusic, ListPlus, Mic2, Play } from 'lucide-react';
+import { Disc3, Info, ListEnd, ListMusic, ListPlus, Mic2, Play } from 'lucide-react';
 import { Fragment } from 'react';
 import { useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
@@ -34,6 +34,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing }: Tra
   const toggle = usePlayer((s) => s.toggle);
   const navigate = useNavigate();
   const openPicker = useUI((s) => s.openPlaylistPicker);
+  const showMetadata = useUI((s) => s.showMetadata);
 
   const rows: Row[] = tracks.map((track, index) => ({ track, index }));
   if (missing?.length) {
@@ -125,6 +126,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing }: Tra
                       ? [{ label: 'Go to album', icon: Disc3, onSelect: () => navigate(`/albums/${t.albumId}`) }]
                       : []),
                     { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${t.artistId}`) },
+                    { label: 'Show metadata', icon: Info, onSelect: () => showMetadata(t.id) },
                   ]}
                 />
               </div>

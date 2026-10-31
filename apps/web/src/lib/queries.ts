@@ -426,6 +426,10 @@ export function useSourceActions() {
 }
 
 /** A folder source's albums waiting for review (doubtful matches). */
+/** Everything about one song (track menu → Show metadata). Always fresh: files and matches change. */
+export const useTrackMetadata = (id: number | null) =>
+  useQuery({ queryKey: ['track-metadata', id], queryFn: () => api.trackMetadata(id!), enabled: id !== null, staleTime: 0 });
+
 /** How many times to ask again while MusicBrainz details are still coming (every 2 s: about a minute). */
 const REVIEW_DETAIL_POLLS = 30;
 

@@ -26,6 +26,7 @@ import type {
   RequestSettingsPatch,
   ReviewAction,
   ReviewGroup,
+  TrackMetadata,
   SearchResults,
   SourceInfo,
   SourceInput,
@@ -123,6 +124,7 @@ export const api = {
   /** Which folder locations this server can reach (SMB needs rclone). */
   folderAccess: () => get<FolderAccessOptions>('/api/settings/folders/access'),
   review: (id: number) => get<ReviewGroup[]>(`/api/settings/sources/${id}/review`),
+  trackMetadata: (id: number) => get<TrackMetadata>(`/api/tracks/${id}/metadata`),
   reviewAction: (id: number, action: ReviewAction) =>
     request<void>(`/api/settings/sources/${id}/review`, { method: 'POST', body: JSON.stringify(action) }),
   rematchSource: (id: number) => request<void>(`/api/settings/sources/${id}/rematch`, { method: 'POST' }),

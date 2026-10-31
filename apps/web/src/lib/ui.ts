@@ -8,6 +8,10 @@ interface UIState {
   playlistPicker: Track[] | null;
   openPlaylistPicker: (tracks: Track[]) => void;
   closePlaylistPicker: () => void;
+  /** The song whose "Show metadata" dialog is open. */
+  metadataTrackId: number | null;
+  showMetadata: (trackId: number) => void;
+  closeMetadata: () => void;
 }
 
 export const useUI = create<UIState>()((set) => ({
@@ -16,4 +20,7 @@ export const useUI = create<UIState>()((set) => ({
   playlistPicker: null,
   openPlaylistPicker: (tracks) => set({ playlistPicker: tracks.filter((t) => t.recordingId) }),
   closePlaylistPicker: () => set({ playlistPicker: null }),
+  metadataTrackId: null,
+  showMetadata: (metadataTrackId) => set({ metadataTrackId }),
+  closeMetadata: () => set({ metadataTrackId: null }),
 }));

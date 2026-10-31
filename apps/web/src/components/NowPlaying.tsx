@@ -1,4 +1,4 @@
-import { ChevronDown, Disc3, ListMusic, ListPlus, Mic2 } from 'lucide-react';
+import { ChevronDown, Disc3, Info, ListMusic, ListPlus, Mic2 } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -23,6 +23,7 @@ export function NowPlaying() {
 function Sheet() {
   const setOpen = useUI((s) => s.setNowPlaying);
   const openPicker = useUI((s) => s.openPlaylistPicker);
+  const showMetadata = useUI((s) => s.showMetadata);
   const track = useCurrentTrack()!;
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
@@ -93,6 +94,7 @@ function Sheet() {
               { label: 'Add to playlist…', icon: ListPlus, onSelect: () => openPicker([track]) },
               { label: 'Go to album', icon: Disc3, onSelect: () => go(`/albums/${track.albumId}`) },
               { label: 'Go to artist', icon: Mic2, onSelect: () => go(`/artists/${track.artistId}`) },
+              { label: 'Show metadata', icon: Info, onSelect: () => showMetadata(track.id) },
               { label: 'Open queue', icon: ListMusic, onSelect: () => go('/queue') },
             ]}
           />

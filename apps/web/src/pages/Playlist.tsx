@@ -1,5 +1,5 @@
 import type { CoverLayout, PlaylistCoverInfo, PlaylistItem } from '@playarr/shared';
-import { Disc3, GripVertical, ListEnd, ListPlus, Mic2, Palette, Pencil, Play, Shuffle, Trash2, X } from 'lucide-react';
+import { Disc3, GripVertical, Info, ListEnd, ListPlus, Mic2, Palette, Pencil, Play, Shuffle, Trash2, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -15,6 +15,7 @@ import { ErrorState, Skeleton } from '../components/Section';
 import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
 import { usePlaylist, usePlaylistMutations } from '../lib/queries';
+import { useUI } from '../lib/ui';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 
@@ -269,6 +270,7 @@ function PlaylistRow({
                   { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks([track], 'end') },
                   { label: 'Go to album', icon: Disc3, onSelect: () => navigate(`/albums/${track.albumId}`) },
                   { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${track.artistId}`) },
+                  { label: 'Show metadata', icon: Info, onSelect: () => useUI.getState().showMetadata(track.id) },
                 ]
               : []),
             { label: 'Remove from playlist', icon: X, onSelect: onRemove },

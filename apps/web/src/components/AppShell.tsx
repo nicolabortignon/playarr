@@ -6,6 +6,7 @@ import { usePrefs, type MotionPref } from '../lib/prefs';
 import { AudioEngine } from '../player/AudioEngine';
 import { useKeyboardShortcuts } from '../player/useKeyboardShortcuts';
 import { AddToPlaylistDialog } from './AddToPlaylistDialog';
+import { TrackMetadataDialog } from './TrackMetadataDialog';
 import { BottomNav, Sidebar } from './Nav';
 import { NowPlaying } from './NowPlaying';
 import { MiniPlayer, PlayerBar } from './PlayerBar';
@@ -39,6 +40,7 @@ export function AppShell() {
       <BottomNav />
       <NowPlaying />
       <AddToPlaylistDialog />
+      <TrackMetadataDialog />
       <Toasts />
       <AudioEngine />
       <ScrollRestoration />
