@@ -76,6 +76,8 @@ const matcher = new Matcher({
     // Background work: counted apart in the queue status, so the UI can say why Discover waits.
     searchReleases: (artist, album) => musicbrainz.searchReleases(artist, album, undefined, { background: true }),
     release: async (id) => toReleaseInfo(await musicbrainz.release(id, undefined, { background: true })),
+    searchArtists: (name) => musicbrainz.searchArtists(name, undefined, { background: true }),
+    searchReleasesOfArtist: (artistMbid, album) => musicbrainz.searchReleasesOfArtist(artistMbid, album, undefined, { background: true }),
   },
   acoustid: new AcoustId(() => store.appSetting(ACOUSTID_KEY) || undefined),
   fingerprint: (sourceId, path) => folders.get(sourceId)?.fingerprint?.(path) ?? Promise.resolve(null),

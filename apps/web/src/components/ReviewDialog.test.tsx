@@ -1,6 +1,6 @@
 import type { ReviewCandidate, ReviewGroup } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { ReviewDialog } from './ReviewDialog';
@@ -107,4 +107,23 @@ describe('ReviewDialog', () => {
     renderDialog();
     expect(await screen.findByText(/Getting this edition’s details/)).toBeTruthy();
   });
+
+  it('marks albums found nowhere on MusicBrainz and saves names fixed by hand', async () => {
+    groups = [{ ...group('g1', 'No Strings Attached', []), artistName: 'N Sync', notFound: true }];
+    const reviewAction = vi.spyOn(api, 'reviewAction').mockResolvedValue(undefined);
+    renderDialog();
+    expect(await screen.findByText(/not found on musicbrainz/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /fix names/i }));
+    const form = screen.getByRole('form', { name: /fix names/i });
+    fireEvent.change(within(form).getByLabelText('Artist'), { target: { value: '*NSYNC' } });
+    fireEvent.change(within(form).getByLabelText(/title of a\.flac/i), { target: { value: 'Bye Bye Bye' } });
+    fireEvent.submit(form);
+    await waitFor(() =>
+      expect(reviewAction).toHaveBeenCalledWith(1, {
+        groupKey: 'g1',
+        names: { artist: '*NSYNC', album: 'No Strings Attached', titles: { 'a.flac': 'Bye Bye Bye' } },
+      }),
+    );
+  });
 });
+

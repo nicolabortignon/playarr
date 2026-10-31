@@ -637,11 +637,11 @@ export class CatalogStore {
     this.db.prepare("DELETE FROM folder_matches WHERE source_id = ? AND state NOT IN ('manual', 'ignored')").run(sourceId);
   }
 
-  /** Album groups waiting for review, per source. */
+  /** Album groups waiting for review (to choose a match, or found nowhere on MusicBrainz), per source. */
   matchCounts(): Map<number, { review: number }> {
     const rows = this.db
       .prepare(
-        "SELECT source_id AS id, COUNT(DISTINCT group_key) AS review FROM folder_matches WHERE state = 'review' GROUP BY source_id",
+        "SELECT source_id AS id, COUNT(DISTINCT group_key) AS review FROM folder_matches WHERE state IN ('review', 'unmatched') GROUP BY source_id",
       )
       .all() as { id: number; review: number }[];
     return new Map(rows.map((r) => [r.id, { review: r.review }]));

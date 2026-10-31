@@ -55,6 +55,13 @@ const reviewInput = z.object({
   groupKey: z.string().min(1),
   releaseId: z.string().min(1).nullable().optional(),
   search: z.object({ artist: z.string().trim().min(1).max(200), album: z.string().trim().min(1).max(200) }).optional(),
+  names: z
+    .object({
+      artist: z.string().trim().min(1).max(200),
+      album: z.string().trim().min(1).max(200),
+      titles: z.record(z.string(), z.string().max(300)),
+    })
+    .optional(),
 });
 const matchingInput = z.object({ acoustidKey: z.string().trim().max(100) });
 const organizeInput = z.object({ moves: z.array(z.string()).max(10_000) });
@@ -137,7 +144,7 @@ export function settingsRoutes(
   deps: {
     sources: SourceManager;
     library: LibraryControl;
-    matcher: Pick<Matcher, 'reviewGroups' | 'refreshReviewDetailsSoon' | 'applyRelease' | 'ignore' | 'search' | 'enqueue'>;
+    matcher: Pick<Matcher, 'reviewGroups' | 'refreshReviewDetailsSoon' | 'applyRelease' | 'ignore' | 'search' | 'rename' | 'enqueue'>;
     store: Pick<CatalogStore, 'clearMatches' | 'appSetting' | 'setAppSetting'>;
     organizer: Pick<Organizer, 'plan' | 'apply' | 'undo'>;
     /** fpcalc is installed. */
@@ -235,6 +242,7 @@ export function settingsRoutes(
       const action = parse(reviewInput, req.body);
       try {
         if (action.search) await matcher.search(id, action.groupKey, action.search.artist, action.search.album);
+        else if (action.names) matcher.rename(id, action.groupKey, action.names);
         else if (action.releaseId === null) matcher.ignore(id, action.groupKey);
         else if (action.releaseId) await matcher.applyRelease(id, action.groupKey, action.releaseId);
         else throw new SourceError('Choose a release, search, or leave it unmatched', 400);

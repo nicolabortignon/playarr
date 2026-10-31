@@ -121,6 +121,39 @@ describe('Matcher', () => {
     expect(store.matches(sourceId).get('Someone/Demo/01 Song.flac')!.state).toBe('unmatched');
   });
 
+  it('finds an album whose files call the artist by another name MusicBrainz knows them by', async () => {
+    const { matcher, store, sourceId, mb } = setup(mezzanineFiles, { hits: [] });
+    const extra = {
+      searchArtists: vi.fn(async () => [{ id: 'art-1', score: 100 }]),
+      searchReleasesOfArtist: vi.fn(async () => [hit]),
+    };
+    Object.assign(mb, extra);
+    await matcher.matchSource(sourceId);
+    expect(extra.searchReleasesOfArtist).toHaveBeenCalledWith('art-1', 'Mezzanine');
+    expect(store.matches(sourceId).get('Massive Attack/Mezzanine/01 Angel.flac')!.state).toBe('auto');
+  });
+
+  it('puts albums found nowhere on MusicBrainz up for review, where their names can be fixed', async () => {
+    const files = { 'N Sync/No Strings Attached/03 Bye Bye Bye.flac': { album: 'No Strings Attached', artist: 'N Sync', title: 'Bye Bye Bye' } };
+    const { matcher, store, sourceId, onMatched } = setup(files, { hits: [] });
+    await matcher.matchSource(sourceId);
+    const [group] = matcher.reviewGroups(sourceId);
+    expect(group).toMatchObject({ artistName: 'N Sync', albumTitle: 'No Strings Attached', candidates: [], notFound: true });
+    expect(store.matchCounts().get(sourceId)).toEqual({ review: 1 });
+    onMatched.mockClear();
+    matcher.rename(sourceId, group!.groupKey, {
+      artist: '*NSYNC',
+      album: 'No Strings Attached',
+      titles: { 'N Sync/No Strings Attached/03 Bye Bye Bye.flac': 'Bye Bye Bye (Radio Edit)' },
+    });
+    expect(store.matches(sourceId).get('N Sync/No Strings Attached/03 Bye Bye Bye.flac')).toMatchObject({
+      state: 'manual',
+      overlay: { albumArtist: '*NSYNC', album: 'No Strings Attached', title: 'Bye Bye Bye (Radio Edit)' },
+    });
+    expect(matcher.reviewGroups(sourceId)).toEqual([]);
+    expect(onMatched).toHaveBeenCalled();
+  });
+
   it('applies the release the user picked, and can leave a group unmatched for good', async () => {
     const { matcher, store, sourceId } = setup({
       'Massive Attack/Mezzanine/01 Angel.flac': { duration: 200 },

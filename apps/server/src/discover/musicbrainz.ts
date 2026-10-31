@@ -108,11 +108,12 @@ export class MusicBrainz {
   }
 
   /** Artists by name or by another name they go by ("N Sync" finds *NSYNC), best match first. */
-  searchArtists(name: string, signal?: AbortSignal) {
+  searchArtists(name: string, signal?: AbortSignal, opts?: { background?: boolean }) {
     const q = luceneEscape(name);
     return this.get<{ artists: { id: string; name: string; score: number }[] }>(
       `/artist?query=${encodeURIComponent(`artist:"${q}" OR alias:"${q}"`)}&limit=5`,
       signal,
+      opts,
     ).then((r) => r.artists);
   }
 
@@ -144,6 +145,14 @@ export class MusicBrainz {
   /** Releases (editions) by album title and artist, best match first. */
   searchReleases(artistName: string, albumTitle: string, signal?: AbortSignal, opts?: { background?: boolean }) {
     const query = `release:"${luceneEscape(albumTitle)}" AND artist:"${luceneEscape(artistName)}"`;
+    return this.get<{ releases: MbReleaseHit[] }>(`/release?query=${encodeURIComponent(query)}&limit=10`, signal, opts).then(
+      (r) => r.releases,
+    );
+  }
+
+  /** An artist's releases (editions) by album title, best match first. */
+  searchReleasesOfArtist(artistMbid: string, albumTitle: string, signal?: AbortSignal, opts?: { background?: boolean }) {
+    const query = `release:"${luceneEscape(albumTitle)}" AND arid:${artistMbid}`;
     return this.get<{ releases: MbReleaseHit[] }>(`/release?query=${encodeURIComponent(query)}&limit=10`, signal, opts).then(
       (r) => r.releases,
     );

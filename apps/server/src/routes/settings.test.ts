@@ -51,6 +51,7 @@ function fakeMatcher() {
     applyRelease: vi.fn(async () => {}),
     ignore: vi.fn(),
     search: vi.fn(async () => {}),
+    rename: vi.fn(),
     enqueue: vi.fn(),
   };
 }
@@ -190,6 +191,9 @@ describe('settings routes', () => {
     expect(matcher.ignore).toHaveBeenCalledWith(1, 'g');
     await app.inject({ method: 'POST', url: '/api/settings/sources/1/review', payload: { groupKey: 'g', search: { artist: 'A', album: 'B' } }, remoteAddress: HOME });
     expect(matcher.search).toHaveBeenCalledWith(1, 'g', 'A', 'B');
+    const names = { artist: '*NSYNC', album: 'No Strings Attached', titles: { 'a.flac': 'Bye Bye Bye' } };
+    await app.inject({ method: 'POST', url: '/api/settings/sources/1/review', payload: { groupKey: 'g', names }, remoteAddress: HOME });
+    expect(matcher.rename).toHaveBeenCalledWith(1, 'g', names);
   });
 
   it('matches a source again on request', async () => {

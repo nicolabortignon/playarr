@@ -28,6 +28,9 @@ export interface MatcherDeps {
   mb: {
     searchReleases(artist: string, album: string): Promise<MbReleaseHit[]>;
     release(id: string): Promise<MbReleaseInfo>;
+    /** For files that call the artist by another name MusicBrainz knows them by ("N Sync" for *NSYNC). */
+    searchArtists?(name: string): Promise<{ id: string; score: number }[]>;
+    searchReleasesOfArtist?(artistMbid: string, album: string): Promise<MbReleaseHit[]>;
   };
   acoustid?: { enabled: boolean; lookup(fp: Fingerprint): Promise<AcoustIdMatch | null> };
   /** A file's fingerprint, computed where the source's files are; null where it can't be. */
@@ -155,6 +158,23 @@ export class Matcher {
     return records.find((r) => r.rel === rel)?.state ?? 'unmatched';
   }
 
+  /**
+   * Use the names the user gave (artist, album, song titles) instead of the files' own, without a
+   * MusicBrainz match; the group leaves the review list and isn't matched again.
+   */
+  rename(sourceId: number, groupKey: string, names: { artist: string; album: string; titles: Record<string, string> }) {
+    const group = this.groupByKey(sourceId, groupKey);
+    if (!group) throw new Error('That album isn’t waiting for review any more');
+    this.deps.store.saveMatches(
+      sourceId,
+      group.files.map((f) => ({
+        ...this.record(group, f, 'manual'),
+        overlay: { albumArtist: names.artist, album: names.album, title: names.titles[f.rel]?.trim() || f.title },
+      })),
+    );
+    this.deps.onMatched();
+  }
+
   /** Leave a group as its tags and names describe it, and never match it again. */
   ignore(sourceId: number, groupKey: string) {
     const group = this.groupByKey(sourceId, groupKey);
@@ -210,8 +230,11 @@ export class Matcher {
 
   reviewGroups(sourceId: number): ReviewGroup[] {
     const matches = this.deps.store.matches(sourceId);
+    // Albums with candidates to choose from first, then those nothing was found for.
     const review = [...matches.values()].filter((m) => m.state === 'review');
-    const keys = [...new Set(review.map((m) => m.groupKey))];
+    const unmatched = [...matches.values()].filter((m) => m.state === 'unmatched');
+    const notFound = new Set(unmatched.map((m) => m.groupKey));
+    const keys = [...new Set([...review.map((m) => m.groupKey), ...notFound])];
     return keys.flatMap((key) => {
       const group = this.groupByKey(sourceId, key);
       if (!group) return [];
@@ -227,6 +250,7 @@ export class Matcher {
           albumTitle: group.albumTitle,
           files: group.files.map(({ rel, title, trackNumber, discNumber, duration }) => ({ rel, title, trackNumber, discNumber, duration })),
           candidates,
+          ...(!candidates.length && notFound.has(key) ? { notFound: true } : {}),
         },
       ];
     });
@@ -264,7 +288,15 @@ export class Matcher {
   }
 
   private async candidates(group: FileGroup, artist: string, album: string): Promise<ReleaseScore[]> {
-    const hits = (await this.deps.mb.searchReleases(artist, album)).filter((h) => h.score >= SEARCH_MIN_SCORE).slice(0, CANDIDATES);
+    const { mb } = this.deps;
+    let hits = (await mb.searchReleases(artist, album)).filter((h) => h.score >= SEARCH_MIN_SCORE).slice(0, CANDIDATES);
+    // Nothing under that artist name: it may be another name they go by. Find the artist, then the album.
+    if (!hits.length && mb.searchArtists && mb.searchReleasesOfArtist) {
+      const found = (await mb.searchArtists(artist)).find((a) => a.score >= 90);
+      if (found) {
+        hits = (await mb.searchReleasesOfArtist(found.id, album)).filter((h) => h.score >= SEARCH_MIN_SCORE).slice(0, CANDIDATES);
+      }
+    }
     const scored: ReleaseScore[] = [];
     for (const h of hits) scored.push(scoreRelease(group.files, await this.release(h.id)));
     return scored.sort((a, b) => b.score - a.score);

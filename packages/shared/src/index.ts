@@ -475,6 +475,8 @@ export interface ReviewGroup {
   albumTitle?: string;
   files: ReviewFile[];
   candidates: ReviewCandidate[];
+  /** Matching found nothing on MusicBrainz for these files: search with other names, or fix the names. */
+  notFound?: boolean;
 }
 
 export interface ReviewAction {
@@ -483,6 +485,8 @@ export interface ReviewAction {
   releaseId?: string | null;
   /** Look for other candidates. */
   search?: { artist: string; album: string };
+  /** Use these names instead of the files' own (no MusicBrainz match): song titles by file. */
+  names?: { artist: string; album: string; titles: Record<string, string> };
 }
 
 export interface MatchingSettings {

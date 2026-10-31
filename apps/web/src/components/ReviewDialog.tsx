@@ -1,5 +1,5 @@
 import type { ReviewAction, ReviewCandidate, ReviewGroup } from '@playarr/shared';
-import { AlertCircle, Check, Disc3, ExternalLink, Loader2, Search } from 'lucide-react';
+import { AlertCircle, Check, Disc3, ExternalLink, Loader2, PencilLine, Search } from 'lucide-react';
 import { useMutationState } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
@@ -81,6 +81,8 @@ export function ReviewDialog({ sourceId, onClose }: { sourceId: number | null; o
 
 const PRIMARY =
   'inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition disabled:opacity-50';
+const FIELD =
+  'h-10 w-full min-w-0 rounded-lg border border-line bg-ink-900 px-3 text-[14px] text-paper outline-none focus:border-accent';
 const SECONDARY =
   'inline-flex h-10 items-center gap-2 rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5 disabled:opacity-50';
 
@@ -122,6 +124,9 @@ function ReviewGroupView({
   const [chosen, setChosen] = useState(group.candidates[0]?.releaseId);
   const [artist, setArtist] = useState(group.artistName);
   const [album, setAlbum] = useState(group.albumTitle ?? '');
+  // "Fix names": the user's own artist, album and song titles, used without a MusicBrainz match.
+  const [fixing, setFixing] = useState(false);
+  const [titles, setTitles] = useState<Record<string, string>>(() => Object.fromEntries(group.files.map((f) => [f.rel, f.title])));
   // Background refreshes bring new arrays with the same albums: keep the choice unless it's gone (a search).
   useEffect(() => {
     if (!group.candidates.some((c) => c.releaseId === chosen)) setChosen(group.candidates[0]?.releaseId);
@@ -140,6 +145,13 @@ function ReviewGroupView({
     action.mutate({ groupKey: group.groupKey, search: { artist: artist.trim(), album: album.trim() } });
   };
   const yourAlbum = `${group.albumTitle ?? 'No album'} · ${group.artistName}`;
+  const canRename = !!artist.trim() && !!album.trim();
+  const rename = (e: FormEvent) => {
+    e.preventDefault();
+    if (!canRename) return;
+    const names = { artist: artist.trim(), album: album.trim(), titles };
+    decide(group, { groupKey: group.groupKey, names }, `${names.album} · ${names.artist}: names saved`);
+  };
 
   return (
     <motion.div
@@ -158,6 +170,11 @@ function ReviewGroupView({
         </div>
         <span className="shrink-0 font-mono text-[12px] text-muted">{remaining} to review</span>
       </div>
+      {group.notFound && (
+        <p className="-mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-300/25 px-2.5 py-1 font-mono text-[11px] tracking-wider text-amber-200/90 uppercase">
+          <AlertCircle className="size-3.5" /> Not found on MusicBrainz
+        </p>
+      )}
 
       <div aria-busy={searching} className={cn('transition-opacity', searching && 'pointer-events-none opacity-50')}>
         {group.candidates.length > 0 ? (
@@ -189,7 +206,10 @@ function ReviewGroupView({
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted">No albums found on MusicBrainz for these names. Try other names below.</p>
+          <p className="text-sm text-muted">
+            No albums found on MusicBrainz for these names. Search with other names below (the artist may go by
+            another name there), or fix the names yourself.
+          </p>
         )}
       </div>
 
@@ -239,7 +259,52 @@ function ReviewGroupView({
         <SlowLookup active={searching} what="albums with these names" />
       </form>
 
+      {fixing && (
+        <form onSubmit={rename} aria-label="Fix names" className="space-y-3 rounded-lg border border-line p-4">
+          <p className="text-[13px] text-muted">
+            Used instead of what the files say, for this album only. The files themselves aren’t changed.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase">Artist</span>
+              <input value={artist} onChange={(e) => setArtist(e.target.value)} className={FIELD} />
+            </label>
+            <label className="space-y-1">
+              <span className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase">Album</span>
+              <input value={album} onChange={(e) => setAlbum(e.target.value)} className={FIELD} />
+            </label>
+          </div>
+          <div className="space-y-1.5">
+            <span className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase">Songs</span>
+            {group.files.map((f) => (
+              <label key={f.rel} className="flex items-center gap-2">
+                <span className="w-7 shrink-0 text-right font-mono text-[12px] text-muted tabular">{f.trackNumber || ''}</span>
+                <input
+                  value={titles[f.rel] ?? ''}
+                  onChange={(e) => setTitles((t) => ({ ...t, [f.rel]: e.target.value }))}
+                  aria-label={`Title of ${f.rel.split('/').pop()}`}
+                  className={FIELD}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setFixing(false)} className={SECONDARY}>
+              Cancel
+            </button>
+            <button type="submit" disabled={!canRename} className={PRIMARY}>
+              <Check className="size-4" /> Save names
+            </button>
+          </div>
+        </form>
+      )}
+
       <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4">
+        {!fixing && (
+          <button type="button" disabled={searching} onClick={() => setFixing(true)} className={cn(SECONDARY, 'mr-auto')}>
+            <PencilLine className="size-4" /> Fix names
+          </button>
+        )}
         <button
           type="button"
           disabled={searching}
