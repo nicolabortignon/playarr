@@ -581,3 +581,77 @@ export interface UpdateInfo extends UpdateSettings {
   /** The last run's output (update.sh), last 60 lines. */
   log?: string;
 }
+
+// ── Song metadata (track menu → Show metadata) ───────────────────────────────
+
+/** A file's own tags (folder sources), as read from the file. */
+export interface FileTags {
+  title?: string;
+  artist?: string;
+  albumArtist?: string;
+  album?: string;
+  trackNumber?: number;
+  trackTotal?: number;
+  discNumber?: number;
+  year?: number;
+  genres: string[];
+  recordingMbid?: string;
+  releaseGroupMbid?: string;
+  releaseId?: string;
+  artistMbid?: string;
+  albumArtistMbid?: string;
+}
+
+/** One file of a song, in one source. */
+export interface TrackCopyMetadata {
+  fileId: number;
+  /** The copy Playarr plays (best quality, then source order). */
+  playing: boolean;
+  source: {
+    id: number;
+    name: string;
+    kind: SourceKind;
+    /** "This server", "me@nas (SSH)"…: home network only. */
+    location?: string;
+  };
+  /** Where the source keeps the file: home network only. */
+  path?: string;
+  /** Where Playarr reads it, when that differs (a Lidarr path mapped through PATH_MAP): home network only. */
+  readPath?: string;
+  size: number;
+  format: AudioFormat;
+  /** When this file entered the library. */
+  addedAt?: string;
+  /** Folder files: the tags inside the file. */
+  tags?: FileTags;
+  /** Folder files: how the song was identified on MusicBrainz. */
+  match?: { state: string; score?: number };
+}
+
+/** GET /api/tracks/:id/metadata: everything Playarr knows about a song. */
+export interface TrackMetadata {
+  trackId: number;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  trackNumber: number;
+  discNumber: number;
+  duration: number;
+  explicit: boolean;
+  /** MusicBrainz recording id, or Playarr's own "local:"/"track:" id when unknown. */
+  recordingId: string;
+  albumId: number;
+  albumMbid?: string;
+  releaseDate?: string;
+  albumType: string;
+  secondaryTypes: string[];
+  genres: string[];
+  artistId: number;
+  artistMbid?: string;
+  /** Every file of this song, the one that plays first. */
+  copies: TrackCopyMetadata[];
+  /** What the song sounds like (Playarr's own analysis), when measured. */
+  analysis?: { bpm: number; pulse: number; loudness: number; dynamics: number; brightness: number; busyness: number; bass: number };
+  /** Paths and locations were left out: the request didn't come from the home network. */
+  pathsHidden: boolean;
+}

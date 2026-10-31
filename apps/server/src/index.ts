@@ -26,6 +26,7 @@ import { Library } from './library/library.ts';
 import { createMediaSource } from './media/index.ts';
 import { hasRclone } from './media/rclone.ts';
 import { apiRoutes } from './routes/api.ts';
+import { metadataRoutes } from './routes/metadata.ts';
 import { artRoutes, LocalArt } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
@@ -104,6 +105,7 @@ const discover = new Discover(lidarr, musicbrainz, library, requests);
 const recommendations = new Recommendations(playlists, library, requests);
 
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
+metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids) });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
 streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });

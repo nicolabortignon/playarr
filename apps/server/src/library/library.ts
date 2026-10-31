@@ -222,6 +222,10 @@ export class Library {
     return shuffle([...snap.tracks]).slice(0, count);
   }
 
+  async track(id: number): Promise<Track | undefined> {
+    return (await this.ready()).tracks.find((t) => t.id === id);
+  }
+
   async album(id: number): Promise<AlbumDetail | undefined> {
     const snap = await this.ready();
     return snap.albums.get(id);

@@ -402,6 +402,61 @@ export class CatalogStore {
     );
   }
 
+  /** One song with its album, artist and every copy (for Show metadata). */
+  trackDetails(trackId: number):
+    | {
+        track: { id: number; recordingId: string; meta: TrackInfo };
+        album: { id: number; meta: AlbumInfo };
+        artist: { id: number; meta: ArtistInfo };
+        copies: (CopyRow & { ref: string })[];
+      }
+    | undefined {
+    const t = this.db.prepare('SELECT id, album_id, recording_id, meta FROM catalog_tracks WHERE id = ?').get(trackId) as
+      | { id: number; album_id: number; recording_id: string; meta: string }
+      | undefined;
+    if (!t) return undefined;
+    const a = this.db.prepare('SELECT id, artist_id, meta FROM catalog_albums WHERE id = ?').get(t.album_id) as
+      | { id: number; artist_id: number; meta: string }
+      | undefined;
+    const ar = a && (this.db.prepare('SELECT id, meta FROM catalog_artists WHERE id = ?').get(a.artist_id) as { id: number; meta: string } | undefined);
+    if (!a || !ar) return undefined;
+    const copies = (
+      this.db
+        .prepare('SELECT id, source_id, source_ref, path, size, format, added_at FROM copies WHERE track_id = ?')
+        .all(trackId) as { id: number; source_id: number; source_ref: string; path: string; size: number; format: string; added_at: string | null }[]
+    ).map((c) => ({
+      id: c.id,
+      sourceId: c.source_id,
+      trackId,
+      ref: c.source_ref,
+      path: c.path,
+      size: c.size,
+      format: JSON.parse(c.format) as AudioFormat,
+      ...(c.added_at ? { addedAt: c.added_at } : {}),
+    }));
+    return {
+      track: { id: t.id, recordingId: t.recording_id, meta: JSON.parse(t.meta) as TrackInfo },
+      album: { id: a.id, meta: JSON.parse(a.meta) as AlbumInfo },
+      artist: { id: ar.id, meta: JSON.parse(ar.meta) as ArtistInfo },
+      copies,
+    };
+  }
+
+  /** One folder file's cached tags, and how it was matched. */
+  folderFileDetails(sourceId: number, rel: string): { tags: TagInfo | null; match?: { state: string; score?: number } } | undefined {
+    const file = this.db.prepare('SELECT tags FROM folder_files WHERE source_id = ? AND rel_path = ?').get(sourceId, rel) as
+      | { tags: string | null }
+      | undefined;
+    const match = this.db.prepare('SELECT state, score FROM folder_matches WHERE source_id = ? AND rel_path = ?').get(sourceId, rel) as
+      | { state: string; score: number | null }
+      | undefined;
+    if (!file && !match) return undefined;
+    return {
+      tags: file?.tags ? (JSON.parse(file.tags) as TagInfo) : null,
+      ...(match ? { match: { state: match.state, ...(match.score !== null ? { score: match.score } : {}) } } : {}),
+    };
+  }
+
   /** Save newly read files and forget files that are no longer `present`. */
   saveFolderFiles(
     sourceId: number,
