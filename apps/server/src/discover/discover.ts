@@ -11,11 +11,14 @@ import type { LidarrImage, LidarrLookupAlbum, LidarrLookupArtist } from '../lida
 import type { Library } from '../library/library.ts';
 import { normalize } from '../library/search.ts';
 import { coverArtArchive, remoteArtUrl } from './art.ts';
-import { deezerArtistTopTracks, searchDeezerTracks, type DeezerTrack } from './deezer.ts';
+import { deezerArtistPicture, deezerArtistTopTracks, searchDeezerTracks, type DeezerTrack } from './deezer.ts';
+import { similarArtists } from './listenbrainz.ts';
 import { creditName, type MbReleaseGroup, type MusicBrainz } from './musicbrainz.ts';
 import type { Requests } from './requests.ts';
 
 const HIDDEN_SECONDARY = new Set(['Live', 'Compilation', 'Remix', 'DJ-mix', 'Mixtape/Street', 'Demo', 'Interview', 'Spokenword', 'Audiobook', 'Audio drama', 'Field recording']);
+/** How many similar artists an artist page shows. */
+const SIMILAR_ARTISTS = 24;
 const VERSION_WORDS = /\b(remix|mix|live|edit|version|dub|bootleg|cover|instrumental|acoustic|karaoke|tribute)\b/i;
 
 /**
@@ -102,6 +105,29 @@ export class Discover {
       mbid = (found.find((a) => normalize(a.name) === want) ?? found.find((a) => a.score >= 95))?.id;
     }
     return mbid ? { mbid, artistId: await this.library.artistIdByMbid(mbid) } : undefined;
+  }
+
+  /**
+   * Artists like this one, from ListenBrainz (who real listeners play alongside them), most similar first.
+   * Those in the library carry their Playarr id and photo; the others a Deezer photo where it has one.
+   */
+  async similarArtists(mbid: string, signal?: AbortSignal): Promise<DiscoverArtist[]> {
+    const similar = (await similarArtists(mbid, signal)).slice(0, SIMILAR_ARTISTS);
+    const owned = new Map((await this.library.artists()).map((a) => [a.id, a]));
+    return mapLimit(similar, 4, async (s): Promise<DiscoverArtist> => {
+      const artistId = await this.library.artistIdByMbid(s.artist_mbid);
+      const mine = artistId !== undefined ? owned.get(artistId) : undefined;
+      const imageUrl =
+        mine?.imageUrl ?? remoteArtUrl(await deezerArtistPicture(s.name, normalize, signal).catch(() => undefined));
+      return {
+        mbid: s.artist_mbid,
+        name: mine?.name ?? s.name,
+        ...(s.comment ? { disambiguation: s.comment } : {}),
+        ...(imageUrl ? { imageUrl } : {}),
+        genres: mine?.genres.slice(0, 3) ?? [],
+        ...(artistId !== undefined ? { artistId } : {}),
+      };
+    });
   }
 
   async artist(mbid: string, signal?: AbortSignal): Promise<DiscoverArtistDetail> {
@@ -244,4 +270,19 @@ export function rankAlbums(albums: LidarrLookupAlbum[], nq: string): LidarrLooku
     })
     .sort((x, y) => y.score - x.score)
     .map((x) => x.a);
+}
+
+/** `fn` over `items`, at most `limit` at a time, results in order. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i]!);
+      }
+    }),
+  );
+  return out;
 }

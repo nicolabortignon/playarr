@@ -41,3 +41,23 @@ export function searchDeezerTracks(query: string, signal?: AbortSignal) {
 export function deezerArtistTopTracks(artistId: number, signal?: AbortSignal) {
   return get(`/artist/${artistId}/top?limit=50`, signal);
 }
+
+const pictures = new Map<string, { at: number; url?: string }>();
+
+/** A photo of the artist by this exact name (ignoring case and accents), from Deezer; undefined if none. */
+export async function deezerArtistPicture(name: string, normalizeName: (s: string) => string, signal?: AbortSignal): Promise<string | undefined> {
+  const key = normalizeName(name);
+  const hit = pictures.get(key);
+  if (hit && Date.now() - hit.at < TTL_MS) return hit.url;
+  const res = await fetch(`https://api.deezer.com/search/artist?q=${encodeURIComponent(name)}&limit=5`, {
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Deezer HTTP ${res.status}`);
+  const body = (await res.json()) as { data?: { name: string; picture_medium?: string }[] };
+  // Deezer's placeholder for artists without a photo has an empty hash in its path.
+  const url = body.data?.find((a) => normalizeName(a.name) === key)?.picture_medium;
+  const real = url && !url.includes('/artist//') ? url : undefined;
+  pictures.set(key, { at: Date.now(), url: real });
+  if (pictures.size > 2000) pictures.delete(pictures.keys().next().value!);
+  return real;
+}

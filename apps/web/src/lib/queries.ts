@@ -84,6 +84,16 @@ export const useDiscoverArtist = (mbid: string | undefined) =>
     staleTime: 60_000,
   });
 
+/** Artists like this one (ListenBrainz), in the library or not. Changes slowly: kept for an hour. */
+export const useSimilarArtists = (mbid: string | undefined) =>
+  useQuery({
+    queryKey: ['similar-artists', mbid],
+    queryFn: ({ signal }) => api.similarArtists(mbid!, signal),
+    enabled: !!mbid,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+
 export const useArtistLookup = (name: string) =>
   useQuery({
     queryKey: ['artist-lookup', name],

@@ -43,6 +43,15 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
     }
   });
 
+  app.get<{ Params: { mbid: string } }>('/api/discover/artists/:mbid/similar', async (req, reply) => {
+    if (!MBID.test(req.params.mbid)) return reply.code(400).send({ error: 'Invalid MusicBrainz id' });
+    try {
+      return await discover.similarArtists(req.params.mbid, abortOnDisconnect(reply));
+    } catch (err) {
+      return fail(reply, err);
+    }
+  });
+
   app.get<{ Querystring: { name?: string } }>('/api/discover/artist-lookup', async (req, reply) => {
     const name = req.query.name?.trim();
     if (!name) return reply.code(400).send({ error: 'name is required' });

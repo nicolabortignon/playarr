@@ -5,6 +5,7 @@ import { useParams } from 'react-router';
 import { AlbumCard } from '../components/Cards';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { ErrorState, SectionHeader, Skeleton } from '../components/Section';
+import { SimilarArtists } from '../components/SimilarArtists';
 import { SlowLookup } from '../components/SlowLookup';
 import { artistHero } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -185,6 +186,8 @@ export function ArtistPage() {
         ))}
 
         {artist.mbid && <NotInLibrary artistMbid={artist.mbid} owned={artist.albums} />}
+
+        {artist.mbid && <SimilarArtists mbid={artist.mbid} />}
 
         {artist.overview && (
           <section className="max-w-3xl">

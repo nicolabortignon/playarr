@@ -95,3 +95,31 @@ export async function recordingTags(mbids: string[], signal?: AbortSignal): Prom
   if (!res.ok) throw new Error(`ListenBrainz HTTP ${res.status}`);
   return (await res.json()) as Record<string, LbRecordingMetadata>;
 }
+
+export interface LbSimilarArtist {
+  artist_mbid: string;
+  name: string;
+  comment?: string;
+  score: number;
+}
+
+const ARTIST_ALGORITHM = 'session_based_days_7500_session_300_contribution_5_threshold_10_limit_100_filter_True_skip_30';
+const ARTIST_TTL_MS = 6 * 60 * 60_000;
+const artistCache = new Map<string, { at: number; data: LbSimilarArtist[] }>();
+
+/** Artists that real listeners play in the same sessions as this one, most similar first. */
+export async function similarArtists(artistMbid: string, signal?: AbortSignal): Promise<LbSimilarArtist[]> {
+  const hit = artistCache.get(artistMbid);
+  if (hit && Date.now() - hit.at < ARTIST_TTL_MS) return hit.data;
+  const url = `https://labs.api.listenbrainz.org/similar-artists/json?artist_mbids=${artistMbid}&algorithm=${ARTIST_ALGORITHM}`;
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json' },
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`ListenBrainz HTTP ${res.status}`);
+  const body = (await res.json()) as unknown;
+  const data = Array.isArray(body) ? (body as LbSimilarArtist[]).filter((a) => a.artist_mbid !== artistMbid) : [];
+  artistCache.set(artistMbid, { at: Date.now(), data });
+  if (artistCache.size > 500) artistCache.delete(artistCache.keys().next().value!);
+  return data;
+}

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { ErrorState, SectionHeader, Skeleton } from '../components/Section';
+import { SimilarArtists } from '../components/SimilarArtists';
 import { SlowLookup } from '../components/SlowLookup';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -123,6 +124,9 @@ export function DiscoverArtistPage() {
         ) : (
           !artist.albums.length && <p className="text-muted">MusicBrainz lists no albums or EPs for this artist.</p>
         )}
+        <div className="mt-14">
+          <SimilarArtists mbid={artist.mbid} />
+        </div>
       </div>
     </div>
   );
