@@ -1,12 +1,14 @@
 import { formatFromTrackFile } from '../library/format.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
-import type { LidarrImage, LidarrTrackFile } from '../lidarr/types.ts';
+import type { LidarrImage, LidarrTrack, LidarrTrackFile } from '../lidarr/types.ts';
 import { albumKeyFor, artistKeyFor, trackKeyFor } from './keys.ts';
 import type { CatalogSource, SourceSync } from './types.ts';
 
 /** Lidarr's library as a catalog source: validated MusicBrainz metadata, files as Lidarr imported them. */
 export class LidarrSource implements CatalogSource {
   readonly kind = 'lidarr' as const;
+  /** File lengths, by track file id and size, for songs MusicBrainz has no length for. */
+  private readonly fileLengths = new Map<string, number>();
 
   constructor(private readonly lidarr: LidarrClient) {}
 
@@ -20,6 +22,8 @@ export class LidarrSource implements CatalogSource {
       ]);
       return { artist, tracks, files };
     });
+
+    await this.measureUntimed(perArtist);
 
     const albumsById = new Map(lAlbums.map((a) => [a.id, a]));
     const sync: SourceSync = {
@@ -71,7 +75,7 @@ export class LidarrSource implements CatalogSource {
           title: t.title,
           trackNumber: Number.parseInt(t.trackNumber, 10) || t.absoluteTrackNumber,
           discNumber: t.mediumNumber || 1,
-          duration: Math.round(t.duration / 1000),
+          duration: Math.round(t.duration / 1000) || (file ? (this.fileLengths.get(lengthKey(file)) ?? 0) : 0),
           explicit: t.explicit,
         });
         if (file) {
@@ -104,6 +108,38 @@ export class LidarrSource implements CatalogSource {
     }
     return sync;
   }
+
+  /**
+   * Some songs have no length on MusicBrainz (Lidarr reports 0): ask Lidarr for the length of the
+   * file instead, which it reads from the file itself. Remembered per file, so later syncs don't ask again.
+   */
+  private async measureUntimed(perArtist: { tracks: LidarrTrack[]; files: LidarrTrackFile[] }[]) {
+    const untimed = perArtist.flatMap(({ tracks, files }) => {
+      const fileById = new Map(files.map((f) => [f.id, f]));
+      return tracks.flatMap((t) => {
+        const file = !t.duration && t.hasFile ? fileById.get(t.trackFileId) : undefined;
+        return file && !this.fileLengths.has(lengthKey(file)) ? [file] : [];
+      });
+    });
+    await mapLimit(untimed, 4, async (file) => {
+      try {
+        const { audioTags } = await this.lidarr.trackFile(file.id);
+        this.fileLengths.set(lengthKey(file), timeSpanSeconds(audioTags?.duration));
+      } catch {
+        // Try again on the next sync.
+      }
+    });
+  }
+}
+
+const lengthKey = (file: LidarrTrackFile) => `${file.id}:${file.size}`;
+
+/** Lidarr's .NET TimeSpans ("00:01:18.2666666", "1.02:03:04") in whole seconds; 0 if absent. */
+export function timeSpanSeconds(span: string | undefined): number {
+  const m = span?.match(/^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/);
+  if (!m) return 0;
+  const [, days = '0', h, min, s] = m;
+  return Math.round(Number(days) * 86_400 + Number(h) * 3600 + Number(min) * 60 + Number(s));
 }
 
 /** The same recording twice on one album (rare): give the repeat its own key. */

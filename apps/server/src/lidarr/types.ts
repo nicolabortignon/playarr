@@ -76,6 +76,8 @@ export interface LidarrTrackFile {
   dateAdded: string;
   mediaInfo?: LidarrMediaInfo;
   quality?: { quality: { id: number; name: string } };
+  /** Read from the file on request: only `GET /trackfile/{id}` returns it, not the list. */
+  audioTags?: { duration?: string };
 }
 
 export interface LidarrSystemStatus {

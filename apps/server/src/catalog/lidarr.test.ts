@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { LidarrAlbum, LidarrArtist, LidarrTrack, LidarrTrackFile } from '../lidarr/types.ts';
 import { buildCatalog } from './build.ts';
-import { LidarrSource } from './lidarr.ts';
+import { LidarrSource, timeSpanSeconds } from './lidarr.ts';
 import { CatalogStore } from './store.ts';
 import { freshDb } from './testFixtures.ts';
 
@@ -123,6 +123,31 @@ describe('LidarrSource', () => {
       coverUrl: '/art/album/10/cover',
     });
     expect(c.albumsByMbid.get('rg-2')).toEqual({ lidarrId: 11, monitored: true, albumId: undefined });
+  });
+
+  it('falls back to the file length for songs MusicBrainz has no length for, asking Lidarr once per file', async () => {
+    const { client } = fakeLidarr();
+    const untimed = { ...track(101, 10, 'rec-2', '2', 1001), duration: 0 };
+    Object.assign(client, {
+      tracksForArtist: async () => [track(100, 10, 'rec-1', '1', 1000), untimed],
+      trackFile: vi.fn(async (id: number) => ({ ...file(id, 'mp3'), audioTags: { duration: '00:01:18.2666666' } })),
+    });
+    const source = new LidarrSource(client);
+
+    const sync = await source.sync();
+    expect(sync.tracks.map((t) => t.duration)).toEqual([379, 78]);
+    expect(client.trackFile).toHaveBeenCalledExactlyOnceWith(1001); // only the song without a length
+
+    await source.sync();
+    expect(client.trackFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads Lidarr time spans', () => {
+    expect(timeSpanSeconds('00:01:18.2666666')).toBe(78);
+    expect(timeSpanSeconds('00:04:05')).toBe(245);
+    expect(timeSpanSeconds('1.02:03:04')).toBe(93_784);
+    expect(timeSpanSeconds(undefined)).toBe(0);
+    expect(timeSpanSeconds('soon')).toBe(0);
   });
 
   it('gives a repeated recording on one album its own key', async () => {
