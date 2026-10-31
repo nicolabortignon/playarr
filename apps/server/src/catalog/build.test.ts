@@ -55,7 +55,8 @@ describe('buildCatalog', () => {
 
   it('maps release groups to Lidarr albums and to playable library albums', () => {
     const c = buildCatalog(lidarrOnly().store.load());
-    expect(c.albumsByMbid.get('rg-1')).toEqual({ lidarrId: 70, monitored: true, albumId: 70 });
+    // The fixture has 2 of Mezzanine's 11 songs: playable, and partial.
+    expect(c.albumsByMbid.get('rg-1')).toEqual({ lidarrId: 70, monitored: true, albumId: 70, have: 2, total: 11 });
     expect(c.albumsByMbid.get('rg-2')).toEqual({ lidarrId: 71, monitored: true, albumId: undefined });
     expect(c.artistIdByMbid.get('art-1')).toBe(7);
   });

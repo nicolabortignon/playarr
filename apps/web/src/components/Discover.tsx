@@ -30,11 +30,11 @@ export function RequestButton({
   const requestsOn = useRequestsEnabled();
   // Finding an album can wait on MusicBrainz (about one request per second): say so after a moment.
   const slow = useDelayedFlag(request.isPending, 2000);
-  const base = cn(
+  const pill = cn(
     'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full font-mono uppercase tracking-wider transition',
     size === 'sm' ? 'h-7 px-2.5 text-[10px]' : 'h-8 px-3.5 text-[11px]',
-    className,
   );
+  const base = cn(pill, className);
   const stop = (fn: () => void) => (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -53,6 +53,34 @@ export function RequestButton({
         className={cn(base, 'border border-line text-paper-dim')}
       >
         <Loader2 className="size-3 animate-spin" /> {slow ? 'Looking up' : 'Requesting'}
+      </span>
+    );
+  }
+  // Some of its songs are already here: say how many (opening the album), and offer the rest.
+  if (state === 'partial') {
+    const have = availability.have ?? 0;
+    const total = availability.total ?? 0;
+    return (
+      <span className={cn('inline-flex shrink-0 items-center gap-1.5', className)}>
+        <button
+          type="button"
+          title={`${have} of ${total} songs in your library`}
+          aria-label={`${have} of ${total} songs in your library: open the album`}
+          onClick={stop(() => albumId && navigate(`/albums/${albumId}`))}
+          className={cn(pill, 'border border-emerald-400/30 text-emerald-300 tabular hover:bg-emerald-400/10')}
+        >
+          {have}/{total}
+        </button>
+        {requestsOn && (
+          <button
+            type="button"
+            title="Request the whole album"
+            onClick={ask}
+            className={cn(pill, 'bg-accent text-accent-ink hover:brightness-110 active:scale-95')}
+          >
+            <Download className="size-3" /> Request
+          </button>
+        )}
       </span>
     );
   }
@@ -130,9 +158,12 @@ export function DiscoverAlbumCard({
   useEffect(() => {
     if (highlighted) ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }, [highlighted]);
-  const available = album.availability.state === 'available';
-  const to = available ? `/albums/${album.availability.albumId}` : `/discover/artists/${album.artistMbid}`;
-  const kind = album.secondaryTypes[0] ?? album.type;
+  const { state: availabilityState, albumId: libraryAlbumId, have, total } = album.availability;
+  const available = availabilityState === 'available';
+  // Partly in the library: the album page plays what's there.
+  const partial = availabilityState === 'partial' || (have !== undefined && libraryAlbumId !== undefined);
+  const to = (available || partial) && libraryAlbumId ? `/albums/${libraryAlbumId}` : `/discover/artists/${album.artistMbid}`;
+  const kind = partial && have !== undefined && total ? `${have} of ${total}` : (album.secondaryTypes[0] ?? album.type);
   return (
     <div ref={ref} className={cn('group animate-rise', className)} style={style} data-highlighted={highlighted || undefined}>
       <Link to={to} className="block">
@@ -174,13 +205,15 @@ export function DiscoverAlbumCard({
 export function DiscoverTrackRow({ track }: { track: DiscoverTrack }) {
   const navigate = useNavigate();
   const available = track.availability.state === 'available';
+  // A song whose album is only partly here still opens that album.
+  const opens = track.availability.albumId !== undefined && (available || track.availability.have !== undefined);
   return (
     <li
       className={cn(
         'group grid grid-cols-[2.75rem_1fr_auto] items-center gap-3 rounded-md px-3 py-2 transition hover:bg-paper/[0.045] md:grid-cols-[2.75rem_1fr_auto_auto] md:gap-4',
-        available && 'cursor-pointer',
+        opens && 'cursor-pointer',
       )}
-      onClick={() => available && navigate(`/albums/${track.availability.albumId}`)}
+      onClick={() => opens && navigate(`/albums/${track.availability.albumId}`)}
     >
       <div className="relative">
         <Cover src={track.coverUrl} size={44} alt="" label={track.albumTitle} className="size-11 rounded-[3px]" />

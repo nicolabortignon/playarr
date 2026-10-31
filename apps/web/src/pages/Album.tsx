@@ -1,14 +1,16 @@
+import type { AlbumDetail } from '@playarr/shared';
 import { ListEnd, ListMusic, ListPlus, Mic2, Pause, Play, Shuffle } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { AlbumCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
+import { RequestButton } from '../components/Discover';
 import { FormatBadge } from '../components/FormatBadge';
 import { Menu } from '../components/Menu';
 import { ErrorState, SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { useCoverAccent } from '../lib/color';
 import { formatDuration, plural } from '../lib/format';
-import { useAlbum, useArtist } from '../lib/queries';
+import { useAlbum, useArtist, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -92,6 +94,7 @@ export function AlbumPage() {
           >
             <Shuffle className="size-[18px]" /> Shuffle
           </button>
+          {album.mbid && album.trackCount < album.totalTrackCount && <RequestRest album={album} />}
           <Menu
             className="size-12 border border-paper/15 text-paper"
             items={[
@@ -146,5 +149,15 @@ function AlbumSkeleton() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** Only some of the album is here: ask Lidarr for the whole of it, then show how that's going. */
+function RequestRest({ album }: { album: AlbumDetail }) {
+  const { data: requests } = useRequests();
+  const availability = requests?.find((r) => r.mbid === album.mbid)?.availability ?? { state: 'none' as const };
+  if (availability.state === 'available') return null;
+  return (
+    <RequestButton album={{ mbid: album.mbid, artistName: album.artistName, albumTitle: album.title }} availability={availability} />
   );
 }

@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import type { AlbumRef, AlbumRequest, Availability, RequestSettings } from '@playarr/shared';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
 import type { LidarrAlbum, LidarrCommand, LidarrLookupAlbum, LidarrQueueItem } from '../lidarr/types.ts';
-import type { Library } from '../library/library.ts';
+import type { Library, LidarrAlbumRef } from '../library/library.ts';
 import { albumKey, baseTitle, normalize } from '../library/search.ts';
 import { coverArtArchive, remoteArtUrl } from './art.ts';
 import { creditName, releaseGroupRank, type MusicBrainz } from './musicbrainz.ts';
@@ -103,7 +103,8 @@ export class Requests {
         : await this.lookupByName(ref);
     const mbid = lookup.foreignAlbumId;
     const known = await this.library.albumByMbid(mbid);
-    if (known?.albumId !== undefined) {
+    // Only some of its songs in the library (a loose song filed under it, say): the rest can be asked for.
+    if (known?.albumId !== undefined && known.have === undefined) {
       throw new RequestError('This album is already in your library', 409);
     }
 
@@ -238,20 +239,27 @@ export class Requests {
   async availabilityByName(artistName: string, albumTitle: string): Promise<Availability> {
     await this.loaded;
     const albumId = await this.library.albumIdByName(artistName, albumTitle);
-    if (albumId) return { state: 'available', albumId };
+    const album = albumId ? await this.library.album(albumId) : undefined;
+    const songs: Songs | undefined =
+      albumId && album && album.trackCount < album.totalTrackCount
+        ? { albumId, have: album.trackCount, total: album.totalTrackCount }
+        : undefined;
+    if (albumId && !songs) return { state: 'available', albumId };
     const key = albumKey(artistName, albumTitle);
     const req = [...this.requests.values()].find((r) => r.keys.includes(key));
-    if (req) return (await this.statuses()).get(req.mbid) ?? { state: 'waiting' };
-    return { state: 'none' };
+    if (req) return withSongs((await this.statuses()).get(req.mbid) ?? { state: 'waiting' }, songs);
+    return songs ? { state: 'partial', ...songs } : { state: 'none' };
   }
 
   /** Availability for any release group, whether or not Playarr requested it. */
   async availability(mbid: string): Promise<Availability> {
     await this.loaded;
     const known = await this.library.albumByMbid(mbid);
-    if (known?.albumId !== undefined) return { state: 'available', albumId: known.albumId };
-    if (this.requests.has(mbid)) return (await this.statuses()).get(mbid) ?? { state: 'waiting' };
-    if (known?.monitored) return { state: 'waiting', message: 'Wanted in Lidarr' };
+    const songs = songsOf(known);
+    if (known?.albumId !== undefined && !songs) return { state: 'available', albumId: known.albumId };
+    if (this.requests.has(mbid)) return withSongs((await this.statuses()).get(mbid) ?? { state: 'waiting' }, songs);
+    if (known?.monitored) return withSongs({ state: 'waiting', message: 'Wanted in Lidarr' }, songs);
+    if (songs) return { state: 'partial', ...songs };
     return { state: 'none' };
   }
 
@@ -273,10 +281,15 @@ export class Requests {
   private async computeStatuses(): Promise<Map<string, Availability>> {
     const result = new Map<string, Availability>();
     const pending: StoredRequest[] = [];
+    const partial = new Map<string, Songs>();
     for (const r of this.requests.values()) {
       const known = await this.library.albumByMbid(r.mbid);
-      if (known?.albumId !== undefined) result.set(r.mbid, { state: 'available', albumId: known.albumId });
-      else pending.push(r);
+      const songs = songsOf(known);
+      if (known?.albumId !== undefined && !songs) result.set(r.mbid, { state: 'available', albumId: known.albumId });
+      else {
+        if (songs) partial.set(r.mbid, songs);
+        pending.push(r);
+      }
     }
     if (!pending.length) return result;
 
@@ -294,7 +307,15 @@ export class Requests {
     pending.forEach((r, i) => {
       const album = albumById.get(r.lidarrAlbumId);
       const items = queue.filter((q) => q.albumId === r.lidarrAlbumId);
-      result.set(r.mbid, describe(album, items, commands[i]));
+      const songs = partial.get(r.mbid);
+      const stats = album?.statistics;
+      // Asked for the rest of an album already partly here: done once Lidarr has every track it knows of,
+      // even if MusicBrainz lists more (bonus tracks of another edition, say).
+      if (songs && stats && stats.trackCount > 0 && stats.trackFileCount >= stats.trackCount && !items.length) {
+        result.set(r.mbid, { state: 'available', albumId: songs.albumId });
+      } else {
+        result.set(r.mbid, describe(album, items, commands[i]));
+      }
       // Files have landed: pull them into Playarr's library.
       if ((album?.statistics?.trackFileCount ?? 0) > 0) this.library.refreshSoon();
     });
@@ -304,6 +325,24 @@ export class Requests {
   private publicFields(r: StoredRequest): Omit<AlbumRequest, 'availability'> {
     return { mbid: r.mbid, title: r.title, artistName: r.artistName, coverUrl: r.coverUrl, requestedAt: r.requestedAt };
   }
+}
+
+/** Some of an album's songs in the library: which album, how many, out of how many. */
+interface Songs {
+  albumId: number;
+  have: number;
+  total: number;
+}
+
+function songsOf(known: LidarrAlbumRef | undefined): Songs | undefined {
+  return known?.albumId !== undefined && known.have !== undefined && known.total !== undefined
+    ? { albumId: known.albumId, have: known.have, total: known.total }
+    : undefined;
+}
+
+/** A request's progress, plus the songs already here (so the album can still be opened). */
+function withSongs(availability: Availability, songs: Songs | undefined): Availability {
+  return songs && availability.state !== 'available' ? { ...availability, ...songs } : availability;
 }
 
 function describe(

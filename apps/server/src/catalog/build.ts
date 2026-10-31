@@ -16,6 +16,14 @@ export interface LidarrAlbumRef {
   lidarrId?: number;
   monitored: boolean;
   albumId?: number;
+  /** Set when only some of the album's songs are playable: how many, out of how many. */
+  have?: number;
+  total?: number;
+}
+
+/** have/total for an album missing songs, else nothing. */
+function completeness(album: AlbumDetail | undefined): Pick<LidarrAlbumRef, 'have' | 'total'> {
+  return album && album.trackCount < album.totalTrackCount ? { have: album.trackCount, total: album.totalTrackCount } : {};
 }
 
 export interface Catalog {
@@ -147,7 +155,7 @@ export function buildCatalog(rows: CatalogRows): Catalog {
   const albumsByMbid = new Map<string, LidarrAlbumRef>();
   for (const album of albums.values()) {
     const mbid = albumRows.get(album.id)!.meta.mbid;
-    if (mbid) albumsByMbid.set(mbid, { monitored: false, albumId: album.id });
+    if (mbid) albumsByMbid.set(mbid, { monitored: false, albumId: album.id, ...completeness(album) });
   }
   const albumIdByKey = new Map(rows.albums.map((a) => [a.key, a.id]));
   for (const source of rows.sources) {
@@ -158,6 +166,7 @@ export function buildCatalog(rows: CatalogRows): Catalog {
         lidarrId: la.lidarrId,
         monitored: la.monitored,
         albumId: id !== undefined && albums.has(id) ? id : undefined,
+        ...(id !== undefined ? completeness(albums.get(id)) : {}),
       });
     }
   }
@@ -235,6 +244,7 @@ function toAlbumDetail(
     coverUrl: m.coverUrl ?? fallbackCover,
     // When the album first entered the library (kept by the store across file changes), else its earliest copy.
     addedAt: row.addedAt ?? added.sort()[0],
+    ...(m.mbid ? { mbid: m.mbid } : {}),
     format: mostCommonFormat(tracks),
     overview: m.overview,
     tracks,

@@ -37,8 +37,10 @@ export interface Album {
   trackCount: number; // tracks with files
   totalTrackCount: number;
   coverUrl?: string;
-  addedAt?: string; // newest file import date
+  addedAt?: string; // when the album first entered the library
   format?: AudioFormat; // most common format among its tracks
+  /** MusicBrainz release group, when known: what a request for the rest of the album asks Lidarr for. */
+  mbid?: string;
 }
 
 export interface Track {
@@ -150,6 +152,7 @@ export interface RequestSettingsInfo extends RequestSettings {
 
 export type AvailabilityState =
   | 'available' // playable in Playarr
+  | 'partial' // some of its songs are playable; the rest can be requested
   | 'searching' // Lidarr is searching indexers
   | 'downloading'
   | 'importing'
@@ -159,8 +162,11 @@ export type AvailabilityState =
 
 export interface Availability {
   state: AvailabilityState;
-  /** Playarr album id once playable. */
+  /** Playarr album id once playable (also while only some of its songs are). */
   albumId?: number;
+  /** Songs in the library, and on the full album, when only some of them are. */
+  have?: number;
+  total?: number;
   /** 0..1 while downloading. */
   progress?: number;
   message?: string;

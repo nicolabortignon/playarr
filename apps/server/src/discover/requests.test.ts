@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { tempDir } from '../catalog/testFixtures.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { LidarrLookupAlbum } from '../lidarr/types.ts';
-import type { Library } from '../library/library.ts';
+import type { Library, LidarrAlbumRef } from '../library/library.ts';
 import type { MusicBrainz } from './musicbrainz.ts';
 import { type RequestDefaults, Requests } from './requests.ts';
 
@@ -28,6 +28,11 @@ function fakeLidarr() {
       { id: 2, path: '/more', accessible: true, defaultQualityProfileId: 4, defaultMetadataProfileId: 5 },
     ]),
     addAlbum: vi.fn(async (album: LidarrLookupAlbum) => ({ ...album, id: 42 })),
+    queue: vi.fn(async () => []),
+    albumsByIds: vi.fn(async (): Promise<unknown[]> => [
+      { id: 42, monitored: true, statistics: { trackFileCount: 0, trackCount: 12, totalTrackCount: 12, sizeOnDisk: 0, percentOfTracks: 0 } },
+    ]),
+    commandStatus: vi.fn(async () => ({ id: 7, name: 'AlbumSearch', status: 'started' })),
     monitorAlbums: vi.fn(async () => ({})),
     command: vi.fn(async () => ({ id: 7, name: 'AlbumSearch', status: 'queued' })),
   };
@@ -40,7 +45,12 @@ function setup(settings: Partial<RequestSettings> = {}, env: RequestDefaults = {
   const t = tempDir();
   cleanups.push(t.cleanup);
   const lidarr = fakeLidarr();
-  const library = { albumByMbid: vi.fn(async () => undefined), refreshSoon: vi.fn() };
+  const library = {
+    albumByMbid: vi.fn(async (): Promise<LidarrAlbumRef | undefined> => undefined),
+    albumIdByName: vi.fn(async (): Promise<number | undefined> => undefined),
+    album: vi.fn(async (): Promise<unknown> => undefined),
+    refreshSoon: vi.fn(),
+  };
   const current: RequestSettings = { enabled: true, searchOnAdd: true, ...settings };
   const requests = new Requests(
     lidarr as unknown as LidarrClient,
@@ -50,7 +60,7 @@ function setup(settings: Partial<RequestSettings> = {}, env: RequestDefaults = {
     () => current,
     env,
   );
-  return { requests, lidarr, current };
+  return { requests, lidarr, current, library };
 }
 
 const ref = { mbid: MBID, artistName: '', albumTitle: '' };
@@ -118,5 +128,58 @@ describe('Requests', () => {
     const without = setup({ rootFolderPath: '/gone' });
     await without.requests.request(ref);
     expect(addedArtist(without.lidarr)).toMatchObject({ rootFolderPath: '/music', qualityProfileId: 2 });
+  });
+
+  describe('albums with only some of their songs in the library', () => {
+    const partial: LidarrAlbumRef = { monitored: false, albumId: 5, have: 1, total: 12 };
+
+    it('can still be requested, and say how many songs are already here', async () => {
+      const { requests, library, lidarr } = setup();
+      library.albumByMbid.mockResolvedValue(partial);
+      expect(await requests.availability(MBID)).toEqual({ state: 'partial', albumId: 5, have: 1, total: 12 });
+      await requests.request(ref);
+      expect(lidarr.addAlbum).toHaveBeenCalled();
+      expect(lidarr.command).toHaveBeenCalledWith('AlbumSearch', { albumIds: [42] });
+    });
+
+    it('asks Lidarr to monitor and search when it already knows the album', async () => {
+      const { requests, library, lidarr } = setup();
+      library.albumByMbid.mockResolvedValue({ ...partial, lidarrId: 9 });
+      await requests.request(ref);
+      expect(lidarr.monitorAlbums).toHaveBeenCalledWith([9], true);
+      expect(lidarr.addAlbum).not.toHaveBeenCalled();
+    });
+
+    it('show the request’s progress, with the album still reachable, until Lidarr has every track', async () => {
+      const { requests, library, lidarr } = setup();
+      library.albumByMbid.mockResolvedValue(partial);
+      await requests.request(ref);
+      expect(await requests.availability(MBID)).toMatchObject({ state: 'searching', albumId: 5, have: 1, total: 12 });
+      lidarr.albumsByIds.mockResolvedValue([
+        { id: 42, monitored: true, statistics: { trackFileCount: 12, trackCount: 12, totalTrackCount: 12, sizeOnDisk: 1, percentOfTracks: 100 } },
+      ]);
+      // A fresh Requests instance reads the saved request and has no status cache.
+      const again = setup();
+      again.library.albumByMbid.mockResolvedValue(partial);
+      again.lidarr.albumsByIds.mockImplementation(lidarr.albumsByIds);
+      await again.requests.request(ref);
+      expect((await again.requests.availability(MBID)).state).toBe('available');
+    });
+
+    it('still refuse an album that is complete', async () => {
+      const { requests, library } = setup();
+      library.albumByMbid.mockResolvedValue({ monitored: false, albumId: 5 });
+      expect(await requests.availability(MBID)).toEqual({ state: 'available', albumId: 5 });
+      await expect(requests.request(ref)).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('are found by name too', async () => {
+      const { requests, library } = setup();
+      library.albumIdByName.mockResolvedValue(5);
+      library.album.mockResolvedValue({ trackCount: 3, totalTrackCount: 10 });
+      expect(await requests.availabilityByName('Massive Attack', 'Mezzanine')).toEqual({ state: 'partial', albumId: 5, have: 3, total: 10 });
+      library.album.mockResolvedValue({ trackCount: 10, totalTrackCount: 10 });
+      expect(await requests.availabilityByName('Massive Attack', 'Mezzanine')).toEqual({ state: 'available', albumId: 5 });
+    });
   });
 });

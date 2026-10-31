@@ -140,7 +140,9 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Row({ rec, index, onPlay, action }: { rec: RecommendedTrack; index: number; onPlay?: () => void; action: ReactNode }) {
-  const albumId = rec.track?.albumId ?? (rec.availability?.state === 'available' ? rec.availability.albumId : undefined);
+  const albumId =
+    rec.track?.albumId ??
+    (rec.availability?.state === 'available' || rec.availability?.have !== undefined ? rec.availability?.albumId : undefined);
   return (
     <li
       className={cn(
