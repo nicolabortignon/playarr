@@ -272,7 +272,8 @@ function toSnapshot(catalog: Catalog): Snapshot {
   };
 }
 
-function stripAlbum({ tracks: _t, overview: _o, discCount: _d, ...album }: AlbumDetail): Album {
+/** An album as lists show it: no tracks, text or missing songs (those are on its own page, and lists are big). */
+export function stripAlbum({ tracks: _t, overview: _o, discCount: _d, missingTracks: _m, ...album }: AlbumDetail): Album {
   return album;
 }
 

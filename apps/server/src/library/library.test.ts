@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CatalogStore } from '../catalog/store.ts';
 import { freshDb, mezzanine } from '../catalog/testFixtures.ts';
 import type { CatalogSource } from '../catalog/types.ts';
-import { Library } from './library.ts';
+import { Library, stripAlbum } from './library.ts';
 
 const log = { info: () => {}, error: () => {} };
 const ok: CatalogSource = { kind: 'lidarr', sync: async () => mezzanine() };
@@ -60,5 +60,33 @@ describe('Library', () => {
     const library = new Library(store, () => [{ id: a, source: ok }, { id: b, source: later }], log);
     await library.refresh();
     expect(seen).toEqual([2]);
+  });
+});
+
+describe('stripAlbum', () => {
+  it('keeps album lists small: no tracks, overview or missing songs', () => {
+    const detail = {
+      id: 70,
+      title: 'Mezzanine',
+      artistId: 7,
+      artistName: 'Massive Attack',
+      albumType: 'Album',
+      secondaryTypes: [],
+      genres: [],
+      duration: 677,
+      trackCount: 2,
+      totalTrackCount: 11,
+      mbid: 'rg-1',
+      overview: 'A long text',
+      discCount: 1,
+      tracks: [],
+      missingTracks: [{ recordingId: 'rec-3', title: 'Teardrop', trackNumber: 3, discNumber: 1, duration: 330 }],
+    };
+    const listed = stripAlbum(detail);
+    expect(listed).not.toHaveProperty('missingTracks');
+    expect(listed).not.toHaveProperty('tracks');
+    expect(listed).not.toHaveProperty('overview');
+    // What cards need stays: how complete it is, and what to request.
+    expect(listed).toMatchObject({ trackCount: 2, totalTrackCount: 11, mbid: 'rg-1' });
   });
 });
