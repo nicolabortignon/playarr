@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
@@ -32,6 +32,11 @@ interface ArtKey {
  */
 export class LocalArt {
   private inflight = new Map<string, Promise<{ body: Buffer; mime: string }>>();
+  /** Originals known to be on disk, so warming doesn't look at them again. */
+  private readonly cached = new Set<string>();
+  private warming = false;
+  /** Artwork from a refresh that came in while warming: warmed next. */
+  private nextWarm: string[] | null = null;
 
   constructor(
     private readonly lidarr: LidarrClient,
@@ -44,8 +49,13 @@ export class LocalArt {
     return { kind: m[1] as ArtKey['kind'], id: Number(m[2]), type: m[3]!, version: m[4] ?? '0' };
   }
 
-  original({ kind, id, type, version }: ArtKey): Promise<{ body: Buffer; mime: string }> {
-    const key = createHash('sha1').update(`orig/${kind}/${id}/${type}/${version}`).digest('hex');
+  private static cacheKey({ kind, id, type, version }: ArtKey): string {
+    return createHash('sha1').update(`orig/${kind}/${id}/${type}/${version}`).digest('hex');
+  }
+
+  original(art: ArtKey): Promise<{ body: Buffer; mime: string }> {
+    const { kind, id, type } = art;
+    const key = LocalArt.cacheKey(art);
     let job = this.inflight.get(key);
     if (job) return job;
     job = (async () => {
@@ -70,22 +80,47 @@ export class LocalArt {
     return job;
   }
 
-  /** Fetch originals in the background, gently (Lidarr is shared with everything else). */
+  /**
+   * Fetch missing originals in the background, gently (Lidarr is shared with everything else). Runs after
+   * every refresh, so it only checks that a file exists (never reads it) and remembers what's on disk.
+   */
   async warm(urls: string[], log: { info: (m: string) => void }) {
-    const keys = urls.flatMap((u) => LocalArt.parse(u) ?? []);
-    let fetched = 0;
-    const started = Date.now();
-    for (let i = 0; i < keys.length; i += 2) {
-      await Promise.all(
-        keys.slice(i, i + 2).map((k) =>
-          this.original(k).then(
-            () => fetched++,
-            () => {},
-          ),
-        ),
-      );
+    if (this.warming) {
+      this.nextWarm = urls;
+      return;
     }
-    log.info(`Artwork cache warm: ${fetched}/${keys.length} images in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    this.warming = true;
+    try {
+      const keys = urls.flatMap((u) => LocalArt.parse(u) ?? []).filter((k) => !this.cached.has(LocalArt.cacheKey(k)));
+      const missing: ArtKey[] = [];
+      for (const k of keys) {
+        const key = LocalArt.cacheKey(k);
+        if (await access(join(this.dir, key)).then(() => true, () => false)) this.cached.add(key);
+        else missing.push(k);
+      }
+      if (!missing.length) return;
+      let fetched = 0;
+      const started = Date.now();
+      for (let i = 0; i < missing.length; i += 2) {
+        await Promise.all(
+          missing.slice(i, i + 2).map((k) =>
+            this.original(k).then(
+              () => {
+                fetched++;
+                this.cached.add(LocalArt.cacheKey(k));
+              },
+              () => {},
+            ),
+          ),
+        );
+      }
+      log.info(`Artwork cache warm: ${fetched}/${missing.length} images in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    } finally {
+      this.warming = false;
+      const next = this.nextWarm;
+      this.nextWarm = null;
+      if (next) void this.warm(next, log);
+    }
   }
 }
 

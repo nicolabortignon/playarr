@@ -35,6 +35,7 @@ import { ACOUSTID_KEY, readRequestSettings, settingsRoutes } from './routes/sett
 import { statusRoutes } from './routes/status.ts';
 import { streamRoutes } from './routes/stream.ts';
 import { UpdateBridge } from './update/bridge.ts';
+import { watchStalls } from './stallMonitor.ts';
 
 const config = loadConfig();
 const app = Fastify({
@@ -78,7 +79,8 @@ const matcher = new Matcher({
   },
   acoustid: new AcoustId(() => store.appSetting(ACOUSTID_KEY) || undefined),
   fingerprint: (sourceId, path) => folders.get(sourceId)?.fingerprint?.(path) ?? Promise.resolve(null),
-  onMatched: () => library.refreshSoon(),
+  // Matches only change how scanned files are read: rebuild from the last scan, don't scan again.
+  onMatched: () => library.rebuildSoon(),
   log: { warn: (m) => app.log.warn(m) },
 });
 sources.useMatcher(matcher);
@@ -150,3 +152,4 @@ app.log.info(`Sources: ${store.listSources().map((s) => s.name).join(', ') || 'n
 library.loadStored();
 library.refresh().catch(() => {});
 library.startAutoRefresh(config.LIBRARY_REFRESH_MINUTES);
+watchStalls(app.log);

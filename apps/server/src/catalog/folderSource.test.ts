@@ -96,6 +96,39 @@ describe('FolderSource', () => {
     expect(onScanned).toHaveBeenCalledWith(sourceId);
   });
 
+  it('rebuilds from the last scan without touching the folder or the matcher', async () => {
+    const { store, sourceId, dir } = setup();
+    store.saveRelease({
+      id: 'rel-1',
+      title: 'Mezzanine',
+      artistName: 'Massive Attack',
+      artistId: 'art-1',
+      releaseGroup: { id: 'rg-1', title: 'Mezzanine', primaryType: 'Album', secondaryTypes: [] },
+      tracks: [{ disc: 1, position: 1, title: 'Angel', length: 200, recordingId: 'rec-1' }],
+    });
+    const onScanned = vi.fn();
+    const fs = new LocalFolderFs();
+    const source = new FolderSource({ sourceId, root: dir, store, fs, onScanned });
+    const scanned = await source.sync();
+    onScanned.mockClear();
+    const listAudio = vi.spyOn(fs, 'listAudio');
+    store.saveMatches(sourceId, [
+      {
+        rel: 'Massive Attack/Mezzanine/01 Angel.flac',
+        groupKey: 'g',
+        state: 'auto',
+        overlay: { recordingMbid: 'rec-1', releaseGroupMbid: 'rg-1', releaseId: 'rel-1', album: 'Mezzanine', albumArtistMbid: 'art-1' },
+        size: 0,
+        mtimeMs: 0,
+      },
+    ]);
+    const rebuilt = source.cached();
+    expect(listAudio).not.toHaveBeenCalled();
+    expect(onScanned).not.toHaveBeenCalled();
+    expect(rebuilt.copies.map((c) => [c.ref, c.path])).toEqual(scanned.copies.map((c) => [c.ref, c.path]));
+    expect(rebuilt.copies.find((c) => c.ref.endsWith('Angel.flac'))!.trackKey).toBe('mb:rg-1#rec-1'); // the new match
+  });
+
   it('scans a folder on another machine through its filesystem alone', async () => {
     const store = new CatalogStore(freshDb());
     const sourceId = store.addSource('folder', 'NAS', { path: '/volume1/music', access: 'ssh', host: 'nas', user: 'me' });

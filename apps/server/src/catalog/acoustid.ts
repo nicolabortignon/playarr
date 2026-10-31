@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { lowPriority } from '../lowPriority.ts';
 
 export interface Fingerprint {
   duration: number;
@@ -73,7 +74,7 @@ export class AcoustId {
 export function fpcalc(bin = 'fpcalc'): (path: string) => Promise<Fingerprint | null> {
   return (path) =>
     new Promise((resolve) => {
-      execFile(bin, ['-json', path], { timeout: 60_000, maxBuffer: 1 << 20 }, (err, stdout) => {
+      lowPriority(execFile(bin, ['-json', path], { timeout: 60_000, maxBuffer: 1 << 20 }, (err, stdout) => {
         if (err) return resolve(null);
         try {
           const json = JSON.parse(stdout) as { duration?: number; fingerprint?: string };
@@ -81,7 +82,7 @@ export function fpcalc(bin = 'fpcalc'): (path: string) => Promise<Fingerprint | 
         } catch {
           resolve(null);
         }
-      });
+      }));
     });
 }
 

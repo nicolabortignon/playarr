@@ -6,6 +6,7 @@ import { posix } from 'node:path';
 import type { Readable } from 'node:stream';
 import { cleanRcloneError, type Rclone } from './rclone.ts';
 import { ffmpegPcmArgs, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
+import { lowPriority } from '../lowPriority.ts';
 
 /** A free loopback port (tiny race between closing and rclone binding; a failed start retries once). */
 function freePort(): Promise<number> {
@@ -190,11 +191,13 @@ export class RcloneMediaSource implements MediaSource {
   async pcm(path: string, opts: PcmOptions): Promise<Buffer> {
     const url = await this.urlFor(path);
     return new Promise((resolve, reject) => {
-      execFile(
-        this.tools.ffmpeg ?? 'ffmpeg',
-        ffmpegPcmArgs(url, opts),
-        { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, signal: opts.signal },
-        (err, stdout, stderr) => (err ? reject(new Error(`ffmpeg: ${stderr.toString().trim() || err.message}`)) : resolve(stdout)),
+      lowPriority(
+        execFile(
+          this.tools.ffmpeg ?? 'ffmpeg',
+          ffmpegPcmArgs(url, opts),
+          { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, signal: opts.signal },
+          (err, stdout, stderr) => (err ? reject(new Error(`ffmpeg: ${stderr.toString().trim() || err.message}`)) : resolve(stdout)),
+        ),
       );
     });
   }

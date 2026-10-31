@@ -45,6 +45,32 @@ describe('Library', () => {
     expect(sync).toHaveBeenCalledTimes(1);
   });
 
+  it('rebuilds from the last scan without syncing any source', async () => {
+    const store = new CatalogStore(freshDb());
+    const a = store.addSource('lidarr', 'Lidarr');
+    const b = store.addSource('folder', 'Drive');
+    const lidarrSync = vi.fn(async () => mezzanine());
+    const folderSync = vi.fn(async () => ({ artists: [], albums: [], tracks: [], copies: [] }));
+    const cached = vi.fn(() => ({ artists: [], albums: [], tracks: [], copies: [] }));
+    const library = new Library(
+      store,
+      () => [
+        { id: a, source: { kind: 'lidarr', sync: lidarrSync } },
+        { id: b, source: { kind: 'folder', sync: folderSync, cached } },
+      ],
+      log,
+    );
+    const refreshed = vi.fn();
+    library.onRefresh(refreshed);
+    await library.refresh();
+    await library.rebuild();
+    expect(lidarrSync).toHaveBeenCalledTimes(1);
+    expect(folderSync).toHaveBeenCalledTimes(1);
+    expect(cached).toHaveBeenCalledTimes(1);
+    expect(refreshed).toHaveBeenCalledTimes(2);
+    expect((await library.albums()).map((x) => x.title)).toEqual(['Mezzanine']);
+  });
+
   it('syncs sources in order, so later ones see what earlier ones reported', async () => {
     const store = new CatalogStore(freshDb());
     const a = store.addSource('lidarr', 'Lidarr');

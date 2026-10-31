@@ -26,6 +26,7 @@ export class Library {
   private inflight: Promise<void> | null = null;
   private timer: NodeJS.Timeout | null = null;
   private refreshTimer: NodeJS.Timeout | null = null;
+  private rebuildTimer: NodeJS.Timeout | null = null;
   private listeners: ((library: Library) => void)[] = [];
   lastError: string | null = null;
 
@@ -82,12 +83,15 @@ export class Library {
 
   /** Sync every source into the catalog and rebuild. Concurrent callers share one refresh. */
   refresh(): Promise<void> {
+    const started = Date.now();
     this.inflight ??= this.build()
       .then((snap) => {
         this.snapshot = snap;
         this.lastError = null;
         const s = snap.stats;
-        this.log.info(`Library refreshed: ${s.artists} artists, ${s.albums} albums, ${s.tracks} tracks`);
+        this.log.info(
+          `Library refreshed: ${s.artists} artists, ${s.albums} albums, ${s.tracks} tracks in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+        );
         for (const listener of this.listeners) listener(this);
       })
       .catch((err: Error) => {
@@ -125,6 +129,36 @@ export class Library {
     return toSnapshot(buildCatalog(this.store.load()));
   }
 
+  /**
+   * Rebuild from what the sources reported last, without scanning folders or asking Lidarr again: for
+   * when only matches changed. Runs after any refresh in progress.
+   */
+  async rebuild(): Promise<void> {
+    await this.inflight?.catch(() => {});
+    const started = Date.now();
+    for (const { id, source } of this.sources()) {
+      if (!source.cached) continue;
+      try {
+        this.store.applySync(id, source.cached());
+      } catch (err) {
+        this.log.error(`Rebuilding a source failed: ${(err as Error).message}`);
+      }
+    }
+    this.snapshot = toSnapshot(buildCatalog(this.store.load()));
+    this.log.info(`Library rebuilt from the last scan in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    for (const listener of this.listeners) listener(this);
+  }
+
+  /** Rebuild soon (see rebuild), coalescing bursts such as matches landing album after album. */
+  rebuildSoon(delayMs = 10_000) {
+    if (this.rebuildTimer) return;
+    this.rebuildTimer = setTimeout(() => {
+      this.rebuildTimer = null;
+      void this.rebuild().catch(() => {});
+    }, delayMs);
+    this.rebuildTimer.unref?.();
+  }
+
   async albumByMbid(mbid: string): Promise<LidarrAlbumRef | undefined> {
     return (await this.ready()).albumsByMbid.get(mbid);
   }
@@ -156,12 +190,6 @@ export class Library {
       if (normalize(snap.artists.get(id)?.name ?? '') === want) return { id, mbid };
     }
     return undefined;
-  }
-
-  /** Rebuild now, after any rebuild already running (which may have started before the latest change). */
-  async refreshNow(): Promise<void> {
-    await this.inflight?.catch(() => {});
-    await this.refresh();
   }
 
   /** Refresh soon, coalescing bursts (e.g. several downloads finishing together). */

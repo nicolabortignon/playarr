@@ -95,6 +95,8 @@ export interface CatalogSource {
   readonly kind: SourceKind;
   /** Everything the source currently has. Copies it no longer reports are removed. */
   sync(): Promise<SourceSync>;
+  /** The catalog from the last sync without asking the source again, where it keeps one (folders do). */
+  cached?(): SourceSync;
 }
 
 /** A song already in the catalog, as the name index finds it. */

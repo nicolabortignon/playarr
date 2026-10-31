@@ -1,6 +1,6 @@
 import type { Dirent } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { folderSync, type FolderEntry } from './folder.ts';
 import type { FolderFs, FoundFile } from './folderFs.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
@@ -53,6 +53,26 @@ export class FolderSource implements CatalogSource {
       if (tags) entries.push({ ...f, tags });
     });
     store.saveFolderFiles(sourceId, changed, files.map((f) => f.rel));
+    const sync = this.catalog(entries);
+    this.opts.onScanned?.(sourceId);
+    return sync;
+  }
+
+  /**
+   * The catalog from the last scan, without touching the folder: for when only matches changed. Walking
+   * a big share again (and re-reading Lidarr) after every few matched albums kept the server busy.
+   */
+  cached(): SourceSync {
+    const { sourceId, root, store } = this.opts;
+    const entries: FolderEntry[] = [];
+    for (const [rel, f] of store.folderFiles(sourceId)) {
+      if (f.tags) entries.push({ rel, path: posix.join(root, rel), size: f.size, mtimeMs: f.mtimeMs, tags: f.tags });
+    }
+    return this.catalog(entries);
+  }
+
+  private catalog(entries: FolderEntry[]): SourceSync {
+    const { sourceId, store } = this.opts;
     // Matches lay MusicBrainz ids over the files' own tags; matched releases bring their track lists.
     const matches = store.matches(sourceId);
     const releases = new Map<string, MbReleaseInfo>();
@@ -64,9 +84,7 @@ export class FolderSource implements CatalogSource {
       const release = id && !releases.has(id) ? store.cachedRelease(id) : undefined;
       if (release) releases.set(release.id, release);
     }
-    const sync = folderSync(entries, store.nameIndex(), releases);
-    this.opts.onScanned?.(sourceId);
-    return sync;
+    return folderSync(entries, store.nameIndex(), releases);
   }
 }
 

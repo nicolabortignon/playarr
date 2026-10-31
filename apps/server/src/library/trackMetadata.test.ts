@@ -81,24 +81,24 @@ describe('trackMetadata', () => {
 describe('POST /api/files/:fileId/rematch', () => {
   function withRoutes() {
     const { store, library } = setup();
-    const refreshNow = vi.fn(async () => {});
-    const lib = Object.assign(library, { refreshNow, refreshSoon: vi.fn() }) as unknown as Library;
+    const rebuild = vi.fn(async () => {});
+    const lib = Object.assign(library, { rebuild, refreshSoon: vi.fn() }) as unknown as Library;
     const matcher = { rematchFile: vi.fn(async () => 'auto' as const) };
     const lidarr = { configured: true, trackFile: vi.fn(async () => ({ id: 9000, artistId: 33, albumId: 44 })), command: vi.fn(async () => ({})) };
     const app = Fastify();
     metadataRoutes(app, { store, library: lib, pathMap: [], features: () => new Map(), matcher, lidarr: lidarr as never });
     const folderCopy = store.load().copies.find((c) => c.path.startsWith('/volume1'))!;
-    return { app, store, matcher, lidarr, refreshNow, folderCopy };
+    return { app, store, matcher, lidarr, rebuild, folderCopy };
   }
   const post = (app: ReturnType<typeof Fastify>, fileId: number | string, remoteAddress = '192.168.1.20') =>
     app.inject({ method: 'POST', url: `/api/files/${fileId}/rematch`, remoteAddress });
 
   it('matches a folder file again, rebuilds, and says which song it belongs to now', async () => {
-    const { app, matcher, refreshNow, folderCopy } = withRoutes();
+    const { app, matcher, rebuild, folderCopy } = withRoutes();
     const res = await post(app, folderCopy.id);
     expect(res.json()).toEqual({ kind: 'folder', state: 'auto', trackId: folderCopy.trackId });
     expect(matcher.rematchFile).toHaveBeenCalledWith(folderCopy.sourceId, 'Massive Attack/01 Angel.mp3');
-    expect(refreshNow).toHaveBeenCalled();
+    expect(rebuild).toHaveBeenCalled();
   });
 
   it('asks Lidarr to refresh the artist for a Lidarr file', async () => {

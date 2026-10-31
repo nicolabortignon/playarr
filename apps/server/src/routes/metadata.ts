@@ -33,8 +33,8 @@ export function metadataRoutes(
       if (source.kind === 'folder') {
         if (!deps.matcher) return reply.code(409).send({ error: 'Matching isn’t available' });
         const state = await deps.matcher.rematchFile(copy.sourceId, copy.ref);
-        // Rebuild now so the file's song (and its id) reflect the new match before answering.
-        await deps.library.refreshNow();
+        // Rebuild now (from the last scan) so the file's song and its id reflect the new match before answering.
+        await deps.library.rebuild();
         return { kind: 'folder', state, trackId: deps.store.copy(fileId)?.trackId };
       }
       // Lidarr's songs get their metadata from Lidarr: ask it to refresh the artist from MusicBrainz.

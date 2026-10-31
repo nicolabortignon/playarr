@@ -28,7 +28,10 @@ RUN apk add --no-cache ffmpeg chromaprint rclone
 WORKDIR /app
 COPY --from=build /out/server ./server
 COPY --from=build /out/web ./web
+# More threads for disk and network work (default 4): image resizing and file reads shouldn't queue
+# behind each other, or streams and pages wait.
 ENV NODE_ENV=production \
+    UV_THREADPOOL_SIZE=16 \
     HOST=0.0.0.0 \
     PORT=4000 \
     WEB_DIST=/app/web \
