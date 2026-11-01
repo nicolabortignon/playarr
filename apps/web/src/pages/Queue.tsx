@@ -10,6 +10,7 @@ import { FavoriteButton } from '../components/FavoriteButton';
 import { FormatBadge } from '../components/FormatBadge';
 import { Menu } from '../components/Menu';
 import { OfflineMark } from '../components/OfflineMark';
+import { TransitionView } from '../components/TransitionView';
 import { formatDuration, formatTime, plural } from '../lib/format';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
@@ -79,6 +80,7 @@ export function QueuePage() {
           <FormatBadge format={track.format} className="hidden sm:inline-flex" />
           <FavoriteButton track={track} size="md" />
         </div>
+        <TransitionView className="mt-2 ml-1" />
       </section>
 
       <section>

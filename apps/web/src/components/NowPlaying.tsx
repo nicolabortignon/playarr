@@ -16,6 +16,7 @@ import { LyricsView } from './LyricsView';
 import { Menu } from './Menu';
 import { SeekBar, Transport } from './Transport';
 import { SleepTimer } from './SleepTimer';
+import { TransitionView } from './TransitionView';
 import { startRadio } from '../player/radio';
 
 export function NowPlaying() {
@@ -170,7 +171,10 @@ function Sheet() {
               <FavoriteButton track={track} size="lg" className="-mr-2" />
             </div>
             <SeekBar />
-            <Transport size="lg" />
+            <div className="flex flex-col gap-2">
+              <Transport size="lg" />
+              <TransitionView className="self-center" />
+            </div>
             <UpNext onNavigate={close} />
           </div>
         </div>

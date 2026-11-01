@@ -456,6 +456,21 @@ export function useSourceActions() {
 export const useLyrics = (trackId: number, enabled = true) =>
   useQuery({ queryKey: ['lyrics', trackId], queryFn: () => api.lyrics(trackId), enabled, staleTime: Infinity, retry: 1 });
 
+/**
+ * The mix maps (tempo, key, energy) of these songs, by recording id. A song not measured yet is
+ * missing and gets measured on the server meanwhile, so it's asked for again a minute later (a few
+ * times: a server that can't analyse audio never has them).
+ */
+export const useMixMaps = (recordingIds: string[], enabled = true) =>
+  useQuery({
+    queryKey: ['mix-maps', ...recordingIds],
+    queryFn: () => api.mixMaps(recordingIds),
+    enabled: enabled && recordingIds.length > 0,
+    staleTime: 60_000,
+    refetchInterval: (q) =>
+      q.state.data && q.state.dataUpdateCount < 5 && recordingIds.some((id) => !q.state.data![id]) ? 60_000 : false,
+  });
+
 export const useTrackMetadata = (id: number | null) =>
   useQuery({ queryKey: ['track-metadata', id], queryFn: () => api.trackMetadata(id!), enabled: id !== null, staleTime: 0 });
 
