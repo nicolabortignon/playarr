@@ -7,6 +7,7 @@ import { toast } from '../lib/toast';
 import { healQueue } from './healQueue';
 import { useLoadAhead } from './loadAhead';
 import { playTracker } from './playTracker';
+import { useAutoplay } from './radio';
 import { currentTrack, useClock, useCurrentTrack, usePlayer } from './store';
 
 const DEFAULT_ACCENT = '#ff7a1a';
@@ -30,6 +31,7 @@ export function AudioEngine() {
   }, []);
 
   useLoadAhead();
+  useAutoplay();
 
   // Load a new source when the track changes, or restart the current one.
   useEffect(() => {

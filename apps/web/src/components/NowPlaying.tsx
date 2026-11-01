@@ -1,4 +1,4 @@
-import { ChevronDown, Disc3, Info, ListMusic, ListPlus, Mic2 } from 'lucide-react';
+import { ChevronDown, Disc3, Info, ListMusic, ListPlus, Mic2, Radio } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -13,6 +13,7 @@ import { OfflineMark } from './OfflineMark';
 import { FormatBadge } from './FormatBadge';
 import { Menu } from './Menu';
 import { SeekBar, Transport } from './Transport';
+import { startRadio } from '../player/radio';
 
 export function NowPlaying() {
   const open = useUI((s) => s.nowPlayingOpen);
@@ -93,6 +94,7 @@ function Sheet() {
             className="text-paper"
             items={[
               { label: 'Add to playlist…', icon: ListPlus, onSelect: () => openPicker([track]) },
+              { label: 'Start radio', icon: Radio, onSelect: () => void startRadio(track) },
               { label: 'Go to album', icon: Disc3, onSelect: () => go(`/albums/${track.albumId}`) },
               { label: 'Go to artist', icon: Mic2, onSelect: () => go(`/artists/${track.artistId}`) },
               { label: 'Show metadata', icon: Info, onSelect: () => showMetadata(track.id) },

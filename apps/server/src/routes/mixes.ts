@@ -43,6 +43,12 @@ const settingsInput = z.object({
 
 const KEY = /^[a-z]+(-[a-z0-9]+)?$/;
 
+const radioInput = z.object({
+  seeds: z.array(z.string().min(1).max(100)).min(1).max(20),
+  exclude: z.array(z.string().min(1).max(100)).max(2000).optional(),
+  count: z.number().int().min(1).max(100).optional(),
+});
+
 async function handle(reply: FastifyReply, fn: () => unknown) {
   try {
     return await fn();
@@ -83,6 +89,13 @@ export function mixRoutes(
   app.get('/api/plays/recent-albums', async () => {
     const albums = await Promise.all(history.recentAlbums(24).map((id) => deps.library.album(id)));
     return albums.flatMap((a) => (a ? [stripAlbum(a)] : [])).slice(0, 12);
+  });
+
+  /** Songs like these, from the library: to keep playing after the queue, or "Start radio". */
+  app.post('/api/radio', async (req, reply) => {
+    const parsed = radioInput.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
+    return mixes.radio(parsed.data.seeds, parsed.data.exclude ?? [], parsed.data.count ?? 25);
   });
 
   app.get<Tz>('/api/mixes', (req) => mixes.list(tz(req.query)));

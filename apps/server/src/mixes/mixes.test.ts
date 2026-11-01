@@ -140,6 +140,19 @@ describe('Mixes', () => {
   });
 });
 
+describe('Radio', () => {
+  it('plays on with songs like the seeds, not the seeds or what is already queued, two per artist at most', async () => {
+    const { mixes, tracks } = setup();
+    const rock = tracks.filter((t) => t.artistId % 2 === 1); // artists 1, 3, 5… are rock, the rest jazz
+    const radio = await mixes.radio([rock[0]!.recordingId], [rock[1]!.recordingId], 10);
+    expect(radio).toHaveLength(10);
+    expect(radio.map((t) => t.recordingId)).not.toContain(rock[0]!.recordingId);
+    expect(radio.map((t) => t.recordingId)).not.toContain(rock[1]!.recordingId);
+    expect(radio.filter((t) => t.artistId % 2 === 1).length).toBeGreaterThanOrEqual(8); // mostly the same style
+    for (const a of new Set(radio.map((t) => t.artistId))) expect(radio.filter((t) => t.artistId === a).length).toBeLessThanOrEqual(2);
+  });
+});
+
 describe('mix routes', () => {
   const report = { trackId: 100, recordingId: 'rec-100', at: '2026-11-01T10:10:00.000Z', hour: 10, weekday: 0, seconds: 120, skipped: false };
 

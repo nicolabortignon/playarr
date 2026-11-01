@@ -1,5 +1,5 @@
 import type { MissingTrack, Track } from '@playarr/shared';
-import { Disc3, Info, ListEnd, ListMusic, ListPlus, Mic2, Play } from 'lucide-react';
+import { Disc3, Info, ListEnd, ListMusic, ListPlus, Mic2, Play, Radio } from 'lucide-react';
 import { Fragment } from 'react';
 import { useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
@@ -13,6 +13,7 @@ import { FavoriteButton } from './FavoriteButton';
 import { OfflineMark } from './OfflineMark';
 import { InlineLink } from './InlineLink';
 import { Menu } from './Menu';
+import { startRadio } from '../player/radio';
 
 interface TrackListProps {
   tracks: Track[];
@@ -124,6 +125,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing, sourc
                     { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks([t], 'next') },
                     { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks([t], 'end') },
                     { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker([t]) },
+                    { label: 'Start radio', icon: Radio, onSelect: () => void startRadio(t) },
                     ...(variant === 'mixed'
                       ? [{ label: 'Go to album', icon: Disc3, onSelect: () => navigate(`/albums/${t.albumId}`) }]
                       : []),

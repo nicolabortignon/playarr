@@ -2,14 +2,15 @@ import type { MixDetail, MixKind, MixSettings, MixSummary, PlaylistDetail, Track
 import type { DatabaseSync } from 'node:sqlite';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import type { CatalogStore } from '../catalog/store.ts';
-import { hash32 } from '../cover/random.ts';
+import { hash32, Rng } from '../cover/random.ts';
 import { similarRecordings } from '../discover/listenbrainz.ts';
 import type { Library } from '../library/library.ts';
 import type { Playlists } from '../playlists.ts';
-import { generateMix, planMixes, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
+import { choose, generateMix, planMixes, spread, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
 import type { History } from './history.ts';
 import { MIXES_KEY, readMixSettings } from './settings.ts';
-import { buildTaste, toSong, type Song, type Taste } from './taste.ts';
+import { buildTaste, familySimilarity, toSong, type Song, type Taste } from './taste.ts';
+import type { StyleFamily } from '../analysis/styles.ts';
 import { localTime, nextBoundary, validTimeZone, type LocalTime } from './time.ts';
 
 const PLAN_KEY = '_plan';
@@ -143,6 +144,39 @@ export class Mixes {
     const mix = generateMix(plan, ctx, row.period, variant);
     if (mix) this.write(key, row.period, variant, { settings: settingsHash(settings), mix }, now);
     return this.get(key, tz, now);
+  }
+
+  /**
+   * Radio: library songs like `seeds` (their styles, energy and ListenBrainz neighbours), for keeping
+   * the music going after the queue ends or "Start radio" on a song. Leaves out `exclude`.
+   */
+  async radio(seeds: string[], exclude: string[], count = 25): Promise<Track[]> {
+    const songs = await this.songs(readMixSettings(this.deps.store));
+    const byRecording = new Map(songs.map((s) => [s.track.recordingId, s]));
+    const seedSongs = seeds.flatMap((id) => byRecording.get(id) ?? []);
+    if (!seedSongs.length) return [];
+    const families: Partial<Record<StyleFamily, number>> = {};
+    for (const s of seedSongs) {
+      for (const [f, w] of Object.entries(s.families)) families[f as StyleFamily] = (families[f as StyleFamily] ?? 0) + w! / seedSongs.length;
+    }
+    const energies = seedSongs.flatMap((s) => (s.energy === undefined ? [] : [s.energy]));
+    const energy = energies.length ? energies.reduce((a, b) => a + b, 0) / energies.length : undefined;
+    const artists = new Set(seedSongs.map((s) => s.track.artistId));
+    const neighbours = await this.neighboursOf(seeds.filter((id) => MBID.test(id)).slice(0, 5));
+    const skip = new Set([...seeds, ...exclude]);
+    const rng = new Rng(Date.now() >>> 0);
+    const scored = songs
+      .filter((s) => !skip.has(s.track.recordingId))
+      .map((song) => ({
+        song,
+        score:
+          0.35 * familySimilarity(song.families, families) +
+          0.25 * (energy === undefined || song.energy === undefined ? 0.4 : 1 - Math.abs(song.energy - energy) * 1.6) +
+          0.3 * (neighbours.get(song.track.id) ?? 0) +
+          (artists.has(song.track.artistId) ? 0.1 : 0) +
+          rng.next() * 0.2,
+      }));
+    return spread(choose(scored, count, 2), rng).map((s) => s.track);
   }
 
   /** Keep the mix as an ordinary playlist. */
@@ -299,13 +333,19 @@ export class Mixes {
   }
 
   /** Library songs ListenBrainz finds alike to the most played (or loved) ones, for Discovery Weekly. */
-  private async neighbours(taste: Taste): Promise<Map<number, number>> {
+  private neighbours(taste: Taste): Promise<Map<number, number>> {
+    return this.neighboursOf(
+      [...taste.songAffinity]
+        .filter(([id]) => MBID.test(id))
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, NEIGHBOUR_SEEDS)
+        .map(([id]) => id),
+    );
+  }
+
+  /** Library songs ListenBrainz finds alike to these recordings (track id → 0 … 1). */
+  private async neighboursOf(seeds: string[]): Promise<Map<number, number>> {
     const similar = this.deps.similar ?? ((id: string) => similarRecordings(id));
-    const seeds = [...taste.songAffinity]
-      .filter(([id]) => MBID.test(id))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, NEIGHBOUR_SEEDS)
-      .map(([id]) => id);
     const out = new Map<number, number>();
     const lists = await Promise.allSettled(seeds.map((id) => similar(id)));
     for (const list of lists) {

@@ -439,7 +439,7 @@ function skipPenalty(ctx: MixContext, song: Song): number {
 }
 
 /** The best scored songs, at most `perArtist` by any one artist, no song twice. */
-function choose(scored: { song: Song; score: number }[], n: number, perArtist: number): Song[] {
+export function choose(scored: { song: Song; score: number }[], n: number, perArtist: number): Song[] {
   const seen = new Set<number>();
   const perArtistCount = new Map<number, number>();
   const out: Song[] = [];
@@ -456,7 +456,7 @@ function choose(scored: { song: Song; score: number }[], n: number, perArtist: n
 }
 
 /** Shuffle, then never the same artist twice in a row where it can be helped. */
-function spread(songs: Song[], rng: Rng): Song[] {
+export function spread(songs: Song[], rng: Rng): Song[] {
   const rest = shuffle(songs, rng);
   const out: Song[] = [];
   while (rest.length) {

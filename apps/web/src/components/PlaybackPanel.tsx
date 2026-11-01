@@ -22,10 +22,18 @@ const KBD =
 export function PlaybackPanel() {
   const recordPlays = usePrefs((s) => s.recordPlays);
   const setRecordPlays = usePrefs((s) => s.setRecordPlays);
+  const autoplay = usePrefs((s) => s.autoplay);
+  const setAutoplay = usePrefs((s) => s.setAutoplay);
   return (
     <div>
-      <SettingsSection title="Made for you">
+      <SettingsSection title="Playing">
         <div className="divide-y divide-line">
+          <Switch
+            label="Keep playing when the queue ends"
+            description="Carries on with songs from your library like the last ones you heard."
+            checked={autoplay}
+            onChange={setAutoplay}
+          />
           <Switch
             label="Count what this device plays"
             description="Off for a party speaker or a guest’s phone: what plays here won’t shape everyone’s mixes."

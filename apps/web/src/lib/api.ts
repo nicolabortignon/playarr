@@ -157,6 +157,8 @@ export const api = {
   reportPlays: (plays: PlayReport[]) =>
     request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
+  radio: (seeds: string[], exclude: string[] = [], count = 25) =>
+    request<Track[]>('/api/radio', { method: 'POST', body: JSON.stringify({ seeds, exclude, count }) }),
   mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`),
   mix: (key: string) => get<MixDetail>(`/api/mixes/${key}?tz=${encodeURIComponent(timeZone())}`),
   regenerateMix: (key: string) =>
