@@ -2,7 +2,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import { recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
-import { ANALYSIS_VERSION, analyzePcm, pcmToFloat, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
+import { ANALYSIS_VERSION, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
+import { DspThread } from './dspThread.ts';
 
 export interface TrackMeta {
   /** Strongest first. */
@@ -26,6 +27,8 @@ export class Analyzer {
   private readonly metaQueue = new Set<string>();
   private metaTimer: NodeJS.Timeout | undefined;
   private metaRunning = false;
+  /** The number crunching runs off the main thread. */
+  private readonly dsp = new DspThread();
 
   constructor(
     private readonly db: DatabaseSync,
@@ -95,7 +98,8 @@ export class Analyzer {
   }
 
   private pump() {
-    const limit = this.opts.concurrency ?? 2;
+    // One song at a time: decoding and measuring are background work, the NAS has other things to do.
+    const limit = this.opts.concurrency ?? 1;
     while (this.running.size < limit && this.audioQueue.size) {
       const id = this.audioQueue.values().next().value!;
       this.audioQueue.delete(id);
@@ -120,7 +124,7 @@ export class Analyzer {
       const { media, path } = this.files.resolve(file);
       if (!media.pcm) throw new Error('This source can’t decode audio for analysis');
       const pcm = await media.pcm(path, { sampleRate: SAMPLE_RATE, maxSeconds: MAX_SECONDS });
-      const features = analyzePcm(pcmToFloat(pcm));
+      const features = await this.dsp.analyze(pcm);
       save.run(id, ANALYSIS_VERSION, JSON.stringify(features), null, new Date().toISOString());
     } catch (err) {
       this.opts.log.warn({ err, recordingId: id }, 'audio analysis failed');
