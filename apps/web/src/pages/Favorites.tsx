@@ -7,14 +7,14 @@ import { usePlayer } from '../player/store';
 import { PageTitle } from './Albums';
 
 export function FavoritesPage() {
-  const { data: favorites, error, isPending } = useFavorites();
+  const { data: favorites, error, isPending, refetch } = useFavorites();
   const playTracks = usePlayer((s) => s.playTracks);
   const total = favorites?.reduce((sum, t) => sum + t.duration, 0) ?? 0;
 
   return (
     <div className="max-w-5xl px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Favorites" count={favorites?.length} />
-      {error && <ErrorState error={error} />}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} />}
       {isPending && (
         <div className="space-y-3">
           {Array.from({ length: 6 }, (_, i) => (

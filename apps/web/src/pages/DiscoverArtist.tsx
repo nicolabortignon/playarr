@@ -2,7 +2,7 @@ import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { DiscoverAlbumCard } from '../components/Discover';
-import { ErrorState, SectionHeader, Skeleton } from '../components/Section';
+import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
 import { SimilarArtists } from '../components/SimilarArtists';
 import { SlowLookup } from '../components/SlowLookup';
 import { sized } from '../lib/api';
@@ -19,7 +19,7 @@ export function DiscoverArtistPage() {
   const [bioOpen, setBioOpen] = useState(false);
   const wantedAlbum = useSearchParams()[0].get('album');
 
-  if (error) return <ErrorState error={error} />;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !artist) {
     return (
       <div className="px-5 pt-10 md:px-10 md:pt-16">
@@ -43,6 +43,7 @@ export function DiscoverArtistPage() {
   return (
     <div>
       <section className="relative isolate overflow-hidden px-5 pt-10 pb-10 md:px-10 md:pt-16">
+        <BackButton fallback="/search" className="absolute top-3 left-3 z-20" />
         {artist.imageUrl && (
           <img
             src={sized(artist.imageUrl, 480)}

@@ -5,7 +5,7 @@ import { Cover } from '../components/Cover';
 import { RequestRest } from '../components/Discover';
 import { FormatBadge } from '../components/FormatBadge';
 import { Menu } from '../components/Menu';
-import { ErrorState, SectionHeader, Shelf, Skeleton } from '../components/Section';
+import { BackButton, ErrorState, SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { useCoverAccent } from '../lib/color';
 import { formatDuration, plural } from '../lib/format';
@@ -16,7 +16,7 @@ import { useCurrentTrack, usePlayer } from '../player/store';
 
 export function AlbumPage() {
   const id = Number(useParams().id);
-  const { data: album, error, isPending } = useAlbum(id);
+  const { data: album, error, isPending, refetch } = useAlbum(id);
   const { data: artist } = useArtist(album?.artistId ?? Number.NaN);
   const accent = useCoverAccent(album?.coverUrl);
   const current = useCurrentTrack();
@@ -26,7 +26,7 @@ export function AlbumPage() {
   const navigate = useNavigate();
   const openPicker = useUI((s) => s.openPlaylistPicker);
 
-  if (error) return <ErrorState error={error} />;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !album) return <AlbumSkeleton />;
 
   const isCurrent = current?.albumId === album.id;
@@ -35,6 +35,7 @@ export function AlbumPage() {
 
   return (
     <div className="relative">
+      <BackButton fallback={`/artists/${album.artistId}`} className="absolute top-3 left-3 z-20" />
       {/* Header wash tinted with this album's own color. */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-[520px] transition-[background] duration-700"
@@ -78,7 +79,8 @@ export function AlbumPage() {
           </div>
         </header>
 
-        <div className="mt-8 flex items-center gap-3">
+        {/* Wraps on phones: Request (two pills on a partial album) goes to its own line, ⋯ stays in reach. */}
+        <div className="mt-8 flex flex-wrap items-center gap-3">
           <button
             type="button"
             aria-label={`${isCurrent && playing ? 'Pause' : isCurrent ? 'Resume' : 'Play'} ${album.title}`}
@@ -96,7 +98,6 @@ export function AlbumPage() {
           >
             <Shuffle className="size-[18px]" /> Shuffle
           </button>
-          <RequestRest album={album} />
           <Menu
             className="size-12 border border-paper/15 text-paper"
             items={[
@@ -106,6 +107,7 @@ export function AlbumPage() {
               { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${album.artistId}`) },
             ]}
           />
+          <RequestRest album={album} />
         </div>
 
         <div className="mt-8 -mx-3 max-w-5xl md:mt-10">

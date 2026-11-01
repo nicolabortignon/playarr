@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router';
 import { AlbumCard } from '../components/Cards';
 import { DiscoverAlbumCard } from '../components/Discover';
-import { ErrorState, SectionHeader, Skeleton } from '../components/Section';
+import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
 import { SimilarArtists } from '../components/SimilarArtists';
 import { SlowLookup } from '../components/SlowLookup';
 import { artistHero } from '../lib/api';
@@ -95,11 +95,11 @@ function NotInLibrary({ artistMbid, owned }: { artistMbid: string; owned: Album[
 
 export function ArtistPage() {
   const id = Number(useParams().id);
-  const { data: artist, error, isPending } = useArtist(id);
+  const { data: artist, error, isPending, refetch } = useArtist(id);
   const [logoFailed, setLogoFailed] = useState(false);
   const [bioOpen, setBioOpen] = useState(false);
 
-  if (error) return <ErrorState error={error} />;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !artist) {
     return (
       <div>
@@ -118,6 +118,7 @@ export function ArtistPage() {
   return (
     <div>
       <section className="relative isolate flex h-[52vh] min-h-[360px] items-end overflow-hidden md:h-[60vh]">
+        <BackButton fallback="/artists" className="absolute top-3 left-3 z-20" />
         {hero && (
           <img
             src={artistHero(artist)}

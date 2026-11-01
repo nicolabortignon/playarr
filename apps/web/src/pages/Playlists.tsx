@@ -20,13 +20,13 @@ export async function playPlaylist(id: number, opts?: { shuffle?: boolean }) {
 }
 
 export function PlaylistsPage() {
-  const { data: playlists, error, isPending } = usePlaylists();
+  const { data: playlists, error, isPending, refetch } = usePlaylists();
   const openPicker = useUI((s) => s.openPlaylistPicker);
 
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Playlists" count={playlists?.length} />
-      {error && <ErrorState error={error} />}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} />}
       <div className={GRID}>
         <button
           type="button"

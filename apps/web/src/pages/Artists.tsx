@@ -5,13 +5,13 @@ import { useIncremental } from '../lib/useIncremental';
 import { gridItem, PageTitle } from './Albums';
 
 export function ArtistsPage() {
-  const { data, error, isPending } = useArtists();
+  const { data, error, isPending, refetch } = useArtists();
   const { visible, more, sentinel } = useIncremental(data);
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Artists" count={data?.length} />
       {error ? (
-        <ErrorState error={error} />
+        <ErrorState error={error} onRetry={() => void refetch()} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:gap-6 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">

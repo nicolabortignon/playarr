@@ -1,6 +1,6 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { KeepMounted } from '../lib/viewport';
 
 export function SectionHeader({ title, kicker, to, action }: { title: string; kicker?: string; to?: string; action?: ReactNode }) {
@@ -53,11 +53,52 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse rounded bg-ink-800 ${className ?? ''}`} />;
 }
 
-export function ErrorState({ error }: { error: unknown }) {
+/** A page that couldn't load: what went wrong, a retry where there's one, and a way home. */
+export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   return (
-    <div className="mx-auto mt-24 max-w-md text-center">
+    <div className="mx-auto mt-24 max-w-md px-5 text-center" role="alert">
       <div className="font-display text-3xl text-paper">Something skipped.</div>
       <p className="mt-3 text-sm text-muted">{error instanceof Error ? error.message : 'Unknown error'}</p>
+      <div className="mt-6 flex justify-center gap-3">
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110"
+          >
+            <RotateCw className="size-4" /> Try again
+          </button>
+        )}
+        <Link
+          to="/"
+          className="inline-flex h-10 items-center rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5"
+        >
+          Back home
+        </Link>
+      </div>
     </div>
+  );
+}
+
+/**
+ * Back, on phones: the installed app has no browser bar. Goes back where there's somewhere to go back
+ * to in the app, else to `fallback` (a link opened straight to this page).
+ */
+export function BackButton({ fallback, className }: { fallback: string; className?: string }) {
+  const navigate = useNavigate();
+  const back = () => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate(fallback);
+  };
+  return (
+    <button
+      type="button"
+      onClick={back}
+      aria-label="Back"
+      className={`grid size-10 place-items-center rounded-full bg-ink-950/55 text-paper ring-1 ring-paper/10 md:hidden ${className ?? ''}`}
+    >
+      <ChevronLeft className="size-5" />
+    </button>
   );
 }

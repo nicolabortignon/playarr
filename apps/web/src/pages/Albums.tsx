@@ -43,7 +43,7 @@ export function PageTitle({ title, count, children }: { title: string; count?: n
 export function AlbumsPage() {
   const [params, setParams] = useSearchParams();
   const sort = (SORTS.find((s) => s.value === params.get('sort'))?.value ?? 'artist') as AlbumSort;
-  const { data, error, isPending } = useAlbums(sort);
+  const { data, error, isPending, refetch } = useAlbums(sort);
   const { visible, more, sentinel } = useIncremental(data, { resetKey: sort });
 
   return (
@@ -68,7 +68,7 @@ export function AlbumsPage() {
         </div>
       </PageTitle>
       {error ? (
-        <ErrorState error={error} />
+        <ErrorState error={error} onRetry={() => void refetch()} />
       ) : (
         <>
           <div className={GRID}>

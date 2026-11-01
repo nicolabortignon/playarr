@@ -2,7 +2,7 @@ import { BookmarkPlus, ListEnd, ListPlus, Loader2, Play, RefreshCw, Shuffle } fr
 import { useParams } from 'react-router';
 import { Menu } from '../components/Menu';
 import { MixCover } from '../components/Mixes';
-import { ErrorState, Skeleton } from '../components/Section';
+import { BackButton, ErrorState, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, plural } from '../lib/format';
 import { useMix, useRegenerateMix, useSaveMix } from '../lib/queries';
@@ -12,12 +12,12 @@ import { usePlayer } from '../player/store';
 /** A generated mix: why these songs, when it changes, and the songs. */
 export function MixPage() {
   const key = useParams().key ?? '';
-  const { data: mix, error, isPending } = useMix(key);
+  const { data: mix, error, isPending, refetch } = useMix(key);
   const regenerate = useRegenerateMix(key);
   const save = useSaveMix(key);
   const playTracks = usePlayer((s) => s.playTracks);
 
-  if (error) return <ErrorState error={error} />;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !mix) {
     return (
       <div className="px-5 pt-6 md:px-10 md:pt-14" aria-busy="true">
@@ -34,7 +34,8 @@ export function MixPage() {
   }
 
   return (
-    <div className="px-5 pt-6 md:px-10 md:pt-14">
+    <div className="relative px-5 pt-6 md:px-10 md:pt-14">
+      <BackButton fallback="/" className="absolute top-3 left-3 z-20" />
       <header className="flex flex-col gap-6 md:flex-row md:items-end md:gap-10">
         <MixCover
           mix={mix}

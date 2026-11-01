@@ -11,7 +11,7 @@ import { Menu } from '../components/Menu';
 import { CoverPicker } from '../components/CoverPicker';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { PlaylistRecommendations } from '../components/PlaylistRecommendations';
-import { ErrorState, Skeleton } from '../components/Section';
+import { BackButton, ErrorState, Skeleton } from '../components/Section';
 import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
 import { usePlaylist, usePlaylistMutations } from '../lib/queries';
@@ -21,7 +21,7 @@ import { useCurrentTrack, usePlayer } from '../player/store';
 
 export function PlaylistPage() {
   const id = Number(useParams().id);
-  const { data: playlist, error, isPending } = usePlaylist(id);
+  const { data: playlist, error, isPending, refetch } = usePlaylist(id);
   const mutations = usePlaylistMutations();
   const playTracks = usePlayer((s) => s.playTracks);
   const navigate = useNavigate();
@@ -35,7 +35,7 @@ export function PlaylistPage() {
     if (playlist) setItems(playlist.items);
   }, [playlist]);
 
-  if (error) return <ErrorState error={error} />;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !playlist) {
     return (
       <div className="px-5 pt-8 md:px-10 md:pt-14">
@@ -59,7 +59,8 @@ export function PlaylistPage() {
   const unavailable = items.length - playable.length;
 
   return (
-    <div className="px-5 pt-6 md:px-10 md:pt-14">
+    <div className="relative px-5 pt-6 md:px-10 md:pt-14">
+      <BackButton fallback="/playlists" className="absolute top-3 left-3 z-20" />
       <header className="flex flex-col gap-6 md:flex-row md:items-end md:gap-10">
         <button
           type="button"
@@ -113,7 +114,7 @@ export function PlaylistPage() {
         </div>
       </header>
 
-      <div className="mt-8 flex items-center gap-3">
+      <div className="mt-8 flex flex-wrap items-center gap-3">
         <button
           type="button"
           disabled={!playable.length}

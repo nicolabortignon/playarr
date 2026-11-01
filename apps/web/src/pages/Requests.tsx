@@ -26,7 +26,7 @@ function ago(iso: string) {
 }
 
 export function RequestsPage() {
-  const { data, error, isPending } = useRequests();
+  const { data, error, isPending, refetch } = useRequests();
 
   return (
     <div className="max-w-4xl px-5 pt-8 md:px-10 md:pt-14">
@@ -34,7 +34,7 @@ export function RequestsPage() {
       <p className="-mt-4 mb-8 max-w-xl text-sm text-muted md:-mt-6">
         Albums you asked Lidarr to find. Progress updates live; finished albums land in your library automatically.
       </p>
-      {error && <ErrorState error={error} />}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} />}
       {isPending && (
         <div className="space-y-3">
           {Array.from({ length: 3 }, (_, i) => (
