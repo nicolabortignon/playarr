@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { appendFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -114,8 +114,13 @@ function readRaw(file: string): Float32Array {
   return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
 }
 
-let cleanup = () => {};
-afterEach(() => cleanup());
+/** Every service and cache folder a test made: the services are stopped (their work finished) before the folders go. */
+const services: Transitions[] = [];
+const folders: string[] = [];
+afterEach(async () => {
+  await Promise.all(services.splice(0).map((service) => service.close()));
+  for (const dir of folders.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+});
 
 interface SetupOptions {
   tracks?: Track[];
@@ -160,18 +165,15 @@ function setup(options: SetupOptions = {}) {
     renderTimeoutMs: options.renderTimeoutMs,
     forgetGraceMs: options.forgetGraceMs,
   });
+  services.push(transitions);
   return { dir, transitions, pcm, render, encode, log, maps, cues, tracks };
 }
 
 /** A temporary cache folder, removed after the test. */
 function cacheFolder(): string {
-  const t = tempDir();
-  const previous = cleanup;
-  cleanup = () => {
-    previous();
-    t.cleanup();
-  };
-  return t.dir;
+  const { dir } = tempDir();
+  folders.push(dir);
+  return dir;
 }
 
 const transitionFiles = (dir: string) => (existsSync(join(dir, 'transitions')) ? readdirSync(join(dir, 'transitions')).sort() : []);
@@ -182,7 +184,8 @@ function expectReady(answer: TransitionAnswer): Extract<TransitionAnswer, { stat
   return answer as Extract<TransitionAnswer, { status: 'ready' }>;
 }
 
-describe('Transitions', () => {
+// Renders go through the real renderer: seconds each when the whole suite runs files side by side.
+describe('Transitions', { timeout: 30_000 }, () => {
   it('answers pending, renders in the background, then serves the cached file', async () => {
     const t = setup();
     const first = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
@@ -320,6 +323,7 @@ describe('Transitions', () => {
       reason: expect.stringContaining('file changed'),
     });
     expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fromFileId: 101, toFileId: 102 })).status).toBe('pending');
+    await t.transitions.idle();
   });
 
   it('forget during a render throws its result away', async () => {

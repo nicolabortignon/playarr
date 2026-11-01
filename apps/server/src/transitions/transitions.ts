@@ -305,6 +305,17 @@ export class Transitions {
     return CACHE_FILE.test(name) ? join(this.dir, name) : undefined;
   }
 
+  /**
+   * Stops: renders still waiting are dropped, forgotten files are left for trim (or the next start),
+   * and it resolves once the render under way (if any) has finished writing.
+   */
+  async close(): Promise<void> {
+    for (const timer of this.forgottenFiles.values()) clearTimeout(timer);
+    this.forgottenFiles.clear();
+    this.queue = [];
+    await this.idle();
+  }
+
   /** Resolves once nothing is rendering or waiting (tests, shutdown). */
   idle(): Promise<void> {
     if (!this.running && !this.queue.length) return Promise.resolve();
