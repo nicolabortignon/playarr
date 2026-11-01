@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { MIX_HEAD_SECONDS, MIX_MAP_VERSION, MIX_TAIL_SECONDS, type CuePoints, type MixMap } from '@playarr/mix';
 import { RateLimited, recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
@@ -11,7 +12,8 @@ export interface TrackMeta {
   year?: number;
 }
 
-const MAX_SECONDS = 420;
+/** The features and the mix map share one decode of the song's beginning (all of a shorter song). */
+const MAX_SECONDS = MIX_HEAD_SECONDS;
 const RETRY_FAILED_MS = 24 * 60 * 60_000;
 const REFRESH_META_MS = 30 * 24 * 60 * 60_000;
 const TAG_BATCH = 25;
@@ -21,8 +23,8 @@ const TAG_TRIES = 3;
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Background analysis of songs: audio features (ffmpeg where the files are, then dsp.ts) and
- * ListenBrainz tags. Everything is stored in SQLite, so each song is analyzed once.
+ * Background analysis of songs: audio features and mix maps (ffmpeg where the files are, then dsp.ts
+ * and @playarr/mix) and ListenBrainz tags. Everything is stored in SQLite, so each song is analyzed once.
  */
 export class Analyzer {
   private readonly audioQueue = new Set<string>();
@@ -64,6 +66,50 @@ export class Analyzer {
     return new Map(rows.map((r) => [r.recording_id, JSON.parse(r.features) as AudioFeatures]));
   }
 
+  /** Mix maps measured by the current version: an older one may disagree with today's planner. */
+  mixMaps(ids: string[]): Map<string, MixMap> {
+    const rows = this.select<{ recording_id: string; data: string }>(
+      'SELECT recording_id, data FROM mix_maps WHERE version = ? AND data IS NOT NULL AND recording_id IN',
+      ids,
+      [MIX_MAP_VERSION],
+    );
+    return new Map(rows.map((r) => [r.recording_id, JSON.parse(r.data) as MixMap]));
+  }
+
+  /** Mix points set by hand, for the songs that have any. */
+  cues(ids: string[]): Map<string, CuePoints> {
+    const rows = this.select<{ recording_id: string; mix_in: number | null; mix_out: number | null }>(
+      'SELECT recording_id, mix_in, mix_out FROM cue_points WHERE recording_id IN',
+      ids,
+    );
+    return new Map(
+      rows.map((r) => [
+        r.recording_id,
+        { ...(r.mix_in !== null ? { mixIn: r.mix_in } : {}), ...(r.mix_out !== null ? { mixOut: r.mix_out } : {}) },
+      ]),
+    );
+  }
+
+  /**
+   * Sets a song's hand-set mix points, replacing both: one left out (or null) goes back to the
+   * detected point. With neither, the song has no row at all.
+   */
+  setCues(recordingId: string, cues: { mixIn?: number | null; mixOut?: number | null }) {
+    const mixIn = cues.mixIn ?? null;
+    const mixOut = cues.mixOut ?? null;
+    if (mixIn === null && mixOut === null) {
+      this.db.prepare('DELETE FROM cue_points WHERE recording_id = ?').run(recordingId);
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO cue_points (recording_id, mix_in, mix_out, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (recording_id) DO UPDATE SET mix_in = excluded.mix_in, mix_out = excluded.mix_out,
+           updated_at = excluded.updated_at`,
+      )
+      .run(recordingId, mixIn, mixOut, new Date().toISOString());
+  }
+
   meta(ids: string[]): Map<string, TrackMeta> {
     const rows = this.select<{ recording_id: string; tags: string; year: number | null }>(
       'SELECT recording_id, tags, year FROM track_meta WHERE recording_id IN',
@@ -77,11 +123,17 @@ export class Analyzer {
     const unique = [...new Set(ids)].filter((id) => !id.startsWith('track:'));
     if (!unique.length) return;
     if (this.canAnalyzeAudio && opts.audio !== false) {
+      // Done once both the features and the mix map are measured by their current versions (or
+      // failed recently): a song measured before mix maps existed, or before a version bump, is
+      // measured again in the background.
+      const retryAfter = new Date(Date.now() - RETRY_FAILED_MS).toISOString();
       const done = new Set(
         this.select<{ recording_id: string }>(
-          'SELECT recording_id FROM track_features WHERE version = ? AND (features IS NOT NULL OR analyzed_at > ?) AND recording_id IN',
+          `SELECT f.recording_id FROM track_features f JOIN mix_maps m ON m.recording_id = f.recording_id
+           WHERE f.version = ? AND (f.features IS NOT NULL OR f.analyzed_at > ?)
+             AND m.version = ? AND (m.data IS NOT NULL OR m.analyzed_at > ?) AND f.recording_id IN`,
           unique,
-          [ANALYSIS_VERSION, new Date(Date.now() - RETRY_FAILED_MS).toISOString()],
+          [ANALYSIS_VERSION, retryAfter, MIX_MAP_VERSION, retryAfter],
         ).map((r) => r.recording_id),
       );
       for (const id of unique) if (!done.has(id) && !this.running.has(id)) this.audioQueue.add(id);
@@ -121,24 +173,71 @@ export class Analyzer {
   }
 
   private async analyze(id: string) {
-    const save = this.db.prepare(
+    const saveFeatures = this.db.prepare(
       `INSERT INTO track_features (recording_id, version, features, error, analyzed_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (recording_id) DO UPDATE SET version = excluded.version, features = excluded.features,
          error = excluded.error, analyzed_at = excluded.analyzed_at`,
     );
+    const saveMixMap = this.db.prepare(
+      `INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (recording_id) DO UPDATE SET version = excluded.version, data = excluded.data,
+         error = excluded.error, analyzed_at = excluded.analyzed_at`,
+    );
+    // Only what's missing: a song measured before mix maps existed keeps its features.
+    const needsFeatures = !this.features([id]).has(id);
+    const needsMixMap = !this.mixMaps([id]).has(id);
+    const fail = (save: typeof saveFeatures, version: number, what: string, err: unknown) => {
+      this.opts.log.warn({ err, recordingId: id }, `${what} failed`);
+      save.run(id, version, null, (err as Error).message, new Date().toISOString());
+    };
+
+    let decoded;
     try {
-      const track = await this.library.trackByRecording(id);
-      const file = track && (await this.library.file(track.fileId));
-      if (!file) throw new Error('Not in the library');
-      const { media, path } = this.files.resolve(file);
-      if (!media.pcm) throw new Error('This source can’t decode audio for analysis');
-      const pcm = await media.pcm(path, { sampleRate: SAMPLE_RATE, maxSeconds: MAX_SECONDS });
-      const features = await this.dsp.analyze(pcm);
-      save.run(id, ANALYSIS_VERSION, JSON.stringify(features), null, new Date().toISOString());
+      decoded = await this.decodeHead(id);
     } catch (err) {
-      this.opts.log.warn({ err, recordingId: id }, 'audio analysis failed');
-      save.run(id, ANALYSIS_VERSION, null, (err as Error).message, new Date().toISOString());
+      if (needsFeatures) fail(saveFeatures, ANALYSIS_VERSION, 'audio analysis', err);
+      if (needsMixMap) fail(saveMixMap, MIX_MAP_VERSION, 'mix analysis', err);
+      return;
     }
+    const { pcm, duration, decodeTail } = decoded;
+
+    if (needsFeatures) {
+      try {
+        const features = await this.dsp.analyze(pcm);
+        saveFeatures.run(id, ANALYSIS_VERSION, JSON.stringify(features), null, new Date().toISOString());
+      } catch (err) {
+        fail(saveFeatures, ANALYSIS_VERSION, 'audio analysis', err);
+      }
+    }
+    if (needsMixMap) {
+      try {
+        // A long song's outro is past the head: its end is decoded too. Without it the map's outro
+        // would be somewhere in the middle of the song, so a failed tail fails the map.
+        const tail = duration > MIX_HEAD_SECONDS ? await decodeTail() : null;
+        const map = await this.dsp.mixMap(pcm, tail, duration);
+        saveMixMap.run(id, MIX_MAP_VERSION, JSON.stringify(map), null, new Date().toISOString());
+      } catch (err) {
+        fail(saveMixMap, MIX_MAP_VERSION, 'mix analysis', err);
+      }
+    }
+  }
+
+  /**
+   * The song's first MAX_SECONDS as mono PCM at SAMPLE_RATE, its duration (the library's, else what
+   * was decoded), and a way to decode its last MIX_TAIL_SECONDS as well.
+   */
+  private async decodeHead(id: string) {
+    const track = await this.library.trackByRecording(id);
+    const file = track && (await this.library.file(track.fileId));
+    if (!file) throw new Error('Not in the library');
+    const { media, path } = this.files.resolve(file);
+    const decode = media.pcm?.bind(media);
+    if (!decode) throw new Error('This source can’t decode audio for analysis');
+    const pcm = await decode(path, { sampleRate: SAMPLE_RATE, maxSeconds: MAX_SECONDS });
+    const decodedSeconds = pcm.length / 2 / SAMPLE_RATE;
+    const duration = track.duration > 0 ? track.duration : decodedSeconds;
+    const decodeTail = () => decode(path, { sampleRate: SAMPLE_RATE, maxSeconds: MIX_TAIL_SECONDS, fromEnd: true });
+    return { pcm, duration, decodeTail };
   }
 
   private scheduleMeta() {

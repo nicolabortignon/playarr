@@ -1,23 +1,26 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
-import { renderTransition, type Excerpt, type StereoAudio, type TransitionPlan } from '@playarr/mix';
-import { analyzePcm, pcmToFloat, type AudioFeatures } from './dsp.ts';
+import { analyzeMix, renderTransition, type Excerpt, type MixMap, type StereoAudio, type TransitionPlan } from '@playarr/mix';
+import { analyzePcm, pcmToFloat, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
 
 type Pending = { resolve: (answer: WorkerAnswer) => void; reject: (e: Error) => void };
 
 /** What the worker sends back: one of these per job, matched up by id. */
-export type WorkerAnswer = { id: number; features?: AudioFeatures; audio?: StereoAudio; error?: string };
+export type WorkerAnswer = { id: number; features?: AudioFeatures; mixMap?: MixMap; audio?: StereoAudio; error?: string };
 
 /** What the worker is asked to do. */
 export type WorkerJob =
   | { id: number; kind: 'analyze'; pcm: ArrayBuffer }
+  /** s16le PCM at SAMPLE_RATE: the song's head, and its tail when it's long (see analyzeMix). */
+  | { id: number; kind: 'mixmap'; pcm: ArrayBuffer; tail?: ArrayBuffer; duration: number }
   | { id: number; kind: 'render'; plan: TransitionPlan; a: Excerpt; b: Excerpt };
 
 /**
- * The number crunching (analyzePcm, renderTransition) in a worker thread, one job at a time. Built,
- * the worker is dist/dspWorker.js next to the server; in development it runs from its source. If no
- * worker can start, the work is done on the main thread as before (slower to respond, but still working).
+ * The number crunching (analyzePcm, analyzeMix, renderTransition) in a worker thread, one job at a
+ * time. Built, the worker is dist/dspWorker.js next to the server; in development it runs from its
+ * source. If no worker can start, the work is done on the main thread as before (slower to respond,
+ * but still working).
  */
 export class DspThread {
   private worker: Worker | null = null;
@@ -25,14 +28,31 @@ export class DspThread {
   private nextId = 0;
   private readonly pending = new Map<number, Pending>();
 
+  /** `startWorker` replaces the real worker (tests). */
+  constructor(private readonly opts: { startWorker?: () => Worker } = {}) {}
+
   async analyze(pcm: Buffer): Promise<AudioFeatures> {
     const worker = this.start();
     if (!worker) return analyzePcm(pcmToFloat(pcm));
-    // A copy of just these bytes, handed over to the worker rather than copied again.
-    const bytes = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer;
+    const bytes = copyOf(pcm);
     const answer = await this.send(worker, { id: this.nextId++, kind: 'analyze', pcm: bytes }, [bytes]);
     if (!answer.features) throw new Error(answer.error ?? 'Analysis failed');
     return answer.features;
+  }
+
+  /**
+   * A song's mix map (see analyzeMix) from s16le PCM at SAMPLE_RATE: its head, and its tail (null
+   * for a song short enough for the head to hold all of it). The caller's buffers are left alone.
+   */
+  async mixMap(pcm: Buffer, tail: Buffer | null, duration: number): Promise<MixMap> {
+    const worker = this.start();
+    if (!worker) return analyzeMix(pcmToFloat(pcm), tail && pcmToFloat(tail), duration, SAMPLE_RATE);
+    const head = copyOf(pcm);
+    const end = tail && copyOf(tail);
+    const job: WorkerJob = { id: this.nextId++, kind: 'mixmap', pcm: head, ...(end ? { tail: end } : {}), duration };
+    const answer = await this.send(worker, job, end ? [head, end] : [head]);
+    if (!answer.mixMap) throw new Error(answer.error ?? 'Mix analysis failed');
+    return answer.mixMap;
   }
 
   /**
@@ -58,8 +78,10 @@ export class DspThread {
   }
 
   close() {
-    void this.worker?.terminate();
-    this.worker = null;
+    const worker = this.worker;
+    if (!worker) return;
+    this.lost(worker, new Error('DSP worker closed'));
+    void worker.terminate();
   }
 
   private send(worker: Worker, job: WorkerJob, transfer: ArrayBuffer[]): Promise<WorkerAnswer> {
@@ -71,27 +93,21 @@ export class DspThread {
 
   private start(): Worker | null {
     if (this.worker || this.failed) return this.worker;
-    const file = workerFile();
-    if (!file) {
-      this.failed = true;
-      return null;
-    }
     try {
-      // From source (development), through tsx like the server itself.
-      const worker = new Worker(file, file.pathname.endsWith('.ts') ? { execArgv: ['--import', 'tsx'] } : {});
+      const worker = this.opts.startWorker ? this.opts.startWorker() : startWorker();
+      if (!worker) {
+        this.failed = true;
+        return null;
+      }
       worker.unref();
       worker.on('message', (answer: WorkerAnswer) => {
         const p = this.pending.get(answer.id);
         this.pending.delete(answer.id);
         p?.resolve(answer);
       });
-      const lost = (err: Error) => {
-        for (const p of this.pending.values()) p.reject(err);
-        this.pending.clear();
-        this.worker = null;
-      };
-      worker.on('error', lost);
-      worker.on('exit', (code) => code !== 0 && lost(new Error(`DSP worker stopped (${code})`)));
+      worker.on('error', (err: Error) => this.lost(worker, err));
+      // Any exit, a clean one included: a worker that's gone never answers, and its jobs would wait forever.
+      worker.on('exit', (code) => this.lost(worker, new Error(`DSP worker stopped (${code})`)));
       this.worker = worker;
       return worker;
     } catch {
@@ -99,6 +115,30 @@ export class DspThread {
       return null;
     }
   }
+
+  /**
+   * The worker is gone (or going): its waiting jobs fail, and the next job starts a fresh one. An
+   * error is followed by an exit, and a closed worker's exit can arrive after a new one started:
+   * only the current worker's first loss counts.
+   */
+  private lost(worker: Worker, err: Error) {
+    if (this.worker !== worker) return;
+    this.worker = null;
+    for (const p of this.pending.values()) p.reject(err);
+    this.pending.clear();
+  }
+}
+
+/** A copy of just these bytes, to hand over to the worker rather than copy again. */
+function copyOf(pcm: Buffer): ArrayBuffer {
+  return pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer;
+}
+
+function startWorker(): Worker | null {
+  const file = workerFile();
+  if (!file) return null;
+  // From source (development), through tsx like the server itself.
+  return new Worker(file, file.pathname.endsWith('.ts') ? { execArgv: ['--import', 'tsx'] } : {});
 }
 
 /**

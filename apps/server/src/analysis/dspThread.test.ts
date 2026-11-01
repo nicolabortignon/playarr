@@ -1,4 +1,5 @@
-import { renderTransition, type TransitionPlan } from '@playarr/mix';
+import { Worker } from 'node:worker_threads';
+import { analyzeMix, renderTransition, type TransitionPlan } from '@playarr/mix';
 import { afterEach, describe, expect, it } from 'vitest';
 import { analyzePcm, pcmToFloat, SAMPLE_RATE } from './dsp.ts';
 import { DspThread } from './dspThread.ts';
@@ -62,4 +63,32 @@ describe('DspThread', () => {
     expect(audio.right).toEqual(expected.right);
     expect(audio.left.length).toBe(2 * rate);
   });
+
+  it('measures a mix map in a worker, with the same result as on the main thread', async () => {
+    thread = new DspThread();
+    const head = clickTrack();
+    const tail = clickTrack();
+    // A 10-minute song: its first and last 20 s stand in for the decoded head and tail.
+    const inline = analyzeMix(pcmToFloat(head), pcmToFloat(tail), 600, SAMPLE_RATE);
+    const [withTail, headOnly] = await Promise.all([thread.mixMap(head, tail, 600), thread.mixMap(head, null, 20)]);
+    expect(withTail).toEqual(inline);
+    expect(headOnly).toEqual(analyzeMix(pcmToFloat(head), null, 20, SAMPLE_RATE));
+    expect(withTail.soundEnd).toBeGreaterThan(590); // the tail was used: the sound ends at the song's end
+    expect(head.length).toBe(SAMPLE_RATE * 40); // the caller's buffers are left alone
+    expect(tail.length).toBe(SAMPLE_RATE * 40);
+  });
+
+  it('fails the waiting jobs when the worker stops, and starts a fresh one for the next', async () => {
+    let started = 0;
+    // The first worker quits cleanly (code 0) on its first job; the next one answers.
+    const quits = "require('node:worker_threads').parentPort.once('message', () => process.exit(0));";
+    const answers =
+      "const { parentPort } = require('node:worker_threads');" +
+      "parentPort.on('message', (job) => parentPort.postMessage({ id: job.id, error: 'answered' }));";
+    thread = new DspThread({ startWorker: () => new Worker(started++ ? answers : quits, { eval: true }) });
+    await expect(thread.analyze(clickTrack())).rejects.toThrow(/stopped/);
+    await expect(thread.analyze(clickTrack())).rejects.toThrow('answered');
+    expect(started).toBe(2);
+  });
 });
+

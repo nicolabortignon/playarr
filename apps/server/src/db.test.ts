@@ -1,6 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { migrate, MIGRATION_COUNT } from './db.ts';
+import { migrate } from './db.ts';
+
+/** How many migrations ran before the one adding listener profiles. */
+const PROFILES_MIGRATION = 15;
 
 describe('migrate', () => {
   it('creates the catalog tables', () => {
@@ -56,7 +59,7 @@ describe('migrate', () => {
 
   it('gives the history and mixes so far to the first listener profile', () => {
     const db = new DatabaseSync(':memory:');
-    migrate(db, MIGRATION_COUNT - 1);
+    migrate(db, PROFILES_MIGRATION);
     db.exec(`INSERT INTO plays (recording_id, played_at, hour, weekday, seconds) VALUES ('rec', '2026-01-01T00:00:00Z', 1, 1, 100)`);
     db.exec(`INSERT INTO mixes (key, period, data, generated_at) VALUES ('vibes', 'p', '{}', 'now')`);
     migrate(db);
@@ -67,5 +70,13 @@ describe('migrate', () => {
     expect(() =>
       db.exec(`INSERT INTO plays (recording_id, played_at, hour, weekday, seconds, profile_id) VALUES ('rec', '2026-01-01T00:00:00Z', 1, 1, 100, 2)`),
     ).not.toThrow();
+  });
+
+  it('adds mix maps and cue points, both kept by recording', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db);
+    const cols = (t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
+    expect(cols('mix_maps')).toEqual(['recording_id', 'version', 'data', 'error', 'analyzed_at']);
+    expect(cols('cue_points')).toEqual(['recording_id', 'mix_in', 'mix_out', 'updated_at']);
   });
 });

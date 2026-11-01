@@ -213,6 +213,22 @@ const MIGRATIONS = [
    INSERT INTO mixes_by_profile (profile_id, key, period, variant, data, generated_at) SELECT 1, key, period, variant, data, generated_at FROM mixes;
    DROP TABLE mixes;
    ALTER TABLE mixes_by_profile RENAME TO mixes;`,
+  // Each song's mix map (beat grid, key, intro and outro: JSON MixMap) for beatmatched transitions,
+  // and the mix points set by hand. Cue points are kept by recording, not file, so they survive the
+  // song being matched again or replaced by a better copy.
+  `CREATE TABLE mix_maps (
+     recording_id TEXT PRIMARY KEY,
+     version      INTEGER NOT NULL,
+     data         TEXT,
+     error        TEXT,
+     analyzed_at  TEXT NOT NULL
+   );
+   CREATE TABLE cue_points (
+     recording_id TEXT PRIMARY KEY,
+     mix_in       REAL,
+     mix_out      REAL,
+     updated_at   TEXT NOT NULL
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
