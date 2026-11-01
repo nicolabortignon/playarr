@@ -34,6 +34,9 @@ function maxStep(signal: Float32Array): number {
   return max;
 }
 
+/** Samples a filter takes to fade in or out (mirrors filters.ts). */
+const FADE = 4 * FILTER_BLOCK;
+
 const peakOf = (signal: Float32Array) => signal.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
 
 /** Bass plus a high tone, like a kick and hats: what a sweep or bass cut acts on. */
@@ -74,6 +77,13 @@ describe('applyLowShelf', () => {
     expect(maxStep(output)).toBeLessThanOrEqual(1.2 * maxStep(music));
   });
 
+  it('is dry to the bit once it has faded out (a transition joins the untouched track there)', () => {
+    const output = Float32Array.from(music);
+    applyLowShelf(output, (t) => (t >= 1 && t < 2 ? -24 : 0), rate);
+    const dry = 2 * rate + FILTER_BLOCK + FADE; // off from the first block at or after 2 s
+    expect(output.subarray(dry)).toEqual(music.subarray(dry));
+  });
+
   it('refuses a gain that isn’t a number', () => {
     expect(() => applyLowShelf(new Float32Array(1000), () => NaN, rate)).toThrow(RangeError);
   });
@@ -109,30 +119,70 @@ describe('applyHighPass', () => {
   });
 
   it('carries on exactly as if it had never stopped when it comes back after a short rest', () => {
-    const cutoff = (t: number) => (t >= 1 && t < 1.03 ? 20 : 800);
+    // At 30 Hz the filter remembers for a long time (a restart takes ~0.3 s to settle below 1e-6),
+    // so only carrying the state through the rest makes the output bit-exact right after the fade.
+    const cutoff = (t: number) => (t >= 1 && t < 1.03 ? 20 : 30);
     const resting = Float32Array.from(music);
     applyHighPass(resting, cutoff, rate);
     const alwaysOn = Float32Array.from(music);
-    applyHighPass(alwaysOn, () => 800, rate);
+    applyHighPass(alwaysOn, () => 30, rate);
     const settled = Math.round(1.05 * rate); // back on at 1.03 s, fade done 11.6 ms later
-    let worst = 0;
-    for (let i = settled; i < music.length; i++) worst = Math.max(worst, Math.abs(resting[i]! - alwaysOn[i]!));
-    expect(worst).toBeLessThanOrEqual(1e-6);
+    expect(resting.subarray(settled)).toEqual(alwaysOn.subarray(settled));
   });
 
-  it('matches an always-on filter once faded in after a long rest', () => {
-    const resting = Float32Array.from(music);
-    applyHighPass(resting, (t) => (t >= 0.5 && t < 1.5 ? 20 : 800), rate);
-    const alwaysOn = Float32Array.from(music);
-    applyHighPass(alwaysOn, () => 800, rate);
-    let worst = 0;
-    for (let i = Math.round(1.52 * rate); i < music.length; i++) worst = Math.max(worst, Math.abs(resting[i]! - alwaysOn[i]!));
-    expect(worst).toBeLessThanOrEqual(1e-3);
+  it('matches an always-on filter to the bit once faded in after a long rest', () => {
+    // The warm-up starts from zero WARM_UP samples back; by the end of the fade that start has died
+    // away below a float's resolution even at 100 Hz, where a warm-up cut to 128 samples or skipped
+    // still leaves 1e-5 (measured).
+    for (const hz of [800, 100]) {
+      const resting = Float32Array.from(music);
+      applyHighPass(resting, (t) => (t >= 0.5 && t < 1.5 ? 20 : hz), rate);
+      const alwaysOn = Float32Array.from(music);
+      applyHighPass(alwaysOn, () => hz, rate);
+      const settled = Math.round(1.52 * rate);
+      expect(resting.subarray(settled)).toEqual(alwaysOn.subarray(settled));
+    }
+  });
+
+  it('is dry to the bit once it has faded out', () => {
+    const output = Float32Array.from(music);
+    applyHighPass(output, (t) => (t >= 1 && t < 2 ? 800 : 20), rate);
+    const dry = 2 * rate + FILTER_BLOCK + FADE; // off from the first block at or after 2 s
+    expect(output.subarray(dry)).toEqual(music.subarray(dry));
   });
 
   it('refuses a cutoff that isn’t a number', () => {
     expect(() => applyHighPass(new Float32Array(1000), () => Infinity, rate)).toThrow(RangeError);
   });
+});
+
+describe('changing its mind mid-fade', () => {
+  // A louder bass than `music`, so that jumping the fade instead of reversing it would show.
+  const input = Float32Array.from(sine(55, 2, 0.6), (v, i) => v + 0.1 * Math.sin((2 * Math.PI * 3000 * i) / rate));
+  const limit = 1.2 * maxStep(input);
+  const blockOf = (t: number) => Math.round((t * rate) / FILTER_BLOCK);
+  /** On for only `blocks` blocks from block 300: off again before the fade-in is done. */
+  const onFor = (blocks: number) => (t: number) => blockOf(t) >= 300 && blockOf(t) < 300 + blocks;
+  const cases = [
+    // On from block 300 to 600, but neutral for blocks 400–401: back on with the fade-out half done.
+    ['back on during the fade-out', (t: number) => onFor(300)(t) && !(blockOf(t) >= 400 && blockOf(t) < 402)],
+    ['off again during the fade-in (on 1 block)', onFor(1)],
+    ['off again during the fade-in (on 2 blocks)', onFor(2)],
+  ] as const;
+
+  for (const [name, on] of cases) {
+    it(`the shelf doesn’t click when it turns ${name}`, () => {
+      const output = Float32Array.from(input);
+      applyLowShelf(output, (t) => (on(t) ? -24 : 0), rate);
+      expect(maxStep(output)).toBeLessThanOrEqual(limit);
+    });
+
+    it(`the high-pass doesn’t click when it turns ${name}`, () => {
+      const output = Float32Array.from(input);
+      applyHighPass(output, (t) => (on(t) ? 800 : 20), rate);
+      expect(maxStep(output)).toBeLessThanOrEqual(limit);
+    });
+  }
 });
 
 describe('parameter jumps between blocks', () => {

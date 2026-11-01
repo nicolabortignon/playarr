@@ -9,10 +9,11 @@
 // into itself. That matters because a transition joins the original audio at both ends.
 //
 // How exact the tempo curve is followed: where the rate is 1, output sample n is the input sample
-// the integral of the rate says, exactly. Elsewhere that holds at frame centres up to the search
-// nudge, which leans toward the previous frame's natural continuation; with the drift penalty
-// re-centred (below), frames sit on average ~0.7 ms behind the curve when speeding up 5% (ahead
-// when slowing down), and kicks in a dense mix land within ~0.5 ms of it on average.
+// the integral of the rate says, exactly, from the second rate-1 frame on (the first is the one
+// splice that jumps back onto the curve; see planSplices). Elsewhere that holds at frame centres
+// up to the search nudge, which leans toward the previous frame's natural continuation; with the
+// drift penalty re-centred (below), frames sit on average ~0.7 ms behind the curve when speeding
+// up 5% (ahead when slowing down), and kicks in a dense mix land within ~0.5 ms of it on average.
 
 /** Sample rate transitions are rendered at. */
 export const RENDER_RATE = 44100;
@@ -45,6 +46,8 @@ const DRIFT_PENALTY = 3;
  * lean toward the natural continuation: measured on the dense mix at 1.05, frames sat 1.3 ms
  * behind the curve on average. Centring halfway toward the other side halves that to 0.7 ms and
  * brings the kicks' mean offset to 0.3 ms (0.5 ms at 0.95), with no change to tonal splices.
+ * Those figures were measured at ±5% only; the centre's shift is proportional to (rate − 1), so
+ * the correction scales with the stretch, but the halving itself is not verified at other rates.
  * (Leaving ±2 ms around the centre free of penalty was tried too: it made timing worse and
  * splices no better.)
  */
@@ -105,9 +108,9 @@ interface Splices {
  * like. Where the rate is exactly 1 the ideal position is taken as is: once the previous frame is
  * in place too, that is the natural continuation, and the output is the input sample for sample.
  * The first frame at rate 1 after a stretch is the one splice taken without a search: it jumps
- * from wherever the nudging left off (a few ms at most, given the drift penalty) straight onto the
- * curve, through a single 23 ms cross-fade, so the transition can hand over to normal playback at
- * exactly the planned spot.
+ * from wherever the nudging left off (typically a few ms given the drift penalty, never more than
+ * the ±11.6 ms search window) straight onto the curve, through a single 23 ms cross-fade, so the
+ * transition can hand over to normal playback at exactly the planned spot.
  *
  * `fillSignal(into, base)` writes the signal to match on (mono input, or stereo mid) for input
  * positions base… into `into`, leaving zeros outside the input.

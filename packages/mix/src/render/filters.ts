@@ -76,6 +76,11 @@ export function applyHighPass(channel: Float32Array, cutoffHzAt: ParameterAt, sa
  * Turning back on, the filter first runs over the dry samples since it last stopped (they are still
  * the input, as dry blocks aren't touched), so it carries on exactly as if it had been running all
  * along; after a rest longer than WARM_UP it starts afresh on the last WARM_UP samples instead.
+ *
+ * Only turning on and off (to and from the neutral value) is cross-faded. Between two active
+ * values the new coefficients take over at the block boundary, which the state-variable form keeps
+ * free of bursts but not of a step if the value jumps far, so a curve's active stretches must be
+ * continuous. The planner only produces ramps, which move little per 2.9 ms block.
  */
 function runFilter(
   channel: Float32Array,
