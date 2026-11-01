@@ -16,7 +16,10 @@ export interface MixMap {
   downbeatOffset: number;
   /** 0–1: how sure the bar starts are; low means the planner shouldn't trust phrase alignment. */
   downbeatConfidence?: number;
-  /** The grid holds over the whole song (no wandering tempo): long blends allowed. */
+  /**
+   * The grid holds over the whole song (no wandering tempo): long blends allowed. Read it together
+   * with `beatConfidence`: it is false whenever the confidence is below 0.35 (noise, beatless music).
+   */
   gridStable: boolean;
   /** 0–1: how sure the beat grid is. */
   beatConfidence: number;

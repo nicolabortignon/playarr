@@ -3,7 +3,7 @@
  * Input is mono float samples at SAMPLE_RATE (ffmpeg does the decoding and downmixing).
  */
 
-import { analyzeOnsets, ONSET_HOP } from '@playarr/mix';
+import { analyzeOnsets, ONSET_HOP, type Onsets } from '@playarr/mix';
 
 /** Bump when the analysis changes, so stored features are recomputed. */
 export const ANALYSIS_VERSION = 1;
@@ -44,11 +44,19 @@ export function pcmToFloat(buf: Buffer): Float32Array {
   return out;
 }
 
-export function analyzePcm(samples: Float32Array, sampleRate = SAMPLE_RATE): AudioFeatures {
+/**
+ * Measures a song. `onsets` is the song's `analyzeOnsets` pass when the caller already has it (the
+ * mix analysis needs the same one), so the FFT runs once per song.
+ */
+export function analyzePcm(
+  samples: Float32Array,
+  sampleRate = SAMPLE_RATE,
+  onsets: Onsets = analyzeOnsets(samples, sampleRate),
+): AudioFeatures {
   const fps = sampleRate / ONSET_HOP;
   const seconds = samples.length / sampleRate;
   // One FFT pass (shared with the mix analysis) gives the onsets and each frame's loudness and spectrum.
-  const { onset, rms, lowEnergy, energy: power, centroid } = analyzeOnsets(samples, sampleRate);
+  const { onset, rms, lowEnergy, energy: power, centroid } = onsets;
   const frames = onset.length;
   if (frames < fps * 2) return silent(seconds);
 

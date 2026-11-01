@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { analyzeOnsets } from '@playarr/mix';
 import { analyzePcm, ENVELOPE_POINTS, SAMPLE_RATE } from './dsp.ts';
 
 const SR = SAMPLE_RATE;
@@ -65,6 +66,11 @@ describe('analyzePcm', () => {
     expect(f.envelope.at(-1)!).toBeGreaterThan(f.envelope[4]! + 0.4);
     expect(f.dynamics).toBeGreaterThan(0.6);
     expect(analyzePcm(tone(440, 30)).dynamics).toBeLessThan(0.1);
+  });
+
+  it('gives the same features from an onset pass the caller already made', () => {
+    const samples = clickTrack(128);
+    expect(analyzePcm(samples, SR, analyzeOnsets(samples, SR))).toEqual(analyzePcm(samples));
   });
 
   it('returns silence for empty or near-empty input', () => {

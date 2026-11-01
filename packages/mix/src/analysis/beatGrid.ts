@@ -1,15 +1,20 @@
 // The beat grid of a song: its tempo to a hundredth of a BPM and where the beats fall, from the
-// onset envelope (see onset.ts). Beatmatching two songs for a minute needs far more precision than
-// "about 124": at 0.1 BPM off, the kicks drift apart by a sixteenth note within half a minute.
+// onset envelopes of onset.ts. Beatmatching two songs for a minute needs far more precision than
+// "about 124": at 0.1 BPM off, the kicks drift apart by ~25 ms within 30 s, which is audible.
 
-import { ONSET_LATENCY_FRAMES } from './onset.ts';
+import { BEAT_ONSET_LATENCY_FRAMES, type Onsets } from './onset.ts';
 
 export interface BeatGrid {
   /** Beats per minute, rounded to 0.01. Not folded into an octave: 174 stays 174. */
   bpm: number;
   /** Time (s, to the ms) of the first grid beat at or after 0; beat n is at firstBeat + n·60/bpm. */
   firstBeat: number;
-  /** Every 30 s stretch of the excerpt agrees with the one grid: safe for long blends. */
+  /**
+   * The one grid holds over the whole excerpt: every stretch with a beat of its own agrees with it
+   * (stretches without one, like a breakdown, are skipped). Meaningful together with
+   * `beatConfidence`: it is always false when the confidence is below 0.35, so noise or beatless
+   * music never counts as stable.
+   */
   gridStable: boolean;
   /** 0–1: how much the envelope stands out on the grid's beats compared with between them. */
   beatConfidence: number;
@@ -21,25 +26,51 @@ const SEARCH_MAX_BPM = 200;
 /** Tempos a grid may end up with: below 70, the double tempo is what a DJ would count. */
 const MIN_BPM = 70;
 const MAX_BPM = 200;
-/** Beats in the comb that picks between a tempo, its double and its half. */
+/**
+ * The slower of two tempo octaves skips kicks when the bass between its beats is at least this
+ * share of the bass on them. Measured: a song or click track whose kick plays every beat gives
+ * ~0.96 at half tempo; one with only a hi-hat between the kicks gives ~0.06.
+ */
+const SKIPPED_KICK_SHARE = 0.5;
+/**
+ * Below this ratio of best-phase bass comb to the comb of the average bass level there is no bass
+ * beat to go by (no kick, or no bass at all), and the octave falls back to the full envelope.
+ */
+const BASS_BEAT_RATIO = 2;
+/** Beats in the comb that picks the octave when there's no bass beat to go by. */
 const OCTAVE_COMB_TEETH = 16;
 /**
- * How much the faster of two tempo octaves is favoured. A grid at half the tempo can always pick
- * the accented half of the beats (downbeats, a backbeat snare), so its comb scores about as well
- * as the true tempo's; the slower one only wins when the beats it skips are clearly weaker
- * (an off-beat hi-hat rather than a kick).
+ * How much the faster of two octaves is favoured in that fallback. A grid at half tempo can always
+ * pick the accented half of the beats, so its comb scores about as well as the true tempo's; the
+ * slower one only wins when the beats it skips are clearly weaker.
  */
 const FASTER_OCTAVE_BONUS = 1.1;
-/** The refinement searches this far either side of the rough tempo, in BPM steps of REFINE_STEP. */
+/** How far either side of the rough tempo the refinement searches (share of the tempo). */
 const REFINE_RANGE = 0.02;
-const REFINE_STEP = 0.01;
-/** Phase resolution, in frames, while searching tempos (coarse) and for the final grid (fine). */
+/** …either side of a doubled or halved tempo, which is already that precise. */
+const OCTAVE_REFINE_RANGE = 0.005;
+/** …and either side of the global tempo in each stability window, which only has to confirm it. */
+const WINDOW_REFINE_RANGE = 0.01;
+/**
+ * The refinement steps through tempos coarsely on a smoothed envelope, then finely around the best
+ * coarse tempo on the envelope itself. Smoothing widens the comb's peak so a coarse step can't
+ * jump over it on a long excerpt, where the peak is narrowest.
+ */
+const COARSE_STEP = 0.1;
+const FINE_STEP = 0.01;
+const FINE_REACH = 0.15;
+/** Phase resolution, in frames, while searching tempos (coarse, fine) and for the final grid. */
+const COARSE_PHASE_STEP = 0.5;
 const SEARCH_PHASE_STEP = 0.25;
 const FINE_PHASE_STEP = 0.05;
-/** The stability check compares the grid with the beats of every window this long. */
+/** Stability: windows of at least this length, each of whose beats must agree with the grid. */
 const WINDOW_SECONDS = 30;
 const STABLE_PHASE_SECONDS = 0.025;
 const STABLE_BPM_SHARE = 0.005;
+/** A window whose own grid has less contrast than this has no beat to check (a breakdown). */
+const WINDOW_MIN_CONFIDENCE = 0.3;
+/** A grid with less overall confidence than this is never called stable. */
+const STABLE_MIN_CONFIDENCE = 0.35;
 /** Frames either side of a beat that count as "at the beat" for the confidence. */
 const BEAT_HALF_WIDTH = 2;
 /** Less than this many seconds of onsets is too little to call a tempo. */
@@ -47,41 +78,64 @@ const MIN_SECONDS = 4;
 
 const NO_GRID: BeatGrid = { bpm: 0, firstBeat: 0, gridStable: false, beatConfidence: 0 };
 
+/** An onset envelope, the same smoothed for coarse searches, and its frame rate. */
+interface Envelope {
+  onset: Float64Array;
+  smooth: Float64Array;
+  fps: number;
+}
+
 /**
- * Finds the tempo and phase of the beat in an onset envelope (`fps` frames per second), normally
- * `analyzeOnsets(…).beatOnset`, the one that counts the bass twice so off-beat hi-hats don't win:
+ * Finds the tempo and phase of the beat. Expects envelopes from `analyzeOnsets`, whose timing it
+ * relies on: it shifts the grid by BEAT_ONSET_LATENCY_FRAMES to put beats on the transients. Pass
+ * the whole `analyzeOnsets` result, or `beatOnset`, `fps` and (for the octave) `lowOnset`.
+ *
  * 1. a rough tempo from the envelope's autocorrelation, leaning toward 120 BPM;
- * 2. the rough tempo, its double and its half compared with a 16-beat comb, so a 174 BPM song isn't
- *    folded to 87 nor a 90 BPM song doubled because of its off-beat hi-hats;
- * 3. the tempo refined to 0.01 BPM by the comb over the whole excerpt;
+ * 2. the octave: starting from the slowest of the rough tempo, its half and its double that lie in
+ *    70–200 BPM, double while the slower grid skips kicks (bass between its beats as strong as on
+ *    them), so a 174 BPM song with a backbeat snare isn't halved nor a 90 BPM song with off-beat
+ *    hi-hats doubled. Without a bass beat, a 16-beat comb on the full envelope decides;
+ * 3. the tempo refined to 0.01 BPM by a comb over the whole excerpt (before step 2 too, so the
+ *    octave is judged on an exact grid);
  * 4. the phase that puts the comb's teeth on the most onset energy;
- * 5. the same refinement in every 30 s window, to tell a steady grid from a wandering one.
+ * 5. the same refinement in every ≥30 s window, to tell a steady grid from a wandering one.
  */
-export function beatGrid(onset: Float64Array, fps: number): BeatGrid {
+export function beatGrid(frames: Pick<Onsets, 'fps' | 'beatOnset' | 'lowOnset'>): BeatGrid;
+export function beatGrid(onset: Float64Array, fps: number, lowOnset?: Float64Array): BeatGrid;
+export function beatGrid(
+  input: Float64Array | Pick<Onsets, 'fps' | 'beatOnset' | 'lowOnset'>,
+  fps?: number,
+  lowOnset?: Float64Array,
+): BeatGrid {
+  if (input instanceof Float64Array) return findGrid(input, fps!, lowOnset);
+  return findGrid(input.beatOnset, input.fps, input.lowOnset);
+}
+
+function findGrid(onset: Float64Array, fps: number, lowOnset: Float64Array | undefined): BeatGrid {
   const n = onset.length;
   if (n < MIN_SECONDS * fps || !onset.some((v) => v > 0)) return NO_GRID;
+  const envelope: Envelope = { onset, smooth: smoothed(onset), fps };
 
-  const rough = roughTempo(onset, fps);
-  const candidates = [rough, rough * 2, rough / 2].filter((bpm) => bpm >= MIN_BPM && bpm <= MAX_BPM);
-  const slowest = Math.min(...candidates);
-  const octave = maxBy(candidates, (bpm) => {
-    const bonus = FASTER_OCTAVE_BONUS ** Math.log2(bpm / slowest);
-    return octaveComb(onset, periodOf(bpm, fps)) * bonus;
-  });
-
-  const bpm = round(refineTempo(onset, fps, 0, n, octave), 2);
+  // Refined before the octave is chosen: a comb a fraction of a percent off the tempo drifts off
+  // the beats within a minute and can't tell kicks from the gaps between them.
+  const refined = refineTempo(envelope, 0, n, roughTempo(onset, fps), REFINE_RANGE);
+  const candidates = [refined / 2, refined, refined * 2].filter((bpm) => bpm >= MIN_BPM && bpm <= MAX_BPM);
+  const octave = chooseOctave(envelope, lowOnset, candidates);
+  // A doubled or halved tempo keeps its relative precision; one more narrow pass restores 0.01 BPM.
+  const bpm = round(octave === refined ? refined : refineTempo(envelope, 0, n, octave, OCTAVE_REFINE_RANGE), 2);
   const period = periodOf(bpm, fps);
   const phase = bestPhase(onset, 0, n, period, FINE_PHASE_STEP).phase;
 
   // The envelope runs a few frames ahead of the sound; shift the grid back onto the transients.
-  const beatSeconds = ((phase + ONSET_LATENCY_FRAMES) % period) / fps;
-  const firstBeat = round(beatSeconds, 3) < 60 / bpm ? round(beatSeconds, 3) : 0;
+  const beatSeconds = round(((phase + BEAT_ONSET_LATENCY_FRAMES) % period) / fps, 3);
+  const firstBeat = beatSeconds < 60 / bpm ? beatSeconds : 0;
+  const beatConfidence = round(confidence(onset, 0, n, period, phase), 3);
 
   return {
     bpm,
     firstBeat,
-    gridStable: isStable(onset, fps, bpm, phase),
-    beatConfidence: round(confidence(onset, period, phase), 3),
+    gridStable: beatConfidence >= STABLE_MIN_CONFIDENCE && isStable(envelope, bpm, phase),
+    beatConfidence,
   };
 }
 
@@ -134,6 +188,43 @@ function autocorrelation(signal: Float64Array, maxLag: number): Float64Array {
 }
 
 /**
+ * Which of `candidates` (ascending, each double the one before) is the tempo. The kick and bass
+ * decide when there's a bass beat: a grid that leaves kicks between its beats is too slow. The
+ * full envelope can't tell, as a backbeat snare makes half tempo look as strong as the beat.
+ */
+function chooseOctave(envelope: Envelope, lowOnset: Float64Array | undefined, candidates: number[]): number {
+  const { fps } = envelope;
+  if (lowOnset && candidates.length > 1) {
+    const n = lowOnset.length;
+    const averageBass = lowOnset.reduce((s, v) => s + v, 0) / n;
+    let index = 0;
+    for (; index < candidates.length; index++) {
+      const period = periodOf(candidates[index]!, fps);
+      const onBeats = bestPhase(lowOnset, 0, n, period, SEARCH_PHASE_STEP);
+      if (index === 0 && onBeats.score < BASS_BEAT_RATIO * averageBass * (n / period)) break; // no bass beat
+      const between = comb(lowOnset, onBeats.phase + period / 2, period, n);
+      if (index === candidates.length - 1 || between <= SKIPPED_KICK_SHARE * onBeats.score) return candidates[index]!;
+    }
+  }
+  return combOctave(envelope, candidates);
+}
+
+/** The fallback octave choice: a 16-beat comb on the full envelope, favouring the faster tempo. */
+function combOctave({ onset, fps }: Envelope, candidates: number[]): number {
+  const slowest = candidates[0]!;
+  let best = slowest;
+  let bestScore = -Infinity;
+  for (const bpm of candidates) {
+    const score = octaveComb(onset, periodOf(bpm, fps)) * FASTER_OCTAVE_BONUS ** Math.log2(bpm / slowest);
+    if (score > bestScore) {
+      bestScore = score;
+      best = bpm;
+    }
+  }
+  return best;
+}
+
+/**
  * The most onset energy any run of 16 evenly spaced teeth `period` frames apart can collect,
  * anywhere in the excerpt. A fixed number of teeth (rather than the whole excerpt) keeps a double
  * tempo from winning merely by having twice as many teeth to land on off-beats.
@@ -154,19 +245,36 @@ function octaveComb(onset: Float64Array, period: number): number {
 }
 
 /**
- * The tempo within ±2% of `bpm` (0.01 BPM steps, then a parabola through the best three) whose
- * comb, at its best phase, collects the most onset energy in frames [from, to). Over a minute of
- * beats the teeth walk off the onsets for even a small tempo error, so the peak is sharp.
+ * The tempo within ±`range` of `bpm` whose comb, at its best phase, collects the most onset energy
+ * in frames [from, to): 0.1 BPM steps, then 0.01 steps around the best, then a parabola through
+ * the best three. Over a minute of beats the teeth walk off the onsets for even a small tempo
+ * error, so the peak is sharp. A best tempo at the edge of the range means the range was off
+ * centre; the search is re-centred there once.
  */
-function refineTempo(onset: Float64Array, fps: number, from: number, to: number, bpm: number): number {
-  const steps = Math.round((bpm * REFINE_RANGE) / REFINE_STEP);
-  const scores: number[] = [];
-  for (let s = -steps; s <= steps; s++) {
-    scores.push(bestPhase(onset, from, to, periodOf(bpm + s * REFINE_STEP, fps), SEARCH_PHASE_STEP).score);
-  }
-  const best = scores.indexOf(Math.max(...scores));
-  const offset = best > 0 && best < scores.length - 1 ? parabolicOffset(scores[best - 1]!, scores[best]!, scores[best + 1]!) : 0;
-  return bpm + (best - steps + offset) * REFINE_STEP;
+function refineTempo(envelope: Envelope, from: number, to: number, bpm: number, range: number): number {
+  const first = searchTempo(envelope, from, to, bpm, range);
+  return first.atEdge ? searchTempo(envelope, from, to, first.bpm, range).bpm : first.bpm;
+}
+
+function searchTempo({ onset, smooth, fps }: Envelope, from: number, to: number, centre: number, range: number) {
+  const score = (signal: Float64Array, bpm: number, phaseStep: number) =>
+    bestPhase(signal, from, to, periodOf(bpm, fps), phaseStep).score;
+
+  const coarseSteps = Math.max(1, Math.round((centre * range) / COARSE_STEP));
+  const coarse: number[] = [];
+  for (let s = -coarseSteps; s <= coarseSteps; s++) coarse.push(score(smooth, centre + s * COARSE_STEP, COARSE_PHASE_STEP));
+  const bestCoarse = coarse.indexOf(Math.max(...coarse));
+  const roughBpm = centre + (bestCoarse - coarseSteps) * COARSE_STEP;
+
+  const fineSteps = Math.round(FINE_REACH / FINE_STEP);
+  const fine: number[] = [];
+  for (let s = -fineSteps; s <= fineSteps; s++) fine.push(score(onset, roughBpm + s * FINE_STEP, SEARCH_PHASE_STEP));
+  const best = fine.indexOf(Math.max(...fine));
+  const offset = best > 0 && best < fine.length - 1 ? parabolicOffset(fine[best - 1]!, fine[best]!, fine[best + 1]!) : 0;
+  return {
+    bpm: roughBpm + (best - fineSteps + offset) * FINE_STEP,
+    atEdge: bestCoarse === 0 || bestCoarse === coarse.length - 1,
+  };
 }
 
 /** The phase (frame of a tooth, in [from, from + period)) collecting the most energy in [from, to). */
@@ -192,39 +300,58 @@ function comb(onset: Float64Array, phase: number, period: number, to: number): n
 }
 
 /**
- * Whether every 30 s window agrees with the global grid: its own best tempo within ±0.5% and its
- * own beats within ±25 ms of the global ones. A last stretch shorter than a window joins the one
- * before it; an excerpt shorter than a window is one window.
+ * Whether every window with a beat agrees with the global grid: its own best tempo within ±0.5%
+ * and its own beats within ±25 ms of the global ones. Excerpts of 30 s or more are split into at
+ * least two equal windows of at least 30 s, so a tempo change halfway is caught. A window whose own
+ * grid has little contrast (a breakdown) is skipped, unless it has a clear beat at another tempo;
+ * if no window has a beat, there's nothing stable.
  */
-function isStable(onset: Float64Array, fps: number, bpm: number, phase: number): boolean {
+function isStable(envelope: Envelope, bpm: number, phase: number): boolean {
+  const { onset, fps } = envelope;
+  const n = onset.length;
   const period = periodOf(bpm, fps);
   const windowFrames = WINDOW_SECONDS * fps;
-  const windows = Math.max(1, Math.floor(onset.length / windowFrames));
+  const windows = n < windowFrames ? 1 : Math.max(2, Math.floor(n / windowFrames));
+  let confident = 0;
   for (let w = 0; w < windows; w++) {
-    const from = Math.round(w * windowFrames);
-    const to = w === windows - 1 ? onset.length : Math.round((w + 1) * windowFrames);
-    const localBpm = refineTempo(onset, fps, from, to, bpm);
-    if (Math.abs(localBpm - bpm) > STABLE_BPM_SHARE * bpm) return false;
+    const from = Math.round((w * n) / windows);
+    const to = Math.round(((w + 1) * n) / windows);
+    const localBpm = refineTempo(envelope, from, to, bpm, WINDOW_REFINE_RANGE);
     const localPeriod = periodOf(localBpm, fps);
     const local = bestPhase(onset, from, to, localPeriod, FINE_PHASE_STEP).phase;
+    if (confidence(onset, from, to, localPeriod, local) < WINDOW_MIN_CONFIDENCE) {
+      if (hasOwnBeat(envelope, from, to)) return false;
+      continue;
+    }
+    confident++;
+    if (Math.abs(localBpm - bpm) > STABLE_BPM_SHARE * bpm) return false;
     // Compare at the window's middle beat, where a slightly different local tempo matters least.
     const middle = local + Math.floor((to - from) / 2 / localPeriod) * localPeriod;
-    const offGrid = Math.abs(wrap(middle - phase, period));
-    if (offGrid / fps > STABLE_PHASE_SECONDS) return false;
+    if (Math.abs(wrap(middle - phase, period)) / fps > STABLE_PHASE_SECONDS) return false;
   }
-  return true;
+  return confident > 0;
+}
+
+/** Whether frames [from, to) have a clear beat of their own, found from scratch. */
+function hasOwnBeat({ onset, smooth, fps }: Envelope, from: number, to: number): boolean {
+  const slice: Envelope = { onset: onset.subarray(from, to), smooth: smooth.subarray(from, to), fps };
+  if (slice.onset.length < MIN_SECONDS * fps || !slice.onset.some((v) => v > 0)) return false;
+  const bpm = refineTempo(slice, 0, slice.onset.length, roughTempo(slice.onset, fps), REFINE_RANGE);
+  const period = periodOf(bpm, fps);
+  const phase = bestPhase(slice.onset, 0, slice.onset.length, period, SEARCH_PHASE_STEP).phase;
+  return confidence(slice.onset, 0, slice.onset.length, period, phase) >= WINDOW_MIN_CONFIDENCE;
 }
 
 /**
- * How far the envelope on the grid's beats stands above the envelope between them, in standard
- * deviations of the envelope, mapped 0.5 → 0 and 3 → 1. Noise lands about as much energy on any
- * grid as off it; a clean beat is several deviations above.
+ * How far the envelope on the grid's beats stands above the envelope between them over frames
+ * [from, to), in standard deviations of the envelope there, mapped 0.5 → 0 and 3 → 1. Noise lands
+ * about as much energy on any grid as off it; a clean beat is several deviations above.
  */
-function confidence(onset: Float64Array, period: number, phase: number): number {
-  const n = onset.length;
+function confidence(onset: Float64Array, from: number, to: number, period: number, phase: number): number {
+  const end = Math.min(to, onset.length - 1);
   let atBeats = 0;
   let beats = 0;
-  for (let x = phase; x < n - 1; x += period) {
+  for (let x = phase + Math.ceil((from - phase) / period) * period; x < end; x += period) {
     atBeats += sample(onset, x);
     beats++;
   }
@@ -232,7 +359,7 @@ function confidence(onset: Float64Array, period: number, phase: number): number 
   let others = 0;
   let sum = 0;
   let sumSq = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = from; i < to; i++) {
     sum += onset[i]!;
     sumSq += onset[i]! ** 2;
     if (Math.abs(wrap(i - phase, period)) > BEAT_HALF_WIDTH) {
@@ -240,10 +367,20 @@ function confidence(onset: Float64Array, period: number, phase: number): number 
       others++;
     }
   }
-  const mean = sum / n;
-  const std = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
+  const mean = sum / (to - from);
+  const std = Math.sqrt(Math.max(0, sumSq / (to - from) - mean * mean));
   if (!beats || !others || !std) return 0;
   return scale((atBeats / beats - elsewhere / others) / std, 0.5, 3);
+}
+
+/** The envelope under a small triangular blur (5 frames wide): a broader peak for coarse searches. */
+function smoothed(onset: Float64Array): Float64Array {
+  const weights = [1, 2, 3, 2, 1];
+  return onset.map((_, i) => {
+    let sum = 0;
+    weights.forEach((w, k) => (sum += w * (onset[i + k - 2] ?? 0)));
+    return sum / 9;
+  });
 }
 
 /** Linear interpolation of the envelope at a fractional frame. */
@@ -262,19 +399,6 @@ function parabolicOffset(a: number, b: number, c: number): number {
 /** `x` wrapped into −period/2 … period/2. */
 function wrap(x: number, period: number): number {
   return x - Math.round(x / period) * period;
-}
-
-function maxBy(items: number[], score: (item: number) => number): number {
-  let best = items[0]!;
-  let bestScore = -Infinity;
-  for (const item of items) {
-    const s = score(item);
-    if (s > bestScore) {
-      bestScore = s;
-      best = item;
-    }
-  }
-  return best;
 }
 
 const periodOf = (bpm: number, fps: number) => (fps * 60) / bpm;

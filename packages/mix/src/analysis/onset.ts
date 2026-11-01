@@ -1,6 +1,6 @@
 // One pass of short FFT frames over a song, measuring what both the server's audio features and
 // the mix analysis need: the onset envelope (where notes and drums start) plus per-frame loudness
-// and bass energy. Doing it in one pass matters: a FFT over seven minutes of audio is most of the
+// and bass energy. Doing it in one pass matters: an FFT over seven minutes of audio is most of the
 // cost of analysing a song.
 
 import { Fft, hann } from './fft.ts';
@@ -23,6 +23,12 @@ const LOW_BAND_HZ = 150;
  * position back into the time of the sound, add it: t = (frame + ONSET_LATENCY_FRAMES) / fps.
  */
 export const ONSET_LATENCY_FRAMES = 2.85;
+/**
+ * The same lead for `beatOnset`, which peaks a little later than `onset`: the bass flux it adds
+ * rises over more of the window, because a low note needs more of it to show in the spectrum.
+ * Measured on click tracks and songs (see onset.test.ts); `beatGrid` applies it.
+ */
+export const BEAT_ONSET_LATENCY_FRAMES = 2.98;
 
 export interface Onsets {
   /** Frames per second (rate / ONSET_HOP). */
@@ -39,6 +45,12 @@ export interface Onsets {
    * is mostly kick and bass.
    */
   beatOnset: Float64Array;
+  /**
+   * The onset envelope of the bass alone (below ~150 Hz), normalized to unit RMS: where kicks and
+   * bass notes start. Tells a grid that skips every other kick (half tempo) from one that adds
+   * off-beat hi-hats (double tempo).
+   */
+  lowOnset: Float64Array;
   /** Full-band RMS of each frame (time domain, unwindowed): its loudness. */
   rms: Float64Array;
   /** Spectral power of each frame at or below ~150 Hz: the kick and the bass. */
@@ -115,7 +127,7 @@ export function analyzeOnsets(samples: Float32Array, rate = ANALYSIS_RATE): Onse
   const onset = onsetEnvelope(flux, fps);
   const lowOnset = onsetEnvelope(lowFlux, fps);
   const beatOnset = onset.map((v, i) => v + lowOnset[i]!);
-  return { fps, onset, beatOnset, rms, lowEnergy, energy, centroid };
+  return { fps, onset, beatOnset, lowOnset, rms, lowEnergy, energy, centroid };
 }
 
 /**

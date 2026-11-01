@@ -1,27 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { clickTrack } from '../testSignals.ts';
-import { analyzeOnsets, ONSET_HOP, ONSET_LATENCY_FRAMES } from './onset.ts';
+import { analyzeOnsets, BEAT_ONSET_LATENCY_FRAMES, ONSET_HOP, ONSET_LATENCY_FRAMES } from './onset.ts';
 
 const RATE = 11025;
 
 describe('analyzeOnsets', () => {
   it('runs at about 43 frames per second at the analysis rate', () => {
-    const { fps, onset, rms, lowEnergy, energy, centroid } = analyzeOnsets(new Float32Array(10 * RATE), RATE);
+    const { fps, onset, beatOnset, lowOnset, rms, lowEnergy, energy, centroid } = analyzeOnsets(new Float32Array(10 * RATE), RATE);
     expect(fps).toBeCloseTo(RATE / ONSET_HOP, 9);
-    for (const a of [onset, rms, lowEnergy, energy, centroid]) expect(a.length).toBe(Math.floor((10 * RATE - 1024) / 256) + 1);
+    for (const a of [onset, beatOnset, lowOnset, rms, lowEnergy, energy, centroid]) expect(a.length).toBe(Math.floor((10 * RATE - 1024) / 256) + 1);
   });
 
   it('gives empty arrays for input shorter than one frame', () => {
     expect(analyzeOnsets(new Float32Array(100), RATE).onset.length).toBe(0);
   });
 
-  it('peaks ONSET_LATENCY_FRAMES before the frame of each click start', () => {
+  it.each([
+    ['onset', ONSET_LATENCY_FRAMES],
+    ['beatOnset', BEAT_ONSET_LATENCY_FRAMES],
+  ] as const)('%s peaks its latency in frames before the frame of each click start', (envelope, latency) => {
     // Odd offsets so the clicks fall at different points between frames.
     for (const firstBeat of [0.5, 0.5113, 0.523, 0.5171]) {
       const { samples, beats } = clickTrack({ bpm: 120, seconds: 12, rate: RATE, firstBeat });
-      const { onset, fps } = analyzeOnsets(samples, RATE);
+      const frames = analyzeOnsets(samples, RATE);
+      const onset = frames[envelope];
       for (const beat of beats.slice(2, -2)) {
-        const expected = beat * fps - ONSET_LATENCY_FRAMES;
+        const expected = beat * frames.fps - latency;
         // Centre of mass of the pulse within ±3 frames of where it should be.
         let mass = 0;
         let moment = 0;
@@ -31,6 +35,16 @@ describe('analyzeOnsets', () => {
         }
         expect(Math.abs(moment / mass - expected)).toBeLessThan(0.3);
       }
+    }
+  });
+
+  it('has a bass-only envelope that sees the kicks and not the off-beat ticks', () => {
+    const { samples, beats } = clickTrack({ bpm: 120, seconds: 12, rate: RATE });
+    const { lowOnset, fps } = analyzeOnsets(samples, RATE);
+    const around = (t: number) => Math.max(...lowOnset.subarray(Math.round(t * fps) - 5, Math.round(t * fps)));
+    for (let i = 2; i < beats.length - 2; i++) {
+      expect(around(beats[i]!)).toBeGreaterThan(1);
+      expect(around((beats[i]! + beats[i + 1]!) / 2)).toBeLessThan(0.1 * around(beats[i]!));
     }
   });
 
