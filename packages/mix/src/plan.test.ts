@@ -137,7 +137,7 @@ describe('planTransition: choosing the style', () => {
     { name: 'A’s outro too short', a: { outroBeats: 12 }, style: 'quick', reason: /room/ },
     { name: 'B’s intro too short', b: { introBeats: 12 }, style: 'quick', reason: /room/ },
     { name: 'half-time tempos count as close', a: { bpm: 87 }, b: { bpm: 174 }, style: 'long' },
-    { name: 'close tempos, same key', b: { bpm: 126 }, style: 'long', reason: /^Tempos 2% apart, keys compatible: 32-beat blend$/ },
+    { name: 'close tempos, same key', b: { bpm: 126 }, style: 'long', reason: /^Tempos 1.6% apart, keys compatible: 32-beat blend$/ },
   ];
 
   it.each(rows)('$name → $style', ({ a, b, input, style, reason }) => {
@@ -314,23 +314,50 @@ describe('planTransition: a long blend', () => {
   describe('a short B', () => {
     // B at 126: intro ends 17.6 s in; a 32-beat blend hands over at 15.7 s, the ease-back would run to 46 s.
     const a = song();
-    const shortB = (outroStart: number) => song({ bpm: 126, duration: 60, soundEnd: 59, introBeats: 36, outroStart });
+    const shortB = (outroStart: number, bpm = 126) =>
+      song({ bpm, duration: 60, soundEnd: 59, introBeats: 36, outroStart });
 
-    it('drops the whole ease-back rather than resume inside its outro', () => {
-      const b = shortB(39.95);
+    it('tempos within 3%: drops the whole ease-back rather than resume inside its outro', () => {
+      // An outro at 40 s: between the plain hand-over (15.7 s) and the end of the ease-back (46 s).
+      const b = shortB(40);
       const p = plan(a, b);
       expect(p.style).toBe('long');
+      expect(p.reason).toMatch(/: 32-beat blend \(no ease-back\)$/);
       expect(p.bRate).toEqual([{ at: 0, value: tempoRatio(a.bpm, b.bpm) }]);
       expect(p.length).toBeCloseTo(overlapOf(p, a), 9);
       expect(p.bResume).toBeCloseTo(p.bStart + integrate(p.bRate, 0, p.length), 9);
       expect(p.bResume).toBeLessThanOrEqual(b.outroStart);
     });
 
-    it('a quick mix when even a plain blend would resume inside its outro', () => {
-      const p = plan(a, shortB(15));
+    it('tempos over 3% apart: a quick mix rather than snap B’s tempo back on resuming', () => {
+      // 124 into 129 (3.9%): the ease-back would run to 45.7 s; without it B would jump 3.9% at 15.4 s.
+      const b = shortB(40, 129);
+      const p = plan(a, b);
       expect(p.style).toBe('quick');
       expect(p.reason).toBe('B’s outro comes too soon for a blend: quick mix');
+      expect(p.bResume).toBeLessThanOrEqual(b.outroStart);
     });
+
+    it('a quick mix when even a plain blend would resume inside its outro', () => {
+      const b = shortB(15);
+      const p = plan(a, b);
+      expect(p.style).toBe('quick');
+      expect(p.reason).toBe('B’s outro comes too soon for a blend: quick mix');
+      expect(p.bResume).toBeLessThanOrEqual(b.outroStart);
+    });
+  });
+
+  it.each<[string, SongOptions, string]>([
+    ['outro at 15 s, before the intro ends', { bpm: 126, duration: 60, soundEnd: 59, introBeats: 36, outroStart: 15 }, 'quick'],
+    ['mix-out cue at 10 s', { bpm: 126, duration: 60, soundEnd: 59, introBeats: 36, cues: { mixOut: 10 } }, 'quick'],
+    ['outro 20 s, intro to 29 s, unstretched', { bpm: 135, introBeats: 64, outroStart: 20, key: { camelot: '3B', confidence: 0.9 } }, 'quick'],
+    ['outro at 2 s', { bpm: 126, introBeats: 36, outroStart: 2 }, 'straight'],
+  ])('B resumes no later than its own outro (%s)', (_name, bOptions, style) => {
+    const b = song(bOptions);
+    const p = plan(song(), b);
+    expect(p.style).toBe(style);
+    if (style === 'straight') expect(p.reason).toBe('B’s outro comes too soon to mix: straight on');
+    else expect(p.bResume).toBeLessThanOrEqual((b.cues?.mixOut ?? b.outroStart) + 1e-9);
   });
 
   it('a hand-set mix-out cue close to the end: a quick mix from the cue, never before it', () => {
@@ -418,6 +445,8 @@ describe('planTransition: a quick mix', () => {
     const beat = beatOf(a);
     expect(p.style).toBe('quick');
     expect(p.bRate).toEqual([{ at: 0, value: 1 }]);
+    expect([4, 8]).toContain(p.beats);
+    expect(p.switchAt).toBeCloseTo(p.beats * beat, 9);
     expect(p.length).toBeCloseTo(p.switchAt + beat, 9);
     expect(p.bResume).toBeCloseTo(p.bStart + p.length, 9);
 
@@ -437,6 +466,17 @@ describe('planTransition: a quick mix', () => {
     expect(valueAt(p.aHighPassHz, 0)).toBe(20);
     expect(valueAt(p.aHighPassHz, p.switchAt)).toBeGreaterThanOrEqual(800);
     expect(valueAt(p.aHighPassHz, p.switchAt + beat / 2)).toBeGreaterThanOrEqual(800);
+  });
+});
+
+describe('planTransition: when a quick mix stretches B', () => {
+  it.each([
+    [102, 1.02],
+    [102.01, 1],
+  ])('A at %f BPM into B at 100 (keys clash): B plays at rate %f', (aBpm, rate) => {
+    const p = plan(song({ bpm: aBpm }), song({ bpm: 100, key: { camelot: '3B', confidence: 0.9 } }));
+    expect(p.style).toBe('quick');
+    expect(p.bRate).toEqual([{ at: 0, value: rate }]);
   });
 });
 
@@ -527,6 +567,8 @@ describe('planTransition: broken mix maps never make a broken plan', () => {
       expect(p.aStart).toBeLessThanOrEqual(Math.max(0, a.duration));
       expect(p.bStart).toBeGreaterThanOrEqual(0);
       expect(p.length).toBeGreaterThanOrEqual(0);
+      const resumeLimit = b.cues?.mixOut ?? b.outroStart;
+      if (p.style !== 'straight' && Number.isFinite(resumeLimit)) expect(p.bResume).toBeLessThanOrEqual(resumeLimit + 1e-9);
     }
   });
 });

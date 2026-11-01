@@ -14,6 +14,8 @@ export interface MixMap {
   firstBeat: number;
   /** The grid's beat index of the first downbeat (0–3): bars start every 4 beats from there. */
   downbeatOffset: number;
+  /** 0–1: how sure the bar starts are; low means the planner shouldn't trust phrase alignment. */
+  downbeatConfidence?: number;
   /** The grid holds over the whole song (no wandering tempo): long blends allowed. */
   gridStable: boolean;
   /** 0–1: how sure the beat grid is. */
@@ -73,6 +75,9 @@ export interface TransitionPlan {
   aHighPassHz: Automation;
   /** Why this style: for the transition view and logs. */
   reason: string;
-  /** Beats of overlap, for the transition view. */
+  /**
+   * Beats of A in the move, for the transition view: the overlap for a long blend (not B's ease-back after
+   * it), the lead-in up to the landing (8 or 4) for a quick mix, cuts included; 0 for a fade or straight on.
+   */
   beats: number;
 }

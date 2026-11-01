@@ -39,6 +39,8 @@ const ROOM_FOR_AUTO_LONGEST_BLEND = 2 * LONGEST_BLEND_BEATS;
 const EASE_BACK_BEATS = 64;
 /** Quick mix lengths in A's beats, preferred first. */
 const QUICK_MIX_BEATS = [8, 4];
+/** Dropping a long blend's ease-back makes B snap to its own tempo on resuming: only tolerable this close. */
+const SNAP_BACK_GAP = 0.03;
 /** A stretched quick mix crossfades over its last two beats. */
 const QUICK_CROSSFADE_BEATS = 2;
 /** An unstretched quick mix lets A ring on, filtered, for one beat after the cut. */
@@ -262,7 +264,8 @@ function blendBeats({ input, outroRoomBeats, introRoomBeats }: Pair): number | u
 }
 
 function tempoText({ tempoGap, halfTime }: Pair): string {
-  const percent = Math.round(tempoGap * 100);
+  // One decimal under 10% ("2.4% apart"), where the difference between 2% and 3% matters; whole numbers above.
+  const percent = tempoGap < 0.1 ? Number((tempoGap * 100).toFixed(1)) : Math.round(tempoGap * 100);
   if (halfTime) return percent === 0 ? 'Half-time tempos' : `Tempos ${percent}% apart at half time`;
   return percent === 0 ? 'Same tempo' : `Tempos ${percent}% apart`;
 }
@@ -321,8 +324,12 @@ function straightPlan({ a }: Pair, reason: string): TransitionPlan {
 /** Today's crossfade, from where A's outro begins: no beat to match, so no beats counted. */
 function fadePlan(pair: Pair, reason: string): TransitionPlan {
   const aStart = pair.leaveFrom;
-  const length = Math.min(LONGEST_FADE, soundEndOf(pair.a) - aStart);
-  if (!(length >= SHORTEST_FADE)) return straightPlan(pair, 'Too close to the end to fade: straight on');
+  const roomInA = soundEndOf(pair.a) - aStart;
+  // B plays from its start at its own speed and resumes at `length`, which mustn't be inside its outro.
+  const roomInB = resumeLimit(pair.b);
+  if (!(roomInA >= SHORTEST_FADE)) return straightPlan(pair, 'Too close to the end to fade: straight on');
+  if (!(roomInB >= SHORTEST_FADE)) return straightPlan(pair, 'B’s outro comes too soon to mix: straight on');
+  const length = Math.min(LONGEST_FADE, roomInA, roomInB);
   return {
     style: 'fade',
     aStart,
@@ -345,7 +352,10 @@ function fadePlan(pair: Pair, reason: string): TransitionPlan {
  * A long blend: A leaves from a phrase line inside its outro and B's phrase line lands on that same downbeat.
  * B is stretched to A's tempo through the overlap, then eases back to its own over 16 of its bars.
  * B mustn't resume inside its own outro: then the ease-back goes (all of it: a shortened ramp would be a
- * second, odd-sounding tempo move), then shorter blends are tried, then a quick mix.
+ * second, odd-sounding tempo move; and only for tempos within 3%, as B then snaps to its own tempo), then
+ * shorter blends are tried, then a quick mix. Shorter blends rarely rescue it: B's start is picked so the
+ * overlap ends near its mix-in point whatever the length, and the ease-back's length doesn't depend on the
+ * blend's, so B resumes at about the same place. They help only when phrase rounding falls differently.
  */
 function longPlan(pair: Pair, chosenBeats: number, reason: string): TransitionPlan {
   const { a, b, ratio } = pair;
@@ -358,16 +368,22 @@ function longPlan(pair: Pair, chosenBeats: number, reason: string): TransitionPl
 
     // B plays `ratio` of its own seconds per second of blend; its intro should end about when the overlap does.
     const overlapInB = overlap * ratio;
-    const bStart = nearestLine(b, PHRASE_BEATS, mixInPoint(b) - overlapInB, Math.max(0, gridLine(b, BAR_BEATS, 0)));
+    const bStart = Math.max(0, nearestLine(b, PHRASE_BEATS, mixInPoint(b) - overlapInB, Math.max(0, gridLine(b, BAR_BEATS, 0))));
 
-    const steady = { bRate: [{ at: 0, value: ratio }], length: overlap };
-    for (const { bRate, length } of [easedBack(pair, overlap), steady]) {
+    const eased = easedBack(pair, overlap);
+    const candidates = [{ ...eased, note: '' }];
+    // Without the ease-back B snaps to its own tempo the moment it resumes: fine for a small step, audible beyond.
+    if (eased.length > overlap && pair.tempoGap <= SNAP_BACK_GAP + EPSILON) {
+      candidates.push({ bRate: [{ at: 0, value: ratio }], length: overlap, note: ' (no ease-back)' });
+    }
+    for (const { bRate, length, note } of candidates) {
       const bResume = bStart + integrate(bRate, 0, length);
       if (bResume > resumeLimit(b) + EPSILON) {
         tooShortForB = true;
         continue;
       }
-      return longBlend(pair, { beats, aStart, bStart, bRate, length, bResume }, beats === chosenBeats ? reason : longReason(pair, beats));
+      const blendReason = (beats === chosenBeats ? reason : longReason(pair, beats)) + note;
+      return longBlend(pair, { beats, aStart, bStart, bRate, length, bResume }, blendReason);
     }
   }
   return quickPlan(
@@ -449,16 +465,26 @@ function quickPlan(pair: Pair, reason: string): TransitionPlan {
   const rate = stretched ? pair.ratio : 1;
   const leadInB = landingAt * rate;
 
-  // B must have played `leadInB` seconds by the landing, so the landing can't come before that.
+  const tailInB = tailBeats * beat * rate;
+  // B must have played `leadInB` seconds by the landing, so the landing can't come before that; and the
+  // transition must end (B resumes) no later than B's own outro, where the next mix will begin.
+  const latestLanding = resumeLimit(b) - tailInB;
   const target = mixInPoint(b);
   const phraseLanding = nearestLine(b, PHRASE_BEATS, target, leadInB);
-  const landing =
+  let landing =
     Math.abs(phraseLanding - target) <= (PHRASE_BEATS / 2) * beatLength(b)
       ? phraseLanding
       : nearestLine(b, BAR_BEATS, target, leadInB);
+  if (landing > latestLanding + EPSILON) {
+    const earlier = lastLineAtOrBefore(b, BAR_BEATS, latestLanding);
+    if (earlier === undefined || earlier < leadInB - EPSILON) {
+      return straightPlan(pair, 'B’s outro comes too soon to mix: straight on');
+    }
+    landing = earlier;
+  }
   if (!(landing < soundEndOf(b))) return straightPlan(pair, 'B is too short to mix into: straight on');
 
-  const bStart = landing - leadInB;
+  const bStart = Math.max(0, landing - leadInB);
   const bRate: Automation = [{ at: 0, value: rate }];
   const length = landingAt + tailBeats * beat;
   const common = {
@@ -472,7 +498,7 @@ function quickPlan(pair: Pair, reason: string): TransitionPlan {
     bLowDb: FLAT_DB,
     aHighPassHz: highPassSweep(0, landingAt),
     reason,
-    beats: beats + tailBeats,
+    beats,
   };
   if (stretched) {
     const crossfade = landingAt - QUICK_CROSSFADE_BEATS * beat;
