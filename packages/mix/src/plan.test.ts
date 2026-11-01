@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { integrate, valueAt } from './automation.ts';
 import { OWN_TEMPO_HOLD, OWN_TEMPO_RAMP, planTransition, tempoRatio, type PlanInput } from './plan.ts';
+import { excerptRanges, renderTransition, type Excerpt } from './render/transition.ts';
+import { RENDER_RATE } from './render/stretch.ts';
+import { song as signal, stereo } from './testSignals.ts';
 import type { Automation, CuePoints, MixMap, TransitionPlan } from './types.ts';
 
 type Song = MixMap & { cues?: CuePoints };
@@ -693,5 +696,139 @@ describe('planTransition: unsure bar starts', () => {
     expect(p.aStart).toBeGreaterThanOrEqual((a.cues?.mixOut ?? a.outroStart) - 1e-9);
     if (aPosition !== undefined) expect(p.aStart).toBeGreaterThanOrEqual(aPosition + 5);
     expect(p.bResume).toBeLessThanOrEqual((b.cues?.mixOut ?? b.outroStart) + 1e-9);
+  });
+});
+
+describe('planTransition: a skip', () => {
+  const a = song();
+  const beat = beatOf(a);
+  const bar = barOf(a);
+  /** A's bar line `index` bars from its first downbeat. */
+  const barLine = (index: number) => firstDownbeatOf(a) + index * bar;
+  const skip = (at: number, extra: Partial<PlanInput> = {}, b: Song = song()) => plan(a, b, { skip: { at }, ...extra });
+  const landingOf = (p: TransitionPlan) => p.aStart + p.beats * beat;
+
+  it.each<[string, number, number, number]>([
+    // [case, skip at, expected landing, expected lead-in beats]
+    ['just after a bar line: a 2-beat lead-in into the next bar', barLine(50) + 0.1 * beat, barLine(51), 2],
+    ['two and a half beats in: no room for 2 beats, so 4 into the bar after', barLine(50) + 2.5 * beat, barLine(52), 4],
+    ['exactly on a bar line: 4 beats from there', barLine(50), barLine(51), 4],
+  ])('%s', (_name, at, landing, beats) => {
+    const p = skip(at);
+    expect(p.style).toBe('quick');
+    expect(p.reason).toBe('Skipped: quick mix');
+    expect(p.beats).toBe(beats);
+    expect(landingOf(p)).toBeCloseTo(landing, 9);
+    expect(p.aStart).toBeGreaterThanOrEqual(at - 1e-9);
+    // The sweep runs over exactly the lead-in, ending on the landing.
+    expect(valueAt(p.aHighPassHz, 0)).toBe(20);
+    expect(valueAt(p.aHighPassHz, p.beats * beat)).toBeCloseTo(800, 9);
+  });
+
+  it('is never a long blend: not for compatible keys and roomy intros, the same album, or a party', () => {
+    const b = song({ introBeats: 128 });
+    expect(plan(a, b).style).toBe('long'); // what it would be without the skip
+    for (const extra of [{}, { sameAlbumInOrder: true }, { mode: 'party' as const }]) {
+      const p = skip(barLine(50) + 0.1 * beat, extra, b);
+      expect(p.style).toBe('quick');
+      expect(p.reason).toBe('Skipped: quick mix');
+    }
+  });
+
+  it('ignores A’s outro and mix-out cue: it leaves mid-song', () => {
+    const cued = { ...a, cues: { mixOut: 250 } };
+    const p = plan(cued, song(), { skip: { at: 60 } });
+    expect(p.style).toBe('quick');
+    expect(p.aStart).toBeGreaterThanOrEqual(60);
+    expect(p.aStart).toBeLessThan(60 + 2 * bar);
+  });
+
+  it('A’s bar starts unsure: lands on a beat, 4 beats on', () => {
+    const unsureA = song({ downbeatConfidence: 0.1 });
+    const at = barLine(50) + 0.5 * beat;
+    const p = plan(unsureA, song(), { skip: { at } });
+    expect(p.style).toBe('quick');
+    expect(p.beats).toBe(4);
+    expect(landingOf(p)).toBeCloseTo(barLine(50) + 5 * beat, 9); // the first beat with 4 beats' room
+    expect(onBar(unsureA, landingOf(p))).toBe(false);
+  });
+
+  it('a skip time that isn’t a number leaves A playing to its end', () => {
+    expect(skip(Number.NaN)).toMatchObject({ style: 'straight', aStart: a.duration, length: 0 });
+  });
+
+  it('no sure beat: a short crossfade from the skip; into an abrupt start, straight on from the skip', () => {
+    const at = 100.3;
+    const fade = plan(song({ beatConfidence: 0.2 }), song(), { skip: { at } });
+    expect(fade).toMatchObject({ style: 'fade', aStart: at, bStart: 0, length: 2.5, bResume: 2.5, reason: 'Skipped, no sure beat: crossfade' });
+    const cold = plan(song({ beatConfidence: 0.2 }), song({ coldStart: true }), { skip: { at } });
+    expect(cold).toMatchObject({ style: 'straight', aStart: at, length: 0 });
+    const off = plan(a, song(), { skip: { at }, mode: 'off' });
+    expect(off).toMatchObject({ style: 'straight', aStart: at, length: 0, reason: 'Skipped, no mixing: straight on' });
+  });
+
+  it.each<[string, SongOptions, TransitionPlan['style']]>([
+    ['B’s outro soon', { bpm: 126, duration: 60, soundEnd: 59, introBeats: 36, outroStart: 12 }, 'quick'],
+    ['B slowed, outro just past a bar line', { bpm: 126, outroStart: 0.5 + 16 * (60 / 126) + 0.002 }, 'quick'],
+    ['B’s outro before it can even land', { bpm: 126, duration: 30, soundEnd: 29, introBeats: 8, outroStart: 1 }, 'straight'],
+  ])('never resumes B inside its outro (%s)', (_name, bOptions, style) => {
+    const b = song(bOptions);
+    const at = barLine(50) + 0.1 * beat;
+    const p = skip(at, {}, b);
+    expect(p.style).toBe(style);
+    expect(p.bResume).toBeLessThanOrEqual(b.outroStart + 1e-9);
+    // Straight on, from the skip (not from A's end).
+    if (style === 'straight') expect(p).toMatchObject({ aStart: at, reason: 'Skipped; B’s outro comes too soon to mix: straight on' });
+  });
+
+  it.each([
+    ['tempos within 2%: stretched', { bpm: 126 }],
+    ['tempos 5% apart: a cut', { bpm: 130 }],
+    ['B’s bar starts unsure', { bpm: 126, downbeatConfidence: 0.1 }],
+  ] as [string, SongOptions][])('keeps every plan invariant (%s)', (_name, bOptions) => {
+    for (const at of [0, 33.3, barLine(50), 280, Number.NaN, -5, 1e9]) {
+      const p = skip(at, {}, song(bOptions));
+      const numbers = [p.aStart, p.bStart, p.length, p.bResume, p.switchAt, p.beats];
+      for (const curve of [p.bRate, p.aGain, p.bGain, p.aLowDb, p.bLowDb, p.aHighPassHz]) {
+        for (const point of curve) numbers.push(point.at, point.value);
+      }
+      for (const value of numbers) expect(Number.isFinite(value), `at ${at}`).toBe(true);
+      expect(p.bResume).toBeCloseTo(p.bStart + integrate(p.bRate, 0, p.length), 9);
+      if (p.style === 'straight') continue;
+      expect(valueAt(p.bRate, p.length)).toBe(1);
+      expect(valueAt(p.bRate, p.length - OWN_TEMPO_HOLD)).toBe(1);
+      if (Number.isFinite(at)) expect(p.aStart).toBeGreaterThanOrEqual(Math.min(Math.max(at, 0), a.duration) - 1e-9);
+      expect(p.aStart + p.length).toBeLessThanOrEqual(a.soundEnd + 1e-9);
+    }
+  });
+
+  it('renders: the planned skip goes through renderTransition and starts on A', () => {
+    const rate = RENDER_RATE;
+    const track = (bpm: number, map: SongOptions) => {
+      const { samples, truth } = signal({ bpm, rate, introBeats: 16, bodyBeats: 64, outroBeats: 16 });
+      const m = song({ bpm, duration: truth.duration, soundEnd: truth.soundEnd, introEnd: truth.introEnd, outroStart: truth.outroStart, ...map });
+      return { audio: stereo(samples), map: m };
+    };
+    const songA = track(124, {});
+    const songB = track(126, {});
+    const p = planTransition({ a: songA.map, b: songB.map, mode: 'auto', sameAlbumInOrder: false, skip: { at: 20.3 } });
+    expect(p.style).toBe('quick');
+    const ranges = excerptRanges(p)!;
+    const cut = (audio: { left: Float32Array; right: Float32Array }, [from, to]: [number, number]): Excerpt => {
+      const first = Math.floor(from * rate);
+      const last = Math.min(audio.left.length, Math.ceil(to * rate));
+      return { left: audio.left.slice(first, last), right: audio.right.slice(first, last), start: first / rate };
+    };
+    const ea = cut(songA.audio, ranges.a);
+    const eb = cut(songB.audio, ranges.b);
+    const out = renderTransition(p, ea, eb);
+    expect(out.left.length).toBe(Math.round(p.length * rate));
+    for (const v of out.left) expect(Number.isFinite(v)).toBe(true);
+    const aFrom = Math.round((p.aStart - ea.start) * rate);
+    // It starts as A plays. With a 2-beat lead-in (as here) the crossfade is the whole lead-in, so B is
+    // coming in, and A going out, from the first sample: within 3 ms they've moved it by about 0.001.
+    expect(p.beats).toBe(2);
+    for (let i = 0; i < 16; i++) expect(Math.abs(out.left[i]! - ea.left[aFrom + i]!)).toBeLessThan(1e-4);
+    for (let i = 0; i < 128; i++) expect(Math.abs(out.left[i]! - ea.left[aFrom + i]!)).toBeLessThan(3e-3);
   });
 });

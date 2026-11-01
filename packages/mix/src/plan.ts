@@ -14,6 +14,12 @@ export interface PlanInput {
   sameAlbumInOrder: boolean;
   /** Where A's playback is now (a plan never starts in the past). */
   aPosition?: number;
+  /**
+   * The listener skipped: leave A as soon as possible from `at` (seconds into A), the earliest the
+   * transition can start (the caller allows for its own rendering). Then only a quick mix will do: see
+   * skipPlan. `aPosition` is not used.
+   */
+  skip?: { at: number };
 }
 
 type Song = PlanInput['a'];
@@ -54,6 +60,10 @@ const CUT_TAIL_BEATS = 1;
 /** How fast B comes in at a cut: short enough to land on the downbeat, long enough not to click. */
 const CUT_SECONDS = 0.02;
 const LONGEST_FADE = 8;
+/** A skip with no beat to mix on crossfades this long: quick, but not an abrupt cut. */
+const SKIP_FADE = 2.5;
+/** A skip's lead-in in A's beats, preferred first: the second only when it lands a bar sooner. */
+const SKIP_LEAD_BEATS = [4, 2];
 /** A fade shorter than this is pointless: go straight on. */
 const SHORTEST_FADE = 1;
 /** A plan starts at least this far ahead of A's position, so there's time to render and load it. */
@@ -97,6 +107,7 @@ export function tempoRatio(aBpm: number, bBpm: number): number {
 
 export function planTransition(input: PlanInput): TransitionPlan {
   const pair = describePair(input);
+  if (input.skip) return skipPlan(pair, input.skip.at);
   const decision = chooseStyle(pair);
   switch (decision.style) {
     case 'straight':
@@ -365,14 +376,13 @@ function straightPlan({ a }: Pair, reason: string): TransitionPlan {
 }
 
 /** Today's crossfade, from where A's outro begins: no beat to match, so no beats counted. */
-function fadePlan(pair: Pair, reason: string): TransitionPlan {
-  const aStart = pair.leaveFrom;
+function fadePlan(pair: Pair, reason: string, aStart = pair.leaveFrom, longest = LONGEST_FADE): TransitionPlan {
   const roomInA = soundEndOf(pair.a) - aStart;
   // B plays from its start at its own speed and resumes at `length`, which mustn't be inside its outro.
   const roomInB = resumeLimit(pair.b);
   if (!(roomInA >= SHORTEST_FADE)) return straightPlan(pair, 'Too close to the end to fade: straight on');
   if (!(roomInB >= SHORTEST_FADE)) return straightPlan(pair, 'B’s outro comes too soon to mix: straight on');
-  const length = Math.min(LONGEST_FADE, roomInA, roomInB);
+  const length = Math.min(longest, roomInA, roomInB);
   return {
     style: 'fade',
     aStart,
@@ -520,12 +530,12 @@ function longBlend(
  * When B's bar starts are unsure, B lands on its beat nearest the mix-in point instead (A's side: see
  * quickPlacement).
  */
-function quickPlan(pair: Pair, reason: string): TransitionPlan {
+function quickPlan(pair: Pair, reason: string, place = quickPlacement): TransitionPlan {
   const { a, b } = pair;
   if (!hasUsableTempo(a) || !hasUsableTempo(b)) return straightPlan(pair, 'No usable beat: straight on');
   const stretched = pair.tempoGap <= QUICK_MIX_STRETCH_GAP + EPSILON;
   const tailBeats = stretched ? 0 : CUT_TAIL_BEATS;
-  const placement = quickPlacement(pair, tailBeats);
+  const placement = place(pair, tailBeats);
   if (!placement) return straightPlan(pair, 'Too close to the end to mix: straight on');
 
   const { aStart, beats } = placement;
@@ -629,4 +639,57 @@ function quickPlacement(pair: Pair, tailBeats: number): { aStart: number; beats:
     if (aStart >= earliest - EPSILON) return { aStart, beats };
   }
   return undefined;
+}
+
+// ——— Skips ———
+
+/**
+ * The plan when the listener skipped: leave A as soon as possible from `at`, mid-song if need be. A's
+ * outro and mix-out cue, the keys and the same-album rule don't count (the listener asked to move on);
+ * "No mixing" still does, and B is brought in as in any quick mix, never resuming inside its outro.
+ *
+ * - Both beats sure enough to cut on: a quick mix (see skipPlacement for where A leaves).
+ * - Otherwise a SKIP_FADE crossfade from `at`, or straight on when B starts abruptly (fading into a cold
+ *   start sounds like a mistake) or there's no room for even that.
+ *
+ * Every straight plan here leaves A at `at` (not at its end, as a planned straight cut does), except when
+ * `at` isn't a number at all. `at` is kept within A.
+ */
+function skipPlan(pair: Pair, requested: number): TransitionPlan {
+  const { a, b, input } = pair;
+  // No time to leave at is a caller's bug: guessing one could cut A anywhere, so A plays on.
+  if (!Number.isFinite(requested)) return straightPlan(pair, 'Skipped, but with no time to leave at: straight on');
+  const at = Math.min(Math.max(0, requested), durationOf(a));
+  const leavingAt = (plan: TransitionPlan): TransitionPlan => (plan.style === 'straight' ? { ...plan, aStart: at } : plan);
+  if (input.mode === 'off') return leavingAt(straightPlan(pair, 'Skipped, no mixing: straight on'));
+
+  const sureBeat = (song: Song) => hasUsableTempo(song) && song.beatConfidence >= QUICK_MIX_CONFIDENCE;
+  if (!sureBeat(a) || !sureBeat(b)) {
+    if (b.coldStart) return leavingAt(straightPlan(pair, 'Skipped, no sure beat and an abrupt start: straight on'));
+    const fade = fadePlan(pair, 'Skipped, no sure beat: crossfade', at, SKIP_FADE);
+    return leavingAt(fade.style === 'straight' ? { ...fade, reason: `Skipped; ${fade.reason}` } : fade);
+  }
+  const plan = quickPlan(pair, 'Skipped: quick mix', (p, tailBeats) => skipPlacement(p, tailBeats, at));
+  return leavingAt(plan.style === 'straight' ? { ...plan, reason: `Skipped; ${plan.reason}` } : plan);
+}
+
+/**
+ * Where a skip's quick mix starts and how many beats its lead-in lasts. The landing is a bar line of A
+ * (a beat, when A's bar starts are unsure) with the whole lead-in at or after `at`: 4 beats, or 2 when
+ * that lands a bar sooner. So the cut comes under 6 beats after `at` (under 5 on beats), not up to a
+ * phrase later. Undefined when A ends first.
+ */
+function skipPlacement(pair: Pair, tailBeats: number, at: number): { aStart: number; beats: number } | undefined {
+  const { a } = pair;
+  const beat = beatLength(a);
+  const line = pair.aBarsSure ? BAR_BEATS : 1;
+  let best: { aStart: number; beats: number; landing: number } | undefined;
+  for (const beats of SKIP_LEAD_BEATS) {
+    const landing = firstLineAtOrAfter(a, line, at + beats * beat);
+    // A shorter lead-in only for an earlier landing: on beats, a 4-beat lead-in is never more than a beat away.
+    const sooner = best === undefined || (pair.aBarsSure && landing < best.landing - EPSILON);
+    if (sooner) best = { aStart: landing - beats * beat, beats, landing };
+  }
+  if (!best || !(best.landing <= soundEndOf(a) - tailBeats * beat + EPSILON)) return undefined;
+  return { aStart: best.aStart, beats: best.beats };
 }
