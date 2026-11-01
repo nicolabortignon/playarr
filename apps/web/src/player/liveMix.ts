@@ -36,10 +36,18 @@ const START_DECODES = new Set(['mp3', 'flac', 'ogg', 'oga', 'opus']);
 /** Slack on the bytes estimated to hold B's start: bit rates vary through a song, and cover art sits at the front. */
 const RANGE_SLACK = 1.2;
 const RANGE_HEADROOM_BYTES = 2 * MB;
-/** B's element starts this much before the mix ends, for the moment it takes to start (AudioEngine's LEAD_MS)… */
+/** B's element starts this much before the mix ends, for the moment it takes to start (AudioEngine's LEAD_MS). */
 const B_LEAD_S = 0.03;
-/** …and the mix fades out under it over this long (AudioEngine's OVERLAP_MS). */
-const FADE_OUT_S = 0.015;
+/**
+ * At each end, the mix and the element it joins play the same sound together this long, one fading in as
+ * the other fades out with gains adding up to 1 (AudioEngine's OVERLAP_MS): the same sound in step, so the
+ * level holds, and neither join clicks.
+ */
+const OVERLAP_S = 0.015;
+/** How often A's element's volume steps down through the start's overlap. */
+const OVERLAP_STEP_MS = 4;
+/** B already this close to where the mix leaves it isn't moved again (a seek can land a hair off and cost a rebuffer). */
+const SEEK_SLACK_S = 0.005;
 
 /** A quick mix (or, without a sure beat, a short crossfade) from A into B, rendered and ready to play. */
 export interface LiveMix {
@@ -128,7 +136,9 @@ export function prepareLiveMix({
   mode: MixMode;
   signal: AbortSignal;
 }): Promise<LiveMix | null> {
-  if (mode === 'off' || a.fileId === b.fileId) return Promise.resolve(null);
+  // An MP3's <audio> seeks by estimate (exact only with a seek table, which most files lack), so B's element
+  // could resume off where the mix leaves B, and the landing off the beat: worse than a clean skip.
+  if (mode === 'off' || a.fileId === b.fileId || isMp3(b)) return Promise.resolve(null);
   return withDeadline(
     async (deadline) => {
       const maps = await api.mixMaps([a.recordingId, b.recordingId]);
@@ -140,8 +150,8 @@ export function prepareLiveMix({
       const bMixIn = Math.max(0, finiteOr(bMap.cues?.mixIn ?? bMap.introEnd, 0));
       const bUntil = Math.max(FADE_WINDOW_S, bMixIn + beats(bMap, B_WINDOW_BEATS)) + EXCERPT_MARGIN;
       const [aAudio, bAudio] = await Promise.all([
-        songAudio(a, at - EXCERPT_MARGIN, aUntil, false, deadline),
-        songAudio(b, 0, bUntil, true, deadline),
+        songAudio(a, at - EXCERPT_MARGIN, aUntil, deadline),
+        songAudio(b, 0, bUntil, deadline),
       ]);
       if (!aAudio || !bAudio) return null;
       const reply = await runWorker({ a: aMap, b: bMap, mode, sameAlbumInOrder: continues(a, b), at, aAudio, bAudio }, deadline);
@@ -155,6 +165,8 @@ export function prepareLiveMix({
     signal,
   );
 }
+
+const isMp3 = (track: Track) => track.format?.container?.toLowerCase() === 'mp3' || track.format?.codec?.toUpperCase() === 'MP3';
 
 const finiteOr = (value: number, fallback: number) => (Number.isFinite(value) ? value : fallback);
 
@@ -200,15 +212,15 @@ function cut(buffer: AudioBuffer, from: number, to: number, whole: boolean): Son
 }
 
 /**
- * A song's audio from `from` to `to`. With `startOnly` (B, whose part begins at 0) only the bytes that
- * hold it are fetched, where the format decodes from a part; the whole file otherwise, or if the part
- * doesn't decode or comes out short. Null for files too big to decode.
+ * A song's audio from `from` to `to`. Only the bytes from the file's start that hold it are fetched, where
+ * the format decodes from a part: for A, mid-song, that's still everything up to where it plays, but not
+ * the rest. The whole file otherwise, or when the part doesn't decode or comes out short. Null when what
+ * it takes is too big to fetch and decode.
  */
-async function songAudio(track: Track, from: number, to: number, startOnly: boolean, signal: AbortSignal): Promise<SongAudio | null> {
+async function songAudio(track: Track, from: number, to: number, signal: AbortSignal): Promise<SongAudio | null> {
   if (!(track.duration <= MAX_SONG_SECONDS)) return null;
-  const part = startOnly ? startBytes(track, to) : undefined;
-  if (!((part ?? track.size) <= MAX_FILE_BYTES)) return null;
-  if (part !== undefined) {
+  const part = startBytes(track, to);
+  if (part !== undefined && part <= MAX_FILE_BYTES) {
     const audio = await songBytes(track, part, signal)
       .then(decode)
       .then((buffer) => cut(buffer, from, to, false))
@@ -216,6 +228,7 @@ async function songAudio(track: Track, from: number, to: number, startOnly: bool
     if (audio && audio.start + audio.left.length / RENDER_RATE >= to - 1 / RENDER_RATE) return audio;
     signal.throwIfAborted();
   }
+  if (!(track.size <= MAX_FILE_BYTES)) return null;
   return cut(await decode(await songBytes(track, undefined, signal)), from, to, true);
 }
 
@@ -241,7 +254,7 @@ function runWorker(request: LiveMixRequest, signal: AbortSignal): Promise<LiveMi
 
 /** A live mix playing, or about to. */
 export interface LiveMixPlayback {
-  /** The audio context's time the mix starts at (output clock): A's element pauses then. */
+  /** The audio context's time the mix starts at (output clock): A's element fades out under it then. */
   startsAt: number;
   /** Seconds into the transition now; negative before it starts. For songTimeDuring, bridgeGain and the switch. */
   time(): number;
@@ -264,8 +277,9 @@ function at(context: Clock, when: number, fn: () => void): () => void {
 
 /**
  * Plays a live mix in time with A: the rendered transition starts at plan.aStart (a bar line of A for a
- * quick mix; it begins as A itself, so the join is seamless), A's element pauses at that moment, and B's element starts
- * from plan.bResume as the transition ends, where it runs into B. Null when it can't start on time (A
+ * quick mix). It begins as A itself, so A's element fades out over OVERLAP_S as the mix fades in, then
+ * pauses. B's element starts from plan.bResume as the transition ends, where it runs into B, the mix
+ * fading out under it. Null when it can't start on time (A
  * paused or past the mix's start, the context not running): the caller switches straight away.
  *
  * `a` and `b` must hold the two songs, `a` playing (`aOffset`: where its file starts in the song, for a
@@ -287,7 +301,7 @@ export function playLiveMix(
     context: AudioContext;
     aOffset?: number;
     volume?: number;
-    /** A has paused: the mix is what's heard. */
+    /** A has faded out and paused: the mix is what's heard. */
     onStarted?: () => void;
     /** B's element has been told to play (the promise says whether it does). */
     onLanded?: (playing: Promise<void>) => void;
@@ -299,15 +313,22 @@ export function playLiveMix(
   if (context.state !== 'running' || a.paused || startsAt < context.currentTime + MIN_LEAD_S) return null;
   const endsAt = startsAt + buffer.duration;
 
-  // B waits where the mix leaves it, loading meanwhile.
+  // B waits where the mix leaves it, loading meanwhile. Before its metadata a seek may be ignored (Safari),
+  // so it's made once that's there, and checked again as B starts.
+  const seekB = () => {
+    if (Math.abs(b.currentTime - plan.bResume) > SEEK_SLACK_S) b.currentTime = plan.bResume;
+  };
   b.pause();
-  b.currentTime = plan.bResume;
+  if (b.readyState >= 1 /* HAVE_METADATA */) seekB();
+  else b.addEventListener('loadedmetadata', seekB, { once: true });
 
-  // The transition → a fade under B's own start → the volume → the speakers.
+  // The transition → its fades in over A and out under B → the volume → the speakers.
   const source = context.createBufferSource();
   source.buffer = buffer;
   const fade = context.createGain();
-  fade.gain.setValueAtTime(1, endsAt - FADE_OUT_S);
+  fade.gain.setValueAtTime(0, startsAt);
+  fade.gain.linearRampToValueAtTime(1, startsAt + OVERLAP_S);
+  fade.gain.setValueAtTime(1, endsAt - OVERLAP_S);
   fade.gain.linearRampToValueAtTime(0, endsAt);
   const level = context.createGain();
   level.gain.value = volume;
@@ -315,12 +336,33 @@ export function playLiveMix(
   // Sample-exact on the context's clock; the elements only follow by timer, a few milliseconds either way.
   source.start(startsAt);
 
-  const timers = [
-    at(context, startsAt, () => {
+  // A's element fades out as the mix fades in, by the same clock: in steps, as an element's volume only
+  // moves by timer, each matching the mix's gain at that moment so the two add up to A's own level.
+  let fadingOut: ReturnType<typeof setInterval> | undefined;
+  let aVolume: number | undefined;
+  /** A's element back to its level, for whatever it plays next (the engine sets it again anyway). */
+  const endFadeOut = () => {
+    clearInterval(fadingOut);
+    if (aVolume !== undefined) a.volume = aVolume;
+    aVolume = undefined;
+  };
+  const fadeOutA = () => {
+    const full = (aVolume = a.volume);
+    const step = () => {
+      const done = (outputTime(context) - startsAt) / OVERLAP_S;
+      if (done < 1) return void (a.volume = full * Math.max(0, 1 - done));
       a.pause();
+      endFadeOut();
       onStarted?.();
-    }),
+    };
+    fadingOut = setInterval(step, OVERLAP_STEP_MS);
+    step();
+  };
+  const timers = [
+    at(context, startsAt, fadeOutA),
+    endFadeOut,
     at(context, endsAt - B_LEAD_S, () => {
+      seekB();
       const playing = b.play();
       if (onLanded) onLanded(playing);
       else playing.catch(() => {});
@@ -335,6 +377,7 @@ export function playLiveMix(
       if (stopped) return;
       stopped = true;
       timers.forEach((cancel) => cancel());
+      b.removeEventListener('loadedmetadata', seekB);
       source.stop();
       level.disconnect();
     },
