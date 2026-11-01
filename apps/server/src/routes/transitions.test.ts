@@ -51,6 +51,8 @@ describe('transition routes', () => {
     const res = await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto' } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ status: 'unavailable' });
+    // The detail goes to the log, not to whoever asked.
+    expect(res.json().reason).not.toContain('library offline');
   });
 
   it('answers “unavailable” without the service (no audio analysis)', async () => {
@@ -84,6 +86,9 @@ describe('transition routes', () => {
     const outside = await app.inject({ method: 'GET', url: `/transitions/${KEY}.rest.wav`, headers: { range: 'bytes=20-' } });
     expect(outside.statusCode).toBe(416);
     expect(outside.headers['content-range']).toBe('bytes */10');
+    // An error, not audio: nothing for the browser to keep or play.
+    expect(outside.headers['content-type'] ?? '').not.toMatch(/^audio\//);
+    expect(outside.headers['cache-control']).toBeUndefined();
   });
 
   it('answers HEAD without a body', async () => {

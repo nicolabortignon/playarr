@@ -202,6 +202,11 @@ const shutdown = async () => {
   await media.close();
   await folders.closeAll();
   await app.close();
+  analyzer.close();
+  // A render a moment from done is let finish (its file is then complete); one that isn't is cut off.
+  await Promise.race([transitions?.idle(), new Promise((resolve) => setTimeout(resolve, 2000).unref())]);
+  // Shared, so the analyzer leaves it open: closed here, once neither uses it.
+  dsp.close();
   db.close();
   process.exit(0);
 };

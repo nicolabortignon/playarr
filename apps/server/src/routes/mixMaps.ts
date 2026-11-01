@@ -7,7 +7,7 @@ import type { Library } from '../library/library.ts';
 const RECORDING_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|track:\d+)$/i;
 
 const input = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(50) });
-/** null or left out: back to the detected point. */
+/** null: back to the detected point; left out: kept as it is. */
 const cueInput = z.object({ mixIn: z.number().min(0).nullable().optional(), mixOut: z.number().min(0).nullable().optional() });
 
 /**
@@ -56,20 +56,32 @@ export function mixMapRoutes(
     if (!RECORDING_ID.test(id)) return reply.code(400).send({ error: 'Invalid recording id' });
     const parsed = cueInput.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid cue points' });
-    const { mixIn, mixOut } = parsed.data;
-    if (typeof mixIn === 'number' || typeof mixOut === 'number') {
+    const body = parsed.data;
+    // A point left out stays as it was set: setting just the mix-out point mustn't lose the mix-in.
+    const stored = analyzer.cues([id]).get(id) ?? {};
+    const mixIn = body.mixIn === undefined ? (stored.mixIn ?? null) : body.mixIn;
+    const mixOut = body.mixOut === undefined ? (stored.mixOut ?? null) : body.mixOut;
+    // Only a new point needs checking: clearing one can't put the other out of place, and works
+    // even for a song that has left the library.
+    if (typeof body.mixIn === 'number' || typeof body.mixOut === 'number') {
       // The measured length where there's a map (the one the planner works with), else the library's.
       const map = analyzer.mixMaps([id]).get(id);
       const duration = map && map.duration > 0 ? map.duration : (await library.trackByRecording(id))?.duration;
       if (duration === undefined) return reply.code(404).send({ error: 'Song not found in the library' });
+      if (!(duration > 0)) return reply.code(400).send({ error: 'The song’s length isn’t known yet, so mix points can’t be set' });
       for (const t of [mixIn, mixOut]) {
-        if (typeof t === 'number' && duration > 0 && t > duration) return reply.code(400).send({ error: 'Mix points must be within the song' });
+        if (t !== null && t > duration) return reply.code(400).send({ error: 'Mix points must be within the song' });
       }
-      if (typeof mixIn === 'number' && typeof mixOut === 'number' && mixIn >= mixOut) {
+      if (mixIn !== null && mixOut !== null && mixIn >= mixOut) {
         return reply.code(400).send({ error: 'The mix-in point must come before the mix-out point' });
       }
     }
-    analyzer.setCues(id, { mixIn, mixOut });
+    try {
+      analyzer.setCues(id, { mixIn, mixOut });
+    } catch (err) {
+      if (!(err instanceof RangeError)) throw err;
+      return reply.code(400).send({ error: err.message });
+    }
     // Saved either way: a stale transition is only unused, never played (its cache key holds the old points).
     await deps.onCuesChanged?.(id).catch((err: unknown) => req.log.warn({ err, recordingId: id }, 'forgetting transitions failed'));
     return analyzer.cues([id]).get(id) ?? {};

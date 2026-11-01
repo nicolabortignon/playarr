@@ -34,7 +34,8 @@ export function transitionRoutes(
     } catch (err) {
       // The player has a fallback for every answer but an error page: never make it guess.
       req.log.warn({ err, from, to }, 'transition request failed');
-      return { status: 'unavailable', reason: `The transition couldn’t be planned: ${(err as Error).message}` };
+      // The detail (paths, the library's internals) stays in the log.
+      return { status: 'unavailable', reason: 'The transition couldn’t be planned' };
     }
   });
 
@@ -49,13 +50,13 @@ export function transitionRoutes(
       const size = path ? await stat(path).then((info) => (info.isFile() ? info.size : undefined), () => undefined) : undefined;
       if (!path || size === undefined) return reply.code(404).send({ error: 'Unknown transition' });
 
+      reply.header('Accept-Ranges', 'bytes');
+      const range = parseRange(req.headers.range, size);
+      // An error, not audio: nothing a browser should play or keep for a year.
+      if (range === null) return reply.code(416).header('Content-Range', `bytes */${size}`).send();
       reply
-        .header('Accept-Ranges', 'bytes')
         .header('Content-Type', path.endsWith('.wav') ? 'audio/wav' : 'audio/flac')
         .header('Cache-Control', 'private, max-age=31536000, immutable');
-
-      const range = parseRange(req.headers.range, size);
-      if (range === null) return reply.code(416).header('Content-Range', `bytes */${size}`).send();
       if (range) reply.code(206).header('Content-Range', `bytes ${range.start}-${range.end}/${size}`);
       reply.header('Content-Length', range ? range.end - range.start + 1 : size);
       if (req.method === 'HEAD') return reply.send();

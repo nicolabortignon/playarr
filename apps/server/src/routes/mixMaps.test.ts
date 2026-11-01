@@ -80,12 +80,46 @@ describe('mix map routes', () => {
     expect(forget).toHaveBeenCalledWith(SONG);
   });
 
-  it('clears cue points with null or by leaving them out', async () => {
+  it('clears a cue point given as null, and keeps one left out', async () => {
     const { app, cues, forget } = setup({ maps: { [SONG]: map(200) }, cues: { [SONG]: { mixIn: 8, mixOut: 190 } } });
-    const res = await app.inject({ method: 'PUT', url: `/api/recordings/${SONG}/cues`, payload: { mixIn: null } });
-    expect(res.json()).toEqual({});
+    const put = (payload: object) => app.inject({ method: 'PUT', url: `/api/recordings/${SONG}/cues`, payload });
+    expect((await put({ mixIn: null })).json()).toEqual({ mixOut: 190 });
+    expect((await put({ mixIn: 20 })).json()).toEqual({ mixIn: 20, mixOut: 190 });
+    expect((await put({})).json()).toEqual({ mixIn: 20, mixOut: 190 });
+    expect((await put({ mixIn: null, mixOut: null })).json()).toEqual({});
     expect(cues.has(SONG)).toBe(false);
     expect(forget).toHaveBeenCalledWith(SONG);
+  });
+
+  it('checks a new cue point against the one already set', async () => {
+    const { app, analyzer } = setup({ maps: { [SONG]: map(200) }, cues: { [SONG]: { mixOut: 50 } } });
+    const res = await app.inject({ method: 'PUT', url: `/api/recordings/${SONG}/cues`, payload: { mixIn: 60 } });
+    expect(res.statusCode).toBe(400);
+    expect(analyzer.setCues).not.toHaveBeenCalled();
+  });
+
+  it('clears cue points even for a song that has left the library', async () => {
+    const { app, cues } = setup({ cues: { [SONG]: { mixIn: 8 } } });
+    const res = await app.inject({ method: 'PUT', url: `/api/recordings/${SONG}/cues`, payload: { mixIn: null } });
+    expect(res.statusCode).toBe(200);
+    expect(cues.has(SONG)).toBe(false);
+  });
+
+  it('turns away cue points for a song whose length isn’t known', async () => {
+    const { app, analyzer } = setup({ durations: { [SONG]: 0 } });
+    const res = await app.inject({ method: 'PUT', url: `/api/recordings/${SONG}/cues`, payload: { mixIn: 5 } });
+    expect(res.statusCode).toBe(400);
+    expect(analyzer.setCues).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 when the analyzer refuses the cue points', async () => {
+    const { app, analyzer, forget } = setup({ maps: { [SONG]: map(200) } });
+    analyzer.setCues.mockImplementationOnce(() => {
+      throw new RangeError('Invalid cue point');
+    });
+    const res = await app.inject({ method: 'PUT', url: `/api/recordings/${SONG}/cues`, payload: { mixIn: 5 } });
+    expect(res.statusCode).toBe(400);
+    expect(forget).not.toHaveBeenCalled();
   });
 
   it('checks cue points against the library’s length when the song has no map yet', async () => {
