@@ -45,7 +45,8 @@ export function levelRoutes(app: FastifyInstance, deps: { analyzer: Pick<Analyze
       });
       out[id] = { track: cutFor(own), ...(measured.length > 1 ? { album: cutFor(combinedDb(measured)) } : {}) };
     }
-    deps.analyzer.ensure(measure, { audio: true });
+    // Asked for by the player for the song about to play: ahead of the library's backlog.
+    deps.analyzer.ensure(measure, { audio: true, urgent: true });
     return out;
   });
 }

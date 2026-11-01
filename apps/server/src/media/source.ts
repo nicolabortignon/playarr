@@ -1,4 +1,4 @@
-import type { ByteRange } from '@playarr/shared';
+import type { AudioFormat, ByteRange } from '@playarr/shared';
 import { posix } from 'node:path';
 import type { Readable } from 'node:stream';
 
@@ -45,6 +45,17 @@ export interface PcmOptions {
   /** 1 for analysis (the default, smallest), 2 when rendering audio people will hear. */
   channels?: 1 | 2;
   signal?: AbortSignal;
+}
+
+/**
+ * Formats that can't be started sample-exactly in the middle. MP3 has no index: a seek is an
+ * estimate from the bitrate (or a 100-entry table in VBR files), so a player or ffmpeg jumping into
+ * one lands only near the time asked. The others Playarr plays seek exactly: FLAC by its frames
+ * and seek table, AAC/ALAC in MP4 by the sample tables, Ogg Vorbis/Opus by granule positions.
+ * Decode those with `exactSeek` when the position must be exact.
+ */
+export function seeksInexactly(format: AudioFormat): boolean {
+  return format.codec.toUpperCase() === 'MP3' || format.container.toLowerCase() === 'mp3';
 }
 
 /**

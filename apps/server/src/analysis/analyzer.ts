@@ -3,8 +3,9 @@ import { MIX_HEAD_SECONDS, MIX_MAP_VERSION, MIX_TAIL_SECONDS, type CuePoints, ty
 import { RateLimited, recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
+import { seeksInexactly } from '../media/source.ts';
 import { ANALYSIS_VERSION, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
-import { DspThread } from './dspThread.ts';
+import { DspThread, DspWorkerLost } from './dspThread.ts';
 
 export interface TrackMeta {
   /** Strongest first. */
@@ -12,8 +13,39 @@ export interface TrackMeta {
   year?: number;
 }
 
-/** The features and the mix map share one decode of the song's beginning (all of a shorter song). */
+/**
+ * The features and the mix map share one decode of the song's beginning (all of a shorter song).
+ * The features are measured over exactly this much, so changing it needs an ANALYSIS_VERSION bump.
+ */
 const MAX_SECONDS = MIX_HEAD_SECONDS;
+/** A decode still going after this is stuck (a hung share or ffmpeg): the song fails, to be tried another day. */
+const DECODE_TIMEOUT_MS = 5 * 60_000;
+/**
+ * Finding a long song's end. Its last MIX_TAIL_SECONDS are decoded from a known position, so where
+ * they sit in the song is exact: the library's length is MusicBrainz's (rounded, sometimes another
+ * release's), and ffmpeg's -sseof goes by the container's idea of the length, which a VBR MP3
+ * without a header gets wrong. The mix analysis carries the beat grid from the start of the song to
+ * its end and allows 25 ms of difference, so the end has to be placed to the sample.
+ *
+ * The first window starts TAIL_MARGIN_SECONDS before where the library says the last 3 minutes
+ * begin and runs TAIL_SPARE_SECONDS past them: a length off by up to half a minute either way is
+ * found in one decode.
+ */
+const TAIL_MARGIN_SECONDS = 30;
+const TAIL_SPARE_SECONDS = 60;
+/**
+ * A window that doesn't reach the end means the song runs longer than the library says (or it has
+ * no length at all): the next starts 3 minutes before that one ended, so it still holds the last 3
+ * minutes if the song ends just after, and is twice as long, up to MAX_TAIL_WINDOW_SECONDS (32
+ * minutes: 42 MB of PCM, well within what one decode may return). After TAIL_TRIES windows, past
+ * about 1 h 50 min, the map fails: a song that long is a DJ set, not something to mix.
+ */
+const MAX_TAIL_WINDOW_SECONDS = 1920;
+const TAIL_TRIES = 6;
+/** Decoded audio this close to what was asked for is all of it (ffmpeg's last frame may come up a little short). */
+const FULL_SLACK_SECONDS = 0.05;
+/** A song whose DSP worker went away is measured again this often before its failure is stored: it may be what kills the worker. */
+const WORKER_LOST_RETRIES = 2;
 const RETRY_FAILED_MS = 24 * 60 * 60_000;
 const REFRESH_META_MS = 30 * 24 * 60 * 60_000;
 const TAG_BATCH = 25;
@@ -28,12 +60,19 @@ const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export class Analyzer {
   private readonly audioQueue = new Set<string>();
+  /** Songs someone is waiting for (the one playing, a playlist being opened): measured before the library's backlog. */
+  private readonly urgentQueue = new Set<string>();
+  /** How often each song's DSP worker went away mid-measurement. */
+  private readonly workerLosses = new Map<string, number>();
+  private closed = false;
   private readonly running = new Set<string>();
   private readonly metaQueue = new Set<string>();
   private metaTimer: NodeJS.Timeout | undefined;
   private metaRunning = false;
   /** The number crunching runs off the main thread. */
   private readonly dsp: Pick<DspThread, 'analyze' | 'mixMap'>;
+  /** The DSP thread this analyzer started itself (none when it was given the shared one). */
+  private readonly ownDsp: DspThread | null;
 
   constructor(
     private readonly db: DatabaseSync,
@@ -47,7 +86,18 @@ export class Analyzer {
       dsp?: Pick<DspThread, 'analyze' | 'mixMap'>;
     },
   ) {
-    this.dsp = opts.dsp ?? new DspThread();
+    this.ownDsp = opts.dsp ? null : new DspThread();
+    this.dsp = opts.dsp ?? this.ownDsp!;
+  }
+
+  /** Stops background work, and the DSP thread if it's this analyzer's own (not the shared one). */
+  close() {
+    this.closed = true;
+    this.audioQueue.clear();
+    this.urgentQueue.clear();
+    this.metaQueue.clear();
+    clearTimeout(this.metaTimer);
+    this.ownDsp?.close();
   }
 
   /** Whether audio analysis is on. Each song's source must also be able to decode it (ffmpeg). */
@@ -101,6 +151,11 @@ export class Analyzer {
   setCues(recordingId: string, cues: { mixIn?: number | null; mixOut?: number | null }) {
     const mixIn = cues.mixIn ?? null;
     const mixOut = cues.mixOut ?? null;
+    // The API checks these against the song; this keeps nonsense out of the table whoever calls.
+    for (const t of [mixIn, mixOut]) {
+      if (t !== null && !(Number.isFinite(t) && t >= 0)) throw new RangeError(`Invalid cue point: ${t}`);
+    }
+    if (mixIn !== null && mixOut !== null && mixIn >= mixOut) throw new RangeError('The mix-in point must come before the mix-out point');
     if (mixIn === null && mixOut === null) {
       this.db.prepare('DELETE FROM cue_points WHERE recording_id = ?').run(recordingId);
       return;
@@ -122,25 +177,27 @@ export class Analyzer {
     return new Map(rows.map((r) => [r.recording_id, { tags: JSON.parse(r.tags), year: r.year ?? undefined }]));
   }
 
-  /** Queue whatever hasn't been analyzed (or tagged) yet; `audio: false` only fetches tags (cheap). */
-  ensure(ids: string[], opts: { audio?: boolean } = {}) {
+  /**
+   * Queue whatever hasn't been analyzed (or tagged) yet; `audio: false` only fetches tags (cheap).
+   * `urgent` is for songs someone is waiting for: they go ahead of the library's backlog, which
+   * after an upgrade can be every song in it.
+   */
+  ensure(ids: string[], opts: { audio?: boolean; urgent?: boolean } = {}) {
     const unique = [...new Set(ids)].filter((id) => !id.startsWith('track:'));
-    if (!unique.length) return;
+    if (!unique.length || this.closed) return;
     if (this.canAnalyzeAudio && opts.audio !== false) {
       // Done once both the features and the mix map are measured by their current versions (or
       // failed recently): a song measured before mix maps existed, or before a version bump, is
       // measured again in the background.
-      const retryAfter = new Date(Date.now() - RETRY_FAILED_MS).toISOString();
-      const done = new Set(
-        this.select<{ recording_id: string }>(
-          `SELECT f.recording_id FROM track_features f JOIN mix_maps m ON m.recording_id = f.recording_id
-           WHERE f.version = ? AND (f.features IS NOT NULL OR f.analyzed_at > ?)
-             AND m.version = ? AND (m.data IS NOT NULL OR m.analyzed_at > ?) AND f.recording_id IN`,
-          unique,
-          [ANALYSIS_VERSION, retryAfter, MIX_MAP_VERSION, retryAfter],
-        ).map((r) => r.recording_id),
-      );
-      for (const id of unique) if (!done.has(id) && !this.running.has(id)) this.audioQueue.add(id);
+      const features = this.featuresDone(unique);
+      const maps = this.mixMapsDone(unique);
+      for (const id of unique) {
+        if ((features.has(id) && maps.has(id)) || this.running.has(id) || this.urgentQueue.has(id)) continue;
+        if (opts.urgent) {
+          this.audioQueue.delete(id);
+          this.urgentQueue.add(id);
+        } else this.audioQueue.add(id);
+      }
       this.pump();
     }
     // ListenBrainz knows songs by MusicBrainz id only, and one unknown id fails a whole batch.
@@ -157,17 +214,47 @@ export class Analyzer {
     if (this.metaQueue.size > before) this.scheduleMeta();
   }
 
-  /** How many of `ids` are still waiting for analysis or tags. */
-  pending(ids: string[]): number {
-    return new Set(ids.filter((id) => this.audioQueue.has(id) || this.running.has(id) || this.metaQueue.has(id))).size;
+  /**
+   * How many of `ids` are still waiting for analysis or tags. `mixMaps: false` leaves out songs
+   * waiting only for their mix map (a playlist cover needs features and tags, nothing more).
+   */
+  pending(ids: string[], opts: { mixMaps?: boolean } = {}): number {
+    let audio = ids.filter((id) => this.urgentQueue.has(id) || this.audioQueue.has(id) || this.running.has(id));
+    if (opts.mixMaps === false) {
+      const measured = this.featuresDone(audio);
+      audio = audio.filter((id) => !measured.has(id));
+    }
+    return new Set([...audio, ...ids.filter((id) => this.metaQueue.has(id))]).size;
+  }
+
+  /** Songs whose features are measured by the current version, or failed too recently to try again. */
+  private featuresDone(ids: string[]): Set<string> {
+    return this.doneIn('track_features', 'features', ANALYSIS_VERSION, ids);
+  }
+
+  /** Songs whose mix map is made by the current version, or failed too recently to try again. */
+  private mixMapsDone(ids: string[]): Set<string> {
+    return this.doneIn('mix_maps', 'data', MIX_MAP_VERSION, ids);
+  }
+
+  private doneIn(table: string, column: string, version: number, ids: string[]): Set<string> {
+    const retryAfter = new Date(Date.now() - RETRY_FAILED_MS).toISOString();
+    return new Set(
+      this.select<{ recording_id: string }>(
+        `SELECT recording_id FROM ${table} WHERE version = ? AND (${column} IS NOT NULL OR analyzed_at > ?) AND recording_id IN`,
+        ids,
+        [version, retryAfter],
+      ).map((r) => r.recording_id),
+    );
   }
 
   private pump() {
     // One song at a time: decoding and measuring are background work, the NAS has other things to do.
     const limit = this.opts.concurrency ?? 1;
-    while (this.running.size < limit && this.audioQueue.size) {
-      const id = this.audioQueue.values().next().value!;
-      this.audioQueue.delete(id);
+    while (!this.closed && this.running.size < limit && (this.urgentQueue.size || this.audioQueue.size)) {
+      const queue = this.urgentQueue.size ? this.urgentQueue : this.audioQueue;
+      const id = queue.values().next().value!;
+      queue.delete(id);
       this.running.add(id);
       void this.analyze(id).finally(() => {
         this.running.delete(id);
@@ -187,10 +274,23 @@ export class Analyzer {
        ON CONFLICT (recording_id) DO UPDATE SET version = excluded.version, data = excluded.data,
          error = excluded.error, analyzed_at = excluded.analyzed_at`,
     );
-    // Only what's missing: a song measured before mix maps existed keeps its features.
-    const needsFeatures = !this.features([id]).has(id);
-    const needsMixMap = !this.mixMaps([id]).has(id);
+    // Only what's missing (or failed long enough ago): a song measured before mix maps existed
+    // keeps its features.
+    const needsFeatures = !this.featuresDone([id]).has(id);
+    const needsMixMap = !this.mixMapsDone([id]).has(id);
+    let lost = false;
     const fail = (save: typeof saveFeatures, version: number, what: string, err: unknown) => {
+      if (err instanceof DspWorkerLost) {
+        // Nothing wrong with the song: measured again (soon) rather than failed for a day. Unless
+        // it keeps happening, when the song may be what kills the worker, or the analyzer was closed.
+        const losses = (this.workerLosses.get(id) ?? 0) + 1;
+        this.workerLosses.set(id, losses);
+        if (this.closed) return;
+        if (losses <= WORKER_LOST_RETRIES) {
+          lost = true;
+          return;
+        }
+      }
       this.opts.log.warn({ err, recordingId: id }, `${what} failed`);
       save.run(id, version, null, (err as Error).message, new Date().toISOString());
     };
@@ -203,7 +303,7 @@ export class Analyzer {
       if (needsMixMap) fail(saveMixMap, MIX_MAP_VERSION, 'mix analysis', err);
       return;
     }
-    const { pcm, duration, decodeTail } = decoded;
+    const { pcm, findEnd } = decoded;
 
     if (needsFeatures) {
       try {
@@ -215,20 +315,23 @@ export class Analyzer {
     }
     if (needsMixMap) {
       try {
-        // A long song's outro is past the head: its end is decoded too. Without it the map's outro
-        // would be somewhere in the middle of the song, so a failed tail fails the map.
-        const tail = duration > MIX_HEAD_SECONDS ? await decodeTail() : null;
+        const { tail, duration } = await findEnd().catch((err: Error) => {
+          throw new Error(`tail: ${err.message}`, { cause: err });
+        });
         const map = await this.dsp.mixMap(pcm, tail, duration);
         saveMixMap.run(id, MIX_MAP_VERSION, JSON.stringify(map), null, new Date().toISOString());
       } catch (err) {
         fail(saveMixMap, MIX_MAP_VERSION, 'mix analysis', err);
       }
     }
+    if (lost) this.urgentQueue.add(id); // next, once this run is over (see pump)
+    else this.workerLosses.delete(id);
   }
 
   /**
-   * The song's first MAX_SECONDS as mono PCM at SAMPLE_RATE, its duration (the library's, else what
-   * was decoded), and a way to decode its last MIX_TAIL_SECONDS as well.
+   * The song's first MAX_SECONDS as mono PCM at SAMPLE_RATE, and a way to find its end: its exact
+   * duration and, for a song longer than that, its last MIX_TAIL_SECONDS (null for a shorter one,
+   * which the head holds all of).
    */
   private async decodeHead(id: string) {
     const track = await this.library.trackByRecording(id);
@@ -237,11 +340,55 @@ export class Analyzer {
     const { media, path } = this.files.resolve(file);
     const decode = media.pcm?.bind(media);
     if (!decode) throw new Error('This source can’t decode audio for analysis');
-    const pcm = await decode(path, { sampleRate: SAMPLE_RATE, maxSeconds: MAX_SECONDS });
-    const decodedSeconds = pcm.length / 2 / SAMPLE_RATE;
-    const duration = track.duration > 0 ? track.duration : decodedSeconds;
-    const decodeTail = () => decode(path, { sampleRate: SAMPLE_RATE, maxSeconds: MIX_TAIL_SECONDS, fromEnd: true });
-    return { pcm, duration, decodeTail };
+    const signal = () => AbortSignal.timeout(DECODE_TIMEOUT_MS);
+    const head = await decode(path, { sampleRate: SAMPLE_RATE, maxSeconds: MAX_SECONDS, signal: signal() });
+    const exactSeek = seeksInexactly(track.format);
+    const read = (startSeconds: number, maxSeconds: number) =>
+      decode(path, { sampleRate: SAMPLE_RATE, startSeconds, maxSeconds, ...(exactSeek ? { exactSeek } : {}), signal: signal() });
+    const findEnd = async (): Promise<{ tail: Buffer | null; duration: number }> => {
+      // Less than asked for: that's the whole song, to the sample.
+      if (secondsOf(head) < MAX_SECONDS - FULL_SLACK_SECONDS) return { tail: null, duration: secondsOf(head) };
+      return this.findEnd(read, head, track.duration);
+    };
+    return { pcm: head, findEnd };
+  }
+
+  /**
+   * The last MIX_TAIL_SECONDS of a song whose first MAX_SECONDS are `head`, and its duration, by
+   * decoding windows at known positions until one stops short of what was asked: there is the end.
+   * `listed` (the library's length, maybe 0) only says where to look first.
+   */
+  private async findEnd(
+    read: (startSeconds: number, maxSeconds: number) => Promise<Buffer>,
+    head: Buffer,
+    listed: number,
+  ): Promise<{ tail: Buffer; duration: number }> {
+    const headSeconds = secondsOf(head);
+    let start = Math.max(headSeconds, Math.floor(listed - MIX_TAIL_SECONDS - TAIL_MARGIN_SECONDS));
+    let window = MIX_TAIL_SECONDS + TAIL_SPARE_SECONDS;
+    for (let tries = 0; tries < TAIL_TRIES; tries++) {
+      const pcm = await read(start, window);
+      const got = secondsOf(pcm);
+      if (got >= window - FULL_SLACK_SECONDS) {
+        // Not the end yet: the song runs on past where the library says.
+        start += got - MIX_TAIL_SECONDS;
+        window = Math.min(window * 2, MAX_TAIL_WINDOW_SECONDS);
+        continue;
+      }
+      if (got === 0 && start > headSeconds) {
+        // Started past the end: the song is shorter than the library says. It ends after the head.
+        start = headSeconds;
+        continue;
+      }
+      const duration = start + got;
+      const tailStart = Math.max(0, duration - MIX_TAIL_SECONDS);
+      if (tailStart >= start - 1e-6) return { tail: pcm.subarray(byteAt(tailStart - start)), duration };
+      // The window began inside the last 3 minutes. Right after the head, their start is in the head.
+      if (start <= headSeconds) return { tail: Buffer.concat([head.subarray(byteAt(tailStart), byteAt(start)), pcm]), duration };
+      // Else the song is shorter than the library says: decode them again, now that the end is known.
+      start = Math.max(headSeconds, tailStart);
+    }
+    throw new Error(`No end found in the first ${Math.round((start + MIX_TAIL_SECONDS) / 60)} minutes`);
   }
 
   private scheduleMeta() {
@@ -330,5 +477,10 @@ function toMeta(meta: LbRecordingMetadata | undefined): TrackMeta {
   const year = Number(meta?.recording?.first_release_date?.slice(0, 4)) || meta?.release?.year;
   return { tags, year: year && year > 1000 ? year : undefined };
 }
+
+/** Seconds of mono s16le PCM at SAMPLE_RATE. */
+const secondsOf = (pcm: Buffer) => pcm.length / 2 / SAMPLE_RATE;
+/** Where `seconds` into mono s16le PCM at SAMPLE_RATE starts, in bytes. */
+const byteAt = (seconds: number) => Math.round(seconds * SAMPLE_RATE) * 2;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms).unref?.());

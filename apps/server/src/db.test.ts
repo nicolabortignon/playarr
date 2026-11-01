@@ -75,8 +75,25 @@ describe('migrate', () => {
   it('adds mix maps and cue points, both kept by recording', () => {
     const db = new DatabaseSync(':memory:');
     migrate(db);
-    const cols = (t: string) => (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map((c) => c.name);
-    expect(cols('mix_maps')).toEqual(['recording_id', 'version', 'data', 'error', 'analyzed_at']);
-    expect(cols('cue_points')).toEqual(['recording_id', 'mix_in', 'mix_out', 'updated_at']);
+    // [name, part of the primary key, required]
+    const cols = (t: string) =>
+      (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string; pk: number; notnull: number }[]).map((c) => [
+        c.name,
+        c.pk > 0,
+        c.notnull === 1,
+      ]);
+    expect(cols('mix_maps')).toEqual([
+      ['recording_id', true, false],
+      ['version', false, true],
+      ['data', false, false],
+      ['error', false, false],
+      ['analyzed_at', false, true],
+    ]);
+    expect(cols('cue_points')).toEqual([
+      ['recording_id', true, false],
+      ['mix_in', false, false],
+      ['mix_out', false, false],
+      ['updated_at', false, true],
+    ]);
   });
 });

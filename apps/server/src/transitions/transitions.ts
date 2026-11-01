@@ -15,12 +15,12 @@ import {
   type StereoAudio,
   type TransitionPlan,
 } from '@playarr/mix';
-import type { AudioFormat, Track } from '@playarr/shared';
+import type { Track } from '@playarr/shared';
 import { trimCacheDir } from '../cacheDir.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
 import { lowPriority } from '../lowPriority.ts';
-import type { MediaSource } from '../media/source.ts';
+import { seeksInexactly, type MediaSource } from '../media/source.ts';
 
 // Transition files: while A plays, the player asks for A→B. The plan is made at once (it's cheap
 // and pure); the audio is rendered in the background, one transition at a time, and kept on disk
@@ -464,16 +464,6 @@ export class Transitions {
 export function continuesAlbum(a: Track, b: Track): boolean {
   if (a.albumId !== b.albumId) return false;
   return (b.discNumber === a.discNumber && b.trackNumber === a.trackNumber + 1) || (b.discNumber === a.discNumber + 1 && b.trackNumber === 1);
-}
-
-/**
- * Formats that can't be started sample-exactly in the middle. MP3 has no index: a seek is an
- * estimate from the bitrate (or a 100-entry table in VBR files), so a player or ffmpeg jumping into
- * one lands only near the time asked. The others Playarr plays seek exactly: FLAC by its frames
- * and seek table, AAC/ALAC in MP4 by the sample tables, Ogg Vorbis/Opus by granule positions.
- */
-function seeksInexactly(format: AudioFormat): boolean {
-  return format.codec.toUpperCase() === 'MP3' || format.container.toLowerCase() === 'mp3';
 }
 
 /** The excerpt from song time `at` on (it must start at or before it), without copying the samples. */

@@ -61,7 +61,8 @@ export class PlaylistCovers {
     const ids = playlist.items.map((i) => i.recordingId);
     const songs = [...new Set(ids)].sort();
     const live = await this.liveDna(playlist.id, playlist.items);
-    const pending = this.analyzer.pending(ids) > 0;
+    // A cover is drawn from features and tags: songs waiting only for their mix map don't hold it up.
+    const pending = this.analyzer.pending(ids, { mixMaps: false }) > 0;
 
     let snapshot = playlist.snapshot;
     let freeze: CoverSnapshot | undefined;
@@ -95,7 +96,8 @@ export class PlaylistCovers {
   /** DNA of the playlist's songs as they are now; queues analysis of songs not heard yet. */
   async liveDna(playlistId: number, items: PlaylistItem[]): Promise<Dna> {
     const ids = items.map((i) => i.recordingId);
-    this.analyzer.ensure(ids);
+    // Someone is looking at this playlist: its songs go ahead of the library's backlog.
+    this.analyzer.ensure(ids, { urgent: true });
     const [artists, albums] = await Promise.all([this.library.artists(), this.library.albums()]);
     const genres = new Map(artists.map((a) => [a.id, a.genres]));
     const years = new Map(albums.map((a) => [a.id, a.year]));

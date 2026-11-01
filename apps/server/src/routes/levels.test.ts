@@ -36,6 +36,6 @@ describe('levels', () => {
     expect(body.a1.album).toBeGreaterThan(-6);
     expect(body.solo).toEqual({ track: -8 });
     expect(body.a3).toBeUndefined();
-    expect(ensure).toHaveBeenCalledWith(expect.arrayContaining(['a3']), { audio: true });
+    expect(ensure).toHaveBeenCalledWith(expect.arrayContaining(['a3']), { audio: true, urgent: true });
   });
 });

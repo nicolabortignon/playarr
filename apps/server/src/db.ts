@@ -240,8 +240,6 @@ export function openDatabase(dataDir: string): DatabaseSync {
   return db;
 }
 
-export const MIGRATION_COUNT = MIGRATIONS.length;
-
 /** Run the migrations this database hasn't had yet (up to `upTo`, for tests of a migration). */
 export function migrate(db: DatabaseSync, upTo = MIGRATIONS.length) {
   const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number };

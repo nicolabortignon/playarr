@@ -2,7 +2,7 @@ import { Worker } from 'node:worker_threads';
 import { analyzeMix, renderTransition, type TransitionPlan } from '@playarr/mix';
 import { afterEach, describe, expect, it } from 'vitest';
 import { analyzePcm, pcmToFloat, SAMPLE_RATE } from './dsp.ts';
-import { DspThread } from './dspThread.ts';
+import { DspThread, DspWorkerLost } from './dspThread.ts';
 
 /** 20 s of a 120 BPM click over a low tone, as 16-bit PCM. */
 function clickTrack(): Buffer {
@@ -86,9 +86,29 @@ describe('DspThread', () => {
       "const { parentPort } = require('node:worker_threads');" +
       "parentPort.on('message', (job) => parentPort.postMessage({ id: job.id, error: 'answered' }));";
     thread = new DspThread({ startWorker: () => new Worker(started++ ? answers : quits, { eval: true }) });
-    await expect(thread.analyze(clickTrack())).rejects.toThrow(/stopped/);
+    await expect(thread.analyze(clickTrack())).rejects.toThrow(DspWorkerLost);
     await expect(thread.analyze(clickTrack())).rejects.toThrow('answered');
     expect(started).toBe(2);
+  });
+
+  it('takes a new job straight after being closed, on a fresh worker', async () => {
+    thread = new DspThread();
+    const pcm = clickTrack();
+    const waiting = thread.analyze(pcm);
+    thread.close();
+    await expect(waiting).rejects.toThrow(DspWorkerLost);
+    expect(await thread.analyze(pcm)).toEqual(analyzePcm(pcmToFloat(pcm)));
+  });
+
+  it('fails a job the worker can’t be sent, without leaving it waiting', async () => {
+    // A worker that never answers: the job must fail on sending, not wait for an answer.
+    const silent = "require('node:worker_threads').parentPort.on('message', () => {});";
+    thread = new DspThread({ startWorker: () => new Worker(silent, { eval: true }) });
+    const excerpt = () => ({ left: new Float32Array(4), right: new Float32Array(4), start: 0 });
+    // A function can't be copied to another thread, so postMessage throws.
+    const plan = { reason: () => 'not copyable' } as unknown as TransitionPlan;
+    await expect(thread.render(plan, excerpt(), excerpt())).rejects.toThrow();
+    expect(thread['pending'].size).toBe(0);
   });
 });
 

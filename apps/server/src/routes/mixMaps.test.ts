@@ -40,7 +40,7 @@ describe('mix map routes', () => {
     const res = await app.inject({ method: 'POST', url: '/api/mix-maps', payload: { ids: [SONG, OTHER, SONG] } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ [SONG]: { ...map(200), cues: { mixOut: 180 } } });
-    expect(analyzer.ensure).toHaveBeenCalledWith([OTHER], { audio: true });
+    expect(analyzer.ensure).toHaveBeenCalledWith([OTHER], { audio: true, urgent: true });
   });
 
   it('leaves cues out for songs without any', async () => {

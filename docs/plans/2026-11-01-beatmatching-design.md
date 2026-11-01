@@ -20,8 +20,9 @@ option and works on every device, a locked iPhone included. The phone always sho
 
 ## 1. The mix map (server analysis)
 
-The analyzer gains a **mix map** per recording, stored next to the existing audio features
-(`ANALYSIS_VERSION` bump; songs are re-measured in the background, one at a time, as now).
+The analyzer gains a **mix map** per recording, in its own table next to the existing audio features
+and with its own version (`MIX_MAP_VERSION`), so no `ANALYSIS_VERSION` bump: songs without a current
+map are measured in the background, one at a time, as now, and songs someone is waiting for go first.
 
 - **Whole song.** Long songs are measured at both ends (the outro is where you mix out), not just the first 7 minutes.
 - **Beat grid.** Tempo to 0.01 BPM, the first beat's time, every beat (a constant grid with a drift check),

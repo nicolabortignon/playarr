@@ -4,6 +4,12 @@ import { Worker } from 'node:worker_threads';
 import { analyzeMix, renderTransition, type Excerpt, type MixMap, type StereoAudio, type TransitionPlan } from '@playarr/mix';
 import { analyzePcm, pcmToFloat, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
 
+/**
+ * The job failed because the worker went away (crashed, stopped or was closed), not because of what
+ * it was given: the same job may well succeed on the next worker.
+ */
+export class DspWorkerLost extends Error {}
+
 type Pending = { resolve: (answer: WorkerAnswer) => void; reject: (e: Error) => void };
 
 /** What the worker sends back: one of these per job, matched up by id. */
@@ -80,14 +86,20 @@ export class DspThread {
   close() {
     const worker = this.worker;
     if (!worker) return;
-    this.lost(worker, new Error('DSP worker closed'));
+    this.lost(worker, new DspWorkerLost('DSP worker closed'));
     void worker.terminate();
   }
 
   private send(worker: Worker, job: WorkerJob, transfer: ArrayBuffer[]): Promise<WorkerAnswer> {
     return new Promise((resolve, reject) => {
       this.pending.set(job.id, { resolve, reject });
-      worker.postMessage(job, transfer);
+      try {
+        worker.postMessage(job, transfer);
+      } catch (err) {
+        // Never sent (something in it can't be copied to another thread), so no answer will come.
+        this.pending.delete(job.id);
+        reject(err as Error);
+      }
     });
   }
 
@@ -105,9 +117,9 @@ export class DspThread {
         this.pending.delete(answer.id);
         p?.resolve(answer);
       });
-      worker.on('error', (err: Error) => this.lost(worker, err));
+      worker.on('error', (err: Error) => this.lost(worker, new DspWorkerLost(`DSP worker failed: ${err.message}`, { cause: err })));
       // Any exit, a clean one included: a worker that's gone never answers, and its jobs would wait forever.
-      worker.on('exit', (code) => this.lost(worker, new Error(`DSP worker stopped (${code})`)));
+      worker.on('exit', (code) => this.lost(worker, new DspWorkerLost(`DSP worker stopped (${code})`)));
       this.worker = worker;
       return worker;
     } catch {
