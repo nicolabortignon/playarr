@@ -34,3 +34,18 @@ export function camelotDistance(a: Camelot, b: Camelot): number {
 export function keysCompatible(a: Camelot, b: Camelot): boolean {
   return camelotDistance(a, b) <= 1;
 }
+
+/**
+ * The Camelot code of a key, given its tonic as a pitch class (0 = C, 1 = C♯ … 11 = B) and whether
+ * it is minor. Going up a fifth (7 semitones) is one step clockwise, and C major sits at 8B; a minor
+ * key shares its number with its relative major, three semitones up (A minor = C major's 8, so 8A).
+ */
+export function toCamelot(pitchClass: number, minor: boolean): Camelot {
+  if (!Number.isInteger(pitchClass) || pitchClass < 0 || pitchClass > 11) {
+    throw new RangeError(`Not a pitch class (0–11): ${pitchClass}`);
+  }
+  const majorTonic = minor ? (pitchClass + 3) % 12 : pitchClass;
+  const fifthsFromC = (majorTonic * 7) % 12;
+  const number = ((fifthsFromC + 7) % 12) + 1; // C (0 fifths) lands on 8
+  return `${number}${minor ? 'A' : 'B'}`;
+}

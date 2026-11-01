@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { camelotDistance, isCamelot, keysCompatible } from './camelot.ts';
+import { camelotDistance, isCamelot, keysCompatible, toCamelot } from './camelot.ts';
 import type { Camelot } from './types.ts';
 
 describe('camelotDistance', () => {
@@ -48,5 +48,40 @@ describe('isCamelot', () => {
     ['', false],
   ])('%s: %s', (code, valid) => {
     expect(isCamelot(code)).toBe(valid);
+  });
+});
+
+describe('toCamelot', () => {
+  // The standard Camelot wheel (Mixed In Key), written out by hand rather than computed, so the
+  // test checks the formula against the published chart. Pitch classes count semitones from C.
+  const wheel: [pitchClass: number, name: string, major: Camelot, minor: Camelot][] = [
+    [0, 'C', '8B', '5A'],
+    [1, 'C#/Db', '3B', '12A'],
+    [2, 'D', '10B', '7A'],
+    [3, 'D#/Eb', '5B', '2A'],
+    [4, 'E', '12B', '9A'],
+    [5, 'F', '7B', '4A'],
+    [6, 'F#/Gb', '2B', '11A'],
+    [7, 'G', '9B', '6A'],
+    [8, 'G#/Ab', '4B', '1A'],
+    [9, 'A', '11B', '8A'],
+    [10, 'A#/Bb', '6B', '3A'],
+    [11, 'B', '1B', '10A'],
+  ];
+
+  it.each(wheel)('pitch class %i (%s): major %s, minor %s', (pitchClass, _name, major, minor) => {
+    expect(toCamelot(pitchClass, false)).toBe(major);
+    expect(toCamelot(pitchClass, true)).toBe(minor);
+  });
+
+  it('gives every one of the 24 codes exactly once', () => {
+    const codes = wheel.flatMap(([pitchClass]) => [toCamelot(pitchClass, false), toCamelot(pitchClass, true)]);
+    expect(new Set(codes).size).toBe(24);
+  });
+
+  it('refuses a pitch class outside 0–11', () => {
+    expect(() => toCamelot(12, false)).toThrow(RangeError);
+    expect(() => toCamelot(-1, true)).toThrow(RangeError);
+    expect(() => toCamelot(1.5, true)).toThrow(RangeError);
   });
 });
