@@ -85,15 +85,37 @@ export async function recordingMetadata(mbids: string[], signal?: AbortSignal): 
   return out;
 }
 
-/** Genre/mood tags and release info for many recordings. Throws when ListenBrainz can't be reached. */
-export async function recordingTags(mbids: string[], signal?: AbortSignal): Promise<Record<string, LbRecordingMetadata>> {
+/** ListenBrainz said to slow down: try again after `retryIn` seconds. */
+export class RateLimited extends Error {
+  constructor(readonly retryIn: number) {
+    super(`ListenBrainz rate limit: retry in ${retryIn} s`);
+  }
+}
+
+/**
+ * Genre/mood tags and release info for many recordings, with how many more requests ListenBrainz
+ * allows before `resetIn` seconds pass. Throws RateLimited when told to wait, else when unreachable.
+ */
+export async function recordingTags(
+  mbids: string[],
+  signal?: AbortSignal,
+): Promise<{ data: Record<string, LbRecordingMetadata>; remaining?: number; resetIn?: number }> {
   const url = `https://api.listenbrainz.org/1/metadata/recording/?recording_mbids=${mbids.join(',')}&inc=tag%20release`;
   const res = await fetch(url, {
     headers: { Accept: 'application/json' },
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
   });
+  const header = (name: string) => {
+    const v = Number(res.headers.get(name));
+    return res.headers.has(name) && Number.isFinite(v) ? v : undefined;
+  };
+  if (res.status === 429) throw new RateLimited(header('X-RateLimit-Reset-In') ?? 10);
   if (!res.ok) throw new Error(`ListenBrainz HTTP ${res.status}`);
-  return (await res.json()) as Record<string, LbRecordingMetadata>;
+  return {
+    data: (await res.json()) as Record<string, LbRecordingMetadata>,
+    remaining: header('X-RateLimit-Remaining'),
+    resetIn: header('X-RateLimit-Reset-In'),
+  };
 }
 
 export interface LbSimilarArtist {

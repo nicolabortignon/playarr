@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
+import { RateLimited, recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
 import { ANALYSIS_VERSION, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
@@ -15,6 +15,9 @@ const MAX_SECONDS = 420;
 const RETRY_FAILED_MS = 24 * 60 * 60_000;
 const REFRESH_META_MS = 30 * 24 * 60 * 60_000;
 const TAG_BATCH = 25;
+/** Between tag requests when ListenBrainz isn't asking us to wait. */
+const TAG_PAUSE_MS = 250;
+const TAG_TRIES = 3;
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -151,16 +154,30 @@ export class Analyzer {
       `INSERT INTO track_meta (recording_id, tags, year, fetched_at) VALUES (?, ?, ?, ?)
        ON CONFLICT (recording_id) DO UPDATE SET tags = excluded.tags, year = excluded.year, fetched_at = excluded.fetched_at`,
     );
+    let failures = 0;
     try {
       while (this.metaQueue.size) {
         const batch = [...this.metaQueue].slice(0, TAG_BATCH);
         let data: Record<string, LbRecordingMetadata>;
         try {
-          data = await recordingTags(batch);
+          const answer = await recordingTags(batch);
+          data = answer.data;
+          failures = 0;
+          // Pace by what ListenBrainz says is left; a whole library is thousands of requests.
+          await sleep(answer.remaining !== undefined && answer.remaining <= 1 ? (answer.resetIn ?? 10) * 1000 : TAG_PAUSE_MS);
         } catch (err) {
-          // ListenBrainz unreachable: leave these for the next ensure() rather than storing "no tags".
+          if (err instanceof RateLimited) {
+            await sleep(err.retryIn * 1000);
+            continue; // the same batch again
+          }
+          // Unreachable: a few tries a while apart, then leave the rest for the next ensure() (never
+          // store "no tags" for songs that weren't asked about).
+          if (++failures < TAG_TRIES) {
+            await sleep(30_000 * failures);
+            continue;
+          }
           this.opts.log.warn({ err }, 'ListenBrainz tags unavailable');
-          for (const id of batch) this.metaQueue.delete(id);
+          this.metaQueue.clear();
           break;
         }
         const now = new Date().toISOString();
@@ -210,3 +227,5 @@ function toMeta(meta: LbRecordingMetadata | undefined): TrackMeta {
   const year = Number(meta?.recording?.first_release_date?.slice(0, 4)) || meta?.release?.year;
   return { tags, year: year && year > 1000 ? year : undefined };
 }
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms).unref?.());
