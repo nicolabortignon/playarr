@@ -12,6 +12,8 @@ const schema = z.object({
   HOST: z.string().default('0.0.0.0'),
   LIBRARY_REFRESH_MINUTES: z.coerce.number().positive().default(10),
   CACHE_DIR: z.string().default('.cache'),
+  // The artwork cache is trimmed to this size, least recently used first.
+  ART_CACHE_MB: z.coerce.number().positive().default(2048),
   // User data (favorites…). Unlike the cache, don't delete this.
   DATA_DIR: z.string().default('data'),
   WEB_DIST: z.string().optional(),

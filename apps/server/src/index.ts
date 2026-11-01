@@ -27,7 +27,7 @@ import { createMediaSource } from './media/index.ts';
 import { hasRclone } from './media/rclone.ts';
 import { apiRoutes } from './routes/api.ts';
 import { metadataRoutes } from './routes/metadata.ts';
-import { artRoutes, LocalArt } from './routes/art.ts';
+import { artRoutes, LocalArt, trimArtCache } from './routes/art.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
 import { playlistRoutes } from './routes/playlists.ts';
@@ -175,3 +175,12 @@ library.loadStored();
 library.refresh().catch(() => {});
 library.startAutoRefresh(config.LIBRARY_REFRESH_MINUTES);
 watchStalls(app.log);
+
+// Keep the artwork cache to its size: shortly after starting, then every few hours.
+const trimArt = () =>
+  trimArtCache(resolve(config.CACHE_DIR, 'art'), config.ART_CACHE_MB * 1024 * 1024).then(
+    ({ removed, bytes }) => removed && app.log.info(`Artwork cache trimmed: ${removed} images removed, ${(bytes / 1048576).toFixed(0)} MB kept`),
+    (err) => app.log.warn({ err }, 'artwork cache trim failed'),
+  );
+setTimeout(trimArt, 5 * 60_000).unref();
+setInterval(trimArt, 6 * 3600_000).unref();

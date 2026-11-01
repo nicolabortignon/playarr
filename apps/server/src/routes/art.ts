@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
@@ -289,4 +289,33 @@ async function saveCached(dir: string, file: string, body: Buffer, mime: string)
   } catch {
     await rm(tmp, { force: true }).catch(() => {});
   }
+}
+
+/**
+ * Keep the artwork cache under `maxBytes`: what was used least recently goes first (an image is made
+ * again if it's needed). Pages of music outside the library would otherwise grow it forever.
+ */
+export async function trimArtCache(dir: string, maxBytes: number): Promise<{ removed: number; bytes: number }> {
+  const names = await readdir(dir).catch(() => [] as string[]);
+  const images = new Map<string, { bytes: number; used: number }>();
+  for (const name of names) {
+    const info = await stat(join(dir, name)).catch(() => null);
+    if (!info?.isFile()) continue;
+    const base = name.replace(/\.mime$/, '');
+    const entry = images.get(base) ?? { bytes: 0, used: 0 };
+    entry.bytes += info.size;
+    // Reading a file moves its access time on (where the disk keeps it); otherwise, when it was made.
+    entry.used = Math.max(entry.used, info.atimeMs, info.mtimeMs);
+    images.set(base, entry);
+  }
+  let bytes = [...images.values()].reduce((sum, e) => sum + e.bytes, 0);
+  let removed = 0;
+  for (const [base, entry] of [...images].sort((a, b) => a[1].used - b[1].used)) {
+    if (bytes <= maxBytes) break;
+    await rm(join(dir, base), { force: true });
+    await rm(join(dir, `${base}.mime`), { force: true });
+    bytes -= entry.bytes;
+    removed++;
+  }
+  return { removed, bytes };
 }
