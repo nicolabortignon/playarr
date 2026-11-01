@@ -37,14 +37,14 @@ export function FavoritesPage() {
           <div className="-mt-4 mb-8 flex flex-wrap items-center gap-3 md:-mt-6">
             <button
               type="button"
-              onClick={() => playTracks(favorites, 0, { shuffle: false })}
+              onClick={() => playTracks(favorites, 0, { shuffle: false, source: FAVORITES })}
               className="inline-flex h-12 items-center gap-2 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-12px_var(--accent)] transition hover:brightness-110 active:scale-[0.98]"
             >
               <Play className="size-5 fill-current" /> Play
             </button>
             <button
               type="button"
-              onClick={() => playTracks(favorites, 0, { shuffle: true })}
+              onClick={() => playTracks(favorites, 0, { shuffle: true, source: FAVORITES })}
               className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/15 px-5 text-paper transition hover:border-paper/35 hover:bg-paper/5"
             >
               <Shuffle className="size-[18px]" /> Shuffle
@@ -54,10 +54,12 @@ export function FavoritesPage() {
             </span>
           </div>
           <div className="-mx-3">
-            <TrackList tracks={favorites} variant="mixed" />
+            <TrackList tracks={favorites} variant="mixed" source={FAVORITES} />
           </div>
         </>
       )}
     </div>
   );
 }
+
+export const FAVORITES = { label: 'Favorites', href: '/favorites' };

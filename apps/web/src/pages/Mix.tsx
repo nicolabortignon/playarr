@@ -34,6 +34,7 @@ export function MixPage() {
     );
   }
 
+  const source = { label: mix.title, href: `/mixes/${mix.key}` };
   return (
     <div className="relative px-5 pt-6 md:px-10 md:pt-14">
       <BackButton fallback="/" className="absolute top-3 left-3 z-20" />
@@ -59,7 +60,7 @@ export function MixPage() {
         <button
           type="button"
           disabled={!mix.tracks.length}
-          onClick={() => playTracks(mix.tracks, 0, { shuffle: false })}
+          onClick={() => playTracks(mix.tracks, 0, { shuffle: false, source })}
           aria-label={`Play ${mix.title}`}
           className="inline-flex h-12 items-center gap-2 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-12px_var(--accent)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
         >
@@ -68,7 +69,7 @@ export function MixPage() {
         <button
           type="button"
           disabled={!mix.tracks.length}
-          onClick={() => playTracks(mix.tracks, 0, { shuffle: true })}
+          onClick={() => playTracks(mix.tracks, 0, { shuffle: true, source })}
           aria-label={`Shuffle ${mix.title}`}
           className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/15 px-5 text-paper transition hover:border-paper/35 hover:bg-paper/5 disabled:opacity-40"
         >
@@ -100,7 +101,7 @@ export function MixPage() {
       </div>
 
       <div className="mt-8 -mx-3 max-w-5xl">
-        <TrackList tracks={mix.tracks} variant="mixed" />
+        <TrackList tracks={mix.tracks} variant="mixed" source={source} />
       </div>
     </div>
   );

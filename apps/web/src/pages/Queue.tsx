@@ -22,6 +22,7 @@ export function QueuePage() {
   // What plays next, as positions in the player's queue (unique even when a song is queued twice).
   const upcomingIds = usePlayer(useShallow((s) => s.order.slice(s.pos + 1)));
   const queue = usePlayer((s) => s.queue);
+  const source = usePlayer((s) => s.source);
   const upcoming = upcomingIds.map((i) => queue[i]!);
   const total = upcoming.reduce((sum, t) => sum + t.duration, 0);
   const openPicker = useUI((s) => s.openPlaylistPicker);
@@ -50,7 +51,17 @@ export function QueuePage() {
       </PageTitle>
 
       <section className="mb-12">
-        <div className="mb-3 font-mono text-[11px] tracking-[0.25em] text-muted uppercase">Now playing</div>
+        <div className="mb-3 font-mono text-[11px] tracking-[0.25em] text-muted uppercase">
+          Now playing
+          {source && (
+            <>
+              {' · from '}
+              <Link to={source.href} className="text-paper-dim hover:text-paper hover:underline">
+                {source.label}
+              </Link>
+            </>
+          )}
+        </div>
         <div className="flex items-center gap-4 rounded-lg border border-line bg-paper/[0.03] p-3 pr-5">
           <Cover src={track.coverUrl} size={72} alt="" className="size-[72px] shrink-0 rounded-[4px]" />
           <div className="min-w-0 flex-1">

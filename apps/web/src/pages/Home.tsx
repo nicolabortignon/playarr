@@ -9,6 +9,7 @@ import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, greeting } from '../lib/format';
 import { useAlbums, useArtists, useFavorites, useHealth, useMixes, usePlaylists, useRandomAlbums } from '../lib/queries';
+import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
 import { shuffleLibrary } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -70,7 +71,7 @@ export function HomePage() {
         <section className="mb-14 max-w-4xl">
           <SectionHeader kicker="Songs you love" title="Favorites" to="/favorites" />
           <div className="-mx-3">
-            <TrackList tracks={favorites.slice(0, 5)} variant="mixed" />
+            <TrackList tracks={favorites.slice(0, 5)} variant="mixed" source={FAVORITES} />
           </div>
         </section>
       )}

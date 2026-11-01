@@ -16,7 +16,7 @@ import { GRID, PageTitle } from './Albums';
 export async function playPlaylist(id: number, opts?: { shuffle?: boolean }) {
   const p = await queryClient.fetchQuery({ queryKey: ['playlist', id], queryFn: () => api.playlist(id) });
   const tracks = p.items.flatMap((i) => (i.track ? [i.track] : []));
-  usePlayer.getState().playTracks(tracks, 0, opts);
+  usePlayer.getState().playTracks(tracks, 0, { ...opts, source: { label: p.name, href: `/playlists/${id}` } });
 }
 
 export function PlaylistsPage() {

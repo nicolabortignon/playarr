@@ -6,7 +6,7 @@ import { cn } from '../lib/cn';
 import { useUI } from '../lib/ui';
 import { formatTime } from '../lib/format';
 import { queueTracks } from '../player/actions';
-import { useCurrentTrack, usePlayer } from '../player/store';
+import { useCurrentTrack, usePlayer, type PlaySource } from '../player/store';
 import { Cover } from './Cover';
 import { Equalizer } from './Equalizer';
 import { FavoriteButton } from './FavoriteButton';
@@ -21,13 +21,15 @@ interface TrackListProps {
   showDiscs?: boolean;
   /** Songs on the album that aren't in the library, shown greyed out in their place. */
   missing?: MissingTrack[];
+  /** What playing from this list counts as playing from (an album, a mix…), for "Playing from". */
+  source?: PlaySource;
 }
 
 type Row = { track: Track; index: number } | { missing: MissingTrack };
 const disc = (r: Row) => ('track' in r ? r.track.discNumber : r.missing.discNumber);
 const num = (r: Row) => ('track' in r ? r.track.trackNumber : r.missing.trackNumber);
 
-export function TrackList({ tracks, variant = 'album', showDiscs, missing }: TrackListProps) {
+export function TrackList({ tracks, variant = 'album', showDiscs, missing, source }: TrackListProps) {
   const current = useCurrentTrack();
   const playing = usePlayer((s) => s.playing);
   const playTracks = usePlayer((s) => s.playTracks);
@@ -78,7 +80,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing }: Tra
                 variant === 'album' ? 'grid-cols-[2rem_1fr_auto_auto_auto]' : 'grid-cols-[2.75rem_1fr_auto_auto_auto]',
                 isCurrent && 'bg-paper/[0.035]',
               )}
-              onClick={() => (isCurrent ? toggle() : playTracks(tracks, i))}
+              onClick={() => (isCurrent ? toggle() : playTracks(tracks, i, { source }))}
             >
               <div className="relative grid h-full place-items-center">
                 {variant === 'mixed' ? (

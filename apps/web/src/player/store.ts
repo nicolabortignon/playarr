@@ -4,6 +4,12 @@ import { persist } from 'zustand/middleware';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
+/** What the queue was started from (an album, a mix, a playlist…), for "Playing from". */
+export interface PlaySource {
+  label: string;
+  href: string;
+}
+
 interface PlayerState {
   /** Tracks in the order they were added. */
   queue: Track[];
@@ -20,8 +26,10 @@ interface PlayerState {
   restartToken: number;
   /** Where to resume after a reload. */
   resumeAt: number;
+  /** What the queue was started from; unset, Now Playing shows the song's album. */
+  source?: PlaySource;
 
-  playTracks: (tracks: Track[], startIndex?: number, opts?: { shuffle?: boolean }) => void;
+  playTracks: (tracks: Track[], startIndex?: number, opts?: { shuffle?: boolean; source?: PlaySource }) => void;
   playNext: (tracks: Track[]) => void;
   addToQueue: (tracks: Track[]) => void;
   jumpTo: (orderPos: number) => void;
@@ -78,6 +86,7 @@ export const usePlayer = create<PlayerState>()(
           order,
           pos: shuffle ? 0 : start,
           shuffle,
+          source: opts?.source,
           playing: true,
           resumeAt: 0,
           restartToken: get().restartToken + 1,
@@ -179,7 +188,8 @@ export const usePlayer = create<PlayerState>()(
     {
       name: 'playarr.player',
       version: 1,
-      partialize: ({ queue, order, pos, shuffle, repeat, volume, muted, resumeAt }) => ({
+      partialize: ({ queue, order, pos, shuffle, repeat, volume, muted, resumeAt, source }) => ({
+        source,
         queue,
         order,
         pos,

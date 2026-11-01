@@ -5,24 +5,27 @@ import { toast } from '../lib/toast';
 import { plural } from '../lib/format';
 import { usePlayer } from './store';
 
-const albumTracks = async (id: number) =>
-  (await queryClient.fetchQuery({ queryKey: ['album', id], queryFn: () => api.album(id) })).tracks;
+const fetchAlbum = (id: number) => queryClient.fetchQuery({ queryKey: ['album', id], queryFn: () => api.album(id) });
+const albumTracks = async (id: number) => (await fetchAlbum(id)).tracks;
 
 const artistTracks = (id: number) =>
   queryClient.fetchQuery({ queryKey: ['artist-tracks', id], queryFn: () => api.artistTracks(id) });
 
 /** Play means in order wherever it's pressed; only Shuffle shuffles (not whatever shuffle was left on). */
 export async function playAlbum(id: number, opts?: { shuffle?: boolean }) {
-  usePlayer.getState().playTracks(await albumTracks(id), 0, { shuffle: false, ...opts });
+  const album = await fetchAlbum(id);
+  usePlayer.getState().playTracks(album.tracks, 0, { shuffle: false, ...opts, source: { label: album.title, href: `/albums/${id}` } });
 }
 
 export async function playArtist(id: number, opts?: { shuffle?: boolean }) {
-  usePlayer.getState().playTracks(await artistTracks(id), 0, { shuffle: false, ...opts });
+  const tracks = await artistTracks(id);
+  const source = tracks[0] ? { label: tracks[0].artistName, href: `/artists/${id}` } : undefined;
+  usePlayer.getState().playTracks(tracks, 0, { shuffle: false, ...opts, source });
 }
 
 export async function shuffleLibrary() {
   const tracks = await api.randomTracks(300);
-  usePlayer.getState().playTracks(tracks, 0, { shuffle: true });
+  usePlayer.getState().playTracks(tracks, 0, { shuffle: true, source: { label: 'Your whole library', href: '/albums' } });
 }
 
 export function queueTracks(tracks: Track[], mode: 'next' | 'end') {

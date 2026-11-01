@@ -25,6 +25,7 @@ function Sheet() {
   const openPicker = useUI((s) => s.openPlaylistPicker);
   const showMetadata = useUI((s) => s.showMetadata);
   const track = useCurrentTrack()!;
+  const source = usePlayer((s) => s.source);
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
   const navigate = useNavigate();
@@ -84,8 +85,8 @@ function Sheet() {
           </button>
           <div className="min-w-0 px-4 text-center">
             <div className="font-mono text-[10px] tracking-[0.25em] text-paper-dim/70 uppercase">Playing from</div>
-            <button type="button" onClick={() => go(`/albums/${track.albumId}`)} className="block max-w-full truncate text-[13px] text-paper hover:underline">
-              {track.albumTitle}
+            <button type="button" onClick={() => go(source?.href ?? `/albums/${track.albumId}`)} className="block max-w-full truncate text-[13px] text-paper hover:underline">
+              {source?.label ?? track.albumTitle}
             </button>
           </div>
           <Menu

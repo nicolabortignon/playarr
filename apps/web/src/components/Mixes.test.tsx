@@ -78,6 +78,7 @@ describe('mixes', () => {
     expect(await screen.findByRole('heading', { name: 'Vibes of the hour' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Play Vibes of the hour' }));
     expect(usePlayer.getState().queue.map((t) => t.id)).toEqual([1, 2]);
+    expect(usePlayer.getState().source).toEqual({ label: 'Vibes of the hour', href: '/mixes/vibes' }); // "Playing from"
     fireEvent.click(screen.getByRole('button', { name: /new mix/i }));
     await waitFor(() => expect(regenerate).toHaveBeenCalledWith('vibes'));
     expect(await screen.findByText('Song 3')).toBeTruthy();

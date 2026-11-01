@@ -50,7 +50,7 @@ export function PlaylistPage() {
   const playable = items.flatMap((i) => (i.track ? [i.track] : []));
   const playFrom = (item: PlaylistItem) => {
     const index = playable.findIndex((t) => t === item.track);
-    if (index >= 0) playTracks(playable, index, { shuffle: false });
+    if (index >= 0) playTracks(playable, index, { shuffle: false, source: { label: playlist.name, href: `/playlists/${id}` } });
   };
   const commitOrder = () => {
     const ids = items.map((i) => i.itemId);
@@ -118,7 +118,7 @@ export function PlaylistPage() {
         <button
           type="button"
           disabled={!playable.length}
-          onClick={() => playTracks(playable, 0, { shuffle: false })}
+          onClick={() => playTracks(playable, 0, { shuffle: false, source: { label: playlist.name, href: `/playlists/${id}` } })}
           aria-label={`Play ${playlist.name}`}
           className="inline-flex h-12 items-center gap-2 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-12px_var(--accent)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
         >
@@ -127,7 +127,7 @@ export function PlaylistPage() {
         <button
           type="button"
           disabled={!playable.length}
-          onClick={() => playTracks(playable, 0, { shuffle: true })}
+          onClick={() => playTracks(playable, 0, { shuffle: true, source: { label: playlist.name, href: `/playlists/${id}` } })}
           aria-label={`Shuffle ${playlist.name}`}
           className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/15 px-5 text-paper transition hover:border-paper/35 hover:bg-paper/5 disabled:opacity-40"
         >
