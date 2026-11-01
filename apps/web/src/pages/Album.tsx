@@ -13,6 +13,7 @@ import { useAlbum, useArtist } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
+import { DownloadButton } from '../components/DownloadButton';
 
 export function AlbumPage() {
   const id = Number(useParams().id);
@@ -106,6 +107,10 @@ export function AlbumPage() {
               { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker(album.tracks) },
               { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${album.artistId}`) },
             ]}
+          />
+          <DownloadButton
+            item={{ key: `album:${album.id}`, title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl, href: `/albums/${album.id}` }}
+            tracks={album.tracks}
           />
           <RequestRest album={album} />
         </div>

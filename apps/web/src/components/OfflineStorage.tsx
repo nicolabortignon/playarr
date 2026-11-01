@@ -1,6 +1,7 @@
 import { HardDriveDownload } from 'lucide-react';
 import { formatBytes, plural } from '../lib/format';
-import { canKeepOffline, clearOffline, keptBytes, OFFLINE_LIMITS, setOfflineLimit, useOffline, useWorkerReady } from '../player/offline';
+import { Link } from 'react-router';
+import { canKeepOffline, clearOffline, keptBytes, OFFLINE_LIMITS, setOfflineLimit, splitKept, useOffline, useWorkerReady } from '../player/offline';
 import { PillGroup, SettingsSection } from './SettingsControls';
 
 const LIMIT_OPTIONS = OFFLINE_LIMITS.map((value) => ({ value, label: value ? formatBytes(value) : 'Off' }));
@@ -9,8 +10,11 @@ const LIMIT_OPTIONS = OFFLINE_LIMITS.map((value) => ({ value, label: value ? for
 export function OfflineStorage({ className }: { className?: string }) {
   const songs = useOffline((s) => s.songs);
   const limit = useOffline((s) => s.limit);
-  const count = Object.keys(songs).length;
-  const used = keptBytes(songs);
+  const pins = useOffline((s) => s.pins);
+  const { inDownloads, rest } = splitKept(songs, pins);
+  const count = Object.keys(rest).length;
+  const used = keptBytes(rest);
+  const downloads = Object.keys(pins).length;
   const ready = useWorkerReady();
 
   return (
@@ -43,6 +47,15 @@ export function OfflineStorage({ className }: { className?: string }) {
             </div>
           </div>
 
+          {downloads > 0 && (
+            <p className="mt-4 text-sm text-paper-dim">
+              Plus{' '}
+              <Link to="/downloads" className="text-accent hover:underline">
+                {plural(downloads, 'download')}
+              </Link>{' '}
+              ({formatBytes(keptBytes(inDownloads))}), kept until you remove them.
+            </p>
+          )}
           <p className="mt-4 max-w-prose text-sm text-muted">
             As you listen, the next songs in your queue are saved here, so they start instantly and keep playing without a connection. When
             space runs out, the songs you played longest ago make room.
@@ -63,7 +76,7 @@ export function OfflineStorage({ className }: { className?: string }) {
               value={limit}
               onChange={(value) => void setOfflineLimit(value)}
             />
-            {count > 0 && (
+            {(count > 0 || downloads > 0) && (
               <button
                 type="button"
                 onClick={() => void clearOffline()}

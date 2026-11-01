@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { AudioEngine } from './AudioEngine';
 import { playTracker } from './playTracker';
+import { useOffline } from './offline';
 import { useSleep } from './sleep';
 import { currentTrack, usePlayer } from './store';
 
@@ -206,6 +207,19 @@ describe('AudioEngine', () => {
     expect(usePlayer.getState().playing).toBe(false);
     expect(fake(a).paused).toBe(true);
     expect(useSleep.getState().endOfSong).toBe(false);
+  });
+
+  it('offline, skips to the next song on this device when one can’t load', async () => {
+    const [a] = await start([song(1), song(2), song(3)]);
+    useOffline.setState({ songs: { 3: { url: '/stream/3', bytes: 1, usedAt: 0 } } });
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    await act(async () => {
+      a.dispatchEvent(new Event('error'));
+    });
+    await settle();
+    expect(now()).toBe(3);
+    online.mockRestore();
+    useOffline.setState({ songs: {} });
   });
 
   it('turns loud songs down', async () => {

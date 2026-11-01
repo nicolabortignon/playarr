@@ -5,6 +5,7 @@ import { formatDuration, plural } from '../lib/format';
 import { useFavorites } from '../lib/queries';
 import { usePlayer } from '../player/store';
 import { PageTitle } from './Albums';
+import { DownloadButton } from '../components/DownloadButton';
 
 export function FavoritesPage() {
   const { data: favorites, error, isPending, refetch } = useFavorites();
@@ -49,6 +50,7 @@ export function FavoritesPage() {
             >
               <Shuffle className="size-[18px]" /> Shuffle
             </button>
+            <DownloadButton item={{ key: 'favorites', title: 'Favorites', subtitle: 'Your favorite songs', href: '/favorites' }} tracks={favorites} />
             <span className="ml-1 font-mono text-[12px] text-muted">
               {plural(favorites.length, 'song')} · {formatDuration(total)}
             </span>

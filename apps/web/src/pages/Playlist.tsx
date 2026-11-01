@@ -18,6 +18,7 @@ import { usePlaylist, usePlaylistMutations } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
+import { DownloadButton } from '../components/DownloadButton';
 
 export function PlaylistPage() {
   const id = Number(useParams().id);
@@ -133,6 +134,10 @@ export function PlaylistPage() {
         >
           <Shuffle className="size-[18px]" /> Shuffle
         </button>
+        <DownloadButton
+          item={{ key: `playlist:${id}`, title: playlist.name, subtitle: 'Playlist', coverUrl: playlist.cover.url, href: `/playlists/${id}` }}
+          tracks={playable}
+        />
         <Menu
           className="size-12 border border-paper/15 text-paper"
           label="Playlist actions"

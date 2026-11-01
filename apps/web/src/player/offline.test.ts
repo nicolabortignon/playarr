@@ -1,7 +1,8 @@
 import type { Track } from '@playarr/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadAheadPlan } from './loadAhead';
-import { evictions, keepSong, useOffline } from './offline';
+import { nextToDownload } from './downloads';
+import { addDownload, downloadProgress, evictions, keepSong, removeDownload, setOfflineLimit, splitKept, useOffline } from './offline';
 
 const track = (fileId: number, size = 1000): Track =>
   ({ id: fileId, fileId, size, streamUrl: `/stream/${fileId}`, title: `Song ${fileId}`, duration: 200 }) as Track;
@@ -88,7 +89,7 @@ describe('keeping songs', () => {
       });
       return new Response(body, { headers: { 'Content-Length': String(size) } });
     });
-    useOffline.setState({ songs: {}, limit: 1000, active: null });
+    useOffline.setState({ songs: {}, pins: {}, limit: 1000, active: null });
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -118,5 +119,53 @@ describe('keeping songs', () => {
     await expect(pending).rejects.toThrow();
     expect(useOffline.getState().songs).toEqual({});
     expect(useOffline.getState().active).toBeNull();
+  });
+});
+
+describe('downloads', () => {
+  let store: Map<string, ArrayBuffer>;
+  beforeEach(() => {
+    const fake = fakeCaches();
+    store = fake.store;
+    vi.stubGlobal('caches', fake.caches);
+    vi.stubGlobal('fetch', async (url: string) => {
+      const size = Number(url.split('/').pop()) * 100;
+      return new Response(new Uint8Array(size), { headers: { 'Content-Length': String(size) } });
+    });
+    useOffline.setState({ songs: {}, pins: {}, limit: 1000, active: null });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const album = { key: 'album:1', title: 'Dummy', href: '/albums/1', tracks: [track(4, 400), track(5, 500), track(6, 600)] };
+
+  it('keeps a download’s songs beyond the limit, and they never make room for others', async () => {
+    addDownload(album);
+    for (const t of album.tracks) expect(await keepSong(t, { signal: new AbortController().signal, protect: new Set(), pinned: true })).toBe(true);
+    expect(downloadProgress(useOffline.getState().pins['album:1']!, useOffline.getState().songs)).toEqual({ done: 3, total: 3, bytes: 1500 });
+    // A song kept as you listen fits within the limit on its own.
+    expect(await keepSong(track(7, 700), { signal: new AbortController().signal, protect: new Set() })).toBe(true);
+    const { inDownloads, rest } = splitKept(useOffline.getState().songs, useOffline.getState().pins);
+    expect(Object.keys(inDownloads)).toEqual(['4', '5', '6']);
+    expect(Object.keys(rest)).toEqual(['7']);
+    // Turning keeping-as-you-listen off leaves downloads alone.
+    await setOfflineLimit(0);
+    expect(Object.keys(useOffline.getState().songs)).toEqual(['4', '5', '6']);
+  });
+
+  it('removing a download lets its songs go within the limit', async () => {
+    addDownload(album);
+    for (const t of album.tracks) await keepSong(t, { signal: new AbortController().signal, protect: new Set(), pinned: true });
+    await removeDownload('album:1');
+    expect(useOffline.getState().pins).toEqual({});
+    const left = Object.values(useOffline.getState().songs).reduce((sum, s) => sum + s.bytes, 0);
+    expect(left).toBeLessThanOrEqual(1000);
+    expect(store.size).toBe(Object.keys(useOffline.getState().songs).length);
+  });
+
+  it('fetches downloads in the order they were added, skipping what failed', () => {
+    const pins = { b: { addedAt: 2, tracks: [track(8)] }, a: { addedAt: 1, tracks: [track(1), track(2)] } };
+    expect(nextToDownload(pins, {}, {})?.fileId).toBe(1);
+    expect(nextToDownload(pins, { 1: {} }, { 2: 'no room' })?.fileId).toBe(8);
+    expect(nextToDownload(pins, { 1: {}, 2: {}, 8: {} }, {})).toBeUndefined();
   });
 });

@@ -1,4 +1,4 @@
-import { ChartColumn, ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
+import { ArrowDownToLine, ChartColumn, ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { SectionHeader } from '../components/Section';
@@ -6,6 +6,7 @@ import { plural } from '../lib/format';
 import { useFavorites, useHealth, usePlaylists, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { PageTitle } from './Albums';
+import { useOffline } from '../player/offline';
 
 /** Everything that's "yours" in one place; the Library tab on phones. */
 export function LibraryPage() {
@@ -15,10 +16,12 @@ export function LibraryPage() {
   const { data: requests } = useRequests();
   const openPicker = useUI((s) => s.openPlaylistPicker);
   const lib = health?.library;
+  const downloads = useOffline((s) => Object.keys(s.pins).length);
 
   const rows: { to: string; label: string; icon: LucideIcon; detail?: string }[] = [
     { to: '/mixes', label: 'Made for you', icon: Sparkles },
     { to: '/stats', label: 'Your listening', icon: ChartColumn },
+    ...(downloads ? [{ to: '/downloads', label: 'Downloads', icon: ArrowDownToLine, detail: String(downloads) }] : []),
     { to: '/favorites', label: 'Favorites', icon: Heart, detail: favorites ? plural(favorites.length, 'song') : undefined },
     { to: '/artists', label: 'Artists', icon: LibraryIcon, detail: lib ? String(lib.artists) : undefined },
     { to: '/albums', label: 'Albums', icon: Disc3, detail: lib ? String(lib.albums) : undefined },

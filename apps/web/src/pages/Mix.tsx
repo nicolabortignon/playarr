@@ -8,6 +8,7 @@ import { formatDuration, plural } from '../lib/format';
 import { useMix, useRegenerateMix, useSaveMix } from '../lib/queries';
 import { queueTracks } from '../player/actions';
 import { usePlayer } from '../player/store';
+import { DownloadButton } from '../components/DownloadButton';
 
 /** A generated mix: why these songs, when it changes, and the songs. */
 export function MixPage() {
@@ -84,6 +85,10 @@ export function MixPage() {
           {regenerate.isPending ? <Loader2 className="size-[18px] animate-spin" /> : <RefreshCw className="size-[18px]" />}
           {regenerate.isPending ? 'Mixing…' : 'New mix'}
         </button>
+        <DownloadButton
+          item={{ key: `mix:${mix.key}`, title: mix.title, subtitle: 'Mix', coverUrl: mix.covers[0], href: `/mixes/${mix.key}` }}
+          tracks={mix.tracks}
+        />
         <Menu
           className="size-12 border border-paper/15 text-paper"
           label="Mix actions"

@@ -6,9 +6,11 @@ import { setFaviconAccent } from '../lib/favicon';
 import { usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
 import { canSetVolume, fadeCurve, fadeSeconds, levelGain, silentClip, upNext } from './decks';
+import { useDownloads } from './downloads';
 import { healQueue } from './healQueue';
 import { loadLevels, useLevels } from './levels';
 import { useLoadAhead } from './loadAhead';
+import { useOffline } from './offline';
 import { playTracker } from './playTracker';
 import { useAutoplay } from './radio';
 import { sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
@@ -169,6 +171,7 @@ export function AudioEngine() {
   }, []);
 
   useLoadAhead();
+  useDownloads();
   useAutoplay();
   useSleepTimer(applyVolumes);
 
@@ -476,6 +479,7 @@ export function AudioEngine() {
         return;
       }
       switching.current = false;
+      if (skipToKept()) return;
       void reportError(deck);
     },
   };
@@ -486,6 +490,21 @@ export function AudioEngine() {
       <audio ref={b} {...deckProps} />
     </>
   );
+}
+
+/** Offline, a song not on this device can't play: go on to the next one that is. */
+function skipToKept(): boolean {
+  if (navigator.onLine) return false;
+  const s = usePlayer.getState();
+  const { songs } = useOffline.getState();
+  for (let p = s.pos + 1; p < s.order.length; p++) {
+    if (s.queue[s.order[p]!]!.fileId in songs) {
+      s.jumpTo(p);
+      toast('Offline: skipped songs that aren’t on this device');
+      return true;
+    }
+  }
+  return false;
 }
 
 async function play(audio: HTMLAudioElement) {
