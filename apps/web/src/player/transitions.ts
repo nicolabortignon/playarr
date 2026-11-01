@@ -2,41 +2,54 @@ import type { MixMode } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { api, type TransitionAnswer } from '../lib/api';
+import { api, ApiError, type TransitionAnswer } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { upNext } from './decks';
+import { useSleep } from './sleep';
 import { currentTrack, useClock, usePlayer } from './store';
 
 /** Ask only once a song has played this long, so skipping through songs doesn't render each pair. */
 const MIN_PLAYED_S = 5;
-/** While the server renders, ask again this often. */
+/** A new pair waits this long before its first ask, so a burst of queue edits or mode changes renders nothing. */
+const FIRST_ASK_DELAY_MS = 2000;
+/** While the server renders, ask again this often… */
 const POLL_MS = 3000;
+/** …and this often after a few polls, or while paused (it isn't needed soon). */
+const SLOW_POLL_MS = 10_000;
+const FAST_POLLS = 5;
+/** After a lost connection or a server error, try again after these waits (the last one repeats). */
+const RETRY_MS = [3000, 10_000];
+/** "Unavailable" is asked once more after this long: the songs' analysis may have finished meanwhile. */
+const UNAVAILABLE_RETRY_MS = 60_000;
 /** Not ready this close to the mix point: too late to load it, so the pair plays the usual way. */
 const GIVE_UP_S = 20;
-/** Clock steps longer than this are jumps (a seek, a new song), not listening. */
-const MAX_STEP_S = 2;
+/** After giving up, a jump back this far before the cut-off (a restart) is worth asking again. */
+const RESTART_MARGIN_S = 10;
 
 /** What's known of the transition into the next song: the server's answer, or "gave up" (fall back). */
 export type UpcomingResult = TransitionAnswer | { status: 'gave up' };
 
+export type ReadyTransition = Extract<TransitionAnswer, { status: 'ready' }> & { fromFileId: number; toFileId: number };
+
 interface TransitionState {
-  /** The current → next pair, by file (as the decks know them); null when no transition is wanted. */
+  /**
+   * The current → next pair, by file (as the decks know them). Null when no transition is wanted:
+   * transitions aren't DJ mix, this queue's mix mode is off, there's no next song, or the sleep timer
+   * stops at the end of this song. The songs then follow each other the usual way.
+   */
   fromFileId: number | null;
   toFileId: number | null;
-  /** Null until the server answers for this pair. */
+  /** Null until the server answers for this pair (and again while it's asked afresh after a seek). */
   result: UpcomingResult | null;
+  /** The ready answer with its pair, kept as one object so components can select it without re-rendering. */
+  ready: ReadyTransition | undefined;
 }
 
 /** The DJ transition from the song playing into the next one. */
-export const useTransition = create<TransitionState>()(() => ({ fromFileId: null, toFileId: null, result: null }));
-
-export type ReadyTransition = Extract<TransitionAnswer, { status: 'ready' }> & { fromFileId: number; toFileId: number };
+export const useTransition = create<TransitionState>()(() => ({ fromFileId: null, toFileId: null, result: null, ready: undefined }));
 
 /** The transition file to play between the two songs, once rendered. */
-export function readyTransition(s: TransitionState): ReadyTransition | undefined {
-  if (s.result?.status !== 'ready' || s.fromFileId === null || s.toFileId === null) return undefined;
-  return { ...s.result, fromFileId: s.fromFileId, toFileId: s.toFileId };
-}
+export const readyTransition = (s: TransitionState) => s.ready;
 
 /** One pair being asked about. */
 interface Pair {
@@ -46,16 +59,22 @@ interface Pair {
   mode: MixMode;
   /**
    * Where the song was at the first ask, sent unchanged on every ask after: the server's plan (and so
-   * its render) depends on it, and a later position could make it start over.
+   * its render) depends on it, and a later position could make it start over. Only a seek or restart
+   * that leaves the answer behind changes it.
    */
   position?: number;
+  /** Counts asks, so the answer to an ask that's been overtaken is ignored. */
+  asks: number;
   asking: boolean;
-  /** Asks again after a "pending". */
-  poll?: ReturnType<typeof setTimeout>;
+  /** The next ask: the first one's short wait, a poll, a retry. */
+  timer?: ReturnType<typeof setTimeout>;
   /** The plan's mix point in the song playing, once the server has planned it. */
   aStart?: number;
-  /** Answered for good (or gave up): no more asking. */
-  done: boolean;
+  polls: number;
+  errors: number;
+  askedAgainUnavailable: boolean;
+  /** No more asking: answered for good, too late (a restart can undo it), or refused by the server. */
+  ended?: 'answered' | 'late' | 'refused';
 }
 
 /**
@@ -68,53 +87,99 @@ export function useUpcomingTransition() {
 
 function watchUpcomingTransition() {
   let pair: Pair | null = null;
-  /** The song whose listening time is counted, and how long it has played. */
+  /** The song whose listening time is counted (and its restarts), and how long it has played. */
   let playingFileId: number | undefined;
+  let restartToken: number | undefined;
   let played = 0;
+  /** The clock's last reading, and when (epoch ms) it came. */
   let lastTime: number | null = null;
+  let lastAt = Date.now();
 
-  const publish = (result: UpcomingResult | null) => useTransition.setState({ result });
+  function publish(p: Pair, result: UpcomingResult | null) {
+    const ready = result?.status === 'ready' ? { ...result, fromFileId: p.from.fileId, toFileId: p.to.fileId } : undefined;
+    useTransition.setState({ result, ready });
+  }
+
+  function later(p: Pair, ms: number) {
+    clearTimeout(p.timer);
+    p.timer = setTimeout(() => {
+      p.timer = undefined;
+      maybeAsk();
+    }, ms);
+  }
 
   function drop() {
-    clearTimeout(pair?.poll);
+    clearTimeout(pair?.timer);
     pair = null;
   }
 
-  /** Too close to the mix point to still be useful. */
-  const tooLate = (p: Pair) => p.aStart !== undefined && useClock.getState().time >= p.aStart - GIVE_UP_S;
+  /** Too close to the mix point to still be useful (before a plan, the song's end is as late as it gets). */
+  const tooLate = (p: Pair) => useClock.getState().time >= (p.aStart ?? p.from.duration) - GIVE_UP_S;
 
-  function giveUp(p: Pair) {
-    clearTimeout(p.poll);
-    p.done = true;
-    publish({ status: 'gave up' });
+  function giveUp(p: Pair, why: 'late' | 'refused') {
+    clearTimeout(p.timer);
+    p.timer = undefined;
+    p.asking = false;
+    p.ended = why;
+    publish(p, { status: 'gave up' });
+  }
+
+  /** The answer no longer fits where the song is (a seek, a restart): ask afresh from here. */
+  function startOver(p: Pair) {
+    clearTimeout(p.timer);
+    Object.assign(p, { timer: undefined, position: undefined, aStart: undefined, asking: false, ended: undefined, polls: 0, errors: 0 });
+    p.asks++;
+    publish(p, null);
   }
 
   function maybeAsk() {
     const p = pair;
-    if (!p || p.done || p.asking || p.poll !== undefined || played < MIN_PLAYED_S || !navigator.onLine) return;
-    if (tooLate(p)) return giveUp(p);
+    if (!p || p.ended || p.asking || p.timer !== undefined || played < MIN_PLAYED_S || !navigator.onLine) return;
+    if (tooLate(p)) return giveUp(p, 'late');
     p.asking = true;
     p.position ??= useClock.getState().time;
+    const ask = ++p.asks;
+    // The pair changed, started over or gave up meanwhile: this answer is for nothing now.
+    const current = () => pair === p && p.asks === ask && !p.ended;
     api.transition(p.from.id, p.to.id, p.mode, p.position).then(
       (answer) => {
-        // The pair changed meanwhile (or gave up): this answer is for nothing now.
-        if (pair !== p || p.done) return;
+        if (!current()) return;
         p.asking = false;
-        if (answer.status !== 'pending') {
-          p.done = true;
-          return publish(answer);
-        }
-        p.aStart = answer.plan.aStart;
-        if (tooLate(p)) return giveUp(p);
-        publish(answer);
-        p.poll = setTimeout(() => {
-          p.poll = undefined;
-          maybeAsk();
-        }, POLL_MS);
+        p.errors = 0;
+        answered(p, answer);
       },
-      // Can't reach the server: this pair plays the usual way.
-      () => pair === p && !p.done && giveUp(p),
+      (err: unknown) => {
+        if (!current()) return;
+        p.asking = false;
+        failed(p, err);
+      },
     );
+  }
+
+  function answered(p: Pair, answer: TransitionAnswer) {
+    if (answer.status === 'pending' || answer.status === 'ready') {
+      p.aStart = answer.plan.aStart;
+      if (tooLate(p)) return giveUp(p, 'late');
+    }
+    publish(p, answer);
+    if (answer.status === 'pending') {
+      p.polls++;
+      return later(p, p.polls >= FAST_POLLS || !usePlayer.getState().playing ? SLOW_POLL_MS : POLL_MS);
+    }
+    if (answer.status === 'unavailable' && !p.askedAgainUnavailable) {
+      p.askedAgainUnavailable = true;
+      return later(p, UNAVAILABLE_RETRY_MS);
+    }
+    p.ended = 'answered';
+  }
+
+  function failed(p: Pair, err: unknown) {
+    // Offline: the 'online' event asks again.
+    if (!navigator.onLine) return;
+    const status = err instanceof ApiError ? err.status : 0;
+    // A lost connection, too many requests, the server's own trouble: likely to pass.
+    if (status === 0 || status === 429 || status >= 500) return later(p, RETRY_MS[Math.min(p.errors++, RETRY_MS.length - 1)]!);
+    giveUp(p, 'refused');
   }
 
   /** The pair to ask about now, if any; a different one starts over. */
@@ -122,27 +187,49 @@ function watchUpcomingTransition() {
     const s = usePlayer.getState();
     const from = currentTrack(s);
     const to = upNext(s);
-    if (from?.fileId !== playingFileId) {
-      // A new song: its listening time starts from nothing (the clock may still show the last one's).
+    if (from?.fileId !== playingFileId || s.restartToken !== restartToken) {
+      // A new song, or this one from the start: its listening time starts from nothing (the clock may
+      // still show where it was).
       playingFileId = from?.fileId;
+      restartToken = s.restartToken;
       played = 0;
       lastTime = null;
     }
-    const wanted = usePrefs.getState().transitions === 'dj' && !!from && !!to && from.fileId !== to.fileId;
+    const wanted =
+      usePrefs.getState().transitions === 'dj' && s.mixMode !== 'off' && !useSleep.getState().endOfSong && !!from && !!to && from.fileId !== to.fileId;
     const key = wanted ? JSON.stringify([from.id, from.fileId, to.id, to.fileId, s.mixMode]) : null;
     if (key !== (pair?.key ?? null)) {
       drop();
-      if (wanted) pair = { key: key!, from: from!, to: to!, mode: s.mixMode, asking: false, done: false };
-      useTransition.setState({ fromFileId: wanted ? from!.fileId : null, toFileId: wanted ? to!.fileId : null, result: null });
+      if (wanted) {
+        pair = { key: key!, from: from!, to: to!, mode: s.mixMode, asks: 0, asking: false, polls: 0, errors: 0, askedAgainUnavailable: false };
+        later(pair, FIRST_ASK_DELAY_MS);
+      }
+      useTransition.setState({ fromFileId: wanted ? from!.fileId : null, toFileId: wanted ? to!.fileId : null, result: null, ready: undefined });
     }
     maybeAsk();
   }
 
-  function onClock(time: number) {
-    // Only small steps forward are listening; seeks and the clock's reset for a new song aren't.
-    if (lastTime !== null && time > lastTime && time - lastTime <= MAX_STEP_S) played += time - lastTime;
+  /** After a jump, the answer is for a mix point now too close or behind, or (given up) a restart left time again. */
+  function outOfStep(p: Pair, time: number): boolean {
+    const { result } = useTransition.getState();
+    if ((result?.status === 'ready' || result?.status === 'pending') && time >= result.plan.aStart - GIVE_UP_S) return true;
+    return p.ended === 'late' && time < (p.aStart ?? p.from.duration) - GIVE_UP_S - RESTART_MARGIN_S;
+  }
+
+  function onClock(time: number, seeked: boolean) {
+    const now = Date.now();
+    const step = lastTime === null ? NaN : time - lastTime;
+    const elapsed = (now - lastAt) / 1000;
+    // Listening moves the clock about as fast as time passes, even in the rare steps of a locked phone;
+    // a seek, the slider dragged, or a new song's reset doesn't.
+    const listening = !seeked && step > 0 && step <= elapsed * 1.25 + 0.5;
+    if (listening) played += step;
     lastTime = time;
-    if (pair && !pair.done && tooLate(pair)) return giveUp(pair);
+    lastAt = now;
+    const p = pair;
+    if (!p) return;
+    if (!listening && outOfStep(p, time)) startOver(p);
+    else if (!p.ended && tooLate(p)) return giveUp(p, 'late');
     maybeAsk();
   }
 
@@ -151,14 +238,19 @@ function watchUpcomingTransition() {
   lastTime = useClock.getState().time;
   const offPlayer = usePlayer.subscribe(check);
   const offPrefs = usePrefs.subscribe((s, prev) => s.transitions !== prev.transitions && check());
-  const offClock = useClock.subscribe((s, prev) => s.time !== prev.time && onClock(s.time));
+  const offSleep = useSleep.subscribe((s, prev) => s.endOfSong !== prev.endOfSong && check());
+  const offClock = useClock.subscribe((s, prev) => {
+    const seeked = s.seekRequest !== prev.seekRequest;
+    if (s.time !== prev.time || seeked) onClock(s.time, seeked);
+  });
   window.addEventListener('online', check);
   return () => {
     offPlayer();
     offPrefs();
+    offSleep();
     offClock();
     window.removeEventListener('online', check);
     drop();
-    useTransition.setState({ fromFileId: null, toFileId: null, result: null });
+    useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
   };
 }
