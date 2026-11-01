@@ -31,6 +31,13 @@ describe('transition routes', () => {
     expect(request).toHaveBeenCalledWith({ fromTrackId: 3, toTrackId: 4, mode: 'party', aPosition: 61.5 });
   });
 
+  it('passes on the files the player has for the songs', async () => {
+    const { app, request } = await setup();
+    await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', fromFileId: 13, toFileId: 14 } });
+    expect(request).toHaveBeenCalledWith({ fromTrackId: 3, toTrackId: 4, mode: 'auto', fromFileId: 13, toFileId: 14 });
+    expect((await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', toFileId: 'x' } })).statusCode).toBe(400);
+  });
+
   it('leaves the position out when the player does', async () => {
     const { app, request } = await setup();
     await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto' } });

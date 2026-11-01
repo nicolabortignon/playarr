@@ -188,9 +188,13 @@ export const api = {
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
   lyrics: (trackId: number) => get<{ lyrics: Lyrics | null }>(`/api/tracks/${trackId}/lyrics`).then((r) => r.lyrics),
   levels: (ids: string[]) => request<Record<string, TrackLevel>>('/api/levels', { method: 'POST', body: JSON.stringify({ ids }) }),
-  /** `from` into `to` (catalog song ids). `position`: where `from` is now, so the plan doesn't start in the past. */
-  transition: (from: number, to: number, mode: MixMode, position?: number) =>
-    request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position }) }),
+  /**
+   * `from` into `to` (catalog song ids). `position`: where `from` is now, so the plan doesn't start in
+   * the past. `files`: the files the player has for the two songs, so the server never renders from
+   * another one (it answers "unavailable" if the library has since picked a different file).
+   */
+  transition: (from: number, to: number, mode: MixMode, position?: number, files?: { fromFileId: number; toFileId: number }) =>
+    request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files }) }),
   /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
   mixMaps: (ids: string[]) =>
     request<Record<string, MixMap & { cues?: CuePoints }>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),

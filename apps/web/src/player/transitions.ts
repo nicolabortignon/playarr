@@ -180,7 +180,7 @@ function watchUpcomingTransition() {
     const ask = ++p.asks;
     // The pair changed, started over or gave up meanwhile: this answer is for nothing now.
     const current = () => pair === p && p.asks === ask && !p.ended;
-    api.transition(p.from.id, p.to.id, p.mode, p.position).then(
+    api.transition(p.from.id, p.to.id, p.mode, p.position, { fromFileId: p.from.fileId, toFileId: p.to.fileId }).then(
       (answer) => {
         if (!current()) return;
         p.asking = false;

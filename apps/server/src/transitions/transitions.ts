@@ -62,6 +62,21 @@ const SHORTEST_DECODE_SECONDS = 0.1;
 const SEEK_GRID_PER_SECOND = 100;
 /** Frames written to the encoder or a WAV file at a time: a second, so a long blend is never doubled in memory. */
 const CHUNK_FRAMES = RENDER_RATE;
+/**
+ * B's remainder is decoded this much at a time and passed straight on to the encoder, so a long
+ * song (a DJ set) never sits whole in memory: about 16 MB per chunk, however long the song. A whole
+ * number of samples, and of the seek grid, so the chunks meet exactly.
+ */
+const REMAINDER_CHUNK_SECONDS = 30;
+/**
+ * The longest remainder made. Each chunk of an MP3 is decoded from the start of the file (that's what
+ * makes its start exact), so the work grows with the square of the length: 20 minutes is a few minutes
+ * of background work on a NAS; a 60-minute set would hold up every other transition for half an hour.
+ * Beyond it B is joined from its own file, as well as the player's seek allows.
+ */
+const LONGEST_REMAINDER_SECONDS = 20 * 60;
+/** How long a forgotten transition's files stay servable: a player may be streaming them right now. */
+const DEFAULT_FORGET_GRACE_MS = 10 * 60_000;
 const CACHE_FILE = /^[0-9a-f]{40}(\.rest)?\.(flac|wav)$/;
 /** Every file a transition can have: audio in either format, B's remainder, the sidecar, and their temporaries. */
 const FILE_SUFFIXES = ['.flac', '.wav', '.rest.flac', '.rest.wav', '.json'].flatMap((s) => [s, `${s}.tmp`]);
@@ -77,11 +92,14 @@ export interface TransitionRenderer {
   render(plan: TransitionPlan, a: Excerpt, b: Excerpt): Promise<StereoAudio>;
 }
 
+/** Stereo audio at RENDER_RATE, a piece at a time (each piece is only valid until the next is asked for). */
+export type AudioChunks = AsyncIterable<StereoAudio>;
+
 /**
- * Writes stereo audio at RENDER_RATE to `file` as FLAC, giving up when `signal` aborts. Rejects
- * with an error whose `code` is 'ENOENT' when there's no encoder here at all (WAV is written instead).
+ * Writes the audio to `file` as FLAC, giving up when `signal` aborts or the audio fails to arrive.
+ * Rejects with an error whose `code` is 'ENOENT' when there's no encoder here at all (WAV is written instead).
  */
-export type Encoder = (audio: StereoAudio, file: string, signal: AbortSignal) => Promise<void>;
+export type Encoder = (audio: AudioChunks, file: string, signal: AbortSignal) => Promise<void>;
 
 export interface TransitionsOptions {
   library: Pick<Library, 'track' | 'file'>;
@@ -99,6 +117,8 @@ export interface TransitionsOptions {
   encode?: Encoder;
   decodeTimeoutMs?: number;
   renderTimeoutMs?: number;
+  /** How long `forget` leaves the files in place for players still streaming them (default 10 minutes). */
+  forgetGraceMs?: number;
   now?: () => number;
 }
 
@@ -108,6 +128,12 @@ export interface TransitionRequest {
   mode: MixMode;
   /** Where A's playback is now, in seconds: the plan never starts in the past. */
   aPosition?: number;
+  /**
+   * The files the player has for the two songs. The library may have picked another file for a song
+   * since the queue was saved: a transition from that one wouldn't line up with what's playing.
+   */
+  fromFileId?: number;
+  toFileId?: number;
 }
 
 export type TransitionAnswer =
@@ -161,7 +187,10 @@ export class Transitions {
   private readonly encode: Encoder;
   private readonly decodeTimeoutMs: number;
   private readonly renderTimeoutMs: number;
+  private readonly forgetGraceMs: number;
   private readonly now: () => number;
+  /** Forgotten transitions whose files are deleted once players are done with them. */
+  private readonly forgottenFiles = new Map<string, NodeJS.Timeout>();
   private readonly index = new Map<string, Sidecar>();
   private readonly plans = new Map<string, RememberedPlan>();
   private readonly failures = new Map<string, { until: number; reason: string; recordings: [string, string] }>();
@@ -178,6 +207,7 @@ export class Transitions {
     this.encode = opts.encode ?? ffmpegFlacEncoder(opts.ffmpegPath);
     this.decodeTimeoutMs = opts.decodeTimeoutMs ?? DEFAULT_DECODE_TIMEOUT_MS;
     this.renderTimeoutMs = opts.renderTimeoutMs ?? DEFAULT_RENDER_TIMEOUT_MS;
+    this.forgetGraceMs = opts.forgetGraceMs ?? DEFAULT_FORGET_GRACE_MS;
     this.now = opts.now ?? Date.now;
   }
 
@@ -206,9 +236,12 @@ export class Transitions {
     }
   }
 
-  async request({ fromTrackId, toTrackId, mode, aPosition }: TransitionRequest): Promise<TransitionAnswer> {
+  async request({ fromTrackId, toTrackId, mode, aPosition, fromFileId, toFileId }: TransitionRequest): Promise<TransitionAnswer> {
     const [a, b] = await Promise.all([this.opts.library.track(fromTrackId), this.opts.library.track(toTrackId)]);
     if (!a || !b) return { status: 'unavailable', reason: 'Unknown song' };
+    if ((fromFileId !== undefined && fromFileId !== a.fileId) || (toFileId !== undefined && toFileId !== b.fileId)) {
+      return { status: 'unavailable', reason: 'The song’s file changed since it was queued' };
+    }
     const recordings: [string, string] = [a.recordingId, b.recordingId];
     const maps = this.opts.maps.mixMaps(recordings);
     const aMap = maps.get(a.recordingId);
@@ -249,8 +282,10 @@ export class Transitions {
   }
 
   /**
-   * Deletes every cached transition into or out of a song: its mix map or cue points changed, or it
+   * Forgets every cached transition into or out of a song: its mix map or cue points changed, or it
    * left the library. Renders of it still waiting are dropped too, and one rendering is thrown away.
+   * The next request plans afresh at once; the old files stay a while for a player that may be
+   * streaming them (a cue edit on the song playing), then go (trim counts them meanwhile).
    */
   async forget(recordingId: string): Promise<void> {
     const involves = ([a, b]: [string, string]) => a === recordingId || b === recordingId;
@@ -261,7 +296,7 @@ export class Transitions {
     for (const [key, sidecar] of [...this.index]) {
       if (!involves([sidecar.aRecording, sidecar.bRecording])) continue;
       this.index.delete(key);
-      await this.removeFiles(key);
+      this.removeLater(key);
     }
   }
 
@@ -274,6 +309,18 @@ export class Transitions {
   idle(): Promise<void> {
     if (!this.running && !this.queue.length) return Promise.resolve();
     return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  /** Deletes a forgotten transition's files after the grace period, unless it's been made (or is being made) again. */
+  private removeLater(key: string) {
+    clearTimeout(this.forgottenFiles.get(key));
+    const timer = setTimeout(() => {
+      this.forgottenFiles.delete(key);
+      if (this.index.has(key) || this.running?.key === key) return;
+      void this.removeFiles(key).catch((err: unknown) => this.opts.log.warn({ err }, 'forgotten transition not deleted'));
+    }, this.forgetGraceMs);
+    timer.unref();
+    this.forgottenFiles.set(key, timer);
   }
 
   private remember(pair: string, remembered: RememberedPlan) {
@@ -365,23 +412,30 @@ export class Transitions {
 
     const aExcerpt = await this.decode(aSource, ranges.a[0], ranges.a[1]);
     const bExcerpt = await this.decode(bSource, ranges.b[0], ranges.b[1]);
+    const audio = await withTimeout(this.opts.dsp.render(plan, aExcerpt, bExcerpt), this.renderTimeoutMs, 'The render took too long');
+    await mkdir(this.dir, { recursive: true });
+    const transitionAudio = await this.writeAudio(() => inPieces(audio), key, this.renderTimeoutMs);
+
     // An MP3 can't be started sample-exactly in the middle by a player (see seeksInexactly), so
     // the player plays B's remainder from here, decoded exactly like the transition's B: the
     // two meet at bResume to the sample. A leftover risk on A's side (and B's start, if a player
     // ever plays it): ffmpeg skips the LAME encoder delay and padding the file declares, and a
     // browser that doesn't would hear A shifted by those ~25 ms against the transition.
-    const rest = seeksInexactly(b.format)
-      ? startingAt(await this.decode(bSource, plan.bResume, bDuration + END_SLACK_SECONDS), plan.bResume)
-      : undefined;
-
-    const audio = await withTimeout(this.opts.dsp.render(plan, aExcerpt, bExcerpt), this.renderTimeoutMs, 'The render took too long');
-    await mkdir(this.dir, { recursive: true });
+    let continuation: AudioExtension | undefined;
+    const remainderSeconds = bDuration - plan.bResume;
+    if (seeksInexactly(b.format) && remainderSeconds > LONGEST_REMAINDER_SECONDS) {
+      this.opts.log.info({ recordingId: b.recordingId, remainderSeconds }, 'remainder too long to make: B joins from its own file');
+    } else if (seeksInexactly(b.format)) {
+      const chunks = Math.ceil((remainderSeconds + END_SLACK_SECONDS) / REMAINDER_CHUNK_SECONDS);
+      const timeoutMs = this.renderTimeoutMs + chunks * this.decodeTimeoutMs;
+      continuation = await this.writeAudio(() => this.remainder(bSource, plan.bResume), `${key}.rest`, timeoutMs);
+    }
     const sidecar: Sidecar = {
       aRecording: a.recordingId,
       bRecording: b.recordingId,
       plan,
-      audio: await this.writeAudio(audio, key),
-      ...(rest ? { continuation: await this.writeAudio(rest, `${key}.rest`) } : {}),
+      audio: transitionAudio,
+      ...(continuation ? { continuation } : {}),
       createdAt: this.now(),
       pair,
       inputs,
@@ -389,6 +443,47 @@ export class Transitions {
     // Written last: a sidecar means the audio beside it is complete.
     await writeFile(join(this.dir, `${key}.json`), JSON.stringify(sidecar));
     return sidecar;
+  }
+
+  /**
+   * B from song time `from` to its end, REMAINDER_CHUNK_SECONDS at a time, starting exactly at
+   * `from`: the decodes start on the seek grid (the first at or just before `from`, the samples
+   * before it dropped) and each next one where the last ended. Only one chunk is held at a time.
+   * Throws, once the audio runs out, if it ran out much sooner than the song should have.
+   */
+  private async *remainder(source: { media: MediaSource; path: string; track: Track; duration: number }, from: number): AudioChunks {
+    const { media, path, track, duration } = source;
+    if (!media.pcm) throw new Error('This source can’t decode audio');
+    // Counted in grid steps (whole numbers), so the chunk starts never drift by a rounding error.
+    const firstStep = Math.floor(from * SEEK_GRID_PER_SECOND);
+    const stepsPerChunk = REMAINDER_CHUNK_SECONDS * SEEK_GRID_PER_SECOND;
+    const end = duration + END_SLACK_SECONDS;
+    let skip = Math.round((from - firstStep / SEEK_GRID_PER_SECOND) * RENDER_RATE);
+    let decodedSeconds = 0;
+    for (let step = firstStep; step / SEEK_GRID_PER_SECOND < end; step += stepsPerChunk) {
+      const start = step / SEEK_GRID_PER_SECOND;
+      const seconds = Math.min(REMAINDER_CHUNK_SECONDS, end - start);
+      const pcm = await media.pcm(path, {
+        sampleRate: RENDER_RATE,
+        channels: 2,
+        startSeconds: start,
+        maxSeconds: Math.max(SHORTEST_DECODE_SECONDS, seconds),
+        exactSeek: seeksInexactly(track.format),
+        signal: AbortSignal.timeout(this.decodeTimeoutMs),
+      });
+      const { left, right } = deinterleave(pcm);
+      // Never more than the chunk's length: anything past it is the next chunk's first samples.
+      const wanted = Math.round(seconds * RENDER_RATE);
+      const frames = Math.min(left.length, wanted);
+      decodedSeconds += frames / RENDER_RATE;
+      if (frames > skip) yield { left: left.subarray(skip, frames), right: right.subarray(skip, frames) };
+      skip = Math.max(0, skip - frames);
+      if (frames < wanted) break; // the song ended
+    }
+    const expected = duration - firstStep / SEEK_GRID_PER_SECOND;
+    if (decodedSeconds < expected - SHORT_DECODE_SLACK_SECONDS) {
+      throw new Error(`Decoding “${track.title}” stopped ${(expected - decodedSeconds).toFixed(1)} s short`);
+    }
   }
 
   /**
@@ -421,13 +516,16 @@ export class Transitions {
     return { left, right, start: gridFrom };
   }
 
-  /** Writes `<name>.flac`, or `<name>.wav` where there's no ffmpeg; answers which. */
-  private async writeAudio(audio: StereoAudio, name: string): Promise<AudioExtension> {
+  /**
+   * Writes `<name>.flac`, or `<name>.wav` where there's no ffmpeg; answers which. `audio` makes the
+   * audio afresh for each try (a failed encoder may have used some of it up).
+   */
+  private async writeAudio(audio: () => AudioChunks, name: string, timeoutMs: number): Promise<AudioExtension> {
     if (!this.noEncoder) {
       const tmp = join(this.dir, `${name}.flac.tmp`);
       let encoded = false;
       try {
-        await this.encode(audio, tmp, AbortSignal.timeout(this.renderTimeoutMs));
+        await this.encode(audio(), tmp, AbortSignal.timeout(timeoutMs));
         encoded = true;
       } catch (err) {
         await rm(tmp, { force: true });
@@ -441,7 +539,7 @@ export class Transitions {
       }
     }
     const tmp = join(this.dir, `${name}.wav.tmp`);
-    await writeWavFile(audio, tmp);
+    await writeWavFile(audio(), tmp);
     await rename(tmp, join(this.dir, `${name}.wav`));
     return 'wav';
   }
@@ -466,10 +564,16 @@ export function continuesAlbum(a: Track, b: Track): boolean {
   return (b.discNumber === a.discNumber && b.trackNumber === a.trackNumber + 1) || (b.discNumber === a.discNumber + 1 && b.trackNumber === 1);
 }
 
-/** The excerpt from song time `at` on (it must start at or before it), without copying the samples. */
-function startingAt({ left, right, start }: Excerpt, at: number): StereoAudio {
-  const skip = Math.min(left.length, Math.round((at - start) * RENDER_RATE));
-  return { left: left.subarray(skip), right: right.subarray(skip) };
+/** Pieces of at most a second, without copying the samples: no buffer made from one is ever large. */
+function* bySecond({ left, right }: StereoAudio): Generator<StereoAudio> {
+  for (let from = 0; from < left.length; from += CHUNK_FRAMES) {
+    yield { left: left.subarray(from, from + CHUNK_FRAMES), right: right.subarray(from, from + CHUNK_FRAMES) };
+  }
+}
+
+/** Rendered audio, handed to a writer a second at a time. */
+async function* inPieces(audio: StereoAudio): AudioChunks {
+  yield* bySecond(audio);
 }
 
 function withTimeout<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
@@ -512,25 +616,25 @@ export function deinterleave(pcm: Buffer): StereoAudio {
   return { left, right };
 }
 
-/** Frames `from` to `to` as interleaved little-endian float32 (ffmpeg's f32le). */
-function f32leChunk({ left, right }: StereoAudio, from: number, to: number): Buffer {
-  const chunk = Buffer.alloc((to - from) * 8);
+/** Interleaved little-endian float32 (ffmpeg's f32le). */
+function f32le({ left, right }: StereoAudio): Buffer {
+  const chunk = Buffer.alloc(left.length * 8);
   const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-  for (let i = from; i < to; i++) {
-    view.setFloat32((i - from) * 8, left[i]!, true);
-    view.setFloat32((i - from) * 8 + 4, right[i]!, true);
+  for (let i = 0; i < left.length; i++) {
+    view.setFloat32(i * 8, left[i]!, true);
+    view.setFloat32(i * 8 + 4, right[i]!, true);
   }
   return chunk;
 }
 
-/** Frames `from` to `to` as interleaved 16-bit little-endian PCM (a WAV file's data). */
-function s16leChunk({ left, right }: StereoAudio, from: number, to: number): Buffer {
-  const chunk = Buffer.alloc((to - from) * 4);
+/** Interleaved 16-bit little-endian PCM (a WAV file's data). */
+function s16le({ left, right }: StereoAudio): Buffer {
+  const chunk = Buffer.alloc(left.length * 4);
   const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
   const toInt16 = (x: number) => Math.round(Math.max(-1, Math.min(1, x)) * 32767);
-  for (let i = from; i < to; i++) {
-    view.setInt16((i - from) * 4, toInt16(left[i]!), true);
-    view.setInt16((i - from) * 4 + 2, toInt16(right[i]!), true);
+  for (let i = 0; i < left.length; i++) {
+    view.setInt16(i * 4, toInt16(left[i]!), true);
+    view.setInt16(i * 4 + 2, toInt16(right[i]!), true);
   }
   return chunk;
 }
@@ -557,24 +661,33 @@ export function wavHeader(frames: number): Buffer {
   return header;
 }
 
-/** A 16-bit stereo WAV file: what's stored when this server has no ffmpeg to make FLAC. Written a second at a time. */
-async function writeWavFile(audio: StereoAudio, file: string): Promise<void> {
+/**
+ * A 16-bit stereo WAV file: what's stored when this server has no ffmpeg to make FLAC. Written as the
+ * audio arrives; the header's sizes are filled in at the end, once the length is known.
+ */
+async function writeWavFile(audio: AudioChunks, file: string): Promise<void> {
   const handle = await open(file, 'w');
   try {
-    await handle.write(wavHeader(audio.left.length));
-    for (let from = 0; from < audio.left.length; from += CHUNK_FRAMES) {
-      await handle.write(s16leChunk(audio, from, Math.min(audio.left.length, from + CHUNK_FRAMES)));
+    await handle.write(wavHeader(0));
+    let frames = 0;
+    for await (const chunk of audio) {
+      for (const piece of bySecond(chunk)) {
+        await handle.write(s16le(piece));
+        frames += piece.left.length;
+      }
     }
+    await handle.write(wavHeader(frames), 0, 44, 0);
   } finally {
     await handle.close();
   }
 }
 
 /** Feeds the audio to ffmpeg a second at a time, waiting whenever its pipe is full. */
-async function feed(stdin: Writable, audio: StereoAudio, signal: AbortSignal): Promise<void> {
-  for (let from = 0; from < audio.left.length; from += CHUNK_FRAMES) {
-    const chunk = f32leChunk(audio, from, Math.min(audio.left.length, from + CHUNK_FRAMES));
-    if (!stdin.write(chunk)) await once(stdin, 'drain', { signal });
+async function feed(stdin: Writable, audio: AudioChunks, signal: AbortSignal): Promise<void> {
+  for await (const chunk of audio) {
+    for (const piece of bySecond(chunk)) {
+      if (!stdin.write(f32le(piece))) await once(stdin, 'drain', { signal });
+    }
   }
   stdin.end();
 }
@@ -601,11 +714,18 @@ export function ffmpegFlacEncoder(ffmpegPath: string): Encoder {
       });
       // ffmpeg stopping early closes the pipe; 'close' below says why.
       child.stdin.on('error', () => {});
+      // The audio failing to arrive (a decode of B's remainder broke off) fails the encode too.
+      let feedError: unknown;
       child.on('close', (code) => {
         done.abort();
-        if (code === 0) resolve();
+        if (feedError) reject(feedError);
+        else if (code === 0) resolve();
         else reject(new Error(`ffmpeg couldn’t encode the transition (${code}): ${stderr.trim()}`));
       });
-      feed(child.stdin, audio, done.signal).catch(() => {});
+      feed(child.stdin, audio, done.signal).catch((err: unknown) => {
+        if (done.signal.aborted) return; // ffmpeg is already gone, and 'close' or 'error' says why
+        feedError = err;
+        child.kill();
+      });
     });
 }

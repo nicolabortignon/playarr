@@ -86,8 +86,8 @@ describe('when it asks', () => {
     await playTo(4);
     expect(transition).not.toHaveBeenCalled();
     await playTo(5);
-    // Catalog ids for the server, the mix mode of this queue, and where the song is now.
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5);
+    // Catalog ids for the server, the mix mode of this queue, where the song is now, and the files the decks have.
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 });
     expect(useTransition.getState().result).toEqual(pending());
   });
 
@@ -106,7 +106,7 @@ describe('when it asks', () => {
     await playTo(94);
     expect(transition).not.toHaveBeenCalled();
     await playTo(95);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 95);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 95, { fromFileId: 101, toFileId: 102 });
   });
 
   it('gives no credit for a seek backwards', async () => {
@@ -116,7 +116,7 @@ describe('when it asks', () => {
     await playTo(1.5);
     expect(transition).not.toHaveBeenCalled();
     await playTo(2);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 2);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 2, { fromFileId: 101, toFileId: 102 });
   });
 
   it('counts the clock’s long steps while the phone is locked, as long as that much time passed', async () => {
@@ -125,7 +125,7 @@ describe('when it asks', () => {
     await jumpTo(4);
     await wait(2000);
     await jumpTo(6);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 6);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 6, { fromFileId: 101, toFileId: 102 });
   });
 
   it('starts counting again when the song restarts', async () => {
@@ -136,7 +136,7 @@ describe('when it asks', () => {
     await playTo(4);
     expect(transition).not.toHaveBeenCalled();
     await playTo(5);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 });
   });
 
   it('asks nothing unless transitions are DJ mix', async () => {
@@ -172,7 +172,7 @@ describe('when it asks', () => {
     expect(useTransition.getState()).toMatchObject({ fromFileId: 103, toFileId: 101 });
     await playTo(12);
     // A new pair asks after a moment, from where the song is then.
-    expect(transition).toHaveBeenCalledExactlyOnceWith(3, 1, 'auto', 11);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(3, 1, 'auto', 11, { fromFileId: 103, toFileId: 101 });
   });
 
   it('asks nothing while the sleep timer stops at the end of this song', async () => {
@@ -182,7 +182,7 @@ describe('when it asks', () => {
     expect(transition).not.toHaveBeenCalled();
     act(() => useSleep.getState().cancel());
     await playTo(12);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 11);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 11, { fromFileId: 101, toFileId: 102 });
   });
 
   it('asks nothing offline, and asks once back online', async () => {
@@ -193,7 +193,7 @@ describe('when it asks', () => {
     online.mockReturnValue(true);
     act(() => window.dispatchEvent(new Event('online')));
     await settle();
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 10);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 10, { fromFileId: 101, toFileId: 102 });
   });
 });
 
@@ -208,7 +208,7 @@ describe('the pair', () => {
     expect(transition).toHaveBeenCalledTimes(1);
     await playTo(8);
     // The song has played long enough already: 2 seconds later, from where it is then.
-    expect(transition).toHaveBeenLastCalledWith(1, 9, 'auto', 7);
+    expect(transition).toHaveBeenLastCalledWith(1, 9, 'auto', 7, { fromFileId: 101, toFileId: 109 });
   });
 
   it('asks for one pair only when the next song is changed again and again', async () => {
@@ -220,7 +220,7 @@ describe('the pair', () => {
       await wait(500);
     }
     await wait(2000);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 9, 'auto', 10);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 9, 'auto', 10, { fromFileId: 101, toFileId: 109 });
   });
 
   it('starts over on the next song, with 5 seconds to play first', async () => {
@@ -233,7 +233,7 @@ describe('the pair', () => {
     await playTo(4);
     expect(transition).not.toHaveBeenCalled();
     await playTo(5);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(2, 3, 'auto', 5);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(2, 3, 'auto', 5, { fromFileId: 102, toFileId: 103 });
   });
 
   it('asks again when the mix mode changes', async () => {
@@ -242,7 +242,7 @@ describe('the pair', () => {
     act(() => usePlayer.getState().setMixMode('party'));
     expect(useTransition.getState().result).toBeNull();
     await playTo(8);
-    expect(transition).toHaveBeenLastCalledWith(1, 2, 'party', 7);
+    expect(transition).toHaveBeenLastCalledWith(1, 2, 'party', 7, { fromFileId: 101, toFileId: 102 });
   });
 
   it('ignores an answer that arrives after the pair changed', async () => {
@@ -289,7 +289,7 @@ describe('polling', () => {
     expect(transition).toHaveBeenCalledTimes(3);
     // The plan starts from where the song was at the first ask: asking from a later point could
     // change the plan and start its render over.
-    for (const call of transition.mock.calls) expect(call).toEqual([1, 2, 'auto', 5]);
+    for (const call of transition.mock.calls) expect(call).toEqual([1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 }]);
     expect(useTransition.getState().result).toEqual(ready());
     expect(readyTransition(useTransition.getState())).toEqual({ ...ready(), fromFileId: 101, toFileId: 102 });
     await playTo(30);
@@ -393,7 +393,7 @@ describe('giving up and starting over', () => {
     expect(useTransition.getState()).toMatchObject({ result: null, ready: undefined });
     await settle();
     // Asked again from there; a new render that late is too late for this song.
-    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 175);
+    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 175, { fromFileId: 101, toFileId: 102 });
     expect(useTransition.getState().result).toEqual({ status: 'gave up' });
 
     // From the start again, it asks again once the song has played 5 seconds.
@@ -404,7 +404,7 @@ describe('giving up and starting over', () => {
     await playTo(4);
     expect(transition).not.toHaveBeenCalled();
     await playTo(5);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 });
     expect(useTransition.getState().ready?.plan.aStart).toBe(170);
   });
 
@@ -420,7 +420,7 @@ describe('giving up and starting over', () => {
     await playTo(4);
     expect(transition).not.toHaveBeenCalled();
     await playTo(5);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 });
   });
 });
 
@@ -440,7 +440,7 @@ describe('errors', () => {
     await playTo(18);
     expect(transition).toHaveBeenCalledTimes(3);
     expect(useTransition.getState().ready?.url).toBe('/transitions/abc.flac');
-    for (const call of transition.mock.calls) expect(call).toEqual([1, 2, 'auto', 5]);
+    for (const call of transition.mock.calls) expect(call).toEqual([1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 }]);
   });
 
   it('gives up at once when the server refuses', async () => {
@@ -467,7 +467,7 @@ describe('errors', () => {
     act(() => window.dispatchEvent(new Event('online')));
     await settle();
     expect(transition).toHaveBeenCalledTimes(2);
-    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 5);
+    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 });
   });
 
   it('asks once more a minute after “unavailable” (the song may have been analysed since), then keeps it', async () => {
@@ -550,7 +550,7 @@ describe('transitions kept with downloads', () => {
     // Seeking past its mix point: the server plans one from there.
     act(() => useClock.getState().seek(175));
     await settle();
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 175);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 175, { fromFileId: 101, toFileId: 102 });
   });
 
   it('online, asks the server for Party rather than using the kept Auto transition', async () => {
@@ -559,7 +559,7 @@ describe('transitions kept with downloads', () => {
     renderHook(() => useUpcomingTransition());
     expect(useTransition.getState().ready).toBeUndefined();
     await playTo(5);
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'party', 5);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'party', 5, { fromFileId: 101, toFileId: 102 });
   });
 });
 
@@ -576,7 +576,7 @@ describe('mix points edited by hand', () => {
     expect(transition).toHaveBeenCalledTimes(1);
     await wait(1);
     expect(transition).toHaveBeenCalledTimes(2);
-    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 6);
+    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 6, { fromFileId: 101, toFileId: 102 });
     expect(useTransition.getState().ready).toBeDefined();
   });
 

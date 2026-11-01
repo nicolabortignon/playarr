@@ -10,6 +10,9 @@ const input = z.object({
   to: z.number().int().nonnegative(),
   mode: z.enum(['auto', 'party', 'off']),
   position: z.number().min(0).optional(),
+  /** The files the player has for the songs (older players don't send them). */
+  fromFileId: z.number().int().nonnegative().optional(),
+  toFileId: z.number().int().nonnegative().optional(),
 });
 
 /**
@@ -28,9 +31,16 @@ export function transitionRoutes(
     const parsed = input.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
     if (!transitions) return { status: 'unavailable', reason: unavailableReason };
-    const { from, to, mode, position } = parsed.data;
+    const { from, to, mode, position, fromFileId, toFileId } = parsed.data;
     try {
-      return await transitions.request({ fromTrackId: from, toTrackId: to, mode, ...(position !== undefined ? { aPosition: position } : {}) });
+      return await transitions.request({
+        fromTrackId: from,
+        toTrackId: to,
+        mode,
+        ...(position !== undefined ? { aPosition: position } : {}),
+        ...(fromFileId !== undefined ? { fromFileId } : {}),
+        ...(toFileId !== undefined ? { toFileId } : {}),
+      });
     } catch (err) {
       // The player has a fallback for every answer but an error page: never make it guess.
       req.log.warn({ err, from, to }, 'transition request failed');

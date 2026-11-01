@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { appendFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   planTransition,
@@ -92,14 +92,21 @@ function synthPcm(path: string, { sampleRate, maxSeconds, startSeconds: asked = 
   return Buffer.from(samples.buffer);
 }
 
-/** Writes the floats as they are, interleaved: enough to check what would have been encoded. */
-const rawEncoder: Encoder = async ({ left, right }: StereoAudio, file: string) => {
-  const out = new Float32Array(left.length * 2);
-  for (let i = 0; i < left.length; i++) {
-    out[2 * i] = left[i]!;
-    out[2 * i + 1] = right[i]!;
+/** The most frames the fake encoder was ever handed at once. */
+let largestPiece = 0;
+
+/** Writes the floats as they are, interleaved, as they arrive: enough to check what would have been encoded. */
+const rawEncoder: Encoder = async (audio, file) => {
+  await writeFile(file, Buffer.alloc(0));
+  for await (const { left, right } of audio) {
+    largestPiece = Math.max(largestPiece, left.length);
+    const out = new Float32Array(left.length * 2);
+    for (let i = 0; i < left.length; i++) {
+      out[2 * i] = left[i]!;
+      out[2 * i + 1] = right[i]!;
+    }
+    await appendFile(file, Buffer.from(out.buffer));
   }
-  await writeFile(file, Buffer.from(out.buffer));
 };
 
 function readRaw(file: string): Float32Array {
@@ -120,6 +127,7 @@ interface SetupOptions {
   dir?: string;
   maxBytes?: number;
   renderTimeoutMs?: number;
+  forgetGraceMs?: number;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -150,6 +158,7 @@ function setup(options: SetupOptions = {}) {
     now: options.now,
     maxBytes: options.maxBytes,
     renderTimeoutMs: options.renderTimeoutMs,
+    forgetGraceMs: options.forgetGraceMs,
   });
   return { dir, transitions, pcm, render, encode, log, maps, cues, tracks };
 }
@@ -280,17 +289,37 @@ describe('Transitions', () => {
     }
   });
 
-  it('forget removes every cached transition involving a song', async () => {
-    const t = setup();
+  it('forget plans afresh at once, and deletes the old files only once players are done with them', async () => {
+    const t = setup({ forgetGraceMs: 300 });
     await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
     await t.transitions.request({ fromTrackId: 3, toTrackId: 4, mode: 'auto' });
     await t.transitions.idle();
+    const old = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' }));
     expect(transitionFiles(t.dir)).toHaveLength(4);
 
-    await t.transitions.forget('rec-2');
-    expect(transitionFiles(t.dir)).toHaveLength(2);
-    expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).status).toBe('pending');
+    // Song 1's mix map is measured again (its outro moved), and the analyzer forgets it.
+    t.maps.set('rec-1', mixMap({ outroStart: 35 }));
+    await t.transitions.forget('rec-1');
+    const replanned = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
+    expect(replanned).toMatchObject({ status: 'pending', plan: { aStart: 35 } });
+    // A player streaming the old transition can still finish it.
+    const oldName = old.url.replace('/transitions/', '');
+    expect(existsSync(t.transitions.filePath(oldName)!)).toBe(true);
     expect((await t.transitions.request({ fromTrackId: 3, toTrackId: 4, mode: 'auto' })).status).toBe('ready');
+
+    await t.transitions.idle();
+    await vi.waitFor(() => expect(existsSync(t.transitions.filePath(oldName)!)).toBe(false));
+    expect(transitionFiles(t.dir)).toHaveLength(4); // 3→4, and 1→2 made afresh
+    expect(transitionFiles(t.dir)).not.toContain(oldName.replace('.flac', '.json'));
+  });
+
+  it('turns away a request for a file the song no longer has, so the player falls back', async () => {
+    const t = setup();
+    expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fromFileId: 101, toFileId: 999 })).toEqual({
+      status: 'unavailable',
+      reason: expect.stringContaining('file changed'),
+    });
+    expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fromFileId: 101, toFileId: 102 })).status).toBe('pending');
   });
 
   it('forget during a render throws its result away', async () => {
@@ -408,6 +437,7 @@ describe('Transitions', () => {
       ['rec-2', mixMap()],
     ]);
     const t = setup({ tracks: [track(1), track(2, MP3)], maps });
+    largestPiece = 0;
     await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
     await t.transitions.idle();
     const ready = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' }));
@@ -418,7 +448,14 @@ describe('Transitions', () => {
       ['/music/1.flac', false],
       ['/music/2.flac', true],
       ['/music/2.flac', true],
+      ['/music/2.flac', true],
     ]);
+    // The remainder comes in 30 s decodes, one after the other on the 10 ms grid, and reaches the
+    // encoder no bigger than that: a long song is never held whole.
+    const remainderCalls = t.pcm.mock.calls.slice(2).map(([, opts]) => opts);
+    expect(remainderCalls.map((opts) => opts.startSeconds)).toEqual([6.66, 36.66]);
+    expect(remainderCalls.every((opts) => opts.maxSeconds <= 30)).toBe(true);
+    expect(largestPiece).toBeLessThanOrEqual(30 * RENDER_RATE);
 
     const rest = readRaw(fileOf(t.dir, ready.continuationUrl!));
     const bResume = ready.plan.bResume;
@@ -492,7 +529,10 @@ describe('Transitions', () => {
   it('the ffmpeg encoder reports a missing ffmpeg as ENOENT, which is what switches to WAV', async () => {
     const encode = ffmpegFlacEncoder('playarr-test-no-such-ffmpeg');
     const audio = { left: new Float32Array(10), right: new Float32Array(10) };
-    await expect(encode(audio, join(cacheFolder(), 'out.flac.tmp'), AbortSignal.timeout(10_000))).rejects.toMatchObject({ code: 'ENOENT' });
+    const pieces = (async function* () {
+      yield audio;
+    })();
+    await expect(encode(pieces, join(cacheFolder(), 'out.flac.tmp'), AbortSignal.timeout(10_000))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('serves only its own file names', () => {
