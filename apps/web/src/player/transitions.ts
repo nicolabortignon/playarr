@@ -24,6 +24,11 @@ const RETRY_MS = [3000, 10_000];
 const UNAVAILABLE_RETRY_MS = 60_000;
 /** Not ready this close to the mix point: too late to load it, so the pair plays the usual way. */
 const GIVE_UP_S = 20;
+/**
+ * A ready transition survives a seek that lands at least this long before its mix point: the engine
+ * has its file loaded well ahead, and only needs a moment to start it.
+ */
+const READY_LEAD_S = 1;
 /** After giving up, a jump back this far before the cut-off (a restart) is worth asking again. */
 const RESTART_MARGIN_S = 10;
 
@@ -231,10 +236,14 @@ function watchUpcomingTransition() {
     maybeAsk();
   }
 
-  /** After a jump, the answer is for a mix point now too close or behind, or (given up) a restart left time again. */
+  /**
+   * After a jump, the answer is for a mix point now behind (ready) or too close to render in time
+   * (pending), or (given up) a restart left time again.
+   */
   function outOfStep(p: Pair, time: number): boolean {
     const { result } = useTransition.getState();
-    if ((result?.status === 'ready' || result?.status === 'pending') && time >= result.plan.aStart - GIVE_UP_S) return true;
+    if (result?.status === 'ready' && time >= result.plan.aStart - READY_LEAD_S) return true;
+    if (result?.status === 'pending' && time >= result.plan.aStart - GIVE_UP_S) return true;
     return p.ended === 'late' && time < (p.aStart ?? p.from.duration) - GIVE_UP_S - RESTART_MARGIN_S;
   }
 

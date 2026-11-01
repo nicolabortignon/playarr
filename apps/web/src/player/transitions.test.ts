@@ -370,28 +370,42 @@ describe('giving up and starting over', () => {
     expect(useTransition.getState()).toMatchObject({ result: { status: 'gave up' }, ready: undefined });
   });
 
+  it('keeps a ready transition through a seek that stays before its mix point', async () => {
+    transition.mockResolvedValue(ready(170));
+    renderHook(() => useUpcomingTransition());
+    await playTo(5);
+    const first = useTransition.getState().ready;
+    act(() => useClock.getState().seek(100));
+    await settle();
+    // Into the song's outro, closer than the 20 seconds a file not yet ready would need: the engine
+    // has it loaded by now, so it still plays.
+    act(() => useClock.getState().seek(160));
+    await settle();
+    expect(transition).toHaveBeenCalledTimes(1);
+    expect(useTransition.getState().ready).toBe(first);
+  });
+
   it('starts over from the new position after a seek past the mix point', async () => {
     transition.mockResolvedValue(ready(170));
     renderHook(() => useUpcomingTransition());
     await playTo(5);
-    // A seek that leaves the mix point well ahead keeps the answer.
-    act(() => useClock.getState().seek(100));
-    await settle();
-    expect(transition).toHaveBeenCalledTimes(1);
-    expect(useTransition.getState().ready).toBeDefined();
-
-    transition.mockResolvedValue(ready(180));
-    act(() => useClock.getState().seek(155));
-    await settle();
-    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 155);
-    expect(useTransition.getState().ready?.plan.aStart).toBe(180);
-
-    // Past it: asked again from there, and too late for this song.
     act(() => useClock.getState().seek(175));
     expect(useTransition.getState()).toMatchObject({ result: null, ready: undefined });
     await settle();
+    // Asked again from there; a new render that late is too late for this song.
     expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 175);
     expect(useTransition.getState().result).toEqual({ status: 'gave up' });
+
+    // From the start again, it asks again once the song has played 5 seconds.
+    transition.mockClear();
+    act(() => usePlayer.getState().prev(176));
+    await jumpTo(0);
+    expect(useTransition.getState().result).toBeNull();
+    await playTo(4);
+    expect(transition).not.toHaveBeenCalled();
+    await playTo(5);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 5);
+    expect(useTransition.getState().ready?.plan.aStart).toBe(170);
   });
 
   it('asks again after giving up when the song restarts', async () => {
@@ -534,9 +548,9 @@ describe('transitions kept with downloads', () => {
     await playTo(30);
     expect(transition).not.toHaveBeenCalled();
     // Seeking past its mix point: the server plans one from there.
-    act(() => useClock.getState().seek(160));
+    act(() => useClock.getState().seek(175));
     await settle();
-    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 160);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 175);
   });
 
   it('online, asks the server for Party rather than using the kept Auto transition', async () => {
