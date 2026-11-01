@@ -28,6 +28,8 @@ interface PlayerState {
   removeAt: (orderPos: number) => void;
   move: (fromPos: number, toPos: number) => void;
   clearUpcoming: () => void;
+  /** Replace what plays after the current song: indices into `queue`, e.g. reordered or restored. */
+  setUpcoming: (queueIndices: number[]) => void;
   next: (auto?: boolean) => void;
   prev: (currentTime: number) => void;
   setPlaying: (playing: boolean) => void;
@@ -119,6 +121,12 @@ export const usePlayer = create<PlayerState>()(
         next.splice(toPos, 0, item!);
         const current = order[pos]!;
         set({ order: next, pos: next.indexOf(current) });
+      },
+
+      setUpcoming: (queueIndices) => {
+        const { order, pos, queue } = get();
+        const valid = queueIndices.filter((i) => i >= 0 && i < queue.length && i !== order[pos]);
+        set({ order: [...order.slice(0, pos + 1), ...valid] });
       },
 
       clearUpcoming: () => {

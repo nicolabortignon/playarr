@@ -1,13 +1,17 @@
-import { ListPlus, X } from 'lucide-react';
-import { Link } from 'react-router';
+import type { Track } from '@playarr/shared';
+import { Disc3, GripVertical, ListMusic, ListPlus, ListStart, Mic2, X } from 'lucide-react';
+import { Reorder, useDragControls } from 'motion/react';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import { Cover } from '../components/Cover';
 import { Equalizer } from '../components/Equalizer';
 import { FavoriteButton } from '../components/FavoriteButton';
 import { FormatBadge } from '../components/FormatBadge';
+import { Menu } from '../components/Menu';
 import { OfflineMark } from '../components/OfflineMark';
-import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
+import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { PageTitle } from './Albums';
@@ -15,9 +19,10 @@ import { PageTitle } from './Albums';
 export function QueuePage() {
   const track = useCurrentTrack();
   const playing = usePlayer((s) => s.playing);
-  const pos = usePlayer((s) => s.pos);
-  const upcoming = usePlayer(useShallow((s) => s.order.slice(s.pos + 1).map((i) => s.queue[i]!)));
-  const { jumpTo, removeAt, clearUpcoming } = usePlayer.getState();
+  // What plays next, as positions in the player's queue (unique even when a song is queued twice).
+  const upcomingIds = usePlayer(useShallow((s) => s.order.slice(s.pos + 1)));
+  const queue = usePlayer((s) => s.queue);
+  const upcoming = upcomingIds.map((i) => queue[i]!);
   const total = upcoming.reduce((sum, t) => sum + t.duration, 0);
   const openPicker = useUI((s) => s.openPlaylistPicker);
 
@@ -71,7 +76,7 @@ export function QueuePage() {
             Up next{upcoming.length > 0 && ` · ${plural(upcoming.length, 'track')} · ${formatDuration(total)}`}
           </div>
           {upcoming.length > 0 && (
-            <button type="button" onClick={clearUpcoming} className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase hover:text-paper">
+            <button type="button" onClick={() => clearWithUndo(upcomingIds)} className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase hover:text-paper">
               Clear
             </button>
           )}
@@ -79,39 +84,103 @@ export function QueuePage() {
         {upcoming.length === 0 ? (
           <p className="py-6 text-sm text-muted">The queue ends after this track.</p>
         ) : (
-          <ol className="-mx-3">
-            {upcoming.map((t, i) => (
-              <li
-                key={`${t.id}-${pos + 1 + i}`}
-                className="group grid cursor-pointer grid-cols-[2.75rem_1fr_auto_auto_auto] items-center gap-3 rounded-md px-3 py-2 transition hover:bg-paper/[0.045] md:gap-4"
-                onClick={() => jumpTo(pos + 1 + i)}
-              >
-                <Cover src={t.coverUrl} size={44} alt="" className="size-11 rounded-[3px]" />
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[15px] text-paper">{t.title}</span>
-                    <OfflineMark fileId={t.fileId} />
-                  </div>
-                  <div className="truncate text-[13px] text-muted">{t.artistName}</div>
-                </div>
-                <FavoriteButton track={t} reveal />
-                <span className="font-mono text-[13px] text-muted tabular">{formatTime(t.duration)}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${t.title} from queue`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeAt(pos + 1 + i);
-                  }}
-                  className={cn('grid size-9 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper md:opacity-0 md:group-hover:opacity-100')}
-                >
-                  <X className="size-4" />
-                </button>
-              </li>
-            ))}
-          </ol>
+          <UpNext ids={upcomingIds} queue={queue} />
         )}
       </section>
     </div>
+  );
+}
+
+/** Clear what's coming up, with a way back for a mis-tap. */
+function clearWithUndo(ids: number[]) {
+  const { clearUpcoming, setUpcoming } = usePlayer.getState();
+  const current = usePlayer.getState().order[usePlayer.getState().pos];
+  clearUpcoming();
+  toast(`Cleared ${plural(ids.length, 'track')}`, 'info', {
+    label: 'Undo',
+    run: () => {
+      const s = usePlayer.getState();
+      if (s.order[s.pos] === current) setUpcoming([...ids, ...s.order.slice(s.pos + 1)]);
+    },
+  });
+}
+
+/** Up next: drag to reorder (by the grip), tap to play from there, ⋯ for the rest. */
+function UpNext({ ids, queue }: { ids: number[]; queue: Track[] }) {
+  // Dragging reorders this copy; the player's order changes when the drag ends.
+  const [order, setOrder] = useState(ids);
+  useEffect(() => setOrder(ids), [ids]);
+  const commit = () => usePlayer.getState().setUpcoming(order);
+  return (
+    <Reorder.Group axis="y" values={order} onReorder={setOrder} as="ol" className="-mx-3">
+      {order.map((queueIndex, i) => (
+        <UpNextRow key={queueIndex} queueIndex={queueIndex} track={queue[queueIndex]!} position={i} order={order} onDragEnd={commit} />
+      ))}
+    </Reorder.Group>
+  );
+}
+
+function UpNextRow({
+  queueIndex,
+  track: t,
+  position,
+  order,
+  onDragEnd,
+}: {
+  queueIndex: number;
+  track: Track;
+  position: number;
+  order: number[];
+  onDragEnd: () => void;
+}) {
+  const controls = useDragControls();
+  const navigate = useNavigate();
+  const openPicker = useUI((s) => s.openPlaylistPicker);
+  const p = () => usePlayer.getState();
+  const at = () => p().pos + 1 + position;
+  return (
+    <Reorder.Item
+      value={queueIndex}
+      dragListener={false}
+      dragControls={controls}
+      onDragEnd={onDragEnd}
+      whileDrag={{ scale: 1.02, boxShadow: '0 16px 40px -12px rgb(0 0 0 / 0.8)' }}
+      className="group grid cursor-pointer grid-cols-[1.5rem_2.75rem_1fr_auto_auto_auto] items-center gap-2 rounded-md bg-ink-900 px-2 py-2 transition-colors hover:bg-ink-850 md:gap-3"
+      onClick={() => p().jumpTo(at())}
+    >
+      <span
+        role="button"
+        aria-label={`Drag to reorder ${t.title}`}
+        onPointerDown={(e) => controls.start(e)}
+        onClick={(e) => e.stopPropagation()}
+        className="grid h-9 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100"
+      >
+        <GripVertical className="size-4" />
+      </span>
+      <Cover src={t.coverUrl} size={44} alt="" className="size-11 rounded-[3px]" />
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[15px] text-paper">{t.title}</span>
+          <OfflineMark fileId={t.fileId} />
+        </div>
+        <div className="truncate text-[13px] text-muted">{t.artistName}</div>
+      </div>
+      <FavoriteButton track={t} reveal />
+      <span className="font-mono text-[13px] text-muted tabular max-sm:hidden">{formatTime(t.duration)}</span>
+      <div onClick={(e) => e.stopPropagation()} className="md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+        <Menu
+          label={`Actions for ${t.title}`}
+          items={[
+            ...(position > 0
+              ? [{ label: 'Play next', icon: ListStart, onSelect: () => p().setUpcoming([queueIndex, ...order.filter((i) => i !== queueIndex)]) }]
+              : []),
+            { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker([t]) },
+            { label: 'Go to album', icon: Disc3, onSelect: () => navigate(`/albums/${t.albumId}`) },
+            { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${t.artistId}`) },
+            { label: 'Remove from queue', icon: X, onSelect: () => p().removeAt(at()) },
+          ]}
+        />
+      </div>
+    </Reorder.Item>
   );
 }
