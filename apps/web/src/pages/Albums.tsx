@@ -49,7 +49,7 @@ export function AlbumsPage() {
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Albums" count={data?.length}>
-        <div role="radiogroup" aria-label="Sort albums" className="scrollbar-none -mx-5 flex gap-1.5 overflow-x-auto px-5 md:mx-0 md:px-0">
+        <div role="radiogroup" aria-label="Sort albums" className="scrollbar-none -mx-5 flex gap-1.5 overflow-x-auto overflow-y-hidden px-5 md:mx-0 md:px-0">
           {SORTS.map((s) => (
             <button
               key={s.value}

@@ -30,7 +30,7 @@ export function Shelf({ children }: { children: ReactNode }) {
     <div className="group/shelf relative -mx-5 md:-mx-10">
       <div
         ref={ref}
-        className="scrollbar-none flex snap-x snap-mandatory scroll-px-5 gap-4 overflow-x-auto px-5 pb-2 md:scroll-px-10 md:gap-6 md:px-10"
+        className="scrollbar-none flex snap-x snap-mandatory scroll-px-5 gap-4 overflow-x-auto px-5 pb-2 md:scroll-px-10 md:gap-6 md:px-10 overflow-y-hidden"
       >
         <KeepMounted value>{children}</KeepMounted>
       </div>

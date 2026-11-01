@@ -28,7 +28,7 @@ export function SettingsPage() {
   return (
     <div className="max-w-4xl px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Settings" />
-      <nav aria-label="Settings" className="scrollbar-none mb-10 flex gap-6 overflow-x-auto border-b border-line">
+      <nav aria-label="Settings" className="scrollbar-none mb-10 flex gap-6 overflow-x-auto overflow-y-hidden border-b border-line">
         {PANELS.map((p) => (
           <Link
             key={p.id}
