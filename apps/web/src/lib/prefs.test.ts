@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ACCENTS, PREFS_KEY, usePrefs } from './prefs';
 
-const defaults = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true } as const;
+const defaults = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, crossfade: 0, levelVolume: true } as const;
 const stored = (state: Record<string, unknown>) =>
   localStorage.setItem(PREFS_KEY, JSON.stringify({ state, version: 1 }));
 
@@ -17,13 +17,15 @@ describe('device preferences', () => {
   });
 
   it('keeps what is set, on this device', () => {
-    const { setAccent, setMotion, setFormatBadges, setRecordPlays, setAutoplay } = usePrefs.getState();
+    const { setAccent, setMotion, setFormatBadges, setRecordPlays, setAutoplay, setCrossfade, setLevelVolume } = usePrefs.getState();
     setAccent(ACCENTS[2]);
     setMotion('reduce');
     setFormatBadges(false);
     setRecordPlays(false);
     setAutoplay(false);
-    const saved = { accent: ACCENTS[2], motion: 'reduce', formatBadges: false, recordPlays: false, autoplay: false };
+    setCrossfade(6);
+    setLevelVolume(false);
+    const saved = { accent: ACCENTS[2], motion: 'reduce', formatBadges: false, recordPlays: false, autoplay: false, crossfade: 6, levelVolume: false };
     expect(usePrefs.getState()).toMatchObject(saved);
     expect(JSON.parse(localStorage.getItem(PREFS_KEY)!).state).toEqual(saved);
   });

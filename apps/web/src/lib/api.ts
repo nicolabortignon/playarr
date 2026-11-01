@@ -39,6 +39,7 @@ import type {
   SourceTestResult,
   SourcesResponse,
   Track,
+  TrackLevel,
   TrackMetadata,
   UpdateInfo,
   UpdateSettings,
@@ -157,6 +158,7 @@ export const api = {
   reportPlays: (plays: PlayReport[]) =>
     request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
+  levels: (ids: string[]) => request<Record<string, TrackLevel>>('/api/levels', { method: 'POST', body: JSON.stringify({ ids }) }),
   radio: (seeds: string[], exclude: string[] = [], count = 25) =>
     request<Track[]>('/api/radio', { method: 'POST', body: JSON.stringify({ seeds, exclude, count }) }),
   mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`),

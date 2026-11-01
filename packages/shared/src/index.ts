@@ -762,3 +762,11 @@ export interface MixSettingsInfo extends MixSettings {
   analysisAvailable: boolean;
   history: { plays: number; since?: string };
 }
+
+/** How much to turn a song down so songs play at an even volume (dB, never above 0). */
+export interface TrackLevel {
+  /** The song on its own. */
+  track: number;
+  /** The song within its album, keeping the album's quiet and loud songs as they were mastered. */
+  album?: number;
+}

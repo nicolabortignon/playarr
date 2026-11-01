@@ -1,7 +1,8 @@
 import { Fragment } from 'react';
-import { usePrefs } from '../lib/prefs';
+import { CROSSFADES, usePrefs } from '../lib/prefs';
+import { canSetVolume } from '../player/decks';
 import { OfflineStorage } from './OfflineStorage';
-import { SettingsSection, Switch } from './SettingsControls';
+import { PillGroup, SettingsSection, Switch } from './SettingsControls';
 
 /** What player/useKeyboardShortcuts.ts does. */
 const SHORTCUTS: { keys: string[][]; action: string }[] = [
@@ -24,6 +25,11 @@ export function PlaybackPanel() {
   const setRecordPlays = usePrefs((s) => s.setRecordPlays);
   const autoplay = usePrefs((s) => s.autoplay);
   const setAutoplay = usePrefs((s) => s.setAutoplay);
+  const crossfade = usePrefs((s) => s.crossfade);
+  const setCrossfade = usePrefs((s) => s.setCrossfade);
+  const levelVolume = usePrefs((s) => s.levelVolume);
+  const setLevelVolume = usePrefs((s) => s.setLevelVolume);
+  const settable = canSetVolume();
   return (
     <div>
       <SettingsSection title="Playing">
@@ -40,6 +46,35 @@ export function PlaybackPanel() {
             checked={recordPlays}
             onChange={setRecordPlays}
           />
+        </div>
+      </SettingsSection>
+      <SettingsSection
+        title="Sound"
+        description={
+          settable
+            ? 'Songs always follow each other without a gap.'
+            : 'Songs always follow each other without a gap. This device sets the volume with its own buttons, so it can’t fade or even out songs.'
+        }
+      >
+        <div className="divide-y divide-line">
+          <Switch
+            label="Even out the volume"
+            description="Loud songs are turned down to match the rest; an album played in order keeps its own quiet and loud songs."
+            checked={settable && levelVolume}
+            onChange={setLevelVolume}
+            disabled={!settable}
+          />
+          <div className="py-3">
+            <div className="text-[15px] text-paper">Crossfade</div>
+            <p className="mt-0.5 mb-3 text-[13px] text-muted">Fades each song into the next. Never between songs of an album played in order.</p>
+            <PillGroup
+              label="Crossfade"
+              options={CROSSFADES.map((s) => ({ value: s, label: s ? `${s} s` : 'Off' }))}
+              value={settable ? crossfade : 0}
+              onChange={setCrossfade}
+              disabled={!settable}
+            />
+          </div>
         </div>
       </SettingsSection>
       <OfflineStorage />
