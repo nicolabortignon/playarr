@@ -74,7 +74,6 @@ function maxAbs(values: ArrayLike<number>): number {
   for (let i = 0; i < values.length; i++) max = Math.max(max, Math.abs(values[i]!));
   return max;
 }
-const ms = (seconds: number) => `${(seconds * 1000).toFixed(2)} ms`;
 
 describe('stretch', () => {
   it('keeps the pitch of a sine slowed to 0.95 and returns exactly the length asked for', () => {
@@ -83,8 +82,7 @@ describe('stretch', () => {
     const output = stretch(input, () => 0.95, outSamples, rate);
     expect(output.length).toBe(outSamples);
     const hz = risingZeroCrossings(output) / (outSamples / rate);
-    console.log(`sine at 0.95: ${hz.toFixed(2)} Hz`);
-    expect(Math.abs(hz - 440) / 440).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(hz - 440) / 440).toBeLessThanOrEqual(0.01); // measured 439.96 Hz
   });
 
   it('plays a 120 BPM click track at 1.05 with kicks every 0.5 / 1.05 s', () => {
@@ -94,8 +92,7 @@ describe('stretch', () => {
     expect(errors.length).toBeGreaterThanOrEqual(38);
     const intervals = beats.slice(1).map((b, i) => b - beats[i]!);
     expect(maxAbs(intervals.map((d) => d - 0.5))).toBeLessThan(1e-9);
-    console.log(`click track at 1.05: worst kick ${ms(maxAbs(errors))} off over ${errors.length} kicks`);
-    expect(maxAbs(errors)).toBeLessThanOrEqual(0.002);
+    expect(maxAbs(errors)).toBeLessThanOrEqual(0.002); // measured 0.77 ms
   });
 
   it('follows a rate ramp from 1.04 down to 1.0: kicks land where the integral of the rate says', () => {
@@ -105,8 +102,7 @@ describe('stretch', () => {
     const output = stretch(samples, rampRate, seconds * rate, rate);
     // ∫₀ᵗ rate = 1.04 t − 0.001 t², solved for t.
     const errors = kickErrors(samples, beats, output, (b) => (1.04 - Math.sqrt(1.04 ** 2 - 0.004 * b)) / 0.002);
-    console.log(`ramp 1.04 → 1.0: worst kick ${ms(maxAbs(errors))} off over ${errors.length} kicks`);
-    expect(maxAbs(errors)).toBeLessThanOrEqual(0.003);
+    expect(maxAbs(errors)).toBeLessThanOrEqual(0.003); // measured 0.58 ms
   });
 
   it('keeps the beat on the tempo curve under a dense mix, where nothing but the natural continuation matches well', () => {
@@ -115,15 +111,15 @@ describe('stretch', () => {
     const input = samples.map((v, i) => v + 0.1 * hiss[i]!);
     for (const speed of [1.05, 0.95]) {
       const output = stretch(input, () => speed, 20 * rate, rate);
-      const errors = beats
-        .filter((b) => b / speed > 0.2 && b / speed < 19.5)
-        .map((b) => Math.abs(lagNear(input, b, output, b / speed)))
-        .sort((a, b) => a - b);
-      const mean = errors.reduce((s, e) => s + e, 0) / errors.length;
+      const lags = beats.filter((b) => b / speed > 0.2 && b / speed < 19.5).map((b) => lagNear(input, b, output, b / speed));
+      const errors = lags.map(Math.abs).sort((a, b) => a - b);
+      const meanError = errors.reduce((s, e) => s + e, 0) / errors.length;
+      const bias = lags.reduce((s, e) => s + e, 0) / lags.length;
       const p90 = errors[Math.floor(0.9 * errors.length)]!;
-      console.log(`dense mix at ${speed}: beats off by ${ms(mean)} on average, 90% within ${ms(p90)}`);
-      expect(mean).toBeLessThanOrEqual(0.0025);
+      // Measured at 1.05 / 0.95: mean error 1.0 / 1.6 ms, 90% within 1.7 / 2.8 ms, bias −0.3 / +0.5 ms.
+      expect(meanError).toBeLessThanOrEqual(0.0025);
       expect(p90).toBeLessThanOrEqual(0.0045);
+      expect(Math.abs(bias)).toBeLessThanOrEqual(0.0007);
     }
   });
 
@@ -156,6 +152,30 @@ describe('stretch', () => {
     expect(worst).toBeLessThanOrEqual(1e-6);
   });
 
+  it('starts from startOffset at any rate', () => {
+    const { samples, beats } = clickTrack({ bpm: 120, seconds: 25, rate });
+    const offset = Math.round(3.3 * rate);
+    const output = stretch(samples, () => 0.97, 15 * rate, rate, offset);
+    const errors = kickErrors(samples, beats, output, (t) => (t - offset / rate) / 0.97);
+    expect(errors.length).toBeGreaterThanOrEqual(25);
+    expect(maxAbs(errors)).toBeLessThanOrEqual(0.002);
+  });
+
+  it('plays silence before the input when startOffset is negative', () => {
+    const input = noise(2, rate, 9);
+    const lead = 3000;
+    const output = stretch(input, () => 1, rate, rate, -lead);
+    expect(maxAbs(output.subarray(0, lead))).toBe(0);
+    expect(maxAbs(output.subarray(lead).map((v, i) => v - input[i]!))).toBeLessThanOrEqual(1e-6);
+  });
+
+  it('refuses a rate that isn’t a finite positive number', () => {
+    const input = new Float32Array(rate);
+    expect(() => stretch(input, () => 0, rate / 2, rate)).toThrow(RangeError);
+    expect(() => stretch(input, (t) => (t > 0.2 ? NaN : 1), rate / 2, rate)).toThrow(RangeError);
+    expect(() => stretch(input, () => -1, rate / 2, rate)).toThrow(RangeError);
+  });
+
   it('pads with silence past the end of the input instead of failing', () => {
     const output = stretch(sine(440, 1), () => 1.05, 2 * rate, rate);
     expect(output.length).toBe(2 * rate);
@@ -174,18 +194,21 @@ describe('stretchStereo', () => {
     expect(maxAbs(out.right.map((v, i) => v - 0.4 * out.left[i]!))).toBeLessThanOrEqual(1e-6);
   });
 
+  it('refuses channels of different lengths', () => {
+    expect(() => stretchStereo(new Float32Array(100), new Float32Array(99), () => 1, 50, rate)).toThrow(RangeError);
+  });
+
   it('keeps the correlation between channels that differ', () => {
     const { samples } = song({ bpm: 126, rate, introBeats: 8, bodyBeats: 16, outroBeats: 8 });
     const left = Float32Array.from(samples, (v, i) => v + 0.3 * hiss1[i % hiss1.length]!);
     const right = Float32Array.from(samples, (v, i) => 0.7 * v + 0.3 * hiss2[i % hiss2.length]!);
     const out = stretchStereo(left, right, () => 0.96, 10 * rate, rate);
     const before = correlation(left.subarray(0, 10 * rate), right.subarray(0, 10 * rate));
-    const after = correlation(out.left, out.right);
-    console.log(`stereo L/R correlation: ${before.toFixed(3)} before, ${after.toFixed(3)} after`);
+    const after = correlation(out.left, out.right); // measured 0.402 before, 0.407 after
     expect(Math.abs(after - before)).toBeLessThanOrEqual(0.05);
   });
 
-  it('is fast enough for a NAS: 120 s of stereo', () => {
+  it('is fast enough for a NAS: 120 s of stereo', { timeout: 60000 }, () => {
     const { samples } = song({ bpm: 124, rate, introBeats: 32, bodyBeats: 160, outroBeats: 64 });
     const left = Float32Array.from(samples, (v, i) => v + 0.1 * hiss1[i % hiss1.length]!);
     const right = Float32Array.from(samples, (v, i) => v + 0.1 * hiss2[i % hiss2.length]!);
@@ -193,8 +216,7 @@ describe('stretchStereo', () => {
     const ramp = (t: number) => 1.05 - (0.05 * t) / 120;
     stretchStereo(left, right, ramp, 120 * rate, rate);
     const seconds = (performance.now() - started) / 1000;
-    console.log(`120 s of stereo stretched in ${seconds.toFixed(2)} s`);
-    expect(seconds).toBeLessThan(30);
+    expect(seconds).toBeLessThan(30); // measured 0.5–1.2 s on a (busy) laptop
   });
 });
 

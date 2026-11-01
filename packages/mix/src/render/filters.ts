@@ -22,12 +22,18 @@ export const HIGH_PASS_Q = Math.SQRT1_2;
 export const HIGH_PASS_OFF_HZ = 20;
 /** Shelf gains closer to 0 dB than this are treated as flat. */
 const FLAT_DB = 0.01;
-/** Samples over which a filter turning off fades to the dry signal (11.6 ms at 44.1 kHz). */
-const FADE_OUT = 4 * FILTER_BLOCK;
-/** Raised-cosine weight of the dry signal through the fade, 0 → 1. */
-const FADE_CURVE = Float64Array.from({ length: FADE_OUT }, (_, i) => 0.5 - 0.5 * Math.cos((Math.PI * (i + 1)) / FADE_OUT));
-/** Dry samples a filter coming back on runs over first, so its state matches the music. */
+/**
+ * Samples over which a filter turning on or off cross-fades with the dry signal (11.6 ms at
+ * 44.1 kHz). Cutting between filtered and dry in one sample would click: a filter changes the
+ * level and phase of the bass, so the two waveforms differ.
+ */
+const FADE = 4 * FILTER_BLOCK;
+/** Raised-cosine weight of the filtered signal through the fade: 0 (dry) at 0, 1 (filtered) at FADE. */
+const FADE_CURVE = Float64Array.from({ length: FADE + 1 }, (_, i) => 0.5 - 0.5 * Math.cos((Math.PI * i) / FADE));
+/** Dry samples a filter coming back on after a long rest runs over first, so its state matches the music. */
 const WARM_UP = 2048;
+/** Integrator states smaller than this are flushed to zero: denormal numbers are very slow on some CPUs. */
+const DENORMAL = 1e-20;
 
 /** A filter parameter over time: called once per block with the block's start in seconds. */
 export type ParameterAt = (blockStartSeconds: number) => number;
@@ -62,14 +68,14 @@ export function applyHighPass(channel: Float32Array, cutoffHzAt: ParameterAt, sa
 }
 
 /**
- * The shared block loop. Blocks where the parameter is neutral are left untouched, without
- * clicks at either edge:
- * - turning off, the filter keeps running with its last setting for FADE_OUT samples while the
- *   output fades over to the dry signal (cutting from filtered to dry in one sample would click,
- *   because a filter shifts the phase of the bass and the two waveforms differ);
- * - turning back on, the filter first runs over the dry samples just before the block (they are
- *   still the input, since neutral blocks aren't touched), so it starts as if it had been running
- *   all along rather than from silence.
+ * The shared block loop. `wet` (0…FADE) is how far the output has faded from dry to filtered: it
+ * counts up while the parameter is active and down while it is neutral, so turning on, turning off
+ * and changing one's mind mid-fade are all the same smooth cross-fade. While fading out, the filter
+ * keeps its last active setting. Blocks that are neutral and fully dry are left untouched.
+ *
+ * Turning back on, the filter first runs over the dry samples since it last stopped (they are still
+ * the input, as dry blocks aren't touched), so it carries on exactly as if it had been running all
+ * along; after a rest longer than WARM_UP it starts afresh on the last WARM_UP samples instead.
  */
 function runFilter(
   channel: Float32Array,
@@ -82,25 +88,27 @@ function runFilter(
   // Integrator states.
   let ic1 = 0;
   let ic2 = 0;
-  /** Samples left in the fade to dry; −1 while the filter is on. */
-  let fadeLeft = 0;
-  /** Where the current stretch of untouched (dry) samples began. */
+  let wet = 0;
+  /** Where the current stretch of untouched (dry) samples began; the state is as of there. */
   let dryFrom = 0;
 
   for (let start = 0; start < channel.length; start += FILTER_BLOCK) {
     const end = Math.min(start + FILTER_BLOCK, channel.length);
     const value = parameterAt(start / sampleRate);
-    const neutral = isNeutral(value);
+    if (!Number.isFinite(value)) throw new RangeError(`filter parameter at ${start / sampleRate} s is ${value}`);
+    const active = !isNeutral(value);
+    if (!active && wet === 0) continue; // dry: nothing to do
 
-    if (neutral) {
-      if (fadeLeft === 0) continue; // dry: nothing to do
-      if (fadeLeft === -1) fadeLeft = FADE_OUT; // just turned off: fade out on the last setting
-    } else {
+    if (active) {
       design(c, value, sampleRate);
-      if (fadeLeft === 0) {
-        ic1 = ic2 = 0;
+      if (wet === 0) {
+        let from = dryFrom;
+        if (start - dryFrom > WARM_UP) {
+          ic1 = ic2 = 0;
+          from = start - WARM_UP;
+        }
         const { a1, a2, a3 } = c;
-        for (let i = Math.max(dryFrom, start - WARM_UP); i < start; i++) {
+        for (let i = from; i < start; i++) {
           const v3 = channel[i]! - ic2;
           const v1 = a1 * ic1 + a2 * v3;
           const v2 = ic2 + a2 * ic1 + a3 * v3;
@@ -108,10 +116,12 @@ function runFilter(
           ic2 = 2 * v2 - ic2;
         }
       }
-      fadeLeft = -1;
     }
+    if (Math.abs(ic1) < DENORMAL) ic1 = 0;
+    if (Math.abs(ic2) < DENORMAL) ic2 = 0;
 
     const { a1, a2, a3, m0, m1, m2 } = c;
+    const step = active ? 1 : -1;
     for (let i = start; i < end; i++) {
       const v0 = channel[i]!;
       const v3 = v0 - ic2;
@@ -120,13 +130,14 @@ function runFilter(
       ic1 = 2 * v1 - ic1;
       ic2 = 2 * v2 - ic2;
       const y = m0 * v0 + m1 * v1 + m2 * v2;
-      if (fadeLeft > 0) {
-        channel[i] = y + FADE_CURVE[FADE_OUT - fadeLeft]! * (v0 - y);
-        if (--fadeLeft === 0) dryFrom = i + 1;
-      } else {
+      if (wet === FADE && active) {
         channel[i] = y;
+      } else {
+        wet = Math.min(FADE, Math.max(0, wet + step));
+        channel[i] = v0 + FADE_CURVE[wet]! * (y - v0);
       }
     }
+    if (wet === 0) dryFrom = end; // faded out: the state above is as of `end`
   }
 }
 

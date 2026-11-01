@@ -7,6 +7,12 @@
 // Time-domain and frame-based, so it keeps transients like kicks sharp (a phase vocoder smears
 // them), costs little, and is exact at rate 1: frames taken back to back cross-fade the input
 // into itself. That matters because a transition joins the original audio at both ends.
+//
+// How exact the tempo curve is followed: where the rate is 1, output sample n is the input sample
+// the integral of the rate says, exactly. Elsewhere that holds at frame centres up to the search
+// nudge, which leans toward the previous frame's natural continuation; with the drift penalty
+// re-centred (below), frames sit on average ~0.7 ms behind the curve when speeding up 5% (ahead
+// when slowing down), and kicks in a dense mix land within ~0.5 ms of it on average.
 
 /** Sample rate transitions are rendered at. */
 export const RENDER_RATE = 44100;
@@ -33,13 +39,26 @@ const REFINE = DECIMATION;
  * sines from 45 to 110 Hz dip at most 6% in level at 3, against 1% at 0.2.
  */
 const DRIFT_PENALTY = 3;
+/**
+ * Where the penalty is centred, as a fraction of how far the natural continuation falls behind the
+ * ideal place each frame ((rate − 1) × hop). Centred on the ideal place itself, the picks still
+ * lean toward the natural continuation: measured on the dense mix at 1.05, frames sat 1.3 ms
+ * behind the curve on average. Centring halfway toward the other side halves that to 0.7 ms and
+ * brings the kicks' mean offset to 0.3 ms (0.5 ms at 0.95), with no change to tonal splices.
+ * (Leaving ±2 ms around the centre free of penalty was tried too: it made timing worse and
+ * splices no better.)
+ */
+const PENALTY_CENTRE = 0.5;
 /** Mean square below this (−90 dB) is silence: nothing to match, so take the ideal position. */
 const SILENCE = 1e-9;
 
 /**
  * Stretches `input` to exactly `outSamples` samples. Output sample n plays input position
- * `startOffset + sampleRate · ∫₀^{n/sampleRate} rate(t) dt` (positions in samples). Input outside
- * the array reads as silence.
+ * `startOffset + sampleRate · ∫₀^{n/sampleRate} rate(t) dt` (positions in samples; see the top of
+ * the file for how exactly). Frames are taken from whole-sample positions, without interpolation,
+ * so a fractional `startOffset` is honoured to within half a sample. Input outside the array,
+ * including before a negative `startOffset`, reads as silence. Throws if the rate is ever not a
+ * finite positive number.
  */
 export function stretch(input: Float32Array, rate: RateAt, outSamples: number, sampleRate: number, startOffset = 0): Float32Array {
   const splices = planSplices((into, base) => copyPadded(input, into, base), input.length, rate, outSamples, sampleRate, startOffset);
@@ -58,7 +77,8 @@ export function stretchStereo(
   sampleRate: number,
   startOffset = 0,
 ): { left: Float32Array; right: Float32Array } {
-  const length = Math.min(left.length, right.length);
+  if (left.length !== right.length) throw new RangeError(`stereo channels differ in length: ${left.length} and ${right.length}`);
+  const length = left.length;
   const fillMid = (into: Float32Array, base: number) => {
     const from = Math.max(0, base);
     const to = Math.min(length, base + into.length);
@@ -84,6 +104,10 @@ interface Splices {
  * previous frame (what would have followed it in the input), so the cross-fade joins like with
  * like. Where the rate is exactly 1 the ideal position is taken as is: once the previous frame is
  * in place too, that is the natural continuation, and the output is the input sample for sample.
+ * The first frame at rate 1 after a stretch is the one splice taken without a search: it jumps
+ * from wherever the nudging left off (a few ms at most, given the drift penalty) straight onto the
+ * curve, through a single 23 ms cross-fade, so the transition can hand over to normal playback at
+ * exactly the planned spot.
  *
  * `fillSignal(into, base)` writes the signal to match on (mono input, or stereo mid) for input
  * positions base… into `into`, leaving zeros outside the input.
@@ -107,10 +131,15 @@ function planSplices(
   const unity = new Uint8Array(segments);
   let position = startOffset;
   ideal[0] = Math.round(position);
-  let rateStart = rate(0);
+  const rateAt = (seconds: number) => {
+    const value = rate(seconds);
+    if (!(Number.isFinite(value) && value > 0)) throw new RangeError(`playback rate at ${seconds} s is ${value}`);
+    return value;
+  };
+  let rateStart = rateAt(0);
   for (let k = 0; k < segments; k++) {
-    const rateMid = rate(((k + 0.5) * hop) / sampleRate);
-    const rateEnd = rate(((k + 1) * hop) / sampleRate);
+    const rateMid = rateAt(((k + 0.5) * hop) / sampleRate);
+    const rateEnd = rateAt(((k + 1) * hop) / sampleRate);
     position += (hop * (rateStart + 4 * rateMid + rateEnd)) / 6;
     ideal[k + 1] = Math.round(position);
     unity[k] = isUnity(rateStart) && isUnity(rateMid) && isUnity(rateEnd) ? 1 : 0;
@@ -149,7 +178,8 @@ function planSplices(
       continue;
     }
     const idealStart = target - hop - base;
-    const score = (start: number, similarity: number) => similarity - (DRIFT_PENALTY * Math.abs(start - idealStart)) / search;
+    const centre = idealStart + PENALTY_CENTRE * (target - ideal[k]! - hop);
+    const score = (start: number, similarity: number) => similarity - (DRIFT_PENALTY * Math.abs(start - centre)) / search;
 
     // Coarse pass over the decimated signal, sliding the candidate's energy along.
     const t = Math.round(natural / DECIMATION);
