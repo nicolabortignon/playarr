@@ -15,15 +15,18 @@ interface Prefs {
   accent: AccentPref;
   motion: MotionPref;
   formatBadges: boolean;
+  /** Count what this device plays towards the mixes (off for a party speaker or a guest's phone). */
+  recordPlays: boolean;
   setAccent(a: AccentPref): void;
   setMotion(m: MotionPref): void;
   setFormatBadges(on: boolean): void;
+  setRecordPlays(on: boolean): void;
 }
 
-type Saved = Pick<Prefs, 'accent' | 'motion' | 'formatBadges'>;
+type Saved = Pick<Prefs, 'accent' | 'motion' | 'formatBadges' | 'recordPlays'>;
 
 export const PREFS_KEY = 'playarr.prefs';
-const DEFAULTS: Saved = { accent: 'album', motion: 'system', formatBadges: true };
+const DEFAULTS: Saved = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true };
 
 const isAccent = (v: unknown): v is AccentPref => v === 'album' || (ACCENTS as readonly unknown[]).includes(v);
 
@@ -34,6 +37,7 @@ function clean(saved: unknown): Saved {
     accent: isAccent(s.accent) ? s.accent : DEFAULTS.accent,
     motion: MOTIONS.includes(s.motion as MotionPref) ? (s.motion as MotionPref) : DEFAULTS.motion,
     formatBadges: typeof s.formatBadges === 'boolean' ? s.formatBadges : DEFAULTS.formatBadges,
+    recordPlays: typeof s.recordPlays === 'boolean' ? s.recordPlays : DEFAULTS.recordPlays,
   };
 }
 
@@ -44,11 +48,12 @@ export const usePrefs = create<Prefs>()(
       setAccent: (accent) => set({ accent: isAccent(accent) ? accent : DEFAULTS.accent }),
       setMotion: (motion) => set({ motion: MOTIONS.includes(motion) ? motion : DEFAULTS.motion }),
       setFormatBadges: (formatBadges) => set({ formatBadges }),
+      setRecordPlays: (recordPlays) => set({ recordPlays }),
     }),
     {
       name: PREFS_KEY,
       version: 1,
-      partialize: ({ accent, motion, formatBadges }) => ({ accent, motion, formatBadges }),
+      partialize: ({ accent, motion, formatBadges, recordPlays }) => ({ accent, motion, formatBadges, recordPlays }),
       merge: (saved, current) => ({ ...current, ...clean(saved) }),
     },
   ),

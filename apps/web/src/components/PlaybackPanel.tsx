@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
+import { usePrefs } from '../lib/prefs';
 import { OfflineStorage } from './OfflineStorage';
-import { SettingsSection } from './SettingsControls';
+import { SettingsSection, Switch } from './SettingsControls';
 
 /** What player/useKeyboardShortcuts.ts does. */
 const SHORTCUTS: { keys: string[][]; action: string }[] = [
@@ -19,8 +20,20 @@ const KBD =
 
 /** Settings → Playback: for this device. */
 export function PlaybackPanel() {
+  const recordPlays = usePrefs((s) => s.recordPlays);
+  const setRecordPlays = usePrefs((s) => s.setRecordPlays);
   return (
     <div>
+      <SettingsSection title="Made for you">
+        <div className="divide-y divide-line">
+          <Switch
+            label="Count what this device plays"
+            description="Off for a party speaker or a guest’s phone: what plays here won’t shape everyone’s mixes."
+            checked={recordPlays}
+            onChange={setRecordPlays}
+          />
+        </div>
+      </SettingsSection>
       <OfflineStorage />
       <SettingsSection title="Keyboard shortcuts" description="They work anywhere in Playarr, except while you’re typing.">
         <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-3">

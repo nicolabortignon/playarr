@@ -1,5 +1,6 @@
 import type { PlayReport, Track } from '@playarr/shared';
 import { api } from '../lib/api';
+import { usePrefs } from '../lib/prefs';
 
 /** Heard this long (or half a shorter song): a play. */
 const PLAY_SECONDS = 30;
@@ -117,4 +118,7 @@ function writePending(plays: PlayReport[]) {
   }
 }
 
-export const playTracker = new PlayTracker((plays) => sendWithRetry(plays));
+export const playTracker = new PlayTracker((plays) => {
+  // Settings → Playback can keep this device out of the history.
+  if (usePrefs.getState().recordPlays) sendWithRetry(plays);
+});
