@@ -1,3 +1,4 @@
+import type { CuePoints, MixMap, MixMode, TransitionPlan } from '@playarr/mix';
 import type {
   Album,
   AlbumDetail,
@@ -50,6 +51,16 @@ import type {
   UpdateSettings,
 } from '@playarr/shared';
 import { usePrefs } from './prefs';
+
+/**
+ * The server's answer for one song into the next: the file to play (ready), still rendering (pending,
+ * ask again), better played straight on, or not possible (no mix map yet, say).
+ */
+export type TransitionAnswer =
+  | { status: 'ready'; plan: TransitionPlan; url: string; continuationUrl?: string }
+  | { status: 'pending'; plan: TransitionPlan }
+  | { status: 'straight'; plan: TransitionPlan }
+  | { status: 'unavailable'; reason: string };
 
 export class ApiError extends Error {
   constructor(
@@ -177,6 +188,12 @@ export const api = {
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
   lyrics: (trackId: number) => get<{ lyrics: Lyrics | null }>(`/api/tracks/${trackId}/lyrics`).then((r) => r.lyrics),
   levels: (ids: string[]) => request<Record<string, TrackLevel>>('/api/levels', { method: 'POST', body: JSON.stringify({ ids }) }),
+  /** `from` into `to` (catalog song ids). `position`: where `from` is now, so the plan doesn't start in the past. */
+  transition: (from: number, to: number, mode: MixMode, position?: number) =>
+    request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position }) }),
+  /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
+  mixMaps: (ids: string[]) =>
+    request<Record<string, MixMap & { cues?: CuePoints }>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),
   radio: (seeds: string[], exclude: string[] = [], count = 25) =>
     request<Track[]>('/api/radio', { method: 'POST', body: JSON.stringify({ seeds, exclude, count }) }),
   mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`),

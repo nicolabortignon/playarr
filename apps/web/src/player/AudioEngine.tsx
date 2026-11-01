@@ -15,6 +15,7 @@ import { playTracker } from './playTracker';
 import { useAutoplay } from './radio';
 import { sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, useClock, useCurrentTrack, usePlayer } from './store';
+import { useUpcomingTransition } from './transitions';
 
 const DEFAULT_ACCENT = '#ff7a1a';
 /** Have the next song loaded this long before the current one ends. */
@@ -174,6 +175,7 @@ export function AudioEngine() {
   useDownloads();
   useAutoplay();
   useSleepTimer(applyVolumes);
+  useUpcomingTransition();
 
   // Phones only let an element make sound after a tap on it: the first tap anywhere readies both,
   // so the next song can start on its own later (with the screen off, say).
