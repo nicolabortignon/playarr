@@ -33,7 +33,7 @@ export class Analyzer {
   private metaTimer: NodeJS.Timeout | undefined;
   private metaRunning = false;
   /** The number crunching runs off the main thread. */
-  private readonly dsp = new DspThread();
+  private readonly dsp: Pick<DspThread, 'analyze' | 'mixMap'>;
 
   constructor(
     private readonly db: DatabaseSync,
@@ -43,8 +43,12 @@ export class Analyzer {
       enabled: boolean;
       log: { warn: (obj: object, msg: string) => void };
       concurrency?: number;
+      /** The server's one DSP thread, shared with transition rendering: the two take turns on one worker rather than both crunching at once. */
+      dsp?: Pick<DspThread, 'analyze' | 'mixMap'>;
     },
-  ) {}
+  ) {
+    this.dsp = opts.dsp ?? new DspThread();
+  }
 
   /** Whether audio analysis is on. Each song's source must also be able to decode it (ffmpeg). */
   get canAnalyzeAudio(): boolean {

@@ -64,6 +64,7 @@ export default defineConfig({
       '/api': server,
       '/stream': server,
       '/art': server,
+      '/transitions': server,
     },
   },
 });

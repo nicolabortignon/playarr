@@ -16,7 +16,7 @@ clientsClaim();
 
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
-registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html'), { denylist: [/^\/api\//, /^\/stream\//, /^\/art\//] }));
+registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html'), { denylist: [/^\/api\//, /^\/stream\//, /^\/art\//, /^\/transitions\//] }));
 
 registerRoute(
   ({ url }) => url.pathname.startsWith('/art/'),

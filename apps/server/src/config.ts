@@ -14,6 +14,8 @@ const schema = z.object({
   CACHE_DIR: z.string().default('.cache'),
   // The artwork cache is trimmed to this size, least recently used first.
   ART_CACHE_MB: z.coerce.number().positive().default(2048),
+  // Rendered transitions (DJ mix) are trimmed to this size the same way.
+  TRANSITIONS_CACHE_MB: z.coerce.number().positive().default(1024),
   // User data (favorites…). Unlike the cache, don't delete this.
   DATA_DIR: z.string().default('data'),
   WEB_DIST: z.string().optional(),

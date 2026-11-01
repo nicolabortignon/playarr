@@ -45,14 +45,14 @@ function clickTrack(seconds: number): Buffer {
 }
 
 /** An analyzer over one song of `duration` seconds whose decodes are 20 s click tracks. */
-function withSong(duration: number, db: DatabaseSync = freshDb()) {
+function withSong(duration: number, db: DatabaseSync = freshDb(), dsp?: ConstructorParameters<typeof Analyzer>[3]['dsp']) {
   const pcm = vi.fn(async (_path: string, _opts: PcmOptions) => clickTrack(20));
   const library = {
     trackByRecording: async () => ({ fileId: 1, duration }) as Track,
     file: async () => ({ id: 1, sourceId: 1, path: '/music/song.flac' }),
   } as unknown as Library;
   const files = { resolve: () => ({ media: { pcm }, path: '/music/song.flac' }) } as unknown as FileResolver;
-  const analyzer = new Analyzer(db, library, files, { enabled: true, log: { warn: () => {} } });
+  const analyzer = new Analyzer(db, library, files, { enabled: true, log: { warn: () => {} }, dsp });
   return { analyzer, pcm, db };
 }
 
@@ -122,6 +122,15 @@ describe('Analyzer mix maps', () => {
     await vi.waitFor(() => expect(analyzer.pending([SONG])).toBe(0));
     analyzer.ensure([SONG]);
     expect(analyzer.pending([SONG])).toBe(0);
+  }, 20_000);
+
+  it('does its number crunching on the DSP thread it’s given (the one transitions render on)', async () => {
+    const dsp = { analyze: vi.fn(async () => ({ given: true }) as never), mixMap: vi.fn(async () => ({ bpm: 99 }) as never) };
+    const { analyzer } = withSong(200, freshDb(), dsp);
+    analyzer.ensure([SONG]);
+    await vi.waitFor(() => expect(analyzer.pending([SONG])).toBe(0), { timeout: 10_000 });
+    expect(analyzer.features([SONG]).get(SONG)).toEqual({ given: true });
+    expect(analyzer.mixMaps([SONG]).get(SONG)).toEqual({ bpm: 99 });
   }, 20_000);
 
   it('only hands out mix maps measured by the current version', () => {

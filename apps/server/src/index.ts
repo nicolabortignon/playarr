@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
 import { Analyzer } from './analysis/analyzer.ts';
+import { DspThread } from './analysis/dspThread.ts';
 import { AcoustId, hasFpcalc } from './catalog/acoustid.ts';
 import { FileResolver } from './catalog/files.ts';
 import { FolderAccess } from './catalog/folderAccess.ts';
@@ -29,6 +30,9 @@ import { apiRoutes } from './routes/api.ts';
 import { metadataRoutes } from './routes/metadata.ts';
 import { artRoutes, LocalArt, trimArtCache } from './routes/art.ts';
 import { levelRoutes } from './routes/levels.ts';
+import { mixMapRoutes } from './routes/mixMaps.ts';
+import { transitionRoutes } from './routes/transitions.ts';
+import { Transitions } from './transitions/transitions.ts';
 import { lyricsRoutes } from './routes/lyrics.ts';
 import { LyricsService } from './lyrics/lyrics.ts';
 import { Scrobbler } from './listenbrainz/scrobbler.ts';
@@ -105,7 +109,25 @@ const media = createMediaSource(config);
 // Lidarr's files through MEDIA_SOURCE + PATH_MAP; folder sources through their own filesystem.
 const files = new FileResolver(store, { media, pathMap: config.pathMap }, folders);
 const favorites = new Favorites(db, library);
-const analyzer = new Analyzer(db, library, files, { enabled: config.ANALYSIS === 'on', log: app.log });
+// One DSP worker for the whole server: analysis and transition rendering take turns on it.
+const dsp = new DspThread();
+const analyzer = new Analyzer(db, library, files, { enabled: config.ANALYSIS === 'on', log: app.log, dsp });
+// DJ mix: transitions rendered to cached files. They're planned from mix maps, which only audio
+// analysis makes; without it the player is told "unavailable" and crossfades as before.
+const transitions = analyzer.canAnalyzeAudio
+  ? new Transitions({
+      library,
+      files,
+      maps: analyzer,
+      dsp,
+      cacheDir: resolve(config.CACHE_DIR),
+      ffmpegPath: config.FFMPEG_PATH,
+      log: app.log,
+      maxBytes: config.TRANSITIONS_CACHE_MB * 1024 * 1024,
+    })
+  : undefined;
+// The cache's index from disk, so transitions rendered before a restart are served, not made again.
+await transitions?.load().catch((err: unknown) => app.log.warn({ err }, 'transition cache could not be read'));
 const covers = new PlaylistCovers(analyzer, library, resolve(config.CACHE_DIR, 'covers'));
 const playlists = new Playlists(db, library, covers);
 // Made for you: mixes generated from the library and what's been played.
@@ -130,6 +152,9 @@ metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) =
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
 streamRoutes(app, { library, files });
 levelRoutes(app, { analyzer, library });
+// New cue points make new plans: the transitions made from the old ones are deleted.
+mixMapRoutes(app, { analyzer, library, onCuesChanged: transitions && ((recordingId) => transitions.forget(recordingId)) });
+transitionRoutes(app, { transitions, unavailableReason: 'DJ mixing needs audio analysis, which is off on this server' });
 lyricsRoutes(app, { lyrics: new LyricsService(db, library, files, { log: app.log }) });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
@@ -165,7 +190,7 @@ const webDist = config.WEB_DIST
 if (existsSync(webDist)) {
   await app.register(fastifyStatic, { root: webDist, wildcard: false });
   app.setNotFoundHandler((req, reply) => {
-    const isApi = /^\/(api|stream|art)\//.test(req.url);
+    const isApi = /^\/(api|stream|art|transitions)\//.test(req.url);
     return isApi || req.method !== 'GET'
       ? reply.code(404).send({ error: 'Not found' })
       : reply.sendFile('index.html');
