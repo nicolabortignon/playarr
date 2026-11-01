@@ -37,6 +37,29 @@ const BLAST = [
 ];
 const COUNTS = [0, 1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }));
 
+/** The household's clock for hourly, daily and Monday mixes, with a way to switch to this device's. */
+function TimeZone({ current, onChange }: { current?: string; onChange: (tz: string) => void }) {
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return (
+    <div>
+      <div className="mb-1.5 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Time zone</div>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-[15px] text-paper">{current ?? 'The server’s'}</span>
+        {here && here !== current && (
+          <button
+            type="button"
+            onClick={() => onChange(here)}
+            className="inline-flex h-9 items-center rounded-full border border-line px-4 text-[13px] text-paper transition hover:bg-paper/5"
+          >
+            Use this device’s ({here})
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-[13px] text-muted">When hours, days and Mondays begin for everyone’s mixes.</p>
+    </div>
+  );
+}
+
 /** Settings → Mixes: which mixes Home shows and how they're made, and the listening history behind them. */
 export function MixesPanel() {
   const { data, error } = useMixSettings();
@@ -80,6 +103,7 @@ export function MixesPanel() {
 
       <SettingsSection title="How they’re made">
         <div className="space-y-6">
+          <TimeZone current={data.timeZone} onChange={(timeZone) => change({ timeZone })} />
           <PillGroup label="Songs per mix" options={LENGTHS} value={data.length} onChange={(length) => change({ length: length as MixSettings['length'] })} />
           <PillGroup label="Discovery Weekly" options={ADVENTURE} value={adventure.value} onChange={(adventurous) => change({ adventurous })} />
           <PillGroup

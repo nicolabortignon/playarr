@@ -105,6 +105,7 @@ const playlists = new Playlists(db, library, covers);
 // Made for you: mixes generated from the library and what's been played.
 const history = new History(db, library);
 const mixes = new Mixes({ db, store, library, analyzer, history, playlists, log: app.log });
+mixes.start();
 // Settings → Requests, read fresh each time so a change applies at once; .env values are the fallback.
 const requestSettings = () => readRequestSettings(store);
 const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), requestSettings, {

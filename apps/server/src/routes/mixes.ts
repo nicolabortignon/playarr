@@ -34,6 +34,10 @@ const settingsInput = z.object({
   decadeMixes: z.number().int().min(0).max(4).optional(),
   recordHistory: z.boolean().optional(),
   analyzeLibrary: z.boolean().optional(),
+  timeZone: z
+    .string()
+    .refine((tz) => !!validTimeZone(tz), 'Unknown time zone')
+    .optional(),
 });
 
 const KEY = /^[a-z]+(-[a-z0-9]+)?$/;
@@ -119,9 +123,9 @@ export function mixRoutes(
   });
 
   /** Forget everything played; the mixes are made again from scratch. */
-  app.delete('/api/settings/mixes/history', editable, () => {
+  app.delete('/api/settings/mixes/history', editable, async () => {
     history.clear();
-    mixes.reset();
+    await mixes.reset();
     return info();
   });
 }

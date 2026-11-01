@@ -753,6 +753,8 @@ export interface MixSettings {
   recordHistory: boolean;
   /** Measure the sound of every song in the library (energy, tempo…), not just those in playlists. */
   analyzeLibrary: boolean;
+  /** The household's time zone, for hours, days and Mondays; set from the first device that asks. */
+  timeZone?: string;
 }
 
 export interface MixSettingsInfo extends MixSettings {

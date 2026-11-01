@@ -38,6 +38,7 @@ function fakeLibrary() {
     }
   }
   const byId = new Map(tracks.map((t) => [t.id, t]));
+  const byRecording = new Map(tracks.map((t) => [t.recordingId, t]));
   const albums = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, year: 1995, addedAt: '2020-01-01T00:00:00Z' }) as Album);
   const artists = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, genres: [i % 2 ? 'jazz' : 'rock'] }) as unknown as Artist);
   return {
@@ -46,7 +47,9 @@ function fakeLibrary() {
       allTracks: async () => tracks,
       albums: async () => albums,
       artists: async () => artists,
+      version: 1,
       tracksByIds: async (ids: number[]) => ids.flatMap((id) => byId.get(id) ?? []),
+      tracksByRecordings: async (ids: string[]) => ids.flatMap((id) => byRecording.get(id) ?? []),
       track: async (id: number) => byId.get(id),
       trackByRecording: async (rid: string) => tracks.find((t) => t.recordingId === rid),
       trackByName: async () => undefined,
@@ -58,7 +61,7 @@ function setup() {
   const db = freshDb();
   const store = new CatalogStore(db);
   const { library, tracks } = fakeLibrary();
-  const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map() } as unknown as Analyzer;
+  const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), progress: () => ({ features: 0, meta: 0 }) } as unknown as Analyzer;
   const history = new History(db, library);
   const playlists = { create: vi.fn(async (name: string) => ({ id: 1, name })) } as unknown as Playlists;
   const mixes = new Mixes({ db, store, library, analyzer, history, playlists, similar: async () => [] });
@@ -82,12 +85,16 @@ describe('Mixes', () => {
     const later = await mixes.get('discovery', 'UTC', at('2026-11-01T10:40:00Z'));
     expect(later.tracks.map((t) => t.id)).toEqual((await mixes.get('discovery', 'UTC', at('2026-11-01T10:05:00Z'))).tracks.map((t) => t.id));
 
-    // A new hour brings a new Vibes of the hour; Discovery Weekly waits for Monday.
-    const nextHour = await mixes.list('UTC', at('2026-11-01T11:01:00Z'));
-    expect(nextHour.find((m) => m.key === 'vibes')!.generatedAt).not.toBe(vibes.generatedAt);
-    expect(nextHour.find((m) => m.key === 'discovery')!.generatedAt).toBe(first.find((m) => m.key === 'discovery')!.generatedAt);
-    const monday = await mixes.list('UTC', at('2026-11-02T08:00:00Z'));
-    expect(monday.find((m) => m.key === 'discovery')!.generatedAt).not.toBe(first.find((m) => m.key === 'discovery')!.generatedAt);
+    // A new hour brings a new Vibes of the hour, made in the background (the request gets the stored one
+    // at once); Discovery Weekly waits for Monday.
+    const generated = async (key: string, iso: string) => (await mixes.list('UTC', at(iso))).find((m) => m.key === key)!.generatedAt;
+    expect(await generated('vibes', '2026-11-01T11:01:00Z')).toBe(vibes.generatedAt);
+    await vi.waitFor(async () => expect(await generated('vibes', '2026-11-01T11:01:00Z')).not.toBe(vibes.generatedAt));
+    expect(await generated('discovery', '2026-11-01T11:02:00Z')).toBe(first.find((m) => m.key === 'discovery')!.generatedAt);
+    await generated('discovery', '2026-11-02T08:00:00Z');
+    await vi.waitFor(async () =>
+      expect(await generated('discovery', '2026-11-02T08:00:00Z')).not.toBe(first.find((m) => m.key === 'discovery')!.generatedAt),
+    );
   });
 
   it('draws a new mix on request, and saves a mix as a playlist', async () => {
@@ -105,9 +112,27 @@ describe('Mixes', () => {
     const { mixes, analyzer, store } = setup();
     await mixes.list('UTC', at('2026-11-01T10:05:00Z'));
     expect(analyzer.ensure).toHaveBeenCalledWith(expect.any(Array), { audio: false });
-    store.setAppSetting('mixes', JSON.stringify({ analyzeLibrary: true }));
+    store.setAppSetting('mixes', JSON.stringify({ analyzeLibrary: true, length: 25 }));
     await mixes.list('UTC', at('2026-11-01T10:06:00Z'));
-    expect(analyzer.ensure).toHaveBeenLastCalledWith(expect.any(Array), { audio: true });
+    await vi.waitFor(() => expect(analyzer.ensure).toHaveBeenLastCalledWith(expect.any(Array), { audio: true }));
+  });
+
+  it('follows one household time zone, whichever device asks', async () => {
+    const { mixes, store } = setup();
+    const rome = await mixes.list('Europe/Rome', at('2026-11-01T10:05:00Z'));
+    expect(JSON.parse(store.appSetting('mixes')!).timeZone).toBe('Europe/Rome');
+    const fromNewYork = await mixes.list('America/New_York', at('2026-11-01T10:06:00Z'));
+    expect(fromNewYork.map((m) => m.generatedAt)).toEqual(rome.map((m) => m.generatedAt));
+  });
+
+  it('keeps a mix whole when its songs get new track ids (matched on MusicBrainz)', async () => {
+    const { mixes, db } = setup();
+    const before = await mixes.get('genre-rock', 'UTC', at('2026-11-01T10:05:00Z'));
+    const row = db.prepare("SELECT data FROM mixes WHERE key = 'genre-rock'").get() as { data: string };
+    const stored = JSON.parse(row.data);
+    stored.mix.trackIds = stored.mix.trackIds.map((id: number) => id + 100_000); // ids the library no longer has
+    db.prepare("UPDATE mixes SET data = ? WHERE key = 'genre-rock'").run(JSON.stringify(stored));
+    expect((await mixes.get('genre-rock', 'UTC', at('2026-11-01T10:06:00Z'))).tracks).toEqual(before.tracks);
   });
 });
 

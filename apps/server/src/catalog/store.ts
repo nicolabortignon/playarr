@@ -534,7 +534,7 @@ export class CatalogStore {
     return index;
   }
 
-  /** A song got its real id: its favorites, playlist entries and analysis follow it. */
+  /** A song got its real id: its favorites, playlist entries, analysis and plays follow it. */
   private moveRecording(from: string, to: string) {
     this.db
       .prepare(
@@ -551,6 +551,10 @@ export class CatalogStore {
       )
       .run(to, from);
     this.db.prepare('DELETE FROM track_features WHERE recording_id = ?').run(from);
+    // Its listening history too, or a matched song would lose its plays to the mixes. (Its track id may
+    // change with the match: the history keeps the recording, which is what the mixes go by.)
+    this.db.prepare('UPDATE OR IGNORE plays SET recording_id = ?, track_id = NULL WHERE recording_id = ?').run(to, from);
+    this.db.prepare('DELETE FROM plays WHERE recording_id = ?').run(from);
   }
 
   /** A folder source's match decisions, by path relative to the folder. */

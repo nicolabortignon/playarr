@@ -30,6 +30,8 @@ export class Library {
   private rebuildTimer: NodeJS.Timeout | null = null;
   private listeners: ((library: Library) => void)[] = [];
   lastError: string | null = null;
+  /** Goes up with every new snapshot, so others can tell when what they derived from it is out of date. */
+  version = 0;
 
   constructor(
     private readonly store: CatalogStore,
@@ -37,6 +39,11 @@ export class Library {
     private readonly sources: () => { id: number; source: CatalogSource }[],
     private readonly log: { info: (msg: string) => void; error: (msg: string) => void },
   ) {}
+
+  private setSnapshot(snap: Snapshot) {
+    this.snapshot = snap;
+    this.version++;
+  }
 
   /** Called after every successful refresh. */
   onRefresh(listener: (library: Library) => void) {
@@ -46,8 +53,8 @@ export class Library {
   /** Serve the catalog saved by a previous run, so a restart doesn't wait on the sources. */
   loadStored(): boolean {
     if (!this.store.hasData()) return false;
-    this.snapshot = toSnapshot(buildCatalog(this.store.load()));
-    this.log.info(`Library loaded from the database: ${this.snapshot.stats.albums} albums`);
+    this.setSnapshot(toSnapshot(buildCatalog(this.store.load())));
+    this.log.info(`Library loaded from the database: ${this.snapshot!.stats.albums} albums`);
     return true;
   }
 
@@ -58,7 +65,7 @@ export class Library {
 
   /** Rebuild from the stored catalog without syncing, e.g. after a source was removed or reordered. */
   reload() {
-    this.snapshot = toSnapshot(buildCatalog(this.store.load()));
+    this.setSnapshot(toSnapshot(buildCatalog(this.store.load())));
     for (const listener of this.listeners) listener(this);
   }
 
@@ -90,7 +97,7 @@ export class Library {
     const started = Date.now();
     this.inflight ??= this.build(only)
       .then((snap) => {
-        this.snapshot = snap;
+        this.setSnapshot(snap);
         this.lastError = null;
         const s = snap.stats;
         this.log.info(
@@ -148,7 +155,7 @@ export class Library {
         this.log.error(`Rebuilding a source failed: ${(err as Error).message}`);
       }
     }
-    this.snapshot = toSnapshot(buildCatalog(this.store.load()));
+    this.setSnapshot(toSnapshot(buildCatalog(this.store.load())));
     this.log.info(`Library rebuilt from the last scan in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     for (const listener of this.listeners) listener(this);
   }
@@ -267,6 +274,12 @@ export class Library {
   /** Every song in the library, album by album. */
   async allTracks(): Promise<Track[]> {
     return (await this.ready()).tracks;
+  }
+
+  /** The library's song for each recording, in this order, leaving out those no longer in the library. */
+  async tracksByRecordings(ids: string[]): Promise<Track[]> {
+    const index = (await this.ready()).trackByRecording;
+    return ids.flatMap((id) => index.get(id) ?? []);
   }
 
   /** These songs, in this order, leaving out any no longer in the library. */

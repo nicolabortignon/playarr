@@ -1,5 +1,6 @@
 import type { MixKind, MixSettings } from '@playarr/shared';
 import type { CatalogStore } from '../catalog/store.ts';
+import { validTimeZone } from './time.ts';
 
 export const MIXES_KEY = 'mixes';
 
@@ -58,6 +59,7 @@ export function readMixSettings(store: Pick<CatalogStore, 'appSetting'>): MixSet
     decadeMixes: count(raw.decadeMixes, MIX_DEFAULTS.decadeMixes),
     recordHistory: typeof raw.recordHistory === 'boolean' ? raw.recordHistory : MIX_DEFAULTS.recordHistory,
     analyzeLibrary: typeof raw.analyzeLibrary === 'boolean' ? raw.analyzeLibrary : MIX_DEFAULTS.analyzeLibrary,
+    ...(typeof raw.timeZone === 'string' && validTimeZone(raw.timeZone) ? { timeZone: raw.timeZone } : {}),
   };
 }
 

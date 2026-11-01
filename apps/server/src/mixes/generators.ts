@@ -34,6 +34,8 @@ export interface GeneratedMix {
   description: string;
   hue: number;
   trackIds: number[];
+  /** The same songs by recording: they survive a song getting a new track id (matched on MusicBrainz). */
+  recordingIds?: string[];
 }
 
 /** Under this many songs, a mix isn't worth showing. */
@@ -77,6 +79,7 @@ export function generateMix(plan: MixPlan, ctx: MixContext, period: string, vari
     description: made.description,
     hue: made.hue,
     trackIds: made.songs.map((s) => s.track.id),
+    recordingIds: made.songs.map((s) => s.track.recordingId),
   };
 }
 

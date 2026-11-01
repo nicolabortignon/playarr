@@ -547,17 +547,23 @@ export function useSaveMatching() {
 // ── Made for you ────────────────────────────────────────────────────────────
 
 /**
- * The generated mixes. Each changes on its own schedule (hour, day, week): look again a minute after
- * the soonest one is due, and when the app comes back to the foreground.
+ * When to look at mixes again: just after the soonest is due, then every 15 s for a little while
+ * (the server serves the old ones while it makes the new ones in the background).
  */
+function mixRecheck(dueTimes: number[]): number {
+  const due = Math.min(...dueTimes);
+  if (!Number.isFinite(due)) return 60_000;
+  const wait = due - Date.now() + 5_000;
+  return wait > 0 ? wait : 15_000;
+}
+
+/** The generated mixes. Each changes on its own schedule (hour, day, week). */
 export const useMixes = () =>
   useQuery({
     queryKey: ['mixes'],
     queryFn: api.mixes,
-    staleTime: (q) => {
-      const due = Math.min(...(q.state.data ?? []).map((m) => Date.parse(m.refreshesAt)));
-      return Number.isFinite(due) ? Math.max(30_000, due - Date.now() + 60_000) : 60_000;
-    },
+    staleTime: 30_000,
+    refetchInterval: (q) => mixRecheck((q.state.data ?? []).map((m) => Date.parse(m.refreshesAt))),
     refetchOnWindowFocus: true,
   });
 
@@ -565,7 +571,8 @@ export const useMix = (key: string) =>
   useQuery({
     queryKey: ['mix', key],
     queryFn: () => api.mix(key),
-    staleTime: (q) => (q.state.data ? Math.max(30_000, Date.parse(q.state.data.refreshesAt) - Date.now() + 60_000) : 60_000),
+    staleTime: 30_000,
+    refetchInterval: (q) => mixRecheck(q.state.data ? [Date.parse(q.state.data.refreshesAt)] : []),
     refetchOnWindowFocus: true,
   });
 

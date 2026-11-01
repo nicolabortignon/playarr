@@ -46,6 +46,12 @@ export class Analyzer {
     return this.opts.enabled;
   }
 
+  /** How many songs have been measured and tagged: grows as background work finishes. */
+  progress(): { features: number; meta: number } {
+    const count = (table: string) => (this.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+    return { features: count('track_features'), meta: count('track_meta') };
+  }
+
   features(ids: string[]): Map<string, AudioFeatures> {
     const rows = this.select<{ recording_id: string; features: string }>(
       'SELECT recording_id, features FROM track_features WHERE version = ? AND features IS NOT NULL AND recording_id IN',

@@ -338,7 +338,7 @@ describe('CatalogStore: matching', () => {
     expect(JSON.stringify(store.load().albums[0]!.meta)).not.toContain('metaRank');
   });
 
-  it('moves favorites, playlist entries and analysis when a song gets its real id', () => {
+  it('moves favorites, playlist entries, analysis and plays when a song gets its real id', () => {
     const db = freshDb();
     const store = new CatalogStore(db);
     const folder = store.addSource('folder', 'Music');
@@ -351,6 +351,7 @@ describe('CatalogStore: matching', () => {
     db.prepare('INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)').run('P', now, now);
     db.prepare('INSERT INTO playlist_items (playlist_id, position, recording_id, title, artist_name, album_title, added_at) VALUES (1, 0, ?, ?, ?, ?, ?)').run('local:rec-1', 'Angel', 'Massive Attack', 'Mezzanine', now);
     db.prepare('INSERT INTO track_features (recording_id, version, features, analyzed_at) VALUES (?, 1, ?, ?)').run('local:rec-1', '{}', now);
+    db.prepare('INSERT INTO plays (recording_id, track_id, played_at, hour, weekday, seconds) VALUES (?, 1, ?, 21, 0, 200)').run('local:rec-1', now);
 
     const matched = mezzanine();
     matched.copies = local.copies.map((c, i) => ({ ...c, trackKey: matched.tracks.find((t) => t.recordingId === `rec-${i + 1}`)!.key }));
@@ -360,6 +361,7 @@ describe('CatalogStore: matching', () => {
     expect(one('SELECT recording_id FROM favorites').recording_id).toBe('rec-1');
     expect(one('SELECT recording_id FROM playlist_items').recording_id).toBe('rec-1');
     expect(one('SELECT recording_id FROM track_features').recording_id).toBe('rec-1');
+    expect(db.prepare('SELECT recording_id, track_id FROM plays').get()).toEqual({ recording_id: 'rec-1', track_id: null });
   });
 });
 

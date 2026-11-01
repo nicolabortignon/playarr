@@ -8,14 +8,16 @@ import type { Library } from '../library/library.ts';
 import type { Playlists } from '../playlists.ts';
 import { generateMix, planMixes, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
 import type { History } from './history.ts';
-import { readMixSettings } from './settings.ts';
-import { buildTaste, toSong, type Taste } from './taste.ts';
-import { localTime, nextBoundary, type LocalTime } from './time.ts';
+import { MIXES_KEY, readMixSettings } from './settings.ts';
+import { buildTaste, toSong, type Song, type Taste } from './taste.ts';
+import { localTime, nextBoundary, validTimeZone, type LocalTime } from './time.ts';
 
 const PLAN_KEY = '_plan';
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Most played songs that seed Discovery Weekly's ListenBrainz neighbours. */
 const NEIGHBOUR_SEEDS = 10;
+/** How often the background check looks for mixes that are due. */
+const CHECK_EVERY_MS = 60_000;
 
 /** How often each kind of mix is made again. */
 const CADENCE: Record<MixKind, 'hour' | 'day' | 'week'> = {
@@ -62,17 +64,22 @@ export class MixError extends Error {
 
 /**
  * Made for you: playlists generated from the library and the listening history. Each mix is made once
- * per hour, day or week (in the listener's time zone) and stored, so it stays put in between.
+ * per hour, day or week, in the household's time zone, by a background check; requests read what's
+ * stored and only wait when there's nothing yet. Making them yields between mixes, so the server keeps
+ * answering meanwhile.
  */
 export class Mixes {
   private inflight: Promise<void> | null = null;
+  private timer: NodeJS.Timeout | null = null;
+  /** Songs as the mixes see them, until the library or what's known about its songs changes. */
+  private songCache: { key: string; songs: Song[] } | null = null;
 
   constructor(
     private readonly deps: {
       db: DatabaseSync;
-      store: Pick<CatalogStore, 'appSetting'>;
+      store: Pick<CatalogStore, 'appSetting' | 'setAppSetting'>;
       library: Library;
-      analyzer: Pick<Analyzer, 'ensure' | 'features' | 'meta'>;
+      analyzer: Pick<Analyzer, 'ensure' | 'features' | 'meta' | 'progress'>;
       history: History;
       playlists: Pick<Playlists, 'create'>;
       /** ListenBrainz neighbours of a recording (swappable in tests). */
@@ -81,9 +88,24 @@ export class Mixes {
     },
   ) {}
 
-  async list(timeZone?: string, now = new Date()): Promise<MixSummary[]> {
-    const local = localTime(now, timeZone);
-    await this.ensure(local, now);
+  /** Keep the mixes made in the background: at each new hour, day and week. */
+  start(everyMs = CHECK_EVERY_MS) {
+    const check = () => {
+      const tz = readMixSettings(this.deps.store).timeZone;
+      if (this.storedPlan() && this.isStale(tz, new Date())) void this.ensure(tz, new Date()).catch((err: Error) => this.deps.log?.warn(`Making mixes failed: ${err.message}`));
+    };
+    this.timer = setInterval(check, everyMs);
+    this.timer.unref();
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  async list(clientTimeZone?: string, now = new Date()): Promise<MixSummary[]> {
+    const tz = this.timeZone(clientTimeZone);
+    await this.ready(tz, now);
+    const local = localTime(now, tz);
     const plan = this.storedPlan()?.plan ?? [];
     const rows = this.rows();
     const out: MixSummary[] = [];
@@ -91,38 +113,121 @@ export class Mixes {
       const row = rows.get(p.key);
       const mix = row && (JSON.parse(row.data) as Stored).mix;
       if (!row || !mix) continue;
-      const tracks = await this.deps.library.tracksByIds(mix.trackIds);
+      const tracks = await this.tracksOf(mix);
       if (tracks.length) out.push(summary(mix, tracks, row, now, local));
     }
     return out;
   }
 
-  async get(key: string, timeZone?: string, now = new Date()): Promise<MixDetail> {
-    const local = localTime(now, timeZone);
-    await this.ensure(local, now);
+  async get(key: string, clientTimeZone?: string, now = new Date()): Promise<MixDetail> {
+    const tz = this.timeZone(clientTimeZone);
+    await this.ready(tz, now);
     const row = this.rows().get(key);
     const mix = row && (JSON.parse(row.data) as Stored).mix;
     if (!row || !mix) throw new MixError('This mix isn’t available right now', 404);
-    const tracks = await this.deps.library.tracksByIds(mix.trackIds);
-    return { ...summary(mix, tracks, row, now, local), tracks };
+    const tracks = await this.tracksOf(mix);
+    return { ...summary(mix, tracks, row, now, localTime(now, tz)), tracks };
   }
 
   /** Draw the mix again for the same hour, day or week ("New mix"). */
-  async regenerate(key: string, timeZone?: string, now = new Date()): Promise<MixDetail> {
-    const local = localTime(now, timeZone);
-    await this.ensure(local, now);
+  async regenerate(key: string, clientTimeZone?: string, now = new Date()): Promise<MixDetail> {
+    const tz = this.timeZone(clientTimeZone);
+    await this.ready(tz, now);
+    await this.inflight?.catch(() => {});
     const plan = this.storedPlan()?.plan.find((p) => p.key === key);
     const row = this.rows().get(key);
     if (!plan || !row) throw new MixError('This mix isn’t available right now', 404);
     const settings = readMixSettings(this.deps.store);
-    const ctx = await this.context(local, now, settings, plan.kind === 'discovery');
+    const ctx = await this.context(localTime(now, tz), now, settings, plan.kind === 'discovery');
     const variant = row.variant + 1;
     const mix = generateMix(plan, ctx, row.period, variant);
     if (mix) this.write(key, row.period, variant, { settings: settingsHash(settings), mix }, now);
-    return this.get(key, timeZone, now);
+    return this.get(key, tz, now);
   }
 
-  private write(key: string, period: string, variant: number, stored: Stored, now: Date) {
+  /** Keep the mix as an ordinary playlist. */
+  async saveAsPlaylist(key: string, clientTimeZone?: string, now = new Date()): Promise<PlaylistDetail> {
+    const tz = this.timeZone(clientTimeZone);
+    const mix = await this.get(key, tz, now);
+    const day = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: tz });
+    return this.deps.playlists.create(`${mix.title} · ${day}`, mix.description.slice(0, 300), mix.tracks.map((t) => t.recordingId));
+  }
+
+  /** Forget every mix, so they're made again (after the history was cleared, say). */
+  async reset() {
+    // A mix being made now would otherwise be written back from the old history.
+    await this.inflight?.catch(() => {});
+    this.deps.db.exec('DELETE FROM mixes');
+  }
+
+  /**
+   * The household's time zone: hours, days and Mondays are the same for every device, or two devices
+   * in different zones would remake the mixes on every request. Settings → Mixes, else the first device
+   * to ask (remembered), else the server's.
+   */
+  private timeZone(clientTimeZone?: string): string | undefined {
+    const settings = readMixSettings(this.deps.store);
+    if (settings.timeZone) return settings.timeZone;
+    const tz = validTimeZone(clientTimeZone);
+    if (tz) this.deps.store.setAppSetting(MIXES_KEY, JSON.stringify({ ...settings, timeZone: tz }));
+    return tz;
+  }
+
+  /** Wait for mixes only when there are none yet; otherwise serve what's stored and remake in the background. */
+  private async ready(tz: string | undefined, now: Date) {
+    if (!this.storedPlan()) await this.ensure(tz, now);
+    else if (this.isStale(tz, now)) void this.ensure(tz, now).catch((err: Error) => this.deps.log?.warn(`Making mixes failed: ${err.message}`));
+  }
+
+  /** Whether any mix (or the day's plan) is due: cheap, from the stored rows alone. */
+  private isStale(tz: string | undefined, now: Date): boolean {
+    const local = localTime(now, tz);
+    const hash = settingsHash(readMixSettings(this.deps.store));
+    const rows = this.rows();
+    const plan = this.storedPlan();
+    if (!plan || plan.settings !== hash || rows.get(PLAN_KEY)?.period !== local.date) return true;
+    return plan.plan.some((p) => {
+      const row = rows.get(p.key);
+      return !row || row.period !== periodOf(p.kind, local) || (JSON.parse(row.data) as Stored).settings !== hash;
+    });
+  }
+
+  private ensure(tz: string | undefined, now: Date): Promise<void> {
+    this.inflight ??= this.refresh(localTime(now, tz), now).finally(() => {
+      this.inflight = null;
+    });
+    return this.inflight;
+  }
+
+  /** Make whatever is due: the plan once a day (or when settings change), each mix on its schedule. */
+  private async refresh(local: LocalTime, now: Date) {
+    const settings = readMixSettings(this.deps.store);
+    const hash = settingsHash(settings);
+    const rows = this.rows();
+    const due = (p: MixPlan) => {
+      const row = rows.get(p.key);
+      return !row || row.period !== periodOf(p.kind, local) || (JSON.parse(row.data) as Stored).settings !== hash;
+    };
+
+    let plan = this.storedPlan();
+    const newPlan = !plan || plan.settings !== hash || rows.get(PLAN_KEY)?.period !== local.date;
+    // Discovery Weekly's ListenBrainz neighbours are only fetched when it's being made.
+    let ctx = await this.context(local, now, settings, newPlan || plan!.plan.some((p) => p.kind === 'discovery' && due(p)));
+    if (newPlan) {
+      plan = { settings: hash, plan: planMixes(ctx) };
+      this.write(PLAN_KEY, local.date, 0, plan, now);
+      if (plan.plan.some((p) => p.kind === 'discovery' && due(p)) && !ctx.neighbours.size) ctx = { ...ctx, neighbours: await this.neighbours(ctx.taste) };
+    }
+    for (const p of plan!.plan) {
+      if (!due(p)) continue;
+      const period = periodOf(p.kind, local);
+      this.write(p.key, period, 0, { settings: hash, mix: generateMix(p, ctx, period, 0) }, now);
+      // Let requests waiting meanwhile through between mixes.
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
+  private write(key: string, period: string, variant: number, stored: Stored | StoredPlan, now: Date) {
     this.deps.db
       .prepare(
         `INSERT INTO mixes (key, period, variant, data, generated_at) VALUES (?, ?, ?, ?, ?)
@@ -131,85 +236,9 @@ export class Mixes {
       .run(key, period, variant, JSON.stringify(stored), now.toISOString());
   }
 
-  /** Keep the mix as an ordinary playlist. */
-  async saveAsPlaylist(key: string, timeZone?: string, now = new Date()): Promise<PlaylistDetail> {
-    const mix = await this.get(key, timeZone, now);
-    const day = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone });
-    return this.deps.playlists.create(`${mix.title} · ${day}`, mix.description.slice(0, 300), mix.tracks.map((t) => t.recordingId));
-  }
-
-  /** Forget every mix, so they're made again (after the history was cleared, say). */
-  reset() {
-    this.deps.db.exec('DELETE FROM mixes');
-  }
-
-  /** Make whatever is out of date: the plan once a day (or when settings change), each mix on its schedule. */
-  private ensure(local: LocalTime, now: Date): Promise<void> {
-    this.inflight ??= this.refresh(local, now).finally(() => {
-      this.inflight = null;
-    });
-    return this.inflight;
-  }
-
-  private async refresh(local: LocalTime, now: Date) {
-    const settings = readMixSettings(this.deps.store);
-    const hash = settingsHash(settings);
-    const rows = this.rows();
-    let ctx: MixContext | undefined;
-    let withNeighbours = false;
-    const context = async (neighbours: boolean) => {
-      if (!ctx || (neighbours && !withNeighbours)) {
-        ctx = await this.context(local, now, settings, neighbours);
-        withNeighbours = neighbours;
-      }
-      return ctx;
-    };
-
-    let plan = this.storedPlan();
-    if (!plan || plan.settings !== hash || rows.get(PLAN_KEY)?.period !== local.date) {
-      plan = { settings: hash, plan: planMixes(await context(false)) };
-      this.deps.db
-        .prepare(
-          `INSERT INTO mixes (key, period, variant, data, generated_at) VALUES (?, ?, 0, ?, ?)
-           ON CONFLICT (key) DO UPDATE SET period = excluded.period, data = excluded.data, generated_at = excluded.generated_at`,
-        )
-        .run(PLAN_KEY, local.date, JSON.stringify(plan), now.toISOString());
-    }
-    for (const p of plan.plan) {
-      const period = periodOf(p.kind, local);
-      const row = rows.get(p.key);
-      const stored = row ? (JSON.parse(row.data) as Stored) : undefined;
-      if (row && stored && row.period === period && stored.settings === hash) continue;
-      const mix = generateMix(p, await context(p.kind === 'discovery'), period, 0);
-      this.write(p.key, period, 0, { settings: hash, mix }, now);
-    }
-  }
-
   private async context(local: LocalTime, now: Date, settings: MixSettings, neighbours: boolean): Promise<MixContext> {
-    const { library, analyzer, history, db } = this.deps;
-    const [tracks, albums, artists] = await Promise.all([library.allTracks(), library.albums(), library.artists()]);
-    const ids = tracks.map((t) => t.recordingId);
-    // Tags are cheap and fetched for everything; measuring sound only when Settings → Mixes asks for it.
-    analyzer.ensure(ids, { audio: settings.analyzeLibrary });
-    const features = analyzer.features(ids);
-    const meta = analyzer.meta(ids);
-    const albumById = new Map(albums.map((a) => [a.id, a]));
-    const genres = new Map(artists.map((a) => [a.id, a.genres]));
-    const songs = tracks.map((track) => {
-      const album = albumById.get(track.albumId);
-      const m = meta.get(track.recordingId);
-      return toSong({
-        track,
-        tags: m?.tags ?? [],
-        // The album's genres (its tags, else the artist's), else the artist's.
-        genres: album?.genres?.length ? album.genres : (genres.get(track.artistId) ?? []),
-        features: features.get(track.recordingId),
-        albumYear: album?.year,
-        tagYear: m?.year,
-        addedAt: album?.addedAt,
-        releaseDate: album?.releaseDate,
-      });
-    });
+    const { history, db } = this.deps;
+    const songs = await this.songs(settings);
     const plays = history.since(365, now.getTime());
     const favorites = new Set(
       (db.prepare('SELECT recording_id FROM favorites').all() as { recording_id: string }[]).map((r) => r.recording_id),
@@ -229,6 +258,44 @@ export class Mixes {
       settings,
       neighbours: neighbours ? await this.neighbours(taste) : new Map(),
     };
+  }
+
+  /**
+   * Every song as the mixes see it, one per recording (a song on its album and on a "best of" is one
+   * song). Kept until the library changes or more songs are tagged or measured.
+   */
+  private async songs(settings: MixSettings): Promise<Song[]> {
+    const { library, analyzer } = this.deps;
+    const progress = analyzer.progress();
+    const key = `${library.version}:${progress.features}:${progress.meta}:${settings.analyzeLibrary}`;
+    if (this.songCache?.key === key) return this.songCache.songs;
+    const [tracks, albums, artists] = await Promise.all([library.allTracks(), library.albums(), library.artists()]);
+    const seen = new Set<string>();
+    const unique = tracks.filter((t) => !seen.has(t.recordingId) && seen.add(t.recordingId));
+    const ids = unique.map((t) => t.recordingId);
+    // Tags are cheap and fetched for everything; measuring sound only when Settings → Mixes asks for it.
+    analyzer.ensure(ids, { audio: settings.analyzeLibrary });
+    const features = analyzer.features(ids);
+    const meta = analyzer.meta(ids);
+    const albumById = new Map(albums.map((a) => [a.id, a]));
+    const genres = new Map(artists.map((a) => [a.id, a.genres]));
+    const songs = unique.map((track) => {
+      const album = albumById.get(track.albumId);
+      const m = meta.get(track.recordingId);
+      return toSong({
+        track,
+        tags: m?.tags ?? [],
+        // The album's genres (its tags, else the artist's), else the artist's.
+        genres: album?.genres?.length ? album.genres : (genres.get(track.artistId) ?? []),
+        features: features.get(track.recordingId),
+        albumYear: album?.year,
+        tagYear: m?.year,
+        addedAt: album?.addedAt,
+        releaseDate: album?.releaseDate,
+      });
+    });
+    this.songCache = { key, songs };
+    return songs;
   }
 
   /** Library songs ListenBrainz finds alike to the most played (or loved) ones, for Discovery Weekly. */
@@ -255,6 +322,11 @@ export class Mixes {
     return out;
   }
 
+  /** A stored mix's songs as the library has them now (by recording, which survives matching). */
+  private tracksOf(mix: GeneratedMix): Promise<Track[]> {
+    return mix.recordingIds ? this.deps.library.tracksByRecordings(mix.recordingIds) : this.deps.library.tracksByIds(mix.trackIds);
+  }
+
   private rows(): Map<string, Row> {
     const rows = this.deps.db.prepare('SELECT key, period, variant, data, generated_at FROM mixes').all() as unknown as Row[];
     return new Map(rows.map((r) => [r.key, r]));
@@ -271,7 +343,9 @@ function periodOf(kind: MixKind, local: LocalTime): string {
   return cadence === 'hour' ? `${local.date}T${String(local.hour).padStart(2, '0')}` : cadence === 'week' ? local.week : local.date;
 }
 
-const settingsHash = (s: MixSettings) => hash32(JSON.stringify(s));
+/** Only the settings that shape the mixes: turning history recording off doesn't remake them. */
+const settingsHash = (s: MixSettings) =>
+  hash32(JSON.stringify([s.enabled, s.length, s.adventurous, s.blastDays, s.genreMixes, s.decadeMixes]));
 
 function summary(mix: GeneratedMix, tracks: Track[], row: Row, now: Date, local: LocalTime): MixSummary {
   const covers: string[] = [];
