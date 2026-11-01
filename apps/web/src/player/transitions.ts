@@ -57,6 +57,18 @@ export const useTransition = create<TransitionState>()(() => ({ fromFileId: null
 /** The transition file to play between the two songs, once rendered. */
 export const readyTransition = (s: TransitionState) => s.ready;
 
+/** Set while the watcher is mounted: forgets the pair's answer if it involves this recording. */
+let refreshFor: ((recordingId: string) => void) | null = null;
+
+/**
+ * A song's mix points were edited: if it's the song playing or the next one, the answer for the pair
+ * is dropped and asked for afresh. The server forgets the old render, so a kept "ready" would point at
+ * a file that's gone.
+ */
+export function refreshUpcomingTransition(recordingId: string) {
+  refreshFor?.(recordingId);
+}
+
 /** One pair being asked about. */
 interface Pair {
   key: string;
@@ -264,6 +276,13 @@ function watchUpcomingTransition() {
     maybeAsk();
   }
 
+  refreshFor = (recordingId) => {
+    if (!pair || (pair.from.recordingId !== recordingId && pair.to.recordingId !== recordingId)) return;
+    // Song and listening time stay as they are: the fresh ask needs only the new pair's short wait.
+    drop();
+    check();
+  };
+
   check();
   // At mount the clock is the song playing's own; after a song change it isn't until the engine resets it.
   lastTime = useClock.getState().time;
@@ -284,6 +303,7 @@ function watchUpcomingTransition() {
     offClock();
     window.removeEventListener('online', check);
     window.removeEventListener('offline', check);
+    refreshFor = null;
     drop();
     useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
   };

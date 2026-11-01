@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { usePlayer } from '../player/store';
+import { useSleep } from '../player/sleep';
 import { useTransition, type UpcomingResult } from '../player/transitions';
-import { TransitionView } from './TransitionView';
+import { nextSongClock, overlapOf, TransitionView } from './TransitionView';
 
 // happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
 Reflect.deleteProperty(Element.prototype, 'animate');
@@ -68,6 +69,7 @@ const line = (name: string) => screen.findByRole('button', { name });
 
 beforeEach(() => {
   usePrefs.setState({ transitions: 'dj' });
+  useSleep.getState().cancel();
   usePlayer.setState({ queue: [1, 2, 3].map(track), order: [0, 1, 2], pos: 0, repeat: 'off', mixMode: 'auto' });
   setResult({ status: 'ready', plan: plan('long', 32), url: '/t/1' });
   vi.spyOn(api, 'mixMaps').mockResolvedValue(maps);
@@ -80,40 +82,40 @@ afterEach(() => {
 describe('TransitionView line', () => {
   it('says how the next song comes in, with both tempos and keys', async () => {
     view();
-    expect(await line('Next: 32-beat blend · 124 → 126 BPM · 8A → 9A')).toBeTruthy();
+    expect(await line('Next: 32-beat blend, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
     expect(api.mixMaps).toHaveBeenCalledWith(['rec-1', 'rec-2']);
   });
 
   it('names a quick mix by its length', async () => {
     setResult({ status: 'ready', plan: plan('quick', 8), url: '/t/1' });
     view();
-    expect(await line('Next: 8-beat quick mix · 124 → 126 BPM · 8A → 9A')).toBeTruthy();
+    expect(await line('Next: 8-beat quick mix, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
   });
 
   it('names a fade and a straight cut', async () => {
     setResult({ status: 'ready', plan: plan('fade', 0), url: '/t/1' });
     const { unmount } = view();
-    expect(await line('Next: crossfade · 124 → 126 BPM · 8A → 9A')).toBeTruthy();
+    expect(await line('Next: crossfade, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
     unmount();
     setResult({ status: 'straight', plan: plan('straight', 0) });
     view();
-    expect(await line('Next: straight on · 124 → 126 BPM · 8A → 9A')).toBeTruthy();
+    expect(await line('Next: straight on, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
   });
 
   it('shows the plan while the mix is still being made', async () => {
     setResult({ status: 'pending', plan: plan('long', 16) });
     view();
-    expect(await line('Next: 16-beat blend · 124 → 126 BPM · 8A → 9A')).toBeTruthy();
+    expect(await line('Next: 16-beat blend, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
   });
 
   it('says straight on when the mix is unavailable or not ready in time (what plays then)', async () => {
     setResult({ status: 'unavailable', reason: 'Not analysed yet' });
     const { unmount } = view();
-    expect(await line('Next: straight on · 124 → 126 BPM · 8A → 9A')).toBeTruthy();
+    expect(await line('Next: straight on, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
     unmount();
     setResult({ status: 'gave up' });
     view();
-    expect(await line('Next: straight on · 124 → 126 BPM · 8A → 9A')).toBeTruthy();
+    expect(await line('Next: straight on, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
   });
 
   it('leaves out unsure keys and unknown tempos', async () => {
@@ -126,7 +128,7 @@ describe('TransitionView line', () => {
     usePlayer.setState({ mixMode: 'off' });
     useTransition.setState({ fromFileId: null, toFileId: null, result: null });
     view();
-    expect(await line('Next: no mixing · 124 → 126 BPM · 8A → 9A')).toBeTruthy();
+    expect(await line('Next: no mixing, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
   });
 
   it('is hidden unless transitions are DJ mix', () => {
@@ -134,6 +136,25 @@ describe('TransitionView line', () => {
     view();
     expect(screen.queryByRole('button')).toBeNull();
     expect(api.mixMaps).not.toHaveBeenCalled();
+  });
+
+  it('shows arrows and dots, and is read out in words', async () => {
+    view();
+    const button = await line('Next: 32-beat blend, 124 to 126 BPM, 8A to 9A');
+    expect(button.textContent).toBe('Next: 32-beat blend · 124 → 126 BPM · 8A → 9A');
+  });
+
+  it('is hidden while the transition store works on another pair', () => {
+    useTransition.setState({ fromFileId: 1, toFileId: 3 });
+    view();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('is hidden when the sleep timer stops after this song, mixed or not', () => {
+    useSleep.setState({ endOfSong: true });
+    usePlayer.setState({ mixMode: 'off' });
+    view();
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('is hidden when no next song is coming', () => {
@@ -146,7 +167,7 @@ describe('TransitionView line', () => {
 describe('TransitionView sheet', () => {
   async function openSheet() {
     view();
-    fireEvent.click(await line('Next: 32-beat blend · 124 → 126 BPM · 8A → 9A'));
+    fireEvent.click(await line('Next: 32-beat blend, 124 to 126 BPM, 8A to 9A'));
     return within(screen.getByRole('dialog', { name: 'Next transition' }));
   }
 
@@ -169,6 +190,21 @@ describe('TransitionView sheet', () => {
     expect(within(table).getAllByText('Yes').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('gives the server’s reason for no mix in plain words', async () => {
+    setResult({ status: 'unavailable', reason: 'No mix map yet for the next song (“Song 2”)' });
+    view();
+    fireEvent.click(await line('Next: straight on, 124 to 126 BPM, 8A to 9A'));
+    const sheet = within(screen.getByRole('dialog', { name: 'Next transition' }));
+    expect(sheet.getByText('The next song hasn’t been analysed yet, so the next song follows straight on.')).toBeTruthy();
+  });
+
+  it('falls back to a plain reason it doesn’t know', async () => {
+    setResult({ status: 'unavailable', reason: 'Something internal broke' });
+    view();
+    fireEvent.click(await line('Next: straight on, 124 to 126 BPM, 8A to 9A'));
+    expect(screen.getByText('There’s no mix for these two songs, so the next song follows straight on.')).toBeTruthy();
+  });
+
   it('changes how this queue is mixed', async () => {
     const sheet = await openSheet();
     const pills = within(sheet.getByRole('radiogroup', { name: 'Mixing for this queue' }));
@@ -177,5 +213,29 @@ describe('TransitionView sheet', () => {
     expect(usePlayer.getState().mixMode).toBe('party');
     fireEvent.click(pills.getByRole('radio', { name: 'No mixing' }));
     expect(usePlayer.getState().mixMode).toBe('off');
+  });
+});
+
+describe('the energy picture’s clock', () => {
+  it('places the next song stretched to the playing song’s tempo during the mix', () => {
+    // 32 seconds of the next song play in a 16-second mix: twice as fast, then at its own pace.
+    const clock = nextSongClock(plan('long', 32, { length: 16, bStart: 8, bResume: 40 }));
+    expect(clock(0)).toBe(-8);
+    expect(clock(8)).toBe(0);
+    expect(clock(24)).toBe(8);
+    expect(clock(40)).toBe(16);
+    expect(clock(50)).toBe(26);
+  });
+
+  it('shades only while both songs sound, not the next song easing back alone', () => {
+    const gain = [
+      { at: 0, value: 1 },
+      { at: 8, value: 0.5 },
+      { at: 12, value: 0 },
+    ];
+    expect(overlapOf(plan('long', 32, { length: 24, aGain: gain }), 124)).toBe(12);
+    // Without the gain, the plan's beats at the playing song's tempo: 32 beats at 120 BPM.
+    expect(overlapOf(plan('long', 32, { length: 24 }), 120)).toBe(16);
+    expect(overlapOf(plan('fade', 0, { length: 10 }), 0)).toBe(10);
   });
 });

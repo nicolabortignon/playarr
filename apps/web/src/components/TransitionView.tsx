@@ -7,6 +7,7 @@ import { formatTime } from '../lib/format';
 import { usePrefs } from '../lib/prefs';
 import { useMixMaps } from '../lib/queries';
 import { upNext } from '../player/decks';
+import { useSleep } from '../player/sleep';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { useTransition, type UpcomingResult } from '../player/transitions';
 import { Dialog } from './Dialog';
@@ -49,6 +50,18 @@ function styleName(plan: TransitionPlan): string {
   }
 }
 
+/**
+ * The server's reasons for having no mix, in the listener's words (they're written for the logs, and
+ * name things like mix maps). Anything not known here gets a plain catch-all.
+ */
+function plainReason(reason: string): string {
+  if (reason.startsWith('No mix map yet for the song playing')) return 'This song hasn’t been analysed yet';
+  if (reason.startsWith('No mix map yet for the next song')) return 'The next song hasn’t been analysed yet';
+  if (reason === 'Mixed transitions need audio analysis') return 'Mixing needs audio analysis, which is off on this server';
+  if (reason.startsWith('The transition couldn’t be')) return 'The mix couldn’t be made';
+  return 'There’s no mix for these two songs';
+}
+
 /** Without a mix (unavailable, too late, mixing off) DJ mix plays the next song straight on, without a gap. */
 function describe(result: UpcomingResult | null, mixMode: MixMode): Upcoming {
   if (mixMode === 'off') return { style: 'no mixing', why: 'Mixing is off for this queue, so the next song follows straight on.' };
@@ -60,7 +73,7 @@ function describe(result: UpcomingResult | null, mixMode: MixMode): Upcoming {
     case 'pending':
       return { style: styleName(result.plan), why: result.plan.reason, plan: result.plan, preparing: true };
     case 'unavailable':
-      return { style: 'straight on', why: `${result.reason}, so the next song follows straight on.` };
+      return { style: 'straight on', why: `${plainReason(result.reason)}, so the next song follows straight on.` };
     case 'gave up':
       return { style: 'straight on', why: 'The mix wasn’t ready in time, so the next song follows straight on.' };
   }
@@ -81,6 +94,9 @@ function pairFacts(a: MixMap | undefined, b: MixMap | undefined): string[] {
 
 const capitalized = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** The line as a screen reader should say it: "124 to 126 BPM", pauses for the dots. */
+const spoken = (text: string) => text.replaceAll(' → ', ' to ').replaceAll(' · ', ', ');
+
 /**
  * "Next: 32-beat blend · 124 → 126 BPM · 8A → 9A" under the transport (and the queue's current song),
  * opening a sheet with the why, both songs' energy around the mix, and this queue's mixing. Only for
@@ -91,11 +107,13 @@ export function TransitionView({ className }: { className?: string }) {
   const from = useCurrentTrack();
   const to = usePlayer(upNext);
   const mixMode = usePlayer((s) => s.mixMode);
+  const sleepEnd = useSleep((s) => s.endOfSong);
   const fromFileId = useTransition((s) => s.fromFileId);
   const toFileId = useTransition((s) => s.toFileId);
   // With mixing on, the transition store names the pair it's working on; any other pair isn't mixed.
   const wanted = mixMode === 'off' || (fromFileId === from?.fileId && toFileId === to?.fileId);
-  if (!dj || !from || !to || from.fileId === to.fileId || !wanted) return null;
+  // The sleep timer stops after this song: nothing follows it, mixed or not.
+  if (!dj || sleepEnd || !from || !to || from.fileId === to.fileId || !wanted) return null;
   return <Line from={from} to={to} mixMode={mixMode} className={className} />;
 }
 
@@ -112,9 +130,11 @@ function Line({ from, to, mixMode, className }: { from: Track; to: Track; mixMod
       <button
         type="button"
         aria-haspopup="dialog"
+        aria-label={spoken(text)}
         onClick={() => setOpen(true)}
+        // 44 px tall to tap, without pushing the transport away.
         className={cn(
-          'inline-flex max-w-full min-w-0 items-center gap-2 rounded-full py-1 text-[13px] text-paper-dim transition hover:text-paper',
+          '-my-2 inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-full text-[13px] text-paper-dim transition hover:text-paper',
           className,
         )}
       >
@@ -181,8 +201,30 @@ interface Strip {
 }
 
 /**
+ * How long both songs sound together, from the start of the mix: until the song playing has faded
+ * out (its gain's last step down to silence), else the plan's beats at its tempo. The rest of the
+ * plan is the next song easing back to its own tempo, alone.
+ */
+export function overlapOf(plan: TransitionPlan, bpmA: number): number {
+  const lastHeard = plan.aGain.findLastIndex((p) => p.value > 0);
+  if (lastHeard >= 0) return Math.min(plan.aGain[lastHeard + 1]?.at ?? plan.length, plan.length);
+  return bpmA > 0 && plan.beats > 0 ? Math.min((plan.beats * 60) / bpmA, plan.length) : plan.length;
+}
+
+/**
+ * Where the next song's moments fall on the picture's clock (0: the start of the mix). During the mix
+ * it's stretched to the playing song's tempo, so its seconds there run at the average rate.
+ */
+export function nextSongClock(plan: TransitionPlan): (songTime: number) => number {
+  const span = plan.bResume - plan.bStart;
+  const rate = plan.length > 0 && span > 0 ? span / plan.length : 1;
+  return (t) => (t < plan.bStart ? t - plan.bStart : t <= plan.bStart + span ? (t - plan.bStart) / rate : plan.length + (t - plan.bStart - span));
+}
+
+/**
  * One song's phrases and bars between `from` and `to` seconds of the picture's clock, where 0 is
- * the start of the mix. `clock` turns a time in the song into that clock.
+ * the start of the mix. `clock` turns a time in the song into that clock; `mixLength` is how long
+ * the two songs overlap.
  */
 function strip(title: string, note: string, map: MixMap, clock: (songTime: number) => number, from: number, to: number, mixLength: number): Strip {
   const span = to - from;
@@ -205,14 +247,10 @@ function EnergyAroundTheMix({ plan, a, b }: { plan: TransitionPlan; a: { track: 
   const pad = Math.max(PAD_S, plan.length / 2);
   const from = -pad;
   const to = plan.length + pad;
-  // The next song is stretched to the tempo during the mix: its seconds there run at the average rate.
-  const bSpan = plan.bResume - plan.bStart;
-  const rate = plan.length > 0 && bSpan > 0 ? bSpan / plan.length : 1;
-  const bClock = (t: number) =>
-    t < plan.bStart ? t - plan.bStart : t <= plan.bStart + bSpan ? (t - plan.bStart) / rate : plan.length + (t - plan.bStart - bSpan);
+  const overlap = overlapOf(plan, a.map.bpm);
   const strips = [
-    strip(a.track.title, `mixes out from ${formatTime(plan.aStart)}`, a.map, (t) => t - plan.aStart, from, to, plan.length),
-    strip(b.track.title, `comes in from ${formatTime(plan.bStart)}`, b.map, bClock, from, to, plan.length),
+    strip(a.track.title, `mixes out from ${formatTime(plan.aStart)}`, a.map, (t) => t - plan.aStart, from, to, overlap),
+    strip(b.track.title, `comes in from ${formatTime(plan.bStart)}`, b.map, nextSongClock(plan), from, to, overlap),
   ];
   const hovered = hover && strips[hover.strip]!.phrases[hover.phrase];
   return (
@@ -230,10 +268,11 @@ function EnergyAroundTheMix({ plan, a, b }: { plan: TransitionPlan; a: { track: 
             </div>
             <div className="relative h-12" aria-hidden>
               <div
-                className={cn('absolute inset-y-0 rounded-[2px]', s.mix.width > 0 ? 'bg-paper/[0.08]' : 'w-px bg-paper/50')}
+                // Edges as lines strong enough to see: the shading alone is too faint to read.
+                className={cn('absolute inset-y-0', s.mix.width > 0 ? 'border-x border-paper/45 bg-paper/[0.08]' : 'w-px bg-paper/50')}
                 style={{ left: `${s.mix.left * 100}%`, width: s.mix.width > 0 ? `${s.mix.width * 100}%` : undefined }}
               >
-                {i === 0 && s.mix.width > 0 && <span className="absolute top-0.5 left-1 font-mono text-[10px] text-muted">mix</span>}
+                {i === 0 && s.mix.width > 0 && <span className="absolute top-0.5 left-1 font-mono text-[10px] text-paper-dim">mix</span>}
               </div>
               <PhraseColumns
                 phrases={s.phrases}

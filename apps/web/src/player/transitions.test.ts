@@ -7,7 +7,7 @@ import { usePrefs } from '../lib/prefs';
 import { type KeptTransition, transitionFileId, transitionPair, useOffline } from './offline';
 import { useSleep } from './sleep';
 import { useClock, usePlayer } from './store';
-import { readyTransition, useTransition, useUpcomingTransition } from './transitions';
+import { readyTransition, refreshUpcomingTransition, useTransition, useUpcomingTransition } from './transitions';
 
 // Catalog ids and file ids differ, to tell which one goes where.
 const song = (id: number) => ({ id, fileId: id + 100, recordingId: `rec-${id}`, title: `Song ${id}`, albumId: id, duration: 200 }) as Track;
@@ -560,5 +560,46 @@ describe('transitions kept with downloads', () => {
     expect(useTransition.getState().ready).toBeUndefined();
     await playTo(5);
     expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'party', 5);
+  });
+});
+
+describe('mix points edited by hand', () => {
+  it('drops the ready transition when either song’s mix points change, and asks afresh after a moment', async () => {
+    transition.mockResolvedValue(ready());
+    renderHook(() => useUpcomingTransition());
+    await playTo(6);
+    expect(useTransition.getState().ready).toBeDefined();
+    // The server forgot its file: keeping the answer would play a missing file.
+    act(() => refreshUpcomingTransition('rec-2'));
+    expect(useTransition.getState()).toMatchObject({ fromFileId: 101, toFileId: 102, result: null, ready: undefined });
+    await wait(1999);
+    expect(transition).toHaveBeenCalledTimes(1);
+    await wait(1);
+    expect(transition).toHaveBeenCalledTimes(2);
+    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 6);
+    expect(useTransition.getState().ready).toBeDefined();
+  });
+
+  it('stops polling the old render, for the song playing too', async () => {
+    renderHook(() => useUpcomingTransition());
+    await playTo(5);
+    expect(transition).toHaveBeenCalledTimes(1);
+    act(() => refreshUpcomingTransition('rec-1'));
+    // The poll due 3 seconds after the first answer doesn't come; the fresh ask 2 seconds on does.
+    await wait(2000);
+    expect(transition).toHaveBeenCalledTimes(2);
+    await wait(1000);
+    expect(transition).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the transition when another song’s mix points change', async () => {
+    transition.mockResolvedValue(ready());
+    renderHook(() => useUpcomingTransition());
+    await playTo(6);
+    const kept = useTransition.getState().ready;
+    act(() => refreshUpcomingTransition('rec-3'));
+    expect(useTransition.getState().ready).toBe(kept);
+    await wait(60_000);
+    expect(transition).toHaveBeenCalledTimes(1);
   });
 });

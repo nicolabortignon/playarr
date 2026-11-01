@@ -2,7 +2,7 @@ import type { CuePoints, MixMap } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AudioWaveform, Play } from 'lucide-react';
-import { useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
@@ -11,6 +11,7 @@ import { useMixMaps } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
 import { currentTrack, useClock, usePlayer } from '../player/store';
+import { refreshUpcomingTransition } from '../player/transitions';
 import { BarTicks, beatGrid, EnergyNumbers, PhraseColumns, PhraseReadout, phrasesAndBars } from './EnergyStrip';
 import { Dialog } from './Dialog';
 import type { MenuItem } from './Menu';
@@ -32,6 +33,8 @@ interface Grid {
 
 /** Without a beat, Shift+arrows move this many seconds. */
 const SECONDS_WITHOUT_BEAT = 10;
+/** A preview plays this many seconds, then pauses. */
+const PREVIEW_S = 8;
 /** Float slack when deciding whether a time sits on a grid line. */
 const EPSILON = 1e-6;
 
@@ -75,14 +78,35 @@ function playFrom(song: Track, time: number) {
     player.setPlaying(true);
     return;
   }
-  if (player.pos < 0) player.playTracks([song]);
+  // The engine starts the song there as it loads it (a seek now would move the song still playing).
+  if (player.pos < 0) player.playTracks([song], 0, { at: time });
   else {
     player.playNext([song]);
-    player.jumpTo(player.pos + 1);
+    player.jumpTo(player.pos + 1, { at: time });
   }
-  // The engine loads the new song in an effect once React has drawn the change: seeking before that
-  // would move the song that was playing, then the new one would start from the top.
-  setTimeout(() => useClock.getState().seek(time), 0);
+}
+
+/**
+ * Plays `song` from `time` for a few seconds, then pauses: enough to hear the point. Returns a cancel.
+ * The pause is called off as soon as the listener takes over (pause, play, seek, skip, another song),
+ * and when the dialog closes: someone who walks away with the song playing wants it to keep playing.
+ */
+function preview(song: Track, time: number): () => void {
+  playFrom(song, time);
+  const cancel = () => {
+    clearTimeout(timer);
+    offClock();
+    offPlayer();
+  };
+  const timer = setTimeout(() => {
+    cancel();
+    usePlayer.getState().setPlaying(false);
+  }, PREVIEW_S * 1000);
+  const offClock = useClock.subscribe((s, prev) => s.seekRequest !== prev.seekRequest && cancel());
+  const offPlayer = usePlayer.subscribe((s, prev) => {
+    if (s.playing !== prev.playing || s.restartToken !== prev.restartToken || s.pos !== prev.pos || s.order !== prev.order) cancel();
+  });
+  return cancel;
 }
 
 /** The song menus' "Edit mix points", only with DJ mix on (the only setting that uses them). */
@@ -150,26 +174,64 @@ function SongTitle({ song }: { song: Track }) {
 function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: CuePoints }; onSaved: () => void }) {
   const saved: Points = { mixIn: map.cues?.mixIn ?? null, mixOut: map.cues?.mixOut ?? null };
   const [points, setPoints] = useState<Points>(saved);
+  const root = useRef<HTMLDivElement>(null);
+  const previewing = useRef<() => void>(undefined);
   const client = useQueryClient();
   const save = useMutation({
     mutationFn: (cues: Points) => api.setCues(song.recordingId, cues),
-    // The transition view and the planner's inputs both come from the mix maps.
-    onSuccess: () => client.invalidateQueries({ queryKey: ['mix-maps'] }),
+    onSuccess: async () => {
+      // The server forgot the transitions made with the old points: a coming one is asked for afresh.
+      refreshUpcomingTransition(song.recordingId);
+      // The transition view and the planner's inputs both come from the mix maps.
+      await client.invalidateQueries({ queryKey: ['mix-maps'] });
+    },
   });
+
+  useEffect(() => {
+    // Loaded after the dialog opened (it focuses what's there then): start on the mix-in marker.
+    const dialog = root.current?.closest('[role="dialog"]');
+    if (!dialog?.contains(document.activeElement)) root.current?.querySelector<HTMLElement>('[role="slider"]')?.focus({ preventScroll: true });
+    // Closing the dialog calls off a preview's pause, at once (the editor stays drawn while the dialog animates away).
+    const stopPreview = () => previewing.current?.();
+    const offUI = useUI.subscribe((s) => s.mixPointsTrack === null && stopPreview());
+    return () => {
+      offUI();
+      stopPreview();
+    };
+  }, []);
 
   const duration = map.duration;
   const grid = gridOf(map);
-  const detected = { mixIn: clamp(finiteOr(map.introEnd, 0), 0, duration), mixOut: clamp(finiteOr(map.outroStart, duration), 0, duration) };
-  const shown = { mixIn: points.mixIn ?? detected.mixIn, mixOut: points.mixOut ?? detected.mixOut };
-  // Mix in stays at least one line before mix out (the server wants it strictly before).
+  // What the planner falls back to without points set by hand (plan.ts): the detected intro end and outro start.
+  const soundEnd = clamp(finiteOr(map.soundEnd, duration), 0, duration);
+  const detected = { mixIn: clamp(finiteOr(map.introEnd, 0), 0, duration), mixOut: clamp(finiteOr(map.outroStart, soundEnd), 0, duration) };
+  // Shown in order, mix in at least one line before mix out (the server wants it strictly before),
+  // even when the detection (or an old point) has them the wrong way round.
+  const mixOut = clamp(points.mixOut ?? detected.mixOut, Math.min(grid.step, duration), duration);
+  const shown = { mixIn: clamp(points.mixIn ?? detected.mixIn, 0, Math.max(0, mixOut - grid.step)), mixOut };
   const bounds = (which: Which): [number, number] =>
     which === 'mixIn' ? [0, shown.mixOut - grid.step] : [shown.mixIn + grid.step, duration];
-  const move = (which: Which, to: number) => setPoints((p) => ({ ...p, [which]: to }));
+  // Back on the detected point is no point set by hand.
+  const move = (which: Which, to: number) =>
+    setPoints((p) => {
+      const value = Math.abs(to - detected[which]) < 0.001 ? null : to;
+      return p[which] === value ? p : { ...p, [which]: value };
+    });
   const changed = points.mixIn !== saved.mixIn || points.mixOut !== saved.mixOut;
   const anySet = [points.mixIn, points.mixOut, saved.mixIn, saved.mixOut].some((t) => t !== null);
+  const play = (time: number) => {
+    previewing.current?.();
+    previewing.current = preview(song, time);
+  };
+  const reset = () => {
+    const none = { mixIn: null, mixOut: null };
+    // Only moved here, never saved: nothing to tell the server.
+    if (saved.mixIn === null && saved.mixOut === null) return setPoints(none);
+    save.mutate(none, { onSuccess: () => setPoints(none) });
+  };
 
   return (
-    <div className="space-y-6 p-5">
+    <div ref={root} className="space-y-6 p-5">
       <div className="space-y-2">
         <SongTitle song={song} />
         <p className="text-sm text-paper-dim">
@@ -187,14 +249,14 @@ function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: Cu
           hint="Where the song is fully in"
           time={shown.mixIn}
           byHand={points.mixIn !== null}
-          onPlay={() => playFrom(song, shown.mixIn)}
+          onPlay={() => play(shown.mixIn)}
         />
         <PointCard
           label="Mix out"
           hint="Where the song starts to give way"
           time={shown.mixOut}
           byHand={points.mixOut !== null}
-          onPlay={() => playFrom(song, shown.mixOut)}
+          onPlay={() => play(shown.mixOut)}
         />
       </div>
 
@@ -208,7 +270,7 @@ function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: Cu
         <button
           type="button"
           disabled={!anySet || save.isPending}
-          onClick={() => save.mutate({ mixIn: null, mixOut: null }, { onSuccess: () => setPoints({ mixIn: null, mixOut: null }) })}
+          onClick={reset}
           className="h-11 rounded-lg px-4 text-paper-dim transition hover:bg-paper/[0.06] hover:text-paper disabled:opacity-40"
         >
           Reset
@@ -247,7 +309,7 @@ function PointCard({ label, hint, time, byHand, onPlay }: { label: string; hint:
       <button
         type="button"
         onClick={onPlay}
-        className="flex h-10 shrink-0 items-center gap-2 rounded-full border border-line px-3 text-[13px] text-paper-dim transition hover:bg-paper/[0.06] hover:text-paper"
+        className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-line px-3 text-[13px] text-paper-dim transition hover:bg-paper/[0.06] hover:text-paper"
       >
         <Play className="size-3.5 fill-current" aria-hidden />
         Play from {label.toLowerCase()}
@@ -296,18 +358,18 @@ function Strip({
         {hovered && <PhraseReadout phrase={hovered} />}
       </figcaption>
       <div className="relative select-none" onPointerLeave={() => setHover(null)}>
-        {/* Rows for the markers' handles: mix in above the strip, mix out below, so they never collide. */}
-        <div className="h-6" />
+        {/* Rows for the markers' handles, each its 44 px hit area: mix in above the strip, mix out below, so they never collide. */}
+        <div className="h-11" />
         <div ref={track} className="relative h-16" aria-hidden>
           <div className="absolute inset-y-0 left-0 rounded-[2px] bg-paper/[0.08]" style={{ width: at(shown.mixIn) }} />
           <div className="absolute inset-y-0 right-0 rounded-[2px] bg-paper/[0.08]" style={{ left: at(shown.mixOut) }} />
           <PhraseColumns phrases={phrases} hovered={hover} onHover={setHover} />
           {(['mixIn', 'mixOut'] as const).map((which) => (
-            <div key={which} className="absolute inset-y-0 border-l border-dashed border-paper/35" style={{ left: at(detected[which]) }} />
+            <div key={which} className="absolute inset-y-0 border-l border-dashed border-paper/45" style={{ left: at(detected[which]) }} />
           ))}
         </div>
         <BarTicks bars={bars} />
-        <div className="h-6" />
+        <div className="h-11" />
         <Marker which="mixIn" label="Mix in" handle="In" time={shown.mixIn} left={at(shown.mixIn)} grid={grid} bounds={bounds} timeAt={timeAt} onMove={onMove} />
         <Marker which="mixOut" label="Mix out" handle="Out" time={shown.mixOut} left={at(shown.mixOut)} grid={grid} bounds={bounds} timeAt={timeAt} onMove={onMove} />
       </div>
@@ -377,7 +439,14 @@ function Marker({
     dragging.current = true;
   };
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (dragging.current) onMove(which, snap(grid, timeAt(e.clientX), min, max));
+    if (!dragging.current) return;
+    // Released somewhere the marker didn't hear about: the drag is over.
+    if (e.buttons === 0) {
+      dragging.current = false;
+      return;
+    }
+    const to = snap(grid, timeAt(e.clientX), min, max);
+    if (to !== time) onMove(which, to);
   };
   const stop = (e: PointerEvent<HTMLDivElement>) => {
     dragging.current = false;
@@ -399,18 +468,21 @@ function Marker({
       onPointerMove={onPointerMove}
       onPointerUp={stop}
       onPointerCancel={stop}
+      onLostPointerCapture={() => (dragging.current = false)}
       // Only the handle and a strip around the line catch the pointer, so two close markers stay reachable.
       className="group pointer-events-none absolute inset-y-0 w-11 -translate-x-1/2 touch-none outline-none"
       style={{ left }}
     >
-      <div className="pointer-events-auto absolute inset-y-6 left-1/2 w-4 -translate-x-1/2 cursor-ew-resize">
+      <div className="pointer-events-auto absolute inset-y-11 left-1/2 w-4 -translate-x-1/2 cursor-ew-resize">
         <div className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-paper" />
       </div>
       <div
         className={cn(
           'pointer-events-auto absolute left-1/2 grid h-6 min-w-10 -translate-x-1/2 cursor-ew-resize place-items-center rounded-full bg-paper px-2 font-mono text-[10px] tracking-[0.1em] text-ink-950 uppercase shadow-md shadow-black/40',
+          // An invisible 44 px hit area around the handle, filling its row.
+          "before:absolute before:-inset-x-2 before:-inset-y-2.5 before:content-['']",
           'group-focus-visible:ring-2 group-focus-visible:ring-accent group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-ink-850',
-          which === 'mixIn' ? 'top-0' : 'bottom-0',
+          which === 'mixIn' ? 'top-2.5' : 'bottom-2.5',
         )}
       >
         {handle}

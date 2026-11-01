@@ -4,6 +4,13 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn';
 
+/** What a dialog focuses as it opens: the first field, slider or button, skipping Close and options not chosen. */
+const FIRST_FOCUS = [
+  'input:not([type="radio"]:not(:checked))',
+  '[role="slider"]',
+  'button:not([aria-label="Close"]):not([role="radio"][aria-checked="false"])',
+].join(', ');
+
 /** Modal dialog: a bottom sheet on phones, a centered card on larger screens. */
 export function Dialog({
   open,
@@ -31,10 +38,8 @@ export function Dialog({
     const previous = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
     window.addEventListener('keydown', onKey);
-    // Focus the first field or button inside, and restore focus when closing.
-    requestAnimationFrame(() =>
-      panel.current?.querySelector<HTMLElement>('input, button:not([aria-label="Close"])')?.focus({ preventScroll: true }),
-    );
+    // Focus the first control inside (of a group of options, the one chosen), and restore focus when closing.
+    requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>(FIRST_FOCUS)?.focus({ preventScroll: true }));
     return () => {
       window.removeEventListener('keydown', onKey);
       previous?.focus?.({ preventScroll: true });

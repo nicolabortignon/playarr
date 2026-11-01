@@ -1,6 +1,6 @@
 import { ChevronDown, Disc3, Info, ListMusic, ListPlus, Mic2, Quote, Radio } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -20,6 +20,12 @@ import { SleepTimer } from './SleepTimer';
 import { TransitionView } from './TransitionView';
 import { startRadio } from '../player/radio';
 
+/** The modal on top: dialogs are portaled to the end of the page, after Now Playing. */
+function topModal(): Element | undefined {
+  const modals = document.querySelectorAll('[aria-modal]');
+  return modals[modals.length - 1];
+}
+
 export function NowPlaying() {
   const open = useUI((s) => s.nowPlayingOpen);
   const track = useCurrentTrack();
@@ -37,6 +43,7 @@ function Sheet() {
   const source = usePlayer((s) => s.source);
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
+  const sheet = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const close = () => setOpen(false);
   const go = (to: string) => {
@@ -45,7 +52,10 @@ function Sheet() {
   };
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    const onKey = (e: KeyboardEvent) => {
+      // A dialog opened from here (Edit mix points, the next transition) takes its own Escape.
+      if (e.key === 'Escape' && topModal() === sheet.current) close();
+    };
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
@@ -56,6 +66,7 @@ function Sheet() {
 
   return (
     <motion.div
+      ref={sheet}
       role="dialog"
       aria-modal
       aria-label="Now playing"

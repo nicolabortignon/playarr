@@ -131,8 +131,9 @@ export interface EnergyRow {
 export function EnergyNumbers({ caption, rows, extraHeader }: { caption: string; rows: EnergyRow[]; extraHeader?: string }) {
   const songs = rows.some((r) => r.song !== undefined);
   return (
-    <details className="mt-3">
-      <summary className="cursor-pointer font-mono text-[10px] tracking-[0.15em] text-muted uppercase hover:text-paper">Numbers</summary>
+    <details className="mt-1">
+      {/* 44 px tall to tap (padding, so it keeps its disclosure triangle). */}
+      <summary className="cursor-pointer py-3.5 font-mono text-[10px] leading-4 tracking-[0.15em] text-muted uppercase hover:text-paper">Numbers</summary>
       <table className="mt-2 w-full text-[13px]">
         <caption className="sr-only">{caption}</caption>
         <thead>
