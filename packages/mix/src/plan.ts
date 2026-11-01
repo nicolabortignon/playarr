@@ -22,6 +22,12 @@ type Song = PlanInput['a'];
 const STEADY_BEAT_CONFIDENCE = 0.35;
 /** A quick mix cuts on a downbeat, so it needs a grid we mostly trust. */
 const QUICK_MIX_CONFIDENCE = 0.5;
+/**
+ * Below this the bar starts (downbeatConfidence) are a guess: equal kicks with a clap on 2 and 4 can put
+ * the bar a beat or two off, so phrase lines can't be trusted. No long blend then (its whole point is
+ * phrases meeting), and a quick mix lands on a beat of that song instead of claiming a phrase or bar.
+ */
+export const MIN_DOWNBEAT_CONFIDENCE = 0.4;
 /** Stretching B more than this is audible: beyond it, no long blend. */
 const LARGEST_TEMPO_GAP = 0.08;
 /** A quick mix only stretches B when the tempos are this close (otherwise it cuts unstretched). */
@@ -172,6 +178,9 @@ interface Pair {
   /** Room for a blend from A's first phrase line at leaveFrom, and in B's intro, both in A's beats (the blend's beats). */
   outroRoomBeats: number;
   introRoomBeats: number;
+  /** The song's bar starts can be trusted (see MIN_DOWNBEAT_CONFIDENCE). */
+  aBarsSure: boolean;
+  bBarsSure: boolean;
   keys: { kind: 'compatible' } | { kind: 'unknown' } | { kind: 'clash'; a: Camelot; b: Camelot };
 }
 
@@ -200,9 +209,14 @@ function describePair(input: PlanInput): Pair {
     leaveFrom,
     outroRoomBeats,
     introRoomBeats,
+    aBarsSure: barsSure(a),
+    bBarsSure: barsSure(b),
     keys: keyRelation(a, b),
   };
 }
+
+/** Bar starts are trusted unless the analysis said it's unsure of them (no confidence at all: older maps, hand-made ones). */
+const barsSure = (song: Song) => song.downbeatConfidence === undefined || song.downbeatConfidence >= MIN_DOWNBEAT_CONFIDENCE;
 
 function keyRelation(a: Song, b: Song): Pair['keys'] {
   const trusted = (song: Song) =>
@@ -238,6 +252,23 @@ const STYLE_RULES: ((pair: Pair) => Decision | undefined)[] = [
       return { style: 'straight', reason: 'Abrupt end into abrupt start at different tempos: straight on' };
     }
     return undefined;
+  },
+  function unsureBars(pair) {
+    if (pair.aBarsSure && pair.bBarsSure) return undefined;
+    const which =
+      !pair.aBarsSure && !pair.bBarsSure
+        ? 'Neither song’s bar starts are sure'
+        : pair.aBarsSure
+          ? 'B’s bar starts are unsure'
+          : 'A’s bar starts are unsure';
+    // Without phrases to meet on, a quick mix on the beat, if the beat itself is sure and steady.
+    const { a, b } = pair;
+    const solidBeats = Math.min(a.beatConfidence, b.beatConfidence) >= QUICK_MIX_CONFIDENCE && a.gridStable && b.gridStable;
+    if (solidBeats) return { style: 'quick', reason: `${which}: quick mix` };
+    if (abruptEdgeAtTheJoin(pair)) {
+      return { style: 'straight', reason: `${which}, the beat isn’t solid and an edge is abrupt: straight on` };
+    }
+    return { style: 'fade', reason: `${which} and the beat isn’t solid: crossfade` };
   },
   function temposTooFarApart(pair) {
     if (pair.tempoGap <= LARGEST_TEMPO_GAP + EPSILON) return undefined;
@@ -484,6 +515,9 @@ function longBlend(
  *   beats, finishing on the landing.
  * - Further apart, B plays at its own speed and its beats would flam against A's, so it's a cut: B is silent
  *   until the landing, then jumps in within 20 ms; A rings on for one beat, filtered of its kick, fading out.
+ *
+ * When B's bar starts are unsure, B lands on its beat nearest the mix-in point instead (A's side: see
+ * quickPlacement).
  */
 function quickPlan(pair: Pair, reason: string): TransitionPlan {
   const { a, b } = pair;
@@ -506,13 +540,15 @@ function quickPlan(pair: Pair, reason: string): TransitionPlan {
   // transition must end (B resumes) no later than B's own outro, where the next mix will begin.
   const latestLanding = resumeLimit(b) - tailInB - holdOvershoot;
   const target = mixInPoint(b);
-  const phraseLanding = nearestLine(b, PHRASE_BEATS, target, leadInB);
+  // Unsure bars: every beat is a "bar line" (and a phrase line) as far as the landing goes.
+  const bar = pair.bBarsSure ? BAR_BEATS : 1;
+  const phraseLanding = nearestLine(b, pair.bBarsSure ? PHRASE_BEATS : 1, target, leadInB);
   let landing =
     Math.abs(phraseLanding - target) <= (PHRASE_BEATS / 2) * beatLength(b)
       ? phraseLanding
-      : nearestLine(b, BAR_BEATS, target, leadInB);
+      : nearestLine(b, bar, target, leadInB);
   if (landing > latestLanding + EPSILON) {
-    const earlier = lastLineAtOrBefore(b, BAR_BEATS, latestLanding);
+    const earlier = lastLineAtOrBefore(b, bar, latestLanding);
     if (earlier === undefined || earlier < leadInB - EPSILON) {
       return straightPlan(pair, 'B’s outro comes too soon to mix: straight on');
     }
@@ -565,23 +601,27 @@ function quickPlan(pair: Pair, reason: string): TransitionPlan {
  * 2. landing on the next downbeat that allows the same;
  * 3. only without a mix-out cue: landing on A's last phrase line that fits, leaving at most a phrase before
  *    the detected outro (a hand-set cue is never overruled).
+ * When A's bar starts are unsure, beats stand in for phrase lines and downbeats: A leaves on its first beat
+ * that allows the above.
  */
 function quickPlacement(pair: Pair, tailBeats: number): { aStart: number; beats: number } | undefined {
   const { a, leaveFrom, earliestStart } = pair;
   const beat = beatLength(a);
+  const phrase = pair.aBarsSure ? PHRASE_BEATS : 1;
+  const bar = pair.aBarsSure ? BAR_BEATS : 1;
   const latestLanding = soundEndOf(a) - tailBeats * beat;
   for (const beats of QUICK_MIX_BEATS) {
     const lead = beats * beat;
-    const landing = firstLineAtOrAfter(a, PHRASE_BEATS, leaveFrom + lead);
+    const landing = firstLineAtOrAfter(a, phrase, leaveFrom + lead);
     if (landing <= latestLanding + EPSILON) return { aStart: landing - lead, beats };
   }
-  const downbeat = firstLineAtOrAfter(a, BAR_BEATS, leaveFrom);
+  const downbeat = firstLineAtOrAfter(a, bar, leaveFrom);
   for (const beats of QUICK_MIX_BEATS) {
     if (downbeat + beats * beat <= latestLanding + EPSILON) return { aStart: downbeat, beats };
   }
   if (a.cues?.mixOut !== undefined) return undefined;
   const earliest = Math.max(earliestStart, finiteOr(a.outroStart, soundEndOf(a)) - PHRASE_BEATS * beat, 0);
-  const landing = lastLineAtOrBefore(a, PHRASE_BEATS, latestLanding);
+  const landing = lastLineAtOrBefore(a, phrase, latestLanding);
   if (landing === undefined) return undefined;
   for (const beats of QUICK_MIX_BEATS) {
     const aStart = landing - beats * beat;

@@ -12,9 +12,16 @@ export interface MixMap {
   bpm: number;
   /** Time of the first beat of the grid; beat n is at firstBeat + n * 60 / bpm. */
   firstBeat: number;
-  /** The grid's beat index of the first downbeat (0–3): bars start every 4 beats from there. */
+  /**
+   * Beats from firstBeat to the music's first downbeat, 0–3 (analysis moves firstBeat to the grid
+   * beat up to three beats before that downbeat, so it never needs more). Bars start there and every
+   * 4 beats after; phrases every 16.
+   */
   downbeatOffset: number;
-  /** 0–1: how sure the bar starts are; low means the planner shouldn't trust phrase alignment. */
+  /**
+   * 0–1: how sure the bar starts are. Below 0.4 the planner doesn't trust phrase alignment (no long
+   * blend; quick mixes land on a beat). Missing counts as sure.
+   */
   downbeatConfidence?: number;
   /**
    * The grid holds over the whole song (no wandering tempo): long blends allowed. Read it together

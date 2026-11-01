@@ -589,3 +589,93 @@ describe('planTransition: broken mix maps never make a broken plan', () => {
     }
   });
 });
+
+describe('planTransition: unsure bar starts', () => {
+  const unsure = { downbeatConfidence: 0.066 }; // the reviewer's song: equal kicks, a clap on 2 and 4
+  const onBeat = (m: MixMap, t: number) => isWhole(linesFromFirstDownbeat(m, t, 1));
+  /** Where B is when the quick mix lands (B's rate is steady until then). */
+  const bAtLanding = (p: TransitionPlan, a: MixMap) => p.bStart + valueAt(p.bRate, 0) * p.beats * beatOf(a);
+
+  it.each<[string, SongOptions, SongOptions, TransitionPlan['style'], string]>([
+    ['B unsure', {}, unsure, 'quick', 'B’s bar starts are unsure: quick mix'],
+    ['A unsure', unsure, {}, 'quick', 'A’s bar starts are unsure: quick mix'],
+    ['both unsure', unsure, unsure, 'quick', 'Neither song’s bar starts are sure: quick mix'],
+    ['B’s confidence not a number', {}, { downbeatConfidence: Number.NaN }, 'quick', 'B’s bar starts are unsure: quick mix'],
+    ['B unsure, tempos 11% apart', {}, { ...unsure, bpm: 140 }, 'quick', 'B’s bar starts are unsure: quick mix'],
+    ['B unsure, beat not sure enough to cut on', {}, { ...unsure, beatConfidence: 0.45 }, 'fade', 'B’s bar starts are unsure and the beat isn’t solid: crossfade'],
+    ['B unsure, A’s beat drifts', { gridStable: false }, unsure, 'fade', 'B’s bar starts are unsure and the beat isn’t solid: crossfade'],
+    ['B unsure, beat not solid, A ends abruptly', { coldEnd: true }, { ...unsure, beatConfidence: 0.45 }, 'straight', 'B’s bar starts are unsure, the beat isn’t solid and an edge is abrupt: straight on'],
+    ['confidence just enough (0.4)', { downbeatConfidence: 0.4 }, { downbeatConfidence: 0.4 }, 'long', 'Same tempo, keys compatible: 32-beat blend'],
+  ])('%s: %s', (_name, aOptions, bOptions, style, reason) => {
+    const p = plan(song(aOptions), song(bOptions));
+    expect(p.style).toBe(style);
+    expect(p.reason).toBe(reason);
+  });
+
+  it('no confidence at all is trusted: the same plans as before', () => {
+    const pairs: [SongOptions, SongOptions][] = [
+      [{}, {}],
+      [{}, { bpm: 127.3 }],
+      [{}, { bpm: 130, key: { camelot: '3B', confidence: 0.9 } }],
+      [{ outroBeats: 38 }, { introBeats: 38 }],
+      [{ cues: { mixOut: 200 } }, { cues: { mixIn: 30 } }],
+    ];
+    for (const [aOptions, bOptions] of pairs) {
+      const sure = { downbeatConfidence: 0.9 };
+      expect(plan(song(aOptions), song(bOptions))).toEqual(plan(song({ ...aOptions, ...sure }), song({ ...bOptions, ...sure })));
+    }
+    expect(plan(song(), song()).style).toBe('long');
+  });
+
+  it('B unsure: lands on B’s beat nearest its mix-in point, not on a phrase line', () => {
+    // The intro ends 38 beats in: 6 beats past a phrase line, 2 before a bar line.
+    const a = song();
+    const sureB = song({ introBeats: 38 });
+    const sure = plan(a, sureB);
+    const b = song({ introBeats: 38, ...unsure });
+    const p = plan(a, b);
+    expect(p.style).toBe('quick');
+    expect(onBeat(b, bAtLanding(p, a))).toBe(true);
+    expect(bAtLanding(p, a)).toBeCloseTo(b.introEnd, 9);
+    // Where a trusted bar would have landed it: the phrase line 6 beats earlier.
+    expect(onPhrase(sureB, bAtLanding(sure, a))).toBe(true);
+    // A's side is unchanged: still a phrase line in its outro.
+    expect(onPhrase(a, p.aStart + p.beats * beatOf(a))).toBe(true);
+  });
+
+  it('A unsure: leaves on its first beat in the outro, not at the next phrase line', () => {
+    // The outro starts 38 beats before the end: 2 beats past a bar line.
+    const sureA = song({ outroBeats: 38 });
+    const a = song({ outroBeats: 38, ...unsure });
+    const sure = plan(sureA, song());
+    const p = plan(a, song());
+    expect(p.style).toBe('quick');
+    expect(p.aStart).toBeCloseTo(a.outroStart, 9);
+    expect(onBeat(a, p.aStart)).toBe(true);
+    expect(onBeat(a, p.aStart + p.beats * beatOf(a))).toBe(true);
+    expect(onPhrase(sureA, sure.aStart + sure.beats * beatOf(sureA))).toBe(true);
+    expect(sure.aStart).toBeGreaterThan(a.outroStart + beatOf(a));
+  });
+
+  it.each<[string, SongOptions, SongOptions, PlanInput['aPosition']]>([
+    ['A unsure with a mix-out cue', { ...unsure, cues: { mixOut: 251.3 } }, {}, undefined],
+    ['B unsure with a mix-in cue', {}, { ...unsure, cues: { mixIn: 21.7 } }, undefined],
+    ['both unsure, B’s outro soon', unsure, { ...unsure, duration: 60, soundEnd: 59, introBeats: 30, outroStart: 25 }, undefined],
+    ['both unsure, A well past its outro', unsure, unsure, 270],
+    ['both unsure, cut, B’s outro soon', unsure, { ...unsure, bpm: 131, duration: 60, soundEnd: 59, introBeats: 30, outroStart: 22 }, undefined],
+  ])('%s: never leaves early, never resumes inside B’s outro, all numbers', (_name, aOptions, bOptions, aPosition) => {
+    const a = song(aOptions);
+    const b = song(bOptions);
+    const p = plan(a, b, { aPosition });
+    const numbers = [p.aStart, p.bStart, p.length, p.bResume, p.switchAt, p.beats];
+    for (const curve of [p.bRate, p.aGain, p.bGain, p.aLowDb, p.bLowDb, p.aHighPassHz]) {
+      for (const point of curve) numbers.push(point.at, point.value);
+    }
+    for (const value of numbers) expect(Number.isFinite(value)).toBe(true);
+    if (p.style === 'straight') return;
+    expect(p.style).not.toBe('long');
+    expect(p.aStart).toBeGreaterThanOrEqual((a.cues?.mixOut ?? a.outroStart) - 1e-9);
+    if (aPosition !== undefined) expect(p.aStart).toBeGreaterThanOrEqual(aPosition + 5);
+    expect(p.bResume).toBeLessThanOrEqual((b.cues?.mixOut ?? b.outroStart) + 1e-9);
+  });
+});
