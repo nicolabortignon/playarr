@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { AudioEngine } from './AudioEngine';
 import { playTracker } from './playTracker';
+import { useSleep } from './sleep';
 import { currentTrack, usePlayer } from './store';
 
 vi.mock('./loadAhead', () => ({ useLoadAhead: () => {} }));
@@ -192,6 +193,19 @@ describe('AudioEngine', () => {
     expect(now()).toBe(1);
     expect(fake(a).time).toBe(0);
     expect(fake(a).paused).toBe(false);
+  });
+
+  it('stops at the end of the song for the sleep timer, ready on the next one', async () => {
+    const [a, b] = await start([song(1), song(2)]);
+    useSleep.getState().sleepAtEndOfSong();
+    await at(a, 199.99);
+    expect(now()).toBe(1); // nothing started early
+    expect(src(b)).toBeNull();
+    await end(a);
+    expect(now()).toBe(2);
+    expect(usePlayer.getState().playing).toBe(false);
+    expect(fake(a).paused).toBe(true);
+    expect(useSleep.getState().endOfSong).toBe(false);
   });
 
   it('turns loud songs down', async () => {

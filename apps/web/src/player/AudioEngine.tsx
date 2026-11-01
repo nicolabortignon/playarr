@@ -11,6 +11,7 @@ import { loadLevels, useLevels } from './levels';
 import { useLoadAhead } from './loadAhead';
 import { playTracker } from './playTracker';
 import { useAutoplay } from './radio';
+import { sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, useClock, useCurrentTrack, usePlayer } from './store';
 
 const DEFAULT_ACCENT = '#ff7a1a';
@@ -73,7 +74,7 @@ export function AudioEngine() {
       if (!deck) continue;
       deck.muted = s.muted;
       const t = loaded.current.get(deck);
-      let v = s.volume * s.volume; // perceptual curve
+      let v = s.volume * s.volume * sleepGain(); // perceptual curve; fading out for the sleep timer
       if (settable && levelVolume && t) v *= levelGain(t, levels[t.recordingId], s);
       const f = fade.current;
       if (f?.out === deck) v *= fadeCurve(remaining(deck) / f.seconds);
@@ -147,7 +148,8 @@ export function AudioEngine() {
   function approachEnd(deck: HTMLAudioElement) {
     const s = usePlayer.getState();
     const left = remaining(deck);
-    if (deck.paused || !s.playing || left > PRELOAD_S || !deck.duration) return;
+    // The sleep timer stops at the end of this song: nothing to start.
+    if (deck.paused || !s.playing || left > PRELOAD_S || !deck.duration || useSleep.getState().endOfSong) return;
     prepareNext();
     const next = upNext(s);
     if (!holds(standby(), next) || handedOff.current !== null || handoffFailed.current) return;
@@ -157,7 +159,7 @@ export function AudioEngine() {
     clearTimeout(handoffTimer.current);
     handoffTimer.current = setTimeout(() => {
       const now = active();
-      if (now === deck && !deck.paused && usePlayer.getState().playing) handOff(seconds);
+      if (now === deck && !deck.paused && usePlayer.getState().playing && !useSleep.getState().endOfSong) handOff(seconds);
     }, Math.max(0, wait * 1000 - LEAD_MS));
   }
 
@@ -168,6 +170,7 @@ export function AudioEngine() {
 
   useLoadAhead();
   useAutoplay();
+  useSleepTimer(applyVolumes);
 
   // Phones only let an element make sound after a tap on it: the first tap anywhere readies both,
   // so the next song can start on its own later (with the screen off, say).
@@ -455,6 +458,13 @@ export function AudioEngine() {
     onEnded: (e) => {
       if (!isActive(e)) return tickFade();
       playTracker.finish('ended');
+      if (sleepsAtSongEnd()) {
+        // The sleep timer: on to the next song, paused, for when you're back.
+        const p = usePlayer.getState();
+        p.next(true);
+        p.setPlaying(false);
+        return;
+      }
       // The next song is loaded but wasn't started early (timers are slowed in the background): start it now.
       if (!handOff(0, () => usePlayer.getState().next(true))) usePlayer.getState().next(true);
     },

@@ -15,6 +15,7 @@ import { FormatBadge } from './FormatBadge';
 import { LyricsView } from './LyricsView';
 import { Menu } from './Menu';
 import { SeekBar, Transport } from './Transport';
+import { SleepTimer } from './SleepTimer';
 import { startRadio } from '../player/radio';
 
 export function NowPlaying() {
@@ -95,6 +96,7 @@ function Sheet() {
             </button>
           </div>
           <div className="flex items-center">
+            <SleepTimer />
             <button
               type="button"
               aria-label="Lyrics"
