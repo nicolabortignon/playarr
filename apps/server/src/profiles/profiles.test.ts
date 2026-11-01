@@ -72,7 +72,7 @@ describe('profiles', () => {
     const asSam = { 'x-playarr-profile': String(sam.id), 'x-playarr': '1' };
     await app.inject({ method: 'POST', url: '/api/plays', headers: asSam, payload: { plays: tracks.slice(0, 20).flatMap((t) => [play(t.id), play(t.id, '2026-11-01T11:00:00Z')]) } });
     // Reports carry who was listening when they were played, whatever the device says now.
-    await app.inject({ method: 'POST', url: '/api/plays', headers: asSam, payload: { plays: [play(30)], profile: 1 } });
+    await app.inject({ method: 'POST', url: '/api/plays', headers: asSam, payload: { plays: [{ ...play(30), profile: 1 }] } });
     expect(history.since(3650, Date.parse('2026-11-02'), sam.id)).toHaveLength(40);
     expect(history.since(3650, Date.parse('2026-11-02'), 1)).toHaveLength(1);
 

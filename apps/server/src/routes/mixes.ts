@@ -25,11 +25,10 @@ const playsInput = z.object({
         weekday: z.number().int().min(0).max(6),
         seconds: z.number().min(0).max(24 * 3600),
         skipped: z.boolean(),
+        profile: z.number().int().positive().optional(),
       }),
     )
     .max(500),
-  /** Who was listening when these were played (the device's profile then). */
-  profile: z.number().int().positive().optional(),
 });
 
 const settingsInput = z.object({
@@ -94,9 +93,11 @@ export function mixRoutes(
     const parsed = playsInput.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid plays' });
     if (!readMixSettings(store).recordHistory) return reply.code(202).send({ recorded: 0 });
-    const asked = parsed.data.profile;
-    const profile = asked && deps.profiles?.ids().includes(asked) ? asked : who(req);
-    const recorded = await history.record(parsed.data.plays, profile);
+    // Each report says who was listening when it was played; a profile removed since counts as the device's now.
+    const ids = new Set(deps.profiles?.ids() ?? [1]);
+    const now = who(req);
+    const plays = parsed.data.plays.map((p) => ({ ...p, profile: p.profile && ids.has(p.profile) ? p.profile : now }));
+    const recorded = await history.record(plays, now);
     if (recorded) void deps.scrobbler?.kick();
     return { recorded };
   });

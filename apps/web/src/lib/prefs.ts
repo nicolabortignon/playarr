@@ -26,6 +26,8 @@ interface Prefs {
   crossfade: Crossfade;
   /** Turn loud songs down so everything plays at about the same volume. */
   levelVolume: boolean;
+  /** Who listens on this device (Settings → Profiles); null until picked. */
+  profileId: number | null;
   setAccent(a: AccentPref): void;
   setMotion(m: MotionPref): void;
   setFormatBadges(on: boolean): void;
@@ -33,12 +35,13 @@ interface Prefs {
   setAutoplay(on: boolean): void;
   setCrossfade(seconds: Crossfade): void;
   setLevelVolume(on: boolean): void;
+  setProfileId(id: number | null): void;
 }
 
-type Saved = Pick<Prefs, 'accent' | 'motion' | 'formatBadges' | 'recordPlays' | 'autoplay' | 'crossfade' | 'levelVolume'>;
+type Saved = Pick<Prefs, 'accent' | 'motion' | 'formatBadges' | 'recordPlays' | 'autoplay' | 'crossfade' | 'levelVolume' | 'profileId'>;
 
 export const PREFS_KEY = 'playarr.prefs';
-const DEFAULTS: Saved = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, crossfade: 0, levelVolume: true };
+const DEFAULTS: Saved = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, crossfade: 0, levelVolume: true, profileId: null };
 
 const isAccent = (v: unknown): v is AccentPref => v === 'album' || (ACCENTS as readonly unknown[]).includes(v);
 
@@ -53,6 +56,7 @@ function clean(saved: unknown): Saved {
     autoplay: typeof s.autoplay === 'boolean' ? s.autoplay : DEFAULTS.autoplay,
     crossfade: CROSSFADES.includes(s.crossfade as Crossfade) ? (s.crossfade as Crossfade) : DEFAULTS.crossfade,
     levelVolume: typeof s.levelVolume === 'boolean' ? s.levelVolume : DEFAULTS.levelVolume,
+    profileId: Number.isInteger(s.profileId) && (s.profileId as number) > 0 ? (s.profileId as number) : null,
   };
 }
 
@@ -67,11 +71,12 @@ export const usePrefs = create<Prefs>()(
       setAutoplay: (autoplay) => set({ autoplay }),
       setCrossfade: (crossfade) => set({ crossfade: CROSSFADES.includes(crossfade) ? crossfade : DEFAULTS.crossfade }),
       setLevelVolume: (levelVolume) => set({ levelVolume }),
+      setProfileId: (profileId) => set({ profileId }),
     }),
     {
       name: PREFS_KEY,
       version: 1,
-      partialize: ({ accent, motion, formatBadges, recordPlays, autoplay, crossfade, levelVolume }) => ({
+      partialize: ({ accent, motion, formatBadges, recordPlays, autoplay, crossfade, levelVolume, profileId }) => ({
         accent,
         motion,
         formatBadges,
@@ -79,6 +84,7 @@ export const usePrefs = create<Prefs>()(
         autoplay,
         crossfade,
         levelVolume,
+        profileId,
       }),
       merge: (saved, current) => ({ ...current, ...clean(saved) }),
     },

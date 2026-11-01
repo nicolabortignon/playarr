@@ -63,7 +63,7 @@ export class History {
           r.weekday,
           Math.round(r.seconds),
           r.skipped ? 1 : 0,
-          profile,
+          r.profile ?? profile,
         ).changes as number;
       }
       this.db.exec('COMMIT');

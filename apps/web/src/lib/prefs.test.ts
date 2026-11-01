@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ACCENTS, PREFS_KEY, usePrefs } from './prefs';
 
-const defaults = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, crossfade: 0, levelVolume: true } as const;
+const defaults = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, crossfade: 0, levelVolume: true, profileId: null } as const;
 const stored = (state: Record<string, unknown>) =>
   localStorage.setItem(PREFS_KEY, JSON.stringify({ state, version: 1 }));
 
@@ -17,7 +17,7 @@ describe('device preferences', () => {
   });
 
   it('keeps what is set, on this device', () => {
-    const { setAccent, setMotion, setFormatBadges, setRecordPlays, setAutoplay, setCrossfade, setLevelVolume } = usePrefs.getState();
+    const { setAccent, setMotion, setFormatBadges, setRecordPlays, setAutoplay, setCrossfade, setLevelVolume, setProfileId } = usePrefs.getState();
     setAccent(ACCENTS[2]);
     setMotion('reduce');
     setFormatBadges(false);
@@ -25,7 +25,8 @@ describe('device preferences', () => {
     setAutoplay(false);
     setCrossfade(6);
     setLevelVolume(false);
-    const saved = { accent: ACCENTS[2], motion: 'reduce', formatBadges: false, recordPlays: false, autoplay: false, crossfade: 6, levelVolume: false };
+    setProfileId(2);
+    const saved = { accent: ACCENTS[2], motion: 'reduce', formatBadges: false, recordPlays: false, autoplay: false, crossfade: 6, levelVolume: false, profileId: 2 };
     expect(usePrefs.getState()).toMatchObject(saved);
     expect(JSON.parse(localStorage.getItem(PREFS_KEY)!).state).toEqual(saved);
   });

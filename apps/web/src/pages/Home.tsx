@@ -8,7 +8,10 @@ import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, greeting } from '../lib/format';
-import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
+import { switchProfile, useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMixes, usePlaylists, useProfiles, useRandomAlbums, useRecentAlbums } from '../lib/queries';
+import { usePrefs } from '../lib/prefs';
+import { useCurrentProfile } from '../components/ProfilesPanel';
+import type { Profile } from '@playarr/shared';
 import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
 import { shuffleLibrary } from '../player/actions';
@@ -16,6 +19,8 @@ import { useCurrentTrack, usePlayer } from '../player/store';
 
 export function HomePage() {
   const { data: health } = useHealth();
+  const { data: profiles } = useProfiles();
+  const current = useCurrentProfile();
   const { data: recent } = useAlbums('added', 14);
   const { data: artists } = useArtists();
   const { data: favorites } = useFavorites();
@@ -35,8 +40,10 @@ export function HomePage() {
         <div className="font-mono text-[11px] tracking-[0.25em] text-muted uppercase">{today}</div>
         <h1 className="mt-3 font-display text-[3.25rem] leading-[0.95] tracking-tight text-paper md:text-[5.5rem]">
           {greeting()}
+          {profiles && profiles.length > 1 && current && <>, {current.name}</>}
           <span className="text-accent">.</span>
         </h1>
+        {profiles && profiles.length > 1 && <WhoIsListening profiles={profiles} current={current} />}
       </header>
 
       <MadeForYou />
@@ -154,6 +161,46 @@ function MadeForYou() {
 }
 
 const MIX_CARD = 'w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52';
+
+/**
+ * Several people listen here: who is it on this device? Asked once (until picked), then a quiet switch
+ * under the greeting.
+ */
+function WhoIsListening({ profiles, current }: { profiles: Profile[]; current?: Profile }) {
+  const picked = usePrefs((s) => s.profileId !== null);
+  if (picked) {
+    return (
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-muted">
+        <span>Not {current?.name}?</span>
+        {profiles
+          .filter((p) => p.id !== current?.id)
+          .map((p) => (
+            <button key={p.id} type="button" onClick={() => switchProfile(p.id)} className="text-paper-dim underline-offset-2 hover:text-paper hover:underline">
+              Listen as {p.name}
+            </button>
+          ))}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-6 rounded-xl border border-line bg-ink-900 p-5">
+      <div className="text-[15px] text-paper">Who’s listening on this device?</div>
+      <p className="mt-1 text-[13px] text-muted">Your mixes, stats and history follow what you play here.</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {profiles.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => switchProfile(p.id)}
+            className="inline-flex h-10 items-center rounded-full border border-line px-5 text-[14px] text-paper transition hover:border-accent hover:bg-paper/5"
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** The year that's ending (in December) or just ended (in January), if anything was played in it. */
 export function reviewYear(now = new Date()): number | undefined {

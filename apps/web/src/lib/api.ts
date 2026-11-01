@@ -30,6 +30,7 @@ import type {
   PlaylistDetail,
   PlaylistSummary,
   PlayReport,
+  Profile,
   Recommendations,
   RematchResult,
   RequestSettingsInfo,
@@ -48,6 +49,7 @@ import type {
   UpdateInfo,
   UpdateSettings,
 } from '@playarr/shared';
+import { usePrefs } from './prefs';
 
 export class ApiError extends Error {
   constructor(
@@ -62,7 +64,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     ...init,
     // X-Playarr: the server only accepts changes from Playarr's own pages (other sites can't send it).
-    headers: { Accept: 'application/json', 'X-Playarr': '1', ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: {
+      Accept: 'application/json',
+      'X-Playarr': '1',
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      // Who's listening on this device: their mixes, stats and history.
+      ...(usePrefs.getState().profileId ? { 'X-Playarr-Profile': String(usePrefs.getState().profileId) } : {}),
+    },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -161,6 +169,10 @@ export const api = {
   /** keepalive: a report sent as the page closes still arrives. */
   reportPlays: (plays: PlayReport[]) =>
     request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),
+  profiles: () => get<Profile[]>('/api/profiles'),
+  createProfile: (name: string) => request<Profile>('/api/profiles', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameProfile: (id: number, name: string) => request<Profile>(`/api/profiles/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteProfile: (id: number) => request<Profile[]>(`/api/profiles/${id}`, { method: 'DELETE' }),
   stats: (range: StatsRange) => get<ListeningStats>(`/api/stats?range=${range}`),
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
   lyrics: (trackId: number) => get<{ lyrics: Lyrics | null }>(`/api/tracks/${trackId}/lyrics`).then((r) => r.lyrics),

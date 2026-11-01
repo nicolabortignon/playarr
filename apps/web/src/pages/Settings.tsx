@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router';
 import { AppearancePanel } from '../components/AppearancePanel';
 import { MixesPanel } from '../components/MixesPanel';
 import { PlaybackPanel } from '../components/PlaybackPanel';
+import { ProfilesPanel } from '../components/ProfilesPanel';
 import { RequestsPanel } from '../components/RequestsPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
 import { UpdatesPanel } from '../components/UpdatesPanel';
@@ -11,6 +12,7 @@ import { PageTitle } from './Albums';
 const PANELS = [
   { id: 'sources', label: 'Sources', scope: undefined, Panel: SourcesPanel },
   { id: 'playback', label: 'Playback', scope: 'These settings are for this device.', Panel: PlaybackPanel },
+  { id: 'profiles', label: 'Profiles', scope: 'Profiles are for everyone; which one listens here is set for this device.', Panel: ProfilesPanel },
   { id: 'mixes', label: 'Mixes', scope: 'These settings apply to everyone.', Panel: MixesPanel },
   { id: 'requests', label: 'Requests', scope: 'These settings apply to everyone.', Panel: RequestsPanel },
   { id: 'appearance', label: 'Appearance', scope: 'These settings are for this device.', Panel: AppearancePanel },
