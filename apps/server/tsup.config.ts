@@ -9,6 +9,6 @@ export default defineConfig({
   clean: true,
   // Keep `node:` prefixes: node:sqlite only exists under its prefixed name.
   removeNodeProtocol: false,
-  // Bundle the workspace types package; keep real npm deps external.
-  noExternal: ['@playarr/shared'],
+  // Bundle the workspace packages (shipped as TypeScript source); keep real npm deps external.
+  noExternal: ['@playarr/shared', '@playarr/mix'],
 });

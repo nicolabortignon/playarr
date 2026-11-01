@@ -19,6 +19,9 @@ importers:
       '@fontsource/gloock':
         specifier: ^5.3.0
         version: 5.3.0
+      '@playarr/mix':
+        specifier: workspace:*
+        version: link:../../packages/mix
       '@playarr/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -80,6 +83,9 @@ importers:
       '@fontsource/gloock':
         specifier: ^5.3.0
         version: 5.3.0
+      '@playarr/mix':
+        specifier: workspace:*
+        version: link:../../packages/mix
       '@playarr/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -168,6 +174,15 @@ importers:
       workbox-strategies:
         specifier: ^7.4.1
         version: 7.4.1
+
+  packages/mix:
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
 
   packages/shared: {}
 
