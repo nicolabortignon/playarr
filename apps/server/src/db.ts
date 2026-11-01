@@ -190,6 +190,29 @@ const MIGRATIONS = [
      data         TEXT,
      fetched_at   TEXT NOT NULL
    );`,
+  // Listener profiles: each has their own history, mixes and stats. The history so far is the first one's.
+  `CREATE TABLE profiles (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     name       TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   INSERT INTO profiles (id, name, created_at) VALUES (1, 'Home', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+   ALTER TABLE plays ADD COLUMN profile_id INTEGER NOT NULL DEFAULT 1;
+   DROP INDEX plays_unique;
+   CREATE UNIQUE INDEX plays_unique ON plays (profile_id, recording_id, played_at);
+   CREATE INDEX plays_by_profile ON plays (profile_id, played_at);
+   CREATE TABLE mixes_by_profile (
+     profile_id   INTEGER NOT NULL DEFAULT 1,
+     key          TEXT NOT NULL,
+     period       TEXT NOT NULL,
+     variant      INTEGER NOT NULL DEFAULT 0,
+     data         TEXT NOT NULL,
+     generated_at TEXT NOT NULL,
+     PRIMARY KEY (profile_id, key)
+   );
+   INSERT INTO mixes_by_profile (profile_id, key, period, variant, data, generated_at) SELECT 1, key, period, variant, data, generated_at FROM mixes;
+   DROP TABLE mixes;
+   ALTER TABLE mixes_by_profile RENAME TO mixes;`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
@@ -201,10 +224,12 @@ export function openDatabase(dataDir: string): DatabaseSync {
   return db;
 }
 
-/** Run the migrations this database hasn't had yet. */
-export function migrate(db: DatabaseSync) {
+export const MIGRATION_COUNT = MIGRATIONS.length;
+
+/** Run the migrations this database hasn't had yet (up to `upTo`, for tests of a migration). */
+export function migrate(db: DatabaseSync, upTo = MIGRATIONS.length) {
   const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  for (let i = version; i < MIGRATIONS.length; i++) {
+  for (let i = version; i < upTo; i++) {
     db.exec('BEGIN');
     db.exec(MIGRATIONS[i]!);
     db.exec(`PRAGMA user_version = ${i + 1}`);

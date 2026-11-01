@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { migrate } from './db.ts';
+import { migrate, MIGRATION_COUNT } from './db.ts';
 
 describe('migrate', () => {
   it('creates the catalog tables', () => {
@@ -52,5 +52,20 @@ describe('migrate', () => {
     migrate(db);
     const cols = (db.prepare('PRAGMA table_info(file_moves)').all() as { name: string }[]).map((c) => c.name);
     expect(cols).toEqual(['id', 'batch', 'source_id', 'from_rel', 'to_rel', 'moved_at', 'undone_at']);
+  });
+
+  it('gives the history and mixes so far to the first listener profile', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, MIGRATION_COUNT - 1);
+    db.exec(`INSERT INTO plays (recording_id, played_at, hour, weekday, seconds) VALUES ('rec', '2026-01-01T00:00:00Z', 1, 1, 100)`);
+    db.exec(`INSERT INTO mixes (key, period, data, generated_at) VALUES ('vibes', 'p', '{}', 'now')`);
+    migrate(db);
+    expect(db.prepare('SELECT id, name FROM profiles').all()).toEqual([{ id: 1, name: 'Home' }]);
+    expect(db.prepare('SELECT profile_id FROM plays').get()).toEqual({ profile_id: 1 });
+    expect(db.prepare('SELECT profile_id, key FROM mixes').get()).toEqual({ profile_id: 1, key: 'vibes' });
+    // Another listener can play the same song at the same moment.
+    expect(() =>
+      db.exec(`INSERT INTO plays (recording_id, played_at, hour, weekday, seconds, profile_id) VALUES ('rec', '2026-01-01T00:00:00Z', 1, 1, 100, 2)`),
+    ).not.toThrow();
   });
 });

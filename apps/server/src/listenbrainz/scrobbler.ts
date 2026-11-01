@@ -3,7 +3,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { CatalogStore } from '../catalog/store.ts';
 import type { Library } from '../library/library.ts';
 
-export const LISTENBRAINZ_KEY = 'listenbrainz';
+/** Each profile's ListenBrainz account (the first profile's under the plain key). */
+export const listenBrainzKey = (profile: number) => (profile === 1 ? 'listenbrainz' : `listenbrainz:${profile}`);
 const API = 'https://api.listenbrainz.org/1';
 const BATCH = 100;
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -47,29 +48,29 @@ export class Scrobbler {
     private readonly db: DatabaseSync,
     private readonly store: Pick<CatalogStore, 'appSetting' | 'setAppSetting'>,
     private readonly library: Pick<Library, 'tracksByRecordings'>,
-    private readonly opts: { log: { warn: (obj: object, msg: string) => void }; fetch?: typeof fetch },
+    private readonly opts: { log: { warn: (obj: object, msg: string) => void }; fetch?: typeof fetch; profiles?: () => number[] },
   ) {}
 
   private get fetch() {
     return this.opts.fetch ?? fetch;
   }
 
-  private saved(): Saved {
+  private saved(profile: number): Saved {
     try {
-      return { enabled: false, ...(JSON.parse(this.store.appSetting(LISTENBRAINZ_KEY) ?? '{}') as Partial<Saved>) };
+      return { enabled: false, ...(JSON.parse(this.store.appSetting(listenBrainzKey(profile)) ?? '{}') as Partial<Saved>) };
     } catch {
       return { enabled: false };
     }
   }
 
-  private save(s: Saved) {
-    this.store.setAppSetting(LISTENBRAINZ_KEY, JSON.stringify(s));
+  private save(profile: number, s: Saved) {
+    this.store.setAppSetting(listenBrainzKey(profile), JSON.stringify(s));
   }
 
-  info(): ListenBrainzInfo {
-    const s = this.saved();
+  info(profile = 1): ListenBrainzInfo {
+    const s = this.saved(profile);
     const count = (where: string, ...params: string[]) =>
-      (this.db.prepare(`SELECT COUNT(*) AS n FROM plays WHERE ${where}`).get(...params) as { n: number }).n;
+      (this.db.prepare(`SELECT COUNT(*) AS n FROM plays WHERE profile_id = ? AND ${where}`).get(profile, ...params) as { n: number }).n;
     const since = s.since ?? new Date().toISOString();
     return {
       connected: !!s.token,
@@ -84,7 +85,7 @@ export class Scrobbler {
   }
 
   /** Check a user token with ListenBrainz and save it; plays from now on are sent. */
-  async connect(token: string): Promise<ListenBrainzInfo> {
+  async connect(token: string, profile = 1): Promise<ListenBrainzInfo> {
     const res = await this.fetch(`${API}/validate-token`, {
       headers: { Authorization: `Token ${token}` },
       signal: AbortSignal.timeout(10_000),
@@ -92,31 +93,31 @@ export class Scrobbler {
     if (!res) throw new ListenBrainzError('Couldn’t reach ListenBrainz', 502);
     const body = (await res.json().catch(() => ({}))) as { valid?: boolean; user_name?: string };
     if (!res.ok || !body.valid) throw new ListenBrainzError('ListenBrainz doesn’t know this token');
-    const before = this.saved();
-    this.save({ token, user: body.user_name, enabled: true, since: before.since ?? new Date().toISOString() });
+    const before = this.saved(profile);
+    this.save(profile, { token, user: body.user_name, enabled: true, since: before.since ?? new Date().toISOString() });
     this.kick();
-    return this.info();
+    return this.info(profile);
   }
 
-  disconnect(): ListenBrainzInfo {
-    const { since } = this.saved();
-    this.save({ enabled: false, since });
-    return this.info();
+  disconnect(profile = 1): ListenBrainzInfo {
+    const { since } = this.saved(profile);
+    this.save(profile, { enabled: false, since });
+    return this.info(profile);
   }
 
-  setEnabled(enabled: boolean): ListenBrainzInfo {
-    const s = this.saved();
-    this.save({ ...s, enabled, error: enabled ? undefined : s.error });
+  setEnabled(enabled: boolean, profile = 1): ListenBrainzInfo {
+    const s = this.saved(profile);
+    this.save(profile, { ...s, enabled, error: enabled ? undefined : s.error });
     if (enabled) this.kick();
-    return this.info();
+    return this.info(profile);
   }
 
   /** Send the plays from before connecting too. */
-  sendEarlier(): ListenBrainzInfo {
-    const s = this.saved();
-    this.save({ ...s, since: new Date(0).toISOString() });
+  sendEarlier(profile = 1): ListenBrainzInfo {
+    const s = this.saved(profile);
+    this.save(profile, { ...s, since: new Date(0).toISOString() });
     this.kick();
-    return this.info();
+    return this.info(profile);
   }
 
   start(everyMs = 60_000) {
@@ -138,15 +139,19 @@ export class Scrobbler {
   }
 
   private async sendAll() {
+    for (const profile of this.opts.profiles?.() ?? [1]) await this.sendFor(profile);
+  }
+
+  private async sendFor(profile: number) {
     for (;;) {
-      const s = this.saved();
+      const s = this.saved(profile);
       if (!s.enabled || !s.token || Date.now() < this.pauseUntil) return;
       const rows = this.db
         .prepare(
           `SELECT id, recording_id, played_at, seconds FROM plays
-           WHERE listenbrainz IS NULL AND skipped = 0 AND played_at >= ? ORDER BY played_at LIMIT ?`,
+           WHERE profile_id = ? AND listenbrainz IS NULL AND skipped = 0 AND played_at >= ? ORDER BY played_at LIMIT ?`,
         )
-        .all(s.since ?? new Date().toISOString(), BATCH) as { id: number; recording_id: string; played_at: string; seconds: number }[];
+        .all(profile, s.since ?? new Date().toISOString(), BATCH) as { id: number; recording_id: string; played_at: string; seconds: number }[];
       if (!rows.length) return;
       const tracks = new Map((await this.library.tracksByRecordings(rows.map((r) => r.recording_id))).map((t) => [t.recordingId, t]));
       const listens: { id: number; listen: object }[] = [];
@@ -157,7 +162,7 @@ export class Scrobbler {
         else skip.push(r.id);
       }
       this.mark(skip, NOT_SENT);
-      if (listens.length && !(await this.submit(s.token, listens))) return;
+      if (listens.length && !(await this.submit(profile, s.token, listens))) return;
       if (rows.length < BATCH) return;
     }
   }
@@ -181,7 +186,7 @@ export class Scrobbler {
   }
 
   /** Returns whether to carry on. */
-  private async submit(token: string, listens: { id: number; listen: object }[]): Promise<boolean> {
+  private async submit(profile: number, token: string, listens: { id: number; listen: object }[]): Promise<boolean> {
     const res = await this.fetch(`${API}/submit-listens`, {
       method: 'POST',
       headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json' },
@@ -193,11 +198,11 @@ export class Scrobbler {
         listens.map((l) => l.id),
         SENT,
       );
-      this.save({ ...this.saved(), lastSentAt: new Date().toISOString(), error: undefined });
+      this.save(profile, { ...this.saved(profile), lastSentAt: new Date().toISOString(), error: undefined });
       return true;
     }
     if (res?.status === 401) {
-      this.save({ ...this.saved(), enabled: false, error: 'ListenBrainz no longer accepts the token: connect again with a new one.' });
+      this.save(profile, { ...this.saved(profile), enabled: false, error: 'ListenBrainz no longer accepts the token: connect again with a new one.' });
       return false;
     }
     if (res?.status === 400) {

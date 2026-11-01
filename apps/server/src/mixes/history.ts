@@ -38,10 +38,10 @@ export class History {
    * Store reports from a device. Songs no longer in the library are kept by recording alone. A report
    * already stored (sent again after a lost answer) is ignored. Returns how many were new.
    */
-  async record(reports: PlayReport[]): Promise<number> {
+  async record(reports: PlayReport[], profile = 1): Promise<number> {
     const insert = this.db.prepare(
-      `INSERT OR IGNORE INTO plays (recording_id, track_id, artist_id, album_id, played_at, hour, weekday, seconds, skipped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO plays (recording_id, track_id, artist_id, album_id, played_at, hour, weekday, seconds, skipped, profile_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const rows = await Promise.all(
       reports.map(async (r) => {
@@ -63,6 +63,7 @@ export class History {
           r.weekday,
           Math.round(r.seconds),
           r.skipped ? 1 : 0,
+          profile,
         ).changes as number;
       }
       this.db.exec('COMMIT');
@@ -74,34 +75,35 @@ export class History {
   }
 
   /** Every play since `days` ago, oldest first. */
-  since(days: number, now = Date.now()): Play[] {
+  since(days: number, now = Date.now(), profile = 1): Play[] {
     const from = new Date(now - days * 86_400_000).toISOString();
-    const rows = this.db.prepare('SELECT * FROM plays WHERE played_at >= ? ORDER BY played_at').all(from) as unknown as PlayRow[];
+    const rows = this.db.prepare('SELECT * FROM plays WHERE played_at >= ? AND profile_id = ? ORDER BY played_at').all(from, profile) as unknown as PlayRow[];
     return rows.map(toPlay);
   }
 
   /** Albums heard lately, most recent first (by catalog album id). */
-  recentAlbums(limit: number): number[] {
+  recentAlbums(limit: number, profile = 1): number[] {
     const rows = this.db
       .prepare(
-        `SELECT album_id FROM plays WHERE album_id IS NOT NULL AND skipped = 0
+        `SELECT album_id FROM plays WHERE album_id IS NOT NULL AND skipped = 0 AND profile_id = ?
          GROUP BY album_id ORDER BY MAX(played_at) DESC LIMIT ?`,
       )
-      .all(limit) as { album_id: number }[];
+      .all(profile, limit) as { album_id: number }[];
     return rows.map((r) => r.album_id);
   }
 
   /** How much history there is. */
-  stats(): { plays: number; since?: string } {
-    const row = this.db.prepare('SELECT COUNT(*) AS n, MIN(played_at) AS first FROM plays WHERE skipped = 0').get() as {
+  stats(profile = 1): { plays: number; since?: string } {
+    const row = this.db.prepare('SELECT COUNT(*) AS n, MIN(played_at) AS first FROM plays WHERE skipped = 0 AND profile_id = ?').get(profile) as {
       n: number;
       first: string | null;
     };
     return { plays: row.n, ...(row.first ? { since: row.first } : {}) };
   }
 
-  clear() {
-    this.db.exec('DELETE FROM plays');
+  /** Forget what someone played. */
+  clear(profile = 1) {
+    this.db.prepare('DELETE FROM plays WHERE profile_id = ?').run(profile);
   }
 }
 

@@ -32,6 +32,8 @@ import { levelRoutes } from './routes/levels.ts';
 import { lyricsRoutes } from './routes/lyrics.ts';
 import { LyricsService } from './lyrics/lyrics.ts';
 import { Scrobbler } from './listenbrainz/scrobbler.ts';
+import { Profiles } from './profiles/profiles.ts';
+import { profileRoutes } from './routes/profiles.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
 import { playlistRoutes } from './routes/playlists.ts';
@@ -108,9 +110,10 @@ const covers = new PlaylistCovers(analyzer, library, resolve(config.CACHE_DIR, '
 const playlists = new Playlists(db, library, covers);
 // Made for you: mixes generated from the library and what's been played.
 const history = new History(db, library);
-const mixes = new Mixes({ db, store, library, analyzer, history, playlists, log: app.log });
+const profiles = new Profiles(db);
+const mixes = new Mixes({ db, store, library, analyzer, history, playlists, log: app.log, profiles: () => profiles.ids() });
 mixes.start();
-const scrobbler = new Scrobbler(db, store, library, { log: app.log });
+const scrobbler = new Scrobbler(db, store, library, { log: app.log, profiles: () => profiles.ids() });
 scrobbler.start();
 // Settings → Requests, read fresh each time so a change applies at once; .env values are the fallback.
 const requestSettings = () => readRequestSettings(store);
@@ -144,7 +147,9 @@ mixRoutes(app, {
   library,
   scrobbler,
   db,
+  profiles,
 });
+profileRoutes(app, { profiles });
 // Settings → Updates: files shared with the updater container (UPDATE_DIR, set by docker/compose.yaml).
 const updates = new UpdateBridge(config.UPDATE_DIR);
 settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares, lidarr, updates });

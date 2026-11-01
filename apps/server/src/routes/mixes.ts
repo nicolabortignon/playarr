@@ -1,5 +1,5 @@
 import type { MixSettingsInfo } from '@playarr/shared';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import type { CatalogStore } from '../catalog/store.ts';
@@ -11,6 +11,7 @@ import { isStatsRange, listeningStats } from '../mixes/stats.ts';
 import { validTimeZone } from '../mixes/time.ts';
 import { stripAlbum, type Library } from '../library/library.ts';
 import { PlaylistError } from '../playlists.ts';
+import type { Profiles } from '../profiles/profiles.ts';
 import { requireLocal } from './settings.ts';
 
 const playsInput = z.object({
@@ -27,6 +28,8 @@ const playsInput = z.object({
       }),
     )
     .max(500),
+  /** Who was listening when these were played (the device's profile then). */
+  profile: z.number().int().positive().optional(),
 });
 
 const settingsInput = z.object({
@@ -76,26 +79,31 @@ export function mixRoutes(
     /** The database the history is in, for stats. */
     db?: DatabaseSync;
     scrobbler?: Pick<Scrobbler, 'info' | 'connect' | 'disconnect' | 'setEnabled' | 'sendEarlier' | 'kick'>;
+    profiles?: Pick<Profiles, 'of' | 'ids'>;
   },
 ) {
   const { mixes, history, store } = deps;
   type Tz = { Querystring: { tz?: string } };
   type KeyTz = Tz & { Params: { key: string } };
   const tz = (q: { tz?: string }) => validTimeZone(q.tz);
+  /** The listener a request is for (Settings → Profiles); 1 when there are no profiles. */
+  const who = (req: FastifyRequest) => deps.profiles?.of(req) ?? 1;
 
   /** Songs heard on a device. Ignored (but accepted) when history is turned off. */
   app.post('/api/plays', async (req, reply) => {
     const parsed = playsInput.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid plays' });
     if (!readMixSettings(store).recordHistory) return reply.code(202).send({ recorded: 0 });
-    const recorded = await history.record(parsed.data.plays);
+    const asked = parsed.data.profile;
+    const profile = asked && deps.profiles?.ids().includes(asked) ? asked : who(req);
+    const recorded = await history.record(parsed.data.plays, profile);
     if (recorded) void deps.scrobbler?.kick();
     return { recorded };
   });
 
   /** Jump back in: albums heard lately that are still in the library. */
-  app.get('/api/plays/recent-albums', async () => {
-    const albums = await Promise.all(history.recentAlbums(24).map((id) => deps.library.album(id)));
+  app.get('/api/plays/recent-albums', async (req) => {
+    const albums = await Promise.all(history.recentAlbums(24, who(req)).map((id) => deps.library.album(id)));
     return albums.flatMap((a) => (a ? [stripAlbum(a)] : [])).slice(0, 12);
   });
 
@@ -104,7 +112,7 @@ export function mixRoutes(
     const range = req.query.range ?? 'month';
     if (!isStatsRange(range)) return reply.code(400).send({ error: 'Unknown range' });
     if (!deps.db) return reply.code(404).send({ error: 'Not available' });
-    return listeningStats(deps.db, deps.library, range);
+    return listeningStats(deps.db, deps.library, range, Date.now(), who(req));
   });
 
   /** Songs like these, from the library: to keep playing after the queue, or "Start radio". */
@@ -114,39 +122,40 @@ export function mixRoutes(
     return mixes.radio(parsed.data.seeds, parsed.data.exclude ?? [], parsed.data.count ?? 25);
   });
 
-  app.get<Tz>('/api/mixes', (req) => mixes.list(tz(req.query)));
+  app.get<Tz>('/api/mixes', (req) => mixes.list(tz(req.query), new Date(), who(req)));
 
   app.get<KeyTz>('/api/mixes/:key', (req, reply) =>
     handle(reply, () => {
       if (!KEY.test(req.params.key)) throw new MixError('Unknown mix', 404);
-      return mixes.get(req.params.key, tz(req.query));
+      return mixes.get(req.params.key, tz(req.query), new Date(), who(req));
     }),
   );
 
   app.post<KeyTz>('/api/mixes/:key/regenerate', (req, reply) =>
     handle(reply, () => {
       if (!KEY.test(req.params.key)) throw new MixError('Unknown mix', 404);
-      return mixes.regenerate(req.params.key, tz(req.query));
+      return mixes.regenerate(req.params.key, tz(req.query), new Date(), who(req));
     }),
   );
 
   app.post<KeyTz>('/api/mixes/:key/save', (req, reply) =>
     handle(reply, async () => {
       if (!KEY.test(req.params.key)) throw new MixError('Unknown mix', 404);
-      return reply.code(201).send(await mixes.saveAsPlaylist(req.params.key, tz(req.query)));
+      return reply.code(201).send(await mixes.saveAsPlaylist(req.params.key, tz(req.query), new Date(), who(req)));
     }),
   );
 
-  const info = (): MixSettingsInfo => ({
+  /** Settings → Mixes: for everyone, with the history of whoever is asking. */
+  const info = (req: FastifyRequest): MixSettingsInfo => ({
     ...readMixSettings(store),
     analysisAvailable: deps.analysisAvailable,
-    history: history.stats(),
+    history: history.stats(who(req)),
   });
 
   // Settings → Mixes: for everyone, changed from the home network like every setting.
   const editable = { onRequest: requireLocal };
 
-  app.get('/api/settings/mixes', editable, () => info());
+  app.get('/api/settings/mixes', editable, (req) => info(req));
 
   app.put('/api/settings/mixes', editable, (req, reply) => {
     const parsed = settingsInput.safeParse(req.body ?? {});
@@ -156,31 +165,31 @@ export function mixRoutes(
     const next = { ...current, ...patch, enabled: { ...current.enabled, ...patch.enabled } };
     store.setAppSetting(MIXES_KEY, JSON.stringify(next));
     if (patch.analyzeLibrary && !current.analyzeLibrary) deps.analyzeLibrary();
-    return info();
+    return info(req);
   });
 
   // Settings → Mixes → ListenBrainz: the token goes in, never out.
   const { scrobbler } = deps;
   if (scrobbler) {
     const lbInput = z.object({ token: z.string().trim().min(1).max(200).optional(), enabled: z.boolean().optional() });
-    app.get('/api/settings/listenbrainz', editable, () => scrobbler.info());
+    app.get('/api/settings/listenbrainz', editable, (req) => scrobbler.info(who(req)));
     app.put('/api/settings/listenbrainz', editable, (req, reply) =>
       handle(reply, async () => {
         const parsed = lbInput.safeParse(req.body ?? {});
         if (!parsed.success) return reply.code(400).send({ error: 'Invalid settings' });
-        if (parsed.data.token) await scrobbler.connect(parsed.data.token);
-        if (parsed.data.enabled !== undefined) scrobbler.setEnabled(parsed.data.enabled);
-        return scrobbler.info();
+        if (parsed.data.token) await scrobbler.connect(parsed.data.token, who(req));
+        if (parsed.data.enabled !== undefined) scrobbler.setEnabled(parsed.data.enabled, who(req));
+        return scrobbler.info(who(req));
       }),
     );
-    app.delete('/api/settings/listenbrainz', editable, () => scrobbler.disconnect());
-    app.post('/api/settings/listenbrainz/earlier', editable, () => scrobbler.sendEarlier());
+    app.delete('/api/settings/listenbrainz', editable, (req) => scrobbler.disconnect(who(req)));
+    app.post('/api/settings/listenbrainz/earlier', editable, (req) => scrobbler.sendEarlier(who(req)));
   }
 
   /** Forget everything played; the mixes are made again from scratch. */
-  app.delete('/api/settings/mixes/history', editable, async () => {
-    history.clear();
-    await mixes.reset();
-    return info();
+  app.delete('/api/settings/mixes/history', editable, async (req) => {
+    history.clear(who(req));
+    await mixes.reset(who(req));
+    return info(req);
   });
 }

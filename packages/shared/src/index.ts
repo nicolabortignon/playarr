@@ -833,3 +833,9 @@ export interface ListeningStats {
   /** Calendar years with history, newest first: each has a year in review. */
   years: number[];
 }
+
+/** Someone who listens: their history, mixes, stats and ListenBrainz account are their own. */
+export interface Profile {
+  id: number;
+  name: string;
+}
