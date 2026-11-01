@@ -1,12 +1,12 @@
 import { Search as SearchIcon, X } from 'lucide-react';
-import { useDeferredValue, useEffect, useRef } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AlbumCard, ArtistCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { DiscoverAlbumCard, DiscoverArtistCard, DiscoverTrackRow, RequestsPill } from '../components/Discover';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
-import { activeRequestCount, useArtists, useDiscover, useHasLidarr, useRequests, useSearch } from '../lib/queries';
+import { activeRequestCount, useArtists, useDiscover, useHasLidarr, usePlaylists, useRequests, useSearch } from '../lib/queries';
 import { useDebounced } from '../lib/useDebounced';
 
 export function SearchPage() {
@@ -17,12 +17,17 @@ export function SearchPage() {
   const input = useRef<HTMLInputElement>(null);
   const { data: requests } = useRequests();
   const hasLidarr = useHasLidarr();
+  const { data: playlists } = usePlaylists();
+  const [allTracks, setAllTracks] = useState(false);
+  useEffect(() => setAllTracks(false), [deferred]);
+  const want = fold(deferred);
+  const playlistHits = want ? (playlists ?? []).filter((p) => fold(p.name).includes(want)).slice(0, 8) : [];
 
   useEffect(() => {
     input.current?.focus();
   }, []);
 
-  const empty = data && !data.artists.length && !data.albums.length && !data.tracks.length;
+  const empty = data && !data.artists.length && !data.albums.length && !data.tracks.length && !playlistHits.length;
   const top = data?.artists[0] ?? null;
 
   return (
@@ -72,7 +77,9 @@ export function SearchPage() {
       {empty && (
         <div className="mt-10">
           <div className="font-display text-3xl text-paper">Not in your crates.</div>
-          <p className="mt-2 text-sm text-muted">Nothing in your library matches “{deferred}”. Here’s what’s out there:</p>
+          <p className="mt-2 text-sm text-muted">
+            Nothing in your library matches “{deferred}”.{hasLidarr ? ' Here’s what’s out there:' : ''}
+          </p>
         </div>
       )}
 
@@ -98,11 +105,37 @@ export function SearchPage() {
               <section className={top ? '' : 'lg:col-span-2'}>
                 <SectionHeader title="Tracks" />
                 <div className="-mx-3">
-                  <TrackList tracks={data.tracks.slice(0, 6)} variant="mixed" />
+                  <TrackList tracks={allTracks ? data.tracks : data.tracks.slice(0, 6)} variant="mixed" />
                 </div>
+                {!allTracks && data.tracks.length > 6 && (
+                  <button
+                    type="button"
+                    onClick={() => setAllTracks(true)}
+                    className="mt-2 font-mono text-[11px] tracking-[0.15em] text-accent uppercase hover:underline"
+                  >
+                    Show all {data.tracks.length} tracks
+                  </button>
+                )}
               </section>
             )}
           </div>
+
+          {playlistHits.length > 0 && (
+            <section>
+              <SectionHeader title="Playlists" />
+              <div className="flex flex-wrap gap-2">
+                {playlistHits.map((p) => (
+                  <Link
+                    key={p.id}
+                    to={`/playlists/${p.id}`}
+                    className="rounded-full border border-line px-4 py-2 text-sm text-paper transition hover:border-accent"
+                  >
+                    {p.name} <span className="font-mono text-[11px] text-muted">· {p.trackCount}</span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
 
           {data.albums.length > 0 && (
             <section>
@@ -207,32 +240,36 @@ function DiscoverSection({ q }: { q: string }) {
   );
 }
 
-/** Empty state: browse by genre-tagged artists. */
+/** Case- and accent-insensitive text, for matching playlist names. */
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+/** How many artists the empty search page suggests: the whole roster is a wall of pills on a phone. */
+const SUGGESTED_ARTISTS = 24;
+
+/** Empty state: the artists with the most music, each a tap away from its page. */
 function BrowseArtists() {
   const { data: artists } = useArtists();
-  const genres = [...new Set(artists?.flatMap((a) => a.genres.slice(0, 2)) ?? [])].slice(0, 12);
-  const [, setParams] = useSearchParams();
-  if (!artists) return null;
+  if (!artists?.length) return null;
+  const suggested = [...artists].sort((a, b) => b.albumCount - a.albumCount || b.trackCount - a.trackCount).slice(0, SUGGESTED_ARTISTS);
   return (
     <div className="mt-8">
       <div className="mb-4 font-mono text-[11px] tracking-[0.25em] text-muted uppercase">Try an artist</div>
       <div className="flex flex-wrap gap-2">
-        {artists.map((a) => (
-          <button
+        {suggested.map((a) => (
+          <Link
             key={a.id}
-            type="button"
-            onClick={() => setParams({ q: a.name }, { replace: true })}
+            to={`/artists/${a.id}`}
             className="rounded-full border border-line px-4 py-2 text-sm text-paper-dim transition hover:border-accent hover:text-paper"
           >
             {a.name}
-          </button>
+          </Link>
         ))}
+        {artists.length > SUGGESTED_ARTISTS && (
+          <Link to="/artists" className="rounded-full px-4 py-2 text-sm text-accent hover:underline">
+            All {artists.length} artists
+          </Link>
+        )}
       </div>
-      {genres.length > 0 && (
-        <p className="mt-10 max-w-xl font-display text-2xl leading-snug text-ink-600 md:text-3xl">
-          {genres.join(' · ')}
-        </p>
-      )}
     </div>
   );
 }
