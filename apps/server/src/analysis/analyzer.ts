@@ -55,10 +55,10 @@ export class Analyzer {
     return this.opts.enabled;
   }
 
-  /** How many songs have been measured and tagged: grows as background work finishes. */
-  progress(): { features: number; meta: number } {
+  /** How many songs have been measured, tagged and mapped for mixing: grows as background work finishes. */
+  progress(): { features: number; meta: number; mixMaps: number } {
     const count = (table: string) => (this.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
-    return { features: count('track_features'), meta: count('track_meta') };
+    return { features: count('track_features'), meta: count('track_meta'), mixMaps: count('mix_maps') };
   }
 
   features(ids: string[]): Map<string, AudioFeatures> {

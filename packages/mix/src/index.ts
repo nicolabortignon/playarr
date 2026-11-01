@@ -10,6 +10,7 @@ export * from './analysis/sections.ts';
 export * from './analysis/key.ts';
 export * from './analysis/mixMap.ts';
 export * from './automation.ts';
+export * from './blend.ts';
 export * from './camelot.ts';
 export * from './plan.ts';
 export * from './render/filters.ts';

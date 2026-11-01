@@ -1,3 +1,4 @@
+import { blendScore, type Blendable } from '@playarr/mix';
 import type { MixKind, MixSettings } from '@playarr/shared';
 import { FAMILIES, type StyleFamily } from '../analysis/styles.ts';
 import { hash32, Rng } from '../cover/random.ts';
@@ -179,7 +180,7 @@ function discovery(ctx: MixContext, rng: Rng): Made | null {
     subtitle: 'Your library, unheard',
     description: `Songs in your library you haven’t played yet, ${a < 0.34 ? 'close to what you love' : a > 0.66 ? 'reaching beyond your usual' : 'some close to what you love, some further out'}: ${artistsLine(songs)}. A new one every Monday.`,
     hue: 165,
-    songs: spread(songs, rng),
+    songs: flow(songs, rng),
   };
 }
 
@@ -202,6 +203,7 @@ function repeat(ctx: MixContext): Made | null {
       return b.n - a.n || b.last - a.last;
     })
     .slice(0, ctx.settings.length);
+  // Most played first is what this mix is: not reordered to blend.
   return {
     title: 'On Repeat',
     subtitle: 'Your most played lately',
@@ -243,7 +245,7 @@ function blast(ctx: MixContext, rng: Rng): Made | null {
     subtitle: `Not heard for ${daysLabel(settings.blastDays)}`,
     description: `Songs you ${source}: ${artistsLine(songs)}.`,
     hue: 42,
-    songs: spread(songs, rng),
+    songs: flow(songs, rng),
   };
 }
 
@@ -262,7 +264,7 @@ function deepcuts(ctx: MixContext, rng: Rng): Made | null {
     subtitle: 'The other songs of artists you love',
     description: `Songs you’ve barely played, by the artists you play most: ${artistsLine(songs)}.`,
     hue: 300,
-    songs: spread(songs, rng),
+    songs: flow(songs, rng),
   };
 }
 
@@ -285,7 +287,7 @@ function fresh(ctx: MixContext, rng: Rng): Made | null {
     subtitle: 'New in your library',
     description: `A few songs from each album added in the last 30 days that you haven’t played yet: ${artistsLine(songs)}.`,
     hue: 128,
-    songs: spread(songs.slice(0, ctx.settings.length), rng),
+    songs: flow(songs.slice(0, ctx.settings.length), rng),
   };
 }
 
@@ -301,7 +303,7 @@ function decade(ctx: MixContext, rng: Rng, param?: string): Made | null {
     subtitle: `Your ${decadeName(from)}, ${from}–${from + 9}`,
     description: `Songs from ${from} to ${from + 9} in your library, leaning towards what you play: ${artistsLine(songs)}.`,
     hue: DECADE_HUES[(from / 10) % DECADE_HUES.length] ?? 45,
-    songs: spread(songs, rng),
+    songs: flow(songs, rng),
   };
 }
 
@@ -333,7 +335,7 @@ function energy(ctx: MixContext, rng: Rng): Made | null {
     subtitle: 'Loud, fast, building up',
     description: `Your most intense songs — loud, busy, a strong beat — building as it goes: ${artistsLine(songs)}.`,
     hue: 8,
-    songs: [...songs].sort((a, b) => a.energy! - b.energy!),
+    songs: blendOrder([...songs].sort((a, b) => a.energy! - b.energy!), energyStep),
   };
 }
 
@@ -347,7 +349,7 @@ function winddown(ctx: MixContext, rng: Rng): Made | null {
     subtitle: 'Calm, soft, slowing down',
     description: `Quiet, gentle songs, settling as it goes: ${artistsLine(songs)}.`,
     hue: 228,
-    songs: [...songs].sort((a, b) => (b.energy ?? 0.3) - (a.energy ?? 0.3)),
+    songs: blendOrder([...songs].sort((a, b) => (b.energy ?? 0.3) - (a.energy ?? 0.3)), energyStep),
   };
 }
 
@@ -379,6 +381,7 @@ function onthisday(ctx: MixContext, rng: Rng): Made | null {
   }
   const songs: Song[] = [];
   for (const album of shuffle([...byAlbum.values()], rng)) songs.push(...shuffle(album, rng).slice(0, 3));
+  // Oldest first tells the story of the week: not reordered to blend.
   const picked = songs.slice(0, ctx.settings.length).sort((a, b) => Number(a.releaseDate!.slice(0, 4)) - Number(b.releaseDate!.slice(0, 4)));
   const years = picked.map((s) => Number(s.releaseDate!.slice(0, 4)));
   return {
@@ -467,23 +470,108 @@ export function spread(songs: Song[], rng: Rng): Song[] {
   return out;
 }
 
-/** Spread artists, then a gentle rise and fall of energy (where it's known) instead of jumps. */
+/** Shuffled for a different start each time, then ordered so neighbours blend. */
+function flow(songs: Song[], rng: Rng): Song[] {
+  return blendOrder(spread(songs, rng));
+}
+
+/** A gentle rise and fall of energy (where it's known) instead of jumps, ordered to blend within each step of it. */
 function smooth(songs: Song[], rng: Rng): Song[] {
   const known = songs.filter((s) => s.energy !== undefined);
-  if (known.length < songs.length / 2) return spread(songs, rng);
+  if (known.length < songs.length / 2) return flow(songs, rng);
   const sorted = [...songs].sort((a, b) => (a.energy ?? 0.5) - (b.energy ?? 0.5));
   // Low → high → low: alternate ends of the sorted list into the front and back.
   const front: Song[] = [];
   const back: Song[] = [];
   sorted.forEach((s, i) => (i % 2 ? back : front).push(s));
-  const arc = [...front, ...back.reverse()];
-  // Break up runs of one artist without undoing the arc much.
+  const arc = blendOrder([...front, ...back.reverse()], energyStep);
+  // Break up runs of one artist that reordering within a step couldn't, without undoing the arc much.
   for (let i = 1; i < arc.length; i++) {
     if (arc[i]!.track.artistId !== arc[i - 1]!.track.artistId) continue;
     const j = arc.findIndex((s, k) => k > i && s.track.artistId !== arc[i - 1]!.track.artistId);
     if (j !== -1) [arc[i], arc[j]] = [arc[j]!, arc[i]!];
   }
   return arc;
+}
+
+/** What blending knows of a song without its energy: tempo and key from its mix map, unknown without one. */
+export function tempoAndKey(song: Song): Blendable {
+  return song.mix ?? NO_MIX_MAP;
+}
+
+/** What blending knows of a song: tempo and key (see tempoAndKey) and its energy. */
+export function blendable(song: Song): Blendable {
+  return song.energy === undefined ? tempoAndKey(song) : { ...tempoAndKey(song), energy: song.energy };
+}
+
+/** No beat and no key: blendScore counts both as neutral, so the song is placed by its energy alone. */
+const NO_MIX_MAP: Blendable = { bpm: 0, beatConfidence: 0 };
+/** Enough 2-opt swaps to settle a mix of a hundred songs, few enough that making mixes stays quick. */
+const MAX_BLEND_SWAPS = 200;
+/** Energy that builds or settles goes in steps this wide; within a step, songs are ordered to blend. */
+const ENERGY_STEP = 0.15;
+/** Blend gains smaller than this are rounding, not a better order. */
+const BLEND_EPSILON = 1e-9;
+
+const energyStep = (song: Song) => Math.floor((song.energy ?? 0.5) / ENERGY_STEP);
+
+/**
+ * Orders songs so each blends into the next (blendScore): from the first song (the planned start), a
+ * greedy walk to the song left that blends best, then 2-opt passes (reversing a stretch of the order when
+ * its two ends blend better that way round), at most MAX_BLEND_SWAPS of them. Never the same artist twice
+ * in a row where it can be helped: that comes before blending. With `stepOf`, the order of steps is kept
+ * (energy that builds, say): only songs next to each other in the same step trade places.
+ */
+export function blendOrder(songs: Song[], stepOf?: (song: Song) => number): Song[] {
+  const count = songs.length;
+  if (count < 3) return [...songs];
+  const blends = songs.map(blendable);
+  const score = blends.map((a, i) => blends.map((b, j) => (i === j ? 0 : blendScore(a, b))));
+  const artist = songs.map((s) => s.track.artistId);
+  // Runs of neighbours in the same step, numbered in order: the walk finishes one before starting the next.
+  const run: number[] = [0];
+  for (let i = 1; i < count; i++) run.push(stepOf && stepOf(songs[i]!) !== stepOf(songs[i - 1]!) ? run[i - 1]! + 1 : run[i - 1]!);
+
+  const order = [0];
+  const left = new Set(songs.keys());
+  left.delete(0);
+  while (left.size) {
+    const previous = order.at(-1)!;
+    const current = Math.min(...[...left].map((i) => run[i]!));
+    const inRun = [...left].filter((i) => run[i] === current);
+    const otherArtists = inRun.filter((i) => artist[i] !== artist[previous]);
+    // Ties go to the earlier song, so without anything to go on the planned order stays.
+    const next = (otherArtists.length ? otherArtists : inRun).reduce((best, i) => (score[previous]![i]! > score[previous]![best]! ? i : best));
+    order.push(next);
+    left.delete(next);
+  }
+
+  // Reversing order[i..j] only changes its two ends' neighbours; runs stay whole as long as i and j share one.
+  const sameArtist = (a: number, b: number | undefined) => (b !== undefined && artist[a] === artist[b] ? 1 : 0);
+  const blend = (a: number, b: number | undefined) => (b === undefined ? 0 : score[a]![b]!);
+  let swaps = 0;
+  let changed = true;
+  while (changed && swaps < MAX_BLEND_SWAPS) {
+    changed = false;
+    for (let i = 1; i < count - 1 && swaps < MAX_BLEND_SWAPS; i++) {
+      for (let j = i + 1; j < count && swaps < MAX_BLEND_SWAPS; j++) {
+        if (run[order[j]!] !== run[order[i]!]) break;
+        const before = order[i - 1]!;
+        const first = order[i]!;
+        const last = order[j]!;
+        const after = order[j + 1];
+        const repeatsNow = sameArtist(before, first) + sameArtist(last, after);
+        const repeatsThen = sameArtist(before, last) + sameArtist(first, after);
+        const gain = blend(before, last) + blend(first, after) - blend(before, first) - blend(last, after);
+        if (repeatsThen < repeatsNow || (repeatsThen === repeatsNow && gain > BLEND_EPSILON)) {
+          order.splice(i, j - i + 1, ...order.slice(i, j + 1).reverse());
+          swaps++;
+          changed = true;
+        }
+      }
+    }
+  }
+  return order.map((i) => songs[i]!);
 }
 
 function shuffle<T>(items: T[], rng: Rng): T[] {

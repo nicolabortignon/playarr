@@ -1,6 +1,8 @@
+import { blendScore, type Camelot } from '@playarr/mix';
 import type { MixSettings, Track } from '@playarr/shared';
 import { describe, expect, it } from 'vitest';
-import { generateMix, planMixes, type MixContext } from './generators.ts';
+import { Rng } from '../cover/random.ts';
+import { blendable, blendOrder, generateMix, planMixes, type MixContext } from './generators.ts';
 import type { Play } from './history.ts';
 import { MIX_DEFAULTS } from './settings.ts';
 import { buildTaste, hourProfile, toSong, type Song } from './taste.ts';
@@ -214,5 +216,78 @@ describe('mixes', () => {
     expect(nextBoundary(now, local, 'day').toISOString()).toBe('2026-11-02T00:00:00.000Z');
     expect(nextBoundary(now, local, 'week').toISOString()).toBe('2026-11-02T00:00:00.000Z');
     expect(localTime(now, 'Asia/Tokyo')).toMatchObject({ date: '2026-11-02', hour: 6, weekday: 1, week: '2026-W45' });
+  });
+});
+
+const TEMPOS = [90, 100, 120, 128, 140, 174];
+const KEYS: Camelot[] = ['8A', '3B', '11A', '6B', '1A', '9B'];
+
+/** A sure mix map with this tempo and key. */
+const mixMap = (bpm: number, camelot: Camelot) => ({ bpm, beatConfidence: 0.9, key: { camelot, confidence: 0.9 } });
+
+/** Mix maps with tempos and keys drawn from a spread, so a few pairs blend and most don't; every `unmappedEvery`th song has none. */
+function withMaps(songs: Song[], unmappedEvery = 0, rng = new Rng(7)): Song[] {
+  return songs.map((s, i) => (unmappedEvery && i % unmappedEvery === 0 ? s : { ...s, mix: mixMap(rng.pick(TEMPOS), rng.pick(KEYS)) }));
+}
+
+/** How well a mix's neighbours blend, on average. */
+function neighbourBlend(songs: Song[]): number {
+  const pairs = songs.slice(1).map((s, i) => blendScore(blendable(songs[i]!), blendable(s)));
+  return pairs.reduce((a, b) => a + b, 0) / pairs.length;
+}
+
+function shuffled<T>(items: T[], rng: Rng): T[] {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
+describe('mix-friendly order', () => {
+  const plans = [
+    { key: 'genre-rock', kind: 'genre', param: 'rock' },
+    { key: 'discovery', kind: 'discovery' },
+    { key: 'decade-1990', kind: 'decade', param: '1990' },
+  ] as const;
+
+  it.each(plans)('$key: neighbours blend better than in a random order of the same songs, mapped or not', (plan) => {
+    const ctx = context(withMaps(library([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 6, { tags: ['rock'], year: 1995 }), 4));
+    const songs = songsOf(ctx, generateMix(plan, ctx, 'p')!.trackIds);
+    expect(songs).toHaveLength(20);
+    expect(songs.some((s) => !s.mix)).toBe(true);
+    const rng = new Rng(1);
+    const random = Array.from({ length: 200 }, () => neighbourBlend(shuffled(songs, rng)));
+    expect(neighbourBlend(songs)).toBeGreaterThan(random.reduce((a, b) => a + b, 0) / random.length);
+  });
+
+  it.each(plans)('$key: never the same artist twice in a row, even when each artist’s songs blend best with each other', (plan) => {
+    // Every artist has one tempo and key of their own: the blend alone would play their songs back to back.
+    const songs = library([1, 2, 3, 4, 5, 6, 7, 8], 10, { tags: ['rock'], year: 1995 }).map((s) =>
+      s.track.artistId === 8 ? s : { ...s, mix: mixMap(TEMPOS[s.track.artistId % TEMPOS.length]!, KEYS[s.track.artistId % KEYS.length]!) },
+    );
+    const ctx = context(songs);
+    const artists = songsOf(ctx, generateMix(plan, ctx, 'p')!.trackIds).map((s) => s.track.artistId);
+    artists.slice(1).forEach((a, i) => expect(a).not.toBe(artists[i]));
+  });
+
+  it('keeps the planned first song and goes on to the one that blends with it', () => {
+    const [a, b, c] = library([1, 2, 3], 1);
+    const order = blendOrder([
+      { ...a!, mix: mixMap(120, '8A') },
+      { ...b!, mix: mixMap(140, '3B') },
+      { ...c!, mix: mixMap(121, '9A') },
+    ]);
+    expect(order.map((s) => s.track.artistId)).toEqual([1, 3, 2]);
+  });
+
+  it('Energy boost still builds up and Wind down still settles, whatever the tempos', () => {
+    const songs = withMaps([...library([1, 2, 3, 4, 5], 2, { energy: 0.9 }), ...library([6, 7, 8, 9, 10], 2, { energy: 0.7 }), ...library([11, 12, 13, 14, 15, 16], 2, { energy: 0.1 })]);
+    const ctx = context(songs);
+    const up = songsOf(ctx, generateMix({ key: 'energy', kind: 'energy' }, ctx, 'p')!.trackIds).map((s) => s.energy!);
+    expect(up).toEqual([...up].sort((a, b) => a - b));
+    const down = songsOf(ctx, generateMix({ key: 'winddown', kind: 'winddown' }, ctx, 'p')!.trackIds).map((s) => s.energy!);
+    expect(down).toEqual([...down].sort((a, b) => b - a));
   });
 });

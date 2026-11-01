@@ -1,3 +1,4 @@
+import { blendScore } from '@playarr/mix';
 import type { MixDetail, MixKind, MixSettings, MixSummary, PlaylistDetail, Track } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Analyzer } from '../analysis/analyzer.ts';
@@ -6,7 +7,7 @@ import { hash32, Rng } from '../cover/random.ts';
 import { similarRecordings } from '../discover/listenbrainz.ts';
 import type { Library } from '../library/library.ts';
 import type { Playlists } from '../playlists.ts';
-import { choose, generateMix, planMixes, spread, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
+import { blendOrder, choose, generateMix, planMixes, spread, tempoAndKey, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
 import type { History } from './history.ts';
 import { MIXES_KEY, readMixSettings } from './settings.ts';
 import { buildTaste, familySimilarity, toSong, type Song, type Taste } from './taste.ts';
@@ -81,7 +82,7 @@ export class Mixes {
       db: DatabaseSync;
       store: Pick<CatalogStore, 'appSetting' | 'setAppSetting'>;
       library: Library;
-      analyzer: Pick<Analyzer, 'ensure' | 'features' | 'meta' | 'progress'>;
+      analyzer: Pick<Analyzer, 'ensure' | 'features' | 'meta' | 'mixMaps' | 'progress'>;
       history: History;
       playlists: Pick<Playlists, 'create'>;
       /** ListenBrainz neighbours of a recording (swappable in tests). */
@@ -154,8 +155,9 @@ export class Mixes {
   }
 
   /**
-   * Radio: library songs like `seeds` (their styles, energy and ListenBrainz neighbours), for keeping
-   * the music going after the queue ends or "Start radio" on a song. Leaves out `exclude`.
+   * Radio: library songs like `seeds` (their styles, energy, tempo and key, and ListenBrainz neighbours),
+   * for keeping the music going after the queue ends or "Start radio" on a song. Leaves out `exclude`.
+   * Ordered to blend on from the last seed, the song playing when the queue runs out.
    */
   async radio(seeds: string[], exclude: string[], count = 25): Promise<Track[]> {
     const songs = await this.songs(readMixSettings(this.deps.store));
@@ -171,6 +173,9 @@ export class Mixes {
     const artists = new Set(seedSongs.map((s) => s.track.artistId));
     const neighbours = await this.neighboursOf(seeds.filter((id) => MBID.test(id)).slice(0, 5));
     const skip = new Set([...seeds, ...exclude]);
+    // Energy has its own term: this one is how well a song's tempo and key go with the seeds'.
+    const seedTemposAndKeys = seedSongs.map(tempoAndKey);
+    const blendsWithSeeds = (song: Song) => seedTemposAndKeys.reduce((sum, seed) => sum + blendScore(seed, tempoAndKey(song)), 0) / seedTemposAndKeys.length;
     const rng = new Rng(Date.now() >>> 0);
     const scored = songs
       .filter((s) => !skip.has(s.track.recordingId))
@@ -180,10 +185,14 @@ export class Mixes {
           0.35 * familySimilarity(song.families, families) +
           0.25 * (energy === undefined || song.energy === undefined ? 0.4 : 1 - Math.abs(song.energy - energy) * 1.6) +
           0.3 * (neighbours.get(song.track.id) ?? 0) +
+          0.3 * blendsWithSeeds(song) +
           (artists.has(song.track.artistId) ? 0.1 : 0) +
           rng.next() * 0.2,
       }));
-    return spread(choose(scored, count, 2), rng).map((s) => s.track);
+    // The walk starts from the last seed so the first radio song blends with it; the seed itself is dropped.
+    return blendOrder([seedSongs.at(-1)!, ...spread(choose(scored, count, 2), rng)])
+      .slice(1)
+      .map((s) => s.track);
   }
 
   /** Keep the mix as an ordinary playlist. */
@@ -311,7 +320,7 @@ export class Mixes {
   private async songs(settings: MixSettings): Promise<Song[]> {
     const { library, analyzer } = this.deps;
     const progress = analyzer.progress();
-    const key = `${library.version}:${progress.features}:${progress.meta}:${settings.analyzeLibrary}`;
+    const key = `${library.version}:${progress.features}:${progress.meta}:${progress.mixMaps}:${settings.analyzeLibrary}`;
     if (this.songCache?.key === key) return this.songCache.songs;
     const [tracks, albums, artists] = await Promise.all([library.allTracks(), library.albums(), library.artists()]);
     const seen = new Set<string>();
@@ -321,6 +330,7 @@ export class Mixes {
     analyzer.ensure(ids, { audio: settings.analyzeLibrary });
     const features = analyzer.features(ids);
     const meta = analyzer.meta(ids);
+    const mixMaps = analyzer.mixMaps(ids);
     const albumById = new Map(albums.map((a) => [a.id, a]));
     const genres = new Map(artists.map((a) => [a.id, a.genres]));
     const songs = unique.map((track) => {
@@ -336,6 +346,7 @@ export class Mixes {
         tagYear: m?.year,
         addedAt: album?.addedAt,
         releaseDate: album?.releaseDate,
+        mixMap: mixMaps.get(track.recordingId),
       });
     });
     this.songCache = { key, songs };

@@ -1,3 +1,4 @@
+import type { Camelot, MixMap } from '@playarr/mix';
 import type { Album, Artist, Track } from '@playarr/shared';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
@@ -61,11 +62,17 @@ function fakeLibrary() {
   };
 }
 
-function setup() {
+function setup(mixMaps = new Map<string, MixMap>()) {
   const db = freshDb();
   const store = new CatalogStore(db);
   const { library, tracks } = fakeLibrary();
-  const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), progress: () => ({ features: 0, meta: 0 }) } as unknown as Analyzer;
+  const analyzer = {
+    ensure: vi.fn(),
+    features: () => new Map(),
+    meta: () => new Map(),
+    mixMaps: (ids: string[]) => new Map(ids.flatMap((id) => (mixMaps.has(id) ? [[id, mixMaps.get(id)!]] : []))),
+    progress: () => ({ features: 0, meta: 0, mixMaps: mixMaps.size }),
+  } as unknown as Analyzer;
   const history = new History(db, library);
   const playlists = { create: vi.fn(async (name: string) => ({ id: 1, name })) } as unknown as Playlists;
   const mixes = new Mixes({ db, store, library, analyzer, history, playlists, similar: async () => [] });
@@ -150,6 +157,20 @@ describe('Radio', () => {
     expect(radio.map((t) => t.recordingId)).not.toContain(rock[1]!.recordingId);
     expect(radio.filter((t) => t.artistId % 2 === 1).length).toBeGreaterThanOrEqual(8); // mostly the same style
     for (const a of new Set(radio.map((t) => t.artistId))) expect(radio.filter((t) => t.artistId === a).length).toBeLessThanOrEqual(2);
+  });
+
+  it('prefers songs in the seed’s tempo and key, and starts with one that blends with it', async () => {
+    // Every song is rock or jazz as before; half of each artist's songs share the seed's tempo and key.
+    const { tracks: all } = fakeLibrary();
+    const map = (bpm: number, camelot: Camelot) => ({ bpm, beatConfidence: 0.9, key: { camelot, confidence: 0.9 } }) as MixMap;
+    const matches = (t: Track) => t.id % 2 === 0;
+    const maps = new Map(all.map((t) => [t.recordingId, matches(t) ? map(124, '8A') : map(96, '3B')]));
+    const { mixes, tracks } = setup(maps);
+    const seed = tracks.find((t) => t.artistId === 1 && matches(t))!;
+    const radio = await mixes.radio([seed.recordingId], [], 10);
+    expect(radio).toHaveLength(10);
+    expect(radio.filter(matches).length).toBeGreaterThanOrEqual(9);
+    expect(matches(radio[0]!)).toBe(true);
   });
 });
 

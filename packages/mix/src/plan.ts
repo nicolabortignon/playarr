@@ -19,7 +19,7 @@ export interface PlanInput {
 type Song = PlanInput['a'];
 
 /** Below this a beat grid is a guess: don't beatmatch, at most crossfade. */
-const STEADY_BEAT_CONFIDENCE = 0.35;
+export const STEADY_BEAT_CONFIDENCE = 0.35;
 /** A quick mix cuts on a downbeat, so it needs a grid we mostly trust. */
 const QUICK_MIX_CONFIDENCE = 0.5;
 /**
@@ -29,11 +29,11 @@ const QUICK_MIX_CONFIDENCE = 0.5;
  */
 export const MIN_DOWNBEAT_CONFIDENCE = 0.4;
 /** Stretching B more than this is audible: beyond it, no long blend. */
-const LARGEST_TEMPO_GAP = 0.08;
+export const LARGEST_TEMPO_GAP = 0.08;
 /** A quick mix only stretches B when the tempos are this close (otherwise it cuts unstretched). */
 const QUICK_MIX_STRETCH_GAP = 0.02;
 /** Keys detected with less confidence than this don't count against a blend. */
-const KEY_CONFIDENCE = 0.3;
+export const KEY_CONFIDENCE = 0.3;
 const LONGEST_BLEND_BEATS = 64;
 const AUTO_BLEND_BEATS = 32;
 const SHORTEST_BLEND_BEATS = 16;
