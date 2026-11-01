@@ -35,6 +35,11 @@ export interface Sections {
   downbeatOffset: number;
   /** Phrase energy for that bar position (the same as `downbeats` gave when it is unchanged). */
   phraseEnergy: number[];
+  /**
+   * Time (s) of the first phrase start in the music: the phrases above count 16 beats from here.
+   * Without enough music to count from, the grid's first downbeat.
+   */
+  firstPhrase: number;
 }
 
 type Frames = Pick<Onsets, 'fps' | 'onset' | 'rms' | 'lowEnergy' | 'energy'>;
@@ -115,16 +120,30 @@ interface Beat {
 /**
  * Finds the sections of a song from one `analyzeOnsets` pass, its `beatGrid` and its `downbeats`.
  *
+ * `phraseLine`, when given, is a time known to start a phrase (measured on another stretch of the
+ * same song, e.g. its beginning when this is its last minutes): phrases then count from the first
+ * beat on that line's 16-beat grid at or after the music starts, and the bar follows it.
+ *
  * Each beat is *sparse* when it has a kick but little else (mid/high fill under 35% of the song's
  * full fill); a phrase of mostly sparse beats is intro or outro. Intro, outro and drop snap to
  * phrase edges because that's where a DJ starts and ends a blend. Phrases here count 16 beats from
  * the first downbeat *of the music*: after seconds of leading silence, the grid's first downbeat
  * can be in the silence, and phrases counted from there would cut the music's phrases in half.
  */
-export function sections(frames: Frames, grid: Pick<BeatGrid, 'bpm' | 'firstBeat'>, found: Downbeats, duration: number): Sections {
+export function sections(
+  frames: Frames,
+  grid: Pick<BeatGrid, 'bpm' | 'firstBeat'>,
+  found: Downbeats,
+  duration: number,
+  phraseLine?: number,
+): Sections {
   const silence = silenceGate(frames.rms);
   const soundEnd = lastSound(frames, silence);
   const beats = beatsOf(frames, grid, duration);
+  const period = 60 / grid.bpm;
+  // The grid beat index of the given phrase line, if any.
+  const lineBeat = phraseLine !== undefined && grid.bpm > 0 ? Math.round((phraseLine - grid.firstBeat) / period) : undefined;
+  const givenOffset = lineBeat === undefined ? undefined : mod(lineBeat, BEATS_PER_BAR);
   const nothing: Sections = {
     introEnd: 0,
     outroStart: soundEnd,
@@ -132,8 +151,9 @@ export function sections(frames: Frames, grid: Pick<BeatGrid, 'bpm' | 'firstBeat
     coldEnd: false,
     soundEnd,
     downbeatConfidence: 0,
-    downbeatOffset: found.downbeatOffset,
+    downbeatOffset: givenOffset ?? found.downbeatOffset,
     phraseEnergy: found.phraseEnergy,
+    firstPhrase: grid.bpm > 0 ? round(grid.firstBeat + (givenOffset ?? found.downbeatOffset) * period) : 0,
   };
   const fullLoudness = percentile(
     beats.map((b) => b.loudness),
@@ -143,15 +163,14 @@ export function sections(frames: Frames, grid: Pick<BeatGrid, 'bpm' | 'firstBeat
   const sounding = beats.filter((b) => b.loudness > audible);
   if (sounding.length < BEATS_PER_BAR) return nothing;
 
-  const period = 60 / grid.bpm;
   const musicStart = beats.findIndex((b) => b.loudness > audible);
   // The first beat at or after the music starts that is a downbeat for bar position `offset`.
   const anchorOf = (offset: number) => musicStart + mod(offset - musicStart, BEATS_PER_BAR);
-  const check = checkBar(frames, grid, duration, beats, audible, anchorOf, found.downbeatOffset);
+  const check = checkBar(frames, grid, duration, beats, audible, anchorOf, givenOffset ?? found.downbeatOffset, givenOffset === undefined);
   const downbeatOffset = check.offset;
   const phraseEnergy =
     downbeatOffset === found.downbeatOffset ? found.phraseEnergy : phraseEnergyFrom(frames, grid, downbeatOffset, duration);
-  const anchor = anchorOf(downbeatOffset);
+  const anchor = lineBeat === undefined ? anchorOf(downbeatOffset) : musicStart + mod(lineBeat - musicStart, BEATS_PER_PHRASE);
   const phraseStart = (k: number) => round(grid.firstBeat + (anchor + k * BEATS_PER_PHRASE) * period);
 
   const phrases = phrasesOf(beats, anchor, audible);
@@ -178,6 +197,7 @@ export function sections(frames: Frames, grid: Pick<BeatGrid, 'bpm' | 'firstBeat
     downbeatConfidence: round(check.confidence),
     downbeatOffset,
     phraseEnergy,
+    firstPhrase: phraseStart(0),
   };
 }
 
@@ -261,6 +281,7 @@ function fadesOut(sounding: Beat[]): boolean {
  * chosen phrase lines, the confidence rises toward 1, and changes clearly on another position's
  * lines lower it. If the bass barely decided and the sections clearly favour another position,
  * that one wins: a four-to-the-floor kick says little about where the bar starts, a drop says a lot.
+ * A bar known from elsewhere (`mayMove` false) stays; only its confidence is measured.
  */
 function checkBar(
   frames: Frames,
@@ -270,6 +291,7 @@ function checkBar(
   audible: number,
   anchorOf: (offset: number) => number,
   chosen: number,
+  mayMove: boolean,
 ): { offset: number; confidence: number } {
   const accents = barAccents(frames, grid, duration);
   const section = sectionScores(beats, audible, anchorOf);
@@ -291,7 +313,7 @@ function checkBar(
   };
 
   let offset = chosen;
-  if (bassConfidence(chosen) < WEAK_BASS) {
+  if (mayMove && bassConfidence(chosen) < WEAK_BASS) {
     const best = [0, 1, 2, 3].reduce((a, b) => (section[b]! > section[a]! ? b : a), chosen);
     if (section[best]! - section[chosen]! >= SECTION_OVERRIDE) offset = best;
   }

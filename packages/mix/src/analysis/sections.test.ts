@@ -10,7 +10,7 @@ const RATE = 11025;
 /** The whole analysis chain on one signal, the way the mix analysis runs it. */
 function analyse(samples: Float32Array) {
   const frames = analyzeOnsets(samples, RATE);
-  const grid = beatGrid(frames.beatOnset, frames.fps);
+  const grid = beatGrid(frames);
   const duration = samples.length / RATE;
   const found = downbeats(frames, grid, duration);
   return { grid, found, ...sections(frames, grid, found, duration) };
@@ -69,6 +69,8 @@ describe('sections', () => {
     expect(Math.abs(result.introEnd - (plain.truth.introEnd + 3))).toBeLessThan(60 / 128);
     expect(Math.abs(result.soundEnd - (plain.truth.soundEnd + 3))).toBeLessThan(0.05);
     expect(result.coldStart).toBe(false);
+    // Phrases count from the music's first downbeat: the song's first beat, 3 s later.
+    expect(Math.abs(result.firstPhrase - 3.5)).toBeLessThan(0.02);
 
     const dense = song({ bpm: 128, rate: RATE, introBeats: 0, bodyBeats: 64, outroBeats: 32, startDense: true });
     expect(analyse(afterSilence(3, dense.samples)).coldStart).toBe(true);
@@ -152,5 +154,19 @@ describe('sections: the bar check', () => {
     expect(agree.downbeatConfidence).toBeGreaterThan(0.9);
     expect(disagree.downbeatOffset).toBe(0);
     expect(disagree.downbeatConfidence).toBeLessThan(0.7);
+  });
+
+  it('counts phrases from a phrase line it is given, whatever the bass says', () => {
+    const found = { downbeatOffset: 0, phraseEnergy: [] };
+    const sure = frames({ accentOn: 0, changesAt: [34, 98] });
+    expect(sections(sure, grid, found, 64.5).firstPhrase).toBeCloseTo(grid.firstBeat, 2);
+    // Beat 50 is on the phrase lines of beat 2 (50 = 2 + 3·16): the same phrases follow.
+    for (const line of [2, 50]) {
+      const result = sections(sure, grid, found, 64.5, grid.firstBeat + line * 0.5);
+      expect(result.downbeatOffset).toBe(2);
+      expect(result.firstPhrase).toBeCloseTo(grid.firstBeat + 2 * 0.5, 2);
+      expect(result.introEnd).toBeCloseTo(grid.firstBeat + 34 * 0.5, 2);
+      expect(result.outroStart).toBeCloseTo(grid.firstBeat + 98 * 0.5, 2);
+    }
   });
 });

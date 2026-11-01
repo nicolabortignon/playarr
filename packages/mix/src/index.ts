@@ -8,6 +8,7 @@ export * from './analysis/beatGrid.ts';
 export * from './analysis/downbeats.ts';
 export * from './analysis/sections.ts';
 export * from './analysis/key.ts';
+export * from './analysis/mixMap.ts';
 export * from './automation.ts';
 export * from './camelot.ts';
 export * from './plan.ts';
