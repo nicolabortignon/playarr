@@ -8,3 +8,5 @@ export * from './analysis/beatGrid.ts';
 export * from './automation.ts';
 export * from './camelot.ts';
 export * from './plan.ts';
+export * from './render/biquad.ts';
+export * from './render/stretch.ts';
