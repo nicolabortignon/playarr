@@ -1,7 +1,9 @@
+import { RENDER_RATE, type MixMode } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { TransitionAnswer } from '../lib/api';
 import { AUDIO_CACHE } from '../lib/cacheNames';
 
 const MB = 1024 ** 2;
@@ -37,6 +39,9 @@ interface KeptSong {
   usedAt: number;
 }
 
+/** The server's answer for a transition that's rendered: its plan, and the files to play it from. */
+export type KeptTransition = Extract<TransitionAnswer, { status: 'ready' }>;
+
 /** An album, playlist, mix or Favorites downloaded to this device: its songs stay until it's removed. */
 export interface Download {
   /** "album:12", "playlist:3", "mix:discovery", "favorites". */
@@ -49,6 +54,11 @@ export interface Download {
   /** Its songs as of the last visit: what's downloaded, and what plays offline. */
   tracks: Track[];
   addedAt: number;
+  /**
+   * The DJ transitions between its songs, kept with them so the download mixes offline too, by
+   * transitionPair(). Only fetched while transitions are DJ mix; older downloads have none.
+   */
+  transitions?: Record<string, KeptTransition>;
 }
 
 interface OfflineState {
@@ -73,9 +83,58 @@ export const useIsKept = (fileId: number) => useOffline((s) => fileId in s.songs
 
 export const keptBytes = (songs: Record<number, KeptSong>) => Object.values(songs).reduce((sum, s) => sum + s.bytes, 0);
 
-/** The songs of every download. */
+/** The songs of every download, and the files of their transitions. */
 export function pinnedFiles(pins: Record<string, Download>): Set<number> {
-  return new Set(Object.values(pins).flatMap((d) => d.tracks.map((t) => t.fileId)));
+  return new Set(Object.values(pins).flatMap((d) => [...d.tracks.map((t) => t.fileId), ...transitionFileIds(d)]));
+}
+
+/** How a transition is known in a download: the two files and the mix mode, like the server's own pair. */
+export const transitionPair = (fromFileId: number, toFileId: number, mode: MixMode) => `${fromFileId}-${toFileId}-${mode}`;
+
+/** The pairs a song order plays, back to back. */
+export function pairsOf(tracks: Track[], mode: MixMode): Set<string> {
+  return new Set(tracks.slice(1).map((to, i) => transitionPair(tracks[i]!.fileId, to.fileId, mode)));
+}
+
+/**
+ * Transition files are kept like songs, under an id made from their URL: negative, so it's never a
+ * song's (file ids count up from 1).
+ */
+export function transitionFileId(url: string): number {
+  // cyrb53: 53 bits of hash, so the few hundred files a device keeps never share an id.
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < url.length; i++) {
+    const c = url.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return -(1 + 4294967296 * (2097151 & h2) + (h1 >>> 0));
+}
+
+/** The files a transition plays from: the transition itself, and B's remainder when it has one. */
+const transitionUrls = (t: KeptTransition) => (t.continuationUrl ? [t.url, t.continuationUrl] : [t.url]);
+
+const transitionFileIds = (d: Download) => Object.values(d.transitions ?? {}).flatMap((t) => transitionUrls(t).map(transitionFileId));
+
+/** Whether every file of a transition is on this device. */
+export const transitionKept = (t: KeptTransition, songs: Record<number, KeptSong>) => transitionUrls(t).every((url) => transitionFileId(url) in songs);
+
+/**
+ * A transition kept with a download, for playing the pair offline (the server can't be asked then):
+ * its plan and URLs, which the service worker answers from this device. Undefined when no download
+ * has it, or its files are gone.
+ */
+export function offlineTransition(fromFileId: number, toFileId: number, mode: MixMode): KeptTransition | undefined {
+  const { pins, songs } = useOffline.getState();
+  const pair = transitionPair(fromFileId, toFileId, mode);
+  for (const d of Object.values(pins)) {
+    const kept = d.transitions?.[pair];
+    if (kept && transitionKept(kept, songs)) return kept;
+  }
+  return undefined;
 }
 
 /** Kept songs split into those of downloads and the rest (kept as you listen, within the limit). */
@@ -189,27 +248,88 @@ export async function clearOffline() {
   if (canKeepOffline) await caches.delete(AUDIO_CACHE);
 }
 
-/** Download an album, playlist, mix or Favorites (or update the songs of one already downloaded). */
-export function addDownload(download: Omit<Download, 'addedAt'>) {
+/**
+ * Download an album, playlist, mix or Favorites (or update the songs of one already downloaded).
+ * Transitions between songs that no longer follow each other go.
+ */
+export function addDownload(download: Omit<Download, 'addedAt' | 'transitions'>) {
+  const before = useOffline.getState().pins[download.key];
+  const transitions = Object.entries(before?.transitions ?? {}).filter(([pair]) => pairsOf(download.tracks, pairMode(pair)).has(pair));
   useOffline.setState((s) => ({
-    pins: { ...s.pins, [download.key]: { ...download, addedAt: s.pins[download.key]?.addedAt ?? Date.now() } },
+    pins: {
+      ...s.pins,
+      [download.key]: { ...download, addedAt: s.pins[download.key]?.addedAt ?? Date.now(), transitions: Object.fromEntries(transitions) },
+    },
   }));
+  if (before) void dropUnpinned(transitionFileIds(before));
 }
 
-/** Remove a download: its songs become ordinary kept songs, which make room as usual. */
+/**
+ * Remove a download: its songs become ordinary kept songs, which make room as usual. Its transitions
+ * are only any use to downloads, so they go unless another one has them too.
+ */
 export async function removeDownload(key: string) {
+  const removed = useOffline.getState().pins[key];
   useOffline.setState((s) => {
     const pins = { ...s.pins };
     delete pins[key];
     return { pins };
   });
+  if (removed) await dropUnpinned(transitionFileIds(removed));
   await fitLimit();
 }
 
-/** How far along a download is. */
+/**
+ * Keep a rendered transition with a download (and B's remainder, if it has one), so the pair mixes
+ * offline too. Resolves false when it won't fit on the device; rejects on network errors and when aborted.
+ */
+export async function keepTransition(
+  key: string,
+  { from, to, mode }: { from: Track; to: Track; mode: MixMode },
+  transition: KeptTransition,
+  { signal }: { signal: AbortSignal },
+): Promise<boolean> {
+  // Sizes for making room, before the server says: uncompressed, which the FLAC files never exceed.
+  const bytesFor = (seconds: number) => Math.ceil(Math.max(0, seconds) * RENDER_RATE * 4);
+  const files = [
+    { url: transition.url, size: bytesFor(transition.plan.length) },
+    ...(transition.continuationUrl ? [{ url: transition.continuationUrl, size: bytesFor(to.duration - transition.plan.bResume) }] : []),
+  ];
+  const fetched: number[] = [];
+  try {
+    for (const { url, size } of files) {
+      const fileId = transitionFileId(url);
+      // Kept already: another download has the same pair.
+      if (fileId in useOffline.getState().songs) continue;
+      const pseudoTrack = { fileId, streamUrl: url, size } as Track;
+      if (!(await keepSong(pseudoTrack, { signal, protect: pinnedFiles(useOffline.getState().pins), pinned: true }))) {
+        await dropUnpinned(fetched);
+        return false;
+      }
+      fetched.push(fileId);
+    }
+  } catch (err) {
+    await dropUnpinned(fetched);
+    throw err;
+  }
+  const pair = transitionPair(from.fileId, to.fileId, mode);
+  const download = useOffline.getState().pins[key];
+  // Removed meanwhile, or its songs no longer follow each other: nothing to keep it for.
+  if (!download || !pairsOf(download.tracks, mode).has(pair)) {
+    await dropUnpinned(fetched);
+    return true;
+  }
+  useOffline.setState((s) => ({
+    pins: { ...s.pins, [key]: { ...s.pins[key]!, transitions: { ...s.pins[key]!.transitions, [pair]: transition } } },
+  }));
+  return true;
+}
+
+/** How far along a download is; its bytes count its transitions too. */
 export function downloadProgress(d: Download, songs: Record<number, KeptSong>) {
   const done = d.tracks.filter((t) => t.fileId in songs);
-  return { done: done.length, total: d.tracks.length, bytes: done.reduce((sum, t) => sum + (songs[t.fileId]?.bytes ?? 0), 0) };
+  const bytes = [...done.map((t) => t.fileId), ...new Set(transitionFileIds(d))].reduce((sum, id) => sum + (songs[id]?.bytes ?? 0), 0);
+  return { done: done.length, total: d.tracks.length, bytes };
 }
 
 /** Forget songs the browser has cleared, and drop stored audio we have no record of. */
@@ -223,6 +343,15 @@ export async function reconcileOffline() {
   const gone = Object.entries(songs).filter(([, s]) => !stored.has(s.url));
   if (gone.length) useOffline.setState((s) => ({ songs: omit(s.songs, gone.map(([id]) => Number(id))) }));
 }
+
+/** Drop transition files no download has any more. */
+async function dropUnpinned(ids: number[]) {
+  const pinned = pinnedFiles(useOffline.getState().pins);
+  await dropSongs(ids.filter((id) => !pinned.has(id)));
+}
+
+/** The mode a transitionPair() was made with. */
+const pairMode = (pair: string) => pair.slice(pair.lastIndexOf('-') + 1) as MixMode;
 
 async function dropSongs(ids: number[]) {
   if (!ids.length) return;

@@ -33,11 +33,12 @@ registerRoute(
 
 /**
  * Audio: songs the page has kept on this device play from disk, answering the byte ranges <audio>
- * asks for (seeking included). Everything else streams from the server untouched; the service worker
- * never stores audio itself, so the page stays in charge of what's kept and how much.
+ * asks for (seeking included), and so do the DJ transitions kept with downloads. Everything else
+ * streams from the server untouched; the service worker never stores audio itself, so the page stays
+ * in charge of what's kept and how much.
  */
 registerRoute(
-  ({ url }) => url.pathname.startsWith('/stream/'),
+  ({ url }) => url.pathname.startsWith('/stream/') || url.pathname.startsWith('/transitions/'),
   async ({ request }) => {
     const kept = await caches.match(request.url, { cacheName: AUDIO_CACHE });
     return kept ? rangeResponse(request, kept) : fetch(request);

@@ -1,8 +1,23 @@
+import type { TransitionPlan } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
+import { api, type TransitionAnswer } from '../lib/api';
+import { usePrefs } from '../lib/prefs';
+import { keepNextTransition, nextToDownload, useDownloadState } from './downloads';
 import { loadAheadPlan } from './loadAhead';
-import { nextToDownload } from './downloads';
-import { addDownload, downloadProgress, evictions, keepSong, removeDownload, setOfflineLimit, splitKept, useOffline } from './offline';
+import {
+  addDownload,
+  downloadProgress,
+  evictions,
+  keepSong,
+  offlineTransition,
+  removeDownload,
+  setOfflineLimit,
+  splitKept,
+  transitionFileId,
+  useOffline,
+} from './offline';
+import { useTransition } from './transitions';
 
 const track = (fileId: number, size = 1000): Track =>
   ({ id: fileId, fileId, size, streamUrl: `/stream/${fileId}`, title: `Song ${fileId}`, duration: 200 }) as Track;
@@ -167,5 +182,167 @@ describe('downloads', () => {
     expect(nextToDownload(pins, {}, {})?.fileId).toBe(1);
     expect(nextToDownload(pins, { 1: {} }, { 2: 'no room' })?.fileId).toBe(8);
     expect(nextToDownload(pins, { 1: {}, 2: {}, 8: {} }, {})).toBeUndefined();
+  });
+});
+
+describe('download transitions', () => {
+  let store: Map<string, ArrayBuffer>;
+  let transition: MockInstance<typeof api.transition>;
+  /** Bytes the server sends for each file. */
+  const sizes: Record<string, number> = {};
+
+  const plan = { style: 'long', aStart: 170, bStart: 8, length: 24, bResume: 32, switchAt: 12 } as Partial<TransitionPlan> as TransitionPlan;
+  const ready = (from: number, to: number, rest = false): TransitionAnswer => ({
+    status: 'ready',
+    plan,
+    url: `/transitions/${from}-${to}.flac`,
+    ...(rest ? { continuationUrl: `/transitions/${from}-${to}.rest.flac` } : {}),
+  });
+  const pending: TransitionAnswer = { status: 'pending', plan };
+
+  /** Answers by pair, in turn: the last one repeats. */
+  function answers(byPair: Record<string, TransitionAnswer[]>) {
+    transition.mockImplementation(async (from, to) => {
+      const list = byPair[`${from}-${to}`];
+      if (!list) throw new Error(`Unexpected ask ${from}-${to}`);
+      return list.length > 1 ? list.shift()! : list[0]!;
+    });
+  }
+
+  /** Fetch every transition downloads are missing, as the downloader does after their songs. */
+  async function keepAll() {
+    while (await keepNextTransition());
+  }
+
+  const keptSongs = (...ids: number[]) => Object.fromEntries(ids.map((id) => [id, { url: `/stream/${id}`, bytes: id * 100, usedAt: 0 }]));
+
+  beforeEach(() => {
+    const fake = fakeCaches();
+    store = fake.store;
+    vi.stubGlobal('caches', fake.caches);
+    vi.stubGlobal('fetch', async (url: string) => {
+      const size = sizes[url] ?? 50;
+      return new Response(new Uint8Array(size), { headers: { 'Content-Length': String(size) } });
+    });
+    for (const url of Object.keys(sizes)) delete sizes[url];
+    usePrefs.setState({ transitions: 'dj' });
+    useDownloadState.setState({ failed: {}, skippedPairs: {} });
+    useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
+    useOffline.setState({ songs: keptSongs(4, 5, 6), pins: {}, limit: 1000, active: null });
+    transition = vi.spyOn(api, 'transition');
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const album = { key: 'album:1', title: 'Dummy', href: '/albums/1', tracks: [track(4, 400), track(5, 500), track(6, 600)] };
+
+  it('asks for each pair of a download in its song order, without a position, and keeps the files', async () => {
+    sizes['/transitions/4-5.flac'] = 70;
+    sizes['/transitions/5-6.flac'] = 80;
+    sizes['/transitions/5-6.rest.flac'] = 90;
+    answers({ '4-5': [ready(4, 5)], '5-6': [ready(5, 6, true)] });
+    addDownload(album);
+    await keepAll();
+
+    expect(transition.mock.calls).toEqual([
+      [4, 5, 'auto'],
+      [5, 6, 'auto'],
+    ]);
+    expect([...store.keys()].sort()).toEqual(['/transitions/4-5.flac', '/transitions/5-6.flac', '/transitions/5-6.rest.flac']);
+    expect(useOffline.getState().pins['album:1']!.transitions).toEqual({ '4-5-auto': ready(4, 5), '5-6-auto': ready(5, 6, true) });
+    expect(useOffline.getState().songs[transitionFileId('/transitions/5-6.rest.flac')]).toMatchObject({ url: '/transitions/5-6.rest.flac', bytes: 90 });
+    // They belong to the download: counted with it, never made room with.
+    const { inDownloads, rest } = splitKept(useOffline.getState().songs, useOffline.getState().pins);
+    expect(Object.keys(inDownloads)).toHaveLength(6);
+    expect(rest).toEqual({});
+    expect(downloadProgress(useOffline.getState().pins['album:1']!, useOffline.getState().songs)).toEqual({ done: 3, total: 3, bytes: 1500 + 240 });
+  });
+
+  it('looks a kept transition up by its pair and mode', async () => {
+    answers({ '4-5': [ready(4, 5)], '5-6': [ready(5, 6, true)] });
+    addDownload(album);
+    await keepAll();
+    expect(offlineTransition(5, 6, 'auto')).toEqual(ready(5, 6, true));
+    expect(offlineTransition(6, 5, 'auto')).toBeUndefined();
+    expect(offlineTransition(5, 6, 'party')).toBeUndefined();
+    // The browser cleared its file: nothing to play it from.
+    useOffline.setState((s) => {
+      const songs = { ...s.songs };
+      delete songs[transitionFileId('/transitions/5-6.rest.flac')];
+      return { songs };
+    });
+    expect(offlineTransition(5, 6, 'auto')).toBeUndefined();
+  });
+
+  it('polls a pair while it renders, and moves on once one takes too long', async () => {
+    vi.useFakeTimers();
+    answers({ '4-5': [pending, pending, ready(4, 5)], '5-6': [pending] });
+    addDownload(album);
+    const done = keepAll();
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    await done;
+    expect(transition.mock.calls.filter(([from]) => from === 4)).toHaveLength(3);
+    expect(transition.mock.calls.filter(([from]) => from === 5).length).toBeGreaterThan(3);
+    expect(Object.keys(useOffline.getState().pins['album:1']!.transitions ?? {})).toEqual(['4-5-auto']);
+    expect(useDownloadState.getState().skippedPairs['5-6-auto']).toMatch(/too long/);
+  });
+
+  it('skips pairs with no transition to keep, and pairs whose songs aren’t kept yet', async () => {
+    useOffline.setState({ songs: keptSongs(4, 5, 6, 8) });
+    answers({ '4-5': [{ status: 'unavailable', reason: 'No mix map yet for the next song' }], '5-6': [{ status: 'straight', plan }], '6-7': [ready(6, 7)] });
+    addDownload({ ...album, tracks: [...album.tracks, track(7), track(8)] });
+    await keepAll();
+    expect(transition.mock.calls).toEqual([
+      [4, 5, 'auto'],
+      [5, 6, 'auto'],
+    ]);
+    expect(store.size).toBe(0);
+    expect(useOffline.getState().pins['album:1']!.transitions ?? {}).toEqual({});
+    expect(Object.keys(useDownloadState.getState().skippedPairs)).toEqual(['4-5-auto', '5-6-auto']);
+  });
+
+  it('shares a transition between downloads, and removes its files with the last one', async () => {
+    answers({ '4-5': [ready(4, 5)], '5-6': [ready(5, 6, true)] });
+    addDownload(album);
+    addDownload({ key: 'playlist:1', title: 'Two', href: '/playlists/1', tracks: [track(4, 400), track(5, 500)] });
+    await keepAll();
+    expect(transition).toHaveBeenCalledTimes(2);
+    expect(useOffline.getState().pins['playlist:1']!.transitions).toEqual({ '4-5-auto': ready(4, 5) });
+
+    await removeDownload('album:1');
+    expect([...store.keys()]).toEqual(['/transitions/4-5.flac']);
+    expect(offlineTransition(5, 6, 'auto')).toBeUndefined();
+    expect(offlineTransition(4, 5, 'auto')).toEqual(ready(4, 5));
+    await removeDownload('playlist:1');
+    expect(store.size).toBe(0);
+    expect(Object.keys(useOffline.getState().songs).map(Number).filter((id) => id < 0)).toEqual([]);
+  });
+
+  it('forgets transitions of pairs a download no longer has', async () => {
+    answers({ '4-5': [ready(4, 5)], '5-6': [ready(5, 6, true)] });
+    addDownload(album);
+    await keepAll();
+    addDownload({ ...album, tracks: [track(4, 400), track(5, 500)] });
+    expect(Object.keys(useOffline.getState().pins['album:1']!.transitions ?? {})).toEqual(['4-5-auto']);
+    await vi.waitFor(() => expect([...store.keys()]).toEqual(['/transitions/4-5.flac']));
+  });
+
+  it('leaves the pair the player is about to mix to the player', async () => {
+    answers({ '4-5': [ready(4, 5)], '5-6': [ready(5, 6, true)] });
+    // Song 4 plays with song 9 next: asking for 4→5 now would push the player's ask out of the server's queue.
+    useTransition.setState({ fromFileId: 4, toFileId: 9 });
+    addDownload(album);
+    await keepAll();
+    expect(transition.mock.calls).toEqual([[5, 6, 'auto']]);
+  });
+
+  it('fetches nothing unless transitions are DJ mix', async () => {
+    usePrefs.setState({ transitions: 'crossfade' });
+    addDownload(album);
+    expect(await keepNextTransition()).toBe(false);
+    expect(transition).not.toHaveBeenCalled();
   });
 });
