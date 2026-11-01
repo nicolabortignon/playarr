@@ -49,38 +49,78 @@ export function downbeats(
   grid: Pick<BeatGrid, 'bpm' | 'firstBeat'>,
   duration: number,
 ): Downbeats {
-  const { fps, rms } = frames;
-  if (!(grid.bpm > 0) || !rms.length || !rms.some((v) => v > 0)) return NOTHING;
+  const scores = barAccents(frames, grid, duration);
+  if (!scores) return NOTHING;
+  const downbeatOffset = barStart(scores);
+  return { downbeatOffset, phraseEnergy: phraseEnergyFrom(frames, grid, downbeatOffset, duration) };
+}
+
+/** How much the beats at each bar position (0–3) stand out, in bass and in onsets. */
+export interface BarAccents {
+  /** Per bar position: mean bass at its beats over the mean bass at all beats (1 = no accent). */
+  low: number[];
+  /** The same measure on the onset envelope. */
+  onset: number[];
+}
+
+/**
+ * The scores `downbeats` picks the bar from, for anything that wants to know how clear the choice
+ * was (see sections.ts). Undefined without a grid, without sound, or with less than a bar of beats.
+ */
+export function barAccents(
+  frames: Pick<Onsets, 'fps' | 'onset' | 'lowEnergy' | 'rms'>,
+  grid: Pick<BeatGrid, 'bpm' | 'firstBeat'>,
+  duration: number,
+): BarAccents | undefined {
+  const { fps, rms, lowEnergy, onset } = frames;
+  if (!(grid.bpm > 0) || !rms.length || !rms.some((v) => v > 0)) return undefined;
 
   const period = 60 / grid.bpm;
   const end = Math.min(duration, (rms.length + FRAME_CENTRE) / fps);
   const beatTimes: number[] = [];
   for (let t = grid.firstBeat; t < end; t += period) beatTimes.push(t);
-  if (beatTimes.length < BEATS_PER_BAR) return NOTHING;
+  if (beatTimes.length < BEATS_PER_BAR) return undefined;
 
-  const downbeatOffset = barStart(frames, beatTimes);
-  const phraseEnergy = phrases(frames, grid.firstBeat + downbeatOffset * period, period, end);
-  return { downbeatOffset, phraseEnergy };
+  // The bass of a beat is in the frames centred on it; its onset leads it by the envelope's latency.
+  const low = beatTimes.map((t) => peak(lowEnergy, t * fps - FRAME_CENTRE, LOW_HALF_WIDTH));
+  const attack = beatTimes.map((t) => peak(onset, t * fps - ONSET_LATENCY_FRAMES, ONSET_HALF_WIDTH));
+  return { low: accents(low), onset: accents(attack) };
+}
+
+/**
+ * Energy 0–1 of each 16-beat phrase when bars start at grid beat `downbeatOffset`, relative to the
+ * loudest phrase. Empty without a grid or without sound.
+ */
+export function phraseEnergyFrom(
+  frames: Pick<Onsets, 'fps' | 'rms'>,
+  grid: Pick<BeatGrid, 'bpm' | 'firstBeat'>,
+  downbeatOffset: number,
+  duration: number,
+): number[] {
+  const { fps, rms } = frames;
+  if (!(grid.bpm > 0) || !rms.length) return [];
+  const period = 60 / grid.bpm;
+  const end = Math.min(duration, (rms.length + FRAME_CENTRE) / fps);
+  return phrases(frames, grid.firstBeat + downbeatOffset * period, period, end);
+}
+
+/**
+ * Two bar positions whose bass accents are within TIE_SHARE of each other are a tie, broken by the
+ * onsets; otherwise the position whose beats carry the most bass wins.
+ */
+export function isBassTie(a: number, b: number): boolean {
+  return Math.abs(a - b) <= TIE_SHARE * Math.max(a, b);
 }
 
 /**
  * The bar position (0–3) whose beats stand out most: highest mean bass at its beats over the mean
  * bass at all beats, ties broken by the same measure on the onset envelope.
  */
-function barStart(frames: Pick<Onsets, 'fps' | 'onset' | 'lowEnergy'>, beatTimes: number[]): number {
-  const { fps, lowEnergy, onset } = frames;
-  // The bass of a beat is in the frames centred on it; its onset leads it by the envelope's latency.
-  const low = beatTimes.map((t) => peak(lowEnergy, t * fps - FRAME_CENTRE, LOW_HALF_WIDTH));
-  const attack = beatTimes.map((t) => peak(onset, t * fps - ONSET_LATENCY_FRAMES, ONSET_HALF_WIDTH));
-  const lowAccent = accents(low);
-  const onsetAccent = accents(attack);
-
+function barStart({ low, onset }: BarAccents): number {
   let best = 0;
   for (let offset = 1; offset < BEATS_PER_BAR; offset++) {
-    const a = lowAccent[offset]!;
-    const b = lowAccent[best]!;
-    const tie = Math.abs(a - b) <= TIE_SHARE * Math.max(a, b);
-    if (tie ? onsetAccent[offset]! > onsetAccent[best]! : a > b) best = offset;
+    const tie = isBassTie(low[offset]!, low[best]!);
+    if (tie ? onset[offset]! > onset[best]! : low[offset]! > low[best]!) best = offset;
   }
   return best;
 }

@@ -6,7 +6,7 @@
 
 import { valueAt } from '../automation.ts';
 import type { Automation, TransitionPlan } from '../types.ts';
-import { applyHighPass, applyLowShelf, HIGH_PASS_OFF_HZ } from './biquad.ts';
+import { applyHighPass, applyLowShelf, HIGH_PASS_OFF_HZ } from './filters.ts';
 import { RENDER_RATE, stretchStereo } from './stretch.ts';
 
 /** A stretch of one song's decoded audio. */
