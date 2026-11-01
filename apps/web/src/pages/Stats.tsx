@@ -10,7 +10,7 @@ import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { useListeningStats } from '../lib/queries';
 import { usePlayer } from '../player/store';
-import { GRID, PageTitle } from './Albums';
+import { GRID } from './Albums';
 
 const RANGES: { value: StatsRange; label: string }[] = [
   { value: 'month', label: '4 weeks' },
@@ -29,8 +29,20 @@ const number = (n: number) => n.toLocaleString();
 export const minutesLabel = (m: number) => (m < 60 ? `${m} min` : `${number(Math.floor(m / 60))} h${m % 60 ? ` ${m % 60} min` : ''}`);
 const isYear = (r: string) => /^\d{4}$/.test(r);
 
-/** Your listening: what you played most, and when, for a period; each calendar year has a year in review. */
+/** Where Your listening lives: Settings → Your listening. */
+export const STATS_PATH = '/settings/listening';
+
+/** Your listening as its own page (older links to /stats). */
 export function StatsPage() {
+  return (
+    <div className="px-5 pt-8 pb-16 md:px-10 md:pt-14">
+      <ListeningStatsView />
+    </div>
+  );
+}
+
+/** Your listening: what you played most, and when, for a period; each calendar year has a year in review. */
+export function ListeningStatsView() {
   const [params, setParams] = useSearchParams();
   const asked = params.get('range') ?? 'month';
   const range = (RANGES.some((r) => r.value === asked) || isYear(asked) ? asked : 'month') as StatsRange;
@@ -39,8 +51,8 @@ export function StatsPage() {
   const options = [...RANGES, ...years.map((y) => ({ value: String(y) as StatsRange, label: String(y) }))];
 
   return (
-    <div className="px-5 pt-8 pb-16 md:px-10 md:pt-14">
-      <PageTitle title={isYear(range) ? `Your ${range}` : 'Your listening'} />
+    <div>
+      {isYear(range) && <h2 className="mb-6 font-display text-4xl text-paper md:text-5xl">Your {range}</h2>}
       <div className="mb-10">
         <PillGroup label="Period" options={options} value={range} onChange={(r) => setParams({ range: r }, { replace: true })} />
       </div>
@@ -138,7 +150,7 @@ function Report({ stats }: { stats: ListeningStats }) {
               playTracks(
                 stats.topTracks.map((t) => t.track),
                 0,
-                { shuffle: false, source: { label: year ? `Your top songs of ${stats.range}` : 'Your top songs', href: `/stats?range=${stats.range}` } },
+                { shuffle: false, source: { label: year ? `Your top songs of ${stats.range}` : 'Your top songs', href: `${STATS_PATH}?range=${stats.range}` } },
               )
             }
             className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110"
@@ -155,7 +167,7 @@ function Report({ stats }: { stats: ListeningStats }) {
                   playTracks(
                     stats.topTracks.map((t) => t.track),
                     i,
-                    { shuffle: false, source: { label: 'Your top songs', href: `/stats?range=${stats.range}` } },
+                    { shuffle: false, source: { label: 'Your top songs', href: `${STATS_PATH}?range=${stats.range}` } },
                   )
                 }
                 className="flex w-full items-center gap-4 rounded-md px-2 py-2 text-left transition hover:bg-paper/[0.05]"

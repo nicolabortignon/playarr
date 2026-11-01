@@ -49,6 +49,7 @@ describe('Your listening', () => {
       </QueryClientProvider>,
     );
     expect(await screen.findByText('Your artist of the year')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Your 2026' })).toBeTruthy();
     expect(api.stats).toHaveBeenCalledWith('2026');
     expect(screen.getByText('1,234')).toBeTruthy();
     expect(screen.getByRole('radio', { name: '2025' })).toBeTruthy();
@@ -56,7 +57,7 @@ describe('Your listening', () => {
     expect(screen.getAllByText(/Most:/)[0]!.textContent).toContain('2 h');
     fireEvent.click(screen.getByRole('button', { name: /Play them/ }));
     expect(usePlayer.getState().queue.map((t) => t.id)).toEqual([1, 2]);
-    expect(usePlayer.getState().source?.label).toBe('Your top songs of 2026');
+    expect(usePlayer.getState().source).toEqual({ label: 'Your top songs of 2026', href: '/settings/listening?range=2026' });
   });
 
   it('formats minutes, and shows the year in review on Home in December and January', () => {

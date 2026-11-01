@@ -20,7 +20,7 @@ export function LibraryPage() {
 
   const rows: { to: string; label: string; icon: LucideIcon; detail?: string }[] = [
     { to: '/mixes', label: 'Made for you', icon: Sparkles },
-    { to: '/stats', label: 'Your listening', icon: ChartColumn },
+    { to: '/settings/listening', label: 'Your listening', icon: ChartColumn },
     ...(downloads ? [{ to: '/downloads', label: 'Downloads', icon: ArrowDownToLine, detail: String(downloads) }] : []),
     { to: '/favorites', label: 'Favorites', icon: Heart, detail: favorites ? plural(favorites.length, 'song') : undefined },
     { to: '/artists', label: 'Artists', icon: LibraryIcon, detail: lib ? String(lib.artists) : undefined },

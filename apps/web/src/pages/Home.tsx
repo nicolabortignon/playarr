@@ -218,7 +218,7 @@ function YearInReview() {
   return (
     <section className="mb-14">
       <Link
-        to={`/stats?range=${year}`}
+        to={`/settings/listening?range=${year}`}
         className="group relative flex items-center gap-5 overflow-hidden rounded-xl border border-line bg-ink-900 p-5 transition hover:border-paper/20 md:p-7"
       >
         {top && <Cover src={top.artist.imageUrl} size={160} alt="" className="size-24 shrink-0 rounded-[4px] md:size-32" />}
