@@ -78,8 +78,11 @@ function play(song: Song, daysAgo: number, hour = 21, extra: Partial<Play> = {})
   };
 }
 
-function context(songs: Song[], plays: Play[] = [], settings: Partial<MixSettings> = {}, favorites: string[] = []): MixContext {
-  const s = { ...MIX_DEFAULTS, length: 25, ...settings } as MixSettings;
+/** Settings for a test; short mix lengths keep the fixtures small. */
+type TestSettings = Partial<Omit<MixSettings, 'length'>> & { length?: number };
+
+function context(songs: Song[], plays: Play[] = [], settings: TestSettings = {}, favorites: string[] = []): MixContext {
+  const s = { ...MIX_DEFAULTS, length: 25, ...settings } as unknown as MixSettings;
   return {
     songs,
     plays,
