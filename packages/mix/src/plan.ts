@@ -70,7 +70,7 @@ export const OWN_TEMPO_HOLD = 0.1;
 /**
  * A steady stretch gets back to B's own speed over this long rather than in a step: the time-stretch
  * integrates the rate per 23 ms frame assuming it's smooth there, and a step inside a frame would put B's
- * end a few samples off where the plan says it resumes. A ramp this gentle keeps that under a sample.
+ * end a few samples off where the plan says it resumes. A ramp this gentle keeps that under half a sample.
  */
 export const OWN_TEMPO_RAMP = 0.2;
 /** Points used to draw an equal-power or exponential curve with straight lines. */
@@ -459,8 +459,9 @@ function easedBack({ b, ratio }: Pair, overlap: number): { bRate: Automation; le
 /**
  * B held at `rate` for a transition of `length`, then back to its own speed over OWN_TEMPO_RAMP and held
  * there for the last OWN_TEMPO_HOLD (see both). That's a tempo change of at most 3%, in the last 0.3 s,
- * where A has almost faded out; it leaves B up to 6 ms off A's beat by the end, and resumes B as far off
- * its bar line (see `ownTempoOvershoot`).
+ * while A is fading out: when the ramp starts, a quick mix's A is down about 6 dB at 124 BPM (only about
+ * 2 dB at 174, where its two-beat crossfade is shorter), a long blend's more than 12 dB. It leaves B up to
+ * 6 ms off A's beat by the end, and resumes B as far off its bar line (see `ownTempoOvershoot`).
  */
 function steadyRate(rate: number, length: number): Automation {
   if (Math.abs(rate - 1) < EPSILON) return [{ at: 0, value: rate }];

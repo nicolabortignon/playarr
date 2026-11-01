@@ -84,8 +84,8 @@ const TEN_MS = Math.round(0.01 * rate);
 
 /**
  * The seams with the songs playing on their own: the first `head` samples of the transition are A
- * from aStart, and its last 10 ms are B up to bResume, rounded to a sample. B is allowed a sample's
- * slack either way: the time-stretch rounds where it reads to whole samples.
+ * from aStart, and its last 10 ms are B up to bResume, each rounded to a sample. (The other song's
+ * last trace, a fade's tail, is allowed for.)
  */
 function expectSeamless(plan: TransitionPlan, a: Excerpt, b: Excerpt, out: StereoAudio, head = TEN_MS): void {
   const aFrom = Math.round((plan.aStart - a.start) * rate);
@@ -93,9 +93,7 @@ function expectSeamless(plan: TransitionPlan, a: Excerpt, b: Excerpt, out: Stere
   const n = out.left.length;
   for (const side of ['left', 'right'] as const) {
     expect(maxDifference(out[side].subarray(0, head), a[side].subarray(aFrom, aFrom + head)), `${side}: start`).toBeLessThan(1e-3);
-    const tail = out[side].subarray(n - TEN_MS);
-    const misses = [-1, 0, 1].map((lag) => maxDifference(tail, b[side].subarray(bEnd + lag - TEN_MS, bEnd + lag)));
-    expect(Math.min(...misses), `${side}: end`).toBeLessThan(1e-3);
+    expect(maxDifference(out[side].subarray(n - TEN_MS), b[side].subarray(bEnd - TEN_MS, bEnd)), `${side}: end`).toBeLessThan(1e-3);
   }
 }
 
@@ -224,6 +222,24 @@ describe('renderTransition', () => {
     expect(maxDifference(quiet, sine(100, 0.8, 4).subarray(rate, 3 * rate))).toBeLessThan(1e-6);
   });
 
+  it('clamps a song alone that goes past full scale, as playing it on its own would', () => {
+    const tooHot = stereo(sine(100, 1.05, 4));
+    const plan = longPlan({
+      aStart: 1,
+      bStart: 1,
+      length: 2,
+      bRate: [{ at: 0, value: 1 }],
+      aGain: [{ at: 0, value: 1 }],
+      bGain: silent,
+      aLowDb: silent,
+      bLowDb: silent,
+    });
+    const out = renderTransition(plan, { ...tooHot, start: 0 }, { ...tooHot, start: 0 }).left;
+    const clamped = tooHot.left.subarray(rate, 3 * rate).map((v) => Math.max(-1, Math.min(1, v)));
+    expect(maxDifference(out, clamped)).toBe(0);
+    expect(out.reduce((peak, v) => Math.max(peak, v), 0)).toBe(1);
+  });
+
   it('never touches a song playing on its own, however loud: the joins must stay exact', () => {
     const hot = stereo(sine(100, 0.99, 4)); // a master peaking just under 0 dBFS
     const plan = longPlan({
@@ -271,7 +287,7 @@ describe('renderTransition', () => {
     expect(() => renderTransition(plan, a, excerpt(songB, plan.bStart + 0.01, plan.bResume))).toThrow(/B excerpt starts/);
   });
 
-  it.each(['aStart', 'bStart', 'length'] as const)('refuses a plan whose %s is not a number', (field) => {
+  it.each(['aStart', 'bStart', 'length', 'bResume'] as const)('refuses a plan whose %s is not a number', (field) => {
     const plan = longPlan();
     const { a, b } = excerptsFor(plan);
     for (const broken of [NaN, Infinity]) {
@@ -280,10 +296,37 @@ describe('renderTransition', () => {
     }
   });
 
-  it('refuses a plan that resumes B somewhere its rate doesn’t take it', () => {
+  it('refuses a plan that resumes B somewhere its rate doesn’t take it, even by a sample', () => {
     const plan = longPlan();
     const { a, b } = excerptsFor(plan);
-    expect(() => renderTransition({ ...plan, bResume: plan.bResume + 0.5 }, a, b)).toThrow(/resumes B at/);
+    expect(() => renderTransition({ ...plan, bResume: plan.bResume + 1 / rate }, a, b)).toThrow(/resumes B at/);
+    expect(() => renderTransition({ ...plan, bResume: plan.bResume + 0.4 / rate }, a, b)).not.toThrow();
+  });
+
+  const curves = ['bRate', 'aGain', 'bGain', 'aLowDb', 'bLowDb', 'aHighPassHz'] as const;
+  it.each(curves)('refuses a plan whose %s can’t be read', (curve) => {
+    const plan = longPlan();
+    const { a, b } = excerptsFor(plan);
+    const broken: unknown[] = [
+      [], // no points
+      [{ at: 0, value: Number.NaN }],
+      [{ at: 0, value: 1 }, { at: Number.POSITIVE_INFINITY, value: 1 }],
+      JSON.parse('[{ "at": 0, "value": null }]'), // what JSON makes of NaN
+      [null],
+      [{ at: 2, value: 1 }, { at: 1, value: 1 }], // out of order
+    ];
+    for (const points of broken) {
+      expect(() => renderTransition({ ...plan, [curve]: points } as TransitionPlan, a, b), JSON.stringify(points)).toThrow(
+        new RegExp(`plan's ${curve}`),
+      );
+    }
+  });
+
+  it('refuses a plan where B doesn’t move forward', () => {
+    const plan = longPlan();
+    const { a, b } = excerptsFor(plan);
+    const stopped = [{ at: 0, value: 0 }];
+    expect(() => renderTransition({ ...plan, bRate: stopped, bResume: plan.bStart }, a, b)).toThrow(/bRate must be positive/);
   });
 
   it('renders a 90 s blend in well under 10 s', () => {
@@ -403,15 +446,86 @@ describe('limitLoudness', () => {
     expect(maxDifference(audio.right, quiet.right)).toBe(0);
   });
 
-  it('comes back to unity gain after a loud moment', () => {
-    const signal = sine(100, 0.5, 2);
+  /** The gain applied around time t: the loudest output over the loudest input within ±5 ms. */
+  function gainAround(output: Float32Array, input: Float32Array, t: number): number {
+    let outPeak = 0;
+    let inPeak = 0;
+    for (let i = Math.round((t - 0.005) * rate); i < Math.round((t + 0.005) * rate); i++) {
+      outPeak = Math.max(outPeak, Math.abs(output[i]!));
+      inPeak = Math.max(inPeak, Math.abs(input[i]!));
+    }
+    return outPeak / inPeak;
+  }
+
+  it('holds the gain down for a second after a loud moment, then lets go smoothly', () => {
+    const signal = sine(100, 0.5, 4);
+    const burstEnd = 0.5 + 2000 / rate;
     for (let i = rate / 2; i < rate / 2 + 2000; i++) signal[i]! *= 3; // a 45 ms burst at 1.5
     const audio = stereo(signal);
     const original = audio.left.slice();
     limitLoudness(audio, rate);
+    const needed = CEILING / 1.5;
+
+    // Untouched until the look-ahead before the burst.
     expect(maxDifference(audio.left.subarray(0, rate / 2 - 300), original.subarray(0, rate / 2 - 300))).toBe(0);
-    // A second later (ten release time constants) the gain is back within 0.01%.
-    expect(maxDifference(audio.left.subarray(1.6 * rate), original.subarray(1.6 * rate))).toBeLessThan(1e-4);
+    // Held at what the burst needed: 50 ms after it, and half a second after it.
+    expect(gainAround(audio.left, original, burstEnd + 0.05)).toBeCloseTo(needed, 2);
+    expect(gainAround(audio.left, original, burstEnd + 0.5)).toBeCloseTo(needed, 2);
+    // 50 ms after the hold, on its way back (the 150 ms release has made up about a third).
+    const letting = gainAround(audio.left, original, burstEnd + 1.05);
+    expect(letting).toBeGreaterThan(needed + 0.05);
+    expect(letting).toBeLessThan(0.9);
+    // And back to unity within a second of the hold ending.
+    expect(maxDifference(audio.left.subarray(Math.round((burstEnd + 2) * rate)), original.subarray(Math.round((burstEnd + 2) * rate)))).toBeLessThan(1e-3);
+  });
+
+  it('keeps two loud beat-matched songs steady instead of pumping on every kick', () => {
+    // Two hot masters at 124 BPM, kicks together: every kick sums to nearly twice full scale.
+    const hot = (seed: number, bassHz: number) => {
+      const hiss = noise(7, rate, seed);
+      const beat = 60 / 124;
+      const raw = Float32Array.from({ length: 6 * rate }, (_, i) => {
+        const t = i / rate;
+        const sinceKick = t % beat;
+        const kick = Math.exp(-sinceKick / 0.06) * Math.sin(2 * Math.PI * (50 + 80 * Math.exp(-sinceKick / 0.02)) * sinceKick);
+        return 0.9 * kick + 0.35 * Math.sin(2 * Math.PI * bassHz * t) + 0.4 * hiss[i]!;
+      });
+      let peak = 0;
+      for (const v of raw) peak = Math.max(peak, Math.abs(v));
+      return stereo(raw.map((v) => (0.99 * Math.tanh((1.5 * v) / peak)) / Math.tanh(1.5)));
+    };
+    const a = hot(1, 55);
+    const b = hot(2, 61.7);
+    const plan = longPlan({
+      aStart: 0,
+      bStart: 0,
+      length: 6,
+      bRate: [{ at: 0, value: 1 }],
+      aGain: [{ at: 0, value: 1 }],
+      bGain: [{ at: 0, value: 1 }],
+      aLowDb: silent,
+      bLowDb: silent,
+    });
+    const out = renderTransition(plan, { ...a, start: 0 }, { ...b, start: 0 }).left;
+    const sum = a.left.map((v, i) => v + b.left[i]!);
+
+    const beat = 60 / 124;
+    let worstSwing = 0;
+    let deepest = 1;
+    for (let start = 1.5; start + beat < 5.5; start += beat) {
+      let lowest = Infinity;
+      let highest = 0;
+      for (let i = Math.round(start * rate); i < Math.round((start + beat) * rate); i++) {
+        if (Math.abs(sum[i]!) < 0.2) continue;
+        const gain = out[i]! / sum[i]!;
+        lowest = Math.min(lowest, gain);
+        highest = Math.max(highest, gain);
+      }
+      worstSwing = Math.max(worstSwing, 20 * Math.log10(highest / lowest));
+      deepest = Math.min(deepest, lowest);
+    }
+    expect(20 * Math.log10(deepest)).toBeLessThan(-3); // it is limiting hard
+    expect(worstSwing).toBeLessThan(1); // dB within each beat
   });
 });
 
@@ -524,6 +638,23 @@ describe('renderTransition with the planner’s plans', () => {
     const aFrom = Math.round((plan.aStart - a.start) * rate);
     const fiftyMs = Math.round(0.05 * rate);
     expect(largestStep(out.left, 0, fiftyMs)).toBeLessThanOrEqual(1.2 * largestStep(a.left, aFrom, fiftyMs));
+  });
+
+  it.each(['long', 'quick, stretched', 'quick, cut', 'fade'])('%s: B ends bit for bit on B at bResume, even in dense music', (name) => {
+    // Under noise every frame of the time-stretch has to search for its splice, so only the plan
+    // getting B back to its own speed in time, and B placed by its end, make the last 50 ms exact.
+    const { pair, plan } = planned(name);
+    const hiss = noise(pair.b.audio.left.length / rate + 1, rate, 7);
+    const dense = (channel: Float32Array) => channel.map((v, i) => 0.85 * (v + 0.15 * hiss[i]!));
+    const denseB = { left: dense(pair.b.audio.left), right: dense(pair.b.audio.right) };
+    const { a, b } = excerptsFor(plan, pair.a.audio, denseB);
+    const out = renderTransition({ ...plan, aGain: silent, bGain: fullGain, bLowDb: flatDb }, a, b);
+    const bEnd = Math.round((plan.bResume - b.start) * rate);
+    const fiftyMs = Math.round(0.05 * rate);
+    const n = out.left.length;
+    for (const side of ['left', 'right'] as const) {
+      expect(maxDifference(out[side].subarray(n - fiftyMs), b[side].subarray(bEnd - fiftyMs, bEnd))).toBe(0);
+    }
   });
 
   it.each(['long', 'quick, stretched'])('%s: B’s kicks land on A’s through the overlap', (name) => {

@@ -495,6 +495,22 @@ describe('planTransition: when a quick mix stretches B', () => {
     expect(p.style).toBe('quick');
     expect(p.bRate).toEqual(steadyThenOwnTempo(rate, p.length));
   });
+
+  it('a slowed B whose outro pushes the landing back still resumes before its outro', () => {
+    // B at 126 into A at 124: B slowed to 0.984, so getting back to its own speed at the end takes it
+    // 3.2 ms past its landing. Its outro starts 2 ms after one of its bar lines: landing on that bar
+    // would resume B inside the outro, so the landing must go back a bar.
+    const b0 = song({ bpm: 126, key: { camelot: '3B', confidence: 0.9 } });
+    const barLine = firstDownbeatOf(b0) + 16 * beatOf(b0);
+    const b = { ...b0, outroStart: barLine + 0.002 };
+    const p = plan(song(), b);
+    expect(p.style).toBe('quick');
+    expect(valueAt(p.bRate, 0)).toBeLessThan(1);
+    const landing = p.bStart + valueAt(p.bRate, 0) * p.beats * beatOf(song());
+    expect(onBar(b, landing)).toBe(true);
+    expect(landing).toBeLessThan(barLine - 1e-6); // pushed back by the outro
+    expect(p.bResume).toBeLessThanOrEqual(b.outroStart);
+  });
 });
 
 describe('planTransition: a crossfade', () => {

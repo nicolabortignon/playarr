@@ -3,8 +3,10 @@
 // sweep and bass cut on it); B is time-stretched to A's tempo and eased back to its own, with its
 // own bass cut; each is faded by its gain curve. Two loud masters playing together can sum to
 // twice full scale (+6 dB), so the sum goes through a look-ahead limiter that turns the level
-// down smoothly ahead of each peak. It never touches a song playing on its own, however loud:
-// the transition must join each song's normal playback sample for sample.
+// down smoothly ahead of each peak and holds it there through the overlap. It doesn't limit a
+// song playing on its own, however loud, so where only one song plays, at least 5 ms before the
+// other comes in and a second and a half after the last loud moment of the overlap, the
+// transition is that song sample for sample, and joins its normal playback exactly.
 
 import { integrate, valueAt } from '../automation.ts';
 import type { Automation, TransitionPlan } from '../types.ts';
@@ -31,8 +33,11 @@ export interface StereoAudio {
  */
 export const EXCERPT_MARGIN = 0.25;
 
-/** How far bResume may be from where B's rate takes it: rounding, not a different place. */
-const MAX_RESUME_MISMATCH = 0.001;
+/**
+ * How far bResume may be from where B's rate takes it, in samples. B is placed by where it ends,
+ * so any mismatch moves all of B's beats against A's: allow only rounding.
+ */
+const MAX_RESUME_MISMATCH_SAMPLES = 0.5;
 
 /** The limiter's ceiling where the songs alone are quieter: −1 dBFS. */
 export const LIMIT_CEILING = 10 ** (-1 / 20);
@@ -42,8 +47,17 @@ export const LIMIT_CEILING = 10 ** (-1 / 20);
  * ramp, not a jump (a jump would click, and reshaping single wave peaks is what a clipper does).
  */
 const LOOK_AHEAD_SECONDS = 0.005;
-/** How quickly the limiter lets go after a peak (time constant): slow enough not to pump audibly. */
-const RELEASE_SECONDS = 0.1;
+/**
+ * How long the limiter holds its gain after a peak before letting go. Two beat-matched loud songs
+ * peak together on every kick; a limiter that recovers between kicks pumps (measured on two hot
+ * masters at 124 BPM: 5.4 dB of swing per beat with a plain 100 ms release, 4.4 dB at 400 ms, 2.1 dB
+ * at 1.5 s, which then held the gain down for 3 s after the overlap). Holding for a second, two beats
+ * at 120 BPM, keeps the level steady through the overlap (0.3 dB per beat) and lets go about a
+ * second after it.
+ */
+const HOLD_SECONDS = 1;
+/** How quickly the limiter lets go once the hold is over (time constant): a smooth return, not a jump. */
+const RELEASE_SECONDS = 0.15;
 
 /**
  * The song times the caller must decode for `renderTransition`: A from where the transition
@@ -68,15 +82,20 @@ export function excerptRanges(plan: TransitionPlan): { a: [from: number, to: num
  * excerpts must reach back to the plan's start in each song: it throws otherwise, as that's a
  * planning or decoding mistake and the joins would land off the beat. The excerpts may stop
  * short at the other end, since a song can end before the transition does: missing audio plays
- * as silence. The first sample follows A's sample at round(aStart × rate), the last runs into
- * B's at round(bResume × rate).
+ * as silence. The first sample follows A's excerpt sample round((aStart − a.start) × rate); the
+ * last runs into B's excerpt sample round((bResume − b.start) × rate).
+ *
+ * The start join also relies on the plan starting with A alone, as the planner's do: aGain 1 and
+ * bGain 0 at time 0, A's filters neutral. (The end join likewise wants A silent and B's filter
+ * neutral by the end.) Nothing else would make the first sample continue A's normal playback.
  */
 export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, rate = RENDER_RATE): StereoAudio {
   checkFinite(plan);
   const samples = Math.round(plan.length * rate);
   const out: StereoAudio = { left: new Float32Array(samples), right: new Float32Array(samples) };
   if (samples === 0) return out;
-  checkResume(plan);
+  checkCurves(plan);
+  checkResume(plan, rate);
   checkReachesBack(a, plan.aStart, 'A', rate);
   checkReachesBack(b, plan.bStart, 'B', rate);
 
@@ -116,14 +135,17 @@ export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, r
  *
  * `allowed` is the level allowed at each sample, at least −1 dBFS (the default throughout). The
  * renderer raises it to what the louder song reaches on its own at that moment, so a song playing
- * alone is never touched, and two songs together are never louder than the louder one alone.
+ * alone never needs limiting, and two songs together are never louder than the louder one alone.
+ * The gain does move a little either side of where limiting is needed, though: from 5 ms before
+ * (the look-ahead) to HOLD_SECONDS and the release after.
  *
  * The gain needed at each sample (the allowed level over the louder channel's level, so both
- * channels move together and the stereo image holds) is spread backwards over the look-ahead
- * window by a running minimum, let back up towards 1 with the release, then averaged over the same
- * window. Each value in that average is a minimum over a window containing the sample itself, so
- * the gain is never more than the sample needs, and the average turns each step down into a ramp
- * over LOOK_AHEAD_SECONDS. Audio already within the allowed level comes out bit for bit unchanged.
+ * channels move together and the stereo image holds) is spread over the look-ahead before it and
+ * the hold after it by a running minimum, let back up towards 1 with the release, then averaged
+ * over the look-ahead window. Each value in that average is a minimum over a window containing the
+ * sample itself, so the gain is never more than the sample needs, and the average turns each step
+ * down into a ramp over LOOK_AHEAD_SECONDS. Audio with nothing over the allowed level comes out bit
+ * for bit unchanged.
  *
  * Finally, samples beyond ±1 (only possible if a song alone goes there) are clamped, which is what
  * playing that song on its own does too.
@@ -146,7 +168,7 @@ export function limitLoudness(audio: StereoAudio, rate: number, allowed?: Float3
     }
   }
   if (anyOver) {
-    const held = runningMinimumAhead(needed, window);
+    const held = runningMinimum(needed, Math.round(HOLD_SECONDS * rate), window - 1);
     // Release: the gain may rise back towards 1 only so fast, and never above what's held.
     const release = 1 - Math.exp(-1 / (RELEASE_SECONDS * rate));
     let gain = 1;
@@ -182,21 +204,25 @@ export function limitLoudness(audio: StereoAudio, rate: number, allowed?: Float3
   }
 }
 
-/** For each sample, the smallest of `values` from it to `window` − 1 samples later. */
-function runningMinimumAhead(values: Float32Array, window: number): Float32Array {
-  const out = new Float32Array(values.length);
+/** For each sample, the smallest of `values` from `behind` samples before it to `ahead` after. */
+function runningMinimum(values: Float32Array, behind: number, ahead: number): Float32Array {
+  const length = values.length;
+  const out = new Float32Array(length);
   // Indices of candidates for the minimum, in a ring, their values increasing from front to back.
-  const ring = new Int32Array(window + 1);
+  const ring = new Int32Array(behind + ahead + 2);
   let front = 0;
   let count = 0;
-  for (let i = values.length - 1; i >= 0; i--) {
-    const value = values[i]!;
-    // Anything not smaller than the new value can never be the minimum again.
-    while (count > 0 && values[ring[(front + count - 1) % ring.length]!]! >= value) count--;
-    ring[(front + count) % ring.length] = i;
-    count++;
-    // Drop the front once it has slid out of the window.
-    if (ring[front]! > i + window - 1) {
+  let next = 0; // the next index to take into the window
+  for (let i = 0; i < length; i++) {
+    for (const last = Math.min(length - 1, i + ahead); next <= last; next++) {
+      const value = values[next]!;
+      // Anything not smaller than the new value can never be the minimum again.
+      while (count > 0 && values[ring[(front + count - 1) % ring.length]!]! >= value) count--;
+      ring[(front + count) % ring.length] = next;
+      count++;
+    }
+    // Drop candidates that have slid out of the window behind.
+    while (ring[front]! < i - behind) {
       front = (front + 1) % ring.length;
       count--;
     }
@@ -225,10 +251,32 @@ function checkFinite(plan: TransitionPlan): void {
   if (plan.length < 0) throw new RangeError(`The transition plan's length is negative (${plan.length} s)`);
 }
 
+/**
+ * Every automation curve must be one the renderer can read: at least one point, all numbers (JSON
+ * turns NaN into null, which would render as NaN samples), in time order; and B's rate positive.
+ */
+function checkCurves(plan: TransitionPlan): void {
+  const curves = ['bRate', 'aGain', 'bGain', 'aLowDb', 'bLowDb', 'aHighPassHz'] as const;
+  for (const name of curves) {
+    const curve: unknown = plan[name];
+    if (!Array.isArray(curve) || curve.length === 0) throw new RangeError(`The transition plan's ${name} has no points`);
+    let previous = -Infinity;
+    for (const point of curve as unknown[]) {
+      const { at, value } = (point ?? {}) as { at?: unknown; value?: unknown };
+      if (typeof at !== 'number' || typeof value !== 'number' || !Number.isFinite(at) || !Number.isFinite(value)) {
+        throw new RangeError(`The transition plan's ${name} has a point that isn't numbers: ${JSON.stringify(point)}`);
+      }
+      if (at < previous) throw new RangeError(`The transition plan's ${name} isn't in time order (${at} s after ${previous} s)`);
+      if (name === 'bRate' && !(value > 0)) throw new RangeError(`The transition plan's bRate must be positive, not ${value}`);
+      previous = at;
+    }
+  }
+}
+
 /** B must end where the plan resumes it: bResume = bStart + ∫ bRate (else B's beats miss A's). */
-function checkResume(plan: TransitionPlan): void {
+function checkResume(plan: TransitionPlan, rate: number): void {
   const reached = plan.bStart + integrate(plan.bRate, 0, plan.length);
-  if (Math.abs(reached - plan.bResume) > MAX_RESUME_MISMATCH) {
+  if (Math.abs(reached - plan.bResume) * rate > MAX_RESUME_MISMATCH_SAMPLES) {
     throw new RangeError(
       `The transition plan resumes B at ${plan.bResume.toFixed(3)} s, but its rate takes B from ` +
         `${plan.bStart.toFixed(3)} s to ${reached.toFixed(3)} s`,
