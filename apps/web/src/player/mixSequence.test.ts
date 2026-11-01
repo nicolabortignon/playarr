@@ -1,6 +1,6 @@
-import type { TransitionPlan } from '@playarr/mix';
+import type { MixMap, TransitionPlan } from '@playarr/mix';
 import { describe, expect, it } from 'vitest';
-import { bridgeEntry, bridgeGain, bTimeAt, songTimeDuring, transitionTimeFor } from './mixSequence';
+import { beatCut, bridgeEntry, bridgeGain, bTimeAt, songTimeDuring, transitionTimeFor } from './mixSequence';
 
 /**
  * A long blend: A from 170 s, B from 8 s, 24 s of transition. B starts 10% fast (at A's tempo) and eases
@@ -69,5 +69,58 @@ describe('the songs during a transition', () => {
     const cut = { ...plan, aGain: [{ at: 0, value: 0 }], bGain: [{ at: 0, value: 0 }] };
     expect(bridgeGain(cut, 11, 0.5, 1)).toBe(0.5);
     expect(bridgeGain(cut, 12, 0.5, 1)).toBe(1);
+  });
+});
+
+/** A 120 BPM song (a beat every half second, a bar every 2 s) whose first downbeat is at 1 s. */
+const song = (over: Partial<MixMap> = {}): MixMap => ({
+  version: 1,
+  duration: 200,
+  bpm: 120,
+  firstBeat: 0.5,
+  downbeatOffset: 1,
+  downbeatConfidence: 0.9,
+  gridStable: true,
+  beatConfidence: 0.9,
+  introEnd: 9,
+  outroStart: 180,
+  coldStart: false,
+  coldEnd: false,
+  soundEnd: 196.4,
+  phraseEnergy: [],
+  ...over,
+});
+const options = { aDuration: 200, mode: 'auto' as const, sameAlbumInOrder: false };
+
+describe('the cut on the beat, with no transition ready', () => {
+  it('leaves A on its last downbeat before its sound ends, and starts B on its first', () => {
+    // A's bars fall at 1, 3, 5 … 195 s: the last before 196.4 is 195.
+    expect(beatCut(song(), song({ firstBeat: 0.2, downbeatOffset: 2 }), options)).toEqual({ aEnd: 195, bStart: 1.2 });
+  });
+
+  it('cuts on a beat, not a bar, of a song whose bars are unsure', () => {
+    expect(beatCut(song({ downbeatConfidence: 0.3 }), song(), options)?.aEnd).toBe(196);
+  });
+
+  it('starts B a bar before the end of a long intro, on a bar line', () => {
+    // Intro to 40.5 s: from 38.5 s, on the first bar line at or after it (1 + 19 × 2 = 39).
+    expect(beatCut(song(), song({ introEnd: 40.5 }), options)?.bStart).toBe(39);
+    // A hand-set mix-in point counts as the intro's end: from 28 s, the bar at 29.
+    expect(beatCut(song(), { ...song(), cues: { mixIn: 30 } }, options)?.bStart).toBe(29);
+    // A short intro plays whole.
+    expect(beatCut(song(), song({ introEnd: 12 }), options)?.bStart).toBe(1);
+  });
+
+  it('never cuts more than 20 s before A’s end, nor before its outro or mix-out point', () => {
+    expect(beatCut(song({ soundEnd: 150 }), song(), options)).toBeNull();
+    expect(beatCut(song({ outroStart: 196 }), song(), options)).toBeNull();
+    expect(beatCut({ ...song(), cues: { mixOut: 195.5 } }, song(), options)).toBeNull();
+  });
+
+  it('plays the songs the usual way without a steady beat, within an album, or with mixing off', () => {
+    expect(beatCut(song({ bpm: 0 }), song(), options)).toBeNull();
+    expect(beatCut(song(), song({ beatConfidence: 0.2 }), options)).toBeNull();
+    expect(beatCut(song(), song(), { ...options, sameAlbumInOrder: true })).toBeNull();
+    expect(beatCut(song(), song(), { ...options, mode: 'off' })).toBeNull();
   });
 });

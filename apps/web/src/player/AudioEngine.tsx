@@ -6,12 +6,13 @@ import { extractAccent } from '../lib/color';
 import { setFaviconAccent } from '../lib/favicon';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
-import { canSetVolume, fadeCurve, fadeSeconds, levelGain, silentClip, upNext } from './decks';
+import { canSetVolume, continues, fadeCurve, fadeSeconds, levelGain, silentClip, upNext } from './decks';
 import { useDownloads } from './downloads';
 import { healQueue } from './healQueue';
 import { loadLevels, useLevels } from './levels';
 import { useLoadAhead } from './loadAhead';
-import { bridgeEntry, bridgeGain, bTimeAt, songTimeDuring, transitionTimeFor } from './mixSequence';
+import { loadMixMaps, mixMapOf } from './mixMaps';
+import { type BeatCut, beatCut, bridgeEntry, bridgeGain, bTimeAt, songTimeDuring, transitionTimeFor } from './mixSequence';
 import { useOffline } from './offline';
 import { playTracker } from './playTracker';
 import { useAutoplay } from './radio';
@@ -32,6 +33,8 @@ const START_WATCH_MS = 250;
 const STALL_MS = 4000;
 /** Seeking flushes what's buffered: an element already this close (in seconds) to the time isn't moved. */
 const SEEK_SLACK_S = 0.005;
+/** A cut on the beat this late (a timer slowed in the background) still beats playing A's tail out. */
+const CUT_LATE_S = 0.5;
 
 interface Fade {
   out: HTMLAudioElement;
@@ -39,7 +42,10 @@ interface Fade {
   seconds: number;
 }
 
-/** Two files of a DJ transition joining: the new one fades in as the old one fades out, then the old one stops. */
+/**
+ * Two files joining on the beat (the joins of a DJ transition, a cut): the new one fades in as the old one
+ * fades out, then the old one stops.
+ */
 interface Overlap {
   out: HTMLAudioElement;
   in: HTMLAudioElement;
@@ -165,10 +171,9 @@ export function AudioEngine() {
     if (Math.abs(deck.currentTime - time) > SEEK_SLACK_S) deck.currentTime = time;
   }
 
-  /** Set an element's time, again once it knows its file: a time set before that may be ignored (Safari). */
+  /** Set an element's time, once it knows its file if it doesn't yet: a time set before that may be ignored (Safari). */
   function setTimeOnLoad(deck: HTMLAudioElement, time: number) {
-    setTime(deck, time);
-    if (deck.readyState >= 1 /* HAVE_METADATA */) return;
+    if (deck.readyState >= 1 /* HAVE_METADATA */) return setTime(deck, time);
     const file = deck.getAttribute('src');
     deck.addEventListener('loadedmetadata', () => deck.getAttribute('src') === file && setTime(deck, time), { once: true });
   }
@@ -260,11 +265,15 @@ export function AudioEngine() {
       deck.preload = 'auto';
       load(deck, next);
     }
+    if (usePrefs.getState().transitions === 'dj') void loadMixMaps([currentTrack(s), next]);
     void loadLevels([next]);
   }
 
-  /** Start the next song (already loaded) now: the store moves to it once it plays. */
-  function handOff(seconds: number, onFail: () => void = () => {}) {
+  /**
+   * Start the next song (already loaded) now: the store moves to it once it plays. At a cut on the beat
+   * it starts on its first downbeat, and A stops just after, on its own (instead of playing its tail out).
+   */
+  function handOff(seconds: number, onFail: () => void = () => {}, cut?: BeatCut) {
     const out = active();
     const next = upNext(usePlayer.getState());
     const incoming = standby();
@@ -275,11 +284,20 @@ export function AudioEngine() {
       fade.current = { out, in: incoming, seconds };
       fadeTimer.current = setInterval(tickFade, 100);
     }
-    seekSong(incoming, 0);
+    const join: Overlap | null = cut ? { out, in: incoming, startedAt: null } : null;
+    if (join) overlap.current = join;
+    seekSong(incoming, cut?.bStart ?? 0);
     applyVolumes();
     incoming.play().then(
-      () => usePlayer.getState().next(true),
       () => {
+        if (join) startOverlap(join);
+        usePlayer.getState().next(true);
+      },
+      () => {
+        if (join && overlap.current === join) {
+          clearInterval(overlapTimer.current);
+          overlap.current = null;
+        }
         // Couldn't start it early (autoplay rules on some phones): back to one element.
         swap();
         handedOff.current = null;
@@ -299,15 +317,35 @@ export function AudioEngine() {
     if (deck.paused || !s.playing || left > PRELOAD_S || !deck.duration || useSleep.getState().endOfSong) return;
     prepareNext();
     const next = upNext(s);
-    if (!holds(standby(), next) || handedOff.current !== null || handoffFailed.current) return;
-    const seconds = canSetVolume() ? fadeSeconds(loaded.current.get(deck), next, crossfadeSeconds(usePrefs.getState())) : 0;
-    const wait = left - seconds;
+    const incoming = standby();
+    if (!incoming || !holds(incoming, next) || handedOff.current !== null || handoffFailed.current) return;
+    const cut = cutInto(deck, next!);
+    const seconds = !cut && canSetVolume() ? fadeSeconds(loaded.current.get(deck), next, crossfadeSeconds(usePrefs.getState())) : 0;
+    // B waits at its first downbeat, so starting it there needs no seek at the join.
+    if (cut) setTimeOnLoad(incoming, cut.bStart);
+    const wait = cut ? (cut.aEnd - songTime(deck)) / (deck.playbackRate || 1) : left - seconds;
     if (wait > 1.5) return;
     clearTimeout(handoffTimer.current);
     handoffTimer.current = setTimeout(() => {
       const now = active();
-      if (now === deck && !deck.paused && usePlayer.getState().playing && !useSleep.getState().endOfSong) handOff(seconds);
+      if (now === deck && !deck.paused && usePlayer.getState().playing && !useSleep.getState().endOfSong) handOff(seconds, undefined, cut ?? undefined);
     }, Math.max(0, wait * 1000 - LEAD_MS));
+  }
+
+  /**
+   * DJ mix with no transition to play (none ready in time, or it failed): where to cut A into B on the
+   * beat, once both songs' mix maps have come. Null plays them the usual way.
+   */
+  function cutInto(deck: HTMLAudioElement, next: Track): BeatCut | null {
+    const from = loaded.current.get(deck);
+    if (usePrefs.getState().transitions !== 'dj' || !from) return null;
+    const a = mixMapOf(from.recordingId);
+    const b = mixMapOf(next.recordingId);
+    if (!a || !b) return null;
+    const aDuration = Number.isFinite(deck.duration) ? deck.duration + offsetOf(deck) : from.duration;
+    const cut = beatCut(a, b, { aDuration, mode: usePlayer.getState().mixMode, sameAlbumInOrder: continues(from, next) });
+    // Long past the downbeat (a seek, a timer slowed in the background): A plays out, B from its start.
+    return cut && songTime(deck) <= cut.aEnd + CUT_LATE_S ? cut : null;
   }
 
   // DJ transitions: the first song (A) → the transition file (the bridge) → the next song (B).
@@ -747,6 +785,10 @@ export function AudioEngine() {
       return;
     }
     void loadLevels([track, upNext(usePlayer.getState())]);
+    if (usePrefs.getState().transitions === 'dj') void loadMixMaps([track, upNext(usePlayer.getState())]);
+    // Asked to start somewhere (a mix point played from its dialog): once, for this song.
+    const startAt = usePlayer.getState().startAt;
+    if (startAt !== null) usePlayer.setState({ startAt: null });
 
     const m = bridging();
     if (m && handedOff.current === track.fileId) {
@@ -761,7 +803,7 @@ export function AudioEngine() {
     if (m && track.fileId === m.to.fileId) {
       // Next during the transition: B, where the transition had it. Past the switch, B played again from the start.
       const again = m.switched;
-      const time = again ? 0 : bTimeAt(m.transition.plan, bridge.current!.currentTime);
+      const time = startAt ?? (again ? 0 : bTimeAt(m.transition.plan, bridge.current!.currentTime));
       handedOff.current = null;
       playTracker.finish(again ? 'ended' : 'changed');
       playTracker.start(track);
@@ -791,7 +833,7 @@ export function AudioEngine() {
     handoffFailed.current = false;
     endFade();
 
-    const resume = firstLoad.current ? usePlayer.getState().resumeAt : 0;
+    const resume = startAt ?? (firstLoad.current ? usePlayer.getState().resumeAt : 0);
     firstLoad.current = false;
     let playOn = deck;
     if (!holds(deck, track)) {
@@ -810,16 +852,14 @@ export function AudioEngine() {
         switching.current = true;
         load(deck, track);
         useClock.setState({ time: resume, duration: track.duration, buffered: 0, error: null });
-        if (resume > 0) {
-          deck.addEventListener('loadedmetadata', () => (deck.currentTime = resume), { once: true });
-        }
+        if (resume > 0) setTimeOnLoad(deck, resume);
       }
     } else {
       // Played again from the start (repeat one, "previous" near the start): it counts as heard through.
       playTracker.finish('ended');
       playTracker.start(track);
-      seekSong(deck, 0);
-      useClock.setState({ time: 0 });
+      seekSong(deck, startAt ?? 0);
+      useClock.setState({ time: startAt ?? 0 });
     }
     applyVolumes();
     if (usePlayer.getState().playing) void play(playOn);

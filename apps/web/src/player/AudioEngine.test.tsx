@@ -1,4 +1,4 @@
-import type { TransitionPlan } from '@playarr/mix';
+import type { MixMap, TransitionPlan } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -90,6 +90,7 @@ beforeEach(() => {
   HTMLMediaElement.prototype.load = function () {};
   vi.spyOn(api, 'levels').mockResolvedValue({});
   vi.spyOn(api, 'radio').mockResolvedValue([]);
+  vi.spyOn(api, 'mixMaps').mockResolvedValue({});
   usePrefs.setState({ transitions: 'off', crossfade: 0, levelVolume: true, autoplay: false });
   usePlayer.setState({ repeat: 'off', volume: 1, muted: false });
 });
@@ -948,6 +949,105 @@ describe('AudioEngine', () => {
         expect(fake(bridge).paused).toBe(true);
         expect(usePlayer.getState().playing).toBe(true);
       });
+    });
+  });
+
+  describe('cuts on the beat, with no transition ready', () => {
+    /** A 120 BPM song: bars every 2 s from 1 s, its sound ending at 196.4 s (so its last downbeat is 195). */
+    const map = (over: Partial<MixMap> = {}): MixMap => ({
+      version: 1,
+      duration: 200,
+      bpm: 120,
+      firstBeat: 0.5,
+      downbeatOffset: 1,
+      downbeatConfidence: 0.9,
+      gridStable: true,
+      beatConfidence: 0.9,
+      introEnd: 9,
+      outroStart: 180,
+      coldStart: false,
+      coldEnd: false,
+      soundEnd: 196.4,
+      phraseEnergy: [],
+      ...over,
+    });
+
+    beforeEach(() => {
+      usePrefs.setState({ transitions: 'dj' });
+    });
+
+    it('leaves the song on its last downbeat and starts the next on its first', async () => {
+      // Songs whose maps weren't asked for yet in these tests (they're kept a minute).
+      vi.spyOn(api, 'mixMaps').mockResolvedValue({ r61: map(), r62: map({ firstBeat: 0.2, downbeatOffset: 2 }) });
+      const [a, b] = await start([song(61), song(62)]);
+      await at(a, 175);
+      expect(src(b)).toBe('/stream/62');
+      expect(fake(b).time).toBe(1.2); // waiting on its first downbeat
+      await at(a, 194); // a second before the downbeat at 195: started 30 ms early
+      await wait(950);
+      expect(now()).toBe(61);
+      await wait(20);
+      expect(now()).toBe(62);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(1.2);
+      expect(clock()).toBe(1.2);
+      await overlap();
+      expect(fake(a).paused).toBe(true); // its tail isn't played out
+      expect(playTracker.finish).toHaveBeenCalledWith('ended');
+    });
+
+    it('plays the songs one after the other as usual without their maps', async () => {
+      const [a, b] = await start([song(63), song(64)]);
+      await at(a, 194);
+      await wait(1500);
+      expect(now()).toBe(63);
+      await at(a, 199.99);
+      expect(now()).toBe(64);
+      expect(fake(b).time).toBe(0);
+    });
+
+    it('plays the song out when the sleep timer stops at its end', async () => {
+      vi.spyOn(api, 'mixMaps').mockResolvedValue({ r65: map(), r66: map() });
+      const [a] = await start([song(65), song(66)]);
+      useSleep.getState().sleepAtEndOfSong();
+      await at(a, 194);
+      await wait(1500);
+      expect(now()).toBe(65);
+      expect(fake(a).paused).toBe(false);
+    });
+  });
+
+  describe('starting a song somewhere', () => {
+    it('starts a song picked to play from a point there, as it loads, not the song that was playing', async () => {
+      const [a] = await start([song(1), song(2), song(3)]);
+      await at(a, 50);
+      // As the mix points dialog plays a song from a marker: in after the current one, from there.
+      Object.defineProperty(a, 'readyState', { configurable: true, value: 0 }); // the new file not known yet
+      await act(async () => {
+        usePlayer.getState().playNext([song(9)]);
+        usePlayer.getState().jumpTo(1, { at: 42 });
+      });
+      await settle();
+      expect(now()).toBe(9);
+      expect(src(a)).toBe('/stream/9');
+      expect(fake(a).time).toBe(50); // not moved before it knows its file
+      expect(clock()).toBe(42);
+      a.dispatchEvent(new Event('loadedmetadata'));
+      expect(fake(a).time).toBe(42);
+      expect(usePlayer.getState().startAt).toBeNull();
+    });
+
+    it('starts a song already loaded there, and a new queue too', async () => {
+      const [a, b] = await start([song(1), song(2)]);
+      await at(a, 175); // the next song loads ahead
+      await act(async () => usePlayer.getState().jumpTo(1, { at: 30 }));
+      await settle();
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(30);
+      await act(async () => usePlayer.getState().playTracks([song(5)], 0, { at: 12 }));
+      await settle();
+      expect(now()).toBe(5);
+      expect(fake(b).time).toBe(12);
     });
   });
 });

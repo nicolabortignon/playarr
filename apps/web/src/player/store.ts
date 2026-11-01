@@ -27,15 +27,18 @@ interface PlayerState {
   restartToken: number;
   /** Where to resume after a reload. */
   resumeAt: number;
+  /** Where the engine starts the song it loads next, once (then null): e.g. a mix point played from its dialog. */
+  startAt: number | null;
   /** What the queue was started from; unset, Now Playing shows the song's album. */
   source?: PlaySource;
   /** How this queue is mixed when transitions are DJ mix: Auto, Party (longer blends) or no mixing. */
   mixMode: MixMode;
 
-  playTracks: (tracks: Track[], startIndex?: number, opts?: { shuffle?: boolean; source?: PlaySource }) => void;
+  /** `at`: start the song there (seconds) instead of its beginning. */
+  playTracks: (tracks: Track[], startIndex?: number, opts?: { shuffle?: boolean; source?: PlaySource; at?: number }) => void;
   playNext: (tracks: Track[]) => void;
   addToQueue: (tracks: Track[]) => void;
-  jumpTo: (orderPos: number) => void;
+  jumpTo: (orderPos: number, opts?: { at?: number }) => void;
   removeAt: (orderPos: number) => void;
   move: (fromPos: number, toPos: number) => void;
   clearUpcoming: () => void;
@@ -79,6 +82,7 @@ export const usePlayer = create<PlayerState>()(
       muted: false,
       restartToken: 0,
       resumeAt: 0,
+      startAt: null,
       mixMode: 'auto',
 
       playTracks: (tracks, startIndex = 0, opts) => {
@@ -98,6 +102,7 @@ export const usePlayer = create<PlayerState>()(
           mixMode: 'auto',
           playing: true,
           resumeAt: 0,
+          startAt: opts?.at ?? null,
           restartToken: get().restartToken + 1,
         });
       },
@@ -119,9 +124,9 @@ export const usePlayer = create<PlayerState>()(
         set({ queue: [...queue, ...tracks], order: [...order, ...tracks.map((_, i) => base + i)] });
       },
 
-      jumpTo: (orderPos) => {
+      jumpTo: (orderPos, opts) => {
         if (orderPos < 0 || orderPos >= get().order.length) return;
-        set({ pos: orderPos, playing: true, resumeAt: 0, restartToken: get().restartToken + 1 });
+        set({ pos: orderPos, playing: true, resumeAt: 0, startAt: opts?.at ?? null, restartToken: get().restartToken + 1 });
       },
 
       removeAt: (orderPos) => {

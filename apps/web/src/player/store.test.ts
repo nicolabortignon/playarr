@@ -32,3 +32,15 @@ describe('mix mode for the queue', () => {
     expect(usePlayer.getState().mixMode).toBe('party');
   });
 });
+
+describe('starting a song somewhere', () => {
+  it('asks the engine once to start the song it loads at a time, never kept for a reload', () => {
+    usePlayer.getState().playTracks([song(1), song(2)], 0, { at: 30 });
+    expect(usePlayer.getState().startAt).toBe(30);
+    usePlayer.getState().jumpTo(1, { at: 12 });
+    expect(usePlayer.getState().startAt).toBe(12);
+    expect(JSON.parse(localStorage.getItem('playarr.player')!).state.startAt).toBeUndefined();
+    usePlayer.getState().jumpTo(0);
+    expect(usePlayer.getState().startAt).toBeNull();
+  });
+});
