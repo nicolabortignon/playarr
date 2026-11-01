@@ -10,6 +10,7 @@ import { canSetVolume, continues, fadeCurve, fadeSeconds, levelGain, silentClip,
 import { useDownloads } from './downloads';
 import { healQueue } from './healQueue';
 import { loadLevels, useLevels } from './levels';
+import { canLiveMix, type LiveMix, type LiveMixPlayback, PREPARE_BUDGET_MS, playLiveMix, prepareLiveMix } from './liveMix';
 import { useLoadAhead } from './loadAhead';
 import { loadMixMaps, mixMapOf } from './mixMaps';
 import { type BeatCut, beatCut, bridgeEntry, bridgeGain, bTimeAt, songTimeDuring, transitionTimeFor } from './mixSequence';
@@ -17,7 +18,7 @@ import { useOffline } from './offline';
 import { playTracker } from './playTracker';
 import { useAutoplay } from './radio';
 import { sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
-import { currentTrack, useClock, useCurrentTrack, usePlayer } from './store';
+import { currentTrack, nextByPress, takeNextPresses, useClock, useCurrentTrack, usePlayer } from './store';
 import { readyTransition, type ReadyTransition, useTransition, useUpcomingTransition } from './transitions';
 
 const DEFAULT_ACCENT = '#ff7a1a';
@@ -35,6 +36,12 @@ const STALL_MS = 4000;
 const SEEK_SLACK_S = 0.005;
 /** A cut on the beat this late (a timer slowed in the background) still beats playing A's tail out. */
 const CUT_LATE_S = 0.5;
+/** A transition from the server starting within this long serves a press of Next: a live mix couldn't start sooner. */
+const BRIDGE_SOON_S = 3;
+/** prepareLiveMix answers within its budget; this much later, the press of Next goes through as a plain skip. */
+const LIVE_SLACK_MS = 250;
+/** How often a live mix (no element, so no timeupdate) moves the clock, the history and the levels on. */
+const LIVE_TICK_MS = 100;
 
 interface Fade {
   out: HTMLAudioElement;
@@ -69,6 +76,22 @@ interface Mix {
   switched: boolean;
   /** The sleep timer was to stop at the end of A, which ended at the switch: stop where the transition ends. */
   sleepAtLanding?: boolean;
+}
+
+/**
+ * A press of Next mixed live into the song it goes to (desktop, with no transition from the server to
+ * play): A plays on while the mix is made, then a rendered quick mix plays through Web Audio, then B's
+ * element. The store moves on to B at the switch, as with a transition.
+ */
+interface Live {
+  from: Track;
+  to: Track;
+  controller: AbortController;
+  mix?: LiveMix;
+  playback?: LiveMixPlayback;
+  /** The switch's timer is set (once: the mix's clock is the audio's own, so it needs no re-arming). */
+  switchArmed?: boolean;
+  switched: boolean;
 }
 
 /**
@@ -108,6 +131,13 @@ export function AudioEngine() {
   const starting = useRef<Mix | null>(null);
   /** When the lock screen's position was last set during a transition. */
   const positionAt = useRef(0);
+  const live = useRef<Live | null>(null);
+  const liveTimer = useRef<ReturnType<typeof setInterval>>(undefined);
+  const liveWatch = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** Web Audio for live mixes, made (or woken) within a press of Next: browsers allow it only then. */
+  const audioContext = useRef<AudioContext | null>(null);
+  /** A press of Next waiting for the transition about to start; it goes through as a plain skip if that doesn't. */
+  const pressAwaits = useRef<Mix | null>(null);
   const overlap = useRef<Overlap | null>(null);
   const overlapTimer = useRef<ReturnType<typeof setInterval>>(undefined);
   /** Transition files that wouldn't play: not tried again. */
@@ -160,6 +190,8 @@ export function AudioEngine() {
 
   /** Where the song shown is now, wherever it plays from. */
   function currentSongTime(): number {
+    const l = liveHeard();
+    if (l) return liveShownTime(l);
     const m = bridging();
     if (m && bridge.current) return shownTime(m, bridge.current.currentTime);
     const deck = active();
@@ -232,6 +264,12 @@ export function AudioEngine() {
       if (o?.out === deck) v *= evenGain(1 - joined);
       else if (o?.in === deck) v *= evenGain(joined);
       deck.volume = Math.max(0, Math.min(1, v));
+    }
+    // A live mix holds both songs at their own levels too.
+    const l = live.current;
+    if (l?.playback && l.mix) {
+      const gain = bridgeGain(l.mix.plan, Math.max(0, l.playback.time()), level(l.from), level(l.to));
+      l.playback.setVolume(s.muted ? 0 : Math.max(0, Math.min(1, s.volume * s.volume * sleepGain() * gain)));
     }
   }
 
@@ -357,7 +395,8 @@ export function AudioEngine() {
    */
   function prepareBridge() {
     const m = mix.current;
-    if (m?.bridging) return;
+    // Not under a live mix: B waits on the other element for it.
+    if (m?.bridging || live.current) return;
     const s = usePlayer.getState();
     const deck = active();
     const next = standby();
@@ -397,6 +436,24 @@ export function AudioEngine() {
     clearTimeout(bridgeTimer.current);
     clearBridge();
     clearRemainder(standby());
+    if (pressAwaits.current === m) pressGoesThrough();
+  }
+
+  /** A press of Next waiting for a transition that won't play after all: on to the next song now. */
+  function pressGoesThrough() {
+    const m = pressAwaits.current;
+    if (!m) return;
+    pressAwaits.current = null;
+    if (mix.current === m && !m.bridging) dropPrepared();
+    skipNow();
+  }
+
+  /** The press of Next as a plain skip: the next song at once, paused if the player is. */
+  function skipNow() {
+    const p = usePlayer.getState();
+    const paused = !p.playing;
+    p.nextNow();
+    if (paused) p.setPlaying(false);
   }
 
   function clearBridge() {
@@ -562,6 +619,7 @@ export function AudioEngine() {
     if (currentTrack(s)?.fileId !== m.from.fileId || upNext(s)?.fileId !== m.to.fileId) return abandonToA(m, currentSongTime());
     clearTimeout(switchTimer.current);
     m.switched = true;
+    if (pressAwaits.current === m) pressAwaits.current = null;
     // The sleep timer, set during the transition, stops at the end of A: A ends here, but the blend plays
     // out, and the music stops where B would go on alone.
     if (sleepsAtSongEnd()) m.sleepAtLanding = true;
@@ -654,6 +712,7 @@ export function AudioEngine() {
     useClock.setState({ time });
     updatePosition();
     applyVolumes();
+    if (pressAwaits.current === m) pressGoesThrough();
   }
 
   /** On to B's own file at `time` (next, a seek past the transition, a failure after the switch). */
@@ -712,6 +771,12 @@ export function AudioEngine() {
 
   /** The OS media controls' seek bar: the song shown, wherever it plays from. */
   function updatePosition() {
+    const l = liveHeard();
+    if (l?.mix) {
+      positionAt.current = performance.now();
+      const t = Math.max(0, l.playback!.time());
+      return updatePositionState(currentSongTime(), useClock.getState().duration, l.switched ? valueAt(l.mix.plan.bRate, t) : 1);
+    }
     const m = bridging();
     if (m && bridge.current) {
       positionAt.current = performance.now();
@@ -720,6 +785,224 @@ export function AudioEngine() {
     }
     const deck = active();
     if (deck) updatePositionState(songTime(deck), deck.duration + offsetOf(deck), deck.playbackRate);
+  }
+
+  // Live mixes (desktop): a press of Next mixed into the song it goes to, when no transition is there to play.
+
+  /** The live mix is what's heard (A has stopped for it), or is about to be this instant. */
+  function liveHeard(): Live | null {
+    const l = live.current;
+    return l?.playback && l.playback.time() >= -0.05 ? l : null;
+  }
+
+  const liveShownTime = (l: Live) => {
+    const t = Math.max(0, l.playback!.time());
+    return l.switched ? bTimeAt(l.mix!.plan, t) : l.mix!.plan.aStart + t;
+  };
+
+  /**
+   * A press of Next: taken over (true) to mix into the song it goes to, or to wait for a transition about
+   * to start; else (false) the store moves on at once, as it always has. Phones and tablets never take it.
+   */
+  function takeNext(): boolean {
+    // During a live mix or a transition the store moves at once: the song change deals with it.
+    if (live.current || bridging() || !canLiveMix()) return false;
+    if (pressAwaits.current) {
+      // Pressed again while waiting: no more waiting.
+      pressAwaits.current = null;
+      dropPrepared();
+      return false;
+    }
+    const s = usePlayer.getState();
+    const deck = active();
+    const from = currentTrack(s);
+    const to = nextByPress(s);
+    const wanted =
+      usePrefs.getState().transitions === 'dj' &&
+      s.mixMode !== 'off' &&
+      s.repeat !== 'one' &&
+      s.playing &&
+      !useSleep.getState().endOfSong &&
+      !!deck &&
+      !deck.paused &&
+      !!from &&
+      holds(deck, from) &&
+      !!to &&
+      to.fileId !== from.fileId &&
+      handedOff.current === null &&
+      !fade.current &&
+      !overlap.current;
+    if (!wanted) return false;
+    // A transition from the server about to start into that song: what a live mix would be, sooner and better.
+    const m = mix.current;
+    const untilBridge = m ? m.transition.plan.aStart - songTime(deck) : Infinity;
+    if (m && m.to.fileId === to.fileId && untilBridge >= -1 && untilBridge <= BRIDGE_SOON_S) {
+      pressAwaits.current = m;
+      return true;
+    }
+    // One further off can't serve a skip.
+    dropPrepared();
+    let context: AudioContext;
+    try {
+      context = audioContext.current ??= new AudioContext();
+      context.resume().catch(() => {});
+    } catch {
+      return false;
+    }
+    startLive(from, to, deck, context);
+    return true;
+  }
+
+  /** A plays on while the live mix is made (B loading meanwhile); then it's set going, or the press goes through as a plain skip. */
+  function startLive(from: Track, to: Track, deck: HTMLAudioElement, context: AudioContext) {
+    const l: Live = { from, to, controller: new AbortController(), switched: false };
+    live.current = l;
+    const next = standby();
+    if (next && !holds(next, to)) {
+      next.preload = 'auto';
+      load(next, to);
+    }
+    clearTimeout(liveWatch.current);
+    liveWatch.current = setTimeout(() => live.current === l && !l.playback && giveUpLive(l), PREPARE_BUDGET_MS + LIVE_SLACK_MS);
+    const s = usePlayer.getState();
+    prepareLiveMix({ a: from, b: to, aPosition: songTime(deck), mode: s.mixMode, signal: l.controller.signal }).then(
+      (mixed) => {
+        if (live.current !== l || l.playback) return;
+        clearTimeout(liveWatch.current);
+        const incoming = standby();
+        const playback =
+          mixed && active() === deck && !deck.paused && incoming && holds(incoming, to)
+            ? playLiveMix(mixed, {
+                a: deck,
+                b: incoming,
+                context,
+                aOffset: offsetOf(deck),
+                onStarted: () => {
+                  applyVolumes();
+                  updatePosition();
+                },
+                onLanded: (playing) => landLive(l, playing),
+              })
+            : null;
+        if (!mixed || !playback) return giveUpLive(l);
+        l.mix = mixed;
+        l.playback = playback;
+        applyVolumes();
+        clearInterval(liveTimer.current);
+        liveTimer.current = setInterval(() => tickLive(l), LIVE_TICK_MS);
+      },
+      () => live.current === l && giveUpLive(l),
+    );
+  }
+
+  function stopLive(l: Live) {
+    if (live.current === l) live.current = null;
+    l.controller.abort();
+    l.playback?.stop();
+    clearInterval(liveTimer.current);
+    clearTimeout(liveWatch.current);
+    clearTimeout(switchTimer.current);
+  }
+
+  /** No live mix after all (none could be made in time, or it was interrupted before it was heard): a plain skip. */
+  function giveUpLive(l: Live) {
+    stopLive(l);
+    skipNow();
+  }
+
+  /** The live mix plays on: the clock, the history and the levels follow it, and the switch comes on time. */
+  function tickLive(l: Live) {
+    if (live.current !== l || !l.playback || !l.mix) return;
+    const t = l.playback.time();
+    // Until the mix starts, A plays on, and its own events keep the clock.
+    if (t < 0) return;
+    const { plan } = l.mix;
+    if (!l.switched && songTimeDuring(plan, t).song === 'b') switchLive(l);
+    if (live.current !== l) return;
+    const time = liveShownTime(l);
+    useClock.setState({ time });
+    if (handedOff.current === null) playTracker.tick(time);
+    if (l.switched && performance.now() - positionAt.current >= 1000) updatePosition();
+    applyVolumes();
+    const wait = plan.switchAt - t;
+    if (!l.switched && !l.switchArmed && wait <= 1.5) {
+      l.switchArmed = true;
+      switchTimer.current = setTimeout(() => live.current === l && !l.switched && switchLive(l), Math.max(0, wait * 1000));
+    }
+  }
+
+  /** The middle of the live mix: the store, the lock screen and the history move on to B, as at a transition's switch. */
+  function switchLive(l: Live) {
+    const s = usePlayer.getState();
+    // The queue changed under the mix: the press goes to the new next song, straight away.
+    if (currentTrack(s)?.fileId !== l.from.fileId || nextByPress(s)?.fileId !== l.to.fileId) return giveUpLive(l);
+    clearTimeout(switchTimer.current);
+    l.switched = true;
+    handedOff.current = l.to.fileId;
+    s.nextNow();
+    useClock.setState({ time: currentSongTime(), duration: l.to.duration });
+    updatePosition();
+  }
+
+  /** The live mix's end: B's element has been started (by playLiveMix) where the mix leaves B. */
+  function landLive(l: Live, playing: Promise<void>) {
+    if (live.current !== l) return void playing.catch(() => {});
+    if (!l.switched) switchLive(l);
+    const incoming = standby();
+    if (live.current !== l || !incoming || !l.mix) return void playing.catch(() => {});
+    const { plan } = l.mix;
+    // The mix fades out under B by itself: only the engine's part of it stops.
+    live.current = null;
+    clearInterval(liveTimer.current);
+    clearTimeout(switchTimer.current);
+    swap();
+    const duration = Number.isFinite(incoming.duration) ? incoming.duration + offsetOf(incoming) : l.to.duration;
+    useClock.setState({ time: plan.bResume, duration, buffered: bufferedEnd(incoming) });
+    applyVolumes();
+    playing.then(
+      () => updatePosition(),
+      () => {
+        // Paused meanwhile: B plays when played again.
+        if (active() !== incoming || !usePlayer.getState().playing) return;
+        // Couldn't start on its own (autoplay rules): B goes on in the element that played A, as land() does.
+        swap();
+        const deck = active()!;
+        handoffFailed.current = true;
+        cue(deck, l.to, plan.bResume);
+        void play(deck);
+      },
+    );
+  }
+
+  /**
+   * A pause or a seek during a live mix. Before it's heard: the press goes through as a plain skip. Once
+   * heard: B's own element from where the mix had it (or the seek's time in B, past the switch).
+   */
+  function interruptLive(l: Live, seekTo?: number) {
+    if (liveHeard() !== l || !l.mix) return giveUpLive(l);
+    const time = seekTo !== undefined && l.switched ? seekTo : bTimeAt(l.mix.plan, Math.max(0, l.playback!.time()));
+    liveToB(l, time);
+  }
+
+  /** Out of a live mix that was heard, on to B's element at `time`; the store moves to B if it hadn't. */
+  function liveToB(l: Live, time: number) {
+    stopLive(l);
+    const out = active();
+    const incoming = standby();
+    if (!incoming) return;
+    swap();
+    out?.pause();
+    cue(incoming, l.to, time);
+    const p = usePlayer.getState();
+    if (p.playing) void play(incoming);
+    if (!l.switched) {
+      // B shows from here: A has ended, as at the switch.
+      handedOff.current = l.to.fileId;
+      skipNow();
+    }
+    useClock.setState({ time });
+    updatePosition();
+    applyVolumes();
   }
 
   // Refresh tracks from a queue saved by an older version (adds fields like recordingId).
@@ -789,6 +1072,31 @@ export function AudioEngine() {
     // Asked to start somewhere (a mix point played from its dialog): once, for this song.
     const startAt = usePlayer.getState().startAt;
     if (startAt !== null) usePlayer.setState({ startAt: null });
+    // Whatever a press of Next was waiting for, the song has changed now.
+    if (pressAwaits.current && handedOff.current !== track.fileId) pressAwaits.current = null;
+
+    const l = live.current;
+    if (l && l.switched && handedOff.current === track.fileId) {
+      // The live mix reached its switch: B plays already, inside the mix.
+      handedOff.current = null;
+      playTracker.finish('ended');
+      playTracker.start(track);
+      useClock.setState({ time: currentSongTime(), duration: track.duration, buffered: 0, error: null });
+      applyVolumes();
+      return;
+    }
+    if (l && liveHeard() === l && !l.switched && track.fileId === l.to.fileId) {
+      // Next again during the live mix: B, where the mix had it.
+      const time = startAt ?? liveShownTime({ ...l, switched: true });
+      playTracker.finish('changed');
+      playTracker.start(track);
+      l.switched = true;
+      liveToB(l, time);
+      useClock.setState({ time, duration: track.duration, buffered: 0, error: null });
+      return;
+    }
+    // Anything else (Next again before the mix is heard, previous, another song): no live mix; the song loads as usual.
+    if (l) stopLive(l);
 
     const m = bridging();
     if (m && handedOff.current === track.fileId) {
@@ -866,6 +1174,9 @@ export function AudioEngine() {
   }, [track?.fileId, restartToken]);
 
   useEffect(() => {
+    // Paused during a live mix, or while a press of Next waits for a transition (see interruptLive).
+    if (!playing && live.current) interruptLive(live.current);
+    if (!playing && pressAwaits.current && !pressAwaits.current.bridging) pressGoesThrough();
     // Paused as the transition was starting: A again, where it stopped; the transition starts again when played.
     const m = bridging();
     if (!playing && m && starting.current === m) cancelStart(m, false);
@@ -887,12 +1198,17 @@ export function AudioEngine() {
   // Nothing left to happen once the player is gone.
   useEffect(
     () => () => {
-      for (const timer of [handoffTimer, bridgeTimer, switchTimer, startWatch, stallTimer]) clearTimeout(timer.current);
+      for (const timer of [handoffTimer, bridgeTimer, switchTimer, startWatch, stallTimer, liveWatch]) clearTimeout(timer.current);
       clearInterval(overlapTimer.current);
       clearInterval(fadeTimer.current);
+      if (live.current) stopLive(live.current);
+      void audioContext.current?.close().catch(() => {});
     },
     [],
   );
+
+  // Presses of Next come here first, within the press (see takeNext).
+  useEffect(() => takeNextPresses(takeNext), []);
 
   // A transition loads ahead once ready for the songs playing next, and is dropped when they change.
   useEffect(() => {
@@ -903,6 +1219,9 @@ export function AudioEngine() {
       const m = bridging();
       // The next song changed during the transition, before it showed: A again, followed by the new next song.
       if (m && !m.switched && currentTrack(s)?.fileId === m.from.fileId && upNext(s)?.fileId !== m.to.fileId) abandonToA(m, currentSongTime());
+      // Likewise under a live mix: the press of Next goes to the new next song, straight away.
+      const l = live.current;
+      if (l && !l.switched && currentTrack(s)?.fileId === l.from.fileId && nextByPress(s)?.fileId !== l.to.fileId) giveUpLive(l);
       prepareBridge();
     });
     return () => {
@@ -936,6 +1255,9 @@ export function AudioEngine() {
           clearTimeout(handoffTimer.current);
           clearTimeout(bridgeTimer.current);
           if (fade.current) endFade();
+          // A press of Next is on its way: it goes through (a seek in the song being left means nothing after).
+          if (live.current) return interruptLive(live.current, s.seekRequest.time);
+          if (pressAwaits.current && !pressAwaits.current.bridging) return pressGoesThrough();
           const m = bridging();
           if (m) return seekInBridge(m, s.seekRequest.time);
           if (seekSong(deck, s.seekRequest.time) && usePlayer.getState().playing) void play(deck);
@@ -1045,7 +1367,8 @@ export function AudioEngine() {
 
   // Events only count from the element playing the current song (the other is loading or fading out),
   // not while it plays the silent clip that readies it, nor while a transition plays instead.
-  const isActive = (e: { currentTarget: HTMLAudioElement }) => e.currentTarget === active() && !!e.currentTarget.dataset.fileId && !bridging();
+  const isActive = (e: { currentTarget: HTMLAudioElement }) =>
+    e.currentTarget === active() && !!e.currentTarget.dataset.fileId && !bridging() && !liveHeard();
   const deckProps: React.AudioHTMLAttributes<HTMLAudioElement> = {
     preload: 'auto',
     onTimeUpdate: (e) => {
@@ -1053,7 +1376,8 @@ export function AudioEngine() {
       const deck = e.currentTarget;
       useClock.setState({ time: songTime(deck) });
       if (!deck.paused) playTracker.tick(songTime(deck));
-      if (!approachBridge(deck)) approachEnd(deck);
+      // A live mix on its way decides what comes next.
+      if (!live.current && !approachBridge(deck)) approachEnd(deck);
       tickFade();
     },
     onSeeking: (e) => isActive(e) && playTracker.pause(),
@@ -1091,6 +1415,8 @@ export function AudioEngine() {
     },
     onEnded: (e) => {
       if (!isActive(e)) return tickFade();
+      // The song ended before a live mix out of it could start: on to the next song as usual.
+      if (live.current) stopLive(live.current);
       playTracker.finish('ended');
       if (sleepsAtSongEnd()) {
         // The sleep timer: on to the next song, paused, for when you're back.

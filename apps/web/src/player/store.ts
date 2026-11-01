@@ -44,7 +44,10 @@ interface PlayerState {
   clearUpcoming: () => void;
   /** Replace what plays after the current song: indices into `queue`, e.g. reordered or restored. */
   setUpcoming: (queueIndices: number[]) => void;
+  /** On to the next song: `auto` when the song ended (or the engine moved on); a press of Next otherwise. */
   next: (auto?: boolean) => void;
+  /** A press of Next that the engine doesn't take over (see takeNextPresses). */
+  nextNow: () => void;
   prev: (currentTime: number) => void;
   setPlaying: (playing: boolean) => void;
   toggle: () => void;
@@ -68,6 +71,21 @@ function shuffled<T>(arr: T[]): T[] {
 const MIX_MODES: readonly MixMode[] = ['auto', 'party', 'off'];
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
+
+/**
+ * The engine can take a press of Next over, to mix into the next song first (a live mix, on desktop): it
+ * then moves the queue on itself as the next song takes over, or at once with nextNow if the mix can't be
+ * made. Called within the press, so the engine may start audio there.
+ */
+let nextTaker: (() => boolean) | null = null;
+
+/** Let `take` see each press of Next first: true when it takes the press over. Returns the undo. */
+export function takeNextPresses(take: () => boolean): () => void {
+  nextTaker = take;
+  return () => {
+    if (nextTaker === take) nextTaker = null;
+  };
+}
 
 export const usePlayer = create<PlayerState>()(
   persist(
@@ -158,12 +176,19 @@ export const usePlayer = create<PlayerState>()(
       },
 
       next: (auto = false) => {
+        if (!auto && nextTaker?.()) return;
         const { pos, order, repeat, restartToken } = get();
         if (auto && repeat === 'one') return set({ restartToken: restartToken + 1, resumeAt: 0 });
         if (pos + 1 < order.length) return set({ pos: pos + 1, playing: true, resumeAt: 0 });
         if (repeat === 'all' && order.length) return set({ pos: 0, playing: true, resumeAt: 0 });
         // End of queue: stop at the last track.
         if (auto) set({ playing: false, resumeAt: 0, restartToken: restartToken + 1 });
+      },
+
+      nextNow: () => {
+        const { pos, order, repeat } = get();
+        if (pos + 1 < order.length) set({ pos: pos + 1, playing: true, resumeAt: 0 });
+        else if (repeat === 'all' && order.length) set({ pos: 0, playing: true, resumeAt: 0 });
       },
 
       prev: (currentTime) => {
@@ -230,6 +255,13 @@ export function currentTrack(s: Pick<PlayerState, 'queue' | 'order' | 'pos'>): T
 }
 
 export const useCurrentTrack = () => usePlayer(currentTrack);
+
+/** The song a press of Next goes to (repeat one included: Next leaves the song), if any. */
+export function nextByPress(s: Pick<PlayerState, 'queue' | 'order' | 'pos' | 'repeat'>): Track | undefined {
+  if (s.pos < 0) return undefined;
+  if (s.pos + 1 < s.order.length) return s.queue[s.order[s.pos + 1]!];
+  return s.repeat === 'all' && s.order.length ? s.queue[s.order[0]!] : undefined;
+}
 
 /** High-frequency playback clock, kept out of the persisted store to avoid re-render storms. */
 interface ClockState {

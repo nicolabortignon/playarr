@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { AudioEngine } from './AudioEngine';
 import { canSetVolume } from './decks';
+import { canLiveMix, type LiveMix, playLiveMix, prepareLiveMix } from './liveMix';
 import { playTracker } from './playTracker';
 import { useOffline } from './offline';
 import { useSleep } from './sleep';
@@ -16,6 +17,13 @@ vi.mock('./loadAhead', () => ({ useLoadAhead: () => {} }));
 vi.mock('./playTracker', () => ({ playTracker: { start: vi.fn(), finish: vi.fn(), tick: vi.fn(), pause: vi.fn() } }));
 // iPhones fix the volume: some tests play as one.
 vi.mock('./decks', async (importOriginal) => ({ ...(await importOriginal<typeof import('./decks')>()), canSetVolume: vi.fn(() => true) }));
+// Live mixes are played by hand: jsdom has no Web Audio.
+vi.mock('./liveMix', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./liveMix')>()),
+  canLiveMix: vi.fn(() => false),
+  prepareLiveMix: vi.fn(),
+  playLiveMix: vi.fn(),
+}));
 // The tests say which transition is ready, instead of the server.
 vi.mock('./transitions', async (importOriginal) => ({ ...(await importOriginal<typeof import('./transitions')>()), useUpcomingTransition: () => {} }));
 
@@ -1048,6 +1056,291 @@ describe('AudioEngine', () => {
       await settle();
       expect(now()).toBe(5);
       expect(fake(b).time).toBe(12);
+    });
+  });
+
+  describe('live mixes on desktop, for a press of Next', () => {
+    /** A quick mix rendered from 62.5 s into the first song: 6 s long, B showing from 3 s, B resuming at 36 s. */
+    const quick = plan({ style: 'quick', aStart: 62.5, length: 6, switchAt: 3, bStart: 30, bResume: 36 });
+    const resume = vi.fn(() => Promise.resolve());
+    /** The mix as playLiveMix plays it: its clock (seconds into it, negative before) is the test's to move. */
+    let mixed: { time: number; volume: number; stop: ReturnType<typeof vi.fn>; started: () => Promise<void>; landed: () => Promise<void> };
+
+    beforeEach(() => {
+      usePrefs.setState({ transitions: 'dj' });
+      vi.mocked(canLiveMix).mockReturnValue(true);
+      vi.stubGlobal(
+        'AudioContext',
+        class {
+          state = 'running';
+          resume = resume;
+          close = () => Promise.resolve();
+        },
+      );
+      vi.mocked(prepareLiveMix).mockImplementation(
+        ({ a, b }) => new Promise((done) => setTimeout(() => done({ plan: quick, buffer: {} as AudioBuffer, from: a, to: b } satisfies LiveMix), 300)),
+      );
+      vi.mocked(playLiveMix).mockImplementation((mix, { a, b, onStarted, onLanded }) => {
+        // As the real one: B waits where the mix leaves it; A stops as the mix starts; B starts as it ends.
+        b.pause();
+        b.currentTime = mix.plan.bResume;
+        const stop = vi.fn();
+        mixed = {
+          time: -1,
+          volume: 1,
+          stop,
+          started: () =>
+            act(async () => {
+              mixed.time = 0;
+              a.pause();
+              onStarted?.();
+            }),
+          landed: () =>
+            act(async () => {
+              mixed.time = mix.plan.length;
+              onLanded?.(b.play());
+            }),
+        };
+        return { startsAt: 0, time: () => mixed.time, setVolume: (v) => (mixed.volume = v), stop };
+      });
+    });
+
+    afterEach(() => {
+      vi.mocked(canLiveMix).mockReturnValue(false);
+      vi.unstubAllGlobals();
+    });
+
+    /** Move the mix's clock on, and the time with it. */
+    async function mixAt(t: number, ms = LIVE_STEP_MS) {
+      mixed.time = t;
+      await wait(ms);
+    }
+    const LIVE_STEP_MS = 100;
+    const press = () => act(async () => usePlayer.getState().next());
+
+    it('mixes into the next song: the first plays on meanwhile, the store moves once at the switch, the next goes on from the mix', async () => {
+      const { titles } = stubMediaSession();
+      try {
+        const [a, b] = await start([song(1), song(2), song(3)]);
+        await at(a, 60);
+        vi.mocked(playTracker.start).mockClear();
+        vi.mocked(playTracker.finish).mockClear();
+        await press();
+        expect(resume).toHaveBeenCalled(); // Web Audio woken within the press
+        expect(now()).toBe(1);
+        expect(fake(a).paused).toBe(false);
+        expect(src(b)).toBe('/stream/2'); // loading meanwhile
+        expect(prepareLiveMix).toHaveBeenCalledWith(expect.objectContaining({ aPosition: 60, mode: 'auto' }));
+        await wait(300);
+        expect(playLiveMix).toHaveBeenCalledOnce();
+        expect(now()).toBe(1);
+        await mixed.started();
+        expect(fake(a).paused).toBe(true);
+        expect(usePlayer.getState().playing).toBe(true);
+        await mixAt(1);
+        expect(clock()).toBe(63.5); // the first song's time, inside the mix
+        await mixAt(2.5); // half a second before the switch (the tick that sees it comes at the end of the step)
+        await wait(490);
+        expect(now()).toBe(1);
+        await wait(20);
+        expect(now()).toBe(2);
+        await mixAt(4);
+        expect(clock()).toBe(34); // the next song's time, inside the mix
+        await mixed.landed();
+        expect(fake(b).paused).toBe(false);
+        expect(fake(b).time).toBe(36);
+        expect(clock()).toBe(36);
+        await at(b, 40);
+        expect(clock()).toBe(40);
+        expect(titles).toEqual(['Song 1', 'Song 2']);
+        // Two plays: the first song ended at the switch, the second counts from there.
+        expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['ended']]);
+        expect(vi.mocked(playTracker.start).mock.calls.map(([t]) => t.fileId)).toEqual([2]);
+        expect(playTracker.tick).toHaveBeenCalledWith(34);
+      } finally {
+        unstubMediaSession();
+      }
+    });
+
+    it('levels the mix like a transition', async () => {
+      vi.spyOn(api, 'levels').mockResolvedValue({ r71: { track: -6 }, r72: { track: 0 } });
+      const [a] = await start([song(71), song(72)]);
+      await at(a, 60);
+      await press();
+      await wait(300);
+      await mixed.started();
+      expect(mixed.volume).toBeCloseTo(10 ** (-6 / 20), 2);
+    });
+
+    it('skips at once when no mix can be made', async () => {
+      vi.mocked(prepareLiveMix).mockResolvedValue(null);
+      const [a, b] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await settle();
+      expect(now()).toBe(2);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(0);
+      expect(fake(a).paused).toBe(true);
+    });
+
+    it('skips at once when making the mix takes too long', async () => {
+      vi.mocked(prepareLiveMix).mockReturnValue(new Promise(() => {}));
+      const [a] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await wait(1700);
+      expect(now()).toBe(1);
+      await wait(60);
+      expect(now()).toBe(2);
+    });
+
+    it('skips at once for a second press while the mix is made', async () => {
+      const [a, b] = await start([song(1), song(2), song(3)]);
+      await at(a, 60);
+      await press();
+      const { signal } = vi.mocked(prepareLiveMix).mock.calls[0]![0];
+      await press();
+      await settle();
+      expect(now()).toBe(2);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(0);
+      expect(signal.aborted).toBe(true);
+      await wait(400);
+      expect(playLiveMix).not.toHaveBeenCalled();
+      expect(now()).toBe(2);
+    });
+
+    it('skips at once, paused, when paused while the mix is made', async () => {
+      const [a, b] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await act(async () => usePlayer.getState().setPlaying(false));
+      await settle();
+      expect(now()).toBe(2);
+      expect(usePlayer.getState().playing).toBe(false);
+      expect(fake(a).paused).toBe(true);
+      expect(fake(b).paused).toBe(true);
+    });
+
+    it('goes on in the next song where the mix had it when paused during it', async () => {
+      const [a, b] = await start([song(1), song(2)]);
+      await at(a, 60);
+      vi.mocked(playTracker.finish).mockClear();
+      await press();
+      await wait(300);
+      await mixed.started();
+      await mixAt(2);
+      await act(async () => usePlayer.getState().setPlaying(false));
+      await settle();
+      expect(mixed.stop).toHaveBeenCalled();
+      expect(now()).toBe(2);
+      expect(usePlayer.getState().playing).toBe(false);
+      expect(fake(b).time).toBe(32);
+      expect(fake(b).paused).toBe(true);
+      expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['ended']]);
+      await act(async () => usePlayer.getState().setPlaying(true));
+      await settle();
+      expect(fake(b).paused).toBe(false);
+    });
+
+    it('seeks in the next song’s own element past the switch', async () => {
+      const [a, b] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await wait(300);
+      await mixed.started();
+      await mixAt(4);
+      expect(now()).toBe(2);
+      await act(async () => useClock.getState().seek(80));
+      await settle();
+      expect(mixed.stop).toHaveBeenCalled();
+      expect(fake(b).time).toBe(80);
+      expect(fake(b).paused).toBe(false);
+      expect(now()).toBe(2);
+    });
+
+    it('goes into the next song where the mix had it for another press during it', async () => {
+      const [a, b] = await start([song(1), song(2), song(3)]);
+      await at(a, 60);
+      await press();
+      await wait(300);
+      await mixed.started();
+      await mixAt(2);
+      await press();
+      await settle();
+      expect(now()).toBe(2);
+      expect(fake(b).time).toBe(32);
+      expect(fake(b).paused).toBe(false);
+      expect(mixed.stop).toHaveBeenCalled();
+    });
+
+    it('keeps today’s skip on phones and tablets', async () => {
+      vi.mocked(canLiveMix).mockReturnValue(false);
+      const [a] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      expect(now()).toBe(2);
+      expect(src(a)).toBe('/stream/2'); // loaded at once, as ever
+      expect(fake(a).paused).toBe(false);
+      expect(prepareLiveMix).not.toHaveBeenCalled();
+      expect(resume).not.toHaveBeenCalled();
+    });
+
+    it('waits for a transition from the server about to start, instead of mixing live', async () => {
+      transitionReady(1, 2);
+      const [a, b, bridge] = await start([song(1), song(2)]);
+      await at(a, 145);
+      await at(a, 168);
+      await press();
+      expect(now()).toBe(1);
+      expect(prepareLiveMix).not.toHaveBeenCalled();
+      await at(a, 169.99);
+      expect(fake(bridge).paused).toBe(false);
+      await overlap();
+      await at(bridge, 12.1);
+      expect(now()).toBe(2);
+      await at(bridge, 23.99);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(32);
+    });
+
+    it('skips at once if the transition it waited for won’t play', async () => {
+      transitionReady(1, 2);
+      const [a, b, bridge] = await start([song(1), song(2)]);
+      slow.set(bridge, 'never');
+      await at(a, 145);
+      await at(a, 168);
+      await press();
+      await at(a, 169.99);
+      await wait(260); // the transition never starts
+      expect(now()).toBe(2);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(0);
+    });
+
+    it('mixes live when the transition from the server starts too far off', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await start([song(1), song(2)]);
+      await at(a, 145);
+      expect(src(bridge)).toBe(TRANSITION);
+      await press();
+      expect(prepareLiveMix).toHaveBeenCalled();
+      expect(src(bridge)).toBeNull();
+      expect(now()).toBe(1);
+    });
+
+    it('skips at once with mixing off for the queue, or the sleep timer at the end of the song', async () => {
+      const [a] = await start([song(1), song(2), song(3)]);
+      usePlayer.getState().setMixMode('off');
+      await at(a, 60);
+      await press();
+      expect(now()).toBe(2);
+      usePlayer.getState().setMixMode('auto');
+      useSleep.getState().sleepAtEndOfSong();
+      await press();
+      expect(now()).toBe(3);
+      expect(prepareLiveMix).not.toHaveBeenCalled();
     });
   });
 });
