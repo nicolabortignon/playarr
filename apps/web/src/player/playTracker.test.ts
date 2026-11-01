@@ -56,6 +56,8 @@ describe('PlayTracker', () => {
 });
 
 describe('sendWithRetry', () => {
+  const report1 = () => report(1);
+  const report2 = () => report(2);
   const report = (n: number): PlayReport => ({ trackId: n, recordingId: `rec-${n}`, at: `2026-11-01T10:0${n}:00.000Z`, hour: 10, weekday: 0, seconds: 60, skipped: false });
 
   it('keeps reports that could not be sent and sends them with the next one', async () => {
@@ -63,10 +65,24 @@ describe('sendWithRetry', () => {
       throw new Error('offline');
     });
     sendWithRetry([report(1)], offline);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0)); // the failed request settles
     const online = vi.fn(async () => ({}));
     sendWithRetry([report(2)], online);
     expect(online).toHaveBeenCalledWith([report(1), report(2)]);
     await vi.waitFor(() => expect(localStorage.getItem('playarr.pendingPlays')).toBeNull());
   });
+
+  it('sends one request at a time; reports made meanwhile follow once it is answered', async () => {
+    let answer: () => void = () => {};
+    const report = vi.fn(() => new Promise<void>((resolve) => (answer = resolve)));
+    sendWithRetry([report1()], report);
+    sendWithRetry([report2()], report);
+    expect(report).toHaveBeenCalledTimes(1);
+    answer();
+    await vi.waitFor(() => expect(report).toHaveBeenCalledTimes(2));
+    expect(report).toHaveBeenLastCalledWith([report2()]);
+    answer();
+    await vi.waitFor(() => expect(localStorage.getItem('playarr.pendingPlays')).toBeNull());
+  });
 });
+

@@ -117,6 +117,8 @@ describe('mix routes', () => {
   it('records plays, unless history is turned off', async () => {
     const { app, history } = setup();
     expect((await app.inject({ method: 'POST', url: '/api/plays', payload: { plays: [report] } })).json()).toEqual({ recorded: 1 });
+    // The same report again (its answer was lost as the app closed): not counted twice.
+    expect((await app.inject({ method: 'POST', url: '/api/plays', payload: { plays: [report] } })).json()).toEqual({ recorded: 0 });
     expect(history.stats().plays).toBe(1);
     expect((await app.inject({ method: 'POST', url: '/api/plays', payload: { plays: [{ ...report, hour: 25 }] } })).statusCode).toBe(400);
     await app.inject({ method: 'PUT', url: '/api/settings/mixes', payload: { recordHistory: false }, remoteAddress: HOME });

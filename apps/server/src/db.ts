@@ -178,6 +178,10 @@ const MIGRATIONS = [
      data         TEXT NOT NULL,
      generated_at TEXT NOT NULL
    );`,
+  // A report can arrive twice (sent as the app closed, then again on the next launch): one play per
+  // song per start time.
+  `DELETE FROM plays WHERE id NOT IN (SELECT MIN(id) FROM plays GROUP BY recording_id, played_at);
+   CREATE UNIQUE INDEX plays_unique ON plays (recording_id, played_at);`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

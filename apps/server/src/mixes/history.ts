@@ -34,10 +34,13 @@ export class History {
     private readonly library: Pick<Library, 'track' | 'trackByRecording'>,
   ) {}
 
-  /** Store reports from a device. Songs no longer in the library are kept by recording alone. Returns how many. */
+  /**
+   * Store reports from a device. Songs no longer in the library are kept by recording alone. A report
+   * already stored (sent again after a lost answer) is ignored. Returns how many were new.
+   */
   async record(reports: PlayReport[]): Promise<number> {
     const insert = this.db.prepare(
-      `INSERT INTO plays (recording_id, track_id, artist_id, album_id, played_at, hour, weekday, seconds, skipped)
+      `INSERT OR IGNORE INTO plays (recording_id, track_id, artist_id, album_id, played_at, hour, weekday, seconds, skipped)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const rows = await Promise.all(
@@ -46,10 +49,11 @@ export class History {
         return { r, track };
       }),
     );
+    let added = 0;
     this.db.exec('BEGIN');
     try {
       for (const { r, track } of rows) {
-        insert.run(
+        added += insert.run(
           track?.recordingId ?? r.recordingId,
           track?.id ?? null,
           track?.artistId ?? null,
@@ -59,14 +63,14 @@ export class History {
           r.weekday,
           Math.round(r.seconds),
           r.skipped ? 1 : 0,
-        );
+        ).changes as number;
       }
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
-    return rows.length;
+    return added;
   }
 
   /** Every play since `days` ago, oldest first. */

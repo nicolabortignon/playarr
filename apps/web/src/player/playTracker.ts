@@ -69,14 +69,32 @@ export class PlayTracker {
   }
 }
 
-/** Send reports, keeping the ones that couldn't go (offline, server restarting) for next time. */
+let sending = false;
+
+/**
+ * Send reports, keeping the ones that couldn't go (offline, server restarting) for next time. One
+ * request at a time: reports arriving meanwhile wait for it, then go together. (The server ignores a
+ * report it already has, e.g. one sent as the app closed whose answer never came back.)
+ */
 export function sendWithRetry(plays: PlayReport[], report: (plays: PlayReport[]) => Promise<unknown> = api.reportPlays) {
-  const pending = [...readPending(), ...plays].slice(-MAX_PENDING);
-  writePending(pending);
-  void report(pending).then(
-    () => writePending(readPending().filter((p) => !pending.some((q) => same(p, q)))),
-    () => {},
-  );
+  writePending([...readPending(), ...plays].slice(-MAX_PENDING));
+  if (sending) return;
+  const batch = readPending();
+  if (!batch.length) return;
+  sending = true;
+  void report(batch)
+    .then(
+      () => {
+        writePending(readPending().filter((p) => !batch.some((q) => same(p, q))));
+        return true;
+      },
+      () => false,
+    )
+    .then((sent) => {
+      sending = false;
+      // More arrived while this was on its way: send them now.
+      if (sent && readPending().length) sendWithRetry([], report);
+    });
 }
 
 const same = (a: PlayReport, b: PlayReport) => a.trackId === b.trackId && a.at === b.at;
