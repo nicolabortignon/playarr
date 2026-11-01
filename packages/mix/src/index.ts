@@ -2,3 +2,4 @@
 // mix analysis types, the transition planner and the audio renderer. No dependencies.
 
 export * from './types.ts';
+export * from './analysis/fft.ts';

@@ -3,6 +3,8 @@
  * Input is mono float samples at SAMPLE_RATE (ffmpeg does the decoding and downmixing).
  */
 
+import { Fft, hann } from '@playarr/mix';
+
 /** Bump when the analysis changes, so stored features are recomputed. */
 export const ANALYSIS_VERSION = 1;
 export const SAMPLE_RATE = 11025;
@@ -289,67 +291,9 @@ function silent(seconds: number): AudioFeatures {
   };
 }
 
-function hann(n: number): Float64Array {
-  const w = new Float64Array(n);
-  for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
-  return w;
-}
-
 function percentile(sorted: number[], q: number): number {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))]!;
 }
 
 const scale = (v: number, lo: number, hi: number) => Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
 const round = (v: number, digits = 3) => Math.round(v * 10 ** digits) / 10 ** digits;
-
-/** Iterative radix-2 complex FFT, in place. */
-class Fft {
-  private readonly rev: Uint32Array;
-  private readonly cos: Float64Array;
-  private readonly sin: Float64Array;
-
-  constructor(private readonly n: number) {
-    const bits = Math.log2(n);
-    this.rev = new Uint32Array(n);
-    for (let i = 0; i < n; i++) {
-      let r = 0;
-      for (let b = 0; b < bits; b++) r = (r << 1) | ((i >> b) & 1);
-      this.rev[i] = r;
-    }
-    this.cos = new Float64Array(n / 2);
-    this.sin = new Float64Array(n / 2);
-    for (let i = 0; i < n / 2; i++) {
-      this.cos[i] = Math.cos((2 * Math.PI * i) / n);
-      this.sin[i] = -Math.sin((2 * Math.PI * i) / n);
-    }
-  }
-
-  transform(re: Float64Array, im: Float64Array) {
-    const n = this.n;
-    for (let i = 0; i < n; i++) {
-      const j = this.rev[i]!;
-      if (j > i) {
-        [re[i], re[j]] = [re[j]!, re[i]!];
-        [im[i], im[j]] = [im[j]!, im[i]!];
-      }
-    }
-    for (let size = 2; size <= n; size *= 2) {
-      const half = size / 2;
-      const step = n / size;
-      for (let start = 0; start < n; start += size) {
-        for (let k = 0; k < half; k++) {
-          const wr = this.cos[k * step]!;
-          const wi = this.sin[k * step]!;
-          const a = start + k;
-          const b = a + half;
-          const tr = re[b]! * wr - im[b]! * wi;
-          const ti = re[b]! * wi + im[b]! * wr;
-          re[b] = re[a]! - tr;
-          im[b] = im[a]! - ti;
-          re[a]! += tr;
-          im[a]! += ti;
-        }
-      }
-    }
-  }
-}
