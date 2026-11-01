@@ -11,12 +11,13 @@ const albumTracks = async (id: number) =>
 const artistTracks = (id: number) =>
   queryClient.fetchQuery({ queryKey: ['artist-tracks', id], queryFn: () => api.artistTracks(id) });
 
+/** Play means in order wherever it's pressed; only Shuffle shuffles (not whatever shuffle was left on). */
 export async function playAlbum(id: number, opts?: { shuffle?: boolean }) {
-  usePlayer.getState().playTracks(await albumTracks(id), 0, opts);
+  usePlayer.getState().playTracks(await albumTracks(id), 0, { shuffle: false, ...opts });
 }
 
 export async function playArtist(id: number, opts?: { shuffle?: boolean }) {
-  usePlayer.getState().playTracks(await artistTracks(id), 0, opts);
+  usePlayer.getState().playTracks(await artistTracks(id), 0, { shuffle: false, ...opts });
 }
 
 export async function shuffleLibrary() {

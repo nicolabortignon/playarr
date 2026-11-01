@@ -1,5 +1,5 @@
 import { BookmarkPlus, ListEnd, ListPlus, Loader2, Play, RefreshCw, Shuffle } from 'lucide-react';
-import { useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
 import { Menu } from '../components/Menu';
 import { MixCover } from '../components/Mixes';
 import { BackButton, ErrorState, Skeleton } from '../components/Section';
@@ -16,6 +16,7 @@ export function MixPage() {
   const regenerate = useRegenerateMix(key);
   const save = useSaveMix(key);
   const playTracks = usePlayer((s) => s.playTracks);
+  const navigate = useNavigate();
 
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !mix) {
@@ -86,7 +87,12 @@ export function MixPage() {
           className="size-12 border border-paper/15 text-paper"
           label="Mix actions"
           items={[
-            { label: save.isPending ? 'Saving…' : 'Save as playlist', icon: BookmarkPlus, onSelect: () => save.mutate() },
+            {
+              label: 'Save as playlist',
+              icon: BookmarkPlus,
+              // Opens the new playlist, so it's clear what was made and where it lives.
+              onSelect: () => !save.isPending && save.mutate(undefined, { onSuccess: (playlist) => navigate(`/playlists/${playlist.id}`) }),
+            },
             { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(mix.tracks, 'next') },
             { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(mix.tracks, 'end') },
           ]}
