@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import type { MixMapProgress } from '../lib/api';
 import { CROSSFADES, usePrefs, type Transitions } from '../lib/prefs';
-import { useMixMapProgress } from '../lib/queries';
+import { useAnalyzeForMixing, useMixMapProgress } from '../lib/queries';
 import { canSetVolume } from '../player/decks';
 import { OfflineStorage } from './OfflineStorage';
 import { PillGroup, SettingsSection, Switch } from './SettingsControls';
@@ -41,10 +41,17 @@ function mixProgressText(p: MixMapProgress): string {
   return `${[`Ready for DJ mix: ${count(p.ready)} of ${songs(p.songs)}`, waiting, failed].filter(Boolean).join(' · ')}.`;
 }
 
+const SECONDARY_BUTTON =
+  'inline-flex h-10 items-center justify-center rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5 disabled:opacity-50';
+
 /** Under the DJ mix choice: how much of the library can be mixed yet. Asked for only while it's shown. */
 function MixProgress() {
   const { data } = useMixMapProgress();
+  const analyze = useAnalyzeForMixing();
   if (!data || (data.enabled && data.songs === 0)) return null;
+  // Only when there's something to start: songs left that aren't failed lately (those wait a day
+  // before another try), and nothing under way already (the counts and the bar show that).
+  const startable = data.enabled && data.ready + data.failed < data.songs && data.waiting === 0 && data.working === 0;
   // A bar only for a scan that will finish: songs analysed as they come up never all get there.
   const bar = data.enabled && data.libraryScan && data.ready < data.songs;
   return (
@@ -60,6 +67,11 @@ function MixProgress() {
         >
           <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(data.ready / data.songs) * 100}%` }} />
         </div>
+      )}
+      {startable && (
+        <button type="button" className={`mt-3 ${SECONDARY_BUTTON}`} disabled={analyze.isPending} onClick={() => analyze.mutate()}>
+          Analyse all songs now
+        </button>
       )}
     </div>
   );

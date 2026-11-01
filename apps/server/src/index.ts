@@ -174,7 +174,7 @@ mixRoutes(app, {
   history,
   store,
   analysisAvailable: analyzer.canAnalyzeAudio,
-  analyzeLibrary: () => void library.allTracks().then((tracks) => analyzer.ensure(tracks.map((t) => t.recordingId))),
+  analyzeLibrary: () => void analyzer.analyzeLibrary().catch((err: unknown) => app.log.warn({ err }, 'queueing the library for analysis failed')),
   library,
   scrobbler,
   db,

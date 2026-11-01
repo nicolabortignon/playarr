@@ -81,9 +81,9 @@ function fakeDsp() {
  * maxSeconds, and stop at the file's end.
  */
 function withSong(
-  opts: { seconds: number; listed?: number; kind?: Kind; format?: Track['format']; db?: DatabaseSync; dsp?: Dsp },
+  opts: { seconds: number; listed?: number; kind?: Kind; format?: Track['format']; db?: DatabaseSync; dsp?: Dsp; songs?: string[] },
 ) {
-  const { seconds, listed = seconds, kind = 'timed', format = FLAC, db = freshDb(), dsp } = opts;
+  const { seconds, listed = seconds, kind = 'timed', format = FLAC, db = freshDb(), dsp, songs = [] } = opts;
   const pcm = vi.fn(async (_path: string, decode: PcmOptions) => {
     if (decode.fromEnd) throw new Error('The end of a file is found by decoding at known positions');
     const from = decode.startSeconds ?? 0;
@@ -96,6 +96,7 @@ function withSong(
       return { fileId: 1, duration: listed, format } as Track;
     },
     file: async () => ({ id: 1, sourceId: 1, path: '/music/song.flac' }),
+    allTracks: async () => songs.map((recordingId) => ({ recordingId }) as Track),
   } as unknown as Library;
   const files = { resolve: () => ({ media: { pcm }, path: '/music/song.flac' }) } as unknown as FileResolver;
   const analyzer = new Analyzer(db, library, files, { enabled: true, log: { warn: () => {} }, dsp });
@@ -327,6 +328,41 @@ describe('Analyzer mix maps', () => {
     map.run('old', MIX_MAP_VERSION - 1, '{}', null, now);
     map.run('failed', MIX_MAP_VERSION, null, 'boom', now);
     expect(analyzer.progress()).toMatchObject({ features: 1, mixMaps: 1 });
+  });
+});
+
+describe('Analyzer library analysis', () => {
+  /** An analyzer over a library of `ids` whose decodes never finish, so queued songs stay queued. */
+  function withLibrary(songs: string[]) {
+    const { analyzer, pcm, db } = withSong({ seconds: 200, songs });
+    pcm.mockImplementation(() => new Promise(() => {}));
+    return { analyzer, db };
+  }
+
+  it('queues the library’s songs still needing a mix map, in the backlog, and says how many', async () => {
+    const { analyzer, db } = withLibrary(['local:ready', 'local:new', 'local:old', 'local:failed', 'local:retry', 'track:9']);
+    const now = new Date().toISOString();
+    const longAgo = new Date(Date.now() - 2 * 24 * 3600_000).toISOString();
+    const feature = db.prepare('INSERT INTO track_features (recording_id, version, features, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)');
+    const map = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
+    for (const id of ['local:ready', 'local:old', 'local:failed', 'local:retry']) feature.run(id, ANALYSIS_VERSION, '{}', now);
+    map.run('local:ready', MIX_MAP_VERSION, '{}', null, now);
+    map.run('local:old', MIX_MAP_VERSION - 1, '{}', null, now);
+    map.run('local:failed', MIX_MAP_VERSION, null, 'boom', now); // failed lately: not yet
+    map.run('local:retry', MIX_MAP_VERSION, null, 'boom', longAgo); // due for another try
+    expect(await analyzer.analyzeLibrary()).toBe(3); // new, old and retry; never track: ids
+    expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 2, working: 1 });
+    // Pressed again: the same songs are already waiting or being measured.
+    expect(await analyzer.analyzeLibrary()).toBe(0);
+    expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 2, working: 1 });
+  });
+
+  it('leaves songs someone is waiting for ahead of the backlog', async () => {
+    const { analyzer } = withLibrary(['local:a', 'local:b', 'local:c']);
+    analyzer.ensure(['local:a'], { urgent: true }); // starts at once
+    analyzer.ensure(['local:b'], { urgent: true }); // waits, ahead of the backlog
+    expect(await analyzer.analyzeLibrary()).toBe(1);
+    expect(analyzer.pending(['local:b', 'local:c'])).toBe(2);
   });
 });
 

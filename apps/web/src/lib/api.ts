@@ -212,6 +212,8 @@ export const api = {
   transition: (from: number, to: number, mode: MixMode, position?: number, files?: { fromFileId: number; toFileId: number }) =>
     request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files }) }),
   mixMapProgress: () => get<MixMapProgress>('/api/mix-maps/progress'),
+  /** Queues every song still to be analysed for DJ mix, once (Settings → Mixes' switch stays as it is). */
+  analyzeForMixing: () => request<{ queued: number }>('/api/mix-maps/analyze', { method: 'POST' }),
   /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
   mixMaps: (ids: string[]) =>
     request<Record<string, MixMap & { cues?: CuePoints }>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),

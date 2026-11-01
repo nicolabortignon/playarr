@@ -247,11 +247,13 @@ export class Analyzer {
   /**
    * Queue whatever hasn't been analyzed (or tagged) yet; `audio: false` only fetches tags (cheap).
    * `urgent` is for songs someone is waiting for: they go ahead of the library's backlog, which
-   * after an upgrade can be every song in it.
+   * after an upgrade can be every song in it. Answers how many songs it queued for audio analysis
+   * (songs already waiting or being measured aren't counted again).
    */
-  ensure(ids: string[], opts: { audio?: boolean; urgent?: boolean } = {}) {
+  ensure(ids: string[], opts: { audio?: boolean; urgent?: boolean } = {}): number {
     const unique = [...new Set(ids)].filter((id) => !id.startsWith('track:'));
-    if (!unique.length || this.closed) return;
+    if (!unique.length || this.closed) return 0;
+    let queued = 0;
     if (this.canAnalyzeAudio && opts.audio !== false) {
       // Done once both the features and the mix map are measured by their current versions (or
       // failed recently): a song measured before mix maps existed, or before a version bump, is
@@ -261,9 +263,12 @@ export class Analyzer {
       for (const id of unique) {
         if ((features.has(id) && maps.has(id)) || this.running.has(id) || this.urgentQueue.has(id)) continue;
         if (opts.urgent) {
-          this.audioQueue.delete(id);
+          if (!this.audioQueue.delete(id)) queued++;
           this.urgentQueue.add(id);
-        } else this.audioQueue.add(id);
+        } else if (!this.audioQueue.has(id)) {
+          this.audioQueue.add(id);
+          queued++;
+        }
       }
       this.pump();
     }
@@ -279,6 +284,17 @@ export class Analyzer {
     const before = this.metaQueue.size;
     for (const id of known) if (!tagged.has(id)) this.metaQueue.add(id);
     if (this.metaQueue.size > before) this.scheduleMeta();
+    return queued;
+  }
+
+  /**
+   * Every song in the library still to be measured goes in the backlog (Settings → Mixes → Measure
+   * every song, or a one-off from Settings → Playback): songs someone is waiting for still go first.
+   * Answers how many were queued.
+   */
+  async analyzeLibrary(): Promise<number> {
+    const tracks = await this.library.allTracks();
+    return this.ensure(tracks.map((t) => t.recordingId));
   }
 
   /**

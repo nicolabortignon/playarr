@@ -50,6 +50,23 @@ export const useMixMapProgress = (enabled = true) =>
     refetchInterval: (q) => (q.state.data && (q.state.data.waiting > 0 || q.state.data.working > 0) ? 10_000 : false),
   });
 
+/** Settings → Playback → Analyse all songs now: the progress line then polls while they're analysed. */
+export function useAnalyzeForMixing() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.analyzeForMixing,
+    onSuccess: ({ queued }) => {
+      toast(
+        queued
+          ? `Analysing ${queued.toLocaleString('en')} ${queued === 1 ? 'song' : 'songs'} in the background`
+          : 'Every song is already analysed or waiting its turn',
+      );
+      void client.invalidateQueries({ queryKey: ['mix-map-progress'] });
+    },
+    onError: (err) => toast((err as Error).message, 'error'),
+  });
+}
+
 export const useArtists = () => useQuery({ queryKey: ['artists'], queryFn: api.artists });
 
 export const artistQuery = (id: number) => queryOptions({ queryKey: ['artist', id], queryFn: () => api.artist(id) });

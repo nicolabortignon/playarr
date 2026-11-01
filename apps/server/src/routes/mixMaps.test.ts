@@ -1,6 +1,15 @@
 import type { CuePoints, MixMap } from '@playarr/mix';
+import { MIX_MAP_VERSION } from '@playarr/mix';
+import type { Track } from '@playarr/shared';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
+import { Analyzer } from '../analysis/analyzer.ts';
+import { ANALYSIS_VERSION } from '../analysis/dsp.ts';
+import type { FileResolver } from '../catalog/files.ts';
+import { CatalogStore } from '../catalog/store.ts';
+import { freshDb } from '../catalog/testFixtures.ts';
+import type { Library } from '../library/library.ts';
+import { MIXES_KEY } from '../mixes/settings.ts';
 import { mixMapRoutes } from './mixMaps.ts';
 
 const SONG = '0b6a2c1e-1111-4222-8333-944455556666';
@@ -24,6 +33,7 @@ function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CueP
     }),
     ensure: vi.fn(),
     mixMapProgress: () => ({ songs: 5678, ready: 1234, failed: 3, waiting: 4400, working: 1 }),
+    analyzeLibrary: vi.fn(async () => 4400),
   };
   const durations = opts.durations ?? {};
   const library = {
@@ -76,6 +86,51 @@ describe('mix map routes', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({});
     expect(analyzer.ensure).not.toHaveBeenCalled();
+  });
+
+  it('queues the library for analysis on request, from the home network only', async () => {
+    const { app, analyzer } = setup();
+    const res = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ queued: 4400 });
+    const away = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze', remoteAddress: '203.0.113.9' });
+    expect(away.statusCode).toBe(403);
+    expect(analyzer.analyzeLibrary).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why nothing can be analysed when audio analysis is off', async () => {
+    const { app, analyzer } = setup({ available: false });
+    const res = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/audio analysis is off/i);
+    expect(analyzer.analyzeLibrary).not.toHaveBeenCalled();
+  });
+
+  it('queues only the songs still needing a mix map, once, and leaves the library setting alone', async () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    store.setAppSetting(MIXES_KEY, JSON.stringify({ analyzeLibrary: false }));
+    const now = new Date().toISOString();
+    db.prepare('INSERT INTO track_features (recording_id, version, features, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)').run('local:ready', ANALYSIS_VERSION, '{}', now);
+    db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)').run('local:ready', MIX_MAP_VERSION, '{}', now);
+    const library = {
+      allTracks: async () => ['local:ready', 'local:a', 'local:b'].map((recordingId) => ({ recordingId }) as Track),
+      trackByRecording: async () => ({ fileId: 1, duration: 200 }) as Track,
+      file: async () => ({ id: 1 }),
+    } as unknown as Library;
+    // Decodes that never finish: queued songs stay queued.
+    const files = { resolve: () => ({ media: { pcm: () => new Promise(() => {}) }, path: '/x.flac' }) } as unknown as FileResolver;
+    const analyzer = new Analyzer(db, library, files, { enabled: true, log: { warn: () => {} }, dsp: { analyze: vi.fn(), mixMap: vi.fn() } });
+    const app = Fastify();
+    mixMapRoutes(app, { analyzer, library });
+    try {
+      const first = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze' });
+      expect(first.json()).toEqual({ queued: 2 });
+      expect((await app.inject({ method: 'POST', url: '/api/mix-maps/analyze' })).json()).toEqual({ queued: 0 });
+      expect(JSON.parse(store.appSetting(MIXES_KEY)!)).toEqual({ analyzeLibrary: false });
+    } finally {
+      analyzer.close();
+    }
   });
 
   it('answers a song’s cue points, or none', async () => {

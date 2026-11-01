@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import type { Library } from '../library/library.ts';
+import { requireLocal } from './settings.ts';
 
 const RECORDING_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|track:\d+)$/i;
 
@@ -18,7 +19,7 @@ const cueInput = z.object({ mixIn: z.number().min(0).nullable().optional(), mixO
 export function mixMapRoutes(
   app: FastifyInstance,
   deps: {
-    analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure' | 'mixMapProgress'>;
+    analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure' | 'mixMapProgress' | 'analyzeLibrary'>;
     library: Pick<Library, 'trackByRecording'>;
     /** A song's cue points changed: its cached transitions are out of date (the transition service's forget). */
     onCuesChanged?: (recordingId: string) => Promise<void>;
@@ -57,6 +58,14 @@ export function mixMapRoutes(
     // Nothing is analysed without audio analysis: no counts to make.
     if (!analyzer.canAnalyzeAudio) return { enabled: false, songs: 0, ready: 0, failed: 0, waiting: 0, working: 0, libraryScan };
     return { enabled: true, ...analyzer.mixMapProgress(), libraryScan };
+  });
+
+  // Settings → Playback → Analyse all songs now: the library's backlog queued once, like the
+  // Settings → Mixes switch does when turned on (and from the home network, like that setting),
+  // without turning that switch on. Pressed twice, the songs already waiting aren't queued again.
+  app.post('/api/mix-maps/analyze', { onRequest: requireLocal }, async (_req, reply) => {
+    if (!analyzer.canAnalyzeAudio) return reply.code(409).send({ error: 'Audio analysis is off on this server (set ANALYSIS=on in its .env)' });
+    return { queued: await analyzer.analyzeLibrary() };
   });
 
   app.get<{ Params: { id: string } }>('/api/recordings/:id/cues', async (req, reply) => {
