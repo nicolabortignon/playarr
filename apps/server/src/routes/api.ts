@@ -27,17 +27,26 @@ export function apiRoutes(
 ) {
   const { config, lidarr, library, media } = deps;
 
-  app.get('/api/health', async (): Promise<HealthStatus> => {
-    const [lidarrResult, mediaResult] = await Promise.allSettled([
+  // Every open app asks every minute: the slow part (Lidarr, the music files) is shared for a little while.
+  const PROBE_TTL_MS = 20_000;
+  let probe: { at: number; result: Promise<[PromiseSettledResult<{ version?: string } | undefined>, PromiseSettledResult<void>]> } | null = null;
+  const probes = () => {
+    if (probe && Date.now() - probe.at < PROBE_TTL_MS) return probe.result;
+    const result = Promise.allSettled([
       lidarr.configured ? lidarr.systemStatus() : Promise.resolve(undefined),
       (async () => {
         // Probe a real file so a bad PATH_MAP shows up here, not on first play.
-        const probe = (await library.albums('added', 1))[0];
-        const track = probe && (await library.album(probe.id))?.tracks[0];
+        const track = (await library.allTracks())[0];
         const file = track && (await library.file(track.fileId));
         await media.check(file ? mapPath(file.path, config.pathMap) : undefined);
       })(),
     ]);
+    probe = { at: Date.now(), result };
+    return result;
+  };
+
+  app.get('/api/health', async (): Promise<HealthStatus> => {
+    const [lidarrResult, mediaResult] = await probes();
     const lidarrOk = lidarrResult.status === 'fulfilled';
     const mediaOk = mediaResult.status === 'fulfilled';
     return {
