@@ -13,7 +13,7 @@ import { SourceError, type SourceManager } from '../catalog/sources.ts';
 import type { CatalogStore } from '../catalog/store.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
-import { isLocalAddress } from '../net.ts';
+import { isLocalRequest } from '../net.ts';
 import { UpdateError, type UpdateBridge } from '../update/bridge.ts';
 
 /** Where a folder is, and how to reach it over SSH, SFTP or SMB. */
@@ -113,7 +113,7 @@ export function readRequestSettings(store: Pick<CatalogStore, 'appSetting'>): Re
 type LibraryControl = Pick<Library, 'refresh' | 'reload' | 'refreshing'>;
 type Id = { Params: { id: string } };
 
-const isLocal = (req: FastifyRequest) => isLocalAddress(req.socket.remoteAddress);
+const isLocal = (req: FastifyRequest) => isLocalRequest(req);
 
 /** Until Playarr has a login, settings can only be changed from the local network. */
 export async function requireLocal(req: FastifyRequest, reply: FastifyReply) {
@@ -220,9 +220,10 @@ export function settingsRoutes(
 
   app.get('/api/settings/folders/access', editable, (): FolderAccessOptions => ({ smb: deps.shares }));
 
-  app.post<Id>('/api/settings/sources/:id/rescan', editable, (_req, reply) =>
+  app.post<Id>('/api/settings/sources/:id/rescan', editable, (req, reply) =>
     handle(reply, () => {
-      syncInBackground();
+      // Just this source: walking every share (and asking Lidarr) for one folder's new files is slow.
+      void library.refresh(Number(req.params.id)).catch(() => {});
       return reply.code(202).send({});
     }),
   );

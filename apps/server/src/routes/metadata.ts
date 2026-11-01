@@ -6,7 +6,7 @@ import type { CatalogStore } from '../catalog/store.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { trackMetadata } from '../library/trackMetadata.ts';
-import { isLocalAddress } from '../net.ts';
+import { isLocalRequest } from '../net.ts';
 
 /** Track menu → Show metadata. File paths and source locations only for the home network. */
 export function metadataRoutes(
@@ -22,7 +22,7 @@ export function metadataRoutes(
 ) {
   // Show metadata → Match again. Changes the catalog, so the home network only, like Settings.
   app.post<{ Params: { fileId: string } }>('/api/files/:fileId/rematch', async (req, reply): Promise<RematchResult | void> => {
-    if (!isLocalAddress(req.socket.remoteAddress)) {
+    if (!isLocalRequest(req)) {
       return reply.code(403).send({ error: 'Matching songs again works from your home network' });
     }
     const fileId = Number(req.params.fileId);
@@ -65,7 +65,7 @@ export function metadataRoutes(
         },
       },
       id,
-      isLocalAddress(req.socket.remoteAddress),
+      isLocalRequest(req),
     );
     return meta ?? reply.code(404).send({ error: 'Track not found' });
   });

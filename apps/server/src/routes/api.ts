@@ -4,6 +4,7 @@ import type { Config } from '../config.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { mapPath, type MediaSource } from '../media/index.ts';
+import { requireLocal } from './settings.ts';
 
 const ALBUM_SORTS: AlbumSort[] = ['title', 'artist', 'year', 'added'];
 
@@ -54,7 +55,8 @@ export function apiRoutes(
     };
   });
 
-  app.post('/api/library/refresh', async () => {
+  // A full rescan is heavy (every folder and Lidarr): from the home network only, like settings.
+  app.post('/api/library/refresh', { onRequest: requireLocal }, async () => {
     await library.refresh();
     return library.stats();
   });

@@ -82,10 +82,13 @@ export class Library {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** Sync every source into the catalog and rebuild. Concurrent callers share one refresh. */
-  refresh(): Promise<void> {
+  /**
+   * Sync every source (or just `only`; the others keep their last sync) into the catalog and rebuild.
+   * Concurrent callers share one refresh.
+   */
+  refresh(only?: number): Promise<void> {
     const started = Date.now();
-    this.inflight ??= this.build()
+    this.inflight ??= this.build(only)
       .then((snap) => {
         this.snapshot = snap;
         this.lastError = null;
@@ -111,8 +114,8 @@ export class Library {
     return this.snapshot!;
   }
 
-  private async build(): Promise<Snapshot> {
-    const sources = this.sources();
+  private async build(only?: number): Promise<Snapshot> {
+    const sources = this.sources().filter((s) => only === undefined || s.id === only);
     const failures: Error[] = [];
     // In Settings order: later sources match their files against what earlier ones reported.
     for (const { id, source } of sources) {

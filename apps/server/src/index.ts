@@ -39,6 +39,7 @@ import { watchStalls } from './stallMonitor.ts';
 import { History } from './mixes/history.ts';
 import { Mixes } from './mixes/mixes.ts';
 import { mixRoutes } from './routes/mixes.ts';
+import { isFromApp } from './net.ts';
 
 const config = loadConfig();
 const app = Fastify({
@@ -121,6 +122,10 @@ streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
+// Changes only from Playarr's own pages (see isFromApp).
+app.addHook('onRequest', async (req, reply) => {
+  if (req.url.startsWith('/api/') && !isFromApp(req)) return reply.code(403).send({ error: 'Changes must come from Playarr itself' });
+});
 mixRoutes(app, {
   mixes,
   history,

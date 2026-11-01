@@ -56,7 +56,8 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     ...init,
-    headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+    // X-Playarr: the server only accepts changes from Playarr's own pages (other sites can't send it).
+    headers: { Accept: 'application/json', 'X-Playarr': '1', ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
