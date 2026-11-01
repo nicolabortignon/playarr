@@ -6,18 +6,17 @@
 import type { MixMap } from '../types.ts';
 import { MIX_MAP_VERSION } from '../types.ts';
 import { beatGrid } from './beatGrid.ts';
-import { downbeats, phraseEnergyFrom } from './downbeats.ts';
+import { downbeats } from './downbeats.ts';
 import { detectKey } from './key.ts';
 import { ANALYSIS_RATE, BEAT_ONSET_LATENCY_FRAMES, analyzeOnsets, type Onsets } from './onset.ts';
 import { sections } from './sections.ts';
+import { BEATS_PER_BAR, BEATS_PER_PHRASE, mod } from './shared.ts';
 
 /** How much of a song's beginning the server decodes for the mix analysis (all of a shorter song). */
 export const MIX_HEAD_SECONDS = 420;
 /** How much of a longer song's end it decodes as well: where the outro is, and where it is mixed out. */
 export const MIX_TAIL_SECONDS = 180;
 
-const BEATS_PER_BAR = 4;
-const BEATS_PER_PHRASE = 16;
 /**
  * The tail's beats may sit this far from the head's grid carried on to them before the grid counts
  * as drifting (the same tolerance as beatGrid's own stability check): 25 ms is where a blend's
@@ -59,12 +58,14 @@ export function analyzeMix(head: Float32Array, tail: Float32Array | null, durati
   const tailPart = tail && tail.length && songSeconds > headSeconds ? measureTail(tail, songSeconds, rate) : undefined;
 
   if (!(grid.bpm > 0)) {
-    // No beat: nothing to mix on, but where the sound ends still matters for a plain crossfade.
+    // No beat: nothing to mix on, but where the sound ends and whether the song starts and ends on
+    // full sound still matter for a plain crossfade.
     const noGrid = { bpm: 0, firstBeat: 0 };
     const nothing = { downbeatOffset: 0, phraseEnergy: [] };
-    const headSound = sections(frames, noGrid, nothing, headSeconds).soundEnd;
-    const tailSound = tailPart ? sections(tailPart.frames, noGrid, nothing, tailPart.seconds).soundEnd : 0;
-    const soundEnd = tailPart && tailSound > 0 ? tailPart.start + tailSound : headSound;
+    const start = sections(frames, noGrid, nothing, headSeconds);
+    const end = tailPart ? sections(tailPart.frames, noGrid, nothing, tailPart.seconds) : undefined;
+    const fromTail = end !== undefined && end.soundEnd > 0;
+    const soundEnd = fromTail ? tailPart!.start + end.soundEnd : Math.min(start.soundEnd, tailPart?.start ?? Infinity);
     return finish(songSeconds, {
       bpm: 0,
       firstBeat: 0,
@@ -75,8 +76,8 @@ export function analyzeMix(head: Float32Array, tail: Float32Array | null, durati
       ...(key ? { key } : {}),
       introEnd: 0,
       outroStart: soundEnd,
-      coldStart: false,
-      coldEnd: false,
+      coldStart: start.coldStart,
+      coldEnd: fromTail ? end.coldEnd : !tailPart && start.coldEnd,
       soundEnd,
       phraseEnergy: [],
     });
@@ -94,7 +95,6 @@ export function analyzeMix(head: Float32Array, tail: Float32Array | null, durati
   const headPeriod = 60 / grid.bpm;
   const beatsBefore = Math.max(0, Math.min(BEATS_PER_BAR - 1, Math.floor(start.firstPhrase / headPeriod + 1e-6)));
   const firstBeat = Math.max(0, round(start.firstPhrase - beatsBefore * headPeriod, 4));
-  const phraseEnergy = phraseEnergyFrom(frames, { bpm: grid.bpm, firstBeat }, beatsBefore, headSeconds);
 
   let bpm = grid.bpm;
   let gridStable = grid.gridStable;
@@ -138,7 +138,8 @@ export function analyzeMix(head: Float32Array, tail: Float32Array | null, durati
     coldStart: start.coldStart,
     coldEnd,
     soundEnd,
-    phraseEnergy,
+    // Counted from `firstPhrase`, so phraseEnergy[k] is the phrase from the planner's phrase line k.
+    phraseEnergy: start.phraseEnergy,
   });
 }
 
@@ -286,5 +287,4 @@ function sample(onset: Float64Array, x: number): number {
 /** `x` wrapped into −period/2 … period/2. */
 const wrap = (x: number, period: number) => x - Math.round(x / period) * period;
 const periodOf = (bpm: number, fps: number) => (fps * 60) / bpm;
-const mod = (n: number, m: number) => ((n % m) + m) % m;
 const round = (v: number, digits: number) => Math.round(v * 10 ** digits) / 10 ** digits;

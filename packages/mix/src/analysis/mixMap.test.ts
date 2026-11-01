@@ -119,6 +119,33 @@ describe('analyzeMix', () => {
     expectInvariants(map);
   });
 
+  it('puts intro, outro and drop on the planner’s phrase lines whatever the leading silence', () => {
+    const bpm = 128;
+    for (const silence of [2, 3, 5, 10]) {
+      const track = song({ bpm, rate: RATE, introBeats: 32, bodyBeats: 64, outroBeats: 32 });
+      const samples = new Float32Array(Math.round(silence * RATE) + track.samples.length);
+      samples.set(track.samples, Math.round(silence * RATE));
+      const map = analyzeMix(samples, null, samples.length / RATE);
+      const period = 60 / map.bpm;
+      const line0 = map.firstBeat + map.downbeatOffset * period;
+      for (const [name, t] of [
+        ['intro end', map.introEnd],
+        ['outro start', map.outroStart],
+        ['first drop', map.firstDrop!],
+      ] as const) {
+        const beats = (t - line0) / period;
+        const offPhrase = Math.abs(beats - 16 * Math.round(beats / 16));
+        expect(offPhrase, `${silence} s of silence: ${name}`).toBeLessThan(0.05);
+      }
+      expect(Math.abs(map.introEnd - (silence + track.truth.introEnd)), `${silence} s`).toBeLessThan(period);
+      expect(Math.abs(map.firstDrop! - (silence + track.truth.introEnd)), `${silence} s`).toBeLessThan(period);
+      // phraseEnergy[k] is the phrase from phrase line k: the drop's phrase is loud, the one before quiet.
+      const dropPhrase = Math.round((map.firstDrop! - line0) / (16 * period));
+      expect(map.phraseEnergy[dropPhrase], `${silence} s`).toBeGreaterThan(0.9);
+      expect(map.phraseEnergy[dropPhrase - 1], `${silence} s`).toBeLessThan(0.5);
+    }
+  });
+
   it('gives an empty map for silence and for too little audio', () => {
     const empty = (duration: number, soundEnd: number): MixMap => ({
       version: MIX_MAP_VERSION,

@@ -19,8 +19,9 @@ export interface MixMap {
    */
   downbeatOffset: number;
   /**
-   * 0–1: how sure the bar starts are. Below 0.4 the planner doesn't trust phrase alignment (no long
-   * blend; quick mixes land on a beat). Missing counts as sure.
+   * 0–1: how sure the bar and phrase starts are (the bar's confidence times the phrase's: a
+   * fade-in with no drop to go by leaves the phrase start unsure). Below 0.4 the planner doesn't
+   * trust phrase alignment (no long blend; quick mixes land on a beat). Missing counts as sure.
    */
   downbeatConfidence?: number;
   /**
@@ -37,12 +38,19 @@ export interface MixMap {
   outroStart: number;
   /** The first big rise in energy, if any. */
   firstDrop?: number;
-  /** The song starts on full sound (no fade or intro), or ends abruptly. */
+  /**
+   * The song starts on full sound (no fade or intro), or ends on it (abruptly, not faded out). Full
+   * sound: about as loud as the main part of the song, and more than a kick on its own.
+   */
   coldStart: boolean;
   coldEnd: boolean;
   /** Where sound ends (before trailing silence). */
   soundEnd: number;
-  /** Energy 0–1 per 16-beat phrase, from the first downbeat. */
+  /**
+   * Energy 0–1 per 16-beat phrase, relative to the loudest: phraseEnergy[k] is the phrase from
+   * phrase line k (firstBeat + (downbeatOffset + 16k) beats), the first line being the music's first
+   * phrase start. Long songs: the first 7 minutes only.
+   */
   phraseEnergy: number[];
 }
 
