@@ -4,6 +4,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { api, ApiError, type TransitionAnswer } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
+import { type KeptTransition, transitionFileId, transitionPair, useOffline } from './offline';
 import { useSleep } from './sleep';
 import { useClock, usePlayer } from './store';
 import { readyTransition, useTransition, useUpcomingTransition } from './transitions';
@@ -47,12 +48,25 @@ function deferred() {
   return (a: TransitionAnswer) => answer(a);
 }
 
+/** A download that kept the transition from file `from` into file `to`, with its file on this device. */
+function keep(from: number, to: number, mode: 'auto' | 'party', aStart: number): KeptTransition {
+  const kept = { ...(ready(aStart) as KeptTransition), url: `/transitions/${from}-${to}.flac` };
+  useOffline.setState({
+    songs: { [transitionFileId(kept.url)]: { url: kept.url, bytes: 100, usedAt: 0 } },
+    pins: { 'album:1': { key: 'album:1', title: 'Album', href: '/albums/1', tracks: [], addedAt: 0, transitions: { [transitionPair(from, to, mode)]: kept } } },
+  });
+  return kept;
+}
+
+const goOffline = () => vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+
 let transition: MockInstance<typeof api.transition>;
 
 beforeEach(() => {
   vi.useFakeTimers();
   usePrefs.setState({ transitions: 'dj' });
   useSleep.getState().cancel();
+  useOffline.setState({ songs: {}, pins: {} });
   usePlayer.setState({ repeat: 'off' });
   usePlayer.getState().playTracks([song(1), song(2), song(3)], 0, { shuffle: false });
   useClock.setState({ time: 0 });
@@ -463,5 +477,74 @@ describe('errors', () => {
     await playTo(100);
     expect(transition).toHaveBeenCalledTimes(1);
     expect(useTransition.getState().result?.status).toBe('straight');
+  });
+});
+
+describe('transitions kept with downloads', () => {
+  it('plays a kept transition offline, without asking', async () => {
+    goOffline();
+    const kept = keep(101, 102, 'auto', 170);
+    renderHook(() => useUpcomingTransition());
+    expect(useTransition.getState()).toMatchObject({ result: kept, ready: { ...kept, fromFileId: 101, toFileId: 102 } });
+    await playTo(30);
+    expect(transition).not.toHaveBeenCalled();
+  });
+
+  it('has nothing offline when no download kept the pair', async () => {
+    goOffline();
+    keep(102, 103, 'auto', 170);
+    renderHook(() => useUpcomingTransition());
+    await playTo(30);
+    expect(transition).not.toHaveBeenCalled();
+    expect(useTransition.getState()).toMatchObject({ result: null, ready: undefined });
+  });
+
+  it('plays the kept Auto transition offline when the queue is in Party mode: better than none', async () => {
+    goOffline();
+    usePlayer.getState().setMixMode('party');
+    const kept = keep(101, 102, 'auto', 170);
+    renderHook(() => useUpcomingTransition());
+    expect(useTransition.getState().ready?.url).toBe(kept.url);
+  });
+
+  it('gives up on a kept transition the song is already too close to', async () => {
+    goOffline();
+    keep(101, 102, 'auto', 30);
+    useClock.setState({ time: 15 });
+    renderHook(() => useUpcomingTransition());
+    expect(useTransition.getState()).toMatchObject({ result: { status: 'gave up' }, ready: undefined });
+  });
+
+  it('picks up the kept transition when the connection drops while the server renders', async () => {
+    renderHook(() => useUpcomingTransition());
+    await playTo(5);
+    expect(useTransition.getState().result?.status).toBe('pending');
+    const kept = keep(101, 102, 'auto', 170);
+    goOffline();
+    act(() => window.dispatchEvent(new Event('offline')));
+    expect(useTransition.getState().ready?.url).toBe(kept.url);
+    await wait(30_000);
+    expect(transition).toHaveBeenCalledTimes(1);
+  });
+
+  it('online, plays a kept transition still ahead at once, and asks the server for the rest', async () => {
+    const kept = keep(101, 102, 'auto', 170);
+    renderHook(() => useUpcomingTransition());
+    expect(useTransition.getState().ready?.url).toBe(kept.url);
+    await playTo(30);
+    expect(transition).not.toHaveBeenCalled();
+    // Seeking past its mix point: the server plans one from there.
+    act(() => useClock.getState().seek(160));
+    await settle();
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'auto', 160);
+  });
+
+  it('online, asks the server for Party rather than using the kept Auto transition', async () => {
+    usePlayer.getState().setMixMode('party');
+    keep(101, 102, 'auto', 170);
+    renderHook(() => useUpcomingTransition());
+    expect(useTransition.getState().ready).toBeUndefined();
+    await playTo(5);
+    expect(transition).toHaveBeenCalledExactlyOnceWith(1, 2, 'party', 5);
   });
 });

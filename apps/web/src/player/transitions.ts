@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { api, ApiError, type TransitionAnswer } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { upNext } from './decks';
+import { type KeptTransition, offlineTransition } from './offline';
 import { useSleep } from './sleep';
 import { currentTrack, useClock, usePlayer } from './store';
 
@@ -132,9 +133,30 @@ function watchUpcomingTransition() {
     publish(p, null);
   }
 
+  /**
+   * The pair's transition kept with a download, if any. Offline a Party queue takes the Auto one: a
+   * mix beats none. Its plan assumes the song played from the start.
+   */
+  function keptTransition(p: Pair, online: boolean): KeptTransition | undefined {
+    const kept = offlineTransition(p.from.fileId, p.to.fileId, p.mode);
+    return kept ?? (!online && p.mode === 'party' ? offlineTransition(p.from.fileId, p.to.fileId, 'auto') : undefined);
+  }
+
   function maybeAsk() {
     const p = pair;
-    if (!p || p.ended || p.asking || p.timer !== undefined || played < MIN_PLAYED_S || !navigator.onLine) return;
+    if (!p || p.ended) return;
+    // A kept transition costs nothing to look up, so there's no waiting for it. Online, one whose mix
+    // point is already too close is passed over, so the server can plan from where the song is.
+    const online = navigator.onLine;
+    const kept = keptTransition(p, online);
+    if (kept && (!online || useClock.getState().time < kept.plan.aStart - GIVE_UP_S)) {
+      clearTimeout(p.timer);
+      p.timer = undefined;
+      p.asking = false;
+      p.asks++; // an ask still out is for nothing now
+      return answered(p, kept);
+    }
+    if (p.asking || p.timer !== undefined || played < MIN_PLAYED_S || !online) return;
     if (tooLate(p)) return giveUp(p, 'late');
     p.asking = true;
     p.position ??= useClock.getState().time;
@@ -243,13 +265,16 @@ function watchUpcomingTransition() {
     const seeked = s.seekRequest !== prev.seekRequest;
     if (s.time !== prev.time || seeked) onClock(s.time, seeked);
   });
+  // Back online the server can be asked; offline a download's kept transition may stand in.
   window.addEventListener('online', check);
+  window.addEventListener('offline', check);
   return () => {
     offPlayer();
     offPrefs();
     offSleep();
     offClock();
     window.removeEventListener('online', check);
+    window.removeEventListener('offline', check);
     drop();
     useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
   };
