@@ -28,23 +28,28 @@ const LARGEST_TEMPO_GAP = 0.08;
 const QUICK_MIX_STRETCH_GAP = 0.02;
 /** Keys detected with less confidence than this don't count against a blend. */
 const KEY_CONFIDENCE = 0.3;
+const LONGEST_BLEND_BEATS = 64;
+const AUTO_BLEND_BEATS = 32;
+const SHORTEST_BLEND_BEATS = 16;
 /** Long blend lengths in A's beats, longest first. */
-const BLEND_BEATS = [64, 32, 16];
+const BLEND_BEATS = [LONGEST_BLEND_BEATS, AUTO_BLEND_BEATS, SHORTEST_BLEND_BEATS];
 /** Auto keeps blends to 32 beats unless both songs have this much room (party always takes the longest that fits). */
-const ROOM_FOR_AUTO_64_BEATS = 128;
-/** After a long blend, B eases back to its own tempo over 16 bars. */
+const ROOM_FOR_AUTO_LONGEST_BLEND = 2 * LONGEST_BLEND_BEATS;
+/** After a long blend, B eases back to its own tempo over 16 of its own bars. */
 const EASE_BACK_BEATS = 64;
 /** Quick mix lengths in A's beats, preferred first. */
 const QUICK_MIX_BEATS = [8, 4];
-/** A quick mix crossfades over its last two beats. */
-const QUICK_CUT_BEATS = 2;
+/** A stretched quick mix crossfades over its last two beats. */
+const QUICK_CROSSFADE_BEATS = 2;
+/** An unstretched quick mix lets A ring on, filtered, for one beat after the cut. */
+const CUT_TAIL_BEATS = 1;
+/** How fast B comes in at a cut: short enough to land on the downbeat, long enough not to click. */
+const CUT_SECONDS = 0.02;
 const LONGEST_FADE = 8;
 /** A fade shorter than this is pointless: go straight on. */
 const SHORTEST_FADE = 1;
 /** A plan starts at least this far ahead of A's position, so there's time to render and load it. */
 const PLANNING_LEAD = 5;
-/** The last-resort quick mix needs less notice. */
-const LAST_RESORT_LEAD = 2;
 const BASS_CUT_DB = -24;
 const HIGH_PASS_OFF_HZ = 20;
 const HIGH_PASS_SWEEP_HZ = 800;
@@ -52,7 +57,7 @@ const HIGH_PASS_SWEEP_HZ = 800;
 const CURVE_POINTS = 8;
 const PHRASE_BEATS = 16;
 const BAR_BEATS = 4;
-/** Slack for comparing times that went through floating-point arithmetic. */
+/** Slack for comparing times and ratios that went through floating-point arithmetic. */
 const EPSILON = 1e-9;
 
 const FLAT_DB: Automation = [{ at: 0, value: 0 }];
@@ -89,6 +94,10 @@ export function planTransition(input: PlanInput): TransitionPlan {
 
 const beatLength = (song: MixMap) => 60 / song.bpm;
 
+/** A grid we can do arithmetic with: a real, positive tempo and a finite first beat. */
+const hasUsableTempo = (song: MixMap) =>
+  Number.isFinite(song.bpm) && song.bpm > 0 && Number.isFinite(song.firstBeat) && Number.isFinite(song.downbeatOffset);
+
 /** Time of grid line `index` counted from the first downbeat; lines are `beatsPerLine` apart (4: bars, 16: phrases). */
 function gridLine(song: MixMap, beatsPerLine: number, index: number): number {
   return song.firstBeat + (song.downbeatOffset + index * beatsPerLine) * beatLength(song);
@@ -116,24 +125,18 @@ function nearestLine(song: MixMap, beatsPerLine: number, target: number, notBefo
   return gridLine(song, beatsPerLine, Math.max(nearest, earliest, 0));
 }
 
-/**
- * A phrase line of A for a transition: the first at or after `preferFrom` (inside the outro) if it is
- * no later than `latest`; otherwise the last one before `latest`, as long as it isn't before `earliest`.
- */
-function phraseLine(
-  song: MixMap,
-  { preferFrom, latest, earliest }: { preferFrom: number; latest: number; earliest: number },
-): number | undefined {
-  const inside = firstLineAtOrAfter(song, PHRASE_BEATS, preferFrom);
-  if (inside <= latest + EPSILON) return inside;
-  const before = lastLineAtOrBefore(song, PHRASE_BEATS, latest);
-  return before !== undefined && before >= earliest - EPSILON ? before : undefined;
-}
-
+// Song positions as the planner uses them. A broken map (NaN, or times outside the song) must never
+// turn into a broken plan, so each falls back to something harmless.
+const finiteOr = (value: number, fallback: number) => (Number.isFinite(value) ? value : fallback);
+const durationOf = (song: Song) => Math.max(0, finiteOr(song.duration, 0));
+/** Where sound ends, kept within the song. */
+const soundEndOf = (song: Song) => Math.min(Math.max(finiteOr(song.soundEnd, durationOf(song)), 0), durationOf(song));
 /** Where A can be left: the hand-set mix-out point, else the detected outro. */
-const mixOutPoint = (a: Song) => a.cues?.mixOut ?? a.outroStart;
+const mixOutPoint = (a: Song) => finiteOr(a.cues?.mixOut ?? a.outroStart, soundEndOf(a));
 /** Where B is fully in: the hand-set mix-in point, else the end of the detected intro. */
-const mixInPoint = (b: Song) => b.cues?.mixIn ?? b.introEnd;
+const mixInPoint = (b: Song) => finiteOr(b.cues?.mixIn ?? b.introEnd, 0);
+/** B mustn't resume normal playback inside (or past) its own outro: that's where the next mix begins. */
+const resumeLimit = (b: Song) => finiteOr(b.cues?.mixOut ?? b.outroStart, soundEndOf(b));
 
 // ——— Choosing the style ———
 
@@ -142,7 +145,7 @@ interface Pair {
   input: PlanInput;
   a: Song;
   b: Song;
-  /** B's rate while matched to A (see tempoRatio). */
+  /** B's rate while matched to A (see tempoRatio); 1 when either tempo is unusable. */
   ratio: number;
   /** How far apart the tempos are, as a fraction (0.03 = 3%). */
   tempoGap: number;
@@ -150,7 +153,9 @@ interface Pair {
   halfTime: boolean;
   /** The earliest A may start the transition. */
   earliestStart: number;
-  /** Room for a blend in A's outro and B's intro, both counted in A's beats (the blend's beats). */
+  /** Where A may start leaving: its outro (or mix-out cue), and not before earliestStart. */
+  leaveFrom: number;
+  /** Room for a blend from A's first phrase line at leaveFrom, and in B's intro, both in A's beats (the blend's beats). */
   outroRoomBeats: number;
   introRoomBeats: number;
   keys: { kind: 'compatible' } | { kind: 'unknown' } | { kind: 'clash'; a: Camelot; b: Camelot };
@@ -158,21 +163,29 @@ interface Pair {
 
 function describePair(input: PlanInput): Pair {
   const { a, b, aPosition } = input;
-  const ratio = tempoRatio(a.bpm, b.bpm);
-  const earliestStart = aPosition === undefined ? 0 : aPosition + PLANNING_LEAD;
-  const outroRoom = a.soundEnd - Math.max(mixOutPoint(a), earliestStart);
-  // B can start no earlier than its first downbeat; its seconds pass `ratio` times faster than the blend's.
-  const introRoomInB = mixInPoint(b) - gridLine(b, BAR_BEATS, 0);
+  const tempos = hasUsableTempo(a) && hasUsableTempo(b);
+  const ratio = tempos ? tempoRatio(a.bpm, b.bpm) : 1;
+  const earliestStart = aPosition === undefined || !Number.isFinite(aPosition) ? 0 : Math.max(0, aPosition + PLANNING_LEAD);
+  const leaveFrom = Math.max(mixOutPoint(a), earliestStart);
+  let outroRoomBeats = 0;
+  let introRoomBeats = 0;
+  if (tempos) {
+    // A long blend starts on a phrase line, so its room runs from the first one A may leave on.
+    outroRoomBeats = (soundEndOf(a) - firstLineAtOrAfter(a, PHRASE_BEATS, leaveFrom)) / beatLength(a);
+    // B can start no earlier than its first downbeat; its seconds pass `ratio` times faster than the blend's.
+    introRoomBeats = (mixInPoint(b) - gridLine(b, BAR_BEATS, 0)) / ratio / beatLength(a);
+  }
   return {
     input,
     a,
     b,
     ratio,
     tempoGap: Math.abs(ratio - 1),
-    halfTime: Math.abs(ratio - a.bpm / b.bpm) > EPSILON,
+    halfTime: tempos && Math.abs(ratio - a.bpm / b.bpm) > EPSILON,
     earliestStart,
-    outroRoomBeats: outroRoom / beatLength(a),
-    introRoomBeats: introRoomInB / ratio / beatLength(a),
+    leaveFrom,
+    outroRoomBeats,
+    introRoomBeats,
     keys: keyRelation(a, b),
   };
 }
@@ -190,6 +203,9 @@ type Decision =
   | { style: 'straight' | 'fade' | 'quick'; reason: string }
   | { style: 'long'; beats: number; reason: string };
 
+/** Fading into or out of an abrupt edge sounds like a mistake; better to play the songs back to back. */
+const abruptEdgeAtTheJoin = ({ a, b }: Pair) => a.coldEnd || b.coldStart;
+
 /** The style rules in order: the first that has something to say decides. The last always does. */
 const STYLE_RULES: ((pair: Pair) => Decision | undefined)[] = [
   function noMixingWanted({ input }) {
@@ -197,24 +213,26 @@ const STYLE_RULES: ((pair: Pair) => Decision | undefined)[] = [
     if (input.sameAlbumInOrder) return { style: 'straight', reason: 'Same album, in order: straight on' };
     return undefined;
   },
-  function noSteadyBeat({ a, b }) {
-    if (a.beatConfidence >= STEADY_BEAT_CONFIDENCE && b.beatConfidence >= STEADY_BEAT_CONFIDENCE) return undefined;
-    // Fading into or out of an abrupt edge sounds like a mistake; better to play them back to back.
-    if (a.coldEnd || b.coldStart) return { style: 'straight', reason: 'No steady beat and an abrupt edge: straight on' };
+  function noSteadyBeat(pair) {
+    const steady = (song: Song) => hasUsableTempo(song) && song.beatConfidence >= STEADY_BEAT_CONFIDENCE;
+    if (steady(pair.a) && steady(pair.b)) return undefined;
+    if (abruptEdgeAtTheJoin(pair)) return { style: 'straight', reason: 'No steady beat and an abrupt edge: straight on' };
     return { style: 'fade', reason: 'No steady beat: crossfade' };
   },
   function abruptJoinAtDifferentTempos({ a, b, tempoGap }) {
-    if (a.coldEnd && b.coldStart && tempoGap > LARGEST_TEMPO_GAP) {
+    if (a.coldEnd && b.coldStart && tempoGap > LARGEST_TEMPO_GAP + EPSILON) {
       return { style: 'straight', reason: 'Abrupt end into abrupt start at different tempos: straight on' };
     }
     return undefined;
   },
   function temposTooFarApart(pair) {
-    if (pair.tempoGap <= LARGEST_TEMPO_GAP) return undefined;
+    if (pair.tempoGap <= LARGEST_TEMPO_GAP + EPSILON) return undefined;
     const sureOfBothBeats = Math.min(pair.a.beatConfidence, pair.b.beatConfidence) >= QUICK_MIX_CONFIDENCE;
-    return sureOfBothBeats
-      ? { style: 'quick', reason: `${tempoText(pair)}: quick mix` }
-      : { style: 'fade', reason: `${tempoText(pair)} and an unsure beat: crossfade` };
+    if (sureOfBothBeats) return { style: 'quick', reason: `${tempoText(pair)}: quick mix` };
+    if (abruptEdgeAtTheJoin(pair)) {
+      return { style: 'straight', reason: `${tempoText(pair)}, an unsure beat and an abrupt edge: straight on` };
+    }
+    return { style: 'fade', reason: `${tempoText(pair)} and an unsure beat: crossfade` };
   },
   function longBlendOrQuickMix(pair) {
     if (!pair.a.gridStable || !pair.b.gridStable) return { style: 'quick', reason: 'Beat drifts: quick mix' };
@@ -240,7 +258,7 @@ function blendBeats({ input, outroRoomBeats, introRoomBeats }: Pair): number | u
   const room = Math.min(outroRoomBeats, introRoomBeats);
   const longest = BLEND_BEATS.find((beats) => beats <= room + EPSILON);
   if (longest === undefined || input.mode === 'party') return longest;
-  return Math.min(longest, room >= ROOM_FOR_AUTO_64_BEATS ? 64 : 32);
+  return Math.min(longest, room >= ROOM_FOR_AUTO_LONGEST_BLEND ? LONGEST_BLEND_BEATS : AUTO_BLEND_BEATS);
 }
 
 function tempoText({ tempoGap, halfTime }: Pair): string {
@@ -263,13 +281,18 @@ function equalPowerCurve(from: number, to: number, direction: 'in' | 'out'): Aut
   );
 }
 
+/** Exponential, so the sweep sounds even: each step raises the cutoff by the same musical interval. */
+function highPassSweep(from: number, to: number): Automation {
+  return sampleCurve(from, to, (progress) => HIGH_PASS_OFF_HZ * (HIGH_PASS_SWEEP_HZ / HIGH_PASS_OFF_HZ) ** progress);
+}
+
 /** CURVE_POINTS points of `shape` (progress 0–1 → value) from `from` to `to`, with exact ends. */
 function sampleCurve(from: number, to: number, shape: (progress: number) => number): Automation {
   const points: Automation = [];
   for (let i = 0; i < CURVE_POINTS; i++) {
     const progress = i / (CURVE_POINTS - 1);
     const value = shape(progress);
-    // sin/cos/pow land a hair off 0 and 1 at the ends: snap them so "fully in" and "silent" are exact.
+    // sin/cos/pow land a hair off round numbers at the ends: snap them so "fully in" and "silent" are exact.
     const snapped = Math.abs(value - Math.round(value)) < EPSILON ? Math.round(value) : value;
     points.push({ at: from + (to - from) * progress, value: snapped });
   }
@@ -279,7 +302,7 @@ function sampleCurve(from: number, to: number, shape: (progress: number) => numb
 function straightPlan({ a }: Pair, reason: string): TransitionPlan {
   return {
     style: 'straight',
-    aStart: a.duration,
+    aStart: durationOf(a),
     bStart: 0,
     length: 0,
     bResume: 0,
@@ -297,10 +320,9 @@ function straightPlan({ a }: Pair, reason: string): TransitionPlan {
 
 /** Today's crossfade, from where A's outro begins: no beat to match, so no beats counted. */
 function fadePlan(pair: Pair, reason: string): TransitionPlan {
-  const { a } = pair;
-  const aStart = Math.max(mixOutPoint(a), pair.earliestStart);
-  const length = Math.min(LONGEST_FADE, a.soundEnd - aStart);
-  if (length < SHORTEST_FADE) return straightPlan(pair, 'Too close to the end to fade: straight on');
+  const aStart = pair.leaveFrom;
+  const length = Math.min(LONGEST_FADE, soundEndOf(pair.a) - aStart);
+  if (!(length >= SHORTEST_FADE)) return straightPlan(pair, 'Too close to the end to fade: straight on');
   return {
     style: 'fade',
     aStart,
@@ -320,132 +342,187 @@ function fadePlan(pair: Pair, reason: string): TransitionPlan {
 }
 
 /**
- * A long blend: A leaves from a phrase line in its outro and B's phrase line lands on that same downbeat.
- * B is stretched to A's tempo through the overlap, then eases back to its own over 16 bars.
- * If A's position leaves no phrase line for the chosen length, shorter blends are tried, then a quick mix.
+ * A long blend: A leaves from a phrase line inside its outro and B's phrase line lands on that same downbeat.
+ * B is stretched to A's tempo through the overlap, then eases back to its own over 16 of its bars.
+ * B mustn't resume inside its own outro: then the ease-back goes (all of it: a shortened ramp would be a
+ * second, odd-sounding tempo move), then shorter blends are tried, then a quick mix.
  */
 function longPlan(pair: Pair, chosenBeats: number, reason: string): TransitionPlan {
-  const { a, b, ratio, earliestStart } = pair;
+  const { a, b, ratio } = pair;
   const beat = beatLength(a);
+  let tooShortForB = false;
   for (const beats of BLEND_BEATS.filter((candidate) => candidate <= chosenBeats)) {
     const overlap = beats * beat;
-    const aStart = phraseLine(a, {
-      preferFrom: Math.max(mixOutPoint(a), earliestStart),
-      latest: a.soundEnd - overlap,
-      earliest: earliestStart,
-    });
-    if (aStart === undefined) continue;
+    const aStart = firstLineAtOrAfter(a, PHRASE_BEATS, pair.leaveFrom);
+    if (aStart + overlap > soundEndOf(a) + EPSILON) continue;
 
     // B plays `ratio` of its own seconds per second of blend; its intro should end about when the overlap does.
     const overlapInB = overlap * ratio;
-    const bStart = nearestLine(b, PHRASE_BEATS, mixInPoint(b) - overlapInB, gridLine(b, BAR_BEATS, 0));
+    const bStart = nearestLine(b, PHRASE_BEATS, mixInPoint(b) - overlapInB, Math.max(0, gridLine(b, BAR_BEATS, 0)));
 
-    const easeBack = Math.abs(ratio - 1) < EPSILON ? 0 : EASE_BACK_BEATS * beat;
-    const bRate: Automation =
-      easeBack === 0
-        ? [{ at: 0, value: ratio }]
-        : [
-            { at: 0, value: ratio },
-            { at: overlap, value: ratio },
-            { at: overlap + easeBack, value: 1 },
-          ];
-    const length = overlap + easeBack;
-
-    // aStart is a downbeat of A, so A's bar lines fall on whole bars of transition time.
-    const bar = BAR_BEATS * beat;
-    const bassSwap = Math.round(overlap / 2 / bar) * bar;
-    return {
-      style: 'long',
-      aStart,
-      bStart,
-      length,
-      bResume: bStart + integrate(bRate, 0, length),
-      switchAt: bassSwap,
-      bRate,
-      aGain: [{ at: 0, value: 1 }, ...equalPowerCurve(overlap * 0.75, overlap, 'out')],
-      bGain: equalPowerCurve(0, overlap * 0.25, 'in'),
-      // The swap is a quick move over the beat leading into the bar line, done by the downbeat.
-      aLowDb: [
-        { at: 0, value: 0 },
-        { at: bassSwap - beat, value: 0 },
-        { at: bassSwap, value: BASS_CUT_DB },
-      ],
-      bLowDb: [
-        { at: 0, value: BASS_CUT_DB },
-        { at: bassSwap - beat, value: BASS_CUT_DB },
-        { at: bassSwap, value: 0 },
-      ],
-      aHighPassHz: HIGH_PASS_OFF,
-      reason: beats === chosenBeats ? reason : longReason(pair, beats),
-      beats,
-    };
+    const steady = { bRate: [{ at: 0, value: ratio }], length: overlap };
+    for (const { bRate, length } of [easedBack(pair, overlap), steady]) {
+      const bResume = bStart + integrate(bRate, 0, length);
+      if (bResume > resumeLimit(b) + EPSILON) {
+        tooShortForB = true;
+        continue;
+      }
+      return longBlend(pair, { beats, aStart, bStart, bRate, length, bResume }, beats === chosenBeats ? reason : longReason(pair, beats));
+    }
   }
-  return quickPlan(pair, 'Too close to the end for a blend: quick mix');
+  return quickPlan(
+    pair,
+    tooShortForB ? 'B’s outro comes too soon for a blend: quick mix' : 'Too close to the end for a blend: quick mix',
+  );
 }
 
 /**
- * A quick mix: a high-pass sweep over A, then a cut to B over the last two beats. The cut finishes on a
- * phrase line of A, and B is lined up so that one of its downbeats (a phrase line when one is near its
- * mix-in point) lands exactly there, where B is fully in. B is stretched only when the tempos are within
- * 2%; otherwise it plays at its own speed and only the landing downbeat is matched.
+ * B's rate through a long blend: matched to A for the overlap, then a straight ramp back to its own tempo
+ * that covers 16 of B's own bars as the listener hears them (∫ rate dt over the ramp = 64 of B's beats),
+ * so B resumes on one of its own bar lines. Nothing to ease back from when B already plays at its own speed.
  */
-function quickPlan(pair: Pair, reason: string): TransitionPlan {
-  const { a, b, ratio } = pair;
-  const placement = quickPlacement(pair);
-  if (!placement) return straightPlan(pair, 'Too close to the end to mix: straight on');
-  const { aStart, beats } = placement;
-  const beat = beatLength(a);
-  const overlap = beats * beat;
-  const rate = pair.tempoGap <= QUICK_MIX_STRETCH_GAP ? ratio : 1;
-  const overlapInB = overlap * rate;
-
-  // B must have played `overlapInB` seconds by the landing, so the landing can't come before that.
-  const target = mixInPoint(b);
-  const phraseLanding = nearestLine(b, PHRASE_BEATS, target, overlapInB);
-  const landing =
-    Math.abs(phraseLanding - target) <= (PHRASE_BEATS / 2) * beatLength(b)
-      ? phraseLanding
-      : nearestLine(b, BAR_BEATS, target, overlapInB);
-  const bStart = landing - overlapInB;
-  const bRate: Automation = [{ at: 0, value: rate }];
-
-  const cut = overlap - QUICK_CUT_BEATS * beat;
+function easedBack({ b, ratio }: Pair, overlap: number): { bRate: Automation; length: number } {
+  if (Math.abs(ratio - 1) < EPSILON) return { bRate: [{ at: 0, value: ratio }], length: overlap };
+  const easeBack = (2 * EASE_BACK_BEATS * beatLength(b)) / (ratio + 1);
   return {
-    style: 'quick',
-    aStart,
-    bStart,
-    length: overlap,
-    bResume: bStart + integrate(bRate, 0, overlap),
-    switchAt: cut,
-    bRate,
-    aGain: [{ at: 0, value: 1 }, ...equalPowerCurve(cut, overlap, 'out')],
-    bGain: [{ at: 0, value: 0 }, ...equalPowerCurve(cut, overlap, 'in')],
-    aLowDb: FLAT_DB,
-    bLowDb: FLAT_DB,
-    // Exponential, so the sweep sounds even: each step raises the cutoff by the same musical interval.
-    aHighPassHz: sampleCurve(0, overlap, (progress) => HIGH_PASS_OFF_HZ * (HIGH_PASS_SWEEP_HZ / HIGH_PASS_OFF_HZ) ** progress),
+    bRate: [
+      { at: 0, value: ratio },
+      { at: overlap, value: ratio },
+      { at: overlap + easeBack, value: 1 },
+    ],
+    length: overlap + easeBack,
+  };
+}
+
+function longBlend(
+  pair: Pair,
+  shape: { beats: number; aStart: number; bStart: number; bRate: Automation; length: number; bResume: number },
+  reason: string,
+): TransitionPlan {
+  const beat = beatLength(pair.a);
+  const overlap = shape.beats * beat;
+  // aStart is a downbeat of A, so A's bar lines fall on whole bars of transition time.
+  const bar = BAR_BEATS * beat;
+  const bassSwap = Math.round(overlap / 2 / bar) * bar;
+  return {
+    style: 'long',
+    ...shape,
+    switchAt: bassSwap,
+    aGain: [{ at: 0, value: 1 }, ...equalPowerCurve(overlap * 0.75, overlap, 'out')],
+    bGain: equalPowerCurve(0, overlap * 0.25, 'in'),
+    // The swap is a quick move over the beat leading into the bar line, done by the downbeat.
+    aLowDb: [
+      { at: 0, value: 0 },
+      { at: bassSwap - beat, value: 0 },
+      { at: bassSwap, value: BASS_CUT_DB },
+    ],
+    bLowDb: [
+      { at: 0, value: BASS_CUT_DB },
+      { at: bassSwap - beat, value: BASS_CUT_DB },
+      { at: bassSwap, value: 0 },
+    ],
+    aHighPassHz: HIGH_PASS_OFF,
     reason,
-    beats,
   };
 }
 
 /**
- * Where a quick mix goes: ending on a phrase line of A (inside the outro when it fits), else, as a last
- * resort when A's position is too late for that, from the next downbeat at least 2 s ahead of it.
+ * A quick mix: a high-pass sweep over A for 4–8 beats up to a landing downbeat of A (a phrase line inside the
+ * outro when one fits), where one of B's downbeats lands (a phrase line when one is near its mix-in point).
+ *
+ * - Tempos within 2%: B is stretched to A, so both can be heard together: a crossfade over the last two
+ *   beats, finishing on the landing.
+ * - Further apart, B plays at its own speed and its beats would flam against A's, so it's a cut: B is silent
+ *   until the landing, then jumps in within 20 ms; A rings on for one beat, filtered of its kick, fading out.
  */
-function quickPlacement({ input, a, earliestStart }: Pair): { aStart: number; beats: number } | undefined {
+function quickPlan(pair: Pair, reason: string): TransitionPlan {
+  const { a, b } = pair;
+  if (!hasUsableTempo(a) || !hasUsableTempo(b)) return straightPlan(pair, 'No usable beat: straight on');
+  const stretched = pair.tempoGap <= QUICK_MIX_STRETCH_GAP + EPSILON;
+  const tailBeats = stretched ? 0 : CUT_TAIL_BEATS;
+  const placement = quickPlacement(pair, tailBeats);
+  if (!placement) return straightPlan(pair, 'Too close to the end to mix: straight on');
+
+  const { aStart, beats } = placement;
   const beat = beatLength(a);
-  for (const beats of QUICK_MIX_BEATS) {
-    const overlap = beats * beat;
-    const end = phraseLine(a, {
-      preferFrom: Math.max(mixOutPoint(a), earliestStart) + overlap,
-      latest: a.soundEnd,
-      earliest: earliestStart + overlap,
-    });
-    if (end !== undefined) return { aStart: end - overlap, beats };
+  const landingAt = beats * beat;
+  const rate = stretched ? pair.ratio : 1;
+  const leadInB = landingAt * rate;
+
+  // B must have played `leadInB` seconds by the landing, so the landing can't come before that.
+  const target = mixInPoint(b);
+  const phraseLanding = nearestLine(b, PHRASE_BEATS, target, leadInB);
+  const landing =
+    Math.abs(phraseLanding - target) <= (PHRASE_BEATS / 2) * beatLength(b)
+      ? phraseLanding
+      : nearestLine(b, BAR_BEATS, target, leadInB);
+  if (!(landing < soundEndOf(b))) return straightPlan(pair, 'B is too short to mix into: straight on');
+
+  const bStart = landing - leadInB;
+  const bRate: Automation = [{ at: 0, value: rate }];
+  const length = landingAt + tailBeats * beat;
+  const common = {
+    style: 'quick' as const,
+    aStart,
+    bStart,
+    length,
+    bResume: bStart + integrate(bRate, 0, length),
+    bRate,
+    aLowDb: FLAT_DB,
+    bLowDb: FLAT_DB,
+    aHighPassHz: highPassSweep(0, landingAt),
+    reason,
+    beats: beats + tailBeats,
+  };
+  if (stretched) {
+    const crossfade = landingAt - QUICK_CROSSFADE_BEATS * beat;
+    return {
+      ...common,
+      switchAt: crossfade,
+      aGain: [{ at: 0, value: 1 }, ...equalPowerCurve(crossfade, landingAt, 'out')],
+      bGain: [{ at: 0, value: 0 }, ...equalPowerCurve(crossfade, landingAt, 'in')],
+    };
   }
-  const from = input.aPosition === undefined ? mixOutPoint(a) : input.aPosition + LAST_RESORT_LEAD;
-  const aStart = firstLineAtOrAfter(a, BAR_BEATS, from);
-  const beats = QUICK_MIX_BEATS.find((candidate) => aStart + candidate * beat <= a.duration);
-  return beats === undefined ? undefined : { aStart, beats };
+  return {
+    ...common,
+    switchAt: landingAt,
+    aGain: [{ at: 0, value: 1 }, ...equalPowerCurve(landingAt, length, 'out')],
+    bGain: [
+      { at: 0, value: 0 },
+      { at: landingAt, value: 0 },
+      { at: landingAt + CUT_SECONDS, value: 1 },
+    ],
+  };
+}
+
+/**
+ * Where a quick mix's lead-in starts, and how many beats it lasts before the landing (the transition then
+ * runs `tailBeats` more). In order of preference:
+ * 1. landing on a phrase line, leaving A no earlier than its outro (or mix-out cue) and its position + 5 s;
+ * 2. landing on the next downbeat that allows the same;
+ * 3. only without a mix-out cue: landing on A's last phrase line that fits, leaving at most a phrase before
+ *    the detected outro (a hand-set cue is never overruled).
+ */
+function quickPlacement(pair: Pair, tailBeats: number): { aStart: number; beats: number } | undefined {
+  const { a, leaveFrom, earliestStart } = pair;
+  const beat = beatLength(a);
+  const latestLanding = soundEndOf(a) - tailBeats * beat;
+  for (const beats of QUICK_MIX_BEATS) {
+    const lead = beats * beat;
+    const landing = firstLineAtOrAfter(a, PHRASE_BEATS, leaveFrom + lead);
+    if (landing <= latestLanding + EPSILON) return { aStart: landing - lead, beats };
+  }
+  const downbeat = firstLineAtOrAfter(a, BAR_BEATS, leaveFrom);
+  for (const beats of QUICK_MIX_BEATS) {
+    if (downbeat + beats * beat <= latestLanding + EPSILON) return { aStart: downbeat, beats };
+  }
+  if (a.cues?.mixOut !== undefined) return undefined;
+  const earliest = Math.max(earliestStart, finiteOr(a.outroStart, soundEndOf(a)) - PHRASE_BEATS * beat, 0);
+  const landing = lastLineAtOrBefore(a, PHRASE_BEATS, latestLanding);
+  if (landing === undefined) return undefined;
+  for (const beats of QUICK_MIX_BEATS) {
+    const aStart = landing - beats * beat;
+    if (aStart >= earliest - EPSILON) return { aStart, beats };
+  }
+  return undefined;
 }

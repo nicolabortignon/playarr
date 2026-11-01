@@ -53,7 +53,10 @@ export interface TransitionPlan {
   aStart: number;
   /** Where in B the transition starts. */
   bStart: number;
-  /** Seconds of transition output. */
+  /**
+   * Seconds of transition output. It can run past A's end (a long blend's ease-back is B alone): A's gain
+   * is 0 by then, so the renderer treats A as silent past its end.
+   */
   length: number;
   /** Where in B normal playback resumes after the transition. */
   bResume: number;
