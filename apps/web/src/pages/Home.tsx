@@ -3,11 +3,12 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { AlbumCard, ArtistCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
+import { MixCard } from '../components/Mixes';
 import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, greeting } from '../lib/format';
-import { useAlbums, useArtists, useFavorites, useHealth, usePlaylists, useRandomAlbums } from '../lib/queries';
+import { useAlbums, useArtists, useFavorites, useHealth, useMixes, usePlaylists, useRandomAlbums } from '../lib/queries';
 import { PlaylistCard } from './Playlists';
 import { shuffleLibrary } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -29,14 +30,19 @@ export function HomePage() {
         <Wordmark />
       </div>
 
+      <header className="mb-8 animate-rise md:mb-10">
+        <div className="font-mono text-[11px] tracking-[0.25em] text-muted uppercase">{today}</div>
+        <h1 className="mt-3 font-display text-[3.25rem] leading-[0.95] tracking-tight text-paper md:text-[5.5rem]">
+          {greeting()}
+          <span className="text-accent">.</span>
+        </h1>
+      </header>
+
+      <MadeForYou />
+
       <section className="relative mb-14 grid items-end gap-10 md:mb-20 xl:grid-cols-[1fr_auto]">
         <div className="animate-rise">
-          <div className="font-mono text-[11px] tracking-[0.25em] text-muted uppercase">{today}</div>
-          <h1 className="mt-3 font-display text-[3.25rem] leading-[0.95] tracking-tight text-paper md:text-[5.5rem]">
-            {greeting()}
-            <span className="text-accent">.</span>
-          </h1>
-          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-paper-dim/80">
+          <p className="max-w-md text-[15px] leading-relaxed text-paper-dim/80">
             {lib ? (
               <>
                 {lib.tracks} tracks across {lib.albums} albums, {formatDuration(lib.durationSeconds)} of music
@@ -124,6 +130,27 @@ export function HomePage() {
     </div>
   );
 }
+
+/**
+ * Made for you: the generated mixes, first thing on Home. Hidden until there's at least one (a new
+ * library has no tags or history yet, and the server is still making them).
+ */
+function MadeForYou() {
+  const { data: mixes, isPending } = useMixes();
+  if (!isPending && !mixes?.length) return null;
+  return (
+    <section className="mb-14">
+      <SectionHeader kicker="Made for you" title="Your mixes" />
+      <Shelf>
+        {mixes
+          ? mixes.map((m, i) => <MixCard key={m.key} mix={m} className={MIX_CARD} style={stagger(i, 40)} />)
+          : Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className={`aspect-square ${MIX_CARD}`} />)}
+      </Shelf>
+    </section>
+  );
+}
+
+const MIX_CARD = 'w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52';
 
 /** How many artists the home shelf shows; all of them are a tap away on Artists. */
 const SHELF_ARTISTS = 20;

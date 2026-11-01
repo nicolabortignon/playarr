@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router';
 import { AppearancePanel } from '../components/AppearancePanel';
+import { MixesPanel } from '../components/MixesPanel';
 import { PlaybackPanel } from '../components/PlaybackPanel';
 import { RequestsPanel } from '../components/RequestsPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
@@ -10,6 +11,7 @@ import { PageTitle } from './Albums';
 const PANELS = [
   { id: 'sources', label: 'Sources', scope: undefined, Panel: SourcesPanel },
   { id: 'playback', label: 'Playback', scope: 'These settings are for this device.', Panel: PlaybackPanel },
+  { id: 'mixes', label: 'Mixes', scope: 'These settings apply to everyone.', Panel: MixesPanel },
   { id: 'requests', label: 'Requests', scope: 'These settings apply to everyone.', Panel: RequestsPanel },
   { id: 'appearance', label: 'Appearance', scope: 'These settings are for this device.', Panel: AppearancePanel },
   { id: 'updates', label: 'Updates', scope: 'These settings apply to everyone.', Panel: UpdatesPanel },
