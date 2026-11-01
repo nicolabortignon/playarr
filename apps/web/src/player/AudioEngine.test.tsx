@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { AudioEngine } from './AudioEngine';
+import { canSetVolume } from './decks';
 import { playTracker } from './playTracker';
 import { useOffline } from './offline';
 import { useSleep } from './sleep';
@@ -13,6 +14,8 @@ import { useTransition } from './transitions';
 
 vi.mock('./loadAhead', () => ({ useLoadAhead: () => {} }));
 vi.mock('./playTracker', () => ({ playTracker: { start: vi.fn(), finish: vi.fn(), tick: vi.fn(), pause: vi.fn() } }));
+// iPhones fix the volume: some tests play as one.
+vi.mock('./decks', async (importOriginal) => ({ ...(await importOriginal<typeof import('./decks')>()), canSetVolume: vi.fn(() => true) }));
 // The tests say which transition is ready, instead of the server.
 vi.mock('./transitions', async (importOriginal) => ({ ...(await importOriginal<typeof import('./transitions')>()), useUpcomingTransition: () => {} }));
 
@@ -30,8 +33,15 @@ const fake = (el: HTMLMediaElement) => {
   return fakes.get(el)!;
 };
 const blocked = new Set<HTMLMediaElement>();
+/** Elements whose play() takes this long (ms) to start, or never does. */
+const slow = new Map<HTMLMediaElement, number | 'never'>();
+/** A play() not started yet, refused if paused meanwhile (as browsers do). */
+const pendingPlays = new Map<HTMLMediaElement, () => void>();
 
 beforeEach(() => {
+  // The engine's timers run on the test's clock, and performance.now() with it (the overlaps use it).
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] });
+  vi.mocked(canSetVolume).mockReturnValue(true);
   Object.defineProperties(HTMLMediaElement.prototype, {
     paused: { configurable: true, get: function (this: HTMLMediaElement) { return fake(this).paused; } },
     ended: { configurable: true, get: function (this: HTMLMediaElement) { return fake(this).ended; } },
@@ -54,11 +64,25 @@ beforeEach(() => {
     f.paused = false;
     f.ended = false;
     this.dispatchEvent(new Event('play'));
-    this.dispatchEvent(new Event('playing'));
-    return Promise.resolve();
+    const delay = slow.get(this);
+    if (delay === undefined) {
+      this.dispatchEvent(new Event('playing'));
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve, reject) => {
+      pendingPlays.set(this, () => reject(new DOMException('paused', 'AbortError')));
+      if (delay === 'never') return;
+      setTimeout(() => {
+        if (!pendingPlays.delete(this)) return;
+        this.dispatchEvent(new Event('playing'));
+        resolve();
+      }, delay);
+    });
   };
   HTMLMediaElement.prototype.pause = function (this: HTMLMediaElement) {
     const f = fake(this);
+    pendingPlays.get(this)?.();
+    pendingPlays.delete(this);
     if (f.paused) return;
     f.paused = true;
     this.dispatchEvent(new Event('pause'));
@@ -72,7 +96,10 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   blocked.clear();
+  slow.clear();
+  pendingPlays.clear();
   vi.clearAllMocks();
   useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
   useSleep.getState().cancel();
@@ -81,9 +108,11 @@ afterEach(() => {
 const song = (id: number, albumId = id) =>
   ({ id, fileId: id, recordingId: `r${id}`, albumId, discNumber: 1, trackNumber: 1, duration: 200, title: `Song ${id}`, streamUrl: `/stream/${id}` }) as Track;
 
-const settle = () => act(() => new Promise((r) => setTimeout(r, 10)));
-/** Long enough for the short overlap where two files join. */
-const overlap = () => act(() => new Promise((r) => setTimeout(r, 40)));
+/** Time passes: timers due run, and what they start. */
+const wait = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+const settle = () => wait(10);
+/** Past the short overlap where two files join. */
+const overlap = () => wait(20);
 
 async function at(deck: HTMLAudioElement, time: number) {
   fake(deck).time = time;
@@ -133,6 +162,38 @@ const TRANSITION = '/transitions/abc.flac';
 function transitionReady(from: number, to: number, extra: { plan?: TransitionPlan; continuationUrl?: string } = {}) {
   const result = { status: 'ready' as const, plan: extra.plan ?? plan(), url: TRANSITION, ...(extra.continuationUrl ? { continuationUrl: extra.continuationUrl } : {}) };
   useTransition.setState({ fromFileId: from, toFileId: to, result, ready: { ...result, fromFileId: from, toFileId: to } });
+}
+
+/** jsdom has no OS media controls: a stand-in that records the songs shown and the positions set. */
+function stubMediaSession() {
+  const titles: string[] = [];
+  const session = {
+    titles,
+    setActionHandler: () => {},
+    setPositionState: vi.fn(),
+    playbackState: 'none',
+    get metadata() {
+      return null;
+    },
+    set metadata(m: { title: string } | null) {
+      if (m) titles.push(m.title);
+    },
+  };
+  Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: session });
+  vi.stubGlobal(
+    'MediaMetadata',
+    class {
+      constructor(init: object) {
+        Object.assign(this, init);
+      }
+    },
+  );
+  return session;
+}
+
+function unstubMediaSession() {
+  delete (navigator as { mediaSession?: unknown }).mediaSession;
+  vi.unstubAllGlobals();
 }
 
 /** Song 1 played into the transition, `t` seconds in. */
@@ -321,29 +382,7 @@ describe('AudioEngine', () => {
     });
 
     it('shows the lock screen the next song once, at the switch, and counts each song once', async () => {
-      const titles: string[] = [];
-      Object.defineProperty(navigator, 'mediaSession', {
-        configurable: true,
-        value: {
-          setActionHandler: () => {},
-          setPositionState: () => {},
-          playbackState: 'none',
-          get metadata() {
-            return null;
-          },
-          set metadata(m: { title: string } | null) {
-            if (m) titles.push(m.title);
-          },
-        },
-      });
-      vi.stubGlobal(
-        'MediaMetadata',
-        class {
-          constructor(init: object) {
-            Object.assign(this, init);
-          }
-        },
-      );
+      const { titles } = stubMediaSession();
       try {
         transitionReady(1, 2);
         const [a, b, bridge] = await start([song(1), song(2), song(3)]);
@@ -367,8 +406,7 @@ describe('AudioEngine', () => {
         expect(playTracker.tick).toHaveBeenCalledWith(21);
         expect(playTracker.tick).toHaveBeenLastCalledWith(33);
       } finally {
-        delete (navigator as { mediaSession?: unknown }).mediaSession;
-        vi.unstubAllGlobals();
+        unstubMediaSession();
       }
     });
 
@@ -578,6 +616,338 @@ describe('AudioEngine', () => {
       // 6 s in, the next song is a tenth of what's heard (its gain 0.25 against 0.75, in power).
       await at(bridge, 6);
       expect(fake(bridge).volume).toBeCloseTo(10 ** ((-6 * 0.9) / 20), 2);
+    });
+
+    it('starts the transition when the timer says, from where the song is and how fast it plays', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await start([song(1), song(2)]);
+      await at(a, 145);
+      a.playbackRate = 2;
+      await at(a, 168); // 2 s of the song: 1 s at double speed, started 30 ms early
+      await wait(950);
+      expect(fake(bridge).paused).toBe(true);
+      fake(a).time = 169.97;
+      await wait(20);
+      expect(fake(bridge).paused).toBe(false);
+      expect(fake(bridge).time).toBe(0);
+    });
+
+    it('joins the transition where the song is, when the timer came late', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await start([song(1), song(2)]);
+      await at(a, 145);
+      await at(a, 169);
+      fake(a).time = 170.5; // the timer, slowed in the background, fires half a second late
+      await wait(1000);
+      expect(fake(bridge).paused).toBe(false);
+      expect(fake(bridge).time).toBe(0.5);
+    });
+
+    it('moves on to the next song at the switch on time, between timeupdates', async () => {
+      transitionReady(1, 2);
+      const [, , bridge] = await intoTransition(11);
+      await wait(980);
+      expect(now()).toBe(1);
+      await wait(20);
+      expect(now()).toBe(2);
+      expect(fake(bridge).paused).toBe(false);
+    });
+
+    it('starts the next song when the transition ends, if no timer did, shown at its own time', async () => {
+      transitionReady(1, 2, { continuationUrl: '/transitions/abc-rest.flac' });
+      const [, b, bridge] = await intoTransition(10);
+      vi.mocked(playTracker.finish).mockClear();
+      vi.mocked(playTracker.start).mockClear();
+      await end(bridge);
+      expect(now()).toBe(2);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(0);
+      expect(clock()).toBe(32);
+      expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['ended']]);
+      expect(vi.mocked(playTracker.start).mock.calls.map(([t]) => t.fileId)).toEqual([2]);
+    });
+
+    it('fades evenly across the join once a slow transition starts, the first song playing until then', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await start([song(1), song(2)]);
+      slow.set(bridge, 100);
+      await at(a, 145);
+      await at(a, 169.99); // asked to start
+      expect(fake(a).paused).toBe(false);
+      expect(fake(bridge).volume).toBe(0);
+      await wait(90); // started
+      await wait(8);
+      expect(fake(a).volume).toBeCloseTo(7 / 15, 6);
+      expect(fake(bridge).volume).toBeCloseTo(8 / 15, 6);
+      await wait(10);
+      expect(fake(a).paused).toBe(true);
+      expect(fake(bridge).volume).toBe(1);
+    });
+
+    it('gives up on a transition that doesn’t start: the first song never stopped, the next follows', async () => {
+      transitionReady(1, 2);
+      const [a, b, bridge] = await start([song(1), song(2)]);
+      slow.set(bridge, 'never');
+      await at(a, 145);
+      await at(a, 169.99);
+      await wait(230);
+      expect(fake(bridge).paused).toBe(false); // still starting
+      await wait(20);
+      expect(fake(bridge).paused).toBe(true);
+      expect(src(bridge)).toBeNull();
+      expect(fake(a).paused).toBe(false);
+      expect(fake(a).volume).toBe(1);
+      expect(usePlayer.getState().playing).toBe(true);
+      await at(a, 185);
+      expect(clock()).toBe(185); // the first song's time again
+      await at(a, 199.99);
+      expect(now()).toBe(2);
+      expect(fake(b).paused).toBe(false);
+    });
+
+    it('pauses while the transition starts, and starts it again where the song is when played', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await start([song(1), song(2)]);
+      slow.set(bridge, 100);
+      await at(a, 145);
+      await at(a, 169.99);
+      await act(async () => usePlayer.getState().setPlaying(false));
+      expect(fake(a).paused).toBe(true);
+      expect(fake(bridge).paused).toBe(true);
+      await wait(500);
+      expect(usePlayer.getState().playing).toBe(false);
+      slow.clear();
+      await act(async () => usePlayer.getState().setPlaying(true));
+      await settle();
+      expect(fake(a).paused).toBe(false);
+      await at(a, 170.2);
+      expect(fake(bridge).paused).toBe(false);
+      expect(fake(bridge).time).toBeCloseTo(0.2, 6);
+    });
+
+    it('pauses and seeks during the joins', async () => {
+      transitionReady(1, 2);
+      const [a, b, bridge] = await start([song(1), song(2), song(3)]);
+      await at(a, 145);
+      await at(a, 169.99); // 10 ms into the 15 ms overlap
+      await act(async () => usePlayer.getState().setPlaying(false));
+      expect(fake(a).paused).toBe(true);
+      expect(fake(bridge).paused).toBe(true);
+      await act(async () => usePlayer.getState().setPlaying(true));
+      await settle();
+      expect(fake(bridge).paused).toBe(false);
+      expect(fake(a).paused).toBe(true);
+      await at(bridge, 12.1);
+      await at(bridge, 23.99); // into B's overlap
+      await act(async () => usePlayer.getState().setPlaying(false));
+      expect(fake(b).paused).toBe(true);
+      expect(fake(bridge).paused).toBe(true);
+      await act(async () => usePlayer.getState().setPlaying(true));
+      await settle();
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(32);
+      expect(fake(bridge).paused).toBe(true);
+      await act(async () => useClock.getState().seek(60));
+      expect(fake(b).time).toBe(60);
+    });
+
+    it('seeks out of the transition during the first join', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await start([song(1), song(2)]);
+      await at(a, 145);
+      await at(a, 169.99);
+      await act(async () => useClock.getState().seek(100));
+      await overlap();
+      expect(fake(a).time).toBe(100);
+      expect(fake(a).paused).toBe(false);
+      expect(fake(a).volume).toBe(1);
+      expect(fake(bridge).paused).toBe(true);
+    });
+
+    it('stops where the transition ends when the sleep timer is set during it', async () => {
+      transitionReady(1, 2);
+      const [, b, bridge] = await intoTransition(5);
+      useSleep.getState().sleepAtEndOfSong();
+      await at(bridge, 12.1);
+      expect(now()).toBe(2);
+      expect(usePlayer.getState().playing).toBe(true); // the blend plays out
+      expect(fake(bridge).paused).toBe(false);
+      await at(bridge, 23.99);
+      expect(usePlayer.getState().playing).toBe(false);
+      expect(fake(bridge).paused).toBe(true);
+      expect(fake(b).paused).toBe(true);
+      expect(fake(b).time).toBe(32); // ready to go on from there
+      expect(useSleep.getState().endOfSong).toBe(false);
+      await act(async () => usePlayer.getState().setPlaying(true));
+      await settle();
+      expect(fake(b).paused).toBe(false);
+    });
+
+    it('goes back to the first song when the next one is taken out of the queue during the transition', async () => {
+      transitionReady(1, 2);
+      const [a, b, bridge] = await intoTransition(5);
+      await act(async () => usePlayer.getState().removeAt(1));
+      await settle();
+      expect(now()).toBe(1);
+      expect(fake(a).time).toBe(175);
+      expect(fake(a).paused).toBe(false);
+      expect(fake(bridge).paused).toBe(true);
+      await at(a, 199.99);
+      expect(now()).toBe(3);
+      expect(src(b)).toBe('/stream/3');
+    });
+
+    it('mixes round the queue with repeat all', async () => {
+      usePlayer.setState({ repeat: 'all' });
+      transitionReady(1, 2);
+      const [a, b, bridge] = await intoTransition(12.5, [song(1), song(2)]);
+      await at(bridge, 23.99);
+      await overlap();
+      expect(now()).toBe(2);
+      transitionReady(2, 1);
+      await at(b, 145);
+      expect(src(a)).toBe('/stream/1');
+      expect(fake(a).time).toBe(32);
+      expect(src(bridge)).toBe(TRANSITION);
+      await at(b, 169.99);
+      await overlap();
+      await at(bridge, 12.5);
+      expect(now()).toBe(1);
+      expect(usePlayer.getState().pos).toBe(0);
+      await at(bridge, 23.99);
+      await overlap();
+      expect(fake(a).paused).toBe(false);
+      expect(fake(a).time).toBe(32);
+      expect(fake(b).paused).toBe(true);
+    });
+
+    it('restarts the first song for previous before the switch', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await intoTransition(5);
+      await act(async () => usePlayer.getState().prev(clock()));
+      await settle();
+      expect(now()).toBe(1);
+      expect(fake(a).time).toBe(0);
+      expect(fake(a).paused).toBe(false);
+      expect(fake(bridge).paused).toBe(true);
+    });
+
+    it('restarts the next song from its own file for previous after the switch', async () => {
+      transitionReady(1, 2, { continuationUrl: '/transitions/abc-rest.flac' });
+      const [, b, bridge] = await intoTransition(14);
+      vi.mocked(playTracker.finish).mockClear();
+      await act(async () => usePlayer.getState().prev(clock()));
+      await settle();
+      expect(now()).toBe(2);
+      expect(src(b)).toBe('/stream/2');
+      expect(fake(b).time).toBe(0);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(bridge).paused).toBe(true);
+      expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['ended']]);
+    });
+
+    it('goes on in the next song’s own file when the transition stays stuck loading', async () => {
+      transitionReady(1, 2);
+      const [, b, bridge] = await intoTransition(5);
+      vi.mocked(playTracker.finish).mockClear();
+      await act(async () => {
+        bridge.dispatchEvent(new Event('waiting'));
+      });
+      await wait(3980);
+      expect(now()).toBe(1);
+      await wait(20);
+      expect(now()).toBe(2);
+      expect(fake(b).time).toBe(13);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(bridge).paused).toBe(true);
+      expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['ended']]);
+    });
+
+    it('goes back to the first song when the transition is stuck and the next song isn’t loaded either', async () => {
+      transitionReady(1, 2);
+      const [a, b, bridge] = await intoTransition(5);
+      Object.defineProperty(b, 'readyState', { configurable: true, value: 1 });
+      await act(async () => {
+        bridge.dispatchEvent(new Event('stalled'));
+      });
+      await wait(4000);
+      expect(now()).toBe(1);
+      expect(fake(a).time).toBe(175);
+      expect(fake(a).paused).toBe(false);
+    });
+
+    it('waits out a short stall in the transition', async () => {
+      transitionReady(1, 2);
+      const [, , bridge] = await intoTransition(5);
+      await act(async () => {
+        bridge.dispatchEvent(new Event('waiting'));
+      });
+      await wait(1000);
+      await act(async () => {
+        bridge.dispatchEvent(new Event('playing'));
+      });
+      await wait(5000);
+      expect(fake(bridge).paused).toBe(false);
+      expect(now()).toBe(1);
+    });
+
+    it('gives the lock screen the next song’s rate during the transition', async () => {
+      const session = stubMediaSession();
+      try {
+        transitionReady(1, 2, { plan: plan({ bRate: [{ at: 0, value: 1.1 }], bResume: 34.4 }) });
+        const [, , bridge] = await intoTransition(5);
+        await at(bridge, 12.1);
+        expect(session.setPositionState).toHaveBeenLastCalledWith(expect.objectContaining({ playbackRate: 1.1 }));
+        session.setPositionState.mockClear();
+        await at(bridge, 12.6);
+        expect(session.setPositionState).not.toHaveBeenCalled(); // about once a second
+        await wait(1000);
+        await at(bridge, 13.6);
+        expect(session.setPositionState).toHaveBeenCalledWith(expect.objectContaining({ position: expect.closeTo(8 + 13.6 * 1.1, 6) }));
+      } finally {
+        unstubMediaSession();
+      }
+    });
+
+    describe('on an iPhone (the volume fixed)', () => {
+      beforeEach(() => {
+        vi.mocked(canSetVolume).mockReturnValue(false);
+      });
+
+      it('stops the first song as the transition starts, and the transition as the next song starts', async () => {
+        transitionReady(1, 2);
+        const [a, b, bridge] = await start([song(1), song(2), song(3)]);
+        await at(a, 145);
+        await at(a, 169.99);
+        expect(fake(bridge).paused).toBe(false);
+        expect(fake(a).paused).toBe(true);
+        expect(usePlayer.getState().playing).toBe(true);
+        await at(bridge, 6);
+        expect(clock()).toBe(176);
+        await at(bridge, 12.1);
+        expect(now()).toBe(2);
+        await at(bridge, 23.99);
+        expect(fake(b).paused).toBe(false);
+        expect(fake(b).time).toBe(32);
+        expect(fake(bridge).paused).toBe(true);
+        expect(fake(bridge).volume).toBe(1);
+        await at(b, 40);
+        expect(clock()).toBe(40);
+      });
+
+      it('plays the first song on from where it stopped when the transition doesn’t start', async () => {
+        transitionReady(1, 2);
+        const [a, , bridge] = await start([song(1), song(2)]);
+        slow.set(bridge, 'never');
+        await at(a, 145);
+        await at(a, 169.99);
+        expect(fake(a).paused).toBe(true);
+        await wait(250);
+        expect(fake(a).paused).toBe(false);
+        expect(fake(a).time).toBe(169.99);
+        expect(fake(bridge).paused).toBe(true);
+        expect(usePlayer.getState().playing).toBe(true);
+      });
     });
   });
 });

@@ -1,3 +1,4 @@
+import { valueAt } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { useEffect, useRef } from 'react';
 import { sized } from '../lib/api';
@@ -25,6 +26,12 @@ const PRELOAD_S = 30;
 const LEAD_MS = 30;
 /** Where the files of a DJ transition join, the old one plays on this long under the new one (the kick masks it). */
 const OVERLAP_MS = 15;
+/** The transition hasn't started this long after asking it to: A plays on (it never stopped). */
+const START_WATCH_MS = 250;
+/** The transition stuck loading this long: on with a song's own file instead. */
+const STALL_MS = 4000;
+/** Seeking flushes what's buffered: an element already this close (in seconds) to the time isn't moved. */
+const SEEK_SLACK_S = 0.005;
 
 interface Fade {
   out: HTMLAudioElement;
@@ -42,6 +49,9 @@ interface Overlap {
   ending?: Mix;
 }
 
+/** A level across a short overlap: equal gain, as both files hold nearly the same sound there. */
+const evenGain = (x: number) => Math.max(0, Math.min(1, x));
+
 /** A DJ transition from the song playing into the next: loaded ahead, then playing. */
 interface Mix {
   transition: ReadyTransition;
@@ -51,6 +61,8 @@ interface Mix {
   bridging: boolean;
   /** Past the switch: the store, the lock screen and the history have moved on to the next song. */
   switched: boolean;
+  /** The sleep timer was to stop at the end of A, which ended at the switch: stop where the transition ends. */
+  sleepAtLanding?: boolean;
 }
 
 /**
@@ -81,6 +93,15 @@ export function AudioEngine() {
   const mix = useRef<Mix | null>(null);
   /** Starts the transition at the mix point, or the next song at the transition's end. */
   const bridgeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** Moves the store on to B at the switch (timeupdate alone comes only every quarter second or so). */
+  const switchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** Gives up on a transition that doesn't start, or stays stuck loading. */
+  const startWatch = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const stallTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** The transition asked to start, not playing yet. */
+  const starting = useRef<Mix | null>(null);
+  /** When the lock screen's position was last set during a transition. */
+  const positionAt = useRef(0);
   const overlap = useRef<Overlap | null>(null);
   const overlapTimer = useRef<ReturnType<typeof setInterval>>(undefined);
   /** Transition files that wouldn't play: not tried again. */
@@ -124,12 +145,32 @@ export function AudioEngine() {
   const offsetOf = (deck: HTMLAudioElement) => Number(deck.dataset.offset ?? 0);
   const songTime = (deck: HTMLAudioElement) => offsetOf(deck) + deck.currentTime;
 
+  /**
+   * Where the transition shows its song: A's time until the switch, B's after. (The switch can come a
+   * moment before switchAt, from its timer: B's time is shown from then.)
+   */
+  const shownTime = (m: Mix, transitionTime: number) =>
+    m.switched ? bTimeAt(m.transition.plan, transitionTime) : m.transition.plan.aStart + transitionTime;
+
   /** Where the song shown is now, wherever it plays from. */
   function currentSongTime(): number {
     const m = bridging();
-    if (m && bridge.current) return songTimeDuring(m.transition.plan, bridge.current.currentTime).time;
+    if (m && bridge.current) return shownTime(m, bridge.current.currentTime);
     const deck = active();
     return deck ? songTime(deck) : 0;
+  }
+
+  /** Set an element's time, unless it's there already: seeking flushes its buffer, a stutter at a join. */
+  function setTime(deck: HTMLAudioElement, time: number) {
+    if (Math.abs(deck.currentTime - time) > SEEK_SLACK_S) deck.currentTime = time;
+  }
+
+  /** Set an element's time, again once it knows its file: a time set before that may be ignored (Safari). */
+  function setTimeOnLoad(deck: HTMLAudioElement, time: number) {
+    setTime(deck, time);
+    if (deck.readyState >= 1 /* HAVE_METADATA */) return;
+    const file = deck.getAttribute('src');
+    deck.addEventListener('loadedmetadata', () => deck.getAttribute('src') === file && setTime(deck, time), { once: true });
   }
 
   /**
@@ -140,22 +181,27 @@ export function AudioEngine() {
     const offset = offsetOf(deck);
     const t = loaded.current.get(deck);
     if (time >= offset || !t) {
-      deck.currentTime = Math.max(0, time - offset);
+      setTimeOnLoad(deck, Math.max(0, time - offset));
       return false;
     }
     switching.current = true;
     load(deck, t);
-    deck.addEventListener('loadedmetadata', () => (deck.currentTime = time), { once: true });
+    setTimeOnLoad(deck, time);
     return true;
   }
 
-  /** Have a deck hold this song at this time, loading it if it doesn't. */
+  /** Have a deck hold this song at this time, loading it if it doesn't. True if it loaded (so it stopped). */
   function cue(deck: HTMLAudioElement, t: Track, time: number) {
     if (holds(deck, t)) return seekSong(deck, time);
     load(deck, t);
-    deck.currentTime = time;
-    if (time > 0) deck.addEventListener('loadedmetadata', () => (deck.currentTime = time), { once: true });
+    setTimeOnLoad(deck, time);
     return true;
+  }
+
+  /** The end of what an element has loaded, in its song's time. */
+  function bufferedEnd(deck: HTMLAudioElement) {
+    const buffered = deck.buffered;
+    return buffered?.length ? buffered.end(buffered.length - 1) + offsetOf(deck) : 0;
   }
 
   /** Each element's volume: the volume set, the song's level, and where it is in a fade. */
@@ -178,8 +224,8 @@ export function AudioEngine() {
       const f = fade.current;
       if (f?.out === deck) v *= fadeCurve(remaining(deck) / f.seconds);
       else if (f?.in === deck) v *= fadeCurve(deck.currentTime / f.seconds);
-      if (o?.out === deck) v *= fadeCurve(1 - joined);
-      else if (o?.in === deck) v *= fadeCurve(joined);
+      if (o?.out === deck) v *= evenGain(1 - joined);
+      else if (o?.in === deck) v *= evenGain(joined);
       deck.volume = Math.max(0, Math.min(1, v));
     }
   }
@@ -222,7 +268,7 @@ export function AudioEngine() {
     const out = active();
     const next = upNext(usePlayer.getState());
     const incoming = standby();
-    if (!out || !incoming || !holds(incoming, next) || handedOff.current !== null || handoffFailed.current) return false;
+    if (!out || !incoming || !holds(incoming, next) || handedOff.current !== null || handoffFailed.current || bridging()) return false;
     handedOff.current = next!.fileId;
     swap();
     if (seconds > 0) {
@@ -300,10 +346,7 @@ export function AudioEngine() {
     br.src = r.url;
     next.preload = 'auto';
     if (r.continuationUrl) loadRemainder(next, to, r.continuationUrl, r.plan.bResume);
-    else {
-      if (!holds(next, to)) load(next, to);
-      next.currentTime = r.plan.bResume;
-    }
+    else cue(next, to, r.plan.bResume);
     void loadLevels([to]);
     mix.current = { transition: r, from, to, bridging: false, switched: false };
   }
@@ -352,40 +395,74 @@ export function AudioEngine() {
     return true;
   }
 
-  /** The mix point: the transition takes over from A's file, which stops after a short overlap. */
+  /**
+   * The mix point: the transition takes over from A's file, which stops after a short overlap. If the
+   * transition doesn't start promptly, A plays on: where the volume can be set, A only stops once the
+   * transition plays, so that's seamless. iPhones stop A as the transition is asked to start (a late start
+   * is then a short gap, not a stretch of A heard twice) and play A on from there if it doesn't.
+   */
   function startBridge(m: Mix, out: HTMLAudioElement) {
     const br = bridge.current;
     const entry = bridgeEntry(m.transition.plan, songTime(out), useSleep.getState().endOfSong);
     if (!br || entry === null) return dropPrepared();
-    // Not even loading yet (a slow connection): A plays on.
-    if (br.readyState < 1 /* HAVE_METADATA */) {
+    // Not loaded enough by now (a slow connection): A plays on. iPhones don't load ahead (they also fix
+    // the volume), so there knowing the file is enough.
+    const settable = canSetVolume();
+    if (br.readyState < (settable ? 3 /* HAVE_FUTURE_DATA */ : 1) /* HAVE_METADATA */) {
       failedBridges.current.add(m.transition.url);
       return dropPrepared();
     }
     m.bridging = true;
+    starting.current = m;
+    clearTimeout(handoffTimer.current);
     if (fade.current) endFade();
-    br.currentTime = entry;
-    const o: Overlap = { out, in: br, startedAt: null };
+    setTime(br, entry);
+    const o: Overlap | null = settable ? { out, in: br, startedAt: null } : null;
     overlap.current = o;
     applyVolumes();
-    br.play().then(
+    clearTimeout(startWatch.current);
+    startWatch.current = setTimeout(() => starting.current === m && cancelStart(m, true), START_WATCH_MS);
+    const started = br.play();
+    if (!settable) out.pause();
+    started.then(
       () => {
-        if (mix.current === m) startOverlap(o);
+        if (starting.current !== m) return;
+        starting.current = null;
+        clearTimeout(startWatch.current);
+        if (o) startOverlap(o);
+        else out.pause();
       },
       () => {
-        // Paused meanwhile: the transition goes on when played again.
-        if (mix.current !== m || !usePlayer.getState().playing) return;
+        // Paused meanwhile: dealt with there.
+        if (starting.current !== m || !usePlayer.getState().playing) return;
         // Couldn't start it (autoplay rules on some phones): A plays on, then B the usual way.
-        failedBridges.current.add(m.transition.url);
-        if (overlap.current === o) {
-          clearInterval(overlapTimer.current);
-          overlap.current = null;
-        }
-        m.bridging = false;
-        dropPrepared();
-        applyVolumes();
+        cancelStart(m, true);
       },
     );
+  }
+
+  /**
+   * The transition didn't start: back to A, which plays on from where it is (it stopped only on iPhones).
+   * A failed transition isn't tried again; one paused while starting starts again when played.
+   */
+  function cancelStart(m: Mix, failed: boolean) {
+    clearTimeout(startWatch.current);
+    cancelStall();
+    if (starting.current === m) starting.current = null;
+    if (overlap.current?.in === bridge.current) {
+      clearInterval(overlapTimer.current);
+      overlap.current = null;
+    }
+    // Not playing the transition any more before its element stops, so its pause isn't taken for the listener's.
+    m.bridging = false;
+    bridge.current?.pause();
+    if (failed) {
+      failedBridges.current.add(m.transition.url);
+      dropPrepared();
+    }
+    const deck = active();
+    if (deck && usePlayer.getState().playing && deck.paused) void play(deck);
+    applyVolumes();
   }
 
   /** Both files of a join play: fade across (where the volume can be set), then stop the old one. */
@@ -416,30 +493,40 @@ export function AudioEngine() {
     const m = bridging();
     const br = bridge.current;
     if (!m || !br) return;
-    const at = songTimeDuring(m.transition.plan, br.currentTime);
-    if (at.song === 'b' && !m.switched) switchToB(m);
+    if (!m.switched && songTimeDuring(m.transition.plan, br.currentTime).song === 'b') switchToB(m);
     if (bridging() !== m) return;
-    useClock.setState({ time: at.time });
+    const time = shownTime(m, br.currentTime);
+    useClock.setState({ time });
     // Not while the store moves on to B (the history starts B then).
-    if (!br.paused && handedOff.current === null) playTracker.tick(at.time);
+    if (!br.paused && handedOff.current === null) playTracker.tick(time);
+    // B's time runs at B's rate in the transition: the lock screen's position is kept close.
+    if (m.switched && performance.now() - positionAt.current >= 1000) updatePosition();
     applyVolumes();
+    approachSwitch(m, br);
     approachLanding(m, br);
+  }
+
+  /** Close to the switch: move on to B on time. */
+  function approachSwitch(m: Mix, br: HTMLAudioElement) {
+    clearTimeout(switchTimer.current);
+    if (m.switched || br.paused || !usePlayer.getState().playing) return;
+    const wait = (m.transition.plan.switchAt - br.currentTime) / (br.playbackRate || 1);
+    if (wait > 1.5) return;
+    switchTimer.current = setTimeout(() => {
+      if (bridging() === m && !m.switched && !br.paused && usePlayer.getState().playing) switchToB(m);
+    }, Math.max(0, wait * 1000));
   }
 
   /** The middle of the blend: the store (and so the lock screen and the history) moves on to B, already playing. */
   function switchToB(m: Mix) {
-    m.switched = true;
     const s = usePlayer.getState();
-    if (sleepsAtSongEnd()) {
-      // The sleep timer, set during the transition: A has ended. On to B, paused, for when you're back.
-      stopBridge(m);
-      playTracker.finish('ended');
-      s.next(true);
-      s.setPlaying(false);
-      return;
-    }
     // The queue changed under the transition: A again, followed by the new next song.
     if (currentTrack(s)?.fileId !== m.from.fileId || upNext(s)?.fileId !== m.to.fileId) return abandonToA(m, currentSongTime());
+    clearTimeout(switchTimer.current);
+    m.switched = true;
+    // The sleep timer, set during the transition, stops at the end of A: A ends here, but the blend plays
+    // out, and the music stops where B would go on alone.
+    if (sleepsAtSongEnd()) m.sleepAtLanding = true;
     handedOff.current = m.to.fileId;
     s.next(true);
     useClock.setState({ time: currentSongTime(), duration: m.to.duration });
@@ -466,12 +553,22 @@ export function AudioEngine() {
     const { plan, continuationUrl } = m.transition;
     mix.current = null;
     clearTimeout(bridgeTimer.current);
+    cancelStall();
     swap();
     cue(incoming, m.to, plan.bResume);
+    const duration = Number.isFinite(incoming.duration) ? incoming.duration + offsetOf(incoming) : m.to.duration;
+    useClock.setState({ time: plan.bResume, duration, buffered: bufferedEnd(incoming) });
+    if (m.sleepAtLanding) {
+      // The sleep timer: B waits here, paused, for when you're back.
+      br.pause();
+      clearBridge();
+      applyVolumes();
+      usePlayer.getState().setPlaying(false);
+      return;
+    }
     const o: Overlap = { out: br, in: incoming, startedAt: null, ending: m };
     overlap.current = o;
     applyVolumes();
-    useClock.setState({ time: plan.bResume });
     incoming.play().then(
       () => startOverlap(o),
       () => {
@@ -479,7 +576,8 @@ export function AudioEngine() {
           clearInterval(overlapTimer.current);
           overlap.current = null;
         }
-        if (active() !== incoming) return;
+        // Paused meanwhile: B plays when played again.
+        if (active() !== incoming || !usePlayer.getState().playing) return;
         // Couldn't start it on its own (autoplay rules on some phones): B goes on in the element that
         // played A, which has played before. Its end follows the usual way too.
         swap();
@@ -495,7 +593,11 @@ export function AudioEngine() {
   /** Leave the transition playing; the caller says what plays instead. */
   function stopBridge(m: Mix) {
     if (mix.current === m) mix.current = null;
+    if (starting.current === m) starting.current = null;
     clearTimeout(bridgeTimer.current);
+    clearTimeout(switchTimer.current);
+    clearTimeout(startWatch.current);
+    cancelStall();
     if (overlap.current) {
       clearInterval(overlapTimer.current);
       overlap.current = null;
@@ -538,16 +640,46 @@ export function AudioEngine() {
     const intoA = time - plan.aStart;
     const t = m.switched ? transitionTimeFor(plan, time) : intoA >= 0 && intoA < plan.switchAt ? intoA : null;
     if (t !== null) {
+      clearTimeout(switchTimer.current);
       br.currentTime = t;
       updatePosition();
     } else if (m.switched) abandonToB(m, time);
     else abandonToA(m, time);
   }
 
+  /** The transition stuck loading: on with the song's own file, B's if it's shown or loaded, else A's. */
+  function onBridgeStall() {
+    const m = bridging();
+    if (!m || stallTimer.current !== undefined) return;
+    stallTimer.current = setTimeout(() => {
+      stallTimer.current = undefined;
+      const br = bridge.current;
+      if (bridging() !== m || !br) return;
+      if (!m.switched && (standby()?.readyState ?? 0) < 3 /* HAVE_FUTURE_DATA */) return abandonToA(m, currentSongTime());
+      const time = bTimeAt(m.transition.plan, br.currentTime);
+      const moveOn = !m.switched;
+      abandonToB(m, time);
+      if (moveOn) {
+        // B shows from here: A has ended, as at the switch.
+        handedOff.current = m.to.fileId;
+        usePlayer.getState().next(true);
+      }
+    }, STALL_MS);
+  }
+
+  function cancelStall() {
+    clearTimeout(stallTimer.current);
+    stallTimer.current = undefined;
+  }
+
   /** The OS media controls' seek bar: the song shown, wherever it plays from. */
   function updatePosition() {
     const m = bridging();
-    if (m && bridge.current) return updatePositionState(currentSongTime(), useClock.getState().duration, 1);
+    if (m && bridge.current) {
+      positionAt.current = performance.now();
+      const t = bridge.current.currentTime;
+      return updatePositionState(currentSongTime(), useClock.getState().duration, m.switched ? valueAt(m.transition.plan.bRate, t) : 1);
+    }
     const deck = active();
     if (deck) updatePositionState(songTime(deck), deck.duration + offsetOf(deck), deck.playbackRate);
   }
@@ -638,7 +770,10 @@ export function AudioEngine() {
       return;
     }
     // Any other song (previous, one picked from the queue): the transition stops, the song loads as usual.
-    if (m) stopBridge(m);
+    if (m) {
+      stopBridge(m);
+      clearRemainder(standby());
+    }
     dropPrepared();
 
     // Started early by the engine (no gap, or a crossfade): already playing.
@@ -646,7 +781,7 @@ export function AudioEngine() {
       handedOff.current = null;
       playTracker.finish('ended');
       playTracker.start(track);
-      useClock.setState({ time: deck.currentTime, duration: track.duration, buffered: 0, error: null });
+      useClock.setState({ time: songTime(deck), duration: track.duration, buffered: 0, error: null });
       applyVolumes();
       return;
     }
@@ -691,17 +826,33 @@ export function AudioEngine() {
   }, [track?.fileId, restartToken]);
 
   useEffect(() => {
+    // Paused as the transition was starting: A again, where it stopped; the transition starts again when played.
+    const m = bridging();
+    if (!playing && m && starting.current === m) cancelStart(m, false);
     const deck = playingDeck();
     if (!deck || !deck.getAttribute('src')) return;
     if (playing && deck.paused) void play(deck);
     if (!playing) {
       clearTimeout(handoffTimer.current);
       clearTimeout(bridgeTimer.current);
+      clearTimeout(switchTimer.current);
+      // Still loading when played again, it says so again.
+      cancelStall();
       if (!deck.paused) deck.pause();
       if (overlap.current) endOverlap();
       if (fade.current) endFade();
     }
   }, [playing]);
+
+  // Nothing left to happen once the player is gone.
+  useEffect(
+    () => () => {
+      for (const timer of [handoffTimer, bridgeTimer, switchTimer, startWatch, stallTimer]) clearTimeout(timer.current);
+      clearInterval(overlapTimer.current);
+      clearInterval(fadeTimer.current);
+    },
+    [],
+  );
 
   // A transition loads ahead once ready for the songs playing next, and is dropped when they change.
   useEffect(() => {
@@ -930,9 +1081,15 @@ export function AudioEngine() {
     preload: 'auto',
     onTimeUpdate: (e) => isBridging(e) && onBridgeTime(),
     onSeeking: (e) => isBridging(e) && playTracker.pause(),
-    onWaiting: (e) => isBridging(e) && useClock.setState({ loading: true }),
+    onWaiting: (e) => {
+      if (!isBridging(e)) return;
+      useClock.setState({ loading: true });
+      onBridgeStall();
+    },
+    onStalled: (e) => isBridging(e) && onBridgeStall(),
     onPlaying: (e) => {
       if (!isBridging(e)) return;
+      cancelStall();
       useClock.setState({ loading: false, error: null });
       updatePosition();
     },
@@ -957,9 +1114,9 @@ export function AudioEngine() {
       const m = mix.current;
       if (m?.transition.url !== url) return;
       if (!m.bridging) return dropPrepared();
-      const at = songTimeDuring(m.transition.plan, e.currentTarget.currentTime);
-      if (m.switched) abandonToB(m, at.time);
-      else abandonToA(m, at.time);
+      const time = shownTime(m, e.currentTarget.currentTime);
+      if (m.switched) abandonToB(m, time);
+      else abandonToA(m, time);
     },
   };
 
