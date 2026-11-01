@@ -7,7 +7,6 @@ import {
   canLiveMix,
   contextTimeFor,
   type LiveMix,
-  nextDownbeat,
   outputTime,
   playLiveMix,
   prepareLiveMix,
@@ -38,31 +37,6 @@ const map = (overrides: Partial<Song> = {}): Song => ({
   soundEnd: 290,
   phraseEnergy: [],
   ...overrides,
-});
-
-describe('nextDownbeat', () => {
-  // 120 BPM, the first beat at 0.5 s and the first downbeat a beat later: bars at 1, 3, 5, 7…
-  const grid = map({ bpm: 120, firstBeat: 0.5, downbeatOffset: 1 });
-
-  it('is the first bar line at or after the time', () => {
-    expect(nextDownbeat(grid, 2.2)).toBeCloseTo(3);
-    expect(nextDownbeat(grid, 3.01)).toBeCloseTo(5);
-    expect(nextDownbeat(grid, 101)).toBeCloseTo(101);
-  });
-
-  it('a time on a bar line is that bar line, despite rounding', () => {
-    expect(nextDownbeat(grid, 3 + 1e-12)).toBeCloseTo(3);
-    expect(nextDownbeat(grid, 5 - 1e-12)).toBeCloseTo(5);
-  });
-
-  it('before the music’s first downbeat, it is that one', () => {
-    expect(nextDownbeat(grid, 0)).toBeCloseTo(1);
-  });
-
-  it('without a usable tempo, the time itself', () => {
-    expect(nextDownbeat(map({ bpm: 0 }), 12.3)).toBe(12.3);
-    expect(nextDownbeat(map({ firstBeat: Number.NaN }), 12.3)).toBe(12.3);
-  });
 });
 
 describe('song time to Web Audio time', () => {
@@ -262,7 +236,7 @@ describe('prepareLiveMix', () => {
   const prepare = (a = track(1), b = track(2), signal = new AbortController().signal) =>
     prepareLiveMix({ a, b, aPosition: 60, mode: 'auto', signal });
 
-  it('renders a quick mix starting on a downbeat of A after the time it takes to prepare', async () => {
+  it('renders a quick mix from A no earlier than the time it takes to prepare', async () => {
     const mix = await prepare();
     expect(mix).not.toBeNull();
     const { plan, buffer } = mix!;
@@ -283,7 +257,8 @@ describe('prepareLiveMix', () => {
     // Songs go to the worker cut down to around the mix, not whole.
     const [request] = FakeWorker.requests;
     expect(request!.aAudio.start).toBeGreaterThan(60);
-    expect(request!.aAudio.left.length / RENDER_RATE).toBeLessThan(20);
+    expect(request!.aAudio.start).toBeLessThanOrEqual(request!.at);
+    expect(request!.aAudio.left.length / RENDER_RATE).toBeLessThan(8); // 12 beats at 124 BPM, and margins
     expect(request!.bAudio.start).toBe(0);
   });
 
@@ -305,10 +280,22 @@ describe('prepareLiveMix', () => {
     ['no mix map for B', () => vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': map() })],
     ['A too big to decode whole', () => {}, track(1, { size: 80 * MB })],
     ['the stream fails', () => (respond = async () => new Response('', { status: 500 }))],
-    ['no steady beat in A', () => vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': map({ beatConfidence: 0.1 }), 'rec-2': map() })],
+    [
+      'no sure beat and an abrupt start to B (straight on)',
+      () => vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': map({ beatConfidence: 0.1 }), 'rec-2': map({ coldStart: true }) }),
+    ],
   ])('%s: null, for an immediate switch', async (_, setUp, a = track(1)) => {
     setUp();
     expect(await prepare(a)).toBeNull();
+  });
+
+  it('no beat in A: a short crossfade, from a few seconds of A', async () => {
+    vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': map({ bpm: 0, beatConfidence: 0 }), 'rec-2': map() });
+    const mix = await prepare();
+    const { at } = FakeWorker.requests[0]!;
+    expect(at).toBeGreaterThanOrEqual(60 + PREPARE_BUDGET_MS / 1000);
+    expect(mix?.plan).toMatchObject({ style: 'fade', aStart: at, length: 2.5 });
+    expect(FakeWorker.requests[0]!.aAudio.left.length / RENDER_RATE).toBeCloseTo(4.5, 1);
   });
 
   it('no mixing on the queue, or the same file: null without asking anything', async () => {

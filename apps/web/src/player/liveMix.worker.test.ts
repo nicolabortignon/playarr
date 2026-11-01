@@ -45,7 +45,7 @@ function request(overrides: Partial<LiveMixRequest> = {}): LiveMixRequest {
     b: song(),
     mode: 'auto',
     sameAlbumInOrder: false,
-    leaveAt: 60.5,
+    at: 60.5,
     aAudio: audio(60, 80),
     bAudio: audio(0, 40),
     ...overrides,
@@ -53,12 +53,13 @@ function request(overrides: Partial<LiveMixRequest> = {}): LiveMixRequest {
 }
 
 describe('planLiveMix', () => {
-  it('leaves A from the leave point, mid-song, not at its outro', () => {
+  it('leaves A mid-song on a bar line a few beats after the earliest it may, not at its outro', () => {
     const plan = planLiveMix(request());
     expect(plan.aStart).toBeGreaterThanOrEqual(60.5);
-    // A quick mix waits at most a phrase (16 beats) for a phrase-line landing.
-    expect(plan.aStart).toBeLessThan(60.5 + 16 * beat);
-    expect(onBar(plan.aStart)).toBe(true);
+    // The cut lands on a bar line, its lead-in included, under 6 beats after the earliest start.
+    const landing = plan.aStart + plan.beats * beat;
+    expect(landing).toBeLessThan(60.5 + 6 * beat);
+    expect(onBar(landing)).toBe(true);
   });
 
   it('a pair that would blend long gets a quick mix: a skip has no time for a blend', () => {
@@ -67,10 +68,9 @@ describe('planLiveMix', () => {
     expect(plan.reason).toBe('Skipped: quick mix');
   });
 
-  it('keeps the planner’s own reason when it chose a quick mix anyway', () => {
-    const plan = planLiveMix(request({ b: song({ bpm: 140 }) }));
-    expect(plan.style).toBe('quick');
-    expect(plan.reason).toMatch(/^Tempos 11% apart: quick mix$/);
+  it('a beat that isn’t sure enough to cut on: a short crossfade from the earliest start', () => {
+    const plan = planLiveMix(request({ a: song({ beatConfidence: 0.2 }) }));
+    expect(plan).toMatchObject({ style: 'fade', aStart: 60.5, bStart: 0, length: 2.5 });
   });
 
   it('ignores A’s own mix-out cue: the skip says where A leaves', () => {
@@ -91,12 +91,19 @@ describe('answerLiveMix', () => {
     expect(transfer).toEqual([reply.left.buffer, reply.right.buffer]);
   });
 
+  it('renders the crossfade where a beat isn’t sure', () => {
+    const { reply } = answerLiveMix(request({ b: song({ beatConfidence: 0.2 }) }));
+    expect(reply.status).toBe('ready');
+    if (reply.status !== 'ready') return;
+    expect(reply.plan.style).toBe('fade');
+    expect(reply.left.length).toBe(Math.round(2.5 * RENDER_RATE));
+  });
+
   it.each([
-    ['no mixing on the queue', { mode: 'off' as const }, /^No mixing/],
-    ['the same album, in order', { sameAlbumInOrder: true }, /^Same album/],
-    ['no steady beat (a crossfade)', { a: song({ beatConfidence: 0.2 }) }, /crossfade$/],
-    ['too close to A’s end', { leaveAt: 289 }, /straight on$/],
-  ])('%s: not possible', (_, overrides, reason) => {
+    ['no mixing on the queue', { mode: 'off' as const }, /no mixing: straight on$/],
+    ['no sure beat, and B starts abruptly', { a: song({ beatConfidence: 0.2 }), b: song({ coldStart: true }) }, /straight on$/],
+    ['too close to A’s end', { at: 289 }, /straight on$/],
+  ])('%s: straight on, so not possible', (_, overrides, reason) => {
     const { reply, transfer } = answerLiveMix(request(overrides));
     expect(reply).toEqual({ status: 'not possible', reason: expect.stringMatching(reason) });
     expect(transfer).toEqual([]);

@@ -8,8 +8,7 @@ import { useOffline } from './offline';
 
 // The desktop live mixer. When the listener skips and no transition from the server is ready, a desktop
 // browser can mix one itself: fetch and decode both songs around the mix, plan and render a quick mix in a
-// worker (liveMix.worker.ts), and play it through Web Audio from a downbeat of A, in time with A's own
-// element. Anything slow or missing gives up (null): the caller then switches straight away, as before.
+// worker (liveMix.worker.ts), and play it through Web Audio, in time with A's own element. Anything slow or missing gives up (null): the caller then switches straight away, as before.
 
 const MB = 1024 ** 2;
 
@@ -24,11 +23,14 @@ export const MAX_FILE_BYTES = 60 * MB;
 /** Longer songs aren't decoded either, whatever their size: an hour-long DJ set would take gigabytes. */
 const MAX_SONG_SECONDS = 15 * 60;
 /**
- * Beats of each song the worker gets after where the mix may begin: a quick mix waits at most a phrase
- * (16 beats) for a landing on a phrase line and lasts up to 9 beats; B lands within 8 of its beats of
- * its mix-in point. The worker checks that the plan fits what it got.
+ * Beats of A the worker gets from the earliest the mix may start: a skip's quick mix lands under 6 beats
+ * later (its lead-in included) and A rings on for a beat after. The worker checks the plan fits what it got.
  */
-const WINDOW_BEATS = 32;
+const A_WINDOW_BEATS = 12;
+/** Beats of B from its mix-in point: a quick mix lands B within 8 of its beats of it, and stops a beat later. */
+const B_WINDOW_BEATS = 32;
+/** Seconds of each song otherwise (no beat, or a fast one): a skip with no sure beat is a 2.5 s crossfade. */
+const FADE_WINDOW_S = 4;
 /** Formats whose start decodes on its own. Others (an MP4's index can sit at its end) are fetched whole. */
 const START_DECODES = new Set(['mp3', 'flac', 'ogg', 'oga', 'opus']);
 /** Slack on the bytes estimated to hold B's start: bit rates vary through a song, and cover art sits at the front. */
@@ -39,7 +41,7 @@ const B_LEAD_S = 0.03;
 /** …and the mix fades out under it over this long (AudioEngine's OVERLAP_MS). */
 const FADE_OUT_S = 0.015;
 
-/** A quick mix from A into B, rendered and ready to play. */
+/** A quick mix (or, without a sure beat, a short crossfade) from A into B, rendered and ready to play. */
 export interface LiveMix {
   plan: TransitionPlan;
   /** The transition at RENDER_RATE: it continues A from plan.aStart and runs into B at plan.bResume. */
@@ -58,16 +60,6 @@ export function canLiveMix(): boolean {
     matchMedia('(pointer: fine)').matches &&
     canSetVolume()
   );
-}
-
-/** A's first bar line at or after `time`: firstBeat + downbeatOffset beats, then every 4 beats. The time itself without a usable grid. */
-export function nextDownbeat(map: Pick<MixMap, 'bpm' | 'firstBeat' | 'downbeatOffset'>, time: number): number {
-  const beat = 60 / map.bpm;
-  const first = map.firstBeat + map.downbeatOffset * beat;
-  if (!(beat > 0) || !Number.isFinite(beat) || !Number.isFinite(first)) return time;
-  // A time a hair past a bar line (rounding) is on it.
-  const bars = Math.max(0, Math.ceil((time - first) / (4 * beat) - 1e-9));
-  return first + bars * 4 * beat;
 }
 
 type Clock = Pick<BaseAudioContext, 'currentTime'> & { getOutputTimestamp?: () => AudioTimestamp };
@@ -118,10 +110,10 @@ export async function withDeadline<T>(work: (signal: AbortSignal) => Promise<T |
 }
 
 /**
- * Prepares a quick mix from A, playing at `aPosition` now, into B: null if it can't be done within
- * PREPARE_BUDGET_MS (no mix map, a song too big, a slow connection, a pair that doesn't mix, `signal`
- * aborted), and the caller switches straight away. A should play on meanwhile: the mix starts on A's
- * first downbeat after the budget and START_MARGIN_S.
+ * Prepares the skip from A, playing at `aPosition` now, into B: null if it can't be done within
+ * PREPARE_BUDGET_MS (no mix map, a song too big, a slow connection, a pair that goes straight on, `signal`
+ * aborted), and the caller switches straight away. A should play on meanwhile: the mix starts no earlier
+ * than the budget and START_MARGIN_S from now (on a bar line of A within a few beats after, for a quick mix).
  */
 export function prepareLiveMix({
   a,
@@ -143,16 +135,16 @@ export function prepareLiveMix({
       const aMap = maps[a.recordingId];
       const bMap = maps[b.recordingId];
       if (!aMap || !bMap) return null;
-      const leaveAt = nextDownbeat(aMap, aPosition + PREPARE_BUDGET_MS / 1000 + START_MARGIN_S);
-      const aUntil = leaveAt + (WINDOW_BEATS * 60) / aMap.bpm + EXCERPT_MARGIN;
-      const bUntil = Math.max(0, bMap.cues?.mixIn ?? bMap.introEnd) + (WINDOW_BEATS * 60) / bMap.bpm + EXCERPT_MARGIN;
-      if (!Number.isFinite(aUntil) || !Number.isFinite(bUntil)) return null;
+      const at = aPosition + PREPARE_BUDGET_MS / 1000 + START_MARGIN_S;
+      const aUntil = at + Math.max(FADE_WINDOW_S, beats(aMap, A_WINDOW_BEATS)) + EXCERPT_MARGIN;
+      const bMixIn = Math.max(0, finiteOr(bMap.cues?.mixIn ?? bMap.introEnd, 0));
+      const bUntil = Math.max(FADE_WINDOW_S, bMixIn + beats(bMap, B_WINDOW_BEATS)) + EXCERPT_MARGIN;
       const [aAudio, bAudio] = await Promise.all([
-        songAudio(a, leaveAt - EXCERPT_MARGIN, aUntil, false, deadline),
+        songAudio(a, at - EXCERPT_MARGIN, aUntil, false, deadline),
         songAudio(b, 0, bUntil, true, deadline),
       ]);
       if (!aAudio || !bAudio) return null;
-      const reply = await runWorker({ a: aMap, b: bMap, mode, sameAlbumInOrder: continues(a, b), leaveAt, aAudio, bAudio }, deadline);
+      const reply = await runWorker({ a: aMap, b: bMap, mode, sameAlbumInOrder: continues(a, b), at, aAudio, bAudio }, deadline);
       if (reply.status !== 'ready') return null;
       const buffer = new AudioBuffer({ numberOfChannels: 2, length: reply.left.length, sampleRate: RENDER_RATE });
       buffer.copyToChannel(reply.left, 0);
@@ -163,6 +155,11 @@ export function prepareLiveMix({
     signal,
   );
 }
+
+const finiteOr = (value: number, fallback: number) => (Number.isFinite(value) ? value : fallback);
+
+/** Seconds of `count` beats of the song; 0 without a usable tempo (the windows then fall back to FADE_WINDOW_S). */
+const beats = (map: Pick<MixMap, 'bpm'>, count: number) => (map.bpm > 0 && Number.isFinite(map.bpm) ? (count * 60) / map.bpm : 0);
 
 /** How many bytes from the start of the file hold its first `seconds`; undefined: fetch it whole. */
 function startBytes(track: Track, seconds: number): number | undefined {
@@ -266,8 +263,8 @@ function at(context: Clock, when: number, fn: () => void): () => void {
 }
 
 /**
- * Plays a live mix in time with A: the rendered transition starts at plan.aStart, a downbeat of A (it
- * begins as A itself, so the join is seamless), A's element pauses at that moment, and B's element starts
+ * Plays a live mix in time with A: the rendered transition starts at plan.aStart (a bar line of A for a
+ * quick mix; it begins as A itself, so the join is seamless), A's element pauses at that moment, and B's element starts
  * from plan.bResume as the transition ends, where it runs into B. Null when it can't start on time (A
  * paused or past the mix's start, the context not running): the caller switches straight away.
  *
