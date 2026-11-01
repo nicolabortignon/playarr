@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { sized } from '../lib/api';
 import { extractAccent } from '../lib/color';
 import { setFaviconAccent } from '../lib/favicon';
-import { usePrefs } from '../lib/prefs';
+import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
 import { canSetVolume, fadeCurve, fadeSeconds, levelGain, silentClip, upNext } from './decks';
 import { useDownloads } from './downloads';
@@ -155,7 +155,7 @@ export function AudioEngine() {
     prepareNext();
     const next = upNext(s);
     if (!holds(standby(), next) || handedOff.current !== null || handoffFailed.current) return;
-    const seconds = canSetVolume() ? fadeSeconds(loaded.current.get(deck), next, usePrefs.getState().crossfade) : 0;
+    const seconds = canSetVolume() ? fadeSeconds(loaded.current.get(deck), next, crossfadeSeconds(usePrefs.getState())) : 0;
     const wait = left - seconds;
     if (wait > 1.5) return;
     clearTimeout(handoffTimer.current);

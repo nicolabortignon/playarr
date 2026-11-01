@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { CROSSFADES, usePrefs } from '../lib/prefs';
+import { CROSSFADES, usePrefs, type Transitions } from '../lib/prefs';
 import { canSetVolume } from '../player/decks';
 import { OfflineStorage } from './OfflineStorage';
 import { PillGroup, SettingsSection, Switch } from './SettingsControls';
@@ -16,6 +16,9 @@ const SHORTCUTS: { keys: string[][]; action: string }[] = [
   { keys: [['/']], action: 'Search' },
 ];
 
+/** Lengths offered once Crossfade is chosen: 0 seconds would just be Off. */
+const CROSSFADE_LENGTHS = CROSSFADES.filter((s) => s > 0).map((s) => ({ value: s, label: `${s} s` }));
+
 const KBD =
   'inline-flex h-6 min-w-6 items-center justify-center rounded border border-line bg-ink-800 px-1.5 font-mono text-[11px] tracking-wider text-paper-dim uppercase';
 
@@ -25,11 +28,21 @@ export function PlaybackPanel() {
   const setRecordPlays = usePrefs((s) => s.setRecordPlays);
   const autoplay = usePrefs((s) => s.autoplay);
   const setAutoplay = usePrefs((s) => s.setAutoplay);
+  const transitions = usePrefs((s) => s.transitions);
+  const setTransitions = usePrefs((s) => s.setTransitions);
   const crossfade = usePrefs((s) => s.crossfade);
   const setCrossfade = usePrefs((s) => s.setCrossfade);
   const levelVolume = usePrefs((s) => s.levelVolume);
   const setLevelVolume = usePrefs((s) => s.setLevelVolume);
   const settable = canSetVolume();
+  // A device that can't fade plays a saved Crossfade without a gap, so show it as Off there.
+  // DJ mix stays: its transitions are mixed before they reach the device, no volume needed.
+  const shown: Transitions = !settable && transitions === 'crossfade' ? 'off' : transitions;
+  const transitionOptions: { value: Transitions; label: string; disabled?: boolean }[] = [
+    { value: 'off', label: 'Off' },
+    { value: 'crossfade', label: 'Crossfade', disabled: !settable },
+    { value: 'dj', label: 'DJ mix' },
+  ];
   return (
     <div>
       <SettingsSection title="Playing">
@@ -53,7 +66,7 @@ export function PlaybackPanel() {
         description={
           settable
             ? 'Songs always follow each other without a gap.'
-            : 'Songs always follow each other without a gap. This device sets the volume with its own buttons, so it can’t fade or even out songs.'
+            : 'Songs always follow each other without a gap. This device sets the volume with its own buttons, so it can’t crossfade or even out songs. DJ mix still works here, joining songs on the beat.'
         }
       >
         <div className="divide-y divide-line">
@@ -65,15 +78,19 @@ export function PlaybackPanel() {
             disabled={!settable}
           />
           <div className="py-3">
-            <div className="text-[15px] text-paper">Crossfade</div>
-            <p className="mt-0.5 mb-3 text-[13px] text-muted">Fades each song into the next. Never between songs of an album played in order.</p>
-            <PillGroup
-              label="Crossfade"
-              options={CROSSFADES.map((s) => ({ value: s, label: s ? `${s} s` : 'Off' }))}
-              value={settable ? crossfade : 0}
-              onChange={setCrossfade}
-              disabled={!settable}
-            />
+            <div className="mb-3 text-[15px] text-paper">Transitions</div>
+            <PillGroup label="Transitions" options={transitionOptions} value={shown} onChange={setTransitions} />
+            {shown === 'crossfade' && (
+              <>
+                <p className="mt-3 mb-3 text-[13px] text-muted">Fades each song into the next. Never between songs of an album played in order.</p>
+                <PillGroup label="Crossfade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} />
+              </>
+            )}
+            {shown === 'dj' && (
+              <p className="mt-3 text-[13px] text-muted">
+                Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on.
+              </p>
+            )}
           </div>
         </div>
       </SettingsSection>

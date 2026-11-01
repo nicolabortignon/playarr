@@ -1,3 +1,4 @@
+import type { MixMode } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -28,6 +29,8 @@ interface PlayerState {
   resumeAt: number;
   /** What the queue was started from; unset, Now Playing shows the song's album. */
   source?: PlaySource;
+  /** How this queue is mixed when transitions are DJ mix: Auto, Party (longer blends) or no mixing. */
+  mixMode: MixMode;
 
   playTracks: (tracks: Track[], startIndex?: number, opts?: { shuffle?: boolean; source?: PlaySource }) => void;
   playNext: (tracks: Track[]) => void;
@@ -47,6 +50,7 @@ interface PlayerState {
   setVolume: (v: number) => void;
   toggleMute: () => void;
   setResumeAt: (t: number) => void;
+  setMixMode: (mode: MixMode) => void;
 }
 
 function shuffled<T>(arr: T[]): T[] {
@@ -57,6 +61,8 @@ function shuffled<T>(arr: T[]): T[] {
   }
   return a;
 }
+
+const MIX_MODES: readonly MixMode[] = ['auto', 'party', 'off'];
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
@@ -73,6 +79,7 @@ export const usePlayer = create<PlayerState>()(
       muted: false,
       restartToken: 0,
       resumeAt: 0,
+      mixMode: 'auto',
 
       playTracks: (tracks, startIndex = 0, opts) => {
         if (!tracks.length) return;
@@ -87,6 +94,8 @@ export const usePlayer = create<PlayerState>()(
           pos: shuffle ? 0 : start,
           shuffle,
           source: opts?.source,
+          // A party mode picked for the last queue shouldn't carry over to something new.
+          mixMode: 'auto',
           playing: true,
           resumeAt: 0,
           restartToken: get().restartToken + 1,
@@ -184,12 +193,14 @@ export const usePlayer = create<PlayerState>()(
       setVolume: (volume) => set({ volume: Math.min(1, Math.max(0, volume)), muted: false }),
       toggleMute: () => set({ muted: !get().muted }),
       setResumeAt: (resumeAt) => set({ resumeAt }),
+      setMixMode: (mixMode) => set({ mixMode }),
     }),
     {
       name: 'playarr.player',
       version: 1,
-      partialize: ({ queue, order, pos, shuffle, repeat, volume, muted, resumeAt, source }) => ({
+      partialize: ({ queue, order, pos, shuffle, repeat, volume, muted, resumeAt, source, mixMode }) => ({
         source,
+        mixMode,
         queue,
         order,
         pos,
@@ -199,6 +210,11 @@ export const usePlayer = create<PlayerState>()(
         muted,
         resumeAt,
       }),
+      // A mix mode this version doesn't know (or none, from before mixing) plays as Auto.
+      merge: (saved, current) => {
+        const s = (saved ?? {}) as Partial<PlayerState>;
+        return { ...current, ...s, mixMode: MIX_MODES.includes(s.mixMode as MixMode) ? (s.mixMode as MixMode) : 'auto' };
+      },
     },
   ),
 );

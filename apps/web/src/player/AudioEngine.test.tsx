@@ -62,7 +62,7 @@ beforeEach(() => {
   HTMLMediaElement.prototype.load = function () {};
   vi.spyOn(api, 'levels').mockResolvedValue({});
   vi.spyOn(api, 'radio').mockResolvedValue([]);
-  usePrefs.setState({ crossfade: 0, levelVolume: true, autoplay: false });
+  usePrefs.setState({ transitions: 'off', crossfade: 0, levelVolume: true, autoplay: false });
   usePlayer.setState({ repeat: 'off', volume: 1, muted: false });
 });
 
@@ -145,7 +145,7 @@ describe('AudioEngine', () => {
   });
 
   it('crossfades between songs of different albums, the volume following the music', async () => {
-    usePrefs.setState({ crossfade: 6 });
+    usePrefs.setState({ transitions: 'crossfade', crossfade: 6 });
     const [a, b] = await start([song(1), song(2)]);
     await at(a, 193.99);
     expect(now()).toBe(2);
@@ -159,8 +159,17 @@ describe('AudioEngine', () => {
     expect(fake(b).volume).toBe(1);
   });
 
+  it('plays DJ mix without a gap, not as a crossfade, for now', async () => {
+    usePrefs.setState({ transitions: 'dj', crossfade: 6 });
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 193.99);
+    expect(now()).toBe(1);
+    await at(a, 199.99);
+    expect(now()).toBe(2);
+  });
+
   it('never fades between songs of one album played in order', async () => {
-    usePrefs.setState({ crossfade: 6 });
+    usePrefs.setState({ transitions: 'crossfade', crossfade: 6 });
     const first = { ...song(1, 9), trackNumber: 1 };
     const second = { ...song(2, 9), trackNumber: 2 };
     const [a] = await start([first, second]);

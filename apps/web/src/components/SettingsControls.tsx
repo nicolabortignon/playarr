@@ -91,14 +91,25 @@ const STEPS: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: 
 /**
  * Keyboard for a radiogroup of buttons: arrows move and choose, Home and End jump.
  * Only the chosen option is in the tab order (or the first, when none is).
+ * Options this device can't use (`enabled` false) are stepped over.
  */
-export function radioKeys<T>(values: readonly T[], current: T, onChange: (v: T) => void) {
+export function radioKeys<T>(values: readonly T[], current: T, onChange: (v: T) => void, enabled: (v: T) => boolean = () => true) {
   const index = values.indexOf(current);
   return {
     onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
       const n = values.length;
-      const next =
-        e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : STEPS[e.key] ? (Math.max(index, 0) + STEPS[e.key]! + n) % n : -1;
+      const step = e.key === 'Home' || e.key === 'End' ? 0 : STEPS[e.key];
+      if (step === undefined) return;
+      // Home and End look from either end inwards; arrows from the current option onwards.
+      const from = e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : (Math.max(index, 0) + step + n) % n;
+      const direction = e.key === 'Home' ? 1 : e.key === 'End' ? -1 : step;
+      let next = -1;
+      for (let i = 0, at = from; i < n; i++, at = (at + direction + n) % n) {
+        if (enabled(values[at]!)) {
+          next = at;
+          break;
+        }
+      }
       if (next < 0) return;
       e.preventDefault();
       onChange(values[next]!);
@@ -117,7 +128,8 @@ export function PillGroup<T extends string | number>({
   disabled,
 }: {
   label: string;
-  options: readonly { value: T; label: string }[];
+  /** An option `disabled` stays visible but can't be chosen, e.g. something this device can't do. */
+  options: readonly { value: T; label: string; disabled?: boolean }[];
   value: T;
   onChange: (v: T) => void;
   disabled?: boolean;
@@ -126,6 +138,7 @@ export function PillGroup<T extends string | number>({
     options.map((o) => o.value),
     value,
     onChange,
+    (v) => !options.find((o) => o.value === v)?.disabled,
   );
   return (
     <div
@@ -142,10 +155,12 @@ export function PillGroup<T extends string | number>({
           role="radio"
           aria-checked={value === o.value}
           tabIndex={keys.tabIndexFor(i)}
-          disabled={disabled}
+          disabled={disabled || o.disabled}
           onClick={() => onChange(o.value)}
           className={cn(
             'h-8 rounded-full border px-3.5 font-mono text-[11px] tracking-wider uppercase transition',
+            // The whole group dims itself when disabled; a single option dims on its own.
+            o.disabled && !disabled && 'opacity-50',
             value === o.value ? 'border-accent bg-accent text-accent-ink' : 'border-line text-paper-dim hover:border-paper/25',
           )}
         >
