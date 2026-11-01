@@ -4,6 +4,9 @@ import { create } from 'zustand';
 interface UIState {
   nowPlayingOpen: boolean;
   setNowPlaying: (open: boolean) => void;
+  /** Now Playing shows the words in place of the cover. */
+  lyricsOpen: boolean;
+  setLyrics: (open: boolean) => void;
   /** Songs waiting to be added by the "Add to playlist" dialog; [] = just create a playlist. */
   playlistPicker: Track[] | null;
   openPlaylistPicker: (tracks: Track[]) => void;
@@ -17,6 +20,8 @@ interface UIState {
 export const useUI = create<UIState>()((set) => ({
   nowPlayingOpen: false,
   setNowPlaying: (nowPlayingOpen) => set({ nowPlayingOpen }),
+  lyricsOpen: false,
+  setLyrics: (lyricsOpen) => set({ lyricsOpen }),
   playlistPicker: null,
   openPlaylistPicker: (tracks) => set({ playlistPicker: tracks.filter((t) => t.recordingId) }),
   closePlaylistPicker: () => set({ playlistPicker: null }),

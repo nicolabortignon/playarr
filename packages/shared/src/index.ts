@@ -788,3 +788,14 @@ export interface ListenBrainzInfo {
   /** Why sending stopped, e.g. the token was revoked. */
   error?: string;
 }
+
+/** A song's words: timed lines when known (to follow along), else the text. */
+export interface Lyrics {
+  /** Lines with when they're sung, in seconds. */
+  synced?: { at: number; text: string }[];
+  plain?: string;
+  /** Known to have no words. */
+  instrumental?: boolean;
+  /** Where they came from: the file (its tags or an .lrc beside it) or LRCLIB. */
+  source: 'file' | 'lrclib';
+}

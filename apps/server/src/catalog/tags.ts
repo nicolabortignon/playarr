@@ -84,6 +84,16 @@ export async function readTagsFrom(media: MediaSource, path: string, size: numbe
   return toTagInfo(await parseRemote(media, path, size, true), path);
 }
 
+/** Lyrics kept in a file's tags: timed lines (milliseconds) or the text, which may itself be LRC. */
+export async function lyricsFrom(media: MediaSource, path: string, size: number): Promise<{ synced?: { ms: number; text: string }[]; text?: string } | null> {
+  const tag = (await parseRemote(media, path, size, true)).common.lyrics?.find((l) => l.syncText?.length || l.text?.trim());
+  if (!tag) return null;
+  // ID3 timestamps in milliseconds (format 2); MPEG frames (1) can't be placed without decoding.
+  const synced = tag.timeStampFormat === 2 ? tag.syncText.filter((l) => l.timestamp !== undefined) : [];
+  if (synced.length) return { synced: synced.map((l) => ({ ms: l.timestamp!, text: l.text })) };
+  return tag.text?.trim() ? { text: tag.text } : null;
+}
+
 /** The embedded picture of a file read through byte ranges. */
 export async function pictureFrom(media: MediaSource, path: string, size: number): Promise<{ body: Buffer; mime: string } | null> {
   const picture = (await parseRemote(media, path, size, false)).common.picture?.[0];

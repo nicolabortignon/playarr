@@ -29,6 +29,8 @@ import { apiRoutes } from './routes/api.ts';
 import { metadataRoutes } from './routes/metadata.ts';
 import { artRoutes, LocalArt, trimArtCache } from './routes/art.ts';
 import { levelRoutes } from './routes/levels.ts';
+import { lyricsRoutes } from './routes/lyrics.ts';
+import { LyricsService } from './lyrics/lyrics.ts';
 import { Scrobbler } from './listenbrainz/scrobbler.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
@@ -125,6 +127,7 @@ metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) =
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
 streamRoutes(app, { library, files });
 levelRoutes(app, { analyzer, library });
+lyricsRoutes(app, { lyrics: new LyricsService(db, library, files, { log: app.log }) });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });

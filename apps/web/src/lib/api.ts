@@ -17,6 +17,7 @@ import type {
   FolderListing,
   HealthStatus,
   ListenBrainzInfo,
+  Lyrics,
   MatchingSettings,
   MixDetail,
   MixSettings,
@@ -159,6 +160,7 @@ export const api = {
   reportPlays: (plays: PlayReport[]) =>
     request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
+  lyrics: (trackId: number) => get<{ lyrics: Lyrics | null }>(`/api/tracks/${trackId}/lyrics`).then((r) => r.lyrics),
   levels: (ids: string[]) => request<Record<string, TrackLevel>>('/api/levels', { method: 'POST', body: JSON.stringify({ ids }) }),
   radio: (seeds: string[], exclude: string[] = [], count = 25) =>
     request<Track[]>('/api/radio', { method: 'POST', body: JSON.stringify({ seeds, exclude, count }) }),

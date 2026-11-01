@@ -1,8 +1,9 @@
-import { ChevronDown, Disc3, Info, ListMusic, ListPlus, Mic2, Radio } from 'lucide-react';
+import { ChevronDown, Disc3, Info, ListMusic, ListPlus, Mic2, Quote, Radio } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { sized } from '../lib/api';
+import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { useUI } from '../lib/ui';
 import { useShallow } from 'zustand/react/shallow';
@@ -11,6 +12,7 @@ import { Cover } from './Cover';
 import { FavoriteButton } from './FavoriteButton';
 import { OfflineMark } from './OfflineMark';
 import { FormatBadge } from './FormatBadge';
+import { LyricsView } from './LyricsView';
 import { Menu } from './Menu';
 import { SeekBar, Transport } from './Transport';
 import { startRadio } from '../player/radio';
@@ -25,6 +27,8 @@ function Sheet() {
   const setOpen = useUI((s) => s.setNowPlaying);
   const openPicker = useUI((s) => s.openPlaylistPicker);
   const showMetadata = useUI((s) => s.showMetadata);
+  const lyricsOpen = useUI((s) => s.lyricsOpen);
+  const setLyrics = useUI((s) => s.setLyrics);
   const track = useCurrentTrack()!;
   const source = usePlayer((s) => s.source);
   const playing = usePlayer((s) => s.playing);
@@ -90,40 +94,58 @@ function Sheet() {
               {source?.label ?? track.albumTitle}
             </button>
           </div>
-          <Menu
-            className="text-paper"
-            items={[
-              { label: 'Add to playlist…', icon: ListPlus, onSelect: () => openPicker([track]) },
-              { label: 'Start radio', icon: Radio, onSelect: () => void startRadio(track) },
-              { label: 'Go to album', icon: Disc3, onSelect: () => go(`/albums/${track.albumId}`) },
-              { label: 'Go to artist', icon: Mic2, onSelect: () => go(`/artists/${track.artistId}`) },
-              { label: 'Show metadata', icon: Info, onSelect: () => showMetadata(track.id) },
-              { label: 'Open queue', icon: ListMusic, onSelect: () => go('/queue') },
-            ]}
-          />
+          <div className="flex items-center">
+            <button
+              type="button"
+              aria-label="Lyrics"
+              aria-pressed={lyricsOpen}
+              onClick={() => setLyrics(!lyricsOpen)}
+              className={cn(
+                'grid size-10 place-items-center rounded-full transition hover:bg-paper/10 max-md:size-11',
+                lyricsOpen ? 'text-accent' : 'text-paper',
+              )}
+            >
+              <Quote className="size-5" />
+            </button>
+            <Menu
+              className="text-paper"
+              items={[
+                { label: 'Add to playlist…', icon: ListPlus, onSelect: () => openPicker([track]) },
+                { label: 'Start radio', icon: Radio, onSelect: () => void startRadio(track) },
+                { label: 'Go to album', icon: Disc3, onSelect: () => go(`/albums/${track.albumId}`) },
+                { label: 'Go to artist', icon: Mic2, onSelect: () => go(`/artists/${track.artistId}`) },
+                { label: 'Show metadata', icon: Info, onSelect: () => showMetadata(track.id) },
+                { label: 'Open queue', icon: ListMusic, onSelect: () => go('/queue') },
+              ]}
+            />
+          </div>
         </header>
 
         <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] items-center gap-6 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:grid-rows-1 md:gap-16">
-          <div
-            className="flex h-full min-h-0 w-full touch-none items-center justify-center py-4 [container-type:size]"
-            onPointerDown={(e) => controls.start(e)}
-          >
-            <motion.div
-              key={track.albumId}
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: playing ? 1 : 0.86 }}
-              transition={{ type: 'spring', damping: 22, stiffness: 180 }}
-              className="aspect-square w-[min(100cqw,100cqh,560px)]"
+          {lyricsOpen ? (
+            <LyricsView key={track.id} track={track} className="py-4" />
+          ) : (
+            <div
+              className="flex h-full min-h-0 w-full touch-none items-center justify-center py-4 [container-type:size]"
+              onPointerDown={(e) => controls.start(e)}
             >
-              <Cover
-                src={track.coverUrl}
-                size={560}
-                alt={track.albumTitle}
-                eager
-                className="w-full rounded-lg shadow-[0_40px_80px_-20px_rgb(0_0_0/0.85)] ring-1 ring-paper/10"
-              />
-            </motion.div>
-          </div>
+              <motion.div
+                key={track.albumId}
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: playing ? 1 : 0.86 }}
+                transition={{ type: 'spring', damping: 22, stiffness: 180 }}
+                className="aspect-square w-[min(100cqw,100cqh,560px)]"
+              >
+                <Cover
+                  src={track.coverUrl}
+                  size={560}
+                  alt={track.albumTitle}
+                  eager
+                  className="w-full rounded-lg shadow-[0_40px_80px_-20px_rgb(0_0_0/0.85)] ring-1 ring-paper/10"
+                />
+              </motion.div>
+            </div>
+          )}
 
           <div className="flex flex-col gap-6 md:gap-8">
             <div className="flex items-start gap-4">

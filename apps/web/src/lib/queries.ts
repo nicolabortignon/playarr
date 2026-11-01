@@ -449,6 +449,10 @@ export function useSourceActions() {
 
 /** A folder source's albums waiting for review (doubtful matches). */
 /** Everything about one song (track menu → Show metadata). Always fresh: files and matches change. */
+/** A song's words; fetched once per song and visit. */
+export const useLyrics = (trackId: number, enabled = true) =>
+  useQuery({ queryKey: ['lyrics', trackId], queryFn: () => api.lyrics(trackId), enabled, staleTime: Infinity, retry: 1 });
+
 export const useTrackMetadata = (id: number | null) =>
   useQuery({ queryKey: ['track-metadata', id], queryFn: () => api.trackMetadata(id!), enabled: id !== null, staleTime: 0 });
 

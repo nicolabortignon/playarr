@@ -184,6 +184,12 @@ const MIGRATIONS = [
    CREATE UNIQUE INDEX plays_unique ON plays (recording_id, played_at);`,
   // Sending plays to ListenBrainz: NULL waiting, 1 sent, 2 not to be sent (too short, or unknown).
   `ALTER TABLE plays ADD COLUMN listenbrainz INTEGER;`,
+  // Lyrics found for each song (or that none were found), from its file or LRCLIB.
+  `CREATE TABLE lyrics (
+     recording_id TEXT PRIMARY KEY,
+     data         TEXT,
+     fetched_at   TEXT NOT NULL
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
