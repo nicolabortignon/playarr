@@ -14,6 +14,7 @@ const MAX_SECONDS = 420;
 const RETRY_FAILED_MS = 24 * 60 * 60_000;
 const REFRESH_META_MS = 30 * 24 * 60 * 60_000;
 const TAG_BATCH = 25;
+const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Background analysis of songs: audio features (ffmpeg where the files are, then dsp.ts) and
@@ -59,11 +60,11 @@ export class Analyzer {
     return new Map(rows.map((r) => [r.recording_id, { tags: JSON.parse(r.tags), year: r.year ?? undefined }]));
   }
 
-  /** Queue whatever hasn't been analyzed (or tagged) yet. */
-  ensure(ids: string[]) {
+  /** Queue whatever hasn't been analyzed (or tagged) yet; `audio: false` only fetches tags (cheap). */
+  ensure(ids: string[], opts: { audio?: boolean } = {}) {
     const unique = [...new Set(ids)].filter((id) => !id.startsWith('track:'));
     if (!unique.length) return;
-    if (this.canAnalyzeAudio) {
+    if (this.canAnalyzeAudio && opts.audio !== false) {
       const done = new Set(
         this.select<{ recording_id: string }>(
           'SELECT recording_id FROM track_features WHERE version = ? AND (features IS NOT NULL OR analyzed_at > ?) AND recording_id IN',
@@ -74,15 +75,17 @@ export class Analyzer {
       for (const id of unique) if (!done.has(id) && !this.running.has(id)) this.audioQueue.add(id);
       this.pump();
     }
+    // ListenBrainz knows songs by MusicBrainz id only, and one unknown id fails a whole batch.
+    const known = unique.filter((id) => MBID.test(id));
     const tagged = new Set(
       this.select<{ recording_id: string }>(
         'SELECT recording_id FROM track_meta WHERE fetched_at > ? AND recording_id IN',
-        unique,
+        known,
         [new Date(Date.now() - REFRESH_META_MS).toISOString()],
       ).map((r) => r.recording_id),
     );
     const before = this.metaQueue.size;
-    for (const id of unique) if (!tagged.has(id)) this.metaQueue.add(id);
+    for (const id of known) if (!tagged.has(id)) this.metaQueue.add(id);
     if (this.metaQueue.size > before) this.scheduleMeta();
   }
 

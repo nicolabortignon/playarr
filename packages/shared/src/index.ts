@@ -682,3 +682,81 @@ export interface TrackMetadata {
   /** Paths and locations were left out: the request didn't come from the home network. */
   pathsHidden: boolean;
 }
+
+// ── Made for you: generated mixes and the listening history behind them ─────
+
+/** One song heard (or skipped) on a device, reported when it stops being the current song. */
+export interface PlayReport {
+  trackId: number;
+  recordingId: string;
+  /** When it started, ISO. */
+  at: string;
+  /** Local hour (0–23) and weekday (0 = Sunday) where it was heard: the server may be in another time zone. */
+  hour: number;
+  weekday: number;
+  /** Seconds actually heard. */
+  seconds: number;
+  /** Left for another song early: a "not now". */
+  skipped: boolean;
+}
+
+export type MixKind =
+  | 'vibes'
+  | 'discovery'
+  | 'repeat'
+  | 'blast'
+  | 'deepcuts'
+  | 'fresh'
+  | 'decade'
+  | 'genre'
+  | 'energy'
+  | 'winddown'
+  | 'focus'
+  | 'onthisday';
+
+export interface MixSummary {
+  /** Stable per mix, e.g. "vibes", "genre-electronic", "decade-1990". */
+  key: string;
+  kind: MixKind;
+  title: string;
+  /** One line under the title on Home. */
+  subtitle: string;
+  /** Why these songs: shown on the mix's page. */
+  description: string;
+  trackCount: number;
+  duration: number;
+  /** Up to four album covers for the mix's cover. */
+  covers: string[];
+  /** OKLCH hue of the mix's colour. */
+  hue: number;
+  generatedAt: string;
+  /** When it will be made again (a new hour, day or week). */
+  refreshesAt: string;
+}
+
+export interface MixDetail extends MixSummary {
+  tracks: Track[];
+}
+
+export interface MixSettings {
+  /** Kinds of mix to make; missing kinds count as on. */
+  enabled: Partial<Record<MixKind, boolean>>;
+  /** Songs per mix. */
+  length: 25 | 50 | 75 | 100;
+  /** Discovery Weekly: 0 (more of what you like) … 1 (further afield). */
+  adventurous: number;
+  /** Blast from the past: songs not heard for at least this many days. */
+  blastDays: 30 | 90 | 180 | 365;
+  genreMixes: number;
+  decadeMixes: number;
+  /** Record what's played (the history the mixes learn from). */
+  recordHistory: boolean;
+  /** Measure the sound of every song in the library (energy, tempo…), not just those in playlists. */
+  analyzeLibrary: boolean;
+}
+
+export interface MixSettingsInfo extends MixSettings {
+  /** Whether this server can measure sound at all (ANALYSIS=on). */
+  analysisAvailable: boolean;
+  history: { plays: number; since?: string };
+}

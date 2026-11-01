@@ -156,6 +156,28 @@ const MIGRATIONS = [
   // which copies keep from wherever they came from; albums recompute from their copies on the next sync.
   `UPDATE copies SET added_at = NULL WHERE source_id IN (SELECT id FROM sources WHERE kind = 'folder');
    UPDATE catalog_albums SET added_at = NULL;`,
+  // Listening history (what the generated mixes learn from) and the mixes as last generated.
+  `CREATE TABLE plays (
+     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+     recording_id TEXT NOT NULL,
+     track_id     INTEGER,
+     artist_id    INTEGER,
+     album_id     INTEGER,
+     played_at    TEXT NOT NULL,
+     hour         INTEGER NOT NULL,
+     weekday      INTEGER NOT NULL,
+     seconds      INTEGER NOT NULL,
+     skipped      INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE INDEX plays_by_time ON plays (played_at);
+   CREATE INDEX plays_by_recording ON plays (recording_id);
+   CREATE TABLE mixes (
+     key          TEXT PRIMARY KEY,
+     period       TEXT NOT NULL,
+     variant      INTEGER NOT NULL DEFAULT 0,
+     data         TEXT NOT NULL,
+     generated_at TEXT NOT NULL
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

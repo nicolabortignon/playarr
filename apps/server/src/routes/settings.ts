@@ -116,7 +116,7 @@ type Id = { Params: { id: string } };
 const isLocal = (req: FastifyRequest) => isLocalAddress(req.socket.remoteAddress);
 
 /** Until Playarr has a login, settings can only be changed from the local network. */
-async function requireLocal(req: FastifyRequest, reply: FastifyReply) {
+export async function requireLocal(req: FastifyRequest, reply: FastifyReply) {
   if (!isLocal(req)) return reply.code(403).send({ error: 'Settings can only be changed from your home network' });
 }
 

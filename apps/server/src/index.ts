@@ -36,6 +36,9 @@ import { statusRoutes } from './routes/status.ts';
 import { streamRoutes } from './routes/stream.ts';
 import { UpdateBridge } from './update/bridge.ts';
 import { watchStalls } from './stallMonitor.ts';
+import { History } from './mixes/history.ts';
+import { Mixes } from './mixes/mixes.ts';
+import { mixRoutes } from './routes/mixes.ts';
 
 const config = loadConfig();
 const app = Fastify({
@@ -98,6 +101,9 @@ const favorites = new Favorites(db, library);
 const analyzer = new Analyzer(db, library, files, { enabled: config.ANALYSIS === 'on', log: app.log });
 const covers = new PlaylistCovers(analyzer, library, resolve(config.CACHE_DIR, 'covers'));
 const playlists = new Playlists(db, library, covers);
+// Made for you: mixes generated from the library and what's been played.
+const history = new History(db, library);
+const mixes = new Mixes({ db, store, library, analyzer, history, playlists, log: app.log });
 // Settings → Requests, read fresh each time so a change applies at once; .env values are the fallback.
 const requestSettings = () => readRequestSettings(store);
 const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), requestSettings, {
@@ -115,6 +121,13 @@ streamRoutes(app, { library, files });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
+mixRoutes(app, {
+  mixes,
+  history,
+  store,
+  analysisAvailable: analyzer.canAnalyzeAudio,
+  analyzeLibrary: () => void library.allTracks().then((tracks) => analyzer.ensure(tracks.map((t) => t.recordingId))),
+});
 // Settings → Updates: files shared with the updater container (UPDATE_DIR, set by docker/compose.yaml).
 const updates = new UpdateBridge(config.UPDATE_DIR);
 settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares, lidarr, updates });

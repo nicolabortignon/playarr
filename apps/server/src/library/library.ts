@@ -17,6 +17,7 @@ export type { FileRecord, LidarrAlbumRef };
 
 interface Snapshot extends Catalog {
   albumIdByKey: Map<string, number>;
+  trackById: Map<number, Track>;
   trackByRecording: Map<string, Track>;
   trackByName: Map<string, Track>;
 }
@@ -257,7 +258,18 @@ export class Library {
   }
 
   async track(id: number): Promise<Track | undefined> {
-    return (await this.ready()).tracks.find((t) => t.id === id);
+    return (await this.ready()).trackById.get(id);
+  }
+
+  /** Every song in the library, album by album. */
+  async allTracks(): Promise<Track[]> {
+    return (await this.ready()).tracks;
+  }
+
+  /** These songs, in this order, leaving out any no longer in the library. */
+  async tracksByIds(ids: number[]): Promise<Track[]> {
+    const index = (await this.ready()).trackById;
+    return ids.flatMap((id) => index.get(id) ?? []);
   }
 
   async album(id: number): Promise<AlbumDetail | undefined> {
@@ -295,6 +307,7 @@ function toSnapshot(catalog: Catalog): Snapshot {
   return {
     ...catalog,
     albumIdByKey: new Map([...catalog.albums.values()].map((a) => [albumKey(a.artistName, a.title), a.id])),
+    trackById: new Map(catalog.tracks.map((t) => [t.id, t])),
     trackByRecording: indexByRecording(catalog.tracks),
     trackByName: indexByName(catalog.tracks),
   };

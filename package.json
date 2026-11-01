@@ -1,7 +1,7 @@
 {
   "name": "playarr",
   "private": true,
-  "version": "0.6.43",
+  "version": "0.6.44",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
   "scripts": {

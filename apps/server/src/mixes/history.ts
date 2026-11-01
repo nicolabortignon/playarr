@@ -1,0 +1,105 @@
+import type { PlayReport } from '@playarr/shared';
+import type { DatabaseSync } from 'node:sqlite';
+import type { Library } from '../library/library.ts';
+
+/** A song heard (or skipped), as stored. */
+export interface Play {
+  recordingId: string;
+  trackId?: number;
+  artistId?: number;
+  albumId?: number;
+  playedAt: string;
+  hour: number;
+  weekday: number;
+  seconds: number;
+  skipped: boolean;
+}
+
+interface PlayRow {
+  recording_id: string;
+  track_id: number | null;
+  artist_id: number | null;
+  album_id: number | null;
+  played_at: string;
+  hour: number;
+  weekday: number;
+  seconds: number;
+  skipped: number;
+}
+
+/** The listening history: what was played where and when, which the generated mixes learn from. */
+export class History {
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly library: Pick<Library, 'track' | 'trackByRecording'>,
+  ) {}
+
+  /** Store reports from a device. Songs no longer in the library are kept by recording alone. Returns how many. */
+  async record(reports: PlayReport[]): Promise<number> {
+    const insert = this.db.prepare(
+      `INSERT INTO plays (recording_id, track_id, artist_id, album_id, played_at, hour, weekday, seconds, skipped)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const rows = await Promise.all(
+      reports.map(async (r) => {
+        const track = (await this.library.track(r.trackId)) ?? (await this.library.trackByRecording(r.recordingId));
+        return { r, track };
+      }),
+    );
+    this.db.exec('BEGIN');
+    try {
+      for (const { r, track } of rows) {
+        insert.run(
+          track?.recordingId ?? r.recordingId,
+          track?.id ?? null,
+          track?.artistId ?? null,
+          track?.albumId ?? null,
+          new Date(r.at).toISOString(),
+          r.hour,
+          r.weekday,
+          Math.round(r.seconds),
+          r.skipped ? 1 : 0,
+        );
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return rows.length;
+  }
+
+  /** Every play since `days` ago, oldest first. */
+  since(days: number, now = Date.now()): Play[] {
+    const from = new Date(now - days * 86_400_000).toISOString();
+    const rows = this.db.prepare('SELECT * FROM plays WHERE played_at >= ? ORDER BY played_at').all(from) as unknown as PlayRow[];
+    return rows.map(toPlay);
+  }
+
+  /** How much history there is. */
+  stats(): { plays: number; since?: string } {
+    const row = this.db.prepare('SELECT COUNT(*) AS n, MIN(played_at) AS first FROM plays WHERE skipped = 0').get() as {
+      n: number;
+      first: string | null;
+    };
+    return { plays: row.n, ...(row.first ? { since: row.first } : {}) };
+  }
+
+  clear() {
+    this.db.exec('DELETE FROM plays');
+  }
+}
+
+function toPlay(r: PlayRow): Play {
+  return {
+    recordingId: r.recording_id,
+    ...(r.track_id !== null ? { trackId: r.track_id } : {}),
+    ...(r.artist_id !== null ? { artistId: r.artist_id } : {}),
+    ...(r.album_id !== null ? { albumId: r.album_id } : {}),
+    playedAt: r.played_at,
+    hour: r.hour,
+    weekday: r.weekday,
+    seconds: r.seconds,
+    skipped: r.skipped === 1,
+  };
+}
