@@ -1,4 +1,4 @@
-import { ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
+import { ChartColumn, ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { SectionHeader } from '../components/Section';
@@ -18,6 +18,7 @@ export function LibraryPage() {
 
   const rows: { to: string; label: string; icon: LucideIcon; detail?: string }[] = [
     { to: '/mixes', label: 'Made for you', icon: Sparkles },
+    { to: '/stats', label: 'Your listening', icon: ChartColumn },
     { to: '/favorites', label: 'Favorites', icon: Heart, detail: favorites ? plural(favorites.length, 'song') : undefined },
     { to: '/artists', label: 'Artists', icon: LibraryIcon, detail: lib ? String(lib.artists) : undefined },
     { to: '/albums', label: 'Albums', icon: Disc3, detail: lib ? String(lib.albums) : undefined },

@@ -17,6 +17,7 @@ import type {
   FolderListing,
   HealthStatus,
   ListenBrainzInfo,
+  ListeningStats,
   Lyrics,
   MatchingSettings,
   MixDetail,
@@ -40,6 +41,7 @@ import type {
   SourceInput,
   SourceTestResult,
   SourcesResponse,
+  StatsRange,
   Track,
   TrackLevel,
   TrackMetadata,
@@ -159,6 +161,7 @@ export const api = {
   /** keepalive: a report sent as the page closes still arrives. */
   reportPlays: (plays: PlayReport[]) =>
     request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),
+  stats: (range: StatsRange) => get<ListeningStats>(`/api/stats?range=${range}`),
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
   lyrics: (trackId: number) => get<{ lyrics: Lyrics | null }>(`/api/tracks/${trackId}/lyrics`).then((r) => r.lyrics),
   levels: (ids: string[]) => request<Record<string, TrackLevel>>('/api/levels', { method: 'POST', body: JSON.stringify({ ids }) }),

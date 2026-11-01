@@ -8,7 +8,7 @@ import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, greeting } from '../lib/format';
-import { useAlbums, useArtists, useFavorites, useHealth, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
+import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
 import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
 import { shuffleLibrary } from '../player/actions';
@@ -40,6 +40,7 @@ export function HomePage() {
       </header>
 
       <MadeForYou />
+      <YearInReview />
       <JumpBackIn />
 
       <section className="relative mb-14 grid items-end gap-10 md:mb-20 xl:grid-cols-[1fr_auto]">
@@ -153,6 +154,38 @@ function MadeForYou() {
 }
 
 const MIX_CARD = 'w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52';
+
+/** The year that's ending (in December) or just ended (in January), if anything was played in it. */
+export function reviewYear(now = new Date()): number | undefined {
+  if (now.getMonth() === 11) return now.getFullYear();
+  if (now.getMonth() === 0) return now.getFullYear() - 1;
+  return undefined;
+}
+
+/** December and January: your year in music, a tap away. */
+function YearInReview() {
+  const year = reviewYear();
+  const { data } = useListeningStats(String(year ?? 0) as `${number}`, year !== undefined);
+  if (!year || !data?.plays || data.range !== String(year)) return null;
+  const top = data.topArtists[0];
+  return (
+    <section className="mb-14">
+      <Link
+        to={`/stats?range=${year}`}
+        className="group relative flex items-center gap-5 overflow-hidden rounded-xl border border-line bg-ink-900 p-5 transition hover:border-paper/20 md:p-7"
+      >
+        {top && <Cover src={top.artist.imageUrl} size={160} alt="" className="size-24 shrink-0 rounded-[4px] md:size-32" />}
+        <div className="min-w-0">
+          <div className="font-mono text-[11px] tracking-[0.2em] text-accent uppercase">Year in review</div>
+          <div className="mt-1 font-display text-3xl text-paper md:text-5xl">Your {year} in music</div>
+          <p className="mt-2 text-[14px] text-paper-dim">
+            {data.minutes.toLocaleString()} minutes{top ? `, most of all ${top.artist.name}` : ''}
+          </p>
+        </div>
+      </Link>
+    </section>
+  );
+}
 
 /** Jump back in: the albums heard lately, from the listening history. Hidden until there are a few. */
 function JumpBackIn() {

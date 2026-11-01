@@ -1,11 +1,13 @@
 import type { MixSettingsInfo } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import type { CatalogStore } from '../catalog/store.ts';
 import { ListenBrainzError, type Scrobbler } from '../listenbrainz/scrobbler.ts';
 import type { History } from '../mixes/history.ts';
 import { MixError, type Mixes } from '../mixes/mixes.ts';
 import { MIX_KINDS, MIXES_KEY, readMixSettings } from '../mixes/settings.ts';
+import { isStatsRange, listeningStats } from '../mixes/stats.ts';
 import { validTimeZone } from '../mixes/time.ts';
 import { stripAlbum, type Library } from '../library/library.ts';
 import { PlaylistError } from '../playlists.ts';
@@ -70,7 +72,9 @@ export function mixRoutes(
     analysisAvailable: boolean;
     /** Measure the whole library's sound, when that setting is turned on. */
     analyzeLibrary: () => void;
-    library: Pick<Library, 'album'>;
+    library: Pick<Library, 'album' | 'artists' | 'tracksByRecordings'>;
+    /** The database the history is in, for stats. */
+    db?: DatabaseSync;
     scrobbler?: Pick<Scrobbler, 'info' | 'connect' | 'disconnect' | 'setEnabled' | 'sendEarlier' | 'kick'>;
   },
 ) {
@@ -93,6 +97,14 @@ export function mixRoutes(
   app.get('/api/plays/recent-albums', async () => {
     const albums = await Promise.all(history.recentAlbums(24).map((id) => deps.library.album(id)));
     return albums.flatMap((a) => (a ? [stripAlbum(a)] : [])).slice(0, 12);
+  });
+
+  /** Your listening: top artists, albums and songs, when you listen, and each year in review. */
+  app.get<{ Querystring: { range?: string } }>('/api/stats', (req, reply) => {
+    const range = req.query.range ?? 'month';
+    if (!isStatsRange(range)) return reply.code(400).send({ error: 'Unknown range' });
+    if (!deps.db) return reply.code(404).send({ error: 'Not available' });
+    return listeningStats(deps.db, deps.library, range);
   });
 
   /** Songs like these, from the library: to keep playing after the queue, or "Start radio". */

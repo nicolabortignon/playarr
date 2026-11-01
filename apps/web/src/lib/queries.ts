@@ -16,6 +16,7 @@ import type {
   ReviewAction,
   ReviewGroup,
   SourceInput,
+  StatsRange,
   Track,
   UpdateInfo,
   UpdateSettings,
@@ -680,3 +681,7 @@ export function useListenBrainzAction<T>(fn: (arg: T) => Promise<ListenBrainzInf
     onError: (err: Error) => toast(err.message, 'error'),
   });
 }
+
+/** Your listening, for a period. */
+export const useListeningStats = (range: StatsRange, enabled = true) =>
+  useQuery({ queryKey: ['stats', range], queryFn: () => api.stats(range), enabled, staleTime: 5 * 60_000, placeholderData: (prev) => prev });

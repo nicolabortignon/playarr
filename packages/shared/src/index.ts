@@ -799,3 +799,37 @@ export interface Lyrics {
   /** Where they came from: the file (its tags or an .lrc beside it) or LRCLIB. */
   source: 'file' | 'lrclib';
 }
+
+/** Listening stats: the last 4 weeks, 6 months, 12 months, all time, or a calendar year ("2026"). */
+export type StatsRange = 'month' | 'halfyear' | 'year' | 'all' | `${number}`;
+
+/** What was played in a period, from the listening history. Minutes are minutes heard. */
+export interface ListeningStats {
+  range: StatsRange;
+  from?: string;
+  to: string;
+  minutes: number;
+  plays: number;
+  songs: number;
+  artists: number;
+  /** Days with something played. */
+  days: number;
+  /** Artists first heard in this period. */
+  newArtists: number;
+  /** Most days in a row with something played. */
+  longestStreak: number;
+  topArtists: { artist: Artist; plays: number; minutes: number }[];
+  topAlbums: { album: Album; plays: number; minutes: number }[];
+  topTracks: { track: Track; plays: number }[];
+  topGenres: { genre: string; minutes: number }[];
+  /** Minutes by hour of the day (local time where it was played). */
+  hours: number[];
+  /** Minutes by day of the week, Sunday first. */
+  weekdays: number[];
+  /** Minutes by month, for a calendar year. */
+  months?: number[];
+  /** The first song played in the period. */
+  firstSong?: { track: Track; at: string };
+  /** Calendar years with history, newest first: each has a year in review. */
+  years: number[];
+}
