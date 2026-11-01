@@ -10,6 +10,7 @@ import { usePrefs } from '../lib/prefs';
 import { useMixMaps } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
+import { forgetMixMap } from '../player/mixMaps';
 import { currentTrack, useClock, usePlayer } from '../player/store';
 import { refreshUpcomingTransition } from '../player/transitions';
 import { BarTicks, beatGrid, EnergyNumbers, PhraseColumns, PhraseReadout, phrasesAndBars } from './EnergyStrip';
@@ -182,6 +183,7 @@ function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: Cu
     onSuccess: async () => {
       // The server forgot the transitions made with the old points: a coming one is asked for afresh.
       refreshUpcomingTransition(song.recordingId);
+      forgetMixMap(song.recordingId);
       // The transition view and the planner's inputs both come from the mix maps.
       await client.invalidateQueries({ queryKey: ['mix-maps'] });
     },

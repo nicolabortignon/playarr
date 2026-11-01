@@ -16,6 +16,11 @@ export function mixMapOf(recordingId: string): SongMap | undefined {
   return known.get(recordingId)?.map ?? undefined;
 }
 
+/** Forget a song's mix map (its cue points were just edited): it's asked for afresh next time. */
+export function forgetMixMap(recordingId: string) {
+  known.delete(recordingId);
+}
+
 /** Learn the mix maps of these songs (for cuts on the beat), unless known lately or on their way. */
 export async function loadMixMaps(tracks: (Track | undefined)[]): Promise<void> {
   const now = Date.now();

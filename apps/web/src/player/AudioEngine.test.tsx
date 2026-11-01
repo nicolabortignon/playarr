@@ -1063,6 +1063,7 @@ describe('AudioEngine', () => {
     /** A quick mix rendered from 62.5 s into the first song: 6 s long, B showing from 3 s, B resuming at 36 s. */
     const quick = plan({ style: 'quick', aStart: 62.5, length: 6, switchAt: 3, bStart: 30, bResume: 36 });
     const resume = vi.fn(() => Promise.resolve());
+    const suspend = vi.fn(() => Promise.resolve());
     /** The mix as playLiveMix plays it: its clock (seconds into it, negative before) is the test's to move. */
     let mixed: { time: number; volume: number; stop: ReturnType<typeof vi.fn>; started: () => Promise<void>; landed: () => Promise<void> };
 
@@ -1074,6 +1075,7 @@ describe('AudioEngine', () => {
         class {
           state = 'running';
           resume = resume;
+          suspend = suspend;
           close = () => Promise.resolve();
         },
       );
@@ -1089,9 +1091,10 @@ describe('AudioEngine', () => {
           time: -1,
           volume: 1,
           stop,
+          // As the real one: A's element fades out over 15 ms from the mix's start, then pauses.
           started: () =>
             act(async () => {
-              mixed.time = 0;
+              mixed.time = 0.015;
               a.pause();
               onStarted?.();
             }),
@@ -1138,7 +1141,7 @@ describe('AudioEngine', () => {
         expect(fake(a).paused).toBe(true);
         expect(usePlayer.getState().playing).toBe(true);
         await mixAt(1);
-        expect(clock()).toBe(63.5); // the first song's time, inside the mix
+        expect(clock()).toBe(63.5); // the first song's time, inside the mix (from its start at 62.5)
         await mixAt(2.5); // half a second before the switch (the tick that sees it comes at the end of the step)
         await wait(490);
         expect(now()).toBe(1);
@@ -1153,8 +1156,9 @@ describe('AudioEngine', () => {
         await at(b, 40);
         expect(clock()).toBe(40);
         expect(titles).toEqual(['Song 1', 'Song 2']);
-        // Two plays: the first song ended at the switch, the second counts from there.
-        expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['ended']]);
+        // Two plays: the first song left at the switch (skipped: Next was pressed, so the skip rules apply),
+        // the second counts from there.
+        expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['changed']]);
         expect(vi.mocked(playTracker.start).mock.calls.map(([t]) => t.fileId)).toEqual([2]);
         expect(playTracker.tick).toHaveBeenCalledWith(34);
       } finally {
@@ -1170,6 +1174,20 @@ describe('AudioEngine', () => {
       await wait(300);
       await mixed.started();
       expect(mixed.volume).toBeCloseTo(10 ** (-6 / 20), 2);
+    });
+
+    it('leaves the first song’s volume to the mix while it fades it out', async () => {
+      const [a] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await wait(300);
+      mixed.time = 0.005; // the mix has started: playLiveMix is fading A out
+      fake(a).volume = 0.4;
+      await act(async () => usePlayer.getState().setVolume(0.9));
+      expect(fake(a).volume).toBe(0.4);
+      await mixed.started();
+      await act(async () => usePlayer.getState().setVolume(1));
+      expect(fake(a).volume).toBe(1); // its own again once paused (for when it plays again)
     });
 
     it('skips at once when no mix can be made', async () => {
@@ -1238,7 +1256,7 @@ describe('AudioEngine', () => {
       expect(usePlayer.getState().playing).toBe(false);
       expect(fake(b).time).toBe(32);
       expect(fake(b).paused).toBe(true);
-      expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['ended']]);
+      expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['changed']]); // left for a press of Next
       await act(async () => usePlayer.getState().setPlaying(true));
       await settle();
       expect(fake(b).paused).toBe(false);
@@ -1330,6 +1348,120 @@ describe('AudioEngine', () => {
       expect(now()).toBe(1);
     });
 
+    it('counts the song left for a transition waited for by a press of Next as skipped, one heard through as ended', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await start([song(1), song(2)]);
+      await at(a, 145);
+      await at(a, 168);
+      vi.mocked(playTracker.finish).mockClear();
+      await press();
+      await at(a, 169.99);
+      await overlap();
+      await at(bridge, 12.1);
+      expect(vi.mocked(playTracker.finish).mock.calls).toEqual([['changed']]);
+    });
+
+    it('skips at once, paused, when paused while the transition it waited for starts', async () => {
+      transitionReady(1, 2);
+      const [a, , bridge] = await start([song(1), song(2)]);
+      slow.set(bridge, 100);
+      await at(a, 145);
+      await at(a, 168);
+      await press();
+      await at(a, 169.99); // the transition asked to start
+      await act(async () => usePlayer.getState().setPlaying(false));
+      await settle();
+      expect(now()).toBe(2);
+      expect(usePlayer.getState().playing).toBe(false);
+      expect(fake(bridge).paused).toBe(true);
+    });
+
+    it('skips at once when the mix can’t be set going', async () => {
+      vi.mocked(playLiveMix).mockImplementation(() => {
+        throw new Error('no Web Audio after all');
+      });
+      const [a] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await wait(300);
+      expect(now()).toBe(2);
+    });
+
+    it('waits for the next song to load enough before setting the mix going, within the time allowed', async () => {
+      const [a, b] = await start([song(1), song(2)]);
+      Object.defineProperty(b, 'readyState', { configurable: true, value: 1 });
+      await at(a, 60);
+      await press();
+      await wait(300);
+      expect(playLiveMix).not.toHaveBeenCalled();
+      expect(now()).toBe(1);
+      Object.defineProperty(b, 'readyState', { configurable: true, value: 4 });
+      await act(async () => {
+        b.dispatchEvent(new Event('canplay'));
+      });
+      expect(playLiveMix).toHaveBeenCalledOnce();
+      expect(now()).toBe(1);
+    });
+
+    it('skips at once when the next song doesn’t load in time for the mix', async () => {
+      const [a, b] = await start([song(1), song(2)]);
+      Object.defineProperty(b, 'readyState', { configurable: true, value: 1 });
+      await at(a, 60);
+      await press();
+      await wait(1760);
+      expect(playLiveMix).not.toHaveBeenCalled();
+      expect(now()).toBe(2);
+    });
+
+    it('stops where the mix ends when the sleep timer is set during it', async () => {
+      const [a, b] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await wait(300);
+      await mixed.started();
+      useSleep.getState().sleepAtEndOfSong();
+      await mixAt(4);
+      expect(now()).toBe(2);
+      expect(usePlayer.getState().playing).toBe(true); // the mix plays out
+      await mixed.landed();
+      expect(usePlayer.getState().playing).toBe(false);
+      expect(fake(b).paused).toBe(true);
+      expect(fake(b).time).toBe(36);
+      expect(useSleep.getState().endOfSong).toBe(false);
+    });
+
+    it('lets Web Audio rest after a mix', async () => {
+      const [a] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await wait(300);
+      await mixed.started();
+      await mixAt(4);
+      await mixed.landed();
+      await wait(250);
+      expect(suspend).toHaveBeenCalled();
+    });
+
+    it('never mixes for a press of Next with repeat one', async () => {
+      usePlayer.setState({ repeat: 'one' });
+      const [a] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      expect(now()).toBe(2);
+      expect(prepareLiveMix).not.toHaveBeenCalled();
+    });
+
+    it('goes on with the next press of Next when the queue empties during a mix', async () => {
+      const [a] = await start([song(1), song(2)]);
+      await at(a, 60);
+      await press();
+      await wait(300);
+      await mixed.started();
+      await act(async () => usePlayer.setState({ queue: [], order: [], pos: -1 }));
+      await settle();
+      expect(mixed.stop).toHaveBeenCalled();
+    });
+
     it('skips at once with mixing off for the queue, or the sleep timer at the end of the song', async () => {
       const [a] = await start([song(1), song(2), song(3)]);
       usePlayer.getState().setMixMode('off');
@@ -1342,5 +1474,41 @@ describe('AudioEngine', () => {
       expect(now()).toBe(3);
       expect(prepareLiveMix).not.toHaveBeenCalled();
     });
+  });
+
+  it('goes on from the song’s own file when its remainder file disappears while it plays', async () => {
+    transitionReady(1, 2, { continuationUrl: '/transitions/abc-rest.flac' });
+    const [, b] = await intoTransition(12.1);
+    const bridge = document.querySelectorAll('audio')[2]!;
+    await at(bridge, 23.99);
+    await at(b, 10); // B at 42 s, from its remainder
+    Object.defineProperty(b, 'readyState', { configurable: true, value: 0 });
+    await act(async () => {
+      b.dispatchEvent(new Event('error'));
+    });
+    await settle();
+    expect(src(b)).toBe('/stream/2');
+    expect(useClock.getState().error).toBeNull();
+    b.dispatchEvent(new Event('loadedmetadata'));
+    expect(fake(b).time).toBe(42);
+    expect(fake(b).paused).toBe(false);
+  });
+
+  it('moves a song only to the latest time asked for once its file is known', async () => {
+    usePrefs.setState({ transitions: 'dj' });
+    const [a] = await start([song(1), song(2), song(3)]);
+    await at(a, 50);
+    Object.defineProperty(a, 'readyState', { configurable: true, value: 0 });
+    await act(async () => {
+      usePlayer.getState().playNext([song(9)]);
+      usePlayer.getState().jumpTo(1, { at: 42 });
+    });
+    await settle();
+    // The file known, a seek moves it at once; the time asked for before mustn't move it back after.
+    Object.defineProperty(a, 'readyState', { configurable: true, value: 1 });
+    await act(async () => useClock.getState().seek(80));
+    expect(fake(a).time).toBe(80);
+    a.dispatchEvent(new Event('loadedmetadata'));
+    expect(fake(a).time).toBe(80);
   });
 });

@@ -1,6 +1,6 @@
 import type { Track } from '@playarr/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { takeNextPresses, usePlayer } from './store';
+import { nextByPress, takeNextPresses, usePlayer } from './store';
 
 const song = (id: number) => ({ id, fileId: id, recordingId: `r${id}`, duration: 200 }) as Track;
 
@@ -60,6 +60,29 @@ describe('presses of Next', () => {
     usePlayer.getState().prev(0);
     usePlayer.getState().next();
     expect(usePlayer.getState().pos).toBe(2);
+    undo();
+  });
+});
+
+describe('the song a press of Next goes to', () => {
+  it('is the next in the play order, round to the first with repeat all, shuffled or not', () => {
+    const queue = [song(1), song(2), song(3)];
+    expect(nextByPress({ queue, order: [0, 1, 2], pos: 0, repeat: 'off' })?.id).toBe(2);
+    expect(nextByPress({ queue, order: [0, 1, 2], pos: 2, repeat: 'off' })).toBeUndefined();
+    expect(nextByPress({ queue, order: [0, 1, 2], pos: 2, repeat: 'all' })?.id).toBe(1);
+    expect(nextByPress({ queue, order: [0, 1, 2], pos: 1, repeat: 'one' })?.id).toBe(3); // Next leaves the song
+    // Shuffled: the play order, not the queue's.
+    expect(nextByPress({ queue, order: [2, 0, 1], pos: 0, repeat: 'off' })?.id).toBe(1);
+    expect(nextByPress({ queue, order: [2, 0, 1], pos: 2, repeat: 'all' })?.id).toBe(3);
+  });
+
+  it('is gone to even if the engine fails while taking the press over', () => {
+    usePlayer.getState().playTracks([song(1), song(2)]);
+    const undo = takeNextPresses(() => {
+      throw new Error('broken');
+    });
+    usePlayer.getState().next();
+    expect(usePlayer.getState().pos).toBe(1);
     undo();
   });
 });

@@ -79,6 +79,24 @@ const range = (n: number) => Array.from({ length: n }, (_, i) => i);
  */
 let nextTaker: (() => boolean) | null = null;
 
+/** The engine took this press of Next over. Should it fail, the press goes through as ever: Next never does nothing. */
+function takenOver(): boolean {
+  try {
+    return !!nextTaker?.();
+  } catch {
+    return false;
+  }
+}
+
+/** On to the next song in the play order (round to the first with repeat all): false at the end of the queue. */
+function moveOn(get: () => Pick<PlayerState, 'pos' | 'order' | 'repeat'>, set: (s: Partial<PlayerState>) => void): boolean {
+  const { pos, order, repeat } = get();
+  if (pos + 1 < order.length) set({ pos: pos + 1, playing: true, resumeAt: 0 });
+  else if (repeat === 'all' && order.length) set({ pos: 0, playing: true, resumeAt: 0 });
+  else return false;
+  return true;
+}
+
 /** Let `take` see each press of Next first: true when it takes the press over. Returns the undo. */
 export function takeNextPresses(take: () => boolean): () => void {
   nextTaker = take;
@@ -176,19 +194,18 @@ export const usePlayer = create<PlayerState>()(
       },
 
       next: (auto = false) => {
-        if (!auto && nextTaker?.()) return;
-        const { pos, order, repeat, restartToken } = get();
-        if (auto && repeat === 'one') return set({ restartToken: restartToken + 1, resumeAt: 0 });
-        if (pos + 1 < order.length) return set({ pos: pos + 1, playing: true, resumeAt: 0 });
-        if (repeat === 'all' && order.length) return set({ pos: 0, playing: true, resumeAt: 0 });
+        if (!auto) {
+          if (takenOver()) return;
+          return get().nextNow();
+        }
+        const { repeat, restartToken } = get();
+        if (repeat === 'one') return set({ restartToken: restartToken + 1, resumeAt: 0 });
         // End of queue: stop at the last track.
-        if (auto) set({ playing: false, resumeAt: 0, restartToken: restartToken + 1 });
+        if (!moveOn(get, set)) set({ playing: false, resumeAt: 0, restartToken: restartToken + 1 });
       },
 
       nextNow: () => {
-        const { pos, order, repeat } = get();
-        if (pos + 1 < order.length) set({ pos: pos + 1, playing: true, resumeAt: 0 });
-        else if (repeat === 'all' && order.length) set({ pos: 0, playing: true, resumeAt: 0 });
+        moveOn(get, set);
       },
 
       prev: (currentTime) => {
