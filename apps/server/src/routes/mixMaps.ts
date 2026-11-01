@@ -18,10 +18,15 @@ const cueInput = z.object({ mixIn: z.number().min(0).nullable().optional(), mixO
 export function mixMapRoutes(
   app: FastifyInstance,
   deps: {
-    analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure'>;
+    analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure' | 'mixMapProgress'>;
     library: Pick<Library, 'trackByRecording'>;
     /** A song's cue points changed: its cached transitions are out of date (the transition service's forget). */
     onCuesChanged?: (recordingId: string) => Promise<void>;
+    /**
+     * Whether the whole library is analysed in the background (Settings → Mixes → analyse the
+     * library); otherwise songs are only analysed as they're needed (played, queued, opened).
+     */
+    libraryScan?: () => boolean;
   },
 ) {
   const { analyzer, library } = deps;
@@ -44,6 +49,14 @@ export function mixMapRoutes(
     const missing = ids.filter((id) => !maps.has(id));
     if (missing.length) analyzer.ensure(missing, { audio: true, urgent: true });
     return out;
+  });
+
+  // Settings → Playback: how many songs are ready for DJ mix, polled while work remains.
+  app.get('/api/mix-maps/progress', () => {
+    const libraryScan = deps.libraryScan?.() ?? false;
+    // Nothing is analysed without audio analysis: no counts to make.
+    if (!analyzer.canAnalyzeAudio) return { enabled: false, songs: 0, ready: 0, failed: 0, waiting: 0, working: 0, libraryScan };
+    return { enabled: true, ...analyzer.mixMapProgress(), libraryScan };
   });
 
   app.get<{ Params: { id: string } }>('/api/recordings/:id/cues', async (req, reply) => {

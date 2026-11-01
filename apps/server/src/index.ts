@@ -49,6 +49,7 @@ import { watchStalls } from './stallMonitor.ts';
 import { History } from './mixes/history.ts';
 import { Mixes } from './mixes/mixes.ts';
 import { mixRoutes } from './routes/mixes.ts';
+import { readMixSettings } from './mixes/settings.ts';
 import { isFromApp } from './net.ts';
 
 const config = loadConfig();
@@ -153,7 +154,12 @@ artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folde
 streamRoutes(app, { library, files });
 levelRoutes(app, { analyzer, library });
 // New cue points make new plans: the transitions made from the old ones are deleted.
-mixMapRoutes(app, { analyzer, library, onCuesChanged: transitions && ((recordingId) => transitions.forget(recordingId)) });
+mixMapRoutes(app, {
+  analyzer,
+  library,
+  onCuesChanged: transitions && ((recordingId) => transitions.forget(recordingId)),
+  libraryScan: () => readMixSettings(store).analyzeLibrary,
+});
 transitionRoutes(app, { transitions, unavailableReason: 'DJ mixing needs audio analysis, which is off on this server' });
 lyricsRoutes(app, { lyrics: new LyricsService(db, library, files, { log: app.log }) });
 discoverRoutes(app, { discover, requests });

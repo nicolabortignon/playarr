@@ -41,6 +41,15 @@ export const useMusicBrainzStatus = (enabled = true) =>
     refetchInterval: (q) => (q.state.data?.queued ? 1500 : 15_000),
   });
 
+/** How far the library is from ready for DJ mix: polled while songs are waiting or being analysed, then left alone. */
+export const useMixMapProgress = (enabled = true) =>
+  useQuery({
+    queryKey: ['mix-map-progress'],
+    queryFn: api.mixMapProgress,
+    enabled,
+    refetchInterval: (q) => (q.state.data && (q.state.data.waiting > 0 || q.state.data.working > 0) ? 10_000 : false),
+  });
+
 export const useArtists = () => useQuery({ queryKey: ['artists'], queryFn: api.artists });
 
 export const artistQuery = (id: number) => queryOptions({ queryKey: ['artist', id], queryFn: () => api.artist(id) });

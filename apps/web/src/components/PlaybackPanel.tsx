@@ -1,5 +1,7 @@
 import { Fragment } from 'react';
+import type { MixMapProgress } from '../lib/api';
 import { CROSSFADES, usePrefs, type Transitions } from '../lib/prefs';
+import { useMixMapProgress } from '../lib/queries';
 import { canSetVolume } from '../player/decks';
 import { OfflineStorage } from './OfflineStorage';
 import { PillGroup, SettingsSection, Switch } from './SettingsControls';
@@ -21,6 +23,47 @@ const CROSSFADE_LENGTHS = CROSSFADES.filter((s) => s > 0).map((s) => ({ value: s
 
 const KBD =
   'inline-flex h-6 min-w-6 items-center justify-center rounded border border-line bg-ink-800 px-1.5 font-mono text-[11px] tracking-wider text-paper-dim uppercase';
+
+/** 5678 → "5,678": the rest of the panel is in English, so its numbers are too. */
+const count = (n: number) => n.toLocaleString('en');
+const songs = (n: number) => `${count(n)} ${n === 1 ? 'song' : 'songs'}`;
+
+/** What the line under DJ mix says about the library's songs: how many can be mixed, and what's left to do. */
+function mixProgressText(p: MixMapProgress): string {
+  if (!p.enabled) return 'DJ mix needs audio analysis, which is off on this server (set ANALYSIS=on in its .env).';
+  if (p.ready >= p.songs) return p.songs === 1 ? 'The library’s one song is ready for DJ mix.' : `All ${songs(p.songs)} are ready for DJ mix.`;
+  const failed = p.failed > 0 ? `${count(p.failed)} couldn’t be analysed` : '';
+  // Without the library-wide scan there's no backlog to count down: songs are measured when they're needed.
+  if (!p.libraryScan) {
+    return `${count(p.ready)} of ${songs(p.songs)} are ready for DJ mix. Others are analysed as they come up to play${failed ? `; ${failed}` : ''}.`;
+  }
+  const waiting = p.waiting > 0 ? `${count(p.waiting)} waiting to be analysed` : '';
+  return `${[`Ready for DJ mix: ${count(p.ready)} of ${songs(p.songs)}`, waiting, failed].filter(Boolean).join(' · ')}.`;
+}
+
+/** Under the DJ mix choice: how much of the library can be mixed yet. Asked for only while it's shown. */
+function MixProgress() {
+  const { data } = useMixMapProgress();
+  if (!data || (data.enabled && data.songs === 0)) return null;
+  // A bar only for a scan that will finish: songs analysed as they come up never all get there.
+  const bar = data.enabled && data.libraryScan && data.ready < data.songs;
+  return (
+    <div className="mt-3">
+      <p className="text-[13px] text-paper-dim">{mixProgressText(data)}</p>
+      {bar && (
+        <div
+          className="mt-2 h-1 overflow-hidden rounded-full bg-paper/10"
+          role="meter"
+          aria-label="Songs ready for DJ mix"
+          aria-valuenow={data.ready}
+          aria-valuemax={data.songs}
+        >
+          <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(data.ready / data.songs) * 100}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Settings → Playback: for this device. */
 export function PlaybackPanel() {
@@ -87,9 +130,12 @@ export function PlaybackPanel() {
               </>
             )}
             {shown === 'dj' && (
-              <p className="mt-3 text-[13px] text-muted">
-                Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on.
-              </p>
+              <>
+                <p className="mt-3 text-[13px] text-muted">
+                  Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on.
+                </p>
+                <MixProgress />
+              </>
             )}
           </div>
         </div>

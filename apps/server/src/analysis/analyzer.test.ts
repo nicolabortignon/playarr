@@ -2,7 +2,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import { MIX_MAP_VERSION } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FLAC, freshDb } from '../catalog/testFixtures.ts';
+import { CatalogStore } from '../catalog/store.ts';
+import { FLAC, freshDb, mezzanine } from '../catalog/testFixtures.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
 import type { PcmOptions } from '../media/source.ts';
@@ -326,6 +327,44 @@ describe('Analyzer mix maps', () => {
     map.run('old', MIX_MAP_VERSION - 1, '{}', null, now);
     map.run('failed', MIX_MAP_VERSION, null, 'boom', now);
     expect(analyzer.progress()).toMatchObject({ features: 1, mixMaps: 1 });
+  });
+});
+
+describe('Analyzer mix map progress', () => {
+  it('counts the library’s songs, those mapped for mixing and those that failed, from the current version', () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    store.applySync(store.ensureSource('lidarr', 'Lidarr'), mezzanine()); // rec-1 and rec-2
+    // A song only a turned-off source has isn't in the library.
+    const off = store.addSource('folder', 'Old disk');
+    const elsewhere = mezzanine();
+    elsewhere.tracks = [{ ...elsewhere.tracks[0]!, key: 'mb:rg-1#rec-3', recordingId: 'rec-3' }];
+    elsewhere.copies = [{ ...elsewhere.copies[0]!, ref: 'x', trackKey: 'mb:rg-1#rec-3' }];
+    store.applySync(off, elsewhere);
+    db.prepare('UPDATE sources SET enabled = 0 WHERE id = ?').run(off);
+
+    const { analyzer } = withSong({ seconds: 200, db });
+    const now = new Date().toISOString();
+    const longAgo = new Date(Date.now() - 2 * 24 * 3600_000).toISOString();
+    const map = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
+    map.run('rec-1', MIX_MAP_VERSION, '{}', null, now);
+    map.run('rec-2', MIX_MAP_VERSION, null, 'boom', now);
+    map.run('rec-3', MIX_MAP_VERSION, '{}', null, now);
+    map.run('gone', MIX_MAP_VERSION, '{}', null, now);
+    expect(analyzer.mixMapProgress()).toEqual({ songs: 2, ready: 1, failed: 1, waiting: 0, working: 0 });
+
+    // A failure due for another try is neither ready nor failed; an old version's map doesn't count.
+    db.prepare('UPDATE mix_maps SET analyzed_at = ? WHERE recording_id = ?').run(longAgo, 'rec-2');
+    db.prepare('UPDATE mix_maps SET version = ? WHERE recording_id = ?').run(MIX_MAP_VERSION - 1, 'rec-1');
+    expect(analyzer.mixMapProgress()).toMatchObject({ songs: 2, ready: 0, failed: 0 });
+  });
+
+  it('counts the songs waiting in either queue and the one being measured', () => {
+    const { analyzer, pcm } = withSong({ seconds: 200 });
+    pcm.mockImplementation(() => new Promise(() => {})); // never finishes
+    analyzer.ensure(['local:a', 'local:b']);
+    analyzer.ensure(['local:c'], { urgent: true });
+    expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 2, working: 1 });
   });
 });
 

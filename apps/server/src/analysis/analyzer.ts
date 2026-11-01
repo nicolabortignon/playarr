@@ -119,6 +119,38 @@ export class Analyzer {
     };
   }
 
+  /**
+   * How far the library is from being ready for DJ mix, cheap enough to poll: one query over the
+   * catalog (no JSON read) and the queue sizes.
+   * - songs: recordings with a file in an enabled source (what the library shows), leaving out
+   *   `track:` ids, which are never analyzed;
+   * - ready: of those, the ones with a mix map from the current version;
+   * - failed: the ones whose current-version mix map failed recently (tried again a day later);
+   * - waiting / working: songs queued for analysis (features or mix map), and being measured now.
+   */
+  mixMapProgress(): { songs: number; ready: number; failed: number; waiting: number; working: number } {
+    const row = this.db
+      .prepare(
+        `WITH library AS (
+           SELECT DISTINCT t.recording_id AS id FROM catalog_tracks t
+           JOIN copies c ON c.track_id = t.id JOIN sources s ON s.id = c.source_id
+           WHERE s.enabled = 1 AND t.recording_id NOT LIKE 'track:%'
+         )
+         SELECT COUNT(*) AS songs,
+           COUNT(CASE WHEN m.data IS NOT NULL THEN 1 END) AS ready,
+           COUNT(CASE WHEN m.data IS NULL AND m.analyzed_at > ? THEN 1 END) AS failed
+         FROM library l LEFT JOIN mix_maps m ON m.recording_id = l.id AND m.version = ?`,
+      )
+      .get(new Date(Date.now() - RETRY_FAILED_MS).toISOString(), MIX_MAP_VERSION) as { songs: number; ready: number; failed: number };
+    return {
+      songs: row.songs,
+      ready: row.ready,
+      failed: row.failed,
+      waiting: this.urgentQueue.size + this.audioQueue.size,
+      working: this.running.size,
+    };
+  }
+
   features(ids: string[]): Map<string, AudioFeatures> {
     const rows = this.select<{ recording_id: string; features: string }>(
       'SELECT recording_id, features FROM track_features WHERE version = ? AND features IS NOT NULL AND recording_id IN',

@@ -9,7 +9,7 @@ const OTHER = '0b6a2c1e-1111-4222-8333-944455557777';
 const map = (duration: number) => ({ version: 1, duration, bpm: 120 }) as MixMap;
 
 /** The routes over an in-memory analyzer: `maps` and `cues` by recording, `durations` the library's. */
-function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CuePoints>; durations?: Record<string, number>; available?: boolean } = {}) {
+function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CuePoints>; durations?: Record<string, number>; available?: boolean; libraryScan?: boolean } = {}) {
   const maps = new Map(Object.entries(opts.maps ?? {}));
   const cues = new Map(Object.entries(opts.cues ?? {}));
   const pick = <T>(all: Map<string, T>, ids: string[]) => new Map(ids.flatMap((id) => (all.has(id) ? [[id, all.get(id)!] as const] : [])));
@@ -23,6 +23,7 @@ function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CueP
       else cues.delete(id);
     }),
     ensure: vi.fn(),
+    mixMapProgress: () => ({ songs: 5678, ready: 1234, failed: 3, waiting: 4400, working: 1 }),
   };
   const durations = opts.durations ?? {};
   const library = {
@@ -30,11 +31,24 @@ function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CueP
   };
   const forget = vi.fn(async () => {});
   const app = Fastify();
-  mixMapRoutes(app, { analyzer, library, onCuesChanged: forget });
+  mixMapRoutes(app, { analyzer, library, onCuesChanged: forget, libraryScan: () => opts.libraryScan ?? true });
   return { app, analyzer, forget, cues };
 }
 
 describe('mix map routes', () => {
+  it('reports how many songs are ready for DJ mix, and whether the whole library is being analysed', async () => {
+    const { app } = setup({ libraryScan: false });
+    const res = await app.inject({ method: 'GET', url: '/api/mix-maps/progress' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ enabled: true, songs: 5678, ready: 1234, failed: 3, waiting: 4400, working: 1, libraryScan: false });
+  });
+
+  it('says so when audio analysis is off', async () => {
+    const { app } = setup({ available: false });
+    const res = await app.inject({ method: 'GET', url: '/api/mix-maps/progress' });
+    expect(res.json()).toMatchObject({ enabled: false, waiting: 0, working: 0 });
+  });
+
   it('answers the measured maps with their cue points, and has the missing ones measured', async () => {
     const { app, analyzer } = setup({ maps: { [SONG]: map(200) }, cues: { [SONG]: { mixOut: 180 } } });
     const res = await app.inject({ method: 'POST', url: '/api/mix-maps', payload: { ids: [SONG, OTHER, SONG] } });

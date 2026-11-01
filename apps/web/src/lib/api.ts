@@ -62,6 +62,22 @@ export type TransitionAnswer =
   | { status: 'straight'; plan: TransitionPlan }
   | { status: 'unavailable'; reason: string };
 
+/** How many of the library's songs are ready for DJ mix (GET /api/mix-maps/progress). */
+export interface MixMapProgress {
+  /** Audio analysis is on: without it there's no DJ mix. */
+  enabled: boolean;
+  songs: number;
+  /** Songs with a mix map. */
+  ready: number;
+  /** Songs whose analysis failed lately (tried again a day later). */
+  failed: number;
+  /** Songs queued for analysis, and being analysed now. */
+  waiting: number;
+  working: number;
+  /** The whole library is analysed in the background (Settings → Mixes); otherwise songs as they come up to play. */
+  libraryScan: boolean;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -195,6 +211,7 @@ export const api = {
    */
   transition: (from: number, to: number, mode: MixMode, position?: number, files?: { fromFileId: number; toFileId: number }) =>
     request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files }) }),
+  mixMapProgress: () => get<MixMapProgress>('/api/mix-maps/progress'),
   /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
   mixMaps: (ids: string[]) =>
     request<Record<string, MixMap & { cues?: CuePoints }>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),
