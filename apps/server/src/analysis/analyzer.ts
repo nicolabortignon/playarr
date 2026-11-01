@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { MIX_HEAD_SECONDS, MIX_MAP_VERSION, MIX_TAIL_SECONDS, type CuePoints, type MixMap } from '@playarr/mix';
+import { MIX_HEAD_SECONDS, MIX_MAP_VERSION, MIX_TAIL_SECONDS, type CuePoints, type MixMap, type MixMapSummary } from '@playarr/mix';
 import { RateLimited, recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
@@ -105,10 +105,18 @@ export class Analyzer {
     return this.opts.enabled;
   }
 
-  /** How many songs have been measured, tagged and mapped for mixing: grows as background work finishes. */
+  /**
+   * How many songs have been measured, tagged and mapped for mixing: grows as background work finishes.
+   * Measurements count only from the current version and when they worked, so a new version (which
+   * measures everything again) changes the counts as songs are redone.
+   */
   progress(): { features: number; meta: number; mixMaps: number } {
-    const count = (table: string) => (this.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
-    return { features: count('track_features'), meta: count('track_meta'), mixMaps: count('mix_maps') };
+    const count = (sql: string, ...params: number[]) => (this.db.prepare(sql).get(...params) as { n: number }).n;
+    return {
+      features: count('SELECT COUNT(*) AS n FROM track_features WHERE version = ? AND features IS NOT NULL', ANALYSIS_VERSION),
+      meta: count('SELECT COUNT(*) AS n FROM track_meta'),
+      mixMaps: count('SELECT COUNT(*) AS n FROM mix_maps WHERE version = ? AND data IS NOT NULL', MIX_MAP_VERSION),
+    };
   }
 
   features(ids: string[]): Map<string, AudioFeatures> {
@@ -128,6 +136,33 @@ export class Analyzer {
       [MIX_MAP_VERSION],
     );
     return new Map(rows.map((r) => [r.recording_id, JSON.parse(r.data) as MixMap]));
+  }
+
+  /**
+   * What blending needs from the current mix maps (tempo, how sure and steady the beat is, key), for every song a
+   * mix might hold: SQLite picks the fields out, so the rest of each map (beat grid, phrase energy) is
+   * never parsed.
+   */
+  mixSummaries(ids: string[]): Map<string, MixMapSummary> {
+    const rows = this.select<{ recording_id: string; bpm: number; beat_confidence: number; grid_stable: number | null; key: string | null }>(
+      `SELECT recording_id, json_extract(data, '$.bpm') AS bpm, json_extract(data, '$.beatConfidence') AS beat_confidence,
+         json_extract(data, '$.gridStable') AS grid_stable, json_extract(data, '$.key') AS key
+       FROM mix_maps WHERE version = ? AND data IS NOT NULL AND recording_id IN`,
+      ids,
+      [MIX_MAP_VERSION],
+    );
+    return new Map(
+      rows.map((r) => [
+        r.recording_id,
+        {
+          bpm: r.bpm,
+          beatConfidence: r.beat_confidence,
+          // JSON true comes out of SQLite as 1.
+          gridStable: r.grid_stable === 1,
+          ...(r.key ? { key: JSON.parse(r.key) as NonNullable<MixMap['key']> } : {}),
+        },
+      ]),
+    );
   }
 
   /** Mix points set by hand, for the songs that have any. */

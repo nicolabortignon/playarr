@@ -297,6 +297,36 @@ describe('Analyzer mix maps', () => {
     expect([...maps.keys()]).toEqual(['current']);
     expect(maps.get('current')).toEqual({ bpm: 128 });
   });
+
+  it('hands out only what blending needs from current mix maps, without the rest of the map', () => {
+    const { analyzer, db } = withSong({ seconds: 200 });
+    const save = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
+    const now = new Date().toISOString();
+    const map = { bpm: 128, beatConfidence: 0.9, gridStable: true, key: { camelot: '8A', confidence: 0.7 }, phraseEnergy: [0.2, 0.9], introEnd: 30 };
+    save.run('current', MIX_MAP_VERSION, JSON.stringify(map), null, now);
+    save.run('keyless', MIX_MAP_VERSION, JSON.stringify({ bpm: 0, beatConfidence: 0.1, gridStable: false }), null, now);
+    save.run('old', MIX_MAP_VERSION - 1, JSON.stringify(map), null, now);
+    save.run('failed', MIX_MAP_VERSION, null, 'boom', now);
+    const summaries = analyzer.mixSummaries(['current', 'keyless', 'old', 'failed', 'unknown']);
+    expect(Object.fromEntries(summaries)).toEqual({
+      current: { bpm: 128, beatConfidence: 0.9, gridStable: true, key: { camelot: '8A', confidence: 0.7 } },
+      keyless: { bpm: 0, beatConfidence: 0.1, gridStable: false },
+    });
+  });
+
+  it('counts only features and mix maps measured by the current version, so a new version is noticed', () => {
+    const { analyzer, db } = withSong({ seconds: 200 });
+    const now = new Date().toISOString();
+    const feature = db.prepare('INSERT INTO track_features (recording_id, version, features, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
+    feature.run('current', ANALYSIS_VERSION, '{}', null, now);
+    feature.run('old', ANALYSIS_VERSION - 1, '{}', null, now);
+    feature.run('failed', ANALYSIS_VERSION, null, 'boom', now);
+    const map = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
+    map.run('current', MIX_MAP_VERSION, '{}', null, now);
+    map.run('old', MIX_MAP_VERSION - 1, '{}', null, now);
+    map.run('failed', MIX_MAP_VERSION, null, 'boom', now);
+    expect(analyzer.progress()).toMatchObject({ features: 1, mixMaps: 1 });
+  });
 });
 
 describe('Analyzer cue points', () => {

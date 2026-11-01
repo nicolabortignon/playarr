@@ -82,7 +82,7 @@ export class Mixes {
       db: DatabaseSync;
       store: Pick<CatalogStore, 'appSetting' | 'setAppSetting'>;
       library: Library;
-      analyzer: Pick<Analyzer, 'ensure' | 'features' | 'meta' | 'mixMaps' | 'progress'>;
+      analyzer: Pick<Analyzer, 'ensure' | 'features' | 'meta' | 'mixSummaries' | 'progress'>;
       history: History;
       playlists: Pick<Playlists, 'create'>;
       /** ListenBrainz neighbours of a recording (swappable in tests). */
@@ -173,9 +173,16 @@ export class Mixes {
     const artists = new Set(seedSongs.map((s) => s.track.artistId));
     const neighbours = await this.neighboursOf(seeds.filter((id) => MBID.test(id)).slice(0, 5));
     const skip = new Set([...seeds, ...exclude]);
-    // Energy has its own term: this one is how well a song's tempo and key go with the seeds'.
-    const seedTemposAndKeys = seedSongs.map(tempoAndKey);
-    const blendsWithSeeds = (song: Song) => seedTemposAndKeys.reduce((sum, seed) => sum + blendScore(seed, tempoAndKey(song)), 0) / seedTemposAndKeys.length;
+    // Energy has its own term: this one is how well a song's tempo and key go with the seeds'. The song
+    // playing (the last seed) is what the radio follows on from, so it weighs as much as the rest together.
+    const playing = tempoAndKey(seedSongs.at(-1)!);
+    const earlier = seedSongs.slice(0, -1).map(tempoAndKey);
+    const blendsWithSeeds = (song: Song) => {
+      const own = tempoAndKey(song);
+      const withPlaying = blendScore(playing, own);
+      if (!earlier.length) return withPlaying;
+      return 0.5 * withPlaying + (0.5 * earlier.reduce((sum, seed) => sum + blendScore(seed, own), 0)) / earlier.length;
+    };
     const rng = new Rng(Date.now() >>> 0);
     const scored = songs
       .filter((s) => !skip.has(s.track.recordingId))
@@ -330,7 +337,8 @@ export class Mixes {
     analyzer.ensure(ids, { audio: settings.analyzeLibrary });
     const features = analyzer.features(ids);
     const meta = analyzer.meta(ids);
-    const mixMaps = analyzer.mixMaps(ids);
+    // Only what blending needs: whole mix maps (beat grid, phrase energy…) for every song would be slow to read and fill memory.
+    const summaries = analyzer.mixSummaries(ids);
     const albumById = new Map(albums.map((a) => [a.id, a]));
     const genres = new Map(artists.map((a) => [a.id, a.genres]));
     const songs = unique.map((track) => {
@@ -346,7 +354,7 @@ export class Mixes {
         tagYear: m?.year,
         addedAt: album?.addedAt,
         releaseDate: album?.releaseDate,
-        mixMap: mixMaps.get(track.recordingId),
+        mix: summaries.get(track.recordingId),
       });
     });
     this.songCache = { key, songs };

@@ -1,4 +1,4 @@
-import type { Camelot, MixMap } from '@playarr/mix';
+import type { Camelot, MixMapSummary } from '@playarr/mix';
 import type { Album, Artist, Track } from '@playarr/shared';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
@@ -62,7 +62,7 @@ function fakeLibrary() {
   };
 }
 
-function setup(mixMaps = new Map<string, MixMap>()) {
+function setup(mixMaps = new Map<string, MixMapSummary>()) {
   const db = freshDb();
   const store = new CatalogStore(db);
   const { library, tracks } = fakeLibrary();
@@ -70,7 +70,7 @@ function setup(mixMaps = new Map<string, MixMap>()) {
     ensure: vi.fn(),
     features: () => new Map(),
     meta: () => new Map(),
-    mixMaps: (ids: string[]) => new Map(ids.flatMap((id) => (mixMaps.has(id) ? [[id, mixMaps.get(id)!]] : []))),
+    mixSummaries: (ids: string[]) => new Map(ids.flatMap((id) => (mixMaps.has(id) ? [[id, mixMaps.get(id)!]] : []))),
     progress: () => ({ features: 0, meta: 0, mixMaps: mixMaps.size }),
   } as unknown as Analyzer;
   const history = new History(db, library);
@@ -82,6 +82,9 @@ function setup(mixMaps = new Map<string, MixMap>()) {
 }
 
 const at = (iso: string) => new Date(iso);
+
+/** A sure mix map summary with this tempo and key. */
+const map = (bpm: number, camelot: Camelot): MixMapSummary => ({ bpm, beatConfidence: 0.9, gridStable: true, key: { camelot, confidence: 0.9 } });
 
 describe('Mixes', () => {
   it('makes mixes once per period and keeps them, even as listening goes on', async () => {
@@ -162,7 +165,6 @@ describe('Radio', () => {
   it('prefers songs in the seed’s tempo and key, and starts with one that blends with it', async () => {
     // Every song is rock or jazz as before; half of each artist's songs share the seed's tempo and key.
     const { tracks: all } = fakeLibrary();
-    const map = (bpm: number, camelot: Camelot) => ({ bpm, beatConfidence: 0.9, key: { camelot, confidence: 0.9 } }) as MixMap;
     const matches = (t: Track) => t.id % 2 === 0;
     const maps = new Map(all.map((t) => [t.recordingId, matches(t) ? map(124, '8A') : map(96, '3B')]));
     const { mixes, tracks } = setup(maps);
@@ -171,6 +173,27 @@ describe('Radio', () => {
     expect(radio).toHaveLength(10);
     expect(radio.filter(matches).length).toBeGreaterThanOrEqual(9);
     expect(matches(radio[0]!)).toBe(true);
+  });
+
+  it('weighs the song playing (the last seed) as much as all the others together', async () => {
+    // Three tempos and keys that don't go together, a third of each rock artist's songs in each.
+    const { tracks: all } = fakeLibrary();
+    const group = (t: Track) => t.id % 3;
+    const maps = new Map(all.map((t) => [t.recordingId, [map(124, '8A'), map(96, '3B'), map(150, '11A')][group(t)]!]));
+    const { mixes, tracks } = setup(maps);
+    const seedOf = (artistId: number, g: number) => tracks.find((t) => t.artistId === artistId && group(t) === g)!.recordingId;
+    // Fixed randomness: the term being checked is a nudge, not a landslide.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-01T10:00:00Z'));
+    try {
+      // Four earlier seeds in the other two groups: averaged with them, the song playing would be outvoted.
+      const radio = await mixes.radio([seedOf(1, 1), seedOf(3, 1), seedOf(5, 2), seedOf(7, 2), seedOf(9, 0)], [], 10);
+      const inGroup = (g: number) => radio.filter((t) => group(t) === g).length;
+      expect(inGroup(0)).toBeGreaterThan(inGroup(1));
+      expect(inGroup(0)).toBeGreaterThan(inGroup(2));
+      expect(group(radio[0]!)).toBe(0);
+    } finally {
+      vi.mocked(Date.now).mockRestore();
+    }
   });
 });
 

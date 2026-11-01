@@ -39,7 +39,7 @@ function setup() {
   const store = new CatalogStore(db);
   const profiles = new Profiles(db);
   const history = new History(db, library);
-  const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), mixMaps: () => new Map(), progress: () => ({ features: 0, meta: 0, mixMaps: 0 }) } as unknown as Analyzer;
+  const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), mixSummaries: () => new Map(), progress: () => ({ features: 0, meta: 0, mixMaps: 0 }) } as unknown as Analyzer;
   const mixes = new Mixes({ db, store, library, analyzer, history, playlists: {} as Playlists, similar: async () => [], profiles: () => profiles.ids() });
   const app = Fastify();
   // Requests count as local from inject's 127.0.0.1.

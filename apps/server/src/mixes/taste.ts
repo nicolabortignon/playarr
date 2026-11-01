@@ -1,4 +1,4 @@
-import type { MixMap } from '@playarr/mix';
+import type { MixMapSummary } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import type { AudioFeatures } from '../analysis/dsp.ts';
 import { styleProfile, type StyleFamily } from '../analysis/styles.ts';
@@ -22,10 +22,8 @@ export interface Song {
   /** The album's release date (YYYY-MM-DD) when it's a real one (not just a year). */
   releaseDate?: string;
   /** Its tempo and key, when its mix map is measured: for ordering mixes so neighbours blend. */
-  mix?: SongMix;
+  mix?: MixMapSummary;
 }
-
-export type SongMix = Pick<MixMap, 'bpm' | 'key' | 'beatConfidence'>;
 
 /** What a song is known by, from the catalog and from analysis. */
 export interface SongFacts {
@@ -38,7 +36,7 @@ export interface SongFacts {
   tagYear?: number;
   addedAt?: string;
   releaseDate?: string;
-  mixMap?: MixMap;
+  mix?: MixMapSummary;
 }
 
 /** How intense each style feels, for songs whose sound hasn't been measured. */
@@ -90,13 +88,8 @@ export function toSong(f: SongFacts): Song {
     ...(f.addedAt ? { addedAt: Date.parse(f.addedAt) } : {}),
     // "YYYY-01-01" is how a bare year is stored: not a real day.
     ...(date && !date.endsWith('-01-01') ? { releaseDate: date } : {}),
-    // Only what blending needs: the whole map (beat grid, phrase energy…) for every song would fill memory.
-    ...(f.mixMap ? { mix: songMix(f.mixMap) } : {}),
+    ...(f.mix ? { mix: f.mix } : {}),
   };
-}
-
-function songMix({ bpm, beatConfidence, key }: MixMap): SongMix {
-  return { bpm, beatConfidence, ...(key ? { key } : {}) };
 }
 
 export interface SongStats {

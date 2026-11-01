@@ -1,5 +1,5 @@
 import { camelotDistance, isCamelot, keysCompatible } from './camelot.ts';
-import { KEY_CONFIDENCE, LARGEST_TEMPO_GAP, STEADY_BEAT_CONFIDENCE, tempoRatio } from './plan.ts';
+import { KEY_CONFIDENCE, LARGEST_TEMPO_GAP, STEADY_BEAT_CONFIDENCE } from './plan.ts';
 import type { Camelot, MixMap } from './types.ts';
 
 // How well one song would blend into another, for ordering mixes and picking radio songs: close
@@ -7,8 +7,10 @@ import type { Camelot, MixMap } from './types.ts';
 // Whatever isn't known about a song (no beat, an unsure key, unmeasured energy) counts as
 // "fine, not a match": it neither jumps the queue nor sinks to the end.
 
-/** What blending needs to know about a song: from its mix map, plus its overall energy (0–1) if known. */
-export type Blendable = Pick<MixMap, 'bpm' | 'key' | 'beatConfidence'> & { energy?: number };
+/** The little of a mix map that blending needs: kept for every song in the library, so no more. */
+export type MixMapSummary = Pick<MixMap, 'bpm' | 'key' | 'beatConfidence' | 'gridStable'>;
+/** What blending needs to know about a song: its mix map summary, plus its overall energy (0–1) if known. */
+export type Blendable = MixMapSummary & { energy?: number };
 
 /** Each part's score when it can't be judged: as good as a pair at the edge of blending well. */
 const NEUTRAL = 0.8;
@@ -20,6 +22,8 @@ const TEMPO_HALVING_GAP = 0.03;
 const FARTHEST_TEMPO = 0.1;
 /** A beat is fully trusted from this confidence; between the planner's threshold and here, partly. */
 const SURE_BEAT_CONFIDENCE = 0.6;
+/** A tempo that wanders through the song may not hold where the blend is: trusted this much. */
+const WANDERING_TEMPO_TRUST = 0.5;
 /** Keys two steps apart on the wheel are bearable; further apart they clash. */
 const TWO_STEPS_KEY = 0.8;
 const CLASHING_KEY = 0.6;
@@ -35,17 +39,26 @@ export function blendScore(a: Blendable, b: Blendable): number {
 
 function tempoCloseness(a: Blendable, b: Blendable): number {
   if (!hasTempo(a) || !hasTempo(b)) return NEUTRAL;
-  const certainty = ramp(Math.min(a.beatConfidence, b.beatConfidence), STEADY_BEAT_CONFIDENCE, SURE_BEAT_CONFIDENCE);
+  const certainty =
+    ramp(Math.min(a.beatConfidence, b.beatConfidence), STEADY_BEAT_CONFIDENCE, SURE_BEAT_CONFIDENCE) *
+    (a.gridStable && b.gridStable ? 1 : WANDERING_TEMPO_TRUST);
   if (certainty === 0) return NEUTRAL;
-  // The planner stretches B to A; taking the larger gap of either way round keeps the score symmetric
-  // (reversing a stretch of a mix mustn't change how well it blends) and never kinder than the planner.
-  const ratio = tempoRatio(a.bpm, b.bpm);
-  const gap = Math.max(Math.abs(ratio - 1), Math.abs(1 / ratio - 1));
+  const gap = tempoGap(a.bpm, b.bpm);
   const closeness =
     gap <= LARGEST_TEMPO_GAP
       ? 1 - (1 - AT_TEMPO_LIMIT) * (gap / LARGEST_TEMPO_GAP) ** 2
       : Math.max(FARTHEST_TEMPO, AT_TEMPO_LIMIT * 0.5 ** ((gap - LARGEST_TEMPO_GAP) / TEMPO_HALVING_GAP));
   return NEUTRAL + (closeness - NEUTRAL) * certainty;
+}
+
+/**
+ * How far apart two tempos are as a ratio (0.08: one is 8% faster), at the same, double or half time,
+ * whichever is nearest. Measured in octaves (log2) and folded to the nearest one, so it is the same either
+ * way round: reversing a stretch of a mix mustn't change how well it blends.
+ */
+export function tempoGap(aBpm: number, bBpm: number): number {
+  const octaves = Math.log2(aBpm / bBpm);
+  return 2 ** Math.abs(octaves - Math.round(octaves)) - 1;
 }
 
 function keyCompatibility(a: Blendable, b: Blendable): number {

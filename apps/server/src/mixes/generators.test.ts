@@ -223,7 +223,7 @@ const TEMPOS = [90, 100, 120, 128, 140, 174];
 const KEYS: Camelot[] = ['8A', '3B', '11A', '6B', '1A', '9B'];
 
 /** A sure mix map with this tempo and key. */
-const mixMap = (bpm: number, camelot: Camelot) => ({ bpm, beatConfidence: 0.9, key: { camelot, confidence: 0.9 } });
+const mixMap = (bpm: number, camelot: Camelot) => ({ bpm, beatConfidence: 0.9, gridStable: true, key: { camelot, confidence: 0.9 } });
 
 /** Mix maps with tempos and keys drawn from a spread, so a few pairs blend and most don't; every `unmappedEvery`th song has none. */
 function withMaps(songs: Song[], unmappedEvery = 0, rng = new Rng(7)): Song[] {
@@ -280,6 +280,24 @@ describe('mix-friendly order', () => {
       { ...c!, mix: mixMap(121, '9A') },
     ]);
     expect(order.map((s) => s.track.artistId)).toEqual([1, 3, 2]);
+  });
+
+  it.each([
+    [200, 0.5],
+    [300, 0.45],
+    [300, 0.5],
+  ])('never the same artist twice in a row in %i songs, %d of them by one artist whose songs all blend', (count, share) => {
+    // One artist's songs are all 124 BPM in 8A, so the blend alone would play them back to back; everyone else's
+    // are scattered. Energies all differ, as in a real library: there's always a little blend to gain somewhere.
+    const rng = new Rng(count);
+    const songs = Array.from({ length: count }, (_, i) => {
+      const own = i < count * share;
+      const [song] = library([own ? 1 : 2 + (i % 10)], 1);
+      return { ...song!, energy: rng.next(), mix: own ? mixMap(124, '8A') : mixMap(rng.pick(TEMPOS), rng.pick(KEYS)) };
+    });
+    const artists = blendOrder(shuffled(songs, rng)).map((s) => s.track.artistId);
+    expect(artists).toHaveLength(count);
+    expect(artists.slice(1).filter((a, i) => a === artists[i])).toEqual([]);
   });
 
   it('Energy boost still builds up and Wind down still settles, whatever the tempos', () => {

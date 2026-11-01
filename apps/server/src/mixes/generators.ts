@@ -335,21 +335,24 @@ function energy(ctx: MixContext, rng: Rng): Made | null {
     subtitle: 'Loud, fast, building up',
     description: `Your most intense songs — loud, busy, a strong beat — building as it goes: ${artistsLine(songs)}.`,
     hue: 8,
-    songs: blendOrder([...songs].sort((a, b) => a.energy! - b.energy!), energyStep),
+    songs: blendOrder([...songs].sort((a, b) => a.energy! - b.energy!), energyStep(MIDDLE_ENERGY)),
   };
 }
+
+/** A Wind down song's energy when only its tags say it's calm: low, but not the stillest. */
+const CALM_ENERGY = 0.3;
 
 function winddown(ctx: MixContext, rng: Rng): Made | null {
   const scored = ctx.songs
     .filter((s) => (s.energy !== undefined && s.energy <= 0.38) || s.calm >= 0.5)
-    .map((song) => ({ song, score: (1 - (song.energy ?? 0.3)) * 0.35 + song.calm * 0.2 + affinity(ctx, song) * 0.25 + rng.next() * 0.2 - skipPenalty(ctx, song) }));
+    .map((song) => ({ song, score: (1 - (song.energy ?? CALM_ENERGY)) * 0.35 + song.calm * 0.2 + affinity(ctx, song) * 0.25 + rng.next() * 0.2 - skipPenalty(ctx, song) }));
   const songs = choose(scored, ctx.settings.length, 2);
   return {
     title: 'Wind down',
     subtitle: 'Calm, soft, slowing down',
     description: `Quiet, gentle songs, settling as it goes: ${artistsLine(songs)}.`,
     hue: 228,
-    songs: blendOrder([...songs].sort((a, b) => (b.energy ?? 0.3) - (a.energy ?? 0.3)), energyStep),
+    songs: blendOrder([...songs].sort((a, b) => (b.energy ?? CALM_ENERGY) - (a.energy ?? CALM_ENERGY)), energyStep(CALM_ENERGY)),
   };
 }
 
@@ -479,19 +482,12 @@ function flow(songs: Song[], rng: Rng): Song[] {
 function smooth(songs: Song[], rng: Rng): Song[] {
   const known = songs.filter((s) => s.energy !== undefined);
   if (known.length < songs.length / 2) return flow(songs, rng);
-  const sorted = [...songs].sort((a, b) => (a.energy ?? 0.5) - (b.energy ?? 0.5));
+  const sorted = [...songs].sort((a, b) => (a.energy ?? MIDDLE_ENERGY) - (b.energy ?? MIDDLE_ENERGY));
   // Low → high → low: alternate ends of the sorted list into the front and back.
   const front: Song[] = [];
   const back: Song[] = [];
   sorted.forEach((s, i) => (i % 2 ? back : front).push(s));
-  const arc = blendOrder([...front, ...back.reverse()], energyStep);
-  // Break up runs of one artist that reordering within a step couldn't, without undoing the arc much.
-  for (let i = 1; i < arc.length; i++) {
-    if (arc[i]!.track.artistId !== arc[i - 1]!.track.artistId) continue;
-    const j = arc.findIndex((s, k) => k > i && s.track.artistId !== arc[i - 1]!.track.artistId);
-    if (j !== -1) [arc[i], arc[j]] = [arc[j]!, arc[i]!];
-  }
-  return arc;
+  return blendOrder([...front, ...back.reverse()], energyStep(MIDDLE_ENERGY));
 }
 
 /** What blending knows of a song without its energy: tempo and key from its mix map, unknown without one. */
@@ -505,15 +501,22 @@ export function blendable(song: Song): Blendable {
 }
 
 /** No beat and no key: blendScore counts both as neutral, so the song is placed by its energy alone. */
-const NO_MIX_MAP: Blendable = { bpm: 0, beatConfidence: 0 };
-/** Enough 2-opt swaps to settle a mix of a hundred songs, few enough that making mixes stays quick. */
+const NO_MIX_MAP: Blendable = { bpm: 0, beatConfidence: 0, gridStable: false };
+/**
+ * Enough 2-opt swaps for blending to settle a mix of a hundred songs, few enough that making mixes stays
+ * quick. Swaps that keep an artist from playing twice in a row don't count: that rule always comes first.
+ */
 const MAX_BLEND_SWAPS = 200;
 /** Energy that builds or settles goes in steps this wide; within a step, songs are ordered to blend. */
 const ENERGY_STEP = 0.15;
 /** Blend gains smaller than this are rounding, not a better order. */
 const BLEND_EPSILON = 1e-9;
 
-const energyStep = (song: Song) => Math.floor((song.energy ?? 0.5) / ENERGY_STEP);
+/** Where songs of unknown energy go in a mix shaped by energy, unless it says otherwise. */
+const MIDDLE_ENERGY = 0.5;
+
+/** A song's step of energy; `unknown` must be what the mix sorted songs of unknown energy as, or they'd split its steps. */
+const energyStep = (unknown: number) => (song: Song) => Math.floor((song.energy ?? unknown) / ENERGY_STEP);
 
 /**
  * Orders songs so each blends into the next (blendScore): from the first song (the planned start), a
@@ -549,12 +552,14 @@ export function blendOrder(songs: Song[], stepOf?: (song: Song) => number): Song
   // Reversing order[i..j] only changes its two ends' neighbours; runs stay whole as long as i and j share one.
   const sameArtist = (a: number, b: number | undefined) => (b !== undefined && artist[a] === artist[b] ? 1 : 0);
   const blend = (a: number, b: number | undefined) => (b === undefined ? 0 : score[a]![b]!);
-  let swaps = 0;
+  const repeats = () => order.reduce((n, song, i) => n + (i ? sameArtist(order[i - 1]!, song) : 0), 0);
+  let blendSwaps = 0;
   let changed = true;
-  while (changed && swaps < MAX_BLEND_SWAPS) {
+  // Once blending has had its swaps, passes go on only while an artist still plays twice in a row.
+  while (changed && (blendSwaps < MAX_BLEND_SWAPS || repeats() > 0)) {
     changed = false;
-    for (let i = 1; i < count - 1 && swaps < MAX_BLEND_SWAPS; i++) {
-      for (let j = i + 1; j < count && swaps < MAX_BLEND_SWAPS; j++) {
+    for (let i = 1; i < count - 1; i++) {
+      for (let j = i + 1; j < count; j++) {
         if (run[order[j]!] !== run[order[i]!]) break;
         const before = order[i - 1]!;
         const first = order[i]!;
@@ -563,15 +568,41 @@ export function blendOrder(songs: Song[], stepOf?: (song: Song) => number): Song
         const repeatsNow = sameArtist(before, first) + sameArtist(last, after);
         const repeatsThen = sameArtist(before, last) + sameArtist(first, after);
         const gain = blend(before, last) + blend(first, after) - blend(before, first) - blend(last, after);
-        if (repeatsThen < repeatsNow || (repeatsThen === repeatsNow && gain > BLEND_EPSILON)) {
+        const repairs = repeatsThen < repeatsNow;
+        if (repairs || (repeatsThen === repeatsNow && gain > BLEND_EPSILON && blendSwaps < MAX_BLEND_SWAPS)) {
           order.splice(i, j - i + 1, ...order.slice(i, j + 1).reverse());
-          swaps++;
+          if (!repairs) blendSwaps++;
           changed = true;
         }
       }
     }
   }
+  breakRuns(order, artist, run);
   return order.map((i) => songs[i]!);
+}
+
+/**
+ * Breaks up what runs of one artist are left (reversals can't always: say the run is at the very start),
+ * swapping in the nearest later song that fits there. Best is one that leaves no new run where it came
+ * from, and from the same step, so the mix's shape barely changes; failing that, any song by someone
+ * else, and a run that makes further on is broken up when the pass gets there.
+ */
+function breakRuns(order: number[], artist: number[], run: number[]) {
+  const artistAt = (k: number) => (k >= 0 && k < order.length ? artist[order[k]!] : undefined);
+  for (let i = 1; i < order.length; i++) {
+    const previous = artistAt(i - 1);
+    if (artistAt(i) !== previous) continue;
+    let best = -1;
+    let bestRank = -1;
+    for (let k = i + 1; k < order.length && bestRank < 3; k++) {
+      if (artistAt(k) === previous) continue;
+      const fitsHere = k === i + 1 || artistAt(k) !== artistAt(i + 1);
+      const leavesNoRun = (k - 1 === i || artistAt(i) !== artistAt(k - 1)) && artistAt(i) !== artistAt(k + 1);
+      const rank = (fitsHere && leavesNoRun ? 2 : 0) + (run[order[k]!] === run[order[i]!] ? 1 : 0);
+      if (rank > bestRank) [best, bestRank] = [k, rank];
+    }
+    if (best !== -1) [order[i], order[best]] = [order[best]!, order[i]!];
+  }
 }
 
 function shuffle<T>(items: T[], rng: Rng): T[] {

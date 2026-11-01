@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { blendScore, type Blendable } from './blend.ts';
+import { blendScore, tempoGap, type Blendable } from './blend.ts';
 
 /** A song that blends perfectly with itself: 120 BPM, a sure beat, 8A and middling energy. */
 function song(overrides: Partial<Blendable> = {}): Blendable {
-  return { bpm: 120, beatConfidence: 0.9, key: { camelot: '8A', confidence: 0.9 }, energy: 0.5, ...overrides };
+  return { bpm: 120, beatConfidence: 0.9, gridStable: true, key: { camelot: '8A', confidence: 0.9 }, energy: 0.5, ...overrides };
 }
 
 describe('blendScore', () => {
@@ -33,6 +33,11 @@ describe('blendScore', () => {
     it('trusts a half-sure beat halfway', () => {
       const unsure = blendScore(song({ beatConfidence: 0.475 }), song({ bpm: 90 }));
       expect(unsure).toBeCloseTo((0.8 + 0.1) / 2, 5);
+    });
+
+    it('trusts a wandering tempo half as much', () => {
+      expect(blendScore(song({ gridStable: false }), song({ bpm: 90 }))).toBeCloseTo((0.8 + 0.1) / 2, 5);
+      expect(blendScore(song(), song({ bpm: 90, gridStable: false }))).toBeCloseTo((0.8 + 0.1) / 2, 5);
     });
   });
 
@@ -71,8 +76,28 @@ describe('blendScore', () => {
   it('multiplies the three parts, and stays between 0 and 1', () => {
     const far = song({ bpm: 90, key: { camelot: '3B', confidence: 0.9 }, energy: 1 });
     expect(blendScore(song({ energy: 0 }), far)).toBeCloseTo(0.1 * 0.6 * 0.4, 5);
-    const unknown = { bpm: 0, beatConfidence: 0 };
+    const unknown = { bpm: 0, beatConfidence: 0, gridStable: false };
     expect(blendScore(unknown, unknown)).toBeCloseTo(0.8 ** 3, 5);
+  });
+
+  describe('tempoGap', () => {
+    it.each<[number, number, number]>([
+      [120, 120, 0],
+      [120, 240, 0],
+      [87, 174, 0],
+      [120, 129.6, 0.08],
+      [100, 140, 0.4], // nearer the same tempo than double time
+      [100, 150, 1 / 0.75 - 1], // nearer double time: 150 against 200
+    ])('%d against %d is %d', (a, b, gap) => {
+      expect(tempoGap(a, b)).toBeCloseTo(gap, 9);
+    });
+
+    it('is the same either way round, even where halving or doubling is a close call', () => {
+      for (let a = 60; a <= 200; a += 7) {
+        for (let b = 60; b <= 200; b += 3) expect(tempoGap(a, b)).toBeCloseTo(tempoGap(b, a), 12);
+      }
+      expect(tempoGap(140, 100)).toBeCloseTo(tempoGap(100, 140), 12);
+    });
   });
 
   it('is the same either way round', () => {
