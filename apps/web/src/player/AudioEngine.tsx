@@ -6,7 +6,8 @@ import { usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
 import { healQueue } from './healQueue';
 import { useLoadAhead } from './loadAhead';
-import { useClock, useCurrentTrack, usePlayer } from './store';
+import { playTracker } from './playTracker';
+import { currentTrack, useClock, useCurrentTrack, usePlayer } from './store';
 
 const DEFAULT_ACCENT = '#ff7a1a';
 
@@ -35,6 +36,7 @@ export function AudioEngine() {
     const audio = ref.current;
     if (!audio) return;
     if (!track) {
+      playTracker.finish('changed');
       audio.removeAttribute('src');
       audio.load();
       useClock.setState({ time: 0, duration: 0, buffered: 0, error: null });
@@ -44,6 +46,9 @@ export function AudioEngine() {
     firstLoad.current = false;
 
     if (audio.dataset.fileId !== String(track.fileId)) {
+      // The listening history: the song that was playing is reported, the new one starts counting.
+      playTracker.finish('changed');
+      playTracker.start(track);
       audio.dataset.fileId = String(track.fileId);
       switching.current = true;
       audio.src = track.streamUrl;
@@ -52,6 +57,9 @@ export function AudioEngine() {
         audio.addEventListener('loadedmetadata', () => (audio.currentTime = resume), { once: true });
       }
     } else {
+      // Played again from the start (repeat one, "previous" near the start): it counts as heard through.
+      playTracker.finish('ended');
+      playTracker.start(track);
       audio.currentTime = 0;
       useClock.setState({ time: 0 });
     }
@@ -92,11 +100,18 @@ export function AudioEngine() {
       const audio = ref.current;
       if (audio?.src) usePlayer.getState().setResumeAt(audio.currentTime);
     };
+    // Closing the app reports the song so far (never as a skip); it counts afresh if the page comes back.
+    const close = () => {
+      save();
+      playTracker.finish('closed');
+      const current = currentTrack(usePlayer.getState());
+      if (current) playTracker.start(current);
+    };
     const id = setInterval(save, 5000);
-    window.addEventListener('pagehide', save);
+    window.addEventListener('pagehide', close);
     return () => {
       clearInterval(id);
-      window.removeEventListener('pagehide', save);
+      window.removeEventListener('pagehide', close);
     };
   }, []);
 
@@ -181,7 +196,11 @@ export function AudioEngine() {
     <audio
       ref={ref}
       preload="auto"
-      onTimeUpdate={(e) => useClock.setState({ time: e.currentTarget.currentTime })}
+      onTimeUpdate={(e) => {
+        useClock.setState({ time: e.currentTarget.currentTime });
+        if (!e.currentTarget.paused) playTracker.tick(e.currentTarget.currentTime);
+      }}
+      onSeeking={() => playTracker.pause()}
       onDurationChange={(e) => {
         const d = e.currentTarget.duration;
         if (Number.isFinite(d)) useClock.setState({ duration: d });
@@ -204,10 +223,14 @@ export function AudioEngine() {
       // Keep the store in sync when the OS/browser pauses or resumes on its own.
       onPlay={() => !usePlayer.getState().playing && usePlayer.getState().setPlaying(true)}
       onPause={(e) => {
+        playTracker.pause();
         if (switching.current || e.currentTarget.ended) return;
         if (usePlayer.getState().playing) usePlayer.getState().setPlaying(false);
       }}
-      onEnded={() => usePlayer.getState().next(true)}
+      onEnded={() => {
+        playTracker.finish('ended');
+        usePlayer.getState().next(true);
+      }}
       onError={(e) => {
         switching.current = false;
         void reportError(e.currentTarget);

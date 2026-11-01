@@ -9,7 +9,7 @@ const DAY = 24 * 60 * 60_000;
  * Not polled status (health, MusicBrainz queue, requests): those change every few seconds and are cheap
  * to fetch, and keeping them would rewrite the whole stored library each time.
  */
-const KEPT = ['artists', 'artist', 'albums', 'album', 'favorites', 'playlists', 'playlist'];
+const KEPT = ['artists', 'artist', 'albums', 'album', 'favorites', 'playlists', 'playlist', 'mixes'];
 /** Write the stored library at most this often: serialising it is heavy on phones. */
 const PERSIST_EVERY_MS = 10_000;
 const KEEP_FOR = 7 * DAY;

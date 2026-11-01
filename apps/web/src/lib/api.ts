@@ -17,11 +17,16 @@ import type {
   FolderListing,
   HealthStatus,
   MatchingSettings,
+  MixDetail,
+  MixSettings,
+  MixSettingsInfo,
+  MixSummary,
   MusicBrainzStatus,
   OrganizePlan,
   OrganizeResult,
   PlaylistDetail,
   PlaylistSummary,
+  PlayReport,
   Recommendations,
   RematchResult,
   RequestSettingsInfo,
@@ -147,7 +152,29 @@ export const api = {
   saveUpdates: (patch: Partial<UpdateSettings>) =>
     request<UpdateInfo>('/api/settings/updates', { method: 'PUT', body: JSON.stringify(patch) }),
   checkForUpdates: () => request<UpdateInfo>('/api/settings/updates/check', { method: 'POST' }),
+  /** keepalive: a report sent as the page closes still arrives. */
+  reportPlays: (plays: PlayReport[]) =>
+    request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),
+  mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`),
+  mix: (key: string) => get<MixDetail>(`/api/mixes/${key}?tz=${encodeURIComponent(timeZone())}`),
+  regenerateMix: (key: string) =>
+    request<MixDetail>(`/api/mixes/${key}/regenerate?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }),
+  saveMix: (key: string) =>
+    request<PlaylistDetail>(`/api/mixes/${key}/save?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }),
+  mixSettings: () => get<MixSettingsInfo>('/api/settings/mixes'),
+  saveMixSettings: (patch: Partial<MixSettings>) =>
+    request<MixSettingsInfo>('/api/settings/mixes', { method: 'PUT', body: JSON.stringify(patch) }),
+  clearHistory: () => request<MixSettingsInfo>('/api/settings/mixes/history', { method: 'DELETE' }),
 };
+
+/** This device's time zone: mixes follow the listener's clock, not the server's. */
+function timeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
 
 /** Append a size hint to an /art URL so the server returns a resized WebP. */
 export function sized(url: string | undefined, size: number): string | undefined {

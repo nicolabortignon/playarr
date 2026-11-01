@@ -6,6 +6,9 @@ import type {
   CoverLayout,
   FavoriteTrack,
   FolderBrowseRequest,
+  MixDetail,
+  MixSettings,
+  MixSettingsInfo,
   PlaylistDetail,
   RequestSettingsInfo,
   RequestSettingsPatch,
@@ -538,5 +541,105 @@ export function useSaveMatching() {
     mutationFn: api.saveMatching,
     onSuccess: (data) => client.setQueryData(['matching'], data),
     onError: (err: Error) => toast(err.message, 'error'),
+  });
+}
+
+// ── Made for you ────────────────────────────────────────────────────────────
+
+/**
+ * The generated mixes. Each changes on its own schedule (hour, day, week): look again a minute after
+ * the soonest one is due, and when the app comes back to the foreground.
+ */
+export const useMixes = () =>
+  useQuery({
+    queryKey: ['mixes'],
+    queryFn: api.mixes,
+    staleTime: (q) => {
+      const due = Math.min(...(q.state.data ?? []).map((m) => Date.parse(m.refreshesAt)));
+      return Number.isFinite(due) ? Math.max(30_000, due - Date.now() + 60_000) : 60_000;
+    },
+    refetchOnWindowFocus: true,
+  });
+
+export const useMix = (key: string) =>
+  useQuery({
+    queryKey: ['mix', key],
+    queryFn: () => api.mix(key),
+    staleTime: (q) => (q.state.data ? Math.max(30_000, Date.parse(q.state.data.refreshesAt) - Date.now() + 60_000) : 60_000),
+    refetchOnWindowFocus: true,
+  });
+
+/** "New mix": another draw for the same hour, day or week. */
+export function useRegenerateMix(key: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.regenerateMix(key),
+    onSuccess: (mix: MixDetail) => {
+      client.setQueryData(['mix', key], mix);
+      void client.invalidateQueries({ queryKey: ['mixes'] });
+    },
+    onError: (err: Error) => toast(`Couldn’t make a new mix: ${err.message}`, 'error'),
+  });
+}
+
+/** Keep a mix as an ordinary playlist. */
+export function useSaveMix(key: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.saveMix(key),
+    onSuccess: (playlist: PlaylistDetail) => {
+      void client.invalidateQueries({ queryKey: ['playlists'] });
+      toast(`Saved as “${playlist.name}”`);
+    },
+    onError: (err: Error) => toast(`Couldn’t save the mix: ${err.message}`, 'error'),
+  });
+}
+
+export const useMixSettings = () =>
+  useQuery({
+    queryKey: ['mix-settings'],
+    queryFn: api.mixSettings,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 403) && count < 2,
+  });
+
+/** Saves a change at once, showing it before the server answers; the mixes are made again with it. */
+export function useSaveMixSettings() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<MixSettings>) => api.saveMixSettings(patch),
+    onMutate: async (patch) => {
+      await client.cancelQueries({ queryKey: ['mix-settings'] });
+      const previous = client.getQueryData<MixSettingsInfo>(['mix-settings']);
+      if (previous) {
+        client.setQueryData<MixSettingsInfo>(['mix-settings'], {
+          ...previous,
+          ...patch,
+          enabled: { ...previous.enabled, ...patch.enabled },
+        });
+      }
+      return { previous };
+    },
+    onSuccess: (data) => {
+      client.setQueryData(['mix-settings'], data);
+      void client.invalidateQueries({ queryKey: ['mixes'] });
+      void client.invalidateQueries({ queryKey: ['mix'] });
+    },
+    onError: (err: Error, _patch, ctx) => {
+      if (ctx?.previous) client.setQueryData(['mix-settings'], ctx.previous);
+      toast(`Couldn’t save: ${err.message}`, 'error');
+    },
+  });
+}
+
+export function useClearHistory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.clearHistory,
+    onSuccess: (data) => {
+      client.setQueryData(['mix-settings'], data);
+      void client.invalidateQueries({ queryKey: ['mixes'] });
+      toast('Listening history cleared');
+    },
+    onError: (err: Error) => toast(`Couldn’t clear the history: ${err.message}`, 'error'),
   });
 }
