@@ -16,7 +16,8 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
   const favorite = useIsFavorite(track.recordingId);
   const toggle = useToggleFavorite();
   const [popping, setPopping] = useState(false);
-  const box = { sm: 'size-8', md: 'size-9', lg: 'size-12' }[size];
+  // 44 px to tap on phones, whatever it looks like.
+  const box = { sm: 'size-8 max-md:size-11', md: 'size-9 max-md:size-11', lg: 'size-12' }[size];
   // Only until healQueue() has refreshed tracks saved by an older version.
   if (!track.recordingId) return null;
   const icon = { sm: 'size-4', md: 'size-[18px]', lg: 'size-6' }[size];

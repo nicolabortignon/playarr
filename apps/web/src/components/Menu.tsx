@@ -1,5 +1,5 @@
 import { MoreHorizontal, type LucideIcon } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn';
 
@@ -12,6 +12,7 @@ export interface MenuItem {
 /** "⋯" button with a popover menu, portaled so it escapes scroll/overflow containers. */
 export function Menu({ items, label = 'More actions', className }: { items: MenuItem[]; label?: string; className?: string }) {
   const [open, setOpen] = useState(false);
+  const wasOpen = useRef(false);
   const [pos, setPos] = useState({ top: 0, left: 0, up: false });
   const btn = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -36,6 +37,7 @@ export function Menu({ items, label = 'More actions', className }: { items: Menu
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     menu.current?.querySelector('button')?.focus();
+    wasOpen.current = true;
     return () => {
       document.removeEventListener('pointerdown', close);
       document.removeEventListener('keydown', close);
@@ -43,6 +45,23 @@ export function Menu({ items, label = 'More actions', className }: { items: Menu
       window.removeEventListener('resize', close);
     };
   }, [open]);
+
+  // Back to the ⋯ button once the menu closes, so keyboard users carry on from where they were.
+  useEffect(() => {
+    if (open || !wasOpen.current) return;
+    wasOpen.current = false;
+    btn.current?.focus({ preventScroll: true });
+  }, [open]);
+
+  /** Up/Down (wrapping), Home and End move between the items. */
+  const moveFocus = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = [...(menu.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (next === undefined || !items.length) return;
+    e.preventDefault();
+    items[(next + items.length) % items.length]!.focus();
+  };
 
   return (
     <>
@@ -56,7 +75,8 @@ export function Menu({ items, label = 'More actions', className }: { items: Menu
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className={cn('grid size-9 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper', className)}
+        // 44 px to tap on phones; 36 px with a mouse.
+        className={cn('grid size-9 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper max-md:size-11', className)}
       >
         <MoreHorizontal className="size-[18px]" />
       </button>
@@ -65,6 +85,7 @@ export function Menu({ items, label = 'More actions', className }: { items: Menu
           <div
             ref={menu}
             role="menu"
+            onKeyDown={moveFocus}
             style={{ top: pos.top, left: pos.left }}
             className={cn(
               'fixed z-[150] w-[220px] origin-top-right animate-[fade_.15s_ease-out] rounded-lg border border-line bg-ink-800/95 p-1.5 shadow-2xl shadow-black/60 backdrop-blur-xl',
