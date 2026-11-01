@@ -17,12 +17,14 @@ describe('device preferences', () => {
   });
 
   it('keeps what is set, on this device', () => {
-    const { setAccent, setMotion, setFormatBadges } = usePrefs.getState();
+    const { setAccent, setMotion, setFormatBadges, setRecordPlays } = usePrefs.getState();
     setAccent(ACCENTS[2]);
     setMotion('reduce');
     setFormatBadges(false);
-    expect(usePrefs.getState()).toMatchObject({ accent: ACCENTS[2], motion: 'reduce', formatBadges: false });
-    expect(JSON.parse(localStorage.getItem(PREFS_KEY)!).state).toEqual({ accent: ACCENTS[2], motion: 'reduce', formatBadges: false });
+    setRecordPlays(false);
+    const saved = { accent: ACCENTS[2], motion: 'reduce', formatBadges: false, recordPlays: false };
+    expect(usePrefs.getState()).toMatchObject(saved);
+    expect(JSON.parse(localStorage.getItem(PREFS_KEY)!).state).toEqual(saved);
   });
 
   it('reads saved preferences back', async () => {
