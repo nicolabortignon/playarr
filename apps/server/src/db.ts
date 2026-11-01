@@ -182,6 +182,8 @@ const MIGRATIONS = [
   // song per start time.
   `DELETE FROM plays WHERE id NOT IN (SELECT MIN(id) FROM plays GROUP BY recording_id, played_at);
    CREATE UNIQUE INDEX plays_unique ON plays (recording_id, played_at);`,
+  // Sending plays to ListenBrainz: NULL waiting, 1 sent, 2 not to be sent (too short, or unknown).
+  `ALTER TABLE plays ADD COLUMN listenbrainz INTEGER;`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

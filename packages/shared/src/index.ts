@@ -770,3 +770,21 @@ export interface TrackLevel {
   /** The song within its album, keeping the album's quiet and loud songs as they were mastered. */
   album?: number;
 }
+
+/** Settings → Mixes → ListenBrainz. The token is never sent back. */
+export interface ListenBrainzInfo {
+  /** A token is saved. */
+  connected: boolean;
+  /** The ListenBrainz account the token belongs to. */
+  user?: string;
+  enabled: boolean;
+  /** Plays waiting to be sent. */
+  pending: number;
+  /** Plays sent so far. */
+  sent: number;
+  /** Plays in the history from before connecting, which can be sent too. */
+  earlier: number;
+  lastSentAt?: string;
+  /** Why sending stopped, e.g. the token was revoked. */
+  error?: string;
+}

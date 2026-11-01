@@ -6,6 +6,7 @@ import type {
   CoverLayout,
   FavoriteTrack,
   FolderBrowseRequest,
+  ListenBrainzInfo,
   MixDetail,
   MixSettings,
   MixSettingsInfo,
@@ -651,5 +652,27 @@ export function useClearHistory() {
       toast('Listening history cleared');
     },
     onError: (err: Error) => toast(`Couldn’t clear the history: ${err.message}`, 'error'),
+  });
+}
+
+export const useListenBrainz = () =>
+  useQuery({
+    queryKey: ['listenbrainz'],
+    queryFn: api.listenBrainz,
+    // Shows plays going out while the panel is open.
+    refetchInterval: 30_000,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 403) && count < 2,
+  });
+
+/** Connect, pause, disconnect or send earlier plays: the panel shows what the server answers. */
+export function useListenBrainzAction<T>(fn: (arg: T) => Promise<ListenBrainzInfo>, done?: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (data) => {
+      client.setQueryData(['listenbrainz'], data);
+      if (done) toast(done);
+    },
+    onError: (err: Error) => toast(err.message, 'error'),
   });
 }

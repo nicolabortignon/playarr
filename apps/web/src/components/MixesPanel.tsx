@@ -5,6 +5,7 @@ import { ApiError } from '../lib/api';
 import { plural } from '../lib/format';
 import { useClearHistory, useMixSettings, useSaveMixSettings } from '../lib/queries';
 import { Dialog } from './Dialog';
+import { ListenBrainzSection } from './ListenBrainzSection';
 import { AwayNotice, PillGroup, SettingsSection, Switch } from './SettingsControls';
 
 /** Every kind of mix, as Settings names and explains it. */
@@ -143,6 +144,8 @@ export function MixesPanel() {
           </button>
         </div>
       </SettingsSection>
+
+      <ListenBrainzSection />
 
       <SettingsSection
         title="Sound"

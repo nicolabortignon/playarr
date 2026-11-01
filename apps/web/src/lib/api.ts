@@ -16,6 +16,7 @@ import type {
   FolderBrowseRequest,
   FolderListing,
   HealthStatus,
+  ListenBrainzInfo,
   MatchingSettings,
   MixDetail,
   MixSettings,
@@ -170,6 +171,11 @@ export const api = {
   mixSettings: () => get<MixSettingsInfo>('/api/settings/mixes'),
   saveMixSettings: (patch: Partial<MixSettings>) =>
     request<MixSettingsInfo>('/api/settings/mixes', { method: 'PUT', body: JSON.stringify(patch) }),
+  listenBrainz: () => get<ListenBrainzInfo>('/api/settings/listenbrainz'),
+  saveListenBrainz: (patch: { token?: string; enabled?: boolean }) =>
+    request<ListenBrainzInfo>('/api/settings/listenbrainz', { method: 'PUT', body: JSON.stringify(patch) }),
+  disconnectListenBrainz: () => request<ListenBrainzInfo>('/api/settings/listenbrainz', { method: 'DELETE' }),
+  sendEarlierListens: () => request<ListenBrainzInfo>('/api/settings/listenbrainz/earlier', { method: 'POST' }),
   clearHistory: () => request<MixSettingsInfo>('/api/settings/mixes/history', { method: 'DELETE' }),
 };
 

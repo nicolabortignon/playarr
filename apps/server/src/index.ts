@@ -29,6 +29,7 @@ import { apiRoutes } from './routes/api.ts';
 import { metadataRoutes } from './routes/metadata.ts';
 import { artRoutes, LocalArt, trimArtCache } from './routes/art.ts';
 import { levelRoutes } from './routes/levels.ts';
+import { Scrobbler } from './listenbrainz/scrobbler.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
 import { playlistRoutes } from './routes/playlists.ts';
@@ -107,6 +108,8 @@ const playlists = new Playlists(db, library, covers);
 const history = new History(db, library);
 const mixes = new Mixes({ db, store, library, analyzer, history, playlists, log: app.log });
 mixes.start();
+const scrobbler = new Scrobbler(db, store, library, { log: app.log });
+scrobbler.start();
 // Settings → Requests, read fresh each time so a change applies at once; .env values are the fallback.
 const requestSettings = () => readRequestSettings(store);
 const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), requestSettings, {
@@ -136,6 +139,7 @@ mixRoutes(app, {
   analysisAvailable: analyzer.canAnalyzeAudio,
   analyzeLibrary: () => void library.allTracks().then((tracks) => analyzer.ensure(tracks.map((t) => t.recordingId))),
   library,
+  scrobbler,
 });
 // Settings → Updates: files shared with the updater container (UPDATE_DIR, set by docker/compose.yaml).
 const updates = new UpdateBridge(config.UPDATE_DIR);
