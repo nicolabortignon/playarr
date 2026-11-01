@@ -38,7 +38,7 @@ function library(artists: number[], n: number, opts: { tags?: string[]; year?: n
       toSong({
         track: track(a),
         tags: (opts.tags ?? []).map((t): [string, number] => [t, 1]),
-        artistGenres: [],
+        genres: [],
         ...(opts.energy !== undefined
           ? {
               features: {
@@ -170,6 +170,16 @@ describe('mixes', () => {
     const mix = generateMix({ key: 'blast', kind: 'blast' }, context(songs, plays, { blastDays: 90 }), 'p')!;
     const ctx = context(songs, plays);
     expect(songsOf(ctx, mix.trackIds).every((s) => songs.indexOf(s) % 2 === 1)).toBe(true);
+  });
+
+  it('Blast from the past has no songs that only just arrived, however loved', () => {
+    const recent = library([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 2, { addedAt: new Date(NOW - 5 * 86_400_000).toISOString() });
+    const ctx = context(recent, [], {}, recent.map((s) => s.track.recordingId));
+    expect(generateMix({ key: 'blast', kind: 'blast' }, ctx, 'p')).toBeNull();
+    const older = library([11, 12, 13, 14, 15, 16, 17, 18, 19, 20], 2, { addedAt: new Date(NOW - 400 * 86_400_000).toISOString() });
+    const ctx2 = context([...recent, ...older], [], {}, [...recent, ...older].map((s) => s.track.recordingId));
+    const mix = generateMix({ key: 'blast', kind: 'blast' }, ctx2, 'p')!;
+    expect(songsOf(ctx2, mix.trackIds).every((s) => older.includes(s))).toBe(true);
   });
 
   it('Energy boost builds up, Wind down settles', () => {

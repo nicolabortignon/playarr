@@ -26,7 +26,8 @@ export interface Song {
 export interface SongFacts {
   track: Track;
   tags: [string, number][];
-  artistGenres: string[];
+  /** Genres from the catalog (album or artist), when ListenBrainz has no tags for the song. */
+  genres: string[];
   features?: AudioFeatures;
   albumYear?: number;
   tagYear?: number;
@@ -54,8 +55,8 @@ const FOCUS_FAMILIES: Partial<Record<StyleFamily, number>> = { chill: 1, classic
 const FOCUS_TAGS = ['instrumental', 'post-rock', 'ambient', 'soundtrack', 'piano', 'lo-fi', 'lofi', 'minimal', 'neoclassical', 'study'];
 
 export function toSong(f: SongFacts): Song {
-  // Tags from ListenBrainz describe the song; the artist's genres are a fallback.
-  const tags = f.tags.length ? f.tags : f.artistGenres.map((g): [string, number] => [g, 1]);
+  // Tags from ListenBrainz describe the song; the catalog's genres are a fallback.
+  const tags = f.tags.length ? f.tags : f.genres.map((g): [string, number] => [g, 1]);
   const style = styleProfile(tags);
   const families = style.families;
   let energy: number | undefined;

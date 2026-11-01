@@ -201,7 +201,8 @@ export class Mixes {
       return toSong({
         track,
         tags: m?.tags ?? [],
-        artistGenres: genres.get(track.artistId) ?? [],
+        // The album's genres (its tags, else the artist's), else the artist's.
+        genres: album?.genres?.length ? album.genres : (genres.get(track.artistId) ?? []),
         features: features.get(track.recordingId),
         albumYear: album?.year,
         tagYear: m?.year,

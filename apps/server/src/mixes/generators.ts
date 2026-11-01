@@ -224,8 +224,9 @@ function blast(ctx: MixContext, rng: Rng): Made | null {
   let source = 'played a lot, then not for a while';
   if (songs.length < MIN_TRACKS) {
     // Not enough history yet: loved songs not heard lately, then albums from the library's early days.
+    // "From the past" needs a past: only songs in the library for at least as long as the window.
     const loved = ctx.songs
-      .filter((s) => (taste.songAffinity.get(s.track.recordingId) ?? 0) > 0)
+      .filter((s) => (taste.songAffinity.get(s.track.recordingId) ?? 0) > 0 && s.addedAt !== undefined && s.addedAt < cutoff)
       .filter((s) => (taste.songs.get(s.track.recordingId)?.last ?? 0) < cutoff)
       .map((song) => ({ song, score: taste.songAffinity.get(song.track.recordingId)! + rng.next() * 0.3 }));
     const early = ctx.songs
