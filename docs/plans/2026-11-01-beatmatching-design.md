@@ -1,6 +1,6 @@
 # Beatmatched transitions — design
 
-Status: approved 2026-11-01. Implementation plan: `2026-11-01-beatmatching.md`.
+Status: built 2026-11-01 (see *As built* at the end). Implementation plan: `2026-11-01-beatmatching.md`.
 
 ## Goal
 
@@ -126,3 +126,27 @@ the matching point. The sleep timer, radio and downloads keep working.
 - **Join precision** between audio elements (±10–30 ms): joins on downbeats with a short overlap; the
   content on both sides of a join is identical, so an error is a few milliseconds skipped or repeated, not a flam.
 - **Mobile data:** transition files are FLAC (~5 MB/min); quick mixes are tiny, long blends cost a few MB.
+
+## As built
+
+Where the build differs from the design above:
+
+- **Every MP3, not just VBR, seeks exactly.** MP3 has no index, so any seek is an estimate. The server
+  decodes an MP3's sections from the start and drops what comes before (slower, but sample-exact), and always
+  stores B's remainder as FLAC for the player to resume on. FLAC, MP4 and Ogg seek exactly and need neither.
+- **Cache key.** Files are keyed by the plan plus both files' IDs and sizes (and the renderer version), not by
+  recordings, mode, analysis version and cues: the plan already carries maps, cues and mode, and a replaced
+  file is rendered again. A pair keeps its first plan while it can still be reached, so later polls don't ask
+  for a new file each time.
+- **On-the-beat cuts are the fallback on every device.** When a transition isn't ready by A's end (or
+  failed), A leaves on a bar line near its end and B comes in on a downbeat, instead of the live mix or the
+  plain crossfade. A transition that stalls while playing goes on with A's or B's own file. No mix map,
+  mixing off or an album in order still play as before.
+- **Skips plan with a planner *skip mode*.** Rather than the usual plan, a skip leaves A on the next bar with a
+  quick mix, never waiting for the outro; the desktop live mixer renders that plan in a Web Worker.
+- **A ready transition survives a seek within A's outro;** seeking during the transition itself still abandons
+  it as designed.
+- **The renderer limits with a look-ahead, hold-then-release limiter** instead of the planned soft
+  clipping, so loud joins don't distort or pump.
+- **Edit mix points** previews 8 s from each marker, appears in song menus only with DJ mix on, and an edit
+  refreshes the coming transition straight away.
