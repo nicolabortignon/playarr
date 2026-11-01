@@ -50,9 +50,10 @@ A pnpm monorepo, all TypeScript:
 - **The browser never sends a file path.** `/stream/:id` only serves file IDs that Lidarr reports, and refuses anything outside the configured music folders.
 - **Discover and requests** combine several open sources: Deezer for finding songs by popularity, Lidarr for artists and albums, MusicBrainz for discographies and IDs, and ListenBrainz for "Songs like these" recommendations.
 - **Generated playlist covers.** Each playlist gets artwork drawn from how its songs actually sound. ffmpeg decodes each song once and Playarr's own DSP code measures tempo, beat strength, loudness, brightness and more. One of six layouts is drawn as SVG and served as WebP. A cover stays fixed until you pick a new one.
-- **Player built for mobile.** A single `<audio>` element keeps background playback working on iOS. Media Session integration gives lock-screen and OS media controls. The accent color follows the current album art.
-- **Settings** has four panels. Sources: where the music comes from. Playback: songs kept on this device and the keyboard shortcuts. Requests: whether people can request albums, whether Lidarr searches right away, and the root folder and profiles new artists get (chosen from Lidarr's lists; `LIDARR_ROOT_FOLDER`, `LIDARR_QUALITY_PROFILE_ID` and `LIDARR_METADATA_PROFILE_ID` in `.env` apply when nothing is chosen). Appearance: the accent color (from the album art or a fixed one), motion and the audio format badges. Playback and Appearance are per device, saved in the browser; Sources and Requests apply to everyone and, until there's a login, can only be changed from the home network. Turning requests off hides every Request button and the server refuses new requests.
-- **Fast and offline-friendly.** The next few songs in the queue are downloaded ahead of time and played from the device by the service worker. Library data is saved in IndexedDB, so the app opens instantly, and pages prefetch on hover or tap. These features need HTTPS or localhost.
+- **Player built for mobile.** Two `<audio>` elements take turns: the next song is loaded ahead and starts as the current one ends, with no gap, or fading in (crossfade, never within an album played in order). Loud songs are turned down to match the rest, from the loudness Playarr measures (album by album when an album plays in order). When the queue ends, similar songs from the library keep playing (radio). There's a sleep timer, synced lyrics (from an `.lrc` file beside the song, its tags, or [LRCLIB](https://lrclib.net)), lock-screen controls through Media Session, and an accent color that follows the album art. Phones that fix the volume in hardware (iPhone, iPad) get gapless playback but no fades or levelling.
+- **Made for you.** Listening history (per profile, kept on the server) feeds twelve kinds of generated mixes on Home, from Discovery Weekly to Vibes of the hour, plus Jump back in and listening stats: top artists, songs and albums, when you listen, and a year in review. Plays can be sent to ListenBrainz. Each person in the household can have a profile, picked per device; favorites and playlists stay shared.
+- **Settings** has these panels (and Profiles and Mixes, for everyone). Sources: where the music comes from. Playback: songs kept on this device and the keyboard shortcuts. Requests: whether people can request albums, whether Lidarr searches right away, and the root folder and profiles new artists get (chosen from Lidarr's lists; `LIDARR_ROOT_FOLDER`, `LIDARR_QUALITY_PROFILE_ID` and `LIDARR_METADATA_PROFILE_ID` in `.env` apply when nothing is chosen). Appearance: the accent color (from the album art or a fixed one), motion and the audio format badges. Playback and Appearance are per device, saved in the browser; Sources and Requests apply to everyone and, until there's a login, can only be changed from the home network. Turning requests off hides every Request button and the server refuses new requests.
+- **Fast and offline-friendly.** The next few songs in the queue are downloaded ahead of time and played from the device by the service worker. Albums, playlists, mixes and Favorites can be downloaded to keep for offline listening (Library → Downloads). Library data is saved in IndexedDB, so the app opens instantly, and pages prefetch on hover or tap. These features need HTTPS or localhost.
 
 ## Running it
 
@@ -107,9 +108,7 @@ Playarr has no login yet, so don't expose it to the internet without something i
 
 - Login and HTTPS
 - ffmpeg transcoding for formats browsers can't play, and for mobile data
-- Gapless preload of the next track
-- Drag to reorder the queue
-- Play history and "recently played"
-- Lyrics, ReplayGain, crossfade and EQ
+- ReplayGain tags (levelling uses Playarr's own loudness measurement for now) and EQ
+- Per-profile favorites and playlists
 
 See [PLAN.md](PLAN.md) for the full architecture, roadmap and design decisions.
