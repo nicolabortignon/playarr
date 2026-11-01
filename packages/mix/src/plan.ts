@@ -55,6 +55,18 @@ const PLANNING_LEAD = 5;
 const BASS_CUT_DB = -24;
 const HIGH_PASS_OFF_HZ = 20;
 const HIGH_PASS_SWEEP_HZ = 800;
+/**
+ * Every plan that stretches B ends with B back at exactly its own speed for this long. The renderer's
+ * time-stretch only reproduces its input sample for sample once a few of its 23 ms frames in a row play at
+ * rate 1, and the transition must end on exactly the sample where B's own playback picks up.
+ */
+export const OWN_TEMPO_HOLD = 0.1;
+/**
+ * A steady stretch gets back to B's own speed over this long rather than in a step: the time-stretch
+ * integrates the rate per 23 ms frame assuming it's smooth there, and a step inside a frame would put B's
+ * end a few samples off where the plan says it resumes. A ramp this gentle keeps that under a sample.
+ */
+export const OWN_TEMPO_RAMP = 0.2;
 /** Points used to draw an equal-power or exponential curve with straight lines. */
 const CURVE_POINTS = 8;
 const PHRASE_BEATS = 16;
@@ -374,7 +386,7 @@ function longPlan(pair: Pair, chosenBeats: number, reason: string): TransitionPl
     const candidates = [{ ...eased, note: '' }];
     // Without the ease-back B snaps to its own tempo the moment it resumes: fine for a small step, audible beyond.
     if (eased.length > overlap && pair.tempoGap <= SNAP_BACK_GAP + EPSILON) {
-      candidates.push({ bRate: [{ at: 0, value: ratio }], length: overlap, note: ' (no ease-back)' });
+      candidates.push({ bRate: steadyRate(ratio, overlap), length: overlap, note: ' (no ease-back)' });
     }
     for (const { bRate, length, note } of candidates) {
       const bResume = bStart + integrate(bRate, 0, length);
@@ -394,21 +406,43 @@ function longPlan(pair: Pair, chosenBeats: number, reason: string): TransitionPl
 
 /**
  * B's rate through a long blend: matched to A for the overlap, then a straight ramp back to its own tempo
- * that covers 16 of B's own bars as the listener hears them (∫ rate dt over the ramp = 64 of B's beats),
- * so B resumes on one of its own bar lines. Nothing to ease back from when B already plays at its own speed.
+ * and OWN_TEMPO_HOLD at it, together covering 16 of B's own bars as the listener hears them (∫ rate dt =
+ * 64 of B's beats), so B resumes on one of its own bar lines. Nothing to ease back from when B already
+ * plays at its own speed.
  */
 function easedBack({ b, ratio }: Pair, overlap: number): { bRate: Automation; length: number } {
   if (Math.abs(ratio - 1) < EPSILON) return { bRate: [{ at: 0, value: ratio }], length: overlap };
-  const easeBack = (2 * EASE_BACK_BEATS * beatLength(b)) / (ratio + 1);
+  // The ramp plays (ratio + 1) / 2 of B's seconds per second; the hold plays one per second.
+  const ramp = (2 * (EASE_BACK_BEATS * beatLength(b) - OWN_TEMPO_HOLD)) / (ratio + 1);
   return {
     bRate: [
       { at: 0, value: ratio },
       { at: overlap, value: ratio },
-      { at: overlap + easeBack, value: 1 },
+      { at: overlap + ramp, value: 1 },
+      { at: overlap + ramp + OWN_TEMPO_HOLD, value: 1 },
     ],
-    length: overlap + easeBack,
+    length: overlap + ramp + OWN_TEMPO_HOLD,
   };
 }
+
+/**
+ * B held at `rate` for a transition of `length`, then back to its own speed over OWN_TEMPO_RAMP and held
+ * there for the last OWN_TEMPO_HOLD (see both). That's a tempo change of at most 3%, in the last 0.3 s,
+ * where A has almost faded out; it leaves B up to 6 ms off A's beat by the end, and resumes B as far off
+ * its bar line (see `ownTempoOvershoot`).
+ */
+function steadyRate(rate: number, length: number): Automation {
+  if (Math.abs(rate - 1) < EPSILON) return [{ at: 0, value: rate }];
+  const backToOwn = Math.max(0, length - OWN_TEMPO_HOLD);
+  return [
+    { at: 0, value: rate },
+    { at: Math.max(0, backToOwn - OWN_TEMPO_RAMP), value: rate },
+    { at: backToOwn, value: 1 },
+  ];
+}
+
+/** How much further into B a `steadyRate` transition ends than one at `rate` throughout (negative when faster). */
+const ownTempoOvershoot = (rate: number) => (OWN_TEMPO_RAMP / 2 + OWN_TEMPO_HOLD) * (1 - rate);
 
 function longBlend(
   pair: Pair,
@@ -466,9 +500,11 @@ function quickPlan(pair: Pair, reason: string): TransitionPlan {
   const leadInB = landingAt * rate;
 
   const tailInB = tailBeats * beat * rate;
+  // Back at its own speed for the last moment, a slowed-down B ends a little past its landing.
+  const holdOvershoot = Math.max(0, ownTempoOvershoot(rate));
   // B must have played `leadInB` seconds by the landing, so the landing can't come before that; and the
   // transition must end (B resumes) no later than B's own outro, where the next mix will begin.
-  const latestLanding = resumeLimit(b) - tailInB;
+  const latestLanding = resumeLimit(b) - tailInB - holdOvershoot;
   const target = mixInPoint(b);
   const phraseLanding = nearestLine(b, PHRASE_BEATS, target, leadInB);
   let landing =
@@ -484,9 +520,10 @@ function quickPlan(pair: Pair, reason: string): TransitionPlan {
   }
   if (!(landing < soundEndOf(b))) return straightPlan(pair, 'B is too short to mix into: straight on');
 
+  // B's beats meet A's through the lead-in; only the last 0.3 s, getting back to B's own speed, drifts (≤ 4 ms).
   const bStart = Math.max(0, landing - leadInB);
-  const bRate: Automation = [{ at: 0, value: rate }];
   const length = landingAt + tailBeats * beat;
+  const bRate = steadyRate(rate, length);
   const common = {
     style: 'quick' as const,
     aStart,

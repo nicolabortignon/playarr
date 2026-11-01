@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { integrate, valueAt } from './automation.ts';
-import { planTransition, tempoRatio, type PlanInput } from './plan.ts';
-import type { CuePoints, MixMap, TransitionPlan } from './types.ts';
+import { OWN_TEMPO_HOLD, OWN_TEMPO_RAMP, planTransition, tempoRatio, type PlanInput } from './plan.ts';
+import type { Automation, CuePoints, MixMap, TransitionPlan } from './types.ts';
 
 type Song = MixMap & { cues?: CuePoints };
 
@@ -65,6 +65,19 @@ function downbeatsBetween(m: MixMap, from: number, to: number): number[] {
   const times: number[] = [];
   for (let t = firstDownbeatOf(m); t <= to + 1e-9; t += barOf(m)) if (t >= from - 1e-9) times.push(t);
   return times;
+}
+
+/**
+ * B at `rate`, then back to its own speed over OWN_TEMPO_RAMP and at exactly 1 for the last
+ * OWN_TEMPO_HOLD seconds; just 1 when that's its speed anyway.
+ */
+function steadyThenOwnTempo(rate: number, length: number): Automation {
+  if (rate === 1) return [{ at: 0, value: 1 }];
+  return [
+    { at: 0, value: rate },
+    { at: length - OWN_TEMPO_HOLD - OWN_TEMPO_RAMP, value: rate },
+    { at: length - OWN_TEMPO_HOLD, value: 1 },
+  ];
 }
 
 /** Transition time at which B reaches `bSeconds` of its own timeline (B's rate is always positive). */
@@ -233,12 +246,14 @@ describe('planTransition: a long blend', () => {
     });
 
     it('stretches B to A’s tempo, then eases back to its own over 16 of its own bars', () => {
-      const easeBack = (2 * 64 * beatOf(b)) / (r + 1);
+      // A ramp, then OWN_TEMPO_HOLD at B's own speed so the renderer can join B exactly.
+      const ramp = (2 * (64 * beatOf(b) - OWN_TEMPO_HOLD)) / (r + 1);
       expect(valueAt(p.bRate, 0)).toBeCloseTo(r, 12);
       expect(valueAt(p.bRate, overlap)).toBeCloseTo(r, 12);
-      expect(valueAt(p.bRate, overlap + easeBack / 2)).toBeCloseTo((r + 1) / 2, 12);
-      expect(valueAt(p.bRate, overlap + easeBack)).toBe(1);
-      expect(p.length).toBeCloseTo(overlap + easeBack, 9);
+      expect(valueAt(p.bRate, overlap + ramp / 2)).toBeCloseTo((r + 1) / 2, 12);
+      expect(valueAt(p.bRate, overlap + ramp)).toBe(1);
+      expect(valueAt(p.bRate, p.length - OWN_TEMPO_HOLD)).toBe(1);
+      expect(p.length).toBeCloseTo(overlap + ramp + OWN_TEMPO_HOLD, 9);
       // As heard: the ease-back plays exactly 64 of B's beats.
       expect(integrate(p.bRate, overlap, p.length)).toBeCloseTo(64 * beatOf(b), 9);
     });
@@ -323,7 +338,7 @@ describe('planTransition: a long blend', () => {
       const p = plan(a, b);
       expect(p.style).toBe('long');
       expect(p.reason).toMatch(/: 32-beat blend \(no ease-back\)$/);
-      expect(p.bRate).toEqual([{ at: 0, value: tempoRatio(a.bpm, b.bpm) }]);
+      expect(p.bRate).toEqual(steadyThenOwnTempo(tempoRatio(a.bpm, b.bpm), p.length));
       expect(p.length).toBeCloseTo(overlapOf(p, a), 9);
       expect(p.bResume).toBeCloseTo(p.bStart + integrate(p.bRate, 0, p.length), 9);
       expect(p.bResume).toBeLessThanOrEqual(b.outroStart);
@@ -412,13 +427,15 @@ describe('planTransition: a quick mix', () => {
     expect([4, 8]).toContain(p.beats);
     const overlap = overlapOf(p, a);
     expect(p.length).toBeCloseTo(overlap, 9);
-    expect(p.bRate).toEqual([{ at: 0, value: tempoRatio(a.bpm, b.bpm) }]);
+    const r = tempoRatio(a.bpm, b.bpm);
+    expect(p.bRate).toEqual(steadyThenOwnTempo(r, p.length));
     expect(p.bResume).toBeCloseTo(p.bStart + integrate(p.bRate, 0, p.length), 9);
 
-    // A leaves on a phrase line: the crossfade finishes there, inside A's outro, as B lands on a downbeat.
+    // A leaves on a phrase line: the crossfade finishes there, inside A's outro, as B lands on a downbeat
+    // (give or take the drift of getting back to B's own speed for the last 0.3 s: ≤ 4 ms).
     expect(onPhrase(a, p.aStart + overlap)).toBe(true);
     expect(p.aStart).toBeGreaterThanOrEqual(a.outroStart);
-    expect(onBar(b, p.bResume)).toBe(true);
+    expect(onBar(b, p.bResume - (OWN_TEMPO_RAMP / 2 + OWN_TEMPO_HOLD) * (1 - r))).toBe(true);
 
     const crossfade = overlap - 2 * beatOf(a);
     expect(p.switchAt).toBeCloseTo(crossfade, 9);
@@ -476,7 +493,7 @@ describe('planTransition: when a quick mix stretches B', () => {
   ])('A at %f BPM into B at 100 (keys clash): B plays at rate %f', (aBpm, rate) => {
     const p = plan(song({ bpm: aBpm }), song({ bpm: 100, key: { camelot: '3B', confidence: 0.9 } }));
     expect(p.style).toBe('quick');
-    expect(p.bRate).toEqual([{ at: 0, value: rate }]);
+    expect(p.bRate).toEqual(steadyThenOwnTempo(rate, p.length));
   });
 });
 
