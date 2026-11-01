@@ -140,7 +140,7 @@ function MadeForYou() {
   if (!isPending && !mixes?.length) return null;
   return (
     <section className="mb-14">
-      <SectionHeader kicker="Made for you" title="Your mixes" />
+      <SectionHeader kicker="Made for you" title="Your mixes" to="/mixes" />
       <Shelf>
         {mixes
           ? mixes.map((m, i) => <MixCard key={m.key} mix={m} className={MIX_CARD} style={stagger(i, 40)} />)

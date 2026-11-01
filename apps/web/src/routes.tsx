@@ -27,6 +27,7 @@ export const routes: RouteObject[] = [
       { path: 'favorites', element: <FavoritesPage /> },
       { path: 'library', element: <LibraryPage /> },
       { path: 'playlists', element: <PlaylistsPage /> },
+      { path: 'mixes', lazy: () => import('./pages/Mixes').then((m) => ({ Component: m.MixesPage })) },
       { path: 'mixes/:key', lazy: () => import('./pages/Mix').then((m) => ({ Component: m.MixPage })) },
       { path: 'playlists/:id', lazy: () => import('./pages/Playlist').then((m) => ({ Component: m.PlaylistPage })) },
       { path: 'queue', lazy: () => import('./pages/Queue').then((m) => ({ Component: m.QueuePage })) },

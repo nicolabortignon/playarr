@@ -1,4 +1,4 @@
-import { Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, Settings, type LucideIcon } from 'lucide-react';
+import { Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatDuration, formatWait } from '../lib/format';
@@ -10,6 +10,7 @@ type NavItem = { to: string; label: string; icon: LucideIcon };
 const LINKS: NavItem[] = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/search', label: 'Search', icon: Search },
+  { to: '/mixes', label: 'Made for you', icon: Sparkles },
   { to: '/artists', label: 'Artists', icon: Library },
   { to: '/albums', label: 'Albums', icon: Disc3 },
   { to: '/favorites', label: 'Favorites', icon: Heart },
