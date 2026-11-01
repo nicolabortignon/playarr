@@ -3,6 +3,8 @@
 
 export * from './types.ts';
 export * from './analysis/fft.ts';
+export * from './analysis/onset.ts';
+export * from './analysis/beatGrid.ts';
 export * from './automation.ts';
 export * from './camelot.ts';
 export * from './plan.ts';

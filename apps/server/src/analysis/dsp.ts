@@ -3,15 +3,13 @@
  * Input is mono float samples at SAMPLE_RATE (ffmpeg does the decoding and downmixing).
  */
 
-import { Fft, hann } from '@playarr/mix';
+import { analyzeOnsets, ONSET_HOP } from '@playarr/mix';
 
 /** Bump when the analysis changes, so stored features are recomputed. */
 export const ANALYSIS_VERSION = 1;
 export const SAMPLE_RATE = 11025;
 export const ENVELOPE_POINTS = 48;
 
-const FRAME = 1024; // ~93 ms
-const HOP = 256; // ~23 ms → 43 frames per second
 const GATE_DB = -60; // frames quieter than this are silence
 
 export interface AudioFeatures {
@@ -47,62 +45,16 @@ export function pcmToFloat(buf: Buffer): Float32Array {
 }
 
 export function analyzePcm(samples: Float32Array, sampleRate = SAMPLE_RATE): AudioFeatures {
-  const fps = sampleRate / HOP;
-  const frames = Math.floor((samples.length - FRAME) / HOP) + 1;
+  const fps = sampleRate / ONSET_HOP;
   const seconds = samples.length / sampleRate;
+  // One FFT pass (shared with the mix analysis) gives the onsets and each frame's loudness and spectrum.
+  const { onset, rms, lowEnergy, energy: power, centroid } = analyzeOnsets(samples, sampleRate);
+  const frames = onset.length;
   if (frames < fps * 2) return silent(seconds);
 
-  const bins = FRAME / 2 + 1;
-  const binHz = sampleRate / FRAME;
-  const lowBin = Math.round(150 / binHz);
-  const window = hann(FRAME);
-  const fft = new Fft(FRAME);
-  const re = new Float64Array(FRAME);
-  const im = new Float64Array(FRAME);
-  let prev = new Float64Array(bins);
-  let cur = new Float64Array(bins);
-
-  const energy = new Float64Array(frames);
-  const db = new Float64Array(frames);
-  const centroid = new Float64Array(frames);
-  const low = new Float64Array(frames);
-  const flux = new Float64Array(frames);
-
-  for (let f = 0; f < frames; f++) {
-    const offset = f * HOP;
-    let sumSq = 0;
-    for (let i = 0; i < FRAME; i++) {
-      const x = samples[offset + i]!;
-      sumSq += x * x;
-      re[i] = x * window[i]!;
-      im[i] = 0;
-    }
-    fft.transform(re, im);
-    let mags = 0;
-    let weighted = 0;
-    let power = 0;
-    let lowPower = 0;
-    let rise = 0;
-    for (let k = 0; k < bins; k++) {
-      const p = re[k]! * re[k]! + im[k]! * im[k]!;
-      const m = Math.sqrt(p);
-      mags += m;
-      weighted += m * k * binHz;
-      power += p;
-      if (k <= lowBin) lowPower += p;
-      // Log-compressed spectral flux: onsets are where energy *rises* across the spectrum.
-      const lm = Math.log1p(100 * m);
-      const d = lm - prev[k]!;
-      if (d > 0) rise += d;
-      cur[k] = lm;
-    }
-    [prev, cur] = [cur, prev];
-    energy[f] = sumSq / FRAME;
-    db[f] = 10 * Math.log10(energy[f]! + 1e-12);
-    centroid[f] = mags > 0 ? weighted / mags : 0;
-    low[f] = power > 0 ? lowPower / power : 0;
-    flux[f] = f === 0 ? 0 : rise;
-  }
+  const energy = rms.map((r) => r * r);
+  const db = energy.map((e) => 10 * Math.log10(e + 1e-12));
+  const low = lowEnergy.map((p, f) => (power[f]! > 0 ? p / power[f]! : 0));
 
   // Loudness, dynamics, brightness and bass over the non-silent frames.
   const loud: number[] = [];
@@ -121,7 +73,6 @@ export function analyzePcm(samples: Float32Array, sampleRate = SAMPLE_RATE): Aud
   const meanDb = 10 * Math.log10(energySum / loud.length);
   const range = percentile(loud, 0.95) - percentile(loud, 0.1);
 
-  const onset = onsetEnvelope(flux, fps);
   const { bpm, beatPeak } = tempo(onset, fps);
   const centroidHz = centroidSum / energySum;
   const onsetsPerSec = countPeaks(onset) / seconds;
@@ -147,24 +98,6 @@ export function analyzePcm(samples: Float32Array, sampleRate = SAMPLE_RATE): Aud
       beatPeak: round(beatPeak),
     },
   };
-}
-
-/** Spectral flux minus its local average (1 s), half-wave rectified and normalized. */
-function onsetEnvelope(flux: Float64Array, fps: number): Float64Array {
-  const n = flux.length;
-  const half = Math.round(fps / 2);
-  const out = new Float64Array(n);
-  let sum = 0;
-  let lo = 0;
-  let hi = -1;
-  for (let i = 0; i < n; i++) {
-    while (hi < Math.min(n - 1, i + half)) sum += flux[++hi]!;
-    while (lo < i - half) sum -= flux[lo++]!;
-    out[i] = Math.max(0, flux[i]! - sum / (hi - lo + 1));
-  }
-  const std = Math.sqrt(out.reduce((s, x) => s + x * x, 0) / n) || 1;
-  for (let i = 0; i < n; i++) out[i]! /= std;
-  return out;
 }
 
 /**
