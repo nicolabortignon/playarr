@@ -16,26 +16,79 @@ export interface MediaSource {
   open(path: string, range?: ByteRange): Promise<Readable>;
   /** Throws with a human-readable message if the source is unusable. */
   check(probePath?: string): Promise<void>;
-  /** Decode a file to mono s16le PCM with ffmpeg, where the files live. Absent if this source can't. */
+  /** Decode a file to s16le PCM (mono unless asked for stereo) with ffmpeg, where the files live. Absent if this source can't. */
   pcm?(path: string, opts: PcmOptions): Promise<Buffer>;
   close(): Promise<void>;
 }
 
 export interface PcmOptions {
   sampleRate: number;
-  /** Decode at most this many seconds from the start. */
+  /** Decode at most this many seconds (from the start, from `startSeconds`, or the last ones with `fromEnd`). */
   maxSeconds: number;
+  /**
+   * Start decoding this many seconds into the file. The transition renderer uses it to pull
+   * an exact section out of the middle of a song without decoding everything before it.
+   */
+  startSeconds?: number;
+  /**
+   * Decode the last `maxSeconds` of the file instead of the first. The analyzer needs a song's
+   * ending to plan the mix out of it, and long songs would otherwise never get there.
+   * Can't be combined with `startSeconds`.
+   */
+  fromEnd?: boolean;
+  /** 1 for analysis (the default, smallest), 2 when rendering audio people will hear. */
+  channels?: 1 | 2;
   signal?: AbortSignal;
 }
 
-/** ffmpeg arguments that decode `path` to mono s16le PCM on stdout. */
-export function ffmpegPcmArgs(path: string, { sampleRate, maxSeconds }: PcmOptions): string[] {
+/**
+ * Seconds as a plain decimal ffmpeg understands. Rounded to the millisecond so tiny values
+ * never turn into exponent notation like "1e-7", which ffmpeg would reject.
+ */
+function seconds(value: number): string {
+  return String(Number(value.toFixed(3)));
+}
+
+/**
+ * Refuse anything but sane numbers. These end up on an ffmpeg command line (over SSH too, where
+ * they're shell-quoted along with everything else), so a NaN or a negative must never get through.
+ */
+function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, channels }: PcmOptions): void {
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw new RangeError(`Invalid sample rate: ${sampleRate}`);
+  if (!Number.isFinite(maxSeconds) || maxSeconds <= 0) throw new RangeError(`Invalid maxSeconds: ${maxSeconds}`);
+  if (startSeconds !== undefined && (!Number.isFinite(startSeconds) || startSeconds < 0)) {
+    throw new RangeError(`Invalid startSeconds: ${startSeconds}`);
+  }
+  if (startSeconds !== undefined && fromEnd) throw new RangeError('startSeconds and fromEnd cannot be combined');
+  if (channels !== undefined && channels !== 1 && channels !== 2) throw new RangeError(`Invalid channels: ${channels}`);
+}
+
+/**
+ * ffmpeg arguments that decode `path` to s16le PCM on stdout.
+ *
+ * Seeking (`-ss` / `-sseof`) goes before `-i` so ffmpeg jumps in the container instead of
+ * decoding and throwing away everything before; for audio it still decodes accurately from
+ * the requested point. `-t` stays even with `-sseof`: it is harmless there and still caps the
+ * output if the file is shorter than `maxSeconds` (ffmpeg then just starts at the beginning).
+ */
+export function ffmpegPcmArgs(path: string, opts: PcmOptions): string[] {
+  checkPcmOptions(opts);
+  const { sampleRate, maxSeconds, startSeconds, fromEnd, channels = 1 } = opts;
+  const seek =
+    startSeconds !== undefined ? ['-ss', seconds(startSeconds)] : fromEnd ? ['-sseof', `-${seconds(maxSeconds)}`] : [];
   return [
     ...['-hide_banner', '-loglevel', 'error', '-nostdin'],
-    ...['-t', String(maxSeconds), '-i', path],
-    ...['-vn', '-ac', '1', '-ar', String(sampleRate), '-f', 's16le', '-'],
+    ...seek,
+    ...['-t', seconds(maxSeconds), '-i', path],
+    ...['-vn', '-ac', String(channels), '-ar', String(sampleRate), '-f', 's16le', '-'],
   ];
 }
+
+/**
+ * Most PCM bytes we'll collect from one ffmpeg run. A stereo 44.1 kHz s16le section of 150 s
+ * is 44100 × 2 × 2 × 150 ≈ 26.5 MB; this leaves plenty of room above that.
+ */
+export const PCM_MAX_BUFFER = 96 * 1024 * 1024;
 
 export class MediaUnavailableError extends Error {}
 

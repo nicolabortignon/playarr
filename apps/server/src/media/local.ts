@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
-import { ffmpegPcmArgs, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
+import { ffmpegPcmArgs, PCM_MAX_BUFFER, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
 import { lowPriority } from '../lowPriority.ts';
 
 export class LocalMediaSource implements MediaSource {
@@ -31,7 +31,7 @@ export class LocalMediaSource implements MediaSource {
         execFile(
           this.ffmpeg,
           ffmpegPcmArgs(path, opts),
-          { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, signal: opts.signal },
+          { encoding: 'buffer', maxBuffer: PCM_MAX_BUFFER, signal: opts.signal },
           (err, stdout, stderr) => (err ? reject(new Error(`ffmpeg: ${stderr.toString().trim() || err.message}`)) : resolve(stdout)),
         ),
       );

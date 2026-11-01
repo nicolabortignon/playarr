@@ -5,7 +5,7 @@ import { createServer } from 'node:net';
 import { posix } from 'node:path';
 import type { Readable } from 'node:stream';
 import { cleanRcloneError, type Rclone } from './rclone.ts';
-import { ffmpegPcmArgs, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
+import { ffmpegPcmArgs, PCM_MAX_BUFFER, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
 import { lowPriority } from '../lowPriority.ts';
 
 /** A free loopback port (tiny race between closing and rclone binding; a failed start retries once). */
@@ -195,7 +195,7 @@ export class RcloneMediaSource implements MediaSource {
         execFile(
           this.tools.ffmpeg ?? 'ffmpeg',
           ffmpegPcmArgs(url, opts),
-          { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, signal: opts.signal },
+          { encoding: 'buffer', maxBuffer: PCM_MAX_BUFFER, signal: opts.signal },
           (err, stdout, stderr) => (err ? reject(new Error(`ffmpeg: ${stderr.toString().trim() || err.message}`)) : resolve(stdout)),
         ),
       );

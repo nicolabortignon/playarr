@@ -143,7 +143,11 @@ export class SshExecMediaSource implements MediaSource {
     if (probePath) await this.stat(probePath);
   }
 
-  /** Decode on the host (niced, so playback stays smooth); only small mono PCM crosses the network. */
+  /**
+   * Decode on the host (niced, so playback stays smooth); only PCM crosses the network.
+   * Every argument, numbers included, goes through shellQuote, and ffmpegPcmArgs has already
+   * rejected anything that is not a finite number, so nothing raw reaches the remote shell.
+   */
   async pcm(path: string, opts: PcmOptions): Promise<Buffer> {
     const args = ffmpegPcmArgs(path, opts).map(shellQuote).join(' ');
     const channel = await this.shell.exec(`nice -n 10 ${shellQuote(this.ffmpeg)} ${args}`);
