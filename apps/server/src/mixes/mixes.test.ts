@@ -46,6 +46,10 @@ function fakeLibrary() {
     library: {
       allTracks: async () => tracks,
       albums: async () => albums,
+      album: async (id: number) => {
+        const album = albums.find((a) => a.id === id);
+        return album && { ...album, tracks: [], missingTracks: [] };
+      },
       artists: async () => artists,
       version: 1,
       tracksByIds: async (ids: number[]) => ids.flatMap((id) => byId.get(id) ?? []),
@@ -66,7 +70,7 @@ function setup() {
   const playlists = { create: vi.fn(async (name: string) => ({ id: 1, name })) } as unknown as Playlists;
   const mixes = new Mixes({ db, store, library, analyzer, history, playlists, similar: async () => [] });
   const app = Fastify();
-  mixRoutes(app, { mixes, history, store, analysisAvailable: false, analyzeLibrary: vi.fn() });
+  mixRoutes(app, { mixes, history, store, analysisAvailable: false, analyzeLibrary: vi.fn(), library });
   return { db, store, tracks, history, mixes, playlists, analyzer, app };
 }
 
@@ -169,4 +173,15 @@ describe('mix routes', () => {
     expect((await app.inject({ method: 'GET', url: `/api/mixes/${list[0]!.key}` })).json()).toHaveProperty('tracks');
     expect((await app.inject({ method: 'GET', url: '/api/mixes/nope-nope' })).statusCode).toBe(404);
   });
+
+  it('lists albums heard lately, most recent first, without skips', async () => {
+    const { app, history, tracks } = setup();
+    const report = (t: (typeof tracks)[number], at: string, skipped = false) => ({ trackId: t.id, recordingId: t.recordingId, at, hour: 10, weekday: 0, seconds: 100, skipped });
+    await history.record([report(tracks[0]!, '2026-11-01T09:00:00Z'), report(tracks[10]!, '2026-11-01T10:00:00Z'), report(tracks[20]!, '2026-11-01T11:00:00Z', true)]);
+    expect(history.recentAlbums(10)).toEqual([tracks[10]!.albumId, tracks[0]!.albumId]);
+    const recent = (await app.inject({ method: 'GET', url: '/api/plays/recent-albums' })).json() as { id: number; tracks?: unknown }[];
+    expect(recent.map((a) => a.id)).toEqual([tracks[10]!.albumId, tracks[0]!.albumId]);
+    expect(recent[0]).not.toHaveProperty('tracks'); // list-sized albums
+  });
 });
+

@@ -133,6 +133,7 @@ mixRoutes(app, {
   store,
   analysisAvailable: analyzer.canAnalyzeAudio,
   analyzeLibrary: () => void library.allTracks().then((tracks) => analyzer.ensure(tracks.map((t) => t.recordingId))),
+  library,
 });
 // Settings → Updates: files shared with the updater container (UPDATE_DIR, set by docker/compose.yaml).
 const updates = new UpdateBridge(config.UPDATE_DIR);

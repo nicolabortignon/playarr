@@ -8,7 +8,7 @@ import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, greeting } from '../lib/format';
-import { useAlbums, useArtists, useFavorites, useHealth, useMixes, usePlaylists, useRandomAlbums } from '../lib/queries';
+import { useAlbums, useArtists, useFavorites, useHealth, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
 import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
 import { shuffleLibrary } from '../player/actions';
@@ -40,6 +40,7 @@ export function HomePage() {
       </header>
 
       <MadeForYou />
+      <JumpBackIn />
 
       <section className="relative mb-14 grid items-end gap-10 md:mb-20 xl:grid-cols-[1fr_auto]">
         <div className="animate-rise">
@@ -152,6 +153,22 @@ function MadeForYou() {
 }
 
 const MIX_CARD = 'w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52';
+
+/** Jump back in: the albums heard lately, from the listening history. Hidden until there are a few. */
+function JumpBackIn() {
+  const { data: albums } = useRecentAlbums();
+  if (!albums || albums.length < 3) return null;
+  return (
+    <section className="mb-14">
+      <SectionHeader kicker="Heard lately" title="Jump back in" />
+      <Shelf>
+        {albums.map((a, i) => (
+          <AlbumCard key={a.id} album={a} size={200} className={MIX_CARD} style={stagger(i, 40)} />
+        ))}
+      </Shelf>
+    </section>
+  );
+}
 
 /** How many artists the home shelf shows; all of them are a tap away on Artists. */
 const SHELF_ARTISTS = 20;

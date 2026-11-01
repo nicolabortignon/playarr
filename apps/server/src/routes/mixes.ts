@@ -6,6 +6,7 @@ import type { History } from '../mixes/history.ts';
 import { MixError, type Mixes } from '../mixes/mixes.ts';
 import { MIX_KINDS, MIXES_KEY, readMixSettings } from '../mixes/settings.ts';
 import { validTimeZone } from '../mixes/time.ts';
+import { stripAlbum, type Library } from '../library/library.ts';
 import { PlaylistError } from '../playlists.ts';
 import { requireLocal } from './settings.ts';
 
@@ -62,6 +63,7 @@ export function mixRoutes(
     analysisAvailable: boolean;
     /** Measure the whole library's sound, when that setting is turned on. */
     analyzeLibrary: () => void;
+    library: Pick<Library, 'album'>;
   },
 ) {
   const { mixes, history, store } = deps;
@@ -75,6 +77,12 @@ export function mixRoutes(
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid plays' });
     if (!readMixSettings(store).recordHistory) return reply.code(202).send({ recorded: 0 });
     return { recorded: await history.record(parsed.data.plays) };
+  });
+
+  /** Jump back in: albums heard lately that are still in the library. */
+  app.get('/api/plays/recent-albums', async () => {
+    const albums = await Promise.all(history.recentAlbums(24).map((id) => deps.library.album(id)));
+    return albums.flatMap((a) => (a ? [stripAlbum(a)] : [])).slice(0, 12);
   });
 
   app.get<Tz>('/api/mixes', (req) => mixes.list(tz(req.query)));

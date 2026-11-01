@@ -557,6 +557,9 @@ function mixRecheck(dueTimes: number[]): number {
   return wait > 0 ? wait : 15_000;
 }
 
+/** Jump back in: albums heard lately. */
+export const useRecentAlbums = () => useQuery({ queryKey: ['recent-albums'], queryFn: api.recentAlbums, staleTime: 60_000 });
+
 /** The generated mixes. Each changes on its own schedule (hour, day, week). */
 export const useMixes = () =>
   useQuery({

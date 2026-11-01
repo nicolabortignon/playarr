@@ -80,6 +80,17 @@ export class History {
     return rows.map(toPlay);
   }
 
+  /** Albums heard lately, most recent first (by catalog album id). */
+  recentAlbums(limit: number): number[] {
+    const rows = this.db
+      .prepare(
+        `SELECT album_id FROM plays WHERE album_id IS NOT NULL AND skipped = 0
+         GROUP BY album_id ORDER BY MAX(played_at) DESC LIMIT ?`,
+      )
+      .all(limit) as { album_id: number }[];
+    return rows.map((r) => r.album_id);
+  }
+
   /** How much history there is. */
   stats(): { plays: number; since?: string } {
     const row = this.db.prepare('SELECT COUNT(*) AS n, MIN(played_at) AS first FROM plays WHERE skipped = 0').get() as {

@@ -156,6 +156,7 @@ export const api = {
   /** keepalive: a report sent as the page closes still arrives. */
   reportPlays: (plays: PlayReport[]) =>
     request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),
+  recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
   mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`),
   mix: (key: string) => get<MixDetail>(`/api/mixes/${key}?tz=${encodeURIComponent(timeZone())}`),
   regenerateMix: (key: string) =>
