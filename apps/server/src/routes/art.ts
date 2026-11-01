@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
@@ -183,10 +183,7 @@ export function artRoutes(
             mime: 'image/webp',
           }
         : original;
-      await mkdir(dir, { recursive: true });
-      await writeFile(`${file}.tmp`, out.body);
-      await writeFile(`${file}.mime`, out.mime);
-      await rename(`${file}.tmp`, file);
+      await saveCached(dir, file, out.body, out.mime);
       return reply.header('Cache-Control', 'public, max-age=2592000').type(out.mime).send(out.body);
     } catch (err) {
       req.log.warn({ err, url: target.href }, 'remote artwork failed');
@@ -226,10 +223,7 @@ export function artRoutes(
           mime: 'image/webp',
         }
       : original;
-    await mkdir(dir, { recursive: true });
-    await writeFile(`${cached}.tmp`, out.body);
-    await writeFile(`${cached}.mime`, out.mime);
-    await rename(`${cached}.tmp`, cached);
+    await saveCached(dir, cached, out.body, out.mime);
     return reply.header('Cache-Control', 'public, max-age=86400').type(out.mime).send(out.body);
   });
 
@@ -244,7 +238,8 @@ export function artRoutes(
       const requested = Number(req.query.size);
       // Snap to a fixed set of sizes to bound the number of cached variants.
       const size = requested > 0 ? (SIZES.find((s) => s >= requested) ?? SIZES.at(-1)) : undefined;
-      const version = req.query.v ?? '0';
+      // Lidarr's image versions are numbers; anything else would be one more fetch and file per value.
+      const version = /^\d{1,20}$/.test(req.query.v ?? '') ? req.query.v! : '0';
       const key = createHash('sha1').update(`${kind}/${id}/${type}/${size ?? 'orig'}/${version}`).digest('hex');
       const file = join(dir, key);
 
@@ -266,10 +261,7 @@ export function artRoutes(
       }
       try {
         const { body, mime } = await job;
-        await mkdir(dir, { recursive: true });
-        await writeFile(`${file}.tmp`, body);
-        await writeFile(`${file}.mime`, mime);
-        await rename(`${file}.tmp`, file);
+        await saveCached(dir, file, body, mime);
         return reply.header('Cache-Control', cacheOk).type(mime).send(body);
       } catch (err) {
         reply.header('Cache-Control', 'no-store');
@@ -281,4 +273,20 @@ export function artRoutes(
       }
     },
   );
+}
+
+/**
+ * Keep a rendered image. Each write has its own temporary name (two requests for the same image can
+ * finish together), and a failed write only means it's made again next time.
+ */
+async function saveCached(dir: string, file: string, body: Buffer, mime: string) {
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await mkdir(dir, { recursive: true });
+    await writeFile(tmp, body);
+    await writeFile(`${file}.mime`, mime);
+    await rename(tmp, file);
+  } catch {
+    await rm(tmp, { force: true }).catch(() => {});
+  }
 }
