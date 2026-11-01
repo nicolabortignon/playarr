@@ -10,6 +10,7 @@ import { upNext } from '../player/decks';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { useTransition, type UpcomingResult } from '../player/transitions';
 import { Dialog } from './Dialog';
+import { BarTicks, EnergyNumbers, PhraseColumns, PhraseReadout, phrasesAndBars, type BarTick, type PhraseColumn } from './EnergyStrip';
 import { PillGroup } from './SettingsControls';
 
 /** Keys this unsure aren't worth showing: they'd be a guess. */
@@ -165,13 +166,7 @@ function SongFacts({ label, track, map }: { label: string; track: Track; map?: M
   );
 }
 
-interface Phrase {
-  /** Seconds into the song. */
-  at: number;
-  energy: number;
-  /** Position and width in the picture, 0–1. */
-  left: number;
-  width: number;
+interface Phrase extends PhraseColumn {
   inMix: boolean;
 }
 
@@ -180,8 +175,7 @@ interface Strip {
   /** "mixes out from 3:20"… */
   note: string;
   phrases: Phrase[];
-  /** Bar lines in the picture, 0–1; `phrase` marks every fourth (a phrase start). */
-  bars: { left: number; phrase: boolean }[];
+  bars: BarTick[];
   /** The mix, 0–1 (zero width for a straight cut). */
   mix: { left: number; width: number };
 }
@@ -195,28 +189,9 @@ function strip(title: string, note: string, map: MixMap, clock: (songTime: numbe
   const place = (t: number) => (Math.min(Math.max(t, from), to) - from) / span;
   const mixEnd = clock(map.duration);
   const mix = { left: place(0), width: place(Math.min(mixLength, mixEnd)) - place(0) };
-  const phrases: Phrase[] = [];
-  const bars: Strip['bars'] = [];
-  if (map.bpm > 0) {
-    const beat = 60 / map.bpm;
-    const firstBar = map.firstBeat + map.downbeatOffset * beat;
-    map.phraseEnergy.forEach((energy, k) => {
-      const at = firstBar + k * 16 * beat;
-      const start = clock(at);
-      const end = clock(Math.min(at + 16 * beat, map.duration));
-      if (end <= from || start >= to) return;
-      const inMix = mixLength > 0 ? start < mixLength && end > 0 : start <= 0 && end > 0;
-      phrases.push({ at, energy, left: place(start), width: place(end) - place(start), inMix });
-    });
-    for (let n = Math.max(0, Math.ceil(-firstBar / (4 * beat))); ; n++) {
-      const at = firstBar + n * 4 * beat;
-      if (at > map.duration) break;
-      const t = clock(at);
-      if (t > to) break;
-      if (t >= from) bars.push({ left: place(t), phrase: n % 4 === 0 });
-    }
-  }
-  return { title, note, phrases, bars, mix };
+  const { phrases, bars } = phrasesAndBars(map, clock, from, to);
+  const inMix = (p: PhraseColumn) => (mixLength > 0 ? p.start < mixLength && p.end > 0 : p.start <= 0 && p.end > 0);
+  return { title, note, phrases: phrases.map((p) => ({ ...p, inMix: inMix(p) })), bars, mix };
 }
 
 /**
@@ -244,11 +219,7 @@ function EnergyAroundTheMix({ plan, a, b }: { plan: TransitionPlan; a: { track: 
     <figure aria-labelledby={id} className="min-w-0">
       <figcaption id={id} className="mb-3 flex items-baseline justify-between gap-3">
         <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Energy around the mix</span>
-        {hovered && (
-          <span className="text-[13px] text-paper-dim tabular" aria-live="polite">
-            <span className="text-paper">{formatTime(hovered.at)}</span> · {Math.round(hovered.energy * 100)}%
-          </span>
-        )}
+        {hovered && <PhraseReadout phrase={hovered} />}
       </figcaption>
       <div className="space-y-3" onPointerLeave={() => setHover(null)}>
         {strips.map((s, i) => (
@@ -264,65 +235,21 @@ function EnergyAroundTheMix({ plan, a, b }: { plan: TransitionPlan; a: { track: 
               >
                 {i === 0 && s.mix.width > 0 && <span className="absolute top-0.5 left-1 font-mono text-[10px] text-muted">mix</span>}
               </div>
-              <div className="absolute inset-x-0 bottom-0 h-px bg-line" />
-              {s.phrases.map((p, k) => (
-                // The whole phrase's height is the hover target, however low its energy.
-                <div
-                  key={k}
-                  className="absolute inset-y-0 flex items-end"
-                  style={{ left: `${p.left * 100}%`, width: `calc(${p.width * 100}% - 2px)` }}
-                  onPointerEnter={() => setHover({ strip: i, phrase: k })}
-                >
-                  <div
-                    className={cn(
-                      'w-full rounded-t-[4px] bg-accent transition-opacity duration-150',
-                      hover && (hover.strip !== i || hover.phrase !== k) && 'opacity-45',
-                    )}
-                    style={{ height: `max(${p.energy * 100}%, 2px)` }}
-                  />
-                </div>
-              ))}
+              <PhraseColumns
+                phrases={s.phrases}
+                hovered={hover ? (hover.strip === i ? hover.phrase : -1) : null}
+                onHover={(phrase) => setHover({ strip: i, phrase })}
+              />
             </div>
-            <div className="relative mt-0.5 h-1.5" aria-hidden>
-              {s.bars.map((bar, k) => (
-                <div
-                  key={k}
-                  className={cn('absolute top-0 w-px', bar.phrase ? 'h-1.5 bg-paper/40' : 'h-1 bg-paper/15')}
-                  style={{ left: `${bar.left * 100}%` }}
-                />
-              ))}
-            </div>
+            <BarTicks bars={s.bars} />
           </div>
         ))}
       </div>
-      <details className="mt-3">
-        <summary className="cursor-pointer font-mono text-[10px] tracking-[0.15em] text-muted uppercase hover:text-paper">Numbers</summary>
-        <table className="mt-2 w-full text-[13px]">
-          <caption className="sr-only">Energy per phrase (16 beats) near the mix</caption>
-          <thead>
-            <tr className="border-b border-line text-left font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
-              <th scope="col" className="py-1 font-normal">Song</th>
-              <th scope="col" className="py-1 text-right font-normal">From</th>
-              <th scope="col" className="py-1 text-right font-normal">Energy</th>
-              <th scope="col" className="py-1 text-right font-normal">In the mix</th>
-            </tr>
-          </thead>
-          <tbody>
-            {strips.flatMap((s, i) =>
-              s.phrases.map((p, k) => (
-                <tr key={`${i}-${k}`} className="border-b border-line/60">
-                  <th scope="row" className="max-w-0 truncate py-1 text-left font-normal text-paper-dim">
-                    {s.title}
-                  </th>
-                  <td className="py-1 text-right text-paper tabular">{formatTime(p.at)}</td>
-                  <td className="py-1 text-right text-paper tabular">{Math.round(p.energy * 100)}%</td>
-                  <td className="py-1 text-right text-paper-dim">{p.inMix ? 'Yes' : ''}</td>
-                </tr>
-              )),
-            )}
-          </tbody>
-        </table>
-      </details>
+      <EnergyNumbers
+        caption="Energy per phrase (16 beats) near the mix"
+        extraHeader="In the mix"
+        rows={strips.flatMap((s) => s.phrases.map((p) => ({ song: s.title, at: p.at, energy: p.energy, extra: p.inMix ? 'Yes' : '' })))}
+      />
     </figure>
   );
 }

@@ -14,6 +14,7 @@ import { OfflineMark } from './OfflineMark';
 import { FormatBadge } from './FormatBadge';
 import { LyricsView } from './LyricsView';
 import { Menu } from './Menu';
+import { useMixPointsItem } from './MixPointsDialog';
 import { SeekBar, Transport } from './Transport';
 import { SleepTimer } from './SleepTimer';
 import { TransitionView } from './TransitionView';
@@ -32,6 +33,7 @@ function Sheet() {
   const lyricsOpen = useUI((s) => s.lyricsOpen);
   const setLyrics = useUI((s) => s.setLyrics);
   const track = useCurrentTrack()!;
+  const mixPoints = useMixPointsItem(track);
   const source = usePlayer((s) => s.source);
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
@@ -118,6 +120,7 @@ function Sheet() {
                 { label: 'Go to album', icon: Disc3, onSelect: () => go(`/albums/${track.albumId}`) },
                 { label: 'Go to artist', icon: Mic2, onSelect: () => go(`/artists/${track.artistId}`) },
                 { label: 'Show metadata', icon: Info, onSelect: () => showMetadata(track.id) },
+                ...mixPoints,
                 { label: 'Open queue', icon: ListMusic, onSelect: () => go('/queue') },
               ]}
             />

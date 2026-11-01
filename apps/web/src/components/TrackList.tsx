@@ -12,7 +12,8 @@ import { Equalizer } from './Equalizer';
 import { FavoriteButton } from './FavoriteButton';
 import { OfflineMark } from './OfflineMark';
 import { InlineLink } from './InlineLink';
-import { Menu } from './Menu';
+import { Menu, type MenuItem } from './Menu';
+import { useMixPointsItem } from './MixPointsDialog';
 import { startRadio } from '../player/radio';
 
 interface TrackListProps {
@@ -120,7 +121,8 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing, sourc
               <FavoriteButton track={t} reveal />
               <span className="font-mono text-[13px] text-muted tabular">{formatTime(t.duration)}</span>
               <div onClick={(e) => e.stopPropagation()} className="opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-                <Menu
+                <SongMenu
+                  track={t}
                   items={[
                     { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks([t], 'next') },
                     { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks([t], 'end') },
@@ -140,4 +142,10 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing, sourc
       })}
     </ol>
   );
+}
+
+/** A row's menu, with "Edit mix points" at the end when DJ mix is on (a hook, so one component per row). */
+function SongMenu({ track, items }: { track: Track; items: MenuItem[] }) {
+  const mixPoints = useMixPointsItem(track);
+  return <Menu items={[...items, ...mixPoints]} />;
 }

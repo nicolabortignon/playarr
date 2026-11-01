@@ -9,6 +9,7 @@ import { AudioEngine } from '../player/AudioEngine';
 import { useKeyboardShortcuts } from '../player/useKeyboardShortcuts';
 import { AddToPlaylistDialog } from './AddToPlaylistDialog';
 import { TrackMetadataDialog } from './TrackMetadataDialog';
+import { MixPointsDialog } from './MixPointsDialog';
 import { BottomNav, Sidebar } from './Nav';
 import { NowPlaying } from './NowPlaying';
 import { MiniPlayer, PlayerBar } from './PlayerBar';
@@ -51,6 +52,7 @@ export function AppShell() {
       <NowPlaying />
       <AddToPlaylistDialog />
       <TrackMetadataDialog />
+      <MixPointsDialog />
       <Toasts />
       <AudioEngine />
       <ScrollRestoration />

@@ -194,6 +194,11 @@ export const api = {
   /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
   mixMaps: (ids: string[]) =>
     request<Record<string, MixMap & { cues?: CuePoints }>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),
+  /** A recording's hand-set mix points (Edit mix points); {} when none are set. */
+  cues: (recordingId: string) => get<CuePoints>(`/api/recordings/${encodeURIComponent(recordingId)}/cues`),
+  /** Replaces both mix points: null (or left out) clears one, so the song uses the detected point again. */
+  setCues: (recordingId: string, cues: { mixIn: number | null; mixOut: number | null }) =>
+    request<CuePoints>(`/api/recordings/${encodeURIComponent(recordingId)}/cues`, { method: 'PUT', body: JSON.stringify(cues) }),
   radio: (seeds: string[], exclude: string[] = [], count = 25) =>
     request<Track[]>('/api/radio', { method: 'POST', body: JSON.stringify({ seeds, exclude, count }) }),
   mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`),

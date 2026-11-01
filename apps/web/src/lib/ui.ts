@@ -15,6 +15,10 @@ interface UIState {
   metadataTrackId: number | null;
   showMetadata: (trackId: number) => void;
   closeMetadata: () => void;
+  /** The song whose "Edit mix points" dialog is open. */
+  mixPointsTrack: Track | null;
+  editMixPoints: (track: Track) => void;
+  closeMixPoints: () => void;
 }
 
 export const useUI = create<UIState>()((set) => ({
@@ -28,4 +32,7 @@ export const useUI = create<UIState>()((set) => ({
   metadataTrackId: null,
   showMetadata: (metadataTrackId) => set({ metadataTrackId }),
   closeMetadata: () => set({ metadataTrackId: null }),
+  mixPointsTrack: null,
+  editMixPoints: (mixPointsTrack) => set({ mixPointsTrack }),
+  closeMixPoints: () => set({ mixPointsTrack: null }),
 }));
