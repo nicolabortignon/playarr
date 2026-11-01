@@ -36,6 +36,12 @@ export interface PcmOptions {
    * Can't be combined with `startSeconds`.
    */
   fromEnd?: boolean;
+  /**
+   * Seek by decoding from the start and throwing away everything before `startSeconds`, rather than
+   * jumping in the container. Slower, but exact for formats whose seeking is an estimate (MP3 has no
+   * index, so a jump lands only roughly where asked): the transition renderer needs the sample asked for.
+   */
+  exactSeek?: boolean;
   /** 1 for analysis (the default, smallest), 2 when rendering audio people will hear. */
   channels?: 1 | 2;
   signal?: AbortSignal;
@@ -53,13 +59,14 @@ function seconds(value: number): string {
  * Refuse anything but sane numbers. These end up on an ffmpeg command line (over SSH too, where
  * they're shell-quoted along with everything else), so a NaN or a negative must never get through.
  */
-function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, channels }: PcmOptions): void {
+function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels }: PcmOptions): void {
   if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw new RangeError(`Invalid sample rate: ${sampleRate}`);
   if (!Number.isFinite(maxSeconds) || maxSeconds <= 0) throw new RangeError(`Invalid maxSeconds: ${maxSeconds}`);
   if (startSeconds !== undefined && (!Number.isFinite(startSeconds) || startSeconds < 0)) {
     throw new RangeError(`Invalid startSeconds: ${startSeconds}`);
   }
   if (startSeconds !== undefined && fromEnd) throw new RangeError('startSeconds and fromEnd cannot be combined');
+  if (exactSeek && fromEnd) throw new RangeError('exactSeek and fromEnd cannot be combined');
   if (channels !== undefined && channels !== 1 && channels !== 2) throw new RangeError(`Invalid channels: ${channels}`);
 }
 
@@ -70,16 +77,18 @@ function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, channe
  * decoding and throwing away everything before; for audio it still decodes accurately from
  * the requested point. `-t` stays even with `-sseof`: it is harmless there and still caps the
  * output if the file is shorter than `maxSeconds` (ffmpeg then just starts at the beginning).
+ * With `exactSeek`, `-ss` and `-t` go after `-i` instead: ffmpeg decodes from the start and
+ * drops what comes before, so the first sample out is exactly the one asked for.
  */
 export function ffmpegPcmArgs(path: string, opts: PcmOptions): string[] {
   checkPcmOptions(opts);
-  const { sampleRate, maxSeconds, startSeconds, fromEnd, channels = 1 } = opts;
-  const seek =
-    startSeconds !== undefined ? ['-ss', seconds(startSeconds)] : fromEnd ? ['-sseof', `-${seconds(maxSeconds)}`] : [];
+  const { sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels = 1 } = opts;
+  const seek = startSeconds !== undefined ? ['-ss', seconds(startSeconds)] : fromEnd ? ['-sseof', `-${seconds(maxSeconds)}`] : [];
+  const length = ['-t', seconds(maxSeconds)];
+  const input = ['-i', path];
   return [
     ...['-hide_banner', '-loglevel', 'error', '-nostdin'],
-    ...seek,
-    ...['-t', seconds(maxSeconds), '-i', path],
+    ...(exactSeek ? [...input, ...seek, ...length] : [...seek, ...length, ...input]),
     ...['-vn', '-ac', String(channels), '-ar', String(sampleRate), '-f', 's16le', '-'],
   ];
 }

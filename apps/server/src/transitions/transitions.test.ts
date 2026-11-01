@@ -18,6 +18,12 @@ import { tempDir } from '../catalog/testFixtures.ts';
 import type { MediaSource, PcmOptions } from '../media/source.ts';
 import { ffmpegFlacEncoder, Transitions, type Encoder, type TransitionAnswer } from './transitions.ts';
 
+// planTransition as itself, but watchable: one test makes it depend on A's position the way some plans do.
+vi.mock('@playarr/mix', async (importOriginal) => {
+  const mix = await importOriginal<typeof import('@playarr/mix')>();
+  return { ...mix, planTransition: vi.fn(mix.planTransition) };
+});
+
 const SONG_SECONDS = 60;
 const FLAC: AudioFormat = { codec: 'FLAC', container: 'flac', lossless: true };
 const MP3: AudioFormat = { codec: 'MP3', container: 'mp3', lossless: false };
@@ -70,8 +76,12 @@ function track(id: number, format: AudioFormat = FLAC): Track {
 const pitchOf = (path: string) => 200 + 10 * Number(path.replace(/\D/g, ''));
 const sampleAt = (path: string, seconds: number) => 0.5 * Math.sin(2 * Math.PI * pitchOf(path) * seconds);
 
-/** Synthetic s16le stereo for `path` from `startSeconds`, stopping at the song's end like ffmpeg would. */
-function synthPcm(path: string, { sampleRate, maxSeconds, startSeconds = 0 }: PcmOptions): Buffer {
+/**
+ * Synthetic s16le stereo for `path` from `startSeconds`, stopping at the song's end like ffmpeg would.
+ * Like ffmpeg, it starts at `startSeconds` rounded to the millisecond.
+ */
+function synthPcm(path: string, { sampleRate, maxSeconds, startSeconds: asked = 0 }: PcmOptions): Buffer {
+  const startSeconds = Number(asked.toFixed(3));
   const frames = Math.max(0, Math.round(Math.min(maxSeconds, SONG_SECONDS - startSeconds) * sampleRate));
   const samples = new Int16Array(frames * 2);
   for (let i = 0; i < frames; i++) {
@@ -108,6 +118,8 @@ interface SetupOptions {
   render?: (plan: TransitionPlan, a: Excerpt, b: Excerpt) => Promise<StereoAudio>;
   now?: () => number;
   dir?: string;
+  maxBytes?: number;
+  renderTimeoutMs?: number;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -136,8 +148,10 @@ function setup(options: SetupOptions = {}) {
     log,
     encode,
     now: options.now,
+    maxBytes: options.maxBytes,
+    renderTimeoutMs: options.renderTimeoutMs,
   });
-  return { dir, transitions, pcm, render, encode, log, maps, cues };
+  return { dir, transitions, pcm, render, encode, log, maps, cues, tracks };
 }
 
 /** A temporary cache folder, removed after the test. */
@@ -179,8 +193,11 @@ describe('Transitions', () => {
     expect(t.pcm).toHaveBeenCalledTimes(2);
     const [aPath, aOpts] = t.pcm.mock.calls[0]!;
     expect(aPath).toBe('/music/1.flac');
-    expect(aOpts).toMatchObject({ sampleRate: RENDER_RATE, channels: 2, startSeconds: expectedPlan.aStart - 0.25 });
-    expect(aOpts.startSeconds! + aOpts.maxSeconds).toBeLessThanOrEqual(SONG_SECONDS);
+    // From the 10 ms step at or before the excerpt's start: a time ffmpeg seeks to exactly.
+    const excerptStart = Math.floor((expectedPlan.aStart - 0.25) * 100) / 100;
+    expect(aOpts).toMatchObject({ sampleRate: RENDER_RATE, channels: 2, startSeconds: excerptStart, exactSeek: false });
+    expect(aOpts.signal).toBeInstanceOf(AbortSignal);
+    expect(aOpts.startSeconds! + aOpts.maxSeconds).toBeLessThanOrEqual(SONG_SECONDS + 1);
     // What the renderer got: A's audio as it is in the song, from the excerpt's start.
     const [, aExcerpt] = t.render.mock.calls[0]!;
     expect(aExcerpt.start).toBe(aOpts.startSeconds);
@@ -208,18 +225,59 @@ describe('Transitions', () => {
     expect(restarted.render).not.toHaveBeenCalled();
   });
 
-  it('keys the cache by the songs, mode and cue points', async () => {
+  it('keys the cache by the plan and the files', async () => {
     const t = setup();
     await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
     await t.transitions.idle();
     const auto = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' }));
-    expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'party' })).status).toBe('pending');
+
+    // Party plans the very same crossfade for these songs: the same audio, so the same file.
+    const partyPlan = planTransition({ a: mixMap(), b: mixMap(), mode: 'party', sameAlbumInOrder: false });
+    expect(partyPlan).toEqual(auto.plan);
+    expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'party' })).toEqual(auto);
+
+    // A cue point that moves the plan: new audio, a new file.
     t.cues.set('rec-1', { mixOut: 35 });
-    expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).status).toBe('pending');
+    const moved = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
+    expect(moved).toMatchObject({ status: 'pending', plan: { aStart: 35 } });
     await t.transitions.idle();
     const withCue = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' }));
     expect(withCue.url).not.toBe(auto.url);
-    expect(withCue.plan.aStart).toBe(35);
+
+    // The same plan from a replaced file (another size): rendered again.
+    t.tracks.set(2, { ...t.tracks.get(2)!, size: 2 });
+    expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).status).toBe('pending');
+  });
+
+  it('keeps answering with the same plan as A plays on, until that plan can no longer be reached', async () => {
+    const mix = await vi.importActual<typeof import('@playarr/mix')>('@playarr/mix');
+    // A planner whose start drifts with A's position (as next-downbeat quick mixes do): without
+    // remembering, every poll would be a new plan and a new file that's never ready in time.
+    vi.mocked(planTransition).mockImplementation((input) => {
+      const plan = mix.planTransition(input);
+      return { ...plan, aStart: plan.aStart + (input.aPosition ?? 0) / 100 };
+    });
+    try {
+      const t = setup();
+      const first = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 0 });
+      expect(first).toMatchObject({ status: 'pending', plan: { aStart: 40 } });
+      expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 30 })).toEqual(first);
+      await t.transitions.idle();
+      expect(t.render).toHaveBeenCalledTimes(1);
+      const ready = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 35 }));
+      expect(ready.plan).toEqual((first as { plan: TransitionPlan }).plan);
+
+      // A restarted server picks the plan up from the cache too.
+      const restarted = setup({ dir: t.dir });
+      await restarted.transitions.load();
+      expect(await restarted.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 33 })).toEqual(ready);
+
+      // Past the point where it could still start 5 s ahead: planned again.
+      const late = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 36 });
+      expect(late).toMatchObject({ status: 'pending', plan: { aStart: 41.36 } });
+    } finally {
+      vi.mocked(planTransition).mockImplementation(mix.planTransition);
+    }
   });
 
   it('forget removes every cached transition involving a song', async () => {
@@ -232,6 +290,56 @@ describe('Transitions', () => {
     await t.transitions.forget('rec-2');
     expect(transitionFiles(t.dir)).toHaveLength(2);
     expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).status).toBe('pending');
+    expect((await t.transitions.request({ fromTrackId: 3, toTrackId: 4, mode: 'auto' })).status).toBe('ready');
+  });
+
+  it('forget during a render throws its result away', async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const t = setup({
+      render: async (plan, a, b) => {
+        await gate;
+        return renderTransition(plan, a, b);
+      },
+    });
+    await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
+    await vi.waitFor(() => expect(t.render).toHaveBeenCalledTimes(1));
+    await t.transitions.forget('rec-2');
+    release();
+    await t.transitions.idle();
+    expect(transitionFiles(t.dir)).toEqual([]);
+    expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).status).toBe('pending');
+  });
+
+  it('keeps to its size cap, least recently made first, and forgets what it trimmed', async () => {
+    const first = setup();
+    await first.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
+    await first.transitions.idle();
+    const oneTransition = transitionFiles(first.dir).reduce((sum, name) => sum + readFileSync(join(first.dir, 'transitions', name)).length, 0);
+
+    const t = setup({ dir: first.dir, maxBytes: Math.round(oneTransition * 1.5) });
+    await t.transitions.load();
+    await t.transitions.request({ fromTrackId: 3, toTrackId: 4, mode: 'auto' });
+    await t.transitions.idle();
+    const kept = expectReady(await t.transitions.request({ fromTrackId: 3, toTrackId: 4, mode: 'auto' }));
+    const key = kept.url.slice('/transitions/'.length, -'.flac'.length);
+    expect(transitionFiles(t.dir)).toEqual([`${key}.flac`, `${key}.json`]);
+    expect((t.transitions as unknown as { index: Map<string, unknown> }).index.size).toBe(1);
+    expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).status).toBe('pending');
+  });
+
+  it('a render that hangs is given up on, and the queue moves on', async () => {
+    const t = setup({
+      renderTimeoutMs: 50,
+      render: async (plan, a, b) => (pitchOfExcerpt(a) === 1 ? new Promise<never>(() => {}) : renderTransition(plan, a, b)),
+    });
+    await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
+    await t.transitions.request({ fromTrackId: 3, toTrackId: 4, mode: 'auto' });
+    await t.transitions.idle();
+    expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).toEqual({
+      status: 'unavailable',
+      reason: expect.stringContaining('took too long'),
+    });
     expect((await t.transitions.request({ fromTrackId: 3, toTrackId: 4, mode: 'auto' })).status).toBe('ready');
   });
 
@@ -291,21 +399,42 @@ describe('Transitions', () => {
     expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).status).toBe('straight');
   });
 
-  it('also stores the rest of an MP3 B from where playback resumes, decoded with the transition', async () => {
-    const t = setup({ tracks: [track(1), track(2, MP3)] });
+  it('also stores the rest of an MP3 B from where playback resumes, decoded exactly, joining the transition', async () => {
+    // A leaves at a time off the 10 ms grid, so B resumes at one too (on a whole sample, for a clean check):
+    // a decode started where ffmpeg rounds to the millisecond would be a sample or two off.
+    const bResumeFrames = 293_837; // 6.66297… s
+    const maps = new Map([
+      ['rec-1', mixMap({ outroStart: 50 - bResumeFrames / RENDER_RATE })],
+      ['rec-2', mixMap()],
+    ]);
+    const t = setup({ tracks: [track(1), track(2, MP3)], maps });
     await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
     await t.transitions.idle();
     const ready = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' }));
     expect(ready.continuationUrl).toBe(ready.url.replace(/\.flac$/, '.rest.flac'));
 
+    // B's excerpt and its remainder are each decoded with an exact seek; A (FLAC) needs none.
+    expect(t.pcm.mock.calls.map(([path, opts]) => [path, opts.exactSeek])).toEqual([
+      ['/music/1.flac', false],
+      ['/music/2.flac', true],
+      ['/music/2.flac', true],
+    ]);
+
     const rest = readRaw(fileOf(t.dir, ready.continuationUrl!));
     const bResume = ready.plan.bResume;
-    expect(rest.length / 2).toBe(Math.round((SONG_SECONDS - bResume) * RENDER_RATE));
+    expect(bResume * RENDER_RATE).toBeCloseTo(bResumeFrames, 6);
+    expect(Math.abs(rest.length / 2 - (SONG_SECONDS - bResume) * RENDER_RATE)).toBeLessThanOrEqual(1);
     for (const i of [0, 1000, 44100]) {
       expect(rest[2 * i]).toBeCloseTo(sampleAt('/music/2.flac', bResume + i / RENDER_RATE), 3);
     }
-    // One decode of B covers both the transition and the rest, so they join without a gap.
-    expect(t.pcm).toHaveBeenCalledTimes(2);
+
+    // The join: the transition ends on B's tone alone, and the rest's first sample is the very next
+    // one of it (a pure tone's next sample follows from its last two). One sample off would miss by ~0.03.
+    const transition = readRaw(fileOf(t.dir, ready.url));
+    const frames = transition.length / 2;
+    const [beforeLast, last] = [transition[2 * (frames - 2)]!, transition[2 * (frames - 1)]!];
+    const step = (2 * Math.PI * pitchOf('/music/2.flac')) / RENDER_RATE;
+    expect(Math.abs(rest[0]! - (2 * Math.cos(step) * last - beforeLast))).toBeLessThan(2e-3);
 
     t.pcm.mockClear();
     expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).toEqual(ready);
@@ -363,7 +492,7 @@ describe('Transitions', () => {
   it('the ffmpeg encoder reports a missing ffmpeg as ENOENT, which is what switches to WAV', async () => {
     const encode = ffmpegFlacEncoder('playarr-test-no-such-ffmpeg');
     const audio = { left: new Float32Array(10), right: new Float32Array(10) };
-    await expect(encode(audio, join(cacheFolder(), 'out.flac.tmp'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(encode(audio, join(cacheFolder(), 'out.flac.tmp'), AbortSignal.timeout(10_000))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('serves only its own file names', () => {

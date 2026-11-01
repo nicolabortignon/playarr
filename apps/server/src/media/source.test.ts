@@ -34,6 +34,16 @@ describe('ffmpegPcmArgs', () => {
     expect(args).not.toContain('-sseof');
   });
 
+  it('with exactSeek, seeks and limits the length after the input, so ffmpeg decodes and drops up to the start', () => {
+    const args = ffmpegPcmArgs('/music/a.mp3', { sampleRate: 44100, maxSeconds: 30, startSeconds: 200.5, channels: 2, exactSeek: true });
+    expect(args).toEqual([
+      ...['-hide_banner', '-loglevel', 'error', '-nostdin'],
+      ...['-i', '/music/a.mp3', '-ss', '200.5', '-t', '30'],
+      ...['-vn', '-ac', '2', '-ar', '44100', '-f', 's16le', '-'],
+    ]);
+    expect(() => ffmpegPcmArgs('/music/a.mp3', { sampleRate: 44100, maxSeconds: 30, fromEnd: true, exactSeek: true })).toThrow();
+  });
+
   it('seeks relative to the end of the file when fromEnd is set', () => {
     const args = ffmpegPcmArgs('/music/a.flac', { sampleRate: 11025, maxSeconds: 180, fromEnd: true });
     const input = args.indexOf('-i');
