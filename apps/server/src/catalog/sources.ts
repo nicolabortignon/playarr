@@ -145,6 +145,11 @@ export class SourceManager {
     if (input.settings && source.kind === 'folder') {
       settings = withoutUndefined(this.folderSettings(input.settings, source.settings as FolderSettings));
     } else if (input.settings) {
+      const saved = source.settings as LidarrSettings;
+      // The saved key only ever goes to the server it was saved for: a new address needs its key.
+      if (url && !apiKey && saved.url && !sameServer(url, saved.url)) {
+        throw new SourceError('Enter the API key for the new Lidarr address', 400);
+      }
       settings = { ...source.settings, ...(url ? { url: trimUrl(url) } : {}), ...(apiKey ? { apiKey } : {}) };
     }
     this.store.updateSource(id, { name: input.name?.trim() || undefined, enabled: input.enabled, settings });
@@ -240,8 +245,9 @@ export class SourceManager {
   async test(input: { id?: number; url?: string; apiKey?: string }): Promise<SourceTestResult> {
     const saved = input.id !== undefined ? (this.store.source(input.id)?.settings as LidarrSettings | undefined) : undefined;
     const url = input.url || saved?.url;
-    const apiKey = input.apiKey || saved?.apiKey;
-    if (!url || !apiKey) return { ok: false, error: 'Enter the Lidarr URL and API key' };
+    // The saved key only ever goes to the server it was saved for, never to an address typed in a test.
+    const apiKey = input.apiKey || (url && saved?.url && sameServer(url, saved.url) ? saved.apiKey : undefined);
+    if (!url || !apiKey) return { ok: false, error: input.url && saved?.apiKey ? 'Enter the API key for this address' : 'Enter the Lidarr URL and API key' };
     try {
       const status = await new LidarrClient(trimUrl(url), apiKey).systemStatus();
       return { ok: true, version: status.version };
@@ -369,3 +375,12 @@ const defaultPort = (access: FolderAccessKind) => (access === 'smb' ? 445 : 22);
 const withoutUndefined = (o: object): Record<string, unknown> => JSON.parse(JSON.stringify(o)) as Record<string, unknown>;
 
 const trimUrl = (url: string) => url.trim().replace(/\/+$/, '');
+
+/** Same scheme, host and port: where a saved secret may be sent again. */
+function sameServer(a: string, b: string): boolean {
+  try {
+    return new URL(trimUrl(a)).origin === new URL(trimUrl(b)).origin;
+  } catch {
+    return false;
+  }
+}

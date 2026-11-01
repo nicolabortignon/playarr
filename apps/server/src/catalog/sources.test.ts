@@ -64,10 +64,10 @@ describe('SourceManager', () => {
     const { store, manager } = setup();
     manager.seedFromEnv(ENV);
     const id = store.listSources()[0]!.id;
-    manager.update(id, { name: 'Home Lidarr', settings: { url: 'http://nas:8686/' } });
+    manager.update(id, { name: 'Home Lidarr', settings: { url: 'http://lidarr:8686/' } });
     expect(store.source(id)).toMatchObject({
       name: 'Home Lidarr',
-      settings: { url: 'http://nas:8686', apiKey: ENV.apiKey },
+      settings: { url: 'http://lidarr:8686', apiKey: ENV.apiKey },
     });
   });
 
@@ -103,10 +103,21 @@ describe('SourceManager', () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify({ version: '3.1.6' }), { status: 200 }));
-    await expect(manager.test({ id, url: 'http://nas:8686' })).resolves.toEqual({ ok: true, version: '3.1.6' });
+    await expect(manager.test({ id, url: 'http://lidarr:8686/' })).resolves.toEqual({ ok: true, version: '3.1.6' });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(String(url)).toBe('http://nas:8686/api/v1/system/status');
+    expect(String(url)).toBe('http://lidarr:8686/api/v1/system/status');
     expect((init!.headers as Record<string, string>)['X-Api-Key']).toBe(ENV.apiKey);
+  });
+
+  it('never sends the saved key to another address', async () => {
+    const { store, manager } = setup();
+    manager.seedFromEnv(ENV);
+    const id = store.listSources()[0]!.id;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
+    await expect(manager.test({ id, url: 'http://attacker:8686' })).resolves.toEqual({ ok: false, error: 'Enter the API key for this address' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(() => manager.update(id, { settings: { url: 'http://elsewhere:8686' } })).toThrow(/API key/);
+    expect(() => manager.update(id, { settings: { url: `${ENV.url}/` } })).not.toThrow(); // same server
   });
 
   it('reports a failed connection test', async () => {
