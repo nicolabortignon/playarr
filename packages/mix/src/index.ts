@@ -12,3 +12,4 @@ export * from './camelot.ts';
 export * from './plan.ts';
 export * from './render/biquad.ts';
 export * from './render/stretch.ts';
+export * from './render/transition.ts';
