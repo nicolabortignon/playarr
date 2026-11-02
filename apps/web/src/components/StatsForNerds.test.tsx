@@ -152,6 +152,11 @@ describe('Stats for nerds', () => {
     await expectRow('Intro', 'to 0:17.0 · eases in');
     await expectRow('Outro', 'from 3:20.0 · cold end');
     await expectRow('First drop', '0:33.0');
+    // The phrase strip spans the whole song (30 phrases of 8 s from the first bar at 1 s), with lines at the intro's end and the outro's start.
+    await expectRow('Phrases', '0.70intro ends 0:17.0outro from 3:20.0');
+    const marker = (which: string) => document.querySelector<HTMLElement>(`[data-marker="${which}"]`)!.style.left;
+    expect(parseFloat(marker('intro'))).toBeCloseTo((16 / 240) * 100, 3);
+    expect(parseFloat(marker('outro'))).toBeCloseTo((199 / 240) * 100, 3);
   });
 
   it('shows the loudness measured and the gain the stream plays at', async () => {

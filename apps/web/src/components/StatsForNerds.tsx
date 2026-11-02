@@ -410,32 +410,63 @@ function Upcoming({ result, time }: { result: UpcomingResult | null; time: numbe
   );
 }
 
-/** Each phrase's energy, the one playing in the accent color, and its value. */
+/**
+ * Each phrase's energy over the whole song, the one playing in the accent color, with lines where the
+ * intro ends and the outro starts. Energy is measured over a song's first 7 minutes: a longer song's
+ * later phrases are left blank, so its outro still shows where it is.
+ */
 function Energy({ map, time }: { map: MixMap; time: number }) {
   const grid = beatGrid(map);
   if (!grid || !map.phraseEnergy.length) return null;
-  const now = Math.floor((time - grid.firstBar) / (16 * grid.beat));
+  const phrase = 16 * grid.beat;
+  const total = Math.max(map.phraseEnergy.length, Math.ceil((map.soundEnd - grid.firstBar) / phrase));
+  const now = Math.floor((time - grid.firstBar) / phrase);
   const energy = map.phraseEnergy[now];
+  /** Where a time falls along the strip. */
+  const place = (t: number) => `${Math.min(100, Math.max(0, ((t - grid.firstBar) / (phrase * total)) * 100))}%`;
   return (
     <Row
       label="Phrases"
       value={
-        <span className="flex items-center gap-2">
-          <span aria-hidden className="flex h-4 min-w-0 flex-1 items-end gap-px">
-            {map.phraseEnergy.map((e, k) => (
-              <span
-                key={k}
-                style={{ height: `${Math.max(8, e * 100)}%` }}
-                className={cn('min-w-px flex-1 rounded-[1px]', k === now ? 'bg-accent' : k < now ? 'bg-paper/35' : 'bg-paper/15')}
-              />
-            ))}
+        <span className="block">
+          <span className="flex items-center gap-2">
+            <span aria-hidden className="relative flex h-5 min-w-0 flex-1 items-end gap-px">
+              {Array.from({ length: total }, (_, k) => {
+                const e = map.phraseEnergy[k];
+                return (
+                  <span
+                    key={k}
+                    style={{ height: e === undefined ? '8%' : `${Math.max(8, e * 100)}%` }}
+                    className={cn(
+                      'min-w-px flex-1 rounded-[1px]',
+                      e === undefined ? 'bg-paper/5' : k === now ? 'bg-accent' : k < now ? 'bg-paper/35' : 'bg-paper/15',
+                    )}
+                  />
+                );
+              })}
+              <span data-marker="intro" style={{ left: place(map.introEnd) }} className={cn(MARKER, 'bg-sky-300')} />
+              <span data-marker="outro" style={{ left: place(map.outroStart) }} className={cn(MARKER, 'bg-rose-300')} />
+            </span>
+            <span className="shrink-0 tabular">{energy !== undefined ? n2(energy) : '–'}</span>
           </span>
-          <span className="shrink-0 tabular">{energy !== undefined ? n2(energy) : '–'}</span>
+          <span className="mt-0.5 flex flex-wrap gap-x-3 text-[10px] text-muted">
+            <span>
+              <span aria-hidden className="mr-1 inline-block h-2 w-px bg-sky-300" />
+              intro ends {at(map.introEnd)}
+            </span>
+            <span>
+              <span aria-hidden className="mr-1 inline-block h-2 w-px bg-rose-300" />
+              outro from {at(map.outroStart)}
+            </span>
+          </span>
         </span>
       }
     />
   );
 }
+
+/** A line across the phrase strip. */
+const MARKER = 'absolute -top-0.5 -bottom-0.5 w-px';
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
