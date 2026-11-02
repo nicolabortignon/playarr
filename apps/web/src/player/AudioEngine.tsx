@@ -143,6 +143,22 @@ interface Live {
   sleepAtLanding?: boolean;
 }
 
+/** What's heard, for Stats for nerds. */
+export interface Sounding {
+  /** The element making the sound: the transition's while one plays. */
+  element: HTMLAudioElement | null;
+  /** That element plays the transition between two songs. */
+  transition: boolean;
+  /** A live mix (Web Audio, on desktop) is what's heard. */
+  live: boolean;
+}
+
+/** Set while the engine is mounted. */
+let sounding: (() => Sounding) | null = null;
+
+/** What's heard right now, if the engine is mounted. */
+export const soundingNow = (): Sounding | undefined => sounding?.();
+
 /**
  * Owns the <audio> elements and bridges them to the player store and the OS media controls. One plays;
  * another loads the song that comes next and starts it right as the first ends (no gap), or a little
@@ -1538,6 +1554,16 @@ export function AudioEngine() {
 
   // Presses of Next come here first, within the press (see takeNext).
   useEffect(() => takeNextPresses(takeNext), []);
+
+  useEffect(() => {
+    sounding = () => {
+      const element = playingDeck();
+      return { element, transition: !!element && element === bridge.current, live: !!live.current?.started };
+    };
+    return () => {
+      sounding = null;
+    };
+  }, []);
 
   // A transition loads ahead once ready for the songs playing next, and is dropped when they change.
   useEffect(() => {

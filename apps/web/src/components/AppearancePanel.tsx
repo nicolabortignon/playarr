@@ -22,7 +22,7 @@ const MOTION_OPTIONS: { value: MotionPref; label: string }[] = [
 
 /** Settings → Appearance: for this device. */
 export function AppearancePanel() {
-  const { accent, motion, formatBadges, setAccent, setMotion, setFormatBadges } = usePrefs();
+  const { accent, motion, formatBadges, statsForNerds, setAccent, setMotion, setFormatBadges, setStatsForNerds } = usePrefs();
   return (
     <div>
       <SettingsSection title="Accent color">
@@ -44,6 +44,15 @@ export function AppearancePanel() {
           description="The FLAC, MP3 and Hi-Res labels in the player, Now Playing, the queue and on albums."
           checked={formatBadges}
           onChange={setFormatBadges}
+        />
+      </SettingsSection>
+
+      <SettingsSection title="For the curious">
+        <Switch
+          label="Stats for nerds"
+          description="An overlay with everything Playarr knows about the song playing: its tempo, key and beat grid as it plays, intro, outro and drop, loudness and the gain applied, the stream and its buffer, and the next transition."
+          checked={statsForNerds}
+          onChange={setStatsForNerds}
         />
       </SettingsSection>
     </div>

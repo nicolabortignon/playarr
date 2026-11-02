@@ -774,7 +774,6 @@ export interface MixSettingsInfo extends MixSettings {
   history: { plays: number; since?: string };
 }
 
-/** How much to turn a song down so songs play at an even volume (dB, never above 0). */
 /**
  * How much to turn a song (dB) so it plays at the standard loudness (−14 LUFS): negative turns a loud
  * song down, positive a quiet one up (as far as its peak leaves room).
@@ -784,6 +783,9 @@ export interface TrackLevel {
   track: number;
   /** The song within its album, keeping the album's quiet and loud songs as they were mastered. */
   album?: number;
+  /** What was measured (for Stats for nerds): its loudness (LUFS, EBU R128) and its highest sample (dBFS). */
+  lufs?: number;
+  peak?: number;
 }
 
 /** Settings → Mixes → ListenBrainz. The token is never sent back. */

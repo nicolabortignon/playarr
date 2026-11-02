@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ACCENTS, crossfadeSeconds, djFadeSeconds, PREFS_KEY, usePrefs } from './prefs';
 
-const defaults = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, transitions: 'off', crossfade: 0, levelVolume: true, profileId: null } as const;
+const defaults = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, transitions: 'off', crossfade: 0, levelVolume: true, profileId: null, statsForNerds: false } as const;
 const stored = (state: Record<string, unknown>) =>
   localStorage.setItem(PREFS_KEY, JSON.stringify({ state, version: 1 }));
 
@@ -17,7 +17,7 @@ describe('device preferences', () => {
   });
 
   it('keeps what is set, on this device', () => {
-    const { setAccent, setMotion, setFormatBadges, setRecordPlays, setAutoplay, setCrossfade, setLevelVolume, setProfileId } = usePrefs.getState();
+    const { setAccent, setMotion, setFormatBadges, setRecordPlays, setAutoplay, setCrossfade, setLevelVolume, setProfileId, setStatsForNerds } = usePrefs.getState();
     setAccent(ACCENTS[2]);
     setMotion('reduce');
     setFormatBadges(false);
@@ -27,7 +27,8 @@ describe('device preferences', () => {
     setCrossfade(6);
     setLevelVolume(false);
     setProfileId(2);
-    const saved = { accent: ACCENTS[2], motion: 'reduce', formatBadges: false, recordPlays: false, autoplay: false, transitions: 'dj', crossfade: 6, levelVolume: false, profileId: 2 };
+    setStatsForNerds(true);
+    const saved = { accent: ACCENTS[2], motion: 'reduce', formatBadges: false, recordPlays: false, autoplay: false, transitions: 'dj', crossfade: 6, levelVolume: false, profileId: 2, statsForNerds: true };
     expect(usePrefs.getState()).toMatchObject(saved);
     expect(JSON.parse(localStorage.getItem(PREFS_KEY)!).state).toEqual(saved);
   });
@@ -39,7 +40,7 @@ describe('device preferences', () => {
   });
 
   it('falls back to the default for a value it does not know', async () => {
-    stored({ accent: 'url(evil)', motion: 'sideways', formatBadges: 'yes' });
+    stored({ accent: 'url(evil)', motion: 'sideways', formatBadges: 'yes', statsForNerds: 1 });
     await usePrefs.persist.rehydrate();
     expect(usePrefs.getState()).toMatchObject(defaults);
     stored({ accent: '#123456', motion: 'reduce' });

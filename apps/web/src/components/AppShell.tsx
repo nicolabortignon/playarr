@@ -13,6 +13,7 @@ import { MixPointsDialog } from './MixPointsDialog';
 import { BottomNav, Sidebar } from './Nav';
 import { NowPlaying } from './NowPlaying';
 import { MiniPlayer, PlayerBar } from './PlayerBar';
+import { StatsForNerds } from './StatsForNerds';
 import { Toasts } from './Toasts';
 
 const REDUCED_MOTION = { system: 'user', reduce: 'always', full: 'never' } as const satisfies Record<MotionPref, string>;
@@ -50,6 +51,7 @@ export function AppShell() {
         </>
       )}
       <NowPlaying />
+      <StatsForNerds />
       <AddToPlaylistDialog />
       <TrackMetadataDialog />
       <MixPointsDialog />

@@ -62,7 +62,7 @@ describe('levels route', () => {
     // The album as a whole is quieter than its loudest song: a smaller cut, the same for every song of it.
     expect(body.a1.album).toBeLessThan(-3);
     expect(body.a1.album).toBeGreaterThan(-6);
-    expect(body.solo).toEqual({ track: -8 });
+    expect(body.solo).toEqual({ track: -8, lufs: -6, peak: -0.5 });
     expect(body.a3).toBeUndefined();
     expect(body.gone).toBeUndefined();
     // Loudness only (beat and sound analysis are for other things), the songs asked about first.

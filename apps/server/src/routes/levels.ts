@@ -75,6 +75,8 @@ export function levelRoutes(
       out[id] = {
         track: gainFor(own.lufs, own.peak),
         ...(songs.length > 1 ? { album: gainFor(combinedLufs(songs), albumPeak) } : {}),
+        lufs: own.lufs,
+        ...(own.peak !== null && Number.isFinite(own.peak) ? { peak: own.peak } : {}),
       };
     }
     // Asked for by the player for the songs about to play: ahead of everything; their albums after.
