@@ -40,8 +40,6 @@ const PRELOAD_S = 30;
 const LEAD_MS = 30;
 /** Where the files of a DJ transition join, the old one plays on this long under the new one (the kick masks it). */
 const OVERLAP_MS = 15;
-/** The transition hasn't started this long after asking it to: A plays on (it never stopped). */
-const START_WATCH_MS = 250;
 /** The transition stuck loading this long: on with a song's own file instead. */
 const STALL_MS = 4000;
 /** Seeking flushes what's buffered: an element already this close (in seconds) to the time isn't moved. */
@@ -55,9 +53,10 @@ const LIVE_SLACK_MS = 250;
 /** How often a live mix (no element, so no timeupdate) moves the clock, the history and the levels on. */
 const LIVE_TICK_MS = 100;
 /**
- * iPhones can't fade, nor start a file at an exact moment: the next file starts there silenced while
- * the old one plays on, plays a little faster or slower until both are at the same moment, then takes
- * over (see inStep). This close counts as the same moment.
+ * No browser starts a file at an exact moment (and iPhones can't fade either): where a transition joins
+ * a song's own file, the next file starts silenced while the old one plays on, plays a little faster or
+ * slower until both are at the same moment, then takes over (see inStep). This close counts as the same
+ * moment.
  */
 const IN_STEP_S = 0.005;
 /** A silenced file closes its gap over about this long (at up to twice or half its speed). */
@@ -234,8 +233,8 @@ export function AudioEngine() {
   const swap = () => (activeIdx.current ^= 1);
   /** The transition playing, if one is. */
   const bridging = () => (mix.current?.bridging ? mix.current : null);
-  /** iPhones change over from a transition to B's own file in the tail of B after it, in step (see inStep). */
-  const landsInStep = (m: Mix) => !canSetVolume() && (m.transition.tail ?? 0) >= MIN_TAIL_S;
+  /** From a transition to B's own file in the tail of B after it, in step (see inStep): where the file has one. */
+  const landsInStep = (m: Mix) => (m.transition.tail ?? 0) >= MIN_TAIL_S;
   /** The element making the sound: the transition's while one plays. */
   const playingDeck = () => (bridging() ? bridge.current : active());
 
@@ -686,10 +685,8 @@ export function AudioEngine() {
   }
 
   /**
-   * The mix point: the transition takes over from A's file, which stops after a short overlap. If the
-   * transition doesn't start promptly, A plays on: where the volume can be set, A only stops once the
-   * transition plays, so that's seamless. iPhones stop A as the transition is asked to start (a late start
-   * is then a short gap, not a stretch of A heard twice) and play A on from there if it doesn't.
+   * The mix point: the transition takes over from A's file, in step with it (see startBridgeInStep). If
+   * the transition doesn't start, A plays on: it never stopped.
    */
   function startBridge(m: Mix, out: HTMLAudioElement) {
     const br = bridge.current;
@@ -706,33 +703,15 @@ export function AudioEngine() {
     starting.current = m;
     clearTimeout(handoffTimer.current);
     if (fade.current) endFade();
-    if (!settable) return startBridgeInStep(m, out, br, entry);
-    setTime(br, entry);
-    const o: Overlap = { out, in: br, startedAt: null };
-    overlap.current = o;
-    applyVolumes();
-    clearTimeout(startWatch.current);
-    startWatch.current = setTimeout(() => starting.current === m && cancelStart(m, true), START_WATCH_MS);
-    br.play().then(
-      () => {
-        if (starting.current !== m) return;
-        starting.current = null;
-        clearTimeout(startWatch.current);
-        startOverlap(o);
-      },
-      () => {
-        // Paused meanwhile: dealt with there.
-        if (starting.current !== m || !usePlayer.getState().playing) return;
-        // Couldn't start it (autoplay rules on some phones): A plays on, then B the usual way.
-        cancelStart(m, true);
-      },
-    );
+    startBridgeInStep(m, out, br, entry);
   }
 
   /**
-   * iPhones: the transition starts silenced (a moment ahead, for the time starting takes) while A plays
-   * on, and takes over from A once the two are in step: the transition starts as A itself, so nothing
-   * is heard but A, going on. A transition that doesn't start in time leaves A playing.
+   * The transition starts silenced (a moment ahead, for the time starting takes) while A plays on, and
+   * takes over from A once the two are in step: the transition starts as A itself, so nothing is heard
+   * but A, going on. Starting a file takes a moment that's never quite the same, so one started on a
+   * timer alone would skip or repeat a few milliseconds of the music (heard as a tiny gap). A transition
+   * that doesn't start in time leaves A playing.
    */
   function startBridgeInStep(m: Mix, out: HTMLAudioElement, br: HTMLAudioElement, entry: number) {
     silenced.current.add(br);
@@ -748,7 +727,9 @@ export function AudioEngine() {
         inStep(out, br, () => songTime(out) - m.transition.plan.aStart, () => applyVolumes());
       },
       () => {
+        // Paused meanwhile: dealt with there.
         if (starting.current !== m || !usePlayer.getState().playing) return;
+        // Couldn't start it (autoplay rules on some phones): A plays on, then B the usual way.
         cancelStart(m, true);
       },
     );
@@ -804,12 +785,21 @@ export function AudioEngine() {
   }
 
   /**
-   * iPhones: `follower` has just started, silenced, while `lead` plays on and is heard. It plays a little
-   * faster or slower until it's where `target()` says it should be (its time, for where the lead is), then
-   * takes over: heard, as the lead pauses, and `done` runs. `ready` holds the takeover back until the two
-   * play the same sound. The first gap seen teaches how long starting takes, for the next changeover.
+   * `follower` has just started, silenced, while `lead` plays on and is heard. It plays a little faster or
+   * slower until it's where `target()` says it should be (its time, for where the lead is), then takes
+   * over: heard, as the lead stops (where the volume can be set, across a short overlap, as the two are
+   * the same sound at most IN_STEP_S apart; at once on iPhones), and `done` runs. `ready` holds the takeover
+   * back until the two play the same sound. `ending`: the transition the lead plays, ending (its level
+   * holds as it fades). The first gap seen teaches how long starting takes, for the next changeover.
    */
-  function inStep(lead: HTMLAudioElement, follower: HTMLAudioElement, target: () => number, done: () => void, ready: () => boolean = () => true) {
+  function inStep(
+    lead: HTMLAudioElement,
+    follower: HTMLAudioElement,
+    target: () => number,
+    done: () => void,
+    ready: () => boolean = () => true,
+    ending?: Mix,
+  ) {
     stepping.current?.cancel();
     const began = performance.now();
     const startedFrom = follower.currentTime;
@@ -823,8 +813,10 @@ export function AudioEngine() {
     const finish = () => {
       stop();
       silenced.current.delete(follower);
-      applyVolumes();
-      lead.pause();
+      // The overlap stops the lead (at once where the volume can't be set), and the transition with it when that's done with.
+      const o: Overlap = { out: lead, in: follower, startedAt: null, ...(ending ? { ending } : {}) };
+      overlap.current = o;
+      startOverlap(o);
       done();
     };
     const step = {
@@ -949,7 +941,8 @@ export function AudioEngine() {
         if (o) return startOverlap(o);
         // B's own song time for where the transition's tail is.
         const target = () => plan.bResume + intoTail() - offsetOf(incoming);
-        inStep(br, incoming, target, () => clearBridge(), () => br.currentTime >= plan.length);
+        // The overlap clears the transition once it has faded out.
+        inStep(br, incoming, target, () => {}, () => br.currentTime >= plan.length, m);
       },
       () => {
         if (o && overlap.current === o) {

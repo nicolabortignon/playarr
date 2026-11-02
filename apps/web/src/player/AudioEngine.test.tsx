@@ -223,9 +223,19 @@ async function intoTransition(t: number, tracks = [song(1), song(2), song(3)]) {
   const [a, , bridge] = decks;
   await at(a, 145);
   await at(a, 169.99);
-  await overlap();
+  await inStepWith(a, 170.3, bridge, 0.3);
   if (t > 0) await at(bridge, t);
   return decks;
+}
+
+/**
+ * A file started silenced (see inStep) reaches the moment the one playing is at (`followerTime` for
+ * `leadTime`): it takes over, across the short overlap.
+ */
+async function inStepWith(lead: HTMLAudioElement, leadTime: number, follower: HTMLAudioElement, followerTime: number) {
+  fake(follower).time = followerTime;
+  await at(lead, leadTime);
+  await overlap();
 }
 
 describe('AudioEngine', () => {
@@ -454,10 +464,15 @@ describe('AudioEngine', () => {
       expect(fake(b).time).toBe(32);
       expect(fake(b).paused).toBe(true);
       await at(a, 169.99);
+      // Started silenced, a moment ahead for the time starting takes: the first song is what's heard.
       expect(fake(bridge).paused).toBe(false);
-      expect(fake(bridge).time).toBe(0);
-      await overlap();
+      expect(bridge.muted).toBe(true);
+      expect(fake(bridge).time).toBeCloseTo(0.05, 9);
+      expect(fake(a).paused).toBe(false);
+      // At the same moment of the first song: the transition takes over, across the short overlap.
+      await inStepWith(a, 170.3, bridge, 0.3);
       expect(fake(a).paused).toBe(true);
+      expect(bridge.muted).toBe(false);
       expect(usePlayer.getState().playing).toBe(true);
       await at(bridge, 6);
       expect(now()).toBe(1);
@@ -736,7 +751,7 @@ describe('AudioEngine', () => {
       fake(a).time = 169.97;
       await wait(20);
       expect(fake(bridge).paused).toBe(false);
-      expect(fake(bridge).time).toBe(0);
+      expect(fake(bridge).time).toBeCloseTo(0.05, 9);
     });
 
     it('joins the transition where the song is, when the timer came late', async () => {
@@ -747,7 +762,7 @@ describe('AudioEngine', () => {
       fake(a).time = 170.5; // the timer, slowed in the background, fires half a second late
       await wait(1000);
       expect(fake(bridge).paused).toBe(false);
-      expect(fake(bridge).time).toBe(0.5);
+      expect(fake(bridge).time).toBeCloseTo(0.55, 9); // and a moment ahead, for the time starting takes
     });
 
     it('moves on to the next song at the switch on time, between timeupdates', async () => {
@@ -774,21 +789,49 @@ describe('AudioEngine', () => {
       expect(vi.mocked(playTracker.start).mock.calls.map(([t]) => t.fileId)).toEqual([2]);
     });
 
-    it('fades evenly across the join once a slow transition starts, the first song playing until then', async () => {
+    it('plays the first song on while a slow transition starts, then fades evenly across once they’re in step', async () => {
       transitionReady(1, 2);
       const [a, , bridge] = await start([song(1), song(2)]);
       slow.set(bridge, 100);
       await at(a, 145);
       await at(a, 169.99); // asked to start
+      await wait(100); // started, silenced, catching up
       expect(fake(a).paused).toBe(false);
-      expect(fake(bridge).volume).toBe(0);
-      await wait(90); // started
+      expect(fake(a).volume).toBe(1);
+      expect(bridge.muted).toBe(true);
+      fake(bridge).time = 0.3;
+      await act(async () => {
+        fake(a).time = 170.3;
+        a.dispatchEvent(new Event('timeupdate'));
+      });
+      await wait(4); // the next check: in step, so the overlap starts
       await wait(8);
-      expect(fake(a).volume).toBeCloseTo(7 / 15, 6);
-      expect(fake(bridge).volume).toBeCloseTo(8 / 15, 6);
-      await wait(10);
+      // Both heard, evenly, partway across.
+      expect(bridge.muted).toBe(false);
+      expect(fake(a).volume).toBeGreaterThan(0);
+      expect(fake(a).volume).toBeLessThan(1);
+      expect(fake(a).volume + fake(bridge).volume).toBeCloseTo(1, 6);
+      await overlap();
       expect(fake(a).paused).toBe(true);
       expect(fake(bridge).volume).toBe(1);
+    });
+
+    it('changes over to the next song’s own file in the transition’s tail, in step, fading across', async () => {
+      transitionReady(1, 2, { tail: 3 });
+      const [, b, bridge] = await intoTransition(12.1);
+      expect(now()).toBe(2);
+      // The transition over: B's own file starts silenced in its tail (B on its own), the transition heard.
+      await at(bridge, 23.99);
+      expect(fake(b).paused).toBe(false);
+      expect(b.muted).toBe(true);
+      expect(fake(bridge).paused).toBe(false);
+      // In step: B's own file takes over, across the short overlap, and the transition is let go.
+      await inStepWith(bridge, 24.4, b, 32.4);
+      expect(b.muted).toBe(false);
+      expect(fake(bridge).paused).toBe(true);
+      expect(src(bridge)).toBeNull();
+      await at(b, 40);
+      expect(clock()).toBe(40);
     });
 
     it('gives up on a transition that doesn’t start: the first song never stopped, the next follows', async () => {
@@ -797,9 +840,10 @@ describe('AudioEngine', () => {
       slow.set(bridge, 'never');
       await at(a, 145);
       await at(a, 169.99);
-      await wait(230);
-      expect(fake(bridge).paused).toBe(false); // still starting
-      await wait(20);
+      await wait(1470);
+      expect(fake(bridge).paused).toBe(false); // still starting, silenced: the first song is heard
+      expect(fake(a).volume).toBe(1);
+      await wait(30);
       expect(fake(bridge).paused).toBe(true);
       expect(src(bridge)).toBeNull();
       expect(fake(a).paused).toBe(false);
@@ -829,7 +873,7 @@ describe('AudioEngine', () => {
       expect(fake(a).paused).toBe(false);
       await at(a, 170.2);
       expect(fake(bridge).paused).toBe(false);
-      expect(fake(bridge).time).toBeCloseTo(0.2, 6);
+      expect(fake(bridge).time).toBeCloseTo(0.25, 6); // where the song is, and a moment ahead
     });
 
     it('pauses and seeks during the joins', async () => {
@@ -917,7 +961,7 @@ describe('AudioEngine', () => {
       expect(fake(a).time).toBe(32);
       expect(src(bridge)).toBe(TRANSITION);
       await at(b, 169.99);
-      await overlap();
+      await inStepWith(b, 170.3, bridge, 0.3);
       await at(bridge, 12.5);
       expect(now()).toBe(1);
       expect(usePlayer.getState().pos).toBe(0);
@@ -1496,7 +1540,7 @@ describe('AudioEngine', () => {
       await at(a, 168);
       await press();
       await at(a, 169.99);
-      await wait(260); // the transition never starts
+      await wait(1510); // the transition never starts
       expect(now()).toBe(2);
       expect(fake(b).paused).toBe(false);
       expect(fake(b).time).toBe(0);
