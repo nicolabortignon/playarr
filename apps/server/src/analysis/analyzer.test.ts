@@ -523,6 +523,35 @@ describe('Analyzer analysis progress', () => {
     expect(await analyzer.reanalyzeLibrary('tags')).toBe(1);
     expect(analyzer.analysisProgress()).toMatchObject({ beats: { ready: 1 }, tags: { ready: 0, songs: 1 }, tagsWaiting: 1 });
   });
+
+  it('analyses everything again at once: no kind’s earlier work counts', async () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    const sync = mezzanine();
+    sync.tracks = sync.tracks.map((t, i) => ({ ...t, recordingId: [MBID, 'local:abc'][i]! }));
+    store.applySync(store.ensureSource('lidarr', 'Lidarr'), sync);
+    const { analyzer, pcm } = withSong({ seconds: 200, db, songs: [MBID, 'local:abc'] });
+    pcm.mockImplementation(() => new Promise(() => {})); // never finishes
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(() => {})); // nor does ListenBrainz
+    const earlier = new Date(Date.now() - 60_000).toISOString();
+    for (const id of [MBID, 'local:abc']) {
+      db.prepare('INSERT INTO track_features (recording_id, version, features, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)').run(id, ANALYSIS_VERSION, '{}', earlier);
+      db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)').run(id, MIX_MAP_VERSION, '{}', earlier);
+    }
+    db.prepare('INSERT INTO track_meta (recording_id, tags, year, fetched_at) VALUES (?, ?, NULL, ?)').run(MBID, '[]', earlier);
+    expect(await analyzer.analyzeLibrary('all')).toBe(0); // all done
+    expect(await analyzer.reanalyzeLibrary('all')).toBe(2);
+    expect(analyzer.analysisProgress()).toMatchObject({
+      beats: { ready: 0 },
+      sound: { ready: 0 },
+      tags: { ready: 0 },
+      waiting: 1,
+      working: 1,
+      tagsWaiting: 1,
+    });
+    // What they had stays in use meanwhile.
+    expect(analyzer.mixMaps([MBID]).has(MBID)).toBe(true);
+  });
 });
 
 describe('Analyzer cue points', () => {

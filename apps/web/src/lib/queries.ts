@@ -59,7 +59,7 @@ export function useRunAnalysis() {
   const client = useQueryClient();
   return useMutation({
     /** `again`: every song, those already done included. */
-    mutationFn: ({ kind, again = false }: { kind: AnalysisKind; again?: boolean }) => api.runAnalysis(kind, again),
+    mutationFn: ({ kind, again = false }: { kind: AnalysisKind | 'all'; again?: boolean }) => api.runAnalysis(kind, again),
     onSuccess: ({ queued }, { kind, again }) => {
       const songs = `${queued.toLocaleString('en')} ${queued === 1 ? 'song' : 'songs'}`;
       const doing = kind === 'tags' ? 'Looking up' : 'Analysing';

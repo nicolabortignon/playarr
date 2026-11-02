@@ -99,7 +99,7 @@ describe('mix map routes', () => {
     expect(res.json()).toMatchObject({ enabled: false, tags: PROGRESS.tags });
   });
 
-  it.each(['beats', 'sound', 'tags'] as const)('runs %s analysis on every song, once or again, from the home network only', async (kind) => {
+  it.each(['beats', 'sound', 'tags', 'all'] as const)('runs %s analysis on every song, once or again, from the home network only', async (kind) => {
     const { app, analyzer } = setup();
     expect((await app.inject({ method: 'POST', url: `/api/analysis/${kind}` })).json()).toEqual({ queued: 4400 });
     expect(analyzer.analyzeLibrary).toHaveBeenCalledWith(kind);
@@ -111,6 +111,8 @@ describe('mix map routes', () => {
   it('looks tags up without audio analysis, says why the rest can’t run, and turns away unknown analyses', async () => {
     const { app, analyzer } = setup({ available: false });
     expect((await app.inject({ method: 'POST', url: '/api/analysis/tags' })).statusCode).toBe(200);
+    // Everything, here: the tag lookup.
+    expect((await app.inject({ method: 'POST', url: '/api/analysis/all', payload: { again: true } })).statusCode).toBe(200);
     for (const kind of ['beats', 'sound']) {
       const res = await app.inject({ method: 'POST', url: `/api/analysis/${kind}` });
       expect(res.statusCode).toBe(409);

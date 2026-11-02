@@ -182,6 +182,22 @@ describe('AnalysisPanel', () => {
     expect(section('Tag lookup').queryByRole('button', { name: 'Look up all again' })).toBeNull();
   });
 
+  it('asks before analysing everything again, then runs every analysis on every song', async () => {
+    const first = view();
+    fireEvent.click(await screen.findByRole('button', { name: 'Analyse everything again' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Analyse every song again?' })).getByRole('button', { name: 'Cancel' }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(first.ran.calls).toEqual([]);
+    cleanup();
+
+    const { ran } = view();
+    ran.answer = () => json({ queued: 5678 });
+    fireEvent.click(await screen.findByRole('button', { name: 'Analyse everything again' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Analyse everything again' }));
+    await waitFor(() => expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Analysing 5,678 songs again in the background']));
+    expect(ran.calls).toEqual([{ url: '/api/analysis/all', body: { again: true } }]);
+  });
+
   it('shows the server’s reason when an analysis can’t start', async () => {
     const { ran } = view(IDLE);
     ran.answer = () => json({ error: 'Settings can only be changed from your home network' }, 403);

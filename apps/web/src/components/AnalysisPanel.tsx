@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ApiError, type AnalysisKind, type AnalysisProgress } from '../lib/api';
 import { useAnalysisProgress, useMixSettings, useRunAnalysis, useSaveMixSettings } from '../lib/queries';
+import { Dialog } from './Dialog';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
 
 /** 5678 → "5,678": the rest of the panel is in English, so its numbers are too. */
@@ -110,6 +111,42 @@ function Analysis({
   );
 }
 
+/** Every analysis on every song again, after asking: beat analysis alone takes hours over a big library. */
+function EverythingAgain({ audio }: { audio: boolean }) {
+  const run = useRunAnalysis();
+  const [asking, setAsking] = useState(false);
+  return (
+    <>
+      <div className="mt-3">
+        <button type="button" className={SECONDARY_BUTTON} disabled={run.isPending} onClick={() => setAsking(true)}>
+          Analyse everything again
+        </button>
+      </div>
+      <Dialog open={asking} onClose={() => setAsking(false)} title="Analyse every song again?">
+        <div className="space-y-5 p-5">
+          <p className="text-[15px] text-paper-dim">
+            {audio
+              ? 'Beat analysis, sound analysis and a tag lookup for every song, from scratch, one song at a time at low priority. Each song keeps what it has until its turn. On a small server this takes many hours: beat analysis alone can take a minute a song.'
+              : 'A tag lookup for every song matched on MusicBrainz, from scratch. Each song keeps its tags until its turn.'}
+          </p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setAsking(false)} className={SECONDARY_BUTTON}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => run.mutate({ kind: 'all', again: true }, { onSettled: () => setAsking(false) })}
+              className="inline-flex h-10 items-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110"
+            >
+              Analyse everything again
+            </button>
+          </div>
+        </div>
+      </Dialog>
+    </>
+  );
+}
+
 function Loading() {
   return (
     <div aria-busy="true" aria-label="Loading" className="max-w-prose space-y-3">
@@ -158,6 +195,7 @@ export function AnalysisPanel() {
       <SettingsSection title="In the background">
         {switchRow && <div className="divide-y divide-line">{switchRow}</div>}
         <p className="mt-2 text-[13px] text-paper-dim">{queue ?? 'Nothing is being analysed right now.'}</p>
+        {!away && p.songs > 0 && <EverythingAgain audio={p.enabled} />}
       </SettingsSection>
 
       <SettingsSection

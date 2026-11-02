@@ -360,26 +360,30 @@ export class Analyzer {
    * left out, beat and sound analysis and tags: songs someone is waiting for still go first. Answers how
    * many were queued.
    */
-  async analyzeLibrary(kind?: AnalysisKind): Promise<number> {
+  async analyzeLibrary(kind: AnalysisKind | 'all' = 'all'): Promise<number> {
     const ids = (await this.library.allTracks()).map((t) => t.recordingId);
+    const tagsBefore = this.metaQueue.size;
     if (kind === 'tags') {
-      const before = this.metaQueue.size;
       this.ensure(ids, { audio: false });
-      return this.metaQueue.size - before;
+      return this.metaQueue.size - tagsBefore;
     }
-    return this.ensure(ids, kind === 'sound' ? { beats: false } : {});
+    const queued = this.ensure(ids, kind === 'sound' ? { beats: false } : {});
+    // Everything: as many songs as the bigger queue got (only tags without audio analysis).
+    return kind === 'all' ? Math.max(queued, this.metaQueue.size - tagsBefore) : queued;
   }
 
   /**
    * Settings → Analysis → Analyse all again: every song is analysed again, those the current version
    * already did included (after the analysis changed without a new version, say), queued as
-   * analyzeLibrary does. What was made before now stops counting as done and as ready, but stays in use
-   * until its song is redone, so mixing carries on meanwhile. Returns how many songs were queued.
+   * analyzeLibrary does; `all`: every kind of analysis (those that can run here). What was made before
+   * now stops counting as done and as ready, but stays in use until its song is redone, so mixing
+   * carries on meanwhile. Returns how many songs were queued.
    */
-  async reanalyzeLibrary(kind: AnalysisKind = 'beats'): Promise<number> {
-    this.db
-      .prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
-      .run(REDO_KEYS[kind], new Date().toISOString());
+  async reanalyzeLibrary(kind: AnalysisKind | 'all' = 'beats'): Promise<number> {
+    const kinds = kind !== 'all' ? [kind] : this.canAnalyzeAudio ? (Object.keys(REDO_KEYS) as AnalysisKind[]) : (['tags'] as const);
+    const now = new Date().toISOString();
+    const mark = this.db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value');
+    for (const k of kinds) mark.run(REDO_KEYS[k], now);
     return this.analyzeLibrary(kind);
   }
 

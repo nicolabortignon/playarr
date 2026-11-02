@@ -229,10 +229,10 @@ export const api = {
   ) => request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files, ...how }) }),
   analysisProgress: () => get<AnalysisProgress>('/api/analysis/progress'),
   /**
-   * Queues every song this analysis hasn't done yet, once (the background switch stays as it is);
-   * `again`: every song, those done included.
+   * Queues every song this analysis (or `all` of them) hasn't done yet, once (the background switch
+   * stays as it is); `again`: every song, those done included.
    */
-  runAnalysis: (kind: AnalysisKind, again = false) =>
+  runAnalysis: (kind: AnalysisKind | 'all', again = false) =>
     request<{ queued: number }>(`/api/analysis/${kind}`, { method: 'POST', body: JSON.stringify({ again }) }),
   /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
   mixMaps: (ids: string[]) =>
