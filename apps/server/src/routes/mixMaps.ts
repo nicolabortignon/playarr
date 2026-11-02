@@ -9,7 +9,7 @@ import { requireLocal } from './settings.ts';
 const input = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(50) });
 const analyzeInput = z.object({ again: z.boolean().optional() });
 /** `all`: every kind at once (only the tag lookup without audio analysis). */
-const ANALYSIS_KINDS = ['beats', 'sound', 'tags', 'all'] as const;
+const ANALYSIS_KINDS = ['beats', 'sound', 'loudness', 'tags', 'all'] as const;
 /** null: back to the detected point; left out: kept as it is. */
 const cueInput = z.object({ mixIn: z.number().min(0).nullable().optional(), mixOut: z.number().min(0).nullable().optional() });
 
@@ -65,11 +65,11 @@ export function mixMapRoutes(
   // Settings → Analysis → Analyse all songs now: the songs it hasn't done queued once, like the Settings
   // → Analysis switch does when turned on (and from the home network, like that setting), without
   // turning it on; pressed twice, the songs already waiting aren't queued again. With `again`, Analyse
-  // all again: every song, done ones included. Beat analysis, sound analysis, tag lookup, or all of them.
+  // all again: every song, done ones included. Beat, sound or loudness analysis, tag lookup, or all of them.
   app.post<{ Params: { kind: string } }>('/api/analysis/:kind', { onRequest: requireLocal }, async (req, reply) => {
     const kind = ANALYSIS_KINDS.find((k) => k === req.params.kind);
     if (!kind) return reply.code(404).send({ error: 'Unknown analysis' });
-    if ((kind === 'beats' || kind === 'sound') && !analyzer.canAnalyzeAudio) {
+    if (kind !== 'tags' && kind !== 'all' && !analyzer.canAnalyzeAudio) {
       return reply.code(409).send({ error: 'Audio analysis is off on this server (set ANALYSIS=on in its .env)' });
     }
     const again = analyzeInput.safeParse(req.body ?? {}).data?.again === true;

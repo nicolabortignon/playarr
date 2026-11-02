@@ -2,51 +2,84 @@ import type { TrackLevel } from '@playarr/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Analyzer } from '../analysis/analyzer.ts';
+import type { SongLoudness } from '../analysis/loudnessJobs.ts';
 import type { Library } from '../library/library.ts';
 
-/** Songs are turned down to about this loudness (gated RMS, dBFS); quieter songs are left as they are. */
-export const TARGET_DB = -14;
-/** Never turn a song down by more than this. */
-const MAX_CUT_DB = -12;
+/** Songs are levelled to this loudness (EBU R128 integrated), as Spotify, YouTube and Tidal level them. */
+export const TARGET_LUFS = -14;
+/** Turned up, a song's peak stays below this (dBFS): headroom for the peaks between samples. */
+const PEAK_CEILING_DB = -1;
+/** Never more than this either way: past it, it's not the song's level that's off. */
+const MAX_CUT_DB = -20;
+const MAX_BOOST_DB = 12;
 
 const input = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(50) });
 
-/** The cut for a loudness: louder than the target comes down to it. */
-export function cutFor(meanDb: number): number {
-  return Math.round(Math.max(MAX_CUT_DB, Math.min(0, TARGET_DB - meanDb)) * 10) / 10;
-}
-
-/** The loudness of songs heard together: the average of their power, not of their decibels. */
-export function combinedDb(levels: number[]): number {
-  return 10 * Math.log10(levels.reduce((sum, db) => sum + 10 ** (db / 10), 0) / levels.length);
+/**
+ * The gain (dB) that brings a song of this loudness to the target: loud songs come down; quiet ones go
+ * up as far as their peak leaves room (none when it's already near full scale).
+ */
+export function gainFor(lufs: number, peak: number | null): number {
+  const toTarget = TARGET_LUFS - lufs;
+  const gain =
+    toTarget <= 0 ? Math.max(MAX_CUT_DB, toTarget) : Math.min(toTarget, MAX_BOOST_DB, Math.max(0, PEAK_CEILING_DB - (peak ?? PEAK_CEILING_DB)));
+  return Math.round(gain * 10) / 10;
 }
 
 /**
- * Even volume: what to turn each song down by, from its measured loudness. Songs not measured yet are
- * measured in the background (with the rest of their album), so they're levelled from the next play.
+ * The loudness of songs heard one after another: the average of their power, each as long as it lasts
+ * (a long song weighs more), not of their decibels.
  */
-export function levelRoutes(app: FastifyInstance, deps: { analyzer: Pick<Analyzer, 'features' | 'ensure'>; library: Pick<Library, 'trackByRecording' | 'album'> }) {
+export function combinedLufs(songs: { lufs: number; samples: number }[]): number {
+  const total = songs.reduce((sum, s) => sum + s.samples, 0);
+  return 10 * Math.log10(songs.reduce((sum, s) => sum + s.samples * 10 ** (s.lufs / 10), 0) / total);
+}
+
+type Measured = SongLoudness & { lufs: number };
+
+/**
+ * Even volume: the gain for each song from its measured loudness, alone and within its album (so an
+ * album played in order keeps its quiet and loud songs as mastered). Songs not measured yet are
+ * measured at once, the rest of their album after, so they're levelled from the next time they're asked
+ * about (the player asks again shortly).
+ */
+export function levelRoutes(
+  app: FastifyInstance,
+  deps: { analyzer: Pick<Analyzer, 'loudness' | 'ensure' | 'remeasureLoudness'>; library: Pick<Library, 'trackByRecording' | 'album'> },
+) {
   app.post('/api/levels', async (req, reply) => {
     const parsed = input.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
     const out: Record<string, TrackLevel> = {};
-    const measure: string[] = [];
-    for (const id of new Set(parsed.data.ids)) {
+    const asked = [...new Set(parsed.data.ids)];
+    const albumMates = new Set<string>();
+    for (const id of asked) {
       const track = await deps.library.trackByRecording(id);
-      const album = track && (await deps.library.album(track.albumId));
+      if (!track) continue;
+      const album = await deps.library.album(track.albumId);
       const albumIds = album?.tracks.map((t) => t.recordingId) ?? [id];
-      const features = deps.analyzer.features([...new Set([id, ...albumIds])]);
-      measure.push(id, ...albumIds);
-      const own = features.get(id)?.raw.meanDb;
-      if (own === undefined || own < -100) continue;
-      const measured = albumIds.flatMap((r) => {
-        const db = features.get(r)?.raw.meanDb;
-        return db !== undefined && db > -100 ? [db] : [];
+      for (const r of albumIds) albumMates.add(r);
+      const measured = deps.analyzer.loudness([...new Set([id, ...albumIds])]);
+      const own = measured.get(id);
+      // Measured from another file than the one playing now (a better copy came): measured again.
+      if (own && own.fileId !== track.fileId) {
+        deps.analyzer.remeasureLoudness(id);
+        continue;
+      }
+      if (!own || own.lufs === null) continue;
+      const songs = albumIds.flatMap((r) => {
+        const m = measured.get(r);
+        return m && m.lufs !== null ? [m as Measured] : [];
       });
-      out[id] = { track: cutFor(own), ...(measured.length > 1 ? { album: cutFor(combinedDb(measured)) } : {}) };
+      const albumPeak = Math.max(...songs.map((s) => s.peak ?? PEAK_CEILING_DB));
+      out[id] = {
+        track: gainFor(own.lufs, own.peak),
+        ...(songs.length > 1 ? { album: gainFor(combinedLufs(songs), albumPeak) } : {}),
+      };
     }
-    // Asked for by the player for the song about to play: ahead of the library's backlog.
-    deps.analyzer.ensure(measure, { audio: true, urgent: true });
+    // Asked for by the player for the songs about to play: ahead of everything; their albums after.
+    deps.analyzer.ensure(asked, { beats: false, sound: false, tags: false, urgent: true });
+    deps.analyzer.ensure([...albumMates], { beats: false, sound: false, tags: false });
     return out;
   });
 }

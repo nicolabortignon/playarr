@@ -229,6 +229,21 @@ const MIGRATIONS = [
      mix_out      REAL,
      updated_at   TEXT NOT NULL
    );`,
+  // Each song's loudness (EBU R128, LUFS) and peak, for even volume, with the file it was measured from
+  // (its size and time tell when it changed) and the exact length it decodes to (the levelled stream's).
+  `CREATE TABLE track_loudness (
+     recording_id TEXT PRIMARY KEY,
+     file_id      INTEGER NOT NULL,
+     version      INTEGER NOT NULL,
+     lufs         REAL,
+     peak         REAL,
+     samples      INTEGER,
+     size         INTEGER,
+     mtime_ms     REAL,
+     error        TEXT,
+     analyzed_at  TEXT NOT NULL
+   );
+   CREATE INDEX track_loudness_by_file ON track_loudness (file_id);`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

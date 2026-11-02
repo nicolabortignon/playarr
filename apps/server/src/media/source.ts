@@ -1,6 +1,8 @@
 import type { AudioFormat, ByteRange } from '@playarr/shared';
+import { spawn } from 'node:child_process';
 import { posix } from 'node:path';
-import type { Readable } from 'node:stream';
+import { PassThrough, type Readable } from 'node:stream';
+import { lowPriority } from '../lowPriority.ts';
 
 export interface FileStat {
   size: number;
@@ -18,6 +20,8 @@ export interface MediaSource {
   check(probePath?: string): Promise<void>;
   /** Decode a file to s16le PCM (mono unless asked for stereo) with ffmpeg, where the files live. Absent if this source can't. */
   pcm?(path: string, opts: PcmOptions): Promise<Buffer>;
+  /** Decode as pcm does, handing the audio on as it comes: for whole songs, and for what someone listens to. */
+  pcmStream?(path: string, opts: PcmStreamOptions): Readable;
   close(): Promise<void>;
 }
 
@@ -44,7 +48,17 @@ export interface PcmOptions {
   exactSeek?: boolean;
   /** 1 for analysis (the default, smallest), 2 when rendering audio people will hear. */
   channels?: 1 | 2;
+  /** Turn the audio up or down by this many dB as it's decoded (even volume). */
+  gainDb?: number;
   signal?: AbortSignal;
+}
+
+/** The loudest and quietest a decode is turned: more is a mistake, not a song's level. */
+const MAX_GAIN_DB = 24;
+
+export interface PcmStreamOptions extends PcmOptions {
+  /** 'low' (the default) for background work; 'normal' for audio someone is listening to. */
+  priority?: 'low' | 'normal';
 }
 
 /**
@@ -59,18 +73,18 @@ export function seeksInexactly(format: AudioFormat): boolean {
 }
 
 /**
- * Seconds as a plain decimal ffmpeg understands. Rounded to the millisecond so tiny values
- * never turn into exponent notation like "1e-7", which ffmpeg would reject.
+ * Seconds as a plain decimal ffmpeg understands. Rounded to the microsecond (a sample is 23 µs at
+ * 44.1 kHz) so tiny values never turn into exponent notation like "1e-7", which ffmpeg would reject.
  */
 function seconds(value: number): string {
-  return String(Number(value.toFixed(3)));
+  return String(Number(value.toFixed(6)));
 }
 
 /**
  * Refuse anything but sane numbers. These end up on an ffmpeg command line (over SSH too, where
  * they're shell-quoted along with everything else), so a NaN or a negative must never get through.
  */
-function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels }: PcmOptions): void {
+function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels, gainDb }: PcmOptions): void {
   if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw new RangeError(`Invalid sample rate: ${sampleRate}`);
   if (!Number.isFinite(maxSeconds) || maxSeconds <= 0) throw new RangeError(`Invalid maxSeconds: ${maxSeconds}`);
   if (startSeconds !== undefined && (!Number.isFinite(startSeconds) || startSeconds < 0)) {
@@ -79,6 +93,7 @@ function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactS
   if (startSeconds !== undefined && fromEnd) throw new RangeError('startSeconds and fromEnd cannot be combined');
   if (exactSeek && fromEnd) throw new RangeError('exactSeek and fromEnd cannot be combined');
   if (channels !== undefined && channels !== 1 && channels !== 2) throw new RangeError(`Invalid channels: ${channels}`);
+  if (gainDb !== undefined && !(Number.isFinite(gainDb) && Math.abs(gainDb) <= MAX_GAIN_DB)) throw new RangeError(`Invalid gain: ${gainDb}`);
 }
 
 /**
@@ -93,15 +108,37 @@ function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactS
  */
 export function ffmpegPcmArgs(path: string, opts: PcmOptions): string[] {
   checkPcmOptions(opts);
-  const { sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels = 1 } = opts;
+  const { sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels = 1, gainDb } = opts;
   const seek = startSeconds !== undefined ? ['-ss', seconds(startSeconds)] : fromEnd ? ['-sseof', `-${seconds(maxSeconds)}`] : [];
   const length = ['-t', seconds(maxSeconds)];
   const input = ['-i', path];
   return [
     ...['-hide_banner', '-loglevel', 'error', '-nostdin'],
     ...(exactSeek ? [...input, ...seek, ...length] : [...seek, ...length, ...input]),
+    ...(gainDb ? ['-af', `volume=${Number(gainDb.toFixed(2))}dB`] : []),
     ...['-vn', '-ac', String(channels), '-ar', String(sampleRate), '-f', 's16le', '-'],
   ];
+}
+
+/**
+ * Runs ffmpeg on this machine to decode `input` (a path, or a URL ffmpeg can read), the audio handed
+ * on as it comes. The stream fails if ffmpeg does, and ffmpeg stops as soon as the stream is closed
+ * (the listener went away).
+ */
+export function ffmpegPcmStream(ffmpeg: string, input: string, opts: PcmStreamOptions): Readable {
+  const child = spawn(ffmpeg, ffmpegPcmArgs(input, opts), { stdio: ['ignore', 'pipe', 'pipe'], signal: opts.signal });
+  if (opts.priority !== 'normal') lowPriority(child);
+  const out = new PassThrough();
+  let stderr = '';
+  child.stderr.on('data', (chunk: Buffer) => (stderr = (stderr + chunk.toString()).slice(-2000)));
+  child.stdout.pipe(out, { end: false });
+  child.on('error', (err) => out.destroy(err));
+  child.on('close', (code) => {
+    if (code === 0) out.end();
+    else out.destroy(new Error(`ffmpeg: ${stderr.trim() || `exit code ${code}`}`));
+  });
+  out.on('close', () => child.exitCode === null && child.kill());
+  return out;
 }
 
 /**

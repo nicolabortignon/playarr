@@ -63,7 +63,7 @@ export type TransitionAnswer =
   | { status: 'unavailable'; reason: string };
 
 /** The analyses Settings → Analysis runs over the library. */
-export type AnalysisKind = 'beats' | 'sound' | 'tags';
+export type AnalysisKind = 'beats' | 'sound' | 'loudness' | 'tags';
 
 /** How far each analysis has got over the library (GET /api/analysis/progress). */
 export interface AnalysisProgress {
@@ -73,13 +73,18 @@ export interface AnalysisProgress {
   songs: number;
   /** Songs with a mix map; of those, the ones whose beats the beat model found; failed lately (tried again a day later). */
   beats: { ready: number; beatModel: number; failed: number };
-  /** Songs with their tempo, loudness and energy measured; failed lately. */
+  /** Songs with their tempo, energy and texture measured; failed lately. */
   sound: { ready: number; failed: number };
+  /** Songs with their loudness measured (for even volume); failed lately. */
+  loudness: { ready: number; failed: number };
   /** Of the songs with a MusicBrainz id (the only ones ListenBrainz knows), those looked up. */
   tags: { ready: number; songs: number };
-  /** Songs queued for audio analysis (beat or sound), and being analysed now. */
+  /** Songs queued for beat or sound analysis, and being analysed now. */
   waiting: number;
   working: number;
+  /** The same for loudness analysis (its own queue). */
+  loudnessWaiting: number;
+  loudnessWorking: number;
   /** Songs queued for a tag lookup. */
   tagsWaiting: number;
   /** The whole library is analysed in the background; otherwise songs as they come up to play. */

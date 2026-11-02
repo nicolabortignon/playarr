@@ -13,11 +13,13 @@ const AUDIO_OFF = 'Audio analysis is off on this server (set ANALYSIS=on in its 
 const SECONDARY_BUTTON =
   'inline-flex h-10 items-center justify-center rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5 disabled:opacity-50';
 
-/** What's under way: the songs being analysed and waiting, and the tag lookups waiting. */
+/** What's under way: the songs being analysed and waiting, for each queue. */
 function queueText(p: AnalysisProgress): string | null {
+  const working = p.working + p.loudnessWorking;
   const parts = [
-    p.working > 0 ? `analysing ${songs(p.working)}` : '',
-    p.waiting > 0 ? `${count(p.waiting)} waiting to be analysed` : '',
+    working > 0 ? `analysing ${songs(working)}` : '',
+    p.waiting > 0 ? `${count(p.waiting)} waiting for beat or sound analysis` : '',
+    p.loudnessWaiting > 0 ? `${count(p.loudnessWaiting)} waiting for loudness analysis` : '',
     p.tagsWaiting > 0 ? `${count(p.tagsWaiting)} waiting for a tag lookup` : '',
   ].filter(Boolean);
   return parts.length ? `Now: ${parts.join(' · ')}.` : null;
@@ -41,6 +43,13 @@ function soundText(p: AnalysisProgress): string {
   return `Measured: ${count(ready)} of ${songs(p.songs)}${failures}.`;
 }
 
+function loudnessText(p: AnalysisProgress): string {
+  const { ready, failed } = p.loudness;
+  if (ready >= p.songs) return p.songs === 1 ? 'The library’s one song is measured.' : `All ${songs(p.songs)} are measured.`;
+  const failures = failed > 0 ? ` · ${count(failed)} couldn’t be measured` : '';
+  return `Measured: ${count(ready)} of ${songs(p.songs)}${failures}. The others play at their own volume until they are.`;
+}
+
 function tagsText(p: AnalysisProgress): string {
   const { ready, songs: taggable } = p.tags;
   if (!taggable) return 'No song is matched on MusicBrainz yet, so there are no tags to look up.';
@@ -50,61 +59,59 @@ function tagsText(p: AnalysisProgress): string {
   return `Looked up: ${count(ready)} of ${songs(taggable)} matched on MusicBrainz${others}.`;
 }
 
-/** How much of the library one analysis has done: a line, a bar, and buttons to start it on every song. */
+/**
+ * How much of the library one analysis has done: a line, a bar, and one button: for the songs it has
+ * left while there are some, else to do every song again (after the analysis improved, say).
+ */
 function Analysis({
   kind,
   text,
   done,
+  failed,
   of,
   canRun,
   idle,
-  startable,
-  labels,
+  verb,
+  meter,
   away,
 }: {
   kind: AnalysisKind;
   text: string;
   done: number;
+  /** Failed lately: those wait a day before another try, so they aren't left to start. */
+  failed: number;
   of: number;
   canRun: boolean;
   /** Nothing of this kind under way. */
   idle: boolean;
-  /** Songs left that aren't failed lately (those wait a day before another try). */
-  startable: boolean;
-  labels: { now: string; again: string; meter: string };
+  /** "Analyse", "Look up". */
+  verb: string;
+  meter: string;
   away: boolean;
 }) {
   const run = useRunAnalysis();
-  // Only when there's something to start, and nothing under way already (the line says so).
-  const showStart = canRun && !away && idle && startable;
-  // Every song again (after the analysis improved): whenever nothing is under way and some are done.
-  const showAgain = canRun && !away && idle && done > 0;
+  const left = Math.max(0, of - done - failed);
+  // Nothing while songs are being done (the line says so), nor away from home (it can't start there).
+  const button = !canRun || away || !idle ? null : left > 0 ? { label: `${verb} the ${songs(left)} left`, again: false } : done > 0 ? { label: `${verb} all again`, again: true } : null;
   return (
     <div>
       <p className="text-[13px] text-paper-dim">{text}</p>
       {canRun && of > 0 && done < of && (
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-paper/10" role="meter" aria-label={labels.meter} aria-valuenow={done} aria-valuemax={of}>
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-paper/10" role="meter" aria-label={meter} aria-valuenow={done} aria-valuemax={of}>
           <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(done / of) * 100}%` }} />
         </div>
       )}
-      {(showStart || showAgain) && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {showStart && (
-            <button type="button" className={SECONDARY_BUTTON} disabled={run.isPending} onClick={() => run.mutate({ kind })}>
-              {labels.now}
-            </button>
-          )}
-          {showAgain && (
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              disabled={run.isPending}
-              onClick={() => run.mutate({ kind, again: true })}
-              title="Every song again with the current analysis, in the background; what each song has now stays in use until its turn."
-            >
-              {labels.again}
-            </button>
-          )}
+      {button && (
+        <div className="mt-3">
+          <button
+            type="button"
+            className={SECONDARY_BUTTON}
+            disabled={run.isPending}
+            onClick={() => run.mutate({ kind, again: button.again })}
+            title={button.again ? 'Every song again with the current analysis, in the background; what each song has now stays in use until its turn.' : undefined}
+          >
+            {button.label}
+          </button>
         </div>
       )}
     </div>
@@ -126,7 +133,7 @@ function EverythingAgain({ audio }: { audio: boolean }) {
         <div className="space-y-5 p-5">
           <p className="text-[15px] text-paper-dim">
             {audio
-              ? 'Beat analysis, sound analysis and a tag lookup for every song, from scratch, one song at a time at low priority. Each song keeps what it has until its turn. On a small server this takes many hours: beat analysis alone can take a minute a song.'
+              ? 'Beat, sound and loudness analysis and a tag lookup for every song, from scratch, at low priority. Each song keeps what it has until its turn. On a small server this takes many hours: beat analysis alone can take a minute a song.'
               : 'A tag lookup for every song matched on MusicBrainz, from scratch. Each song keeps its tags until its turn.'}
           </p>
           <div className="flex justify-end gap-2">
@@ -159,8 +166,9 @@ function Loading() {
 
 /**
  * Settings → Analysis: what Playarr works out about the songs, how far each analysis has got over the
- * library, and buttons to run one on every song now. Beat analysis is for DJ mix; sound analysis for
- * mixes, covers and even volume; tag lookup for genre and decade mixes.
+ * library, and a button to run each on the songs it has left. Each does one job: beat analysis for DJ
+ * mix, sound analysis for mood mixes and covers, loudness analysis for even volume, tag lookup for
+ * genre and decade mixes.
  */
 export function AnalysisPanel() {
   const { data: p, error } = useAnalysisProgress();
@@ -179,7 +187,7 @@ export function AnalysisPanel() {
         label="Analyse every song in the library"
         description={
           p.enabled
-            ? 'One song at a time, at low priority: beat and sound analysis and a tag lookup, once for each song. Off, songs are analysed as they come up to play. Takes a while on a big library: beat analysis can take a minute a song on a small server.'
+            ? 'At low priority: beat, sound and loudness analysis and a tag lookup, once for each song. Off, songs are analysed as they come up to play. Takes a while on a big library: beat analysis can take a minute a song on a small server.'
             : `Tags are still looked up as songs come up. ${AUDIO_OFF}`
         }
         checked={settings.data.analyzeLibrary && p.enabled}
@@ -200,51 +208,72 @@ export function AnalysisPanel() {
 
       <SettingsSection
         title="Beat analysis"
-        description="Finds each song’s beats and bars, key, intro and outro, and where its sound starts and ends: what DJ mix needs to join songs on the beat."
+        description="Each song’s beat grid and bars, key, intro and outro, and where its sound starts and ends: what DJ mix needs to join songs on the beat. The heaviest analysis: up to a minute a song on a small server."
       >
         <Analysis
           kind="beats"
           text={p.enabled ? beatsText(p) : `DJ mix needs it. ${AUDIO_OFF}`}
           done={p.beats.ready}
+          failed={p.beats.failed}
           of={p.songs}
           canRun={p.enabled}
           idle={audioIdle}
-          startable={p.beats.ready + p.beats.failed < p.songs}
-          labels={{ now: 'Analyse all songs now', again: 'Analyse all again', meter: 'Songs ready for DJ mix' }}
+          verb="Analyse"
+          meter="Songs ready for DJ mix"
           away={away}
         />
       </SettingsSection>
 
       <SettingsSection
         title="Sound analysis"
-        description="Measures each song’s tempo, loudness and energy: for Energy boost, Wind down, Deep focus and Vibes of the hour, playlist covers, and even volume."
+        description="What each song feels like: its tempo, energy, brightness, bass and how busy it is. For Energy boost, Wind down, Deep focus, Vibes of the hour, radio and playlist covers."
       >
         <Analysis
           kind="sound"
           text={p.enabled ? soundText(p) : AUDIO_OFF}
           done={p.sound.ready}
+          failed={p.sound.failed}
           of={p.songs}
           canRun={p.enabled}
           idle={audioIdle}
-          startable={p.sound.ready + p.sound.failed < p.songs}
-          labels={{ now: 'Analyse all songs now', again: 'Analyse all again', meter: 'Songs measured' }}
+          verb="Analyse"
+          meter="Songs measured for their sound"
+          away={away}
+        />
+      </SettingsSection>
+
+      <SettingsSection
+        title="Loudness analysis"
+        description="How loud each song sounds (EBU R128) and its peak, for Even out the volume in Settings → Playback. A second or two a song."
+      >
+        <Analysis
+          kind="loudness"
+          text={p.enabled ? loudnessText(p) : `Even volume needs it. ${AUDIO_OFF}`}
+          done={p.loudness.ready}
+          failed={p.loudness.failed}
+          of={p.songs}
+          canRun={p.enabled}
+          idle={p.loudnessWaiting === 0 && p.loudnessWorking === 0}
+          verb="Analyse"
+          meter="Songs measured for their loudness"
           away={away}
         />
       </SettingsSection>
 
       <SettingsSection
         title="Tag lookup"
-        description="Looks up each song’s genres and year on ListenBrainz, for genre and decade mixes. Only songs matched on MusicBrainz can be looked up; tags are looked up again after a month."
+        description="Each song’s genres and year from ListenBrainz, for genre and decade mixes. Only songs matched on MusicBrainz can be looked up; tags are looked up again after a month."
       >
         <Analysis
           kind="tags"
           text={tagsText(p)}
           done={p.tags.ready}
+          failed={0}
           of={p.tags.songs}
           canRun
           idle={p.tagsWaiting === 0}
-          startable={p.tags.ready < p.tags.songs}
-          labels={{ now: 'Look up all songs now', again: 'Look up all again', meter: 'Songs looked up' }}
+          verb="Look up"
+          meter="Songs looked up"
           away={away}
         />
       </SettingsSection>

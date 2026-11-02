@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { ffmpegPcmArgs } from './source.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tempDir } from '../catalog/testFixtures.ts';
+import { ffmpegPcmArgs, ffmpegPcmStream } from './source.ts';
 
 /** True if `needle` appears as a contiguous run inside `haystack`; returns its index or -1. */
 function indexOfRun(haystack: string[], needle: string[]): number {
@@ -71,7 +74,75 @@ describe('ffmpegPcmArgs', () => {
     ['negative startSeconds', { sampleRate: 44100, maxSeconds: 30, startSeconds: -1 }],
     ['three channels', { sampleRate: 44100, maxSeconds: 30, channels: 3 as 1 }],
     ['startSeconds with fromEnd', { sampleRate: 44100, maxSeconds: 30, startSeconds: 10, fromEnd: true }],
+    ['NaN gain', { sampleRate: 44100, maxSeconds: 30, gainDb: NaN }],
+    ['a gain no song needs', { sampleRate: 44100, maxSeconds: 30, gainDb: 40 }],
   ])('rejects %s', (_label, opts) => {
     expect(() => ffmpegPcmArgs('/music/a.flac', opts)).toThrow();
+  });
+
+  it('turns the audio up or down as it decodes, and seeks to the microsecond', () => {
+    const args = ffmpegPcmArgs('/music/a.flac', { sampleRate: 44100, maxSeconds: 30, startSeconds: 1 / 44100, channels: 2, gainDb: -6.25 });
+    expect(indexOfRun(args, ['-af', 'volume=-6.25dB'])).toBeGreaterThan(args.indexOf('-i'));
+    expect(indexOfRun(args, ['-ss', '0.000023'])).toBeGreaterThanOrEqual(0);
+    expect(ffmpegPcmArgs('/music/a.flac', { sampleRate: 44100, maxSeconds: 30, gainDb: 0 })).not.toContain('-af');
+  });
+});
+
+describe('ffmpegPcmStream', () => {
+  /** A stand-in for ffmpeg: a shell script doing `body`, whatever arguments it's given. */
+  function fakeFfmpeg(body: string) {
+    const t = tempDir();
+    const bin = join(t.dir, 'ffmpeg');
+    writeFileSync(bin, `#!/bin/sh\n${body}\n`);
+    chmodSync(bin, 0o755);
+    return { bin, cleanup: t.cleanup };
+  }
+  const read = async (stream: NodeJS.ReadableStream) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks).toString();
+  };
+  const OPTS = { sampleRate: 44100, maxSeconds: 30, channels: 2 as const };
+
+  it('hands on what ffmpeg decodes', async () => {
+    const ffmpeg = fakeFfmpeg("printf 'pcm bytes'");
+    try {
+      expect(await read(ffmpegPcmStream(ffmpeg.bin, '/music/a.flac', { ...OPTS, priority: 'normal' }))).toBe('pcm bytes');
+    } finally {
+      ffmpeg.cleanup();
+    }
+  });
+
+  it('fails with ffmpeg’s reason when it fails', async () => {
+    const ffmpeg = fakeFfmpeg("printf 'some'; echo 'Invalid data found' >&2; exit 1");
+    try {
+      await expect(read(ffmpegPcmStream(ffmpeg.bin, '/music/a.flac', OPTS))).rejects.toThrow('ffmpeg: Invalid data found');
+    } finally {
+      ffmpeg.cleanup();
+    }
+  });
+
+  it('stops ffmpeg when the stream is closed early', async () => {
+    const t = tempDir();
+    const pidFile = join(t.dir, 'pid');
+    const ffmpeg = fakeFfmpeg(`echo $$ > '${pidFile}'; printf 'start'; exec sleep 30`);
+    try {
+      const stream = ffmpegPcmStream(ffmpeg.bin, '/music/a.flac', OPTS);
+      await new Promise((resolve) => stream.once('data', resolve));
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      stream.destroy();
+      const alive = () => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      await vi.waitFor(() => expect(alive()).toBe(false), { timeout: 3000 });
+    } finally {
+      ffmpeg.cleanup();
+      t.cleanup();
+    }
   });
 });

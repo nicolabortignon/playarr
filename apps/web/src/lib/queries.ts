@@ -50,7 +50,7 @@ export const useAnalysisProgress = (enabled = true) =>
     enabled,
     refetchInterval: (q) => {
       const d = q.state.data;
-      return d && (d.waiting > 0 || d.working > 0 || d.tagsWaiting > 0) ? 10_000 : false;
+      return d && (d.waiting > 0 || d.working > 0 || d.loudnessWaiting > 0 || d.loudnessWorking > 0 || d.tagsWaiting > 0) ? 10_000 : false;
     },
   });
 

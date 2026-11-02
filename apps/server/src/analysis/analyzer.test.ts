@@ -85,9 +85,20 @@ function fakeDsp() {
  * maxSeconds, and stop at the file's end.
  */
 function withSong(
-  opts: { seconds: number; listed?: number; kind?: Kind; format?: Track['format']; db?: DatabaseSync; dsp?: Dsp; songs?: string[]; beats?: Beats },
+  opts: {
+    seconds: number;
+    listed?: number;
+    kind?: Kind;
+    format?: Track['format'];
+    db?: DatabaseSync;
+    dsp?: Dsp;
+    songs?: string[];
+    beats?: Beats;
+    /** Measure loudness too (left out by default: it decodes every song once more). */
+    loudness?: boolean;
+  },
 ) {
-  const { seconds, listed = seconds, kind = 'timed', format = FLAC, db = freshDb(), dsp, songs = [], beats } = opts;
+  const { seconds, listed = seconds, kind = 'timed', format = FLAC, db = freshDb(), dsp, songs = [], beats, loudness = false } = opts;
   const pcm = vi.fn(async (_path: string, decode: PcmOptions) => {
     if (decode.fromEnd) throw new Error('The end of a file is found by decoding at known positions');
     const from = decode.startSeconds ?? 0;
@@ -103,7 +114,7 @@ function withSong(
     allTracks: async () => songs.map((recordingId) => ({ recordingId }) as Track),
   } as unknown as Library;
   const files = { resolve: () => ({ media: { pcm }, path: '/music/song.flac' }) } as unknown as FileResolver;
-  const analyzer = new Analyzer(db, library, files, { enabled: true, log: { warn: () => {} }, dsp, ...(beats ? { beats } : {}) });
+  const analyzer = new Analyzer(db, library, files, { enabled: true, log: { warn: () => {} }, dsp, loudness, ...(beats ? { beats } : {}) });
   analyzers.push(analyzer);
   /** What each decode was asked for, without its timeout signal. */
   const decodes = () => pcm.mock.calls.map(([, { signal, ...rest }]) => rest);
@@ -462,9 +473,12 @@ describe('Analyzer analysis progress', () => {
       songs: 2,
       beats: { ready: 1, beatModel: 0, failed: 1 },
       sound: { ready: 0, failed: 0 },
+      loudness: { ready: 0, failed: 0 },
       tags: { ready: 0, songs: 0 }, // no MusicBrainz ids: nothing to look up
       waiting: 0,
       working: 0,
+      loudnessWaiting: 0,
+      loudnessWorking: 0,
       tagsWaiting: 0,
     });
 

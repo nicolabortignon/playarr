@@ -766,6 +766,10 @@ export interface MixSettingsInfo extends MixSettings {
 }
 
 /** How much to turn a song down so songs play at an even volume (dB, never above 0). */
+/**
+ * How much to turn a song (dB) so it plays at the standard loudness (−14 LUFS): negative turns a loud
+ * song down, positive a quiet one up (as far as its peak leaves room).
+ */
 export interface TrackLevel {
   /** The song on its own. */
   track: number;

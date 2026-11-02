@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import type { Readable } from 'node:stream';
+import { PassThrough, type Readable } from 'node:stream';
 import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
-import { ffmpegPcmArgs, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
+import { ffmpegPcmArgs, type ByteRange, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
 
 export interface SshOptions {
   host: string;
@@ -165,6 +165,29 @@ export class SshExecMediaSource implements MediaSource {
         reject(new Error(`ffmpeg: ${cleanSshError(err) || `exit code ${code}`}`));
       });
     });
+  }
+
+  pcmStream(path: string, opts: PcmStreamOptions): Readable {
+    const args = ffmpegPcmArgs(path, opts).map(shellQuote).join(' ');
+    const nice = opts.priority === 'normal' ? '' : 'nice -n 10 ';
+    const out = new PassThrough();
+    this.shell.exec(`${nice}${shellQuote(this.ffmpeg)} ${args}`).then(
+      (channel) => {
+        let err = '';
+        const abort = () => channel.close();
+        opts.signal?.addEventListener('abort', abort, { once: true });
+        out.on('close', () => channel.close());
+        channel.stderr.on('data', (d: Buffer) => (err = (err + d).slice(-2000)));
+        channel.on('data', (d: Buffer) => out.write(d));
+        channel.on('close', (code: number | null) => {
+          opts.signal?.removeEventListener('abort', abort);
+          if (code === 0) out.end();
+          else out.destroy(opts.signal?.aborted ? opts.signal.reason : new Error(`ffmpeg: ${cleanSshError(err) || `exit code ${code}`}`));
+        });
+      },
+      (e: Error) => out.destroy(e),
+    );
+    return out;
   }
 
   async close() {

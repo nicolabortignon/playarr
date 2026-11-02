@@ -3,9 +3,9 @@ import { randomBytes } from 'node:crypto';
 import { request, type IncomingMessage } from 'node:http';
 import { createServer } from 'node:net';
 import { posix } from 'node:path';
-import type { Readable } from 'node:stream';
+import { PassThrough, type Readable } from 'node:stream';
 import { cleanRcloneError, type Rclone } from './rclone.ts';
-import { ffmpegPcmArgs, PCM_MAX_BUFFER, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
+import { ffmpegPcmArgs, ffmpegPcmStream, PCM_MAX_BUFFER, type ByteRange, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
 import { lowPriority } from '../lowPriority.ts';
 
 /** A free loopback port (tiny race between closing and rclone binding; a failed start retries once). */
@@ -200,6 +200,21 @@ export class RcloneMediaSource implements MediaSource {
         ),
       );
     });
+  }
+
+  pcmStream(path: string, opts: PcmStreamOptions): Readable {
+    // The URL is known once rclone serves the share: until then the audio waits in a pass-through.
+    const out = new PassThrough();
+    this.urlFor(path).then(
+      (url) => {
+        const decoded = ffmpegPcmStream(this.tools.ffmpeg ?? 'ffmpeg', url, opts);
+        decoded.on('error', (err) => out.destroy(err));
+        out.on('close', () => decoded.destroy());
+        decoded.pipe(out);
+      },
+      (err: Error) => out.destroy(err),
+    );
+    return out;
   }
 
   async close() {

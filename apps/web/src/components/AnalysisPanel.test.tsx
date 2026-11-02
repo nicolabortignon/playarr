@@ -11,17 +11,21 @@ const PROGRESS: AnalysisProgress = {
   songs: 5678,
   beats: { ready: 1234, beatModel: 1234, failed: 3 },
   sound: { ready: 2000, failed: 2 },
+  loudness: { ready: 3000, failed: 1 },
   tags: { ready: 4000, songs: 5000 },
   waiting: 4400,
   working: 1,
+  loudnessWaiting: 0,
+  loudnessWorking: 0,
   tagsWaiting: 0,
   libraryScan: true,
 };
-const IDLE = { waiting: 0, working: 0, tagsWaiting: 0 };
+const IDLE = { waiting: 0, working: 0, loudnessWaiting: 0, loudnessWorking: 0, tagsWaiting: 0 };
 const ALL_DONE: Partial<AnalysisProgress> = {
   ...IDLE,
   beats: { ready: 5678, beatModel: 5678, failed: 0 },
   sound: { ready: 5678, failed: 0 },
+  loudness: { ready: 5678, failed: 0 },
   tags: { ready: 5000, songs: 5000 },
 };
 
@@ -87,8 +91,9 @@ describe('AnalysisPanel', () => {
     view();
     expect(await screen.findByText('Ready for DJ mix: 1,234 of 5,678 songs · 3 couldn’t be analysed.')).toBeTruthy();
     expect(screen.getByText('Measured: 2,000 of 5,678 songs · 2 couldn’t be measured.')).toBeTruthy();
+    expect(screen.getByText('Measured: 3,000 of 5,678 songs · 1 couldn’t be measured. The others play at their own volume until they are.')).toBeTruthy();
     expect(screen.getByText('Looked up: 4,000 of 5,000 songs matched on MusicBrainz (678 more aren’t matched on MusicBrainz).')).toBeTruthy();
-    expect(screen.getByText('Now: analysing 1 song · 4,400 waiting to be analysed.')).toBeTruthy();
+    expect(screen.getByText('Now: analysing 1 song · 4,400 waiting for beat or sound analysis.')).toBeTruthy();
     expect(screen.getByRole('meter', { name: 'Songs ready for DJ mix' }).getAttribute('aria-valuenow')).toBe('1234');
     expect(screen.getByRole('meter', { name: 'Songs looked up' }).getAttribute('aria-valuemax')).toBe('5000');
   });
@@ -96,7 +101,7 @@ describe('AnalysisPanel', () => {
   it('says when every song is done', async () => {
     view(ALL_DONE);
     expect(await screen.findByText('All 5,678 songs are ready for DJ mix.')).toBeTruthy();
-    expect(screen.getByText('All 5,678 songs are measured.')).toBeTruthy();
+    expect(screen.getAllByText('All 5,678 songs are measured.')).toHaveLength(2);
     expect(screen.getByText('All 5,000 songs matched on MusicBrainz are looked up (678 more aren’t matched on MusicBrainz).')).toBeTruthy();
     expect(screen.getByText('Nothing is being analysed right now.')).toBeTruthy();
     expect(screen.queryByRole('meter')).toBeNull();
@@ -117,7 +122,8 @@ describe('AnalysisPanel', () => {
     expect(await screen.findByText('DJ mix needs it. Audio analysis is off on this server (set ANALYSIS=on in its .env).')).toBeTruthy();
     expect(section('Beat analysis').queryByRole('button')).toBeNull();
     expect(section('Sound analysis').queryByRole('button')).toBeNull();
-    expect(section('Tag lookup').getByRole('button', { name: 'Look up all songs now' })).toBeTruthy();
+    expect(section('Loudness analysis').queryByRole('button')).toBeNull();
+    expect(section('Tag lookup').getByRole('button', { name: 'Look up the 1,000 songs left' })).toBeTruthy();
     expect((screen.getByRole('switch', { name: 'Analyse every song in the library' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -132,29 +138,31 @@ describe('AnalysisPanel', () => {
     expect(asked).toHaveLength(2);
   });
 
-  it('offers to analyse the songs not done yet, but not while songs are being analysed, all are done, or the rest failed lately', async () => {
-    const button = () => section('Beat analysis').queryByRole('button', { name: 'Analyse all songs now' });
+  it('offers one button: the songs left while there are some, else every song again, and nothing while songs are being analysed', async () => {
+    const buttons = () => section('Beat analysis').queryAllByRole('button').map((b) => b.textContent);
     for (const [answer, shown] of [
-      [IDLE, true],
-      [{ ...IDLE, working: 1 }, false],
-      [{ ...IDLE, waiting: 3 }, false],
-      [ALL_DONE, false],
-      // They're tried again tomorrow: there's nothing to start now.
-      [{ ...IDLE, beats: { ready: 5675, beatModel: 5675, failed: 3 } }, false],
+      [IDLE, ['Analyse the 4,441 songs left']],
+      [{ ...IDLE, working: 1 }, []],
+      [{ ...IDLE, waiting: 3 }, []],
+      [ALL_DONE, ['Analyse all again']],
+      // The rest failed lately and are tried again tomorrow: there's nothing left to start now.
+      [{ ...IDLE, beats: { ready: 5675, beatModel: 5675, failed: 3 } }, ['Analyse all again']],
+      [{ ...IDLE, beats: { ready: 0, beatModel: 0, failed: 0 } }, ['Analyse the 5,678 songs left']],
     ] as const) {
       view(answer);
       await screen.findByText(/DJ mix/, { selector: 'p.text-paper-dim' });
-      expect(!!button(), JSON.stringify(answer)).toBe(shown);
+      expect(buttons(), JSON.stringify(answer)).toEqual(shown);
       cleanup();
     }
   });
 
   it.each([
-    ['Beat analysis', 'Analyse all songs now', '/api/analysis/beats'],
-    ['Sound analysis', 'Analyse all songs now', '/api/analysis/sound'],
-    ['Tag lookup', 'Look up all songs now', '/api/analysis/tags'],
-  ])('runs %s on the songs not done yet, says how many, and follows it from then on', async (title, label, url) => {
-    const { asked, ran } = view(IDLE, { waiting: 4400, working: 1, tagsWaiting: 4400 });
+    ['Beat analysis', 'Analyse the 4,441 songs left', '/api/analysis/beats'],
+    ['Sound analysis', 'Analyse the 3,676 songs left', '/api/analysis/sound'],
+    ['Loudness analysis', 'Analyse the 2,677 songs left', '/api/analysis/loudness'],
+    ['Tag lookup', 'Look up the 1,000 songs left', '/api/analysis/tags'],
+  ])('runs %s on the songs it has left, says how many, and follows it from then on', async (title, label, url) => {
+    const { asked, ran } = view(IDLE, { waiting: 4400, working: 1, loudnessWaiting: 4400, tagsWaiting: 4400 });
     let answer!: (response: Response) => void;
     ran.answer = () => new Promise((resolve) => (answer = resolve));
     const button = await (await findSection(title)).findByRole('button', { name: label });
@@ -175,11 +183,12 @@ describe('AnalysisPanel', () => {
     fireEvent.click(await (await findSection('Sound analysis')).findByRole('button', { name: 'Analyse all again' }));
     await waitFor(() => expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Analysing 5,678 songs again in the background']));
     expect(ran.calls).toEqual([{ url: '/api/analysis/sound', body: { again: true } }]);
-    // Tag lookups waiting don't hold up the audio analyses, nor the other way round.
+    // Each queue holds up its own analysis only.
     cleanup();
-    view({ ...ALL_DONE, tagsWaiting: 5 });
+    view({ ...ALL_DONE, tagsWaiting: 5, loudnessWorking: 1 });
     expect(await (await findSection('Beat analysis')).findByRole('button', { name: 'Analyse all again' })).toBeTruthy();
-    expect(section('Tag lookup').queryByRole('button', { name: 'Look up all again' })).toBeNull();
+    expect(section('Loudness analysis').queryByRole('button')).toBeNull();
+    expect(section('Tag lookup').queryByRole('button')).toBeNull();
   });
 
   it('asks before analysing everything again, then runs every analysis on every song', async () => {
@@ -201,7 +210,7 @@ describe('AnalysisPanel', () => {
   it('shows the server’s reason when an analysis can’t start', async () => {
     const { ran } = view(IDLE);
     ran.answer = () => json({ error: 'Settings can only be changed from your home network' }, 403);
-    fireEvent.click(await (await findSection('Beat analysis')).findByRole('button', { name: 'Analyse all songs now' }));
+    fireEvent.click(await (await findSection('Beat analysis')).findByRole('button', { name: 'Analyse the 4,441 songs left' }));
     await waitFor(() =>
       expect(useToasts.getState().toasts.map((t) => [t.message, t.tone])).toEqual([['Settings can only be changed from your home network', 'error']]),
     );

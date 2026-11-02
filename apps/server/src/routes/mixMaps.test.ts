@@ -21,9 +21,12 @@ const PROGRESS = {
   songs: 5678,
   beats: { ready: 1234, beatModel: 1200, failed: 3 },
   sound: { ready: 5000, failed: 2 },
+  loudness: { ready: 5600, failed: 1 },
   tags: { ready: 4000, songs: 5100 },
   waiting: 4400,
   working: 1,
+  loudnessWaiting: 70,
+  loudnessWorking: 1,
   tagsWaiting: 0,
 };
 
@@ -99,7 +102,7 @@ describe('mix map routes', () => {
     expect(res.json()).toMatchObject({ enabled: false, tags: PROGRESS.tags });
   });
 
-  it.each(['beats', 'sound', 'tags', 'all'] as const)('runs %s analysis on every song, once or again, from the home network only', async (kind) => {
+  it.each(['beats', 'sound', 'loudness', 'tags', 'all'] as const)('runs %s analysis on every song, once or again, from the home network only', async (kind) => {
     const { app, analyzer } = setup();
     expect((await app.inject({ method: 'POST', url: `/api/analysis/${kind}` })).json()).toEqual({ queued: 4400 });
     expect(analyzer.analyzeLibrary).toHaveBeenCalledWith(kind);
@@ -113,7 +116,7 @@ describe('mix map routes', () => {
     expect((await app.inject({ method: 'POST', url: '/api/analysis/tags' })).statusCode).toBe(200);
     // Everything, here: the tag lookup.
     expect((await app.inject({ method: 'POST', url: '/api/analysis/all', payload: { again: true } })).statusCode).toBe(200);
-    for (const kind of ['beats', 'sound']) {
+    for (const kind of ['beats', 'sound', 'loudness']) {
       const res = await app.inject({ method: 'POST', url: `/api/analysis/${kind}` });
       expect(res.statusCode).toBe(409);
       expect(res.json().error).toMatch(/audio analysis is off/i);

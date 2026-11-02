@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
-import { ffmpegPcmArgs, PCM_MAX_BUFFER, type ByteRange, type FileStat, type MediaSource, type PcmOptions } from './source.ts';
+import { ffmpegPcmArgs, ffmpegPcmStream, PCM_MAX_BUFFER, type ByteRange, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
 import { lowPriority } from '../lowPriority.ts';
 
 export class LocalMediaSource implements MediaSource {
@@ -36,5 +36,9 @@ export class LocalMediaSource implements MediaSource {
         ),
       );
     });
+  }
+
+  pcmStream(path: string, opts: PcmStreamOptions): Readable {
+    return ffmpegPcmStream(this.ffmpeg, path, opts);
   }
 }

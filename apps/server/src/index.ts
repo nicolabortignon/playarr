@@ -156,7 +156,7 @@ const recommendations = new Recommendations(playlists, library, requests, musicb
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
-streamRoutes(app, { library, files });
+streamRoutes(app, { library, files, loudness: analyzer });
 levelRoutes(app, { analyzer, library });
 // New cue points make new plans: the transitions made from the old ones are deleted.
 mixMapRoutes(app, {

@@ -7,6 +7,8 @@ import { seeksInexactly } from '../media/source.ts';
 import type { BeatModelThread } from './beatModelThread.ts';
 import { ANALYSIS_VERSION, type AudioFeatures } from './dsp.ts';
 import { DspThread, DspWorkerLost, type SongBeats } from './dspThread.ts';
+import { LOUDNESS_VERSION, LoudnessJobs, type SongLoudness } from './loudnessJobs.ts';
+import { selectIn } from './sql.ts';
 
 export interface TrackMeta {
   /** Strongest first. */
@@ -58,8 +60,8 @@ const RETRY_FAILED_MS = 24 * 60 * 60_000;
  * Analysis; an ISO time). What was made before doesn't count as done or ready, though it stays in use
  * until its song is redone.
  */
-const REDO_KEYS = { beats: 'mixMapsRedoneFrom', sound: 'featuresRedoneFrom', tags: 'tagsRedoneFrom' } as const;
-/** The analyses Settings → Analysis runs: beat analysis (mix maps), sound analysis (features), tag lookup. */
+const REDO_KEYS = { beats: 'mixMapsRedoneFrom', sound: 'featuresRedoneFrom', loudness: 'loudnessRedoneFrom', tags: 'tagsRedoneFrom' } as const;
+/** The analyses Settings → Analysis runs: beat analysis (mix maps), sound analysis (features), loudness analysis, tag lookup. */
 export type AnalysisKind = keyof typeof REDO_KEYS;
 /** A MusicBrainz recording id, as SQL LIKE sees one: only those have tags to look up. */
 const MBID_LIKE = '________-____-____-____-____________';
@@ -98,6 +100,8 @@ export class Analyzer {
   private readonly dsp: Pick<DspThread, 'analyze' | 'mixMap'>;
   /** The DSP thread this analyzer started itself (none when it was given the shared one). */
   private readonly ownDsp: DspThread | null;
+  /** Loudness analysis, on its own queue (it's quick, and the next song's level can't wait). */
+  private readonly loudnessJobs: LoudnessJobs;
 
   constructor(
     private readonly db: DatabaseSync,
@@ -111,10 +115,13 @@ export class Analyzer {
       dsp?: Pick<DspThread, 'analyze' | 'mixMap'>;
       /** The beat model, which finds the beats and bars of mix maps; without it (or when it can't run), the onset analysis does. */
       beats?: Pick<BeatModelThread, 'activations'>;
+      /** false: no loudness analysis (it decodes every song once more, on its own queue). */
+      loudness?: boolean;
     },
   ) {
     this.ownDsp = opts.dsp ? null : new DspThread();
     this.dsp = opts.dsp ?? this.ownDsp!;
+    this.loudnessJobs = new LoudnessJobs(db, library, files, opts.log, () => this.redoneFrom('loudness'));
   }
 
   /** Stops background work, and the DSP thread if it's this analyzer's own (not the shared one). */
@@ -124,6 +131,7 @@ export class Analyzer {
     this.urgentQueue.clear();
     this.metaQueue.clear();
     this.soundOnly.clear();
+    this.loudnessJobs.close();
     clearTimeout(this.metaTimer);
     this.ownDsp?.close();
   }
@@ -153,17 +161,22 @@ export class Analyzer {
    * - beats: mix maps from the current version since Analyse all again, those whose beats the beat
    *   model found, and recent failures;
    * - sound: features from the current version since Analyse all again, and recent failures;
+   * - loudness: the same for loudness measurements (silent songs count: there's nothing to level);
    * - tags: of the songs with a MusicBrainz id (the only ones ListenBrainz knows), those looked up
    *   since Look up all again (a lookup that found no tags counts: there's nothing more to find);
-   * - waiting / working: songs queued for audio analysis and being measured; tagsWaiting: for lookup.
+   * - waiting / working: songs queued for beat or sound analysis and being measured; the same for
+   *   loudness; tagsWaiting: for lookup.
    */
   analysisProgress(): {
     songs: number;
     beats: { ready: number; beatModel: number; failed: number };
     sound: { ready: number; failed: number };
+    loudness: { ready: number; failed: number };
     tags: { ready: number; songs: number };
     waiting: number;
     working: number;
+    loudnessWaiting: number;
+    loudnessWorking: number;
     tagsWaiting: number;
   } {
     const retryAfter = new Date(Date.now() - RETRY_FAILED_MS).toISOString();
@@ -180,14 +193,18 @@ export class Analyzer {
            COUNT(CASE WHEN m.recording_id IS NOT NULL AND m.data IS NULL AND m.analyzed_at > ? THEN 1 END) AS beatsFailed,
            COUNT(CASE WHEN f.features IS NOT NULL THEN 1 END) AS soundReady,
            COUNT(CASE WHEN f.recording_id IS NOT NULL AND f.features IS NULL AND f.analyzed_at > ? THEN 1 END) AS soundFailed,
+           COUNT(CASE WHEN lo.recording_id IS NOT NULL AND lo.error IS NULL THEN 1 END) AS loudnessReady,
+           COUNT(CASE WHEN lo.error IS NOT NULL AND lo.analyzed_at > ? THEN 1 END) AS loudnessFailed,
            COUNT(CASE WHEN l.id LIKE ? THEN 1 END) AS taggable,
            COUNT(CASE WHEN l.id LIKE ? AND tm.recording_id IS NOT NULL THEN 1 END) AS tagsReady
          FROM library l
          LEFT JOIN mix_maps m ON m.recording_id = l.id AND m.version = ? AND m.analyzed_at >= ?
          LEFT JOIN track_features f ON f.recording_id = l.id AND f.version = ? AND f.analyzed_at >= ?
+         LEFT JOIN track_loudness lo ON lo.recording_id = l.id AND lo.version = ? AND lo.analyzed_at >= ?
          LEFT JOIN track_meta tm ON tm.recording_id = l.id AND tm.fetched_at >= ?`,
       )
       .get(
+        retryAfter,
         retryAfter,
         retryAfter,
         MBID_LIKE,
@@ -196,17 +213,40 @@ export class Analyzer {
         this.redoneFrom('beats'),
         ANALYSIS_VERSION,
         this.redoneFrom('sound'),
+        LOUDNESS_VERSION,
+        this.redoneFrom('loudness'),
         this.redoneFrom('tags'),
-      ) as Record<'songs' | 'beatsReady' | 'beatModel' | 'beatsFailed' | 'soundReady' | 'soundFailed' | 'taggable' | 'tagsReady', number>;
+      ) as Record<
+      'songs' | 'beatsReady' | 'beatModel' | 'beatsFailed' | 'soundReady' | 'soundFailed' | 'loudnessReady' | 'loudnessFailed' | 'taggable' | 'tagsReady',
+      number
+    >;
     return {
       songs: row.songs,
       beats: { ready: row.beatsReady, beatModel: row.beatModel, failed: row.beatsFailed },
       sound: { ready: row.soundReady, failed: row.soundFailed },
+      loudness: { ready: row.loudnessReady, failed: row.loudnessFailed },
       tags: { ready: row.tagsReady, songs: row.taggable },
       waiting: this.urgentQueue.size + this.audioQueue.size,
       working: this.running.size,
+      loudnessWaiting: this.loudnessJobs.waiting,
+      loudnessWorking: this.loudnessJobs.working,
       tagsWaiting: this.metaQueue.size,
     };
+  }
+
+  /** The songs' loudness measurements (silent songs included: their lufs is null), and the file each was measured from. */
+  loudness(ids: string[]): Map<string, SongLoudness> {
+    return this.loudnessJobs.measured(ids);
+  }
+
+  /** The loudness measured from this file, if it was: what its levelled stream is made from. */
+  loudnessOfFile(fileId: number): SongLoudness | undefined {
+    return this.loudnessJobs.ofFile(fileId);
+  }
+
+  /** A song's file changed since its loudness was measured: measured again, at once. */
+  remeasureLoudness(id: string) {
+    if (this.canAnalyzeAudio && !this.closed) this.loudnessJobs.remeasure(id);
   }
 
   features(ids: string[]): Map<string, AudioFeatures> {
@@ -311,34 +351,41 @@ export class Analyzer {
    * after an upgrade can be every song in it. Answers how many songs it queued for audio analysis
    * (songs already waiting or being measured aren't counted again).
    */
-  ensure(ids: string[], opts: { audio?: boolean; urgent?: boolean; beats?: boolean } = {}): number {
+  ensure(ids: string[], opts: { audio?: boolean; urgent?: boolean; beats?: boolean; sound?: boolean; loudness?: boolean; tags?: boolean } = {}): number {
     const unique = [...new Set(ids)].filter((id) => !id.startsWith('track:'));
     if (!unique.length || this.closed) return 0;
     let queued = 0;
     if (this.canAnalyzeAudio && opts.audio !== false) {
-      // Done once both the features and the mix map are measured by their current versions (or
-      // failed recently): a song measured before mix maps existed, or before a version bump, is
-      // measured again in the background. `beats: false` asks for the features alone.
+      // Beat and sound analysis share a decode: a song is queued for whichever of the two is asked for
+      // and not done by its current version (or failed recently). `beats: false` asks for the features
+      // alone, `sound: false` for the mix map (the features come too if they're missing: they're cheap
+      // once the song is decoded).
       const beats = opts.beats !== false;
-      const features = this.featuresDone(unique);
+      const sound = opts.sound !== false;
+      const features = sound ? this.featuresDone(unique) : new Set<string>();
       const maps = beats ? this.mixMapsDone(unique) : new Set<string>();
-      for (const id of unique) {
-        // Being measured for its sound alone: measured again once that's done, for its mix map.
-        const forSoundAlone = beats && this.running.has(id) && this.soundOnly.has(id);
-        if (beats) this.soundOnly.delete(id);
-        const busy = (this.running.has(id) && !forSoundAlone) || this.urgentQueue.has(id);
-        if ((features.has(id) && (!beats || maps.has(id))) || busy) continue;
-        if (!beats && !this.audioQueue.has(id)) this.soundOnly.add(id);
-        if (opts.urgent) {
-          if (!this.audioQueue.delete(id)) queued++;
-          this.urgentQueue.add(id);
-        } else if (!this.audioQueue.has(id)) {
-          this.audioQueue.add(id);
-          queued++;
+      if (beats || sound) {
+        for (const id of unique) {
+          // Being measured for its sound alone: measured again once that's done, for its mix map.
+          const forSoundAlone = beats && this.running.has(id) && this.soundOnly.has(id);
+          if (beats) this.soundOnly.delete(id);
+          const busy = (this.running.has(id) && !forSoundAlone) || this.urgentQueue.has(id);
+          const needed = (beats && !maps.has(id)) || (sound && !features.has(id));
+          if (!needed || busy) continue;
+          if (!beats && !this.audioQueue.has(id)) this.soundOnly.add(id);
+          if (opts.urgent) {
+            if (!this.audioQueue.delete(id)) queued++;
+            this.urgentQueue.add(id);
+          } else if (!this.audioQueue.has(id)) {
+            this.audioQueue.add(id);
+            queued++;
+          }
         }
+        this.pump();
       }
-      this.pump();
+      if (opts.loudness !== false && this.opts.loudness !== false) this.loudnessJobs.ensure(unique, { urgent: opts.urgent });
     }
+    if (opts.tags === false) return queued;
     // ListenBrainz knows songs by MusicBrainz id only, and one unknown id fails a whole batch.
     const known = unique.filter((id) => MBID.test(id));
     // Tags a month old are looked up again, and all of them after Look up all again.
@@ -363,13 +410,24 @@ export class Analyzer {
   async analyzeLibrary(kind: AnalysisKind | 'all' = 'all'): Promise<number> {
     const ids = (await this.library.allTracks()).map((t) => t.recordingId);
     const tagsBefore = this.metaQueue.size;
-    if (kind === 'tags') {
-      this.ensure(ids, { audio: false });
-      return this.metaQueue.size - tagsBefore;
+    const loudnessBefore = this.loudnessJobs.waiting;
+    switch (kind) {
+      case 'tags':
+        this.ensure(ids, { audio: false });
+        return this.metaQueue.size - tagsBefore;
+      case 'loudness':
+        this.ensure(ids, { beats: false, sound: false, tags: false });
+        return this.loudnessJobs.waiting - loudnessBefore;
+      case 'beats':
+        return this.ensure(ids, { sound: false, loudness: false, tags: false });
+      case 'sound':
+        return this.ensure(ids, { beats: false, loudness: false, tags: false });
+      case 'all': {
+        // As many songs as the biggest queue got.
+        const queued = this.ensure(ids);
+        return Math.max(queued, this.loudnessJobs.waiting - loudnessBefore, this.metaQueue.size - tagsBefore);
+      }
     }
-    const queued = this.ensure(ids, kind === 'sound' ? { beats: false } : {});
-    // Everything: as many songs as the bigger queue got (only tags without audio analysis).
-    return kind === 'all' ? Math.max(queued, this.metaQueue.size - tagsBefore) : queued;
   }
 
   /**
@@ -636,14 +694,7 @@ export class Analyzer {
 
   /** SELECT … IN (ids), chunked to stay under SQLite's parameter limit. */
   private select<T>(sql: string, ids: string[], params: (string | number)[] = []): T[] {
-    const out: T[] = [];
-    for (let i = 0; i < ids.length; i += 500) {
-      const chunk = ids.slice(i, i + 500);
-      if (!chunk.length) continue;
-      const stmt = this.db.prepare(`${sql} (${chunk.map(() => '?').join(',')})`);
-      out.push(...(stmt.all(...params, ...chunk) as T[]));
-    }
-    return out;
+    return selectIn<T>(this.db, sql, ids, params);
   }
 }
 
