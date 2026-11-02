@@ -1,7 +1,7 @@
 import type { Track, TrackLevel } from '@playarr/shared';
 import type { PlaySource, RepeatMode } from './store';
 
-type QueueState = { queue: Track[]; order: number[]; pos: number; repeat: RepeatMode };
+export type QueueState = { queue: Track[]; order: number[]; pos: number; repeat: RepeatMode };
 
 /** The song that plays when this one ends on its own; none with repeat-one (the song restarts). */
 export function upNext(s: QueueState): Track | undefined {
@@ -32,17 +32,23 @@ export function fadeSeconds(a: Track | undefined, b: Track | undefined, crossfad
 }
 
 /**
- * How much to play a song at (0–1) so it's as loud as the others. Within an album played in order the
+ * How much to turn a song (dB) so it's as loud as the others. Within an album played in order the
  * album's level applies, so its quiet songs stay quiet next to its loud ones.
  */
-export function levelGain(track: Track, level: TrackLevel | undefined, s: QueueState): number {
-  if (!level) return 1;
+export function levelDb(track: Track, level: TrackLevel, s: QueueState): number {
   const at = s.order.findIndex((i, p) => Math.abs(p - s.pos) <= 2 && s.queue[i]?.fileId === track.fileId);
   const before = at > 0 ? s.queue[s.order[at - 1]!] : undefined;
   const after = at >= 0 ? s.queue[s.order[at + 1]!] : undefined;
   const inAlbum = continues(before, track) || continues(track, after);
-  const db = inAlbum && level.album !== undefined ? level.album : level.track;
-  return Math.min(1, 10 ** (db / 20));
+  return inAlbum && level.album !== undefined ? level.album : level.track;
+}
+
+/**
+ * How much to play a song at by its element's volume (0–1), for a song playing its own file: only
+ * down, as an element can't go above full volume (its levelled stream turns quiet songs up).
+ */
+export function levelGain(track: Track, level: TrackLevel | undefined, s: QueueState): number {
+  return level ? Math.min(1, 10 ** (levelDb(track, level, s) / 20)) : 1;
 }
 
 /** Equal-power fade: `x` from 0 (silent) to 1 (full). */

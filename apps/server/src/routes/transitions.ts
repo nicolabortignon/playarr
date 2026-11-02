@@ -17,6 +17,8 @@ const input = z.object({
   fade: z.number().min(0).max(60).optional(),
   /** The queue plays the songs' album (older players don't say). */
   albumQueue: z.boolean().optional(),
+  /** Even volume: the gains (dB) the player plays the two songs at. */
+  levels: z.object({ a: z.number().min(-24).max(24), b: z.number().min(-24).max(24) }).optional(),
 });
 
 /**
@@ -35,7 +37,7 @@ export function transitionRoutes(
     const parsed = input.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
     if (!transitions) return { status: 'unavailable', reason: unavailableReason };
-    const { from, to, mode, position, fromFileId, toFileId, fade, albumQueue } = parsed.data;
+    const { from, to, mode, position, fromFileId, toFileId, fade, albumQueue, levels } = parsed.data;
     try {
       return await transitions.request({
         fromTrackId: from,
@@ -46,6 +48,7 @@ export function transitionRoutes(
         ...(toFileId !== undefined ? { toFileId } : {}),
         ...(fade !== undefined ? { fadeSeconds: fade } : {}),
         ...(albumQueue !== undefined ? { albumQueue } : {}),
+        ...(levels ? { levels } : {}),
       });
     } catch (err) {
       // The player has a fallback for every answer but an error page: never make it guess.

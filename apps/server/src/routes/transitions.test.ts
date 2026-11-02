@@ -38,11 +38,11 @@ describe('transition routes', () => {
     expect((await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', toFileId: 'x' } })).statusCode).toBe(400);
   });
 
-  it('passes on the listener’s fade length and whether the queue plays the album', async () => {
+  it('passes on the listener’s fade length, whether the queue plays the album, and the songs’ levels', async () => {
     const { app, request } = await setup();
-    await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', fade: 9, albumQueue: false } });
-    expect(request).toHaveBeenCalledWith({ fromTrackId: 3, toTrackId: 4, mode: 'auto', fadeSeconds: 9, albumQueue: false });
-    for (const payload of [{ fade: -1 }, { fade: 'long' }, { albumQueue: 'yes' }]) {
+    await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', fade: 9, albumQueue: false, levels: { a: -4.5, b: 2 } } });
+    expect(request).toHaveBeenCalledWith({ fromTrackId: 3, toTrackId: 4, mode: 'auto', fadeSeconds: 9, albumQueue: false, levels: { a: -4.5, b: 2 } });
+    for (const payload of [{ fade: -1 }, { fade: 'long' }, { albumQueue: 'yes' }, { levels: { a: 40, b: 0 } }, { levels: { a: -1 } }]) {
       const res = await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', ...payload } });
       expect(res.statusCode).toBe(400);
     }

@@ -67,16 +67,15 @@ export function PlaybackPanel() {
         description={
           settable
             ? 'Songs always follow each other without a gap.'
-            : 'Songs always follow each other without a gap. This device sets the volume with its own buttons, so it can’t crossfade or even out songs. DJ mix still works here, joining songs on the beat.'
+            : 'Songs always follow each other without a gap. This device sets the volume with its own buttons, so it can’t crossfade. DJ mix still works here, joining songs on the beat.'
         }
       >
         <div className="divide-y divide-line">
           <Switch
             label="Even out the volume"
-            description="Loud songs are turned down to match the rest; an album played in order keeps its own quiet and loud songs."
-            checked={settable && levelVolume}
+            description="Every song plays as loud as the next (−14 LUFS, as streaming services do): loud ones turned down, quiet ones up as far as they can go. An album played in order keeps its own quiet and loud songs. Songs are levelled once Settings → Analysis has measured their loudness."
+            checked={levelVolume}
             onChange={setLevelVolume}
-            disabled={!settable}
           />
           <div className="py-3">
             <div className="mb-3 text-[15px] text-paper">Transitions</div>

@@ -57,7 +57,15 @@ import { usePrefs } from './prefs';
  * ask again), better played straight on, or not possible (no mix map yet, say).
  */
 export type TransitionAnswer =
-  | { status: 'ready'; plan: TransitionPlan; url: string; continuationUrl?: string; tail?: number }
+  | {
+      status: 'ready';
+      plan: TransitionPlan;
+      url: string;
+      continuationUrl?: string;
+      tail?: number;
+      /** The songs' gains (dB) made into the audio, when the player asked for them (even volume). */
+      levels?: { a: number; b: number };
+    }
   | { status: 'pending'; plan: TransitionPlan }
   | { status: 'straight'; plan: TransitionPlan }
   | { status: 'unavailable'; reason: string };
@@ -230,7 +238,7 @@ export const api = {
     mode: MixMode,
     position?: number,
     files?: { fromFileId: number; toFileId: number },
-    how?: { fade?: number; albumQueue?: boolean },
+    how?: { fade?: number; albumQueue?: boolean; levels?: { a: number; b: number } },
   ) => request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files, ...how }) }),
   analysisProgress: () => get<AnalysisProgress>('/api/analysis/progress'),
   /**

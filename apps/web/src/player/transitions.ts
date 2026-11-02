@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { api, ApiError, type TransitionAnswer } from '../lib/api';
 import { djFadeSeconds, usePrefs } from '../lib/prefs';
 import { playsAlbum, upNext } from './decks';
+import { playsAt, useLevels } from './levels';
 import { type KeptTransition, offlineTransition } from './offline';
 import { useSleep } from './sleep';
 import { currentTrack, useClock, usePlayer } from './store';
@@ -85,6 +86,8 @@ interface Pair {
   /** The listener's fade length, and whether the queue plays the songs' album (see api.transition). */
   fade: number;
   albumQueue: boolean;
+  /** The gains (dB) the songs play at from their levelled streams, made into the transition too (even volume). */
+  levels?: { a: number; b: number };
   /**
    * Where the song was at the first ask, sent unchanged on every ask after: the server's plan (and so
    * its render) depends on it, and a later position could make it start over. Only a seek or restart
@@ -191,7 +194,7 @@ function watchUpcomingTransition() {
     // The pair changed, started over or gave up meanwhile: this answer is for nothing now.
     const current = () => pair === p && p.asks === ask && !p.ended;
     const files = { fromFileId: p.from.fileId, toFileId: p.to.fileId };
-    api.transition(p.from.id, p.to.id, p.mode, p.position, files, { fade: p.fade, albumQueue: p.albumQueue }).then(
+    api.transition(p.from.id, p.to.id, p.mode, p.position, files, { fade: p.fade, albumQueue: p.albumQueue, ...(p.levels ? { levels: p.levels } : {}) }).then(
       (answer) => {
         if (!current()) return;
         p.asking = false;
@@ -249,11 +252,28 @@ function watchUpcomingTransition() {
       usePrefs.getState().transitions === 'dj' && s.mixMode !== 'off' && !useSleep.getState().endOfSong && !!from && !!to && from.fileId !== to.fileId;
     const fade = djFadeSeconds(usePrefs.getState());
     const albumQueue = !!from && playsAlbum(s.source, from);
-    const key = wanted ? JSON.stringify([from.id, from.fileId, to.id, to.fileId, s.mixMode, fade, albumQueue]) : null;
+    // At the levels the songs play at (a song at its own volume counts as 0 dB).
+    const a = from && playsAt(from, s);
+    const b = to && playsAt(to, s);
+    const levels = a || b ? { a: a ?? 0, b: b ?? 0 } : undefined;
+    const key = wanted ? JSON.stringify([from.id, from.fileId, to.id, to.fileId, s.mixMode, fade, albumQueue, levels ?? null]) : null;
     if (key !== (pair?.key ?? null)) {
       drop();
       if (wanted) {
-        pair = { key: key!, from: from!, to: to!, mode: s.mixMode, fade, albumQueue, asks: 0, asking: false, polls: 0, errors: 0, askedAgainUnavailable: false };
+        pair = {
+          key: key!,
+          from: from!,
+          to: to!,
+          mode: s.mixMode,
+          fade,
+          albumQueue,
+          ...(levels ? { levels } : {}),
+          asks: 0,
+          asking: false,
+          polls: 0,
+          errors: 0,
+          askedAgainUnavailable: false,
+        };
         later(pair, FIRST_ASK_DELAY_MS);
       }
       useTransition.setState({ fromFileId: wanted ? from!.fileId : null, toFileId: wanted ? to!.fileId : null, result: null, ready: undefined });
@@ -300,7 +320,11 @@ function watchUpcomingTransition() {
   // At mount the clock is the song playing's own; after a song change it isn't until the engine resets it.
   lastTime = useClock.getState().time;
   const offPlayer = usePlayer.subscribe(check);
-  const offPrefs = usePrefs.subscribe((s, prev) => (s.transitions !== prev.transitions || s.crossfade !== prev.crossfade) && check());
+  const offPrefs = usePrefs.subscribe(
+    (s, prev) => (s.transitions !== prev.transitions || s.crossfade !== prev.crossfade || s.levelVolume !== prev.levelVolume) && check(),
+  );
+  // A song's level learned, or a song loaded at its level: the transition is made at the levels they play at.
+  const offLevels = useLevels.subscribe(check);
   const offSleep = useSleep.subscribe((s, prev) => s.endOfSong !== prev.endOfSong && check());
   const offClock = useClock.subscribe((s, prev) => {
     const seeked = s.seekRequest !== prev.seekRequest;
@@ -312,6 +336,7 @@ function watchUpcomingTransition() {
   return () => {
     offPlayer();
     offPrefs();
+    offLevels();
     offSleep();
     offClock();
     window.removeEventListener('online', check);

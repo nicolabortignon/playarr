@@ -6,10 +6,10 @@ import { extractAccent } from '../lib/color';
 import { setFaviconAccent } from '../lib/favicon';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
-import { canSetVolume, continues, fadeCurve, fadeSeconds, levelGain, playsAlbum, silentClip, upNext } from './decks';
+import { canSetVolume, continues, fadeCurve, fadeSeconds, levelDb, levelGain, playsAlbum, silentClip, upNext } from './decks';
 import { useDownloads } from './downloads';
 import { healQueue } from './healQueue';
-import { loadLevels, useLevels } from './levels';
+import { levelledStreamFailed, levelledUrl, loadedAt, loadLevels, streamGain, useLevels } from './levels';
 import { canLiveMix, type LiveMix, type LiveMixPlayback, PREPARE_BUDGET_MS, playLiveMix, prepareLiveMix } from './liveMix';
 import { useLoadAhead } from './loadAhead';
 import { loadMixMaps, mixMapOf } from './mixMaps';
@@ -75,6 +75,8 @@ const MIN_TAIL_S = 1;
 const CUT_PRE_ROLL_S = 0.5;
 /** A song's stream that breaks off is asked for again this many times before playback stops with an error. */
 const STREAM_RETRIES = 3;
+/** The most a live mix turns its audio up (its songs' levels, 12 dB): the levels never ask for more. */
+const MAX_LIVE_GAIN = 10 ** (12 / 20);
 
 interface Fade {
   out: HTMLAudioElement;
@@ -226,17 +228,30 @@ export function AudioEngine() {
     deck.dataset.fileId = String(t.fileId);
     delete deck.dataset.offset;
     pendingTimes.current.delete(deck);
-    deck.src = t.streamUrl;
+    // Even volume: the song's levelled stream once its level is known, turned in the audio itself (so
+    // on iPhones too, and up as well as down); else its own file.
+    const db = streamGain(t, usePlayer.getState());
+    setLevelled(deck, t, db);
+    deck.src = db === undefined ? t.streamUrl : levelledUrl(t, db);
+  }
+
+  /** Marks the gain an element plays its song at (its levelled stream's), or that it plays it at its own volume. */
+  function setLevelled(deck: HTMLAudioElement, t: Track, db: number | undefined) {
+    if (db === undefined) delete deck.dataset.levelled;
+    else deck.dataset.levelled = String(db);
+    loadedAt(t, db);
   }
 
   /**
    * Load a song's remainder, rendered after a DJ transition: a file starting `offset` seconds into the
    * song (some formats can't seek exactly to a beat).
    */
-  function loadRemainder(deck: HTMLAudioElement, t: Track, url: string, offset: number) {
+  function loadRemainder(deck: HTMLAudioElement, t: Track, url: string, offset: number, levels?: { b: number }) {
     loaded.current.set(deck, t);
     deck.dataset.fileId = String(t.fileId);
     deck.dataset.offset = String(offset);
+    // Rendered at B's level along with the transition, when it was asked for one.
+    setLevelled(deck, t, levels?.b || undefined);
     deck.src = url;
   }
 
@@ -318,7 +333,15 @@ export function AudioEngine() {
     const { levelVolume } = usePrefs.getState();
     const { levels } = useLevels.getState();
     const settable = canSetVolume();
-    const level = (t: Track | undefined) => (settable && levelVolume && t ? levelGain(t, levels[t.recordingId], s) : 1);
+    // A song playing its levelled stream is at its level already; one playing its own file is turned
+    // down by its element's volume (where that can be set).
+    const level = (t: Track | undefined, deck?: HTMLAudioElement) =>
+      deck?.dataset.levelled !== undefined ? 1 : settable && levelVolume && t ? levelGain(t, levels[t.recordingId], s) : 1;
+    // A song's whole level, up as well as down, for audio the engine plays itself (a live mix).
+    const fullLevel = (t: Track) => {
+      const known = levelVolume ? levels[t.recordingId] : undefined;
+      return known ? 10 ** (levelDb(t, known, s) / 20) : 1;
+    };
     const o = overlap.current;
     const m = mix.current ?? o?.ending;
     const joined = o?.startedAt == null ? 0 : (performance.now() - o.startedAt) / OVERLAP_MS;
@@ -329,9 +352,12 @@ export function AudioEngine() {
       if (!deck || deck === fadingOut) continue;
       deck.muted = s.muted || silenced.current.has(deck);
       let v = s.volume * s.volume * sleepGain(); // perceptual curve; fading out for the sleep timer
-      // The transition holds both songs at their own levels: it takes each one's level as it's heard.
-      if (deck === bridge.current) v *= m ? bridgeGain(m.transition.plan, deck.currentTime, level(m.from), level(m.to)) : 1;
-      else v *= level(loaded.current.get(deck));
+      // The transition holds both songs at their own levels: it takes each one's level as it's heard
+      // (none for a song whose level was made into it).
+      if (deck === bridge.current) {
+        const baked = m?.transition.levels;
+        v *= m ? bridgeGain(m.transition.plan, deck.currentTime, baked?.a ? 1 : level(m.from), baked?.b ? 1 : level(m.to)) : 1;
+      } else v *= level(loaded.current.get(deck), deck);
       const f = fade.current;
       if (f?.out === deck) v *= fadeCurve(fadeLeft(f) / f.seconds);
       else if (f?.in === deck) v *= fadeCurve((songTime(deck) - f.inStart) / f.seconds);
@@ -339,10 +365,10 @@ export function AudioEngine() {
       else if (o?.in === deck) v *= evenGain(joined);
       deck.volume = Math.max(0, Math.min(1, v));
     }
-    // A live mix holds both songs at their own levels too.
+    // A live mix holds both songs at their own levels too, made from their own files: up as well as down.
     if (l?.playback && l.mix) {
-      const gain = bridgeGain(l.mix.plan, Math.max(0, l.playback.time()), level(l.from), level(l.to));
-      l.playback.setVolume(s.muted ? 0 : Math.max(0, Math.min(1, s.volume * s.volume * sleepGain() * gain)));
+      const gain = bridgeGain(l.mix.plan, Math.max(0, l.playback.time()), fullLevel(l.from), fullLevel(l.to));
+      l.playback.setVolume(s.muted ? 0 : Math.max(0, Math.min(MAX_LIVE_GAIN, s.volume * s.volume * sleepGain() * gain)));
     }
   }
 
@@ -574,7 +600,7 @@ export function AudioEngine() {
     br.dataset.url = r.url;
     br.src = r.url;
     next.preload = 'auto';
-    if (r.continuationUrl) loadRemainder(next, to, r.continuationUrl, r.plan.bResume);
+    if (r.continuationUrl) loadRemainder(next, to, r.continuationUrl, r.plan.bResume, r.levels);
     else cue(next, to, r.plan.bResume);
     void loadLevels([to]);
     mix.current = { transition: r, from, to, bridging: false, switched: false };
@@ -925,7 +951,7 @@ export function AudioEngine() {
         swap();
         const deck = active()!;
         handoffFailed.current = true;
-        if (continuationUrl) loadRemainder(deck, m.to, continuationUrl, plan.bResume);
+        if (continuationUrl) loadRemainder(deck, m.to, continuationUrl, plan.bResume, m.transition.levels);
         else cue(deck, m.to, plan.bResume);
         if (usePlayer.getState().playing) void play(deck);
       },
@@ -1740,15 +1766,19 @@ export function AudioEngine() {
     },
     onError: (e) => {
       const deck = e.currentTarget;
+      const t = loaded.current.get(deck);
+      // A levelled stream that won't play (its loudness being measured again, a server that can't
+      // decode it): the song's own file from now on.
+      const levelled = !!t && deck.dataset.levelled !== undefined && offsetOf(deck) === 0;
+      if (levelled) levelledStreamFailed(t);
       if (!isActive(e)) {
         // The next song didn't load: it loads again the usual way when its turn comes.
         if (deck.getAttribute('src') !== silentClip()) delete deck.dataset.fileId;
         return;
       }
-      const t = loaded.current.get(deck);
-      if (offsetOf(deck) > 0 && t) {
-        // The song's remainder file went away (its mix points edited, the server's cache trimmed): its own
-        // file from the same point does as well.
+      if (t && (levelled || offsetOf(deck) > 0)) {
+        // The song's remainder file went away (its mix points edited, the server's cache trimmed), or its
+        // levelled stream won't play: its own file from the same point does as well.
         const time = songTime(deck);
         switching.current = true;
         load(deck, t);

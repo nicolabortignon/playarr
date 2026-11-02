@@ -149,6 +149,11 @@ export interface TransitionRequest {
    * Older players don't say: as true.
    */
   albumQueue?: boolean;
+  /**
+   * Even volume: the gains (dB) the player plays the two songs at (their levelled streams), so the
+   * transition between them is at the same levels. Left out (or 0): each at its own volume.
+   */
+  levels?: { a: number; b: number };
 }
 
 export type TransitionAnswer =
@@ -159,6 +164,8 @@ export type TransitionAnswer =
       continuationUrl?: string;
       /** Seconds of B after the transition in its file (see TRANSITION_TAIL_SECONDS); none in older files. */
       tail?: number;
+      /** The songs' gains (dB) made into the audio (and B's remainder), when they were asked for. */
+      levels?: { a: number; b: number };
     }
   | { status: 'pending'; plan: TransitionPlan }
   | { status: 'straight'; plan: TransitionPlan }
@@ -184,6 +191,8 @@ interface Sidecar {
   continuation?: AudioExtension;
   /** Seconds of B after the transition in its file; none in files made before tails. */
   tail?: number;
+  /** The songs' gains (dB) made into the audio; none for songs at their own volume. */
+  levels?: { a: number; b: number };
   createdAt: number;
   /** The pair (files and mode) and plan inputs, so a restarted server keeps answering with this plan. */
   pair?: string;
@@ -194,6 +203,7 @@ interface Job {
   key: string;
   pair: string;
   inputs: string;
+  levels?: { a: number; b: number };
   fromTrackId: number;
   a: Track;
   b: Track;
@@ -260,7 +270,7 @@ export class Transitions {
     }
   }
 
-  async request({ fromTrackId, toTrackId, mode, aPosition, fromFileId, toFileId, fadeSeconds, albumQueue }: TransitionRequest): Promise<TransitionAnswer> {
+  async request({ fromTrackId, toTrackId, mode, aPosition, fromFileId, toFileId, fadeSeconds, albumQueue, levels: asked }: TransitionRequest): Promise<TransitionAnswer> {
     const [a, b] = await Promise.all([this.opts.library.track(fromTrackId), this.opts.library.track(toTrackId)]);
     if (!a || !b) return { status: 'unavailable', reason: 'Unknown song' };
     if ((fromFileId !== undefined && fromFileId !== a.fileId) || (toFileId !== undefined && toFileId !== b.fileId)) {
@@ -292,16 +302,17 @@ export class Transitions {
     }
     if (plan.style === 'straight' || plan.length === 0) return { status: 'straight', plan };
 
-    // The plan holds everything the audio depends on (maps, cues and mode went into it); the files'
-    // sizes stand in for their contents, so a replaced file is rendered again.
-    const key = hash([RENDERER_VERSION, a.fileId, a.size, b.fileId, b.size, plan]);
+    // The plan holds everything the audio depends on (maps, cues and mode went into it) but the levels;
+    // the files' sizes stand in for their contents, so a replaced file is rendered again.
+    const levels = asked && (asked.a || asked.b) ? { a: asked.a, b: asked.b } : undefined;
+    const key = hash([RENDERER_VERSION, a.fileId, a.size, b.fileId, b.size, plan, ...(levels ? [levels] : [])]);
     const cached = await this.cached(key);
     if (cached) return cached;
     this.forgetExpiredFailures();
     const failure = this.failures.get(pair);
     if (failure) return { status: 'unavailable', reason: failure.reason };
     const songLength = (map: MixMap, track: Track) => (Number.isFinite(map.duration) && map.duration > 0 ? map.duration : track.duration);
-    this.enqueue({ key, pair, inputs, fromTrackId, a, b, aDuration: songLength(aMap, a), bDuration: songLength(bMap, b), plan });
+    this.enqueue({ key, pair, inputs, ...(levels ? { levels } : {}), fromTrackId, a, b, aDuration: songLength(aMap, a), bDuration: songLength(bMap, b), plan });
     return { status: 'pending', plan };
   }
 
@@ -385,6 +396,7 @@ export class Transitions {
       url: `/transitions/${files[0]}`,
       ...(files[1] ? { continuationUrl: `/transitions/${files[1]}` } : {}),
       ...(sidecar.tail ? { tail: sidecar.tail } : {}),
+      ...(sidecar.levels ? { levels: sidecar.levels } : {}),
     };
   }
 
@@ -438,7 +450,7 @@ export class Transitions {
     await this.trim().catch((err: unknown) => this.opts.log.warn({ err }, 'transition cache trim failed'));
   }
 
-  private async render({ key, pair, inputs, a, b, aDuration, bDuration, plan }: Job): Promise<Sidecar> {
+  private async render({ key, pair, inputs, levels, a, b, aDuration, bDuration, plan }: Job): Promise<Sidecar> {
     const ranges = excerptRanges(plan, TRANSITION_TAIL_SECONDS);
     if (!ranges) throw new Error('A straight cut has no transition audio');
     const [aFile, bFile] = await Promise.all([this.opts.library.file(a.fileId), this.opts.library.file(b.fileId)]);
@@ -446,8 +458,9 @@ export class Transitions {
     const aSource = { ...this.opts.files.resolve(aFile), track: a, duration: aDuration };
     const bSource = { ...this.opts.files.resolve(bFile), track: b, duration: bDuration };
 
-    const aExcerpt = await this.decode(aSource, ranges.a[0], ranges.a[1]);
-    const bExcerpt = await this.decode(bSource, ranges.b[0], ranges.b[1]);
+    // At the levels the player plays the songs at, so the transition sounds as loud as they do.
+    const aExcerpt = withGain(await this.decode(aSource, ranges.a[0], ranges.a[1]), levels?.a);
+    const bExcerpt = withGain(await this.decode(bSource, ranges.b[0], ranges.b[1]), levels?.b);
     const audio = await withTimeout(this.opts.dsp.render(plan, aExcerpt, bExcerpt, TRANSITION_TAIL_SECONDS), this.renderTimeoutMs, 'The render took too long');
     await mkdir(this.dir, { recursive: true });
     const transitionAudio = await this.writeAudio(() => inPieces(audio), key, this.renderTimeoutMs);
@@ -464,7 +477,7 @@ export class Transitions {
     } else if (seeksInexactly(b.format)) {
       const chunks = Math.ceil((remainderSeconds + END_SLACK_SECONDS) / REMAINDER_CHUNK_SECONDS);
       const timeoutMs = this.renderTimeoutMs + chunks * this.decodeTimeoutMs;
-      continuation = await this.writeAudio(() => this.remainder(bSource, plan.bResume), `${key}.rest`, timeoutMs);
+      continuation = await this.writeAudio(() => gained(this.remainder(bSource, plan.bResume), levels?.b), `${key}.rest`, timeoutMs);
     }
     const sidecar: Sidecar = {
       aRecording: a.recordingId,
@@ -473,6 +486,7 @@ export class Transitions {
       audio: transitionAudio,
       ...(continuation ? { continuation } : {}),
       tail: TRANSITION_TAIL_SECONDS,
+      ...(levels ? { levels } : {}),
       createdAt: this.now(),
       pair,
       inputs,
@@ -651,6 +665,19 @@ export function deinterleave(pcm: Buffer): StereoAudio {
     right[i] = view.getInt16(i * PCM_FRAME_BYTES + 2, true) / 32768;
   }
   return { left, right };
+}
+
+/** Turns audio by `db` in place (nothing for none); answers the audio. */
+function withGain<T extends StereoAudio>(audio: T, db: number | undefined): T {
+  if (!db) return audio;
+  const g = 10 ** (db / 20);
+  for (const channel of [audio.left, audio.right]) for (let i = 0; i < channel.length; i++) channel[i]! *= g;
+  return audio;
+}
+
+/** Chunks of audio, each turned by `db`. */
+async function* gained(chunks: AudioChunks, db: number | undefined): AudioChunks {
+  for await (const chunk of chunks) yield withGain(chunk, db);
 }
 
 /** Interleaved little-endian float32 (ffmpeg's f32le). */

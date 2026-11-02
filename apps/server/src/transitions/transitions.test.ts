@@ -507,6 +507,29 @@ describe('Transitions', { timeout: 30_000 }, () => {
     expect(t.pcm).not.toHaveBeenCalled();
   });
 
+  it('mixes at the levels the player plays the songs at, B’s remainder too, and keeps each level’s file apart', async () => {
+    const t = setup({ tracks: [track(1), track(2, MP3)] });
+    const levels = { a: -6, b: 3 };
+    await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', levels });
+    await t.transitions.idle();
+    const ready = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', levels }));
+    expect(ready.levels).toEqual(levels);
+    // What the renderer got: each song turned by its gain.
+    const [, aExcerpt, bExcerpt] = t.render.mock.calls[0]!;
+    expect(aExcerpt.left[100]).toBeCloseTo(sampleAt('/music/1.flac', aExcerpt.start + 100 / RENDER_RATE) * 10 ** (-6 / 20), 3);
+    expect(bExcerpt.left[100]).toBeCloseTo(sampleAt('/music/2.flac', bExcerpt.start + 100 / RENDER_RATE) * 10 ** (3 / 20), 3);
+    const rest = readRaw(fileOf(t.dir, ready.continuationUrl!));
+    expect(rest[2000]).toBeCloseTo(sampleAt('/music/2.flac', ready.plan.bResume + 1000 / RENDER_RATE) * 10 ** (3 / 20), 3);
+
+    // Other levels (or none) are another file; songs at 0 dB are the same as none.
+    const none = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
+    expect(none.status).toBe('pending');
+    await t.transitions.idle();
+    const plain = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', levels: { a: 0, b: 0 } }));
+    expect(plain.url).not.toBe(ready.url);
+    expect(plain.levels).toBeUndefined();
+  });
+
   it('after a failed render answers unavailable for 10 minutes, then tries again', async () => {
     let clock = 1_000_000;
     const t = setup({

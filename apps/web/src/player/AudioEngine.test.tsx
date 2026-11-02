@@ -8,6 +8,7 @@ import { AudioEngine } from './AudioEngine';
 import { canSetVolume } from './decks';
 import { canLiveMix, type LiveMix, playLiveMix, prepareLiveMix } from './liveMix';
 import { playTracker } from './playTracker';
+import { useLevels } from './levels';
 import { useOffline } from './offline';
 import { useSleep } from './sleep';
 import { currentTrack, useClock, usePlayer } from './store';
@@ -168,13 +169,18 @@ const plan = (over: Partial<TransitionPlan> = {}) =>
 const TRANSITION = '/transitions/abc.flac';
 
 /** The server has rendered the transition from `from` into `to` (file ids). */
-function transitionReady(from: number, to: number, extra: { plan?: TransitionPlan; continuationUrl?: string; tail?: number } = {}) {
+function transitionReady(
+  from: number,
+  to: number,
+  extra: { plan?: TransitionPlan; continuationUrl?: string; tail?: number; levels?: { a: number; b: number } } = {},
+) {
   const result = {
     status: 'ready' as const,
     plan: extra.plan ?? plan(),
     url: TRANSITION,
     ...(extra.continuationUrl ? { continuationUrl: extra.continuationUrl } : {}),
     ...(extra.tail ? { tail: extra.tail } : {}),
+    ...(extra.levels ? { levels: extra.levels } : {}),
   };
   useTransition.setState({ fromFileId: from, toFileId: to, result, ready: { ...result, fromFileId: from, toFileId: to } });
 }
@@ -378,6 +384,52 @@ describe('AudioEngine', () => {
     expect(useClock.getState().error).toBe('The song kept stopping loading: the Playarr server or the network is too busy');
     expect(usePlayer.getState().playing).toBe(false);
     vi.unstubAllGlobals();
+  });
+
+  /** Levels already known for these songs (by recording id): songs no other test has asked about. */
+  const knownLevels = (levels: Record<string, { track: number; album?: number }>) => useLevels.setState((s) => ({ levels: { ...s.levels, ...levels } }));
+
+  it('plays a song whose level is known from its levelled stream, turned up or down there rather than by its volume', async () => {
+    knownLevels({ r81: { track: -6 }, r82: { track: 4 } });
+    const [a, b] = await start([song(81), song(82)]);
+    expect(src(a)).toBe('/stream/81/levelled.wav?gain=-6');
+    expect(fake(a).volume).toBe(1);
+    await at(a, 175);
+    expect(src(b)).toBe('/stream/82/levelled.wav?gain=4');
+    expect(fake(b).volume).toBe(1);
+  });
+
+  it('plays the song’s own file with levelling off, or when it’s kept on this device (turned down by its volume)', async () => {
+    knownLevels({ r83: { track: -6 }, r84: { track: -6 } });
+    usePrefs.setState({ levelVolume: false });
+    const [a] = await start([song(83)]);
+    expect(src(a)).toBe('/stream/83');
+    expect(fake(a).volume).toBe(1);
+    cleanup();
+    usePrefs.setState({ levelVolume: true });
+    useOffline.setState({ songs: { 84: { url: '/stream/84', bytes: 1, usedAt: 0 } } });
+    const [b] = await start([song(84)]);
+    expect(src(b)).toBe('/stream/84');
+    expect(fake(b).volume).toBeCloseTo(10 ** (-6 / 20), 2);
+    useOffline.setState({ songs: {} });
+  });
+
+  it('goes on from the song’s own file, from where it was, when its levelled stream won’t play', async () => {
+    knownLevels({ r85: { track: -3 } });
+    const [a] = await start([song(85), song(86)]);
+    await at(a, 50);
+    Object.defineProperty(a, 'readyState', { configurable: true, value: 0 });
+    await act(async () => {
+      a.dispatchEvent(new Event('error'));
+    });
+    await settle();
+    expect(src(a)).toBe('/stream/85');
+    a.dispatchEvent(new Event('loadedmetadata'));
+    expect(fake(a).time).toBe(50);
+    expect(fake(a).paused).toBe(false);
+    expect(useClock.getState().error).toBeNull();
+    // Its volume levels it now, as far as a volume can.
+    expect(fake(a).volume).toBeCloseTo(10 ** (-3 / 20), 2);
   });
 
   it('turns loud songs down', async () => {
@@ -661,6 +713,16 @@ describe('AudioEngine', () => {
       // 6 s in, the next song is a tenth of what's heard (its gain 0.25 against 0.75, in power).
       await at(bridge, 6);
       expect(fake(bridge).volume).toBeCloseTo(10 ** ((-6 * 0.9) / 20), 2);
+    });
+
+    it('leaves the transition’s volume alone when the songs’ levels were made into it', async () => {
+      knownLevels({ r53: { track: -6 }, r54: { track: -2 } });
+      transitionReady(53, 54, { levels: { a: -6, b: -2 } });
+      const [a, , bridge] = await intoTransition(0, [song(53), song(54)]);
+      expect(src(a)).toBe('/stream/53/levelled.wav?gain=-6');
+      expect(fake(bridge).volume).toBe(1);
+      await at(bridge, 6);
+      expect(fake(bridge).volume).toBe(1);
     });
 
     it('starts the transition when the timer says, from where the song is and how fast it plays', async () => {

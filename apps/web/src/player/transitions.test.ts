@@ -4,6 +4,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { api, ApiError, type TransitionAnswer } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
+import { useLevels } from './levels';
 import { type KeptTransition, transitionFileId, transitionPair, useOffline } from './offline';
 import { useSleep } from './sleep';
 import { useClock, usePlayer } from './store';
@@ -13,7 +14,7 @@ import { readyTransition, refreshUpcomingTransition, useTransition, useUpcomingT
 const HOW = { fade: 6, albumQueue: true };
 
 // Catalog ids and file ids differ, to tell which one goes where.
-const song = (id: number) => ({ id, fileId: id + 100, recordingId: `rec-${id}`, title: `Song ${id}`, albumId: id, duration: 200 }) as Track;
+const song = (id: number) => ({ id, fileId: id + 100, recordingId: `rec-${id}`, title: `Song ${id}`, albumId: id, duration: 200, streamUrl: `/stream/${id + 100}` }) as Track;
 
 const plan = (aStart = 170) =>
   ({ style: 'long', aStart, bStart: 8, length: 24, bResume: 32, switchAt: 12 }) as Partial<TransitionPlan> as TransitionPlan;
@@ -70,6 +71,7 @@ beforeEach(() => {
   usePrefs.setState({ transitions: 'dj', crossfade: 0 });
   useSleep.getState().cancel();
   useOffline.setState({ songs: {}, pins: {} });
+  useLevels.setState({ levels: {}, loaded: {} });
   usePlayer.setState({ repeat: 'off' });
   usePlayer.getState().playTracks([song(1), song(2), song(3)], 0, { shuffle: false });
   useClock.setState({ time: 0 });
@@ -255,6 +257,24 @@ describe('the pair', () => {
     expect(useTransition.getState().result).toBeNull();
     await playTo(8);
     expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 7, { fromFileId: 101, toFileId: 102 }, { fade: 12, albumQueue: true });
+  });
+
+  it('asks at the levels the songs play at, and again once a level is learned', async () => {
+    renderHook(() => useUpcomingTransition());
+    await playTo(6);
+    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 }, HOW);
+    // The next song's level learned: it'll play its levelled stream, so the transition is made at that level.
+    act(() => useLevels.setState((s) => ({ levels: { ...s.levels, 'rec-2': { track: -4.5 } } })));
+    expect(useTransition.getState().result).toBeNull();
+    await playTo(8);
+    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 7, { fromFileId: 101, toFileId: 102 }, { ...HOW, levels: { a: 0, b: -4.5 } });
+    // The song playing was started on its own file before its level came: the transition takes it as it plays.
+    act(() => {
+      useLevels.getState().loaded[101] = null;
+      useLevels.setState((s) => ({ levels: { ...s.levels, 'rec-1': { track: -3 } } }));
+    });
+    await playTo(10);
+    expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 7, { fromFileId: 101, toFileId: 102 }, { ...HOW, levels: { a: 0, b: -4.5 } });
   });
 
   it('says when the queue doesn’t play the songs’ album (a playlist)', async () => {
