@@ -38,53 +38,57 @@ The server must be able to **read the same music files Lidarr manages**. Path ma
 |---|---|
 | Lidarr | `http://192.168.1.103:8686`: Lidarr 3.1.6, running in Docker (Alpine). API sends `Access-Control-Allow-Origin: *` |
 | Lidarr API key | ✅ in `.env` (gitignored) |
-| Library | Root folder `/data/media/music` (path inside the container). 9 artists (6 with files), 112 albums (30 with files), 412 tracks, 10.3 GB, ~31 h |
+| Library | Root folder `/data/media/music` (path inside the container). On 2026-10-27: 9 artists (6 with files), 112 albums (30 with files), 412 tracks, 10.3 GB, ~31 h |
 | Formats | FLAC 16/44.1 (185), MP3 320 (174), FLAC 24-bit 44.1/48/88.2 (53). All play natively in browsers, so transcoding is optional |
 | Artwork | `/api/v1/mediacover/...` serves full-size images only (`cover-250.jpg` is the same file), so Playarr resizes them itself |
 | NAS | UGREEN DXP2800 (UGOS, Debian 12, OpenSSH 9.2). The Docker stack is defined in `/volume1/docker/media-stack/docker-compose.yaml` |
 | Music files on the host | Lidarr `/data/media/music` = host **`/volume2/data/media/music`** (from `/volume2/data:/data`). Navidrome mounts the same folder read-only |
 | Music files access | ✅ `MEDIA_SOURCE=ssh` with user `Nicola` (admin group) and a password in `.env`. Notes: UGOS's custom `sftp-server` only exposes shares created in its UI (just `docker`), so SFTP can't see `/volume2/data`. `Nicola` has no home folder, so key auth isn't possible without changes on the NAS |
 | Other services on host | Jellyfin 12.4 on :8096 (runs in Docker, so the host has Docker); something on :4533 (maybe Navidrome) |
-| Local toolchain | Node 25.2, pnpm 10.32, Docker. **ffmpeg not installed** (`brew install ffmpeg` before the transcoding phase) |
+| Local toolchain | Node 25.2, pnpm 10.32 (through `corepack pnpm` in Claude's shell), Docker, Xcode (for `pnpm sim`). **ffmpeg, fpcalc and rclone not installed**: in dev, analysis runs ffmpeg on the NAS over SSH (`brew install ffmpeg` to analyse local folders) |
 | Ports | Playarr server **:4000**, Vite dev **:5180**. :5173 is taken by another local project (lifetool) |
 
 ---
 
-## 3. Tech stack
+## 3. Tech stack (as built)
 
 **Monorepo** (pnpm workspaces)
 ```
 playarr/
 ├── apps/
-│   ├── web/        # React client (Vite)
-│   └── server/     # Fastify API + streaming
+│   ├── web/        # React client (Vite), PWA with its own service worker
+│   └── server/     # Fastify API, streaming, analysis, transitions
 ├── packages/
-│   └── shared/     # Shared TS types (Lidarr DTOs, Playarr API contracts)
-├── docker/         # Dockerfile, compose example
+│   ├── shared/     # Shared TS types (Playarr API contracts) and the byte-range parser
+│   └── mix/        # DJ mixing, no dependencies: analysis, planner, renderer (server and browser)
+├── docker/         # Dockerfile, compose stack, update.sh, the updater container, deploy.mjs
+├── scripts/        # bump-version (pre-commit hook), ios-sim (pnpm sim), beat-this (model export)
+├── docs/           # mixing.md and the design/implementation plans
 └── PLAN.md
 ```
 
 **Web client**
-- React 19, TypeScript, Vite
-- Tailwind CSS v4, Radix UI primitives for accessible menus, dialogs, and sliders
-- TanStack Query for server state and caching; TanStack Router (or React Router) for routing
-- Zustand for player and queue state, persisted to `localStorage`
-- `vite-plugin-pwa` for the manifest, service worker, and installability
-- Playback through a single `<HTMLAudioElement>` plus a second preloaded element for near-gapless transitions. Web Audio API added later for EQ and crossfade.
+- React 19, TypeScript 7, Vite 8
+- Tailwind CSS 4 with our own components (menus, dialogs, sliders; no Radix), lucide icons, Motion for animation
+- TanStack Query for server state, persisted to IndexedDB; React Router 7 for routing
+- Zustand for player, queue and per-device preferences, persisted to `localStorage`
+- `vite-plugin-pwa` in injectManifest mode: our own service worker (`src/sw.ts`) precaches the shell and plays songs kept on the device
+- Playback through `<audio>` elements: two that take turns for gapless songs and crossfades, and a third that plays DJ transitions. On desktop browsers they also run through a Web Audio graph for sample-exact joins and live mixes; phones and tablets stay on plain elements, which keep playing with the screen locked
 - Media Session API for lock-screen and OS media controls, artwork, and next/prev/seek
-- Dynamic accent color pulled from the current album art (e.g. `fast-average-color`)
+- Accent color pulled from the current album art (our own code)
 
 **Server**
-- Node + Fastify, TypeScript
-- `undici`/fetch Lidarr client with typed DTOs
-- Streaming: `fs.createReadStream` with Range parsing; ffmpeg (`child_process`) for transcode to Opus/AAC/MP3
-- SQLite (`better-sqlite3` + Drizzle) for user data
-- In-memory library snapshot with periodic refresh. Later: subscribe to Lidarr SignalR (`/signalr/messages`) for live updates.
-- Artwork proxy with disk cache and resizing (`sharp`) for thumbnails
+- Node + Fastify 5, TypeScript, zod 4 for config and request bodies
+- `fetch` Lidarr client with typed DTOs
+- Pluggable media sources (local disk, SSH, SFTP, rclone for SMB) with Range streaming; ffmpeg decodes for analysis, levelled streams and transitions (no transcoding for playback yet)
+- SQLite through Node's built-in `node:sqlite` for the catalog and user data
+- Catalog in SQLite fed by source adapters (Lidarr, folders), refreshed every 10 minutes
+- Analysis in worker threads: our own DSP, the Beat This! model (onnxruntime-web, WebAssembly), EBU R128 loudness
+- Artwork proxy with a size-capped disk cache and resizing (`sharp`); generated playlist covers (SVG → WebP)
 - Serves the built web app as static files, giving one container and one port in production
 
 **Deployment target**
-- One Docker image. Run it on the Lidarr host (192.168.1.103) next to Lidarr and mount the music volume **read-only** at the same path Lidarr uses (or set a path mapping).
+- One Docker image (Node 24 Alpine with ffmpeg, chromaprint and rclone). Run it on the Lidarr host (192.168.1.103) next to Lidarr and mount the music volume **read-only** at the same path Lidarr uses (or set a path mapping).
 
 ---
 
@@ -107,24 +111,28 @@ Searching the user's own library happens over the server's snapshot. Lidarr's `/
 
 ---
 
-## 5. Playarr server API (draft)
+## 5. Playarr server API (as built, grouped; `apps/server/src/routes/`)
 
 ```
-GET  /api/health                     → Lidarr reachable? path mapping OK?
-GET  /api/artists                    → list (sortable, with art URLs)
-GET  /api/artists/:id                → artist + albums
-GET  /api/albums?sort=&filter=       → albums with files
-GET  /api/albums/:id                 → album + tracks (+ file/format info)
-GET  /api/search?q=                  → artists / albums / tracks
-GET  /api/recent                     → recently added albums
-GET  /stream/:trackFileId            → audio (Range); ?format=opus|aac|mp3&bitrate=
-GET  /art/:kind/:id?size=            → cached, resized artwork
-POST /api/history                    → scrobble a play
-CRUD /api/playlists, /api/favorites
-GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned + missing)
+GET  /api/health                         → Lidarr reachable? media source OK? library stats
+GET  /api/artists, /api/artists/:id(/tracks), /api/albums(/random), /api/albums/:id, /api/tracks/random
+GET  /api/search?q=                      → artists / albums / tracks / playlists in the library
+GET  /api/tracks/:id/metadata | /lyrics  → everything about a song (paths: home network only) | lyrics
+POST /api/files/:fileId/rematch, /api/library/refresh
+GET  /stream/:fileId                     → the file as it is (Range)
+GET  /stream/:fileId/levelled.wav?gain=  → the song at its even-volume level, 16-bit 44.1 kHz WAV made as asked for (Range)
+GET  /art/:kind/:id/:type, /art/copy/:id, /art/remote, /art/playlist/:id(/preview)
+CRUD /api/favorites/:recordingId, /api/playlists (+ items, order, cover, recommendations)
+GET  /api/discover/search, /api/discover/artists/:mbid(/similar), /api/discover/artist-lookup
+CRUD /api/requests                       → request albums through Lidarr, with progress
+POST /api/plays; GET /api/plays/recent-albums, /api/stats, /api/mixes(/:key), POST /api/mixes/:key/regenerate|save, /api/radio
+CRUD /api/profiles
+POST /api/levels, /api/mix-maps, /api/transitions; GET /transitions/:file; GET|PUT /api/recordings/:id/cues
+GET  /api/analysis/progress; POST /api/analysis/:kind
+     /api/settings/{sources,folders,matching,requests,mixes,listenbrainz,updates}  (changes: home network only)
 ```
 
-**Security:** `/stream` only serves paths that come back from Lidarr for a known `trackFileId` *and* that resolve inside a configured music root (no path traversal). Playarr gets its own login. Never expose the Lidarr API key to the client.
+**Security:** `/stream` only serves file ids the catalog knows *and* paths that resolve inside a configured music root (no path traversal); the client never sends a path. Every change request must carry Playarr's own header (no cross-site requests). Settings and other local-only actions need a home address, no proxy in between, and the server addressed by IP or a local name (no DNS rebinding). The Lidarr API key never reaches the client, and a saved key is only ever sent to the server it was saved for. Playarr's own login is still to come (Phase 5).
 
 ---
 
@@ -143,7 +151,7 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
 
 ### Phase 0: Foundations
 - [x] Get the Lidarr API key and confirm connectivity (`/system/status`)
-- [ ] Decide how dev reaches the music files (see Open Questions)
+- [x] Decide how dev reaches the music files: `MEDIA_SOURCE=ssh` (§9)
 - [x] Scaffold the pnpm monorepo (web, server, shared) and tsconfig. *ESLint/Prettier still to add.*
 - [x] Server config via `.env`, validated with zod (`LIDARR_URL`, `LIDARR_API_KEY`, `MEDIA_SOURCE`, `PATH_MAP`, `SFTP_*`, `PORT`)
 - [x] Typed Lidarr client + `/api/health` (Lidarr, media source, and library stats; probes a real file to catch a bad `PATH_MAP`)
@@ -160,14 +168,14 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
 - [x] Player store: queue, play order, shuffle, repeat (off/all/one), volume, play next / add to queue
 - [x] Mini-player, full Now Playing (drag down to dismiss), desktop player bar
 - [x] Media Session API (metadata, artwork, action handlers, position state)
-- [ ] Preload the next track for near-gapless playback
+- [x] Preload the next track: gapless playback, two players taking turns (2026-11-01)
 - [x] Persist the queue and position across reloads
 - [x] Keyboard shortcuts (Space, ←/→, Shift+←/→, ↑/↓, M, S, /)
 
 ### Phase 3: Discovery and polish
 - [x] Search (artists, albums, tracks; ignores accents and punctuation)
-- [x] Recently added, random albums, sorting. *Filtering by genre/format still to do.*
-- [ ] Queue management: play next, add to queue, remove, clear ✅. *Drag to reorder still to do (`move()` exists in the store)*
+- [x] Recently added (by when albums first entered the library, across sources), random albums, sorting. *Filtering by genre/format still to do.*
+- [x] Queue management: play next, add to queue, remove, clear (undoable), drag to reorder, "Playing from" (2026-11-01)
 - [x] Context menus (⋯ menus on tracks and albums). *Long-press still to do.*
 
 ### Phase 4: PWA and mobile
@@ -181,19 +189,22 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
   - *Login:* one password (`PLAYARR_PASSWORD`, stored hashed) and a sign-in screen. A signed, HttpOnly, Secure, SameSite=Lax session cookie, valid for months, guards `/api`, `/stream` and `/art` (the app shell and `/api/health` stay public). Login attempts are rate-limited, and the server returns 401s that the web app turns into the sign-in screen. Optionally trust the LAN (192.168.1.0/24) without a login.
   - *HTTPS:* a Caddy container in the compose stack terminates TLS and proxies to `playarr:4000`. The router forward moves from NAS:4000 to Caddy (e.g. external 443 → NAS 8443; UGOS already owns 80/443), and Playarr's own port goes back to LAN-only. With a static IP and no domain, either a Let's Encrypt certificate for the IP address (short-lived, renewed automatically by Caddy, if available by then) or a free DuckDNS name pointing at the IP with a normal certificate. HTTPS also unlocks the app install and offline songs on phones (§14).
   - *Until then:* anyone who finds the port can stream the library, edit playlists and favorites, and request albums through Lidarr (which downloads them). A quick interim option: a setting that turns requests off on the exposed instance.
-- [x] SQLite (`node:sqlite`, `apps/server/data/playarr.db`): **favorites** and **playlists** (2026-10-28). *Still to do: play history, "recently played".*
+- [x] SQLite (`node:sqlite`, `apps/server/data/playarr.db`): **favorites** and **playlists** (2026-10-28), the catalog (2026-10-30), listening history per profile and Jump back in (2026-11-01)
 - [x] **Docker image + NAS deployment** (2026-10-30, see §15): `pnpm deploy:nas` builds and runs Playarr on the NAS as its own compose stack
 
 ### Phase 6: Nice-to-haves
-- [ ] Lyrics (embedded tags / `.lrc` sidecars, synced display)
-- [ ] ReplayGain, crossfade, EQ (Web Audio)
-- [x] **Load-ahead and offline songs** (built 2026-10-29, see §14): the next songs in the queue are kept on the device (LRU, size limit in Library), played by the service worker with byte ranges; library data persisted in IndexedDB; pages prefetched on hover/tap. *Next: "Download" pins for whole albums/playlists that never get evicted, and an offline view.*
+- [x] Lyrics (`.lrc` beside the song, tags, or LRCLIB; timed lines follow along, tap to seek) (2026-11-01)
+- [x] Crossfade (2026-11-01) and even volume from Playarr's own EBU R128 measurement, through levelled streams so iPhones are levelled too (2026-11-02). *ReplayGain tags and EQ still to do.*
+- [x] **DJ transitions** (2026-11-01/02, see §16 and [docs/mixing.md](docs/mixing.md)): beatmatched blends, quick mixes and fades rendered by the server; live mixes on desktop skips
+- [x] **Made for you** (2026-11-01, see §17): listening history, 12 generated mixes, radio, listening stats and a year in review; listener profiles
+- [x] Sleep timer, Settings → Analysis, Stats for nerds, Settings → Updates (automatic updates)
+- [x] **Load-ahead and offline songs** (built 2026-10-29, see §14): the next songs in the queue are kept on the device (LRU, size limit in Library), played by the service worker with byte ranges; library data persisted in IndexedDB; pages prefetched on hover/tap. Downloads of albums, playlists, mixes and Favorites that are never evicted, with their DJ transitions (Library → Downloads, 2026-11-01).
 - [x] **Discover & request** (built 2026-10-27, see §11): search beyond the library, request albums, live download progress
-- [x] **Playlist recommendations** (built 2026-10-28, see §11): "Songs like these" under each playlist, with Add for songs you own and Request for songs you don't. *Next: the same for Favorites, and a "radio" built from one song.*
-- [x] **Generated playlist covers** (built 2026-10-29, see §13): artwork drawn from what the songs sound like, measured from the audio. *Next: use the same audio features for smart shuffle / mood sorting, and a song "radio".*
-- [ ] Lidarr actions: show an in-library artist's missing albums, interactive release picking
+- [x] **Playlist recommendations** (built 2026-10-28, see §11): "Songs like these" under each playlist, with Add for songs you own and Request for songs you don't. Radio from any song, and when the queue runs out (2026-11-01). *Next: the same suggestions for Favorites.*
+- [x] **Generated playlist covers** (built 2026-10-29, see §13): artwork drawn from what the songs sound like, measured from the audio. The same features now drive mood mixes and radio.
+- [ ] Lidarr actions: interactive release picking. *Artist pages already list missing albums with Request (2026-10-31).*
 - [ ] Live library updates through Lidarr SignalR
-- [ ] Cast / AirPlay (Remote Playback API), Last.fm / ListenBrainz scrobbling
+- [ ] Cast / AirPlay (Remote Playback API), Last.fm scrobbling. *ListenBrainz scrobbling done (2026-11-01).*
 - [ ] Optional wrappers: Tauri (desktop), Capacitor (mobile)
 
 ---
@@ -219,7 +230,7 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
    - c) Mount the library on this Mac (sshfs, or enable an SMB share) and set a path mapping.
    - d) Copy a small sample of albums locally for dev.
 2. ~~Lidarr API key~~ ✅ done (in the root `.env`).
-3. **Users:** one user (you) or multiple users with separate playlists and history?
+3. ~~Users~~ ✅ **Resolved 2026-11-01:** listener profiles, picked per device, each with its own history, mixes, stats and ListenBrainz account; favorites and playlists stay shared (per-profile ones are on the roadmap). No login per profile.
 4. **Remote access:** router port forwarding to NAS port 4000 on the home static IP (2026-10-30; Tailscale was set up, then dropped). Exposed without a login for now, by the user's choice; login + HTTPS are planned (Phase 5). Transcoding for mobile data is still open.
 5. **Design preference:** any reference apps you like (Apple Music, Spotify, Plexamp, Feishin…)?
 
@@ -231,9 +242,14 @@ GET  /api/playlists/:id/recommendations?variant=  → "songs like these" (owned 
 pnpm install
 pnpm dev                 # server :4000 + web :5180 (also reachable on the LAN from a phone)
 pnpm build && pnpm start # production: one process on :4000 serving the API and the built web app
-pnpm --filter @playarr/web test   # smoke tests against the running server
+pnpm -C apps/server test          # server unit tests
+pnpm -C packages/mix test         # mixing: analysis, planner, renderer
+pnpm --filter @playarr/web test   # web unit tests plus smoke tests against the running server
+pnpm typecheck                    # every package
 pnpm deploy:nas          # build and (re)start the NAS deployment from the last commit (§15)
 ```
+
+Every commit raises the patch version in `package.json` (`.githooks/pre-commit`, enabled by `pnpm install`); the sidebar shows the version and commit.
 
 To see a change on an iPhone, use the iOS Simulator (needs Xcode): `pnpm sim boot`, then `pnpm sim open /albums/123`, `pnpm sim click 'text=Shuffle'`, `pnpm sim shot`, `pnpm sim console --errors`. `pnpm sim help` lists every command.
 
@@ -261,13 +277,12 @@ To see a change on an iPhone, use the iOS Simulator (needs Xcode): `pnpm sim boo
 
 Each playlist gets artwork drawn from its music, not a collage of album art. Same songs → same cover.
 
-**1. Listen (server, once per song, cached in SQLite `track_features`).** `ffmpeg` runs where the files are (over SSH on the NAS, `nice`d) and decodes up to 7 min to 11 kHz mono PCM (~5 MB, ~0.5 s per song). `analysis/dsp.ts` then measures, all in plain TypeScript:
-- **tempo**: spectral-flux onset envelope → autocorrelation, with a log-normal prior around 120 BPM, refined over several beat multiples, folded into 70–180
-- **pulse**: how clearly the beat stands out (the autocorrelation peak's prominence above its neighbouring dips; a slow crescendo doesn't count as a beat)
+**1. Listen (server, once per song, cached in SQLite `track_features`; Settings → Analysis calls it *sound analysis*).** `ffmpeg` runs where the files are (over SSH on the NAS, `nice`d) and decodes up to 7 min of mono PCM, shared with beat analysis. `analysis/dsp.ts` then measures, all in plain TypeScript, in a worker thread:
+- **tempo** and **pulse** (how clearly the beat stands out): since 2026-11-02 these come from beat analysis (the song's mix map, §16), the one tempo DJ mix plays by. The original onset-autocorrelation tempo is gone; values stored before stay in the database but aren't read. Until a song has its beat analysis, covers draw it with a neutral stand-in tempo
 - **loudness**, **dynamics** (p95−p10 range), **brightness** (spectral centroid), **busyness** (onsets/s), **bass** (energy share < 150 Hz)
 - **envelope**: 48-point loudness curve, the song's shape
 
-Calibrated against known tempos in the library (Da Funk 111, Around the World 121, One More Time 123, Something About Us 100, Porcelain 95: all within 0.3 BPM) and beatless pieces (Jan Garbarek's *Officium* → pulse 0). Raw measurements are stored too, so scales can be recalibrated without re-decoding. `ANALYSIS=off` disables it; `FFMPEG_PATH` overrides the binary.
+The original tempo was calibrated against known tempos in the library (Da Funk 111, Around the World 121, One More Time 123, Something About Us 100, Porcelain 95: all within 0.3 BPM) and beatless pieces (Jan Garbarek's *Officium* → pulse 0). Raw measurements are stored too, so scales can be recalibrated without re-decoding. `ANALYSIS=off` disables it; `FFMPEG_PATH` overrides the binary.
 
 **2. Read.** ListenBrainz metadata (batched, `track_meta`): crowd tags (recording ×1, release group ×0.6, artist ×0.4) plus first-release year; Lidarr artist genres as a fallback. Tags map to 13 style families (`analysis/styles.ts`), each with a hue and a paper-vs-night bias; families under 12% of a song's tags are noise and dropped. Mood words nudge warmth and calm.
 
@@ -315,19 +330,38 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 
 | Path | What |
 |---|---|
-| `compose.yaml` | copied from `docker/` on each deploy |
-| `.env` (mode 600) | `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR`; written by the deploy |
+| `compose.yaml`, `update.sh` | copied from the deployed commit on each deploy |
+| `compose.override.yaml` | your own mounts (e.g. host folders under `/host`); never overwritten |
+| `.env` (mode 600) | `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR`, `PLAYARR_DIR`; written by the deploy |
 | `src/` | the deployed commit (`src/REVISION`), the build context |
-| `config/` | favorites, playlists, song analysis (SQLite): keep and back up |
-| `cache/` | artwork and covers: safe to delete |
+| `config/` | favorites, playlists, history, song analysis (SQLite): keep and back up |
+| `cache/` | artwork, covers and rendered transitions: safe to delete |
+| `update/` | shared with the updater container: settings, Check now requests, status and the last log |
 
-**Container:** `playarr` (Node 24 Alpine with ffmpeg) runs as 1000:10 like the rest of the stack. Music is mounted read-only at `/data/media/music`, the same path Lidarr uses, so no path mapping is needed. It listens on port 4000.
+**Containers:** `playarr` (Node 24 Alpine with ffmpeg, chromaprint and rclone) runs as 1000:10 like the rest of the stack. Music is mounted read-only at `/data/media/music`, the same path Lidarr uses, so no path mapping is needed. It listens on port 4000. `updater` is the only container with the Docker socket (Settings → Updates, decisions log 2026-10-30).
 
-**Deploy (`pnpm deploy:nas`, `docker/deploy.mjs`):** `git archive HEAD` goes over SSH into `src/` (only committed code: no `.env`, no local data). Then it writes `.env`, runs `sudo docker compose up -d --build` (the image is built on the NAS, natively x86_64), and waits for `/api/health`. `--with-data` copies this machine's database once (a `VACUUM INTO` snapshot, safe while the local server runs); `--force-data` replaces the NAS's.
+**Deploy (`pnpm deploy:nas`, `docker/deploy.mjs`):** by default it copies `docker/update.sh` over SSH and runs it: the NAS downloads the latest commit on GitHub `main` and builds it (it warns when this checkout differs from GitHub's: push first). `--local` instead sends `git archive HEAD` into `src/` (only committed code: no `.env`, no local data) and runs `sudo docker compose up -d --build`. Either way it writes `.env` and waits for `/api/health`; the image is built on the NAS, natively x86_64. `--with-data` copies this machine's database once (a `VACUUM INTO` snapshot, safe while the local server runs); `--force-data` replaces the NAS's.
 
 **UGOS gotcha:** inherited ACLs on `/volume1/docker` make unpacked files 770 and new files readable by everyone. The image runs `chmod -R a+rX` on its build output (the app runs as uid 1000, not root), and the deploy `chmod 600`s `.env` (umask alone isn't enough).
 
-**Updating:** commit, then `pnpm deploy:nas`. **Logs:** `sudo docker compose -f /volume1/docker/playarr/compose.yaml logs -f`. **Backup:** `config/`.
+**Updating:** automatically from Settings → Updates, or push and run `pnpm deploy:nas` (or `sudo sh update.sh` on the NAS). **Logs:** `sudo docker compose -f /volume1/docker/playarr/compose.yaml logs -f`. **Backup:** `config/`.
+
+## 16. DJ transitions
+
+Settings → Playback → Transitions: Off, Crossfade or DJ mix. With DJ mix, songs flow into each other the way a DJ would mix them: long beatmatched blends, quick mixes, fades or straight on, decided per pair. The whole pipeline (analysis, planner, renderer, playback, with every threshold) is in **[docs/mixing.md](docs/mixing.md)**; design and plan: `docs/plans/2026-11-01-beatmatching-design.md` and `2026-11-01-beatmatching.md`. In short:
+
+- **Analysis** (server, once per song, *beat analysis* in Settings → Analysis): a *mix map* with tempo to 0.01 BPM, beat grid, bars and phrases (Beat This! plus our onset comb), key, intro and outro, phrase-by-phrase drift. `packages/mix/src/analysis`.
+- **Planning** (`packages/mix/src/plan.ts`): pure and deterministic, so server and browser agree. The queue's mix mode (Auto, Party, No mixing) is set in Now Playing.
+- **Rendering** (server, `apps/server/src/transitions`): each upcoming transition into a cached FLAC file (`TRANSITIONS_CACHE_MB`), with 2 s of A before and 3 s of B after, so the player can change files where both hold the same sound. At the even-volume levels the songs play at (§17).
+- **Playback** (`apps/web/src/player`): A, then the transition file, then B, each file taking over in step. The lock screen, seek bar and history only ever see the two songs. Desktop browsers line joins up on the sound through Web Audio and mix skips live; phones and tablets stay on plain `<audio>` elements, which keep playing with the screen locked. Downloads keep their transitions for offline listening.
+
+## 17. Listening, profiles, mixes and even volume
+
+- **Listening history** (`POST /api/plays`): a song counts as played after 30 s or half a short song, skipped after 3–30 s. Reports wait on the device until sent, and are stored once. A device can stay out of the history (Settings → Playback).
+- **Profiles**: each listener picks a profile per device (Home asks once; Settings → Profiles). History, mixes, stats and the ListenBrainz account follow the profile; favorites and playlists are shared.
+- **Made for you** (design: `docs/plans/2026-11-01-mixes.md`): a taste model from the history feeds 12 generated mixes (Vibes of the hour, Discovery Weekly, On repeat, Blast from the past, Deep cuts, Fresh arrivals, decades, genres, Energy boost, Wind down, Deep focus, On this day), remade per hour, day or week in the household's time zone, in the background. Songs are ordered to blend (`packages/mix/src/blend.ts`). Settings → Mixes tunes them. Plus radio (when the queue runs out, or from any song), Jump back in, and listening stats with a year in review.
+- **ListenBrainz**: plays are sent to the profile's ListenBrainz account (token in Settings → Mixes); its tags give genres and years (*tag lookup*), and its similar-recordings data drives recommendations and similar artists.
+- **Even volume** (Settings → Playback → Even out the volume): *loudness analysis* measures each song's EBU R128 loudness and peak (one decode in stereo at 44.1 kHz; matches ffmpeg's ebur128 to 0.05 LU), stored per file in `track_loudness`. `/api/levels` gives the gain to −14 LUFS: loud songs down (at most −20 dB), quiet ones up (at most +12 dB, with the peak kept under −1 dBFS), album gain when an album plays in order. The player then plays `/stream/:id/levelled.wav?gain=`: the song decoded with the gain applied, as a WAV whose length is known in advance, so any byte range decodes from its exact sample. This levels iPhones too, which ignore an element's volume. Songs kept on the device, or not measured yet, play their own file, turned down by the element's volume where it can be set. DJ transitions are rendered at the gains the songs are playing at (B's MP3 remainder too), and the player asks again when a level is learned; with the setting off, no gains are sent. Note: the levelled stream is uncompressed (~1.4 Mbit/s), which matters on mobile data until there's transcoding.
 
 ## 12. Decisions log
 
@@ -339,6 +373,9 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 | 2026-10-27 | Discover/requests: Deezer for songs, Lidarr for artists/albums, MusicBrainz for discographies and name → id resolution. Albums are resolved to MusicBrainz ids only at request time (not per search result), which keeps search fast. |
 | 2026-10-27 | Dev server must run outside Claude's sandbox: the sandbox blocks some external hosts (Cover Art Archive, Lidarr's image CDN). This Mac's internet also had intermittent connect timeouts; the code degrades gracefully (songs may be missing; covers retry once). |
 | 2026-10-27 | Git repo initialized; commit each step. |
+| 2026-10-27 | Single `<audio>` element (not two swapped ones) so iOS background playback keeps working. Gapless/crossfade come later via Web Audio. *Superseded 2026-11-01: two elements taking turns, which iOS keeps playing in the background too; Web Audio only on desktop (2026-11-02).* |
+| 2026-10-27 | Visual direction "liner notes": warm near-black, Gloock display serif, Schibsted Grotesk UI, DM Mono for specs and durations. The accent color comes from the current cover art; there's a subtle film grain. |
+| 2026-10-27 | Stack versions: React 19, Vite 8, Tailwind 4, React Router 7 (pinned below v8), TanStack Query 5, Zustand 5, Motion 14, Fastify 5, zod 4, TypeScript 7. |
 | 2026-10-28 | Playlists: entries keyed by recording id plus a title/artist/album snapshot, so songs that leave the library stay visible (greyed out) instead of vanishing; duplicates allowed; order kept as integer positions rewritten on reorder. Mobile tab bar became Home · Search · Library · Queue, with Library collecting playlists, favorites, artists, albums and requests. |
 | 2026-10-28 | Favicon is redrawn in the accent color of the playing track (canvas → PNG, since Safari ignores SVG favicons). |
 | 2026-10-28 | Favorites are keyed by MusicBrainz **recording id** (Lidarr `foreignRecordingId`), not Lidarr track id, so they survive re-imports and quality upgrades. Stored server-side in SQLite so every device shares them. Uses Node's built-in `node:sqlite` (no native dependency); `--disable-warning=ExperimentalWarning` in the scripts. User data lives in `DATA_DIR` (default `apps/server/data`), separate from the deletable `.cache`. |
@@ -359,8 +396,14 @@ Researched on GitHub before adding Currents/Colonies: flow fields with collision
 | 2026-10-30 | Organizing files (phase 4b): opt-in per folder source, review-then-apply. Layout Artist/Album/NN Title.ext (D-NN on multi-disc, Artist/Title.ext without an album), safe names, renames within the folder only, never overwrite, companions (covers, cue, log) follow when a folder's audio all moves, emptied folders removed, every move journaled (file_moves) and undoable per batch. The catalog follows renamed files in place, so copy ids, queues and offline songs survive. Server computes targets; the client only picks which files. |
 | 2026-10-30 | Settings panels: Playback (offline songs moved from Library, keyboard shortcuts) and Appearance (accent from art or fixed, motion, format badges) are per device (persisted in the browser); Requests (allow, search right away, root folder and profiles from Lidarr's lists) is server-wide in app_settings, .env values as fallback, editable from the local network only; turning requests off hides Request buttons and the server refuses new ones. |
 | 2026-10-30 | Automatic updates from Settings → Updates (plan: `docs/plans/2026-10-30-auto-update.md`). A second compose service, `updater` (`docker:cli` + compose, curl, jq, tar), is the only container with the Docker socket: giving it to Playarr would hand root on the host to a web app without login. It has no ports and only reads `update/settings.json` (with jq; only `enabled` and an interval of 15/60/360/1440 minutes are used) and checks for `update/request`; it writes `status.json` (with a heartbeat) and `last.log` by rename. Playarr mounts only `./update` and never talks to Docker; the panel works when `UPDATE_DIR` is set, the folder is writable and the heartbeat is under 3 minutes old. Settings can't choose the branch, commit or repository (GitHub serves fork commits through the parent's API, so a free-form ref would let anyone on the LAN deploy a fork): only `main` of `PLAYARR_REPO`. The updater sees the deploy folder at its host path (`.:${PLAYARR_DIR}`, recorded in `.env` by update.sh and deploy.mjs) so compose's relative paths stay right; inside it update.sh recreates only `playarr` and checks health at `http://playarr:4000`, then a one-off container from the updater image recreates the updater (compose stops the old container before starting the new, which would cut off a self-recreate halfway). The first `sudo sh update.sh` starts the updater; cron jobs for update.sh are no longer needed. Not verified: the updater image and compose on the NAS, a real update cycle. |
+| 2026-10-31 | Speed on phones and the NAS: long grids render as you scroll, covers load a few at a time (on-screen first), rarely used pages load on first open; on the server, matches rebuild from the last scan, analysis and fingerprinting run at low priority, and a larger I/O threadpool (`UV_THREADPOOL_SIZE=16`) keeps streams from queueing behind image work. |
+| 2026-11-01 | Song measurement moved to worker threads, one song at a time: on the NAS it blocked the main thread for seconds per song, and whole-library analysis would have frozen streams and pages. |
+| 2026-11-01 | Security hardening before a login exists: local-only actions need a home address, no proxy in between, and the server addressed by IP or a local name (`LOCAL_HOSTNAMES` for others), against DNS rebinding; every change request carries Playarr's own header (no cross-site requests); a saved Lidarr API key is only sent to the server it was saved for. |
+| 2026-11-01 | Listening history and **Made for you** (`docs/plans/2026-11-01-mixes.md`): 12 mixes made on the server in the background on a timer, in one household time zone, stored by recording id so matching doesn't empty them. **Profiles** per device rather than accounts: history, mixes, stats and ListenBrainz follow the profile; favorites and playlists stay shared for now. Plays go to ListenBrainz (open data, the same ids end to end) rather than Last.fm. |
+| 2026-11-01 | Gapless playback and crossfade with two `<audio>` elements taking turns (replacing the single element): iOS keeps them playing in the background. Phones that fix the volume in hardware get gapless playback but no fades. |
+| 2026-11-01 | **DJ transitions** rendered by the server, not mixed live in the browser (design: `docs/plans/2026-11-01-beatmatching-design.md`): a locked iPhone can't run Web Audio or start a file at an exact moment, so each transition is a file played between A and B, and the phone still shows two songs. A pure, deterministic planner in `packages/mix` shared by server and browser; desktop browsers also mix skips live. |
 | 2026-11-02 | DJ mix analysis: beats and bars from Beat This! (small, MIT) in onnxruntime-web on the server, not our onset comb alone. The comb confused kicks with off-beats and found bars right ~half the time; the model fixes phase, octave and bars, the comb keeps 0.01 BPM precision. WebAssembly, not onnxruntime-node, so the Alpine image stays (≈15 s a song on the N100, ~1.3 GB while running, in a worker that stops when idle). |
 | 2026-11-02 | Testing on iPhone through the iOS Simulator: `pnpm sim` (`scripts/ios-sim/`) boots a simulator, opens pages in its Safari, taps and types, reads the console and takes screenshots. It talks to the simulator's Web Inspector socket directly (the protocol Mac Safari's Develop menu uses), so it needs nothing but Xcode: no `safaridriver --enable` (admin), no Appium. Taps are JavaScript clicks, not touches. First finding: over `http://192.168.1.103:4000` iOS Safari has no service worker at all, confirming that offline songs on phones need HTTPS (Phase 5). |
-| 2026-10-27 | Single `<audio>` element (not two swapped ones) so iOS background playback keeps working. Gapless/crossfade come later via Web Audio. |
-| 2026-10-27 | Visual direction "liner notes": warm near-black, Gloock display serif, Schibsted Grotesk UI, DM Mono for specs and durations. The accent color comes from the current cover art; there's a subtle film grain. |
-| 2026-10-27 | Stack versions: React 19, Vite 8, Tailwind 4, React Router 7 (pinned below v8), TanStack Query 5, Zustand 5, Motion 14, Fastify 5, zod 4, TypeScript 7. |
+| 2026-11-02 | **Even volume through levelled streams**: the server serves each song as a WAV at its level (`/stream/:id/levelled.wav?gain=`), turned up as well as down, because iPhones ignore an element's volume. Loudness is our own EBU R128 measurement (−14 LUFS target), not ReplayGain tags, so every song gets one. DJ transitions are rendered at the same levels, so the volume never jumps at a join; with even volume off, none are applied. Cost: uncompressed audio over the network until there's transcoding. |
+| 2026-11-02 | One tempo for everything: beat analysis's (the mix map), so covers, mixes and DJ mix never disagree; sound analysis no longer measures its own. Settings → Analysis shows four analyses that don't overlap (beat, sound, loudness, tags), each with one button. |
+| 2026-11-02 | Joins between files are lined up on the sound itself on desktop (cross-correlation through a Web Audio graph, delay nodes, audio-clock waits), since an element's reported time isn't the sample heard. Web Audio is kept to desktop browsers (no iPhone, iPad or Android; a fine pointer): iOS suspends it when the screen locks, which silenced the players. There, files take over in step by their reported times. |
