@@ -27,6 +27,14 @@ vi.mock('./liveMix', async (importOriginal) => ({
   playLiveMix: vi.fn(),
 }));
 // The tests say which transition is ready, instead of the server.
+/** The graph that lines joins up on the sound: a stand-in, told what it will measure (see the desktop tests). */
+const graph = vi.hoisted(() => ({
+  instance: null as null | Record<string, unknown>,
+}));
+vi.mock('./joinGraph', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./joinGraph')>()),
+  JoinGraph: { create: () => graph.instance },
+}));
 vi.mock('./transitions', async (importOriginal) => ({ ...(await importOriginal<typeof import('./transitions')>()), useUpcomingTransition: () => {} }));
 
 /** jsdom has no audio: a stand-in whose clock the test moves by hand. */
@@ -840,6 +848,98 @@ describe('AudioEngine', () => {
       // Past the switch (12 s into the transition): the next song.
       await at(bridge, 14.1);
       expect(now()).toBe(2);
+    });
+
+    describe('on desktop, lined up on the sound', () => {
+      function fakeGraph(lags: (number | null)[]) {
+        const routed = new Set<HTMLMediaElement>();
+        const delays = new Map<HTMLMediaElement, number>();
+        const g = {
+          context: { currentTime: 10 },
+          route: (el: HTMLMediaElement) => (routed.add(el), true),
+          routed: (el: HTMLMediaElement) => routed.has(el),
+          setLevel: vi.fn(),
+          delayOf: (el: HTMLMediaElement) => delays.get(el) ?? 0,
+          setDelay: vi.fn((el: HTMLMediaElement, s: number) => delays.set(el, s)),
+          lag: vi.fn(async () => lags.shift() ?? null),
+          crossfade: vi.fn(() => 10.04),
+          release: vi.fn(),
+          delays,
+        };
+        graph.instance = g;
+        // A context the engine can make a graph on (the graph itself is the stand-in above).
+        function FakeContext(this: Record<string, unknown>) {
+          Object.assign(this, { state: 'running', currentTime: 10, resume: async () => {}, close: async () => {} });
+        }
+        Object.assign(FakeContext.prototype, { createMediaElementSource() {} });
+        vi.stubGlobal('AudioContext', FakeContext);
+        return g;
+      }
+      afterEach(() => {
+        graph.instance = null;
+        vi.unstubAllGlobals();
+      });
+
+      it('measures how far apart the two files sound, holds the new one back by that, and cross-fades on the audio clock', async () => {
+        const g = fakeGraph([0.0213, 0.00001]);
+        transitionReady(1, 2, { tail: 3, lead: 2 });
+        const [a, , bridge] = await start([song(1), song(2)]);
+        document.dispatchEvent(new Event('pointerdown')); // the first click: the elements go through the graph
+        expect(g.routed(a) && g.routed(bridge)).toBe(true);
+        expect(a.volume).toBe(1); // the level is the graph's
+        await at(a, 145);
+        await at(a, 167.99);
+        await wait(20);
+        expect(fake(bridge).paused).toBe(false);
+        // Brought 20 ms ahead of A by the elements' times, then measured on the sound.
+        fake(bridge).time = 0.52;
+        await at(a, 168.5);
+        await wait(12);
+        await wait(400);
+        expect(g.setDelay.mock.calls).toEqual([
+          [bridge, 0],
+          [bridge, 0.0213],
+        ]);
+        expect(g.crossfade).toHaveBeenCalledWith(a, bridge, 1, 1, 0.02);
+        expect(useJoins.getState().last).toMatchObject({ join: 'into the transition', heard: true });
+        expect(useJoins.getState().last!.gapMs).toBeCloseTo(0.01, 6);
+        // A has stopped, the cross-fade over (by the audio clock: 40 ms from when it was asked).
+        expect(fake(a).paused).toBe(true);
+      });
+
+      it('corrects once more when the check finds it still off, and falls back to the elements’ times when the sound can’t be measured', async () => {
+        const g = fakeGraph([0.03, 0.0004, 0]);
+        transitionReady(1, 2, { tail: 3, lead: 2 });
+        const [a, , bridge] = await start([song(1), song(2)]);
+        document.dispatchEvent(new Event('pointerdown'));
+        await at(a, 145);
+        await at(a, 167.99);
+        await wait(20);
+        fake(bridge).time = 0.52;
+        await at(a, 168.5);
+        await wait(600);
+        expect(g.setDelay.mock.calls.map(([, s]) => s)).toEqual([0, 0.03, 0.0304]);
+        expect(useJoins.getState().last).toMatchObject({ gapMs: 0, heard: true });
+
+        // Nothing to measure by (silence, say): held back by the 20 ms it was brought ahead, cross-faded as before.
+        cleanup();
+        const silent = fakeGraph([null]);
+        transitionReady(1, 2, { tail: 3, lead: 2 });
+        const [a2, , bridge2] = await start([song(1), song(2)]);
+        document.dispatchEvent(new Event('pointerdown'));
+        await at(a2, 145);
+        await at(a2, 167.99);
+        await wait(20);
+        fake(bridge2).time = 0.52;
+        await at(a2, 168.5);
+        await wait(400);
+        expect(silent.setDelay.mock.calls.map(([, s]) => s)).toEqual([0, 0.02]);
+        expect(silent.crossfade).not.toHaveBeenCalled();
+        expect(useJoins.getState().last).toMatchObject({ join: 'into the transition' });
+        expect(useJoins.getState().last!.heard).toBeUndefined();
+        await overlap();
+        expect(fake(a2).paused).toBe(true);
+      });
     });
 
     it('changes over to the next song’s own file in the transition’s tail, in step, fading across', async () => {

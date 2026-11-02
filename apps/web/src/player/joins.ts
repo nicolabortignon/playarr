@@ -11,6 +11,8 @@ export interface JoinReport {
   gapMs: number | null;
   /** How long getting in step took, in ms. */
   tookMs: number;
+  /** Measured on the sound as it comes out (desktop), rather than by the elements' reported times. */
+  heard?: boolean;
 }
 
 export const useJoins = create<{ last: JoinReport | null }>()(() => ({ last: null }));

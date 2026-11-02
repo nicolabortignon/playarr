@@ -491,9 +491,9 @@ function Row({ label, value }: { label: string; value: ReactNode | undefined }) 
   );
 }
 
-/** How close the last changeover between files came: "into the next song · in step to 0.4 ms, after 180 ms". */
-export function joinOf({ join, gapMs, tookMs }: JoinReport): string {
-  const gap = gapMs === null ? 'not measured' : `in step to ${gapMs < 10 ? gapMs.toFixed(1) : Math.round(gapMs)} ms`;
+/** How close the last changeover between files came: "into the next song · in step to 0.02 ms on the sound, after 640 ms". */
+export function joinOf({ join, gapMs, tookMs, heard }: JoinReport): string {
+  const gap = gapMs === null ? 'not measured' : `in step to ${gapMs < 0.1 ? gapMs.toFixed(2) : gapMs < 10 ? gapMs.toFixed(1) : Math.round(gapMs)} ms${heard ? ' on the sound' : ''}`;
   return `${join} · ${gap}, after ${Math.round(tookMs)} ms`;
 }
 

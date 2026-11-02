@@ -28,7 +28,8 @@ import {
 } from './mixSequence';
 import { useOffline } from './offline';
 import { playTracker } from './playTracker';
-import { reportJoin } from './joins';
+import { AHEAD_S, JoinGraph } from './joinGraph';
+import { type JoinReport, reportJoin } from './joins';
 import { useAutoplay } from './radio';
 import { sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, nextByPress, takeNextPresses, useClock, useCurrentTrack, usePlayer } from './store';
@@ -74,6 +75,14 @@ const CATCH_UP_S = 0.1;
 const IN_STEP_MAX_MS = 1500;
 /** A changeover in a transition's lead or tail is done this long before the shared sound runs out. */
 const IN_STEP_MARGIN_S = 0.3;
+/** Measured on the sound (see joinGraph.ts): how long a file takes to settle at its own speed after being steered, before it's measured. */
+const SETTLE_MS = 150;
+/** …and after its delay is set, before it's checked. */
+const DELAY_SETTLE_MS = 60;
+/** Off by more than this after the first correction (s, about a sample), it's corrected once more. */
+const RESIDUAL_S = 0.00003;
+/** The cross-fade between two files lined up on the sound: the same sound, so short and smooth does it. */
+const GRAPH_FADE_S = 0.02;
 const IN_STEP_TICK_MS = 4;
 /** Ticks further apart than this (the page in the background) can't steer a file: it takes over as it is. */
 const SLOW_TICK_MS = 60;
@@ -109,6 +118,8 @@ interface Overlap {
   startedAt: number | null;
   /** The transition ending into B: its level still applies as it fades out. */
   ending?: Mix;
+  /** Cross-faded by the graph, on the audio clock, until then (context time): the levels are the new file's meanwhile. */
+  graphUntil?: number;
 }
 
 /** A level across a short overlap: equal gain, as both files hold nearly the same sound there. */
@@ -211,6 +222,8 @@ export function AudioEngine() {
   const liveWatch = useRef<ReturnType<typeof setTimeout>>(undefined);
   /** Web Audio for live mixes, made (or woken) within a press of Next: browsers allow it only then. */
   const audioContext = useRef<AudioContext | null>(null);
+  /** On desktop, the graph every element plays through, so joins are lined up on the sound (see joinGraph.ts). */
+  const graph = useRef<JoinGraph | null>(null);
   /** A press of Next waiting for the transition about to start; it goes through as a plain skip if that doesn't. */
   const pressAwaits = useRef<Mix | null>(null);
   /** The song handed off early (handedOff) was moved to for a press of Next: the one left was skipped. */
@@ -357,49 +370,93 @@ export function AudioEngine() {
     return buffered?.length ? buffered.end(buffered.length - 1) + offsetOf(deck) : 0;
   }
 
-  /** Each element's volume: the volume set, the song's level, and where it is in a fade. */
+  /** Sets every element's level (see levelOf), and a live mix's. */
   function applyVolumes() {
+    const s = usePlayer.getState();
+    const l = live.current;
+    // As a live mix starts, playLiveMix fades A's element out itself: left alone until it has.
+    const fadingOut = l?.playback && !l.started && l.playback.time() >= 0 ? l.aDeck : undefined;
+    for (const deck of [a.current, b.current, bridge.current]) {
+      if (!deck || deck === fadingOut) continue;
+      const { muted, level } = levelOf(deck);
+      setLevel(deck, muted, level);
+    }
+    // A live mix holds both songs at their own levels too, made from their own files: up as well as down.
+    if (l?.playback && l.mix) {
+      const { levelVolume } = usePrefs.getState();
+      const { levels } = useLevels.getState();
+      const fullLevel = (t: Track) => {
+        const known = levelVolume ? levels[t.recordingId] : undefined;
+        return known ? 10 ** (levelDb(t, known, s) / 20) : 1;
+      };
+      const gain = bridgeGain(l.mix.plan, Math.max(0, l.playback.time()), fullLevel(l.from), fullLevel(l.to));
+      l.playback.setVolume(s.muted ? 0 : Math.max(0, Math.min(MAX_LIVE_GAIN, s.volume * s.volume * sleepGain() * gain)));
+    }
+  }
+
+  /** Each element's volume: the volume set, the song's level, and where it is in a fade. */
+  function levelOf(deck: HTMLAudioElement): { muted: boolean; level: number } {
     const s = usePlayer.getState();
     const { levelVolume } = usePrefs.getState();
     const { levels } = useLevels.getState();
     const settable = canSetVolume();
     // A song playing its levelled stream is at its level already; one playing its own file is turned
     // down by its element's volume (where that can be set).
-    const level = (t: Track | undefined, deck?: HTMLAudioElement) =>
-      deck?.dataset.levelled !== undefined ? 1 : settable && levelVolume && t ? levelGain(t, levels[t.recordingId], s) : 1;
-    // A song's whole level, up as well as down, for audio the engine plays itself (a live mix).
-    const fullLevel = (t: Track) => {
-      const known = levelVolume ? levels[t.recordingId] : undefined;
-      return known ? 10 ** (levelDb(t, known, s) / 20) : 1;
-    };
+    const level = (t: Track | undefined, d?: HTMLAudioElement) =>
+      d?.dataset.levelled !== undefined ? 1 : settable && levelVolume && t ? levelGain(t, levels[t.recordingId], s) : 1;
     const o = overlap.current;
     const m = mix.current ?? o?.ending;
-    const joined = o?.startedAt == null ? 0 : (performance.now() - o.startedAt) / OVERLAP_MS;
-    const l = live.current;
-    // As a live mix starts, playLiveMix fades A's element out itself: left alone until it has.
-    const fadingOut = l?.playback && !l.started && l.playback.time() >= 0 ? l.aDeck : undefined;
-    for (const deck of [a.current, b.current, bridge.current]) {
-      if (!deck || deck === fadingOut) continue;
-      deck.muted = s.muted || silenced.current.has(deck);
-      let v = s.volume * s.volume * sleepGain(); // perceptual curve; fading out for the sleep timer
-      // The transition holds both songs at their own levels: it takes each one's level as it's heard
-      // (none for a song whose level was made into it).
-      if (deck === bridge.current) {
-        const baked = m?.transition.levels;
-        v *= m ? bridgeGain(m.transition.plan, bridgeTime(m, deck), baked?.a ? 1 : level(m.from), baked?.b ? 1 : level(m.to)) : 1;
-      } else v *= level(loaded.current.get(deck), deck);
-      const f = fade.current;
-      if (f?.out === deck) v *= fadeCurve(fadeLeft(f) / f.seconds);
-      else if (f?.in === deck) v *= fadeCurve((songTime(deck) - f.inStart) / f.seconds);
-      if (o?.out === deck) v *= evenGain(1 - joined);
-      else if (o?.in === deck) v *= evenGain(joined);
-      deck.volume = Math.max(0, Math.min(1, v));
+    const joined = o?.graphUntil !== undefined ? 1 : o?.startedAt == null ? 0 : (performance.now() - o.startedAt) / OVERLAP_MS;
+    const muted = s.muted || silenced.current.has(deck);
+    let v = s.volume * s.volume * sleepGain(); // perceptual curve; fading out for the sleep timer
+    // The transition holds both songs at their own levels: it takes each one's level as it's heard
+    // (none for a song whose level was made into it).
+    if (deck === bridge.current) {
+      const baked = m?.transition.levels;
+      v *= m ? bridgeGain(m.transition.plan, bridgeTime(m, deck), baked?.a ? 1 : level(m.from), baked?.b ? 1 : level(m.to)) : 1;
+    } else v *= level(loaded.current.get(deck), deck);
+    const f = fade.current;
+    if (f?.out === deck) v *= fadeCurve(fadeLeft(f) / f.seconds);
+    else if (f?.in === deck) v *= fadeCurve((songTime(deck) - f.inStart) / f.seconds);
+    if (o?.out === deck) v *= evenGain(1 - joined);
+    else if (o?.in === deck) v *= evenGain(joined);
+    return { muted, level: Math.max(0, Math.min(1, v)) };
+  }
+
+  /** An element's level: its own volume, or (playing through the graph) its gain there, the element at full volume. */
+  function setLevel(deck: HTMLAudioElement, muted: boolean, level: number) {
+    const g = graph.current;
+    if (g?.routed(deck)) {
+      deck.muted = false;
+      deck.volume = 1;
+      g.setLevel(deck, muted ? 0 : level);
+    } else {
+      deck.muted = muted;
+      deck.volume = level;
     }
-    // A live mix holds both songs at their own levels too, made from their own files: up as well as down.
-    if (l?.playback && l.mix) {
-      const gain = bridgeGain(l.mix.plan, Math.max(0, l.playback.time()), fullLevel(l.from), fullLevel(l.to));
-      l.playback.setVolume(s.muted ? 0 : Math.max(0, Math.min(MAX_LIVE_GAIN, s.volume * s.volume * sleepGain() * gain)));
+  }
+
+  /**
+   * Makes the graph, where it can be made (a desktop browser), and plays the elements through it. Only
+   * from a click or key press: browsers only let Web Audio start then.
+   */
+  function ensureGraph() {
+    if (!canSetVolume() || typeof AudioContext === 'undefined' || typeof AudioContext.prototype?.createMediaElementSource !== 'function') return;
+    const context = (audioContext.current ??= new AudioContext());
+    if (!graph.current) {
+      graph.current = JoinGraph.create(context);
+      // Suspended by the system (a sleep, an audio device change): the elements play through it, so it's woken.
+      if (graph.current) context.addEventListener?.('statechange', () => context.state === 'suspended' && void context.resume().catch(() => {}));
     }
+    const g = graph.current;
+    if (!g) return;
+    const routeAll = () => {
+      let any = false;
+      for (const deck of [a.current, b.current, bridge.current]) if (deck && !g.routed(deck)) any = g.route(deck) || any;
+      if (any) applyVolumes();
+    };
+    if (context.state === 'running') routeAll();
+    else void context.resume().then(routeAll, () => {});
   }
 
   function remaining(deck: HTMLAudioElement) {
@@ -789,6 +846,13 @@ export function AudioEngine() {
     if (overlap.current !== o) return;
     // iPhones fix the volume: no fade there, the old file just stops.
     if (!canSetVolume()) return endOverlap();
+    // The graph cross-fades on the audio clock: the old file stops once that's over.
+    const g = graph.current;
+    if (o.graphUntil !== undefined && g) {
+      clearInterval(overlapTimer.current);
+      overlapTimer.current = setTimeout(endOverlap, Math.max(0, (o.graphUntil - g.context.currentTime) * 1000) + 30);
+      return;
+    }
     o.startedAt = performance.now();
     clearInterval(overlapTimer.current);
     overlapTimer.current = setInterval(() => (performance.now() - o.startedAt! >= OVERLAP_MS ? endOverlap() : applyVolumes()), 4);
@@ -833,37 +897,93 @@ export function AudioEngine() {
     let lastTick = began;
     const gaps: number[] = [];
     const median = () => [...gaps].sort((x, y) => x - y)[gaps.length >> 1] ?? Infinity;
+    // On desktop, a join between copies of one sound is lined up on the sound itself (see joinGraph.ts):
+    // the follower is brought AHEAD_S ahead of what's heard of the lead by the elements' times, then
+    // measured as it comes out, and held back by exactly the gap.
+    const g = graph.current;
+    // Not in a page in the background, whose timers are slowed to a second or more: measuring would outlast the shared sound.
+    const onSound = !!join && !!g && g.routed(lead) && g.routed(follower) && !document.hidden;
+    const bias = onSound ? AHEAD_S + g.delayOf(lead) : 0;
+    if (onSound) g.setDelay(follower, 0);
+    let settled = false;
+    let measuring = false;
     const stop = () => {
       clearInterval(timer);
       follower.playbackRate = 1;
       if (stepping.current === step) stepping.current = null;
     };
-    const finish = () => {
+    const takeOver = (o: Overlap, report: Omit<JoinReport, 'join' | 'tookMs'>) => {
+      settled = true;
       stop();
-      if (join) reportJoin({ join, gapMs: gaps.length ? median() * 1000 : null, tookMs: performance.now() - began });
-      silenced.current.delete(follower);
+      if (join) reportJoin({ join, tookMs: performance.now() - began, ...report });
       // The overlap stops the lead (at once where the volume can't be set), and the transition with it when that's done with.
-      const o: Overlap = { out: lead, in: follower, startedAt: null, ...(ending ? { ending } : {}) };
       overlap.current = o;
       startOverlap(o);
       done();
     };
+    /**
+     * By the elements' times: a follower brought ahead for measuring is held back by as much first (or by
+     * `held`, what the sound measured, when it was measured but not yet checked).
+     */
+    const finish = (held = AHEAD_S) => {
+      if (settled) return;
+      if (onSound) g.setDelay(follower, held);
+      silenced.current.delete(follower);
+      takeOver({ out: lead, in: follower, startedAt: null, ...(ending ? { ending } : {}) }, { gapMs: gaps.length ? median() * 1000 : null });
+    };
+    const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    /** Measured on the sound, held back by the gap, checked (corrected once more if need be), then cross-faded on the audio clock. */
+    const measure = async () => {
+      if (!g) return;
+      measuring = true;
+      clearInterval(timer);
+      follower.playbackRate = 1;
+      // Each wait may run long (the page hidden meanwhile): past the shared sound, it takes over as it is.
+      const late = () => document.hidden || performance.now() - began > budgetMs;
+      await pause(SETTLE_MS);
+      if (settled) return;
+      if (late()) return finish();
+      const first = await g.lag(lead, follower);
+      if (settled) return;
+      if (first === null || first < 0) return finish();
+      if (late()) return finish(first);
+      g.setDelay(follower, first);
+      await pause(DELAY_SETTLE_MS);
+      if (settled) return;
+      let left = await g.lag(lead, follower);
+      if (settled) return;
+      if (left !== null && Math.abs(left) > RESIDUAL_S && first + left >= 0 && !late()) {
+        g.setDelay(follower, first + left);
+        await pause(DELAY_SETTLE_MS);
+        if (settled) return;
+        left = await g.lag(lead, follower);
+        if (settled) return;
+      }
+      const leadLevel = levelOf(lead);
+      silenced.current.delete(follower);
+      const followerLevel = levelOf(follower);
+      const until = g.crossfade(lead, follower, leadLevel.muted ? 0 : leadLevel.level, followerLevel.muted ? 0 : followerLevel.level, GRAPH_FADE_S);
+      takeOver({ out: lead, in: follower, startedAt: null, graphUntil: until, ...(ending ? { ending } : {}) }, { gapMs: left === null ? null : Math.abs(left) * 1000, heard: true });
+    };
     const step = {
-      finish,
+      finish: () => finish(onSound ? g.delayOf(follower) || AHEAD_S : AHEAD_S),
       cancel: () => {
+        settled = true;
         stop();
+        if (onSound) g.release(follower);
         silenced.current.delete(follower);
         applyVolumes();
       },
     };
     const tick = () => {
+      if (measuring) return;
       const now = performance.now();
       const slow = now - lastTick > SLOW_TICK_MS;
       lastTick = now;
       // The lead has stopped (its file ended): nothing left to be in step with.
       if (lead.paused || lead.ended) return finish();
       if (follower.paused) return;
-      const gap = target() - follower.currentTime;
+      const gap = target() + bias - follower.currentTime;
       if (!learned && follower.currentTime > startedFrom + 0.01) {
         learned = true;
         startLag.current = Math.min(0.5, Math.max(0, startLag.current + gap));
@@ -872,10 +992,12 @@ export function AudioEngine() {
       if (gaps.length > IN_STEP_GAPS) gaps.shift();
       const elapsed = now - began;
       // A changeover between copies of one sound (a `join`) asks for a millisecond, steadily; a cut, where
-      // the follower comes in on a beat of its own, for IN_STEP_S.
-      const close = join ? IN_STEP_TIGHT_S + (IN_STEP_S - IN_STEP_TIGHT_S) * Math.min(1, elapsed / budgetMs) : IN_STEP_S;
+      // the follower comes in on a beat of its own, for IN_STEP_S. Measured on the sound, the elements'
+      // times only need to bring the two close: the measure does the rest.
+      const close = join && !onSound ? IN_STEP_TIGHT_S + (IN_STEP_S - IN_STEP_TIGHT_S) * Math.min(1, elapsed / budgetMs) : IN_STEP_S;
       const steady = !join || (gaps.length === IN_STEP_GAPS && median() <= close);
       const inStepNow = Math.abs(gap) <= close && steady;
+      if (inStepNow && ready() && onSound) return void measure();
       if ((inStepNow && ready()) || slow || elapsed > budgetMs) return finish();
       follower.playbackRate = Math.min(2, Math.max(0.5, 1 + gap / CATCH_UP_S));
     };
@@ -1380,6 +1502,18 @@ export function AudioEngine() {
   useAutoplay();
   useSleepTimer(applyVolumes);
   useUpcomingTransition();
+
+  // Desktop: on a click or key press (when browsers let Web Audio start), the elements go through the
+  // graph that lines joins up on the sound; and it's woken again if the system suspended it.
+  useEffect(() => {
+    const wake = () => ensureGraph();
+    document.addEventListener('pointerdown', wake, true);
+    document.addEventListener('keydown', wake, true);
+    return () => {
+      document.removeEventListener('pointerdown', wake, true);
+      document.removeEventListener('keydown', wake, true);
+    };
+  }, []);
 
   // Phones only let an element make sound after a tap on it: the first tap anywhere readies both,
   // so the next song can start on its own later (with the screen off, say).
