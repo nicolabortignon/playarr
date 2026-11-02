@@ -233,6 +233,15 @@ library.refresh().catch(() => {});
 library.startAutoRefresh(config.LIBRARY_REFRESH_MINUTES);
 watchStalls(app.log);
 
+// Settings → Analysis → In the background: the analysis queue lives in memory, so after a restart (an
+// update, say) the library's backlog is queued again, behind the songs someone is waiting for.
+if (readMixSettings(store).analyzeLibrary) {
+  analyzer.analyzeLibrary().then(
+    (queued) => queued > 0 && app.log.info(`Library analysis: ${queued} songs queued again`),
+    (err: unknown) => app.log.warn({ err }, 'queueing the library for analysis failed'),
+  );
+}
+
 // Keep the artwork cache to its size: shortly after starting, then every few hours.
 const trimArt = () =>
   trimArtCache(resolve(config.CACHE_DIR, 'art'), config.ART_CACHE_MB * 1024 * 1024).then(
