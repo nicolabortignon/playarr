@@ -3,7 +3,7 @@
  * Input is mono float samples at SAMPLE_RATE (ffmpeg does the decoding and downmixing).
  */
 
-import { analyzeOnsets, ONSET_HOP, type Onsets } from '@playarr/mix';
+import { analyzeOnsets, halveRate, ONSET_HOP, type Onsets } from '@playarr/mix';
 
 /** Bump when the analysis changes, so stored features are recomputed. */
 export const ANALYSIS_VERSION = 1;
@@ -37,6 +37,16 @@ export interface AudioFeatures {
 }
 
 /** s16le PCM bytes → floats in −1…1. */
+/**
+ * `samples` at SAMPLE_RATE, from SAMPLE_RATE or twice it (songs are decoded at the beat model's
+ * 22050 Hz, the rest of the analysis measures at half that).
+ */
+export function atSampleRate(samples: Float32Array, rate: number): Float32Array {
+  if (rate === SAMPLE_RATE) return samples;
+  if (rate === 2 * SAMPLE_RATE) return halveRate(samples);
+  throw new RangeError(`Audio at ${rate} Hz can't be analysed (${SAMPLE_RATE} or ${2 * SAMPLE_RATE} Hz only)`);
+}
+
 export function pcmToFloat(buf: Buffer): Float32Array {
   const n = Math.floor(buf.length / 2);
   const out = new Float32Array(n);

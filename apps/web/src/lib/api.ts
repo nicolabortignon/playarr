@@ -69,6 +69,8 @@ export interface MixMapProgress {
   songs: number;
   /** Songs with a mix map. */
   ready: number;
+  /** Of those, the ones whose beats and bars the beat model found (the rest: the older onset analysis). */
+  beatModel: number;
   /** Songs whose analysis failed lately (tried again a day later). */
   failed: number;
   /** Songs queued for analysis, and being analysed now. */
@@ -212,8 +214,12 @@ export const api = {
   transition: (from: number, to: number, mode: MixMode, position?: number, files?: { fromFileId: number; toFileId: number }) =>
     request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files }) }),
   mixMapProgress: () => get<MixMapProgress>('/api/mix-maps/progress'),
-  /** Queues every song still to be analysed for DJ mix, once (Settings → Mixes' switch stays as it is). */
-  analyzeForMixing: () => request<{ queued: number }>('/api/mix-maps/analyze', { method: 'POST' }),
+  /**
+   * Queues every song still to be analysed for DJ mix, once (Settings → Mixes' switch stays as it is);
+   * `again`: every song, those ready included.
+   */
+  analyzeForMixing: (again = false) =>
+    request<{ queued: number }>('/api/mix-maps/analyze', { method: 'POST', body: JSON.stringify({ again }) }),
   /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
   mixMaps: (ids: string[]) =>
     request<Record<string, MixMap & { cues?: CuePoints }>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),

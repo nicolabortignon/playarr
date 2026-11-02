@@ -1,11 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { MIX_HEAD_SECONDS, MIX_MAP_VERSION, MIX_TAIL_SECONDS, type CuePoints, type MixMap, type MixMapSummary } from '@playarr/mix';
+import { BEAT_THIS_RATE, MIX_HEAD_SECONDS, MIX_MAP_VERSION, MIX_TAIL_SECONDS, type CuePoints, type MixMap, type MixMapSummary } from '@playarr/mix';
 import { RateLimited, recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
 import { seeksInexactly } from '../media/source.ts';
-import { ANALYSIS_VERSION, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
-import { DspThread, DspWorkerLost } from './dspThread.ts';
+import type { BeatModelThread } from './beatModelThread.ts';
+import { ANALYSIS_VERSION, type AudioFeatures } from './dsp.ts';
+import { DspThread, DspWorkerLost, type SongBeats } from './dspThread.ts';
 
 export interface TrackMeta {
   /** Strongest first. */
@@ -18,6 +19,11 @@ export interface TrackMeta {
  * The features are measured over exactly this much, so changing it needs an ANALYSIS_VERSION bump.
  */
 const MAX_SECONDS = MIX_HEAD_SECONDS;
+/**
+ * Songs are decoded at the beat model's rate (22050 Hz); the DSP thread halves it for the features and
+ * the rest of the mix analysis (SAMPLE_RATE).
+ */
+const DECODE_RATE = BEAT_THIS_RATE;
 /** A decode still going after this is stuck (a hung share or ffmpeg): the song fails, to be tried another day. */
 const DECODE_TIMEOUT_MS = 5 * 60_000;
 /**
@@ -37,7 +43,7 @@ const TAIL_SPARE_SECONDS = 60;
  * A window that doesn't reach the end means the song runs longer than the library says (or it has
  * no length at all): the next starts 3 minutes before that one ended, so it still holds the last 3
  * minutes if the song ends just after, and is twice as long, up to MAX_TAIL_WINDOW_SECONDS (32
- * minutes: 42 MB of PCM, well within what one decode may return). After TAIL_TRIES windows, past
+ * minutes: 85 MB of PCM at 22050 Hz, within what one decode may return). After TAIL_TRIES windows, past
  * about 1 h 50 min, the map fails: a song that long is a DJ set, not something to mix.
  */
 const MAX_TAIL_WINDOW_SECONDS = 1920;
@@ -47,6 +53,18 @@ const FULL_SLACK_SECONDS = 0.05;
 /** A song whose DSP worker went away is measured again this often before its failure is stored: it may be what kills the worker. */
 const WORKER_LOST_RETRIES = 2;
 const RETRY_FAILED_MS = 24 * 60 * 60_000;
+/**
+ * app_settings key: when Settings → Playback → Analyse all again was last pressed (an ISO time). Mix
+ * maps made before then are made again, and don't count as ready meanwhile.
+ */
+const REDO_KEY = 'mixMapsRedoneFrom';
+/**
+ * Mix maps from this version on have today's shape and meaning (version 2 put firstBeat up to three
+ * beats before the music's first downbeat). An older map than the current one stays in use until its
+ * song is measured again, so a new version doesn't leave the library without DJ mix for the hours
+ * that takes; it just doesn't count as ready.
+ */
+const OLDEST_USABLE_MIX_MAP = 2;
 const REFRESH_META_MS = 30 * 24 * 60 * 60_000;
 const TAG_BATCH = 25;
 /** Between tag requests when ListenBrainz isn't asking us to wait. */
@@ -84,6 +102,8 @@ export class Analyzer {
       concurrency?: number;
       /** The server's one DSP thread, shared with transition rendering: the two take turns on one worker rather than both crunching at once. */
       dsp?: Pick<DspThread, 'analyze' | 'mixMap'>;
+      /** The beat model, which finds the beats and bars of mix maps; without it (or when it can't run), the onset analysis does. */
+      beats?: Pick<BeatModelThread, 'activations'>;
     },
   ) {
     this.ownDsp = opts.dsp ? null : new DspThread();
@@ -121,14 +141,16 @@ export class Analyzer {
 
   /**
    * How far the library is from being ready for DJ mix, cheap enough to poll: one query over the
-   * catalog (no JSON read) and the queue sizes.
+   * catalog (reading one field of each map) and the queue sizes.
    * - songs: recordings with a file in an enabled source (what the library shows), leaving out
    *   `track:` ids, which are never analyzed;
-   * - ready: of those, the ones with a mix map from the current version;
+   * - ready: of those, the ones with a mix map from the current version (and since Analyse all
+   *   again was last pressed);
+   * - beatModel: of the ready ones, those whose beats and bars the beat model found (see analyzeMix);
    * - failed: the ones whose current-version mix map failed recently (tried again a day later);
    * - waiting / working: songs queued for analysis (features or mix map), and being measured now.
    */
-  mixMapProgress(): { songs: number; ready: number; failed: number; waiting: number; working: number } {
+  mixMapProgress(): { songs: number; ready: number; beatModel: number; failed: number; waiting: number; working: number } {
     const row = this.db
       .prepare(
         `WITH library AS (
@@ -138,13 +160,20 @@ export class Analyzer {
          )
          SELECT COUNT(*) AS songs,
            COUNT(CASE WHEN m.data IS NOT NULL THEN 1 END) AS ready,
+           COUNT(CASE WHEN m.data IS NOT NULL AND json_extract(m.data, '$.beatsFrom') = 'model' THEN 1 END) AS beatModel,
            COUNT(CASE WHEN m.data IS NULL AND m.analyzed_at > ? THEN 1 END) AS failed
-         FROM library l LEFT JOIN mix_maps m ON m.recording_id = l.id AND m.version = ?`,
+         FROM library l LEFT JOIN mix_maps m ON m.recording_id = l.id AND m.version = ? AND m.analyzed_at >= ?`,
       )
-      .get(new Date(Date.now() - RETRY_FAILED_MS).toISOString(), MIX_MAP_VERSION) as { songs: number; ready: number; failed: number };
+      .get(new Date(Date.now() - RETRY_FAILED_MS).toISOString(), MIX_MAP_VERSION, this.redoneFrom()) as {
+      songs: number;
+      ready: number;
+      beatModel: number;
+      failed: number;
+    };
     return {
       songs: row.songs,
       ready: row.ready,
+      beatModel: row.beatModel,
       failed: row.failed,
       waiting: this.urgentQueue.size + this.audioQueue.size,
       working: this.running.size,
@@ -160,12 +189,15 @@ export class Analyzer {
     return new Map(rows.map((r) => [r.recording_id, JSON.parse(r.features) as AudioFeatures]));
   }
 
-  /** Mix maps measured by the current version: an older one may disagree with today's planner. */
+  /**
+   * Each song's mix map: the current version's, or an older one still in use until its song is measured
+   * again (see OLDEST_USABLE_MIX_MAP). Older than that, a map may disagree with today's planner.
+   */
   mixMaps(ids: string[]): Map<string, MixMap> {
     const rows = this.select<{ recording_id: string; data: string }>(
-      'SELECT recording_id, data FROM mix_maps WHERE version = ? AND data IS NOT NULL AND recording_id IN',
+      'SELECT recording_id, data FROM mix_maps WHERE version >= ? AND data IS NOT NULL AND recording_id IN',
       ids,
-      [MIX_MAP_VERSION],
+      [OLDEST_USABLE_MIX_MAP],
     );
     return new Map(rows.map((r) => [r.recording_id, JSON.parse(r.data) as MixMap]));
   }
@@ -179,9 +211,9 @@ export class Analyzer {
     const rows = this.select<{ recording_id: string; bpm: number; beat_confidence: number; grid_stable: number | null; key: string | null }>(
       `SELECT recording_id, json_extract(data, '$.bpm') AS bpm, json_extract(data, '$.beatConfidence') AS beat_confidence,
          json_extract(data, '$.gridStable') AS grid_stable, json_extract(data, '$.key') AS key
-       FROM mix_maps WHERE version = ? AND data IS NOT NULL AND recording_id IN`,
+       FROM mix_maps WHERE version >= ? AND data IS NOT NULL AND recording_id IN`,
       ids,
-      [MIX_MAP_VERSION],
+      [OLDEST_USABLE_MIX_MAP],
     );
     return new Map(
       rows.map((r) => [
@@ -298,6 +330,25 @@ export class Analyzer {
   }
 
   /**
+   * Settings → Playback → Analyse all again: every song's mix map is made again, those the current
+   * version already made included (after the analysis changed without a new version, say), queued as
+   * analyzeLibrary does. Maps made before now stop counting as done and as ready, but stay in use until
+   * their song is redone, so mixing carries on meanwhile. Returns how many songs were queued.
+   */
+  async reanalyzeLibrary(): Promise<number> {
+    this.db
+      .prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+      .run(REDO_KEY, new Date().toISOString());
+    return this.analyzeLibrary();
+  }
+
+  /** When Analyse all again was last pressed ('' if never: every map counts). */
+  private redoneFrom(): string {
+    const row = this.db.prepare('SELECT value FROM app_settings WHERE key = ?').get(REDO_KEY) as { value: string } | undefined;
+    return row?.value ?? '';
+  }
+
+  /**
    * How many of `ids` are still waiting for analysis or tags. `mixMaps: false` leaves out songs
    * waiting only for their mix map (a playlist cover needs features and tags, nothing more).
    */
@@ -315,18 +366,22 @@ export class Analyzer {
     return this.doneIn('track_features', 'features', ANALYSIS_VERSION, ids);
   }
 
-  /** Songs whose mix map is made by the current version, or failed too recently to try again. */
+  /**
+   * Songs whose mix map is made by the current version (since Analyse all again was last pressed), or
+   * failed too recently to try again.
+   */
   private mixMapsDone(ids: string[]): Set<string> {
-    return this.doneIn('mix_maps', 'data', MIX_MAP_VERSION, ids);
+    return this.doneIn('mix_maps', 'data', MIX_MAP_VERSION, ids, this.redoneFrom());
   }
 
-  private doneIn(table: string, column: string, version: number, ids: string[]): Set<string> {
+  /** `from`: an ISO time; rows analysed before it don't count. */
+  private doneIn(table: string, column: string, version: number, ids: string[], from = ''): Set<string> {
     const retryAfter = new Date(Date.now() - RETRY_FAILED_MS).toISOString();
     return new Set(
       this.select<{ recording_id: string }>(
-        `SELECT recording_id FROM ${table} WHERE version = ? AND (${column} IS NOT NULL OR analyzed_at > ?) AND recording_id IN`,
+        `SELECT recording_id FROM ${table} WHERE version = ? AND analyzed_at >= ? AND (${column} IS NOT NULL OR analyzed_at > ?) AND recording_id IN`,
         ids,
-        [version, retryAfter],
+        [version, from, retryAfter],
       ).map((r) => r.recording_id),
     );
   }
@@ -390,7 +445,7 @@ export class Analyzer {
 
     if (needsFeatures) {
       try {
-        const features = await this.dsp.analyze(pcm);
+        const features = await this.dsp.analyze(pcm, DECODE_RATE);
         saveFeatures.run(id, ANALYSIS_VERSION, JSON.stringify(features), null, new Date().toISOString());
       } catch (err) {
         fail(saveFeatures, ANALYSIS_VERSION, 'audio analysis', err);
@@ -401,7 +456,7 @@ export class Analyzer {
         const { tail, duration } = await findEnd().catch((err: Error) => {
           throw new Error(`tail: ${err.message}`, { cause: err });
         });
-        const map = await this.dsp.mixMap(pcm, tail, duration);
+        const map = await this.dsp.mixMap(pcm, tail, duration, DECODE_RATE, await this.songBeats(pcm, tail));
         saveMixMap.run(id, MIX_MAP_VERSION, JSON.stringify(map), null, new Date().toISOString());
       } catch (err) {
         fail(saveMixMap, MIX_MAP_VERSION, 'mix analysis', err);
@@ -411,8 +466,16 @@ export class Analyzer {
     else this.workerLosses.delete(id);
   }
 
+  /** The beat model's answer for a song's head and tail; undefined without a model, or when it can't run. */
+  private async songBeats(head: Buffer, tail: Buffer | null): Promise<SongBeats | undefined> {
+    const model = this.opts.beats;
+    const answer = model && (await model.activations(head));
+    if (!answer) return undefined;
+    return { head: answer, tail: tail && (await model.activations(tail)) };
+  }
+
   /**
-   * The song's first MAX_SECONDS as mono PCM at SAMPLE_RATE, and a way to find its end: its exact
+   * The song's first MAX_SECONDS as mono PCM at DECODE_RATE, and a way to find its end: its exact
    * duration and, for a song longer than that, its last MIX_TAIL_SECONDS (null for a shorter one,
    * which the head holds all of).
    */
@@ -424,10 +487,10 @@ export class Analyzer {
     const decode = media.pcm?.bind(media);
     if (!decode) throw new Error('This source can’t decode audio for analysis');
     const signal = () => AbortSignal.timeout(DECODE_TIMEOUT_MS);
-    const head = await decode(path, { sampleRate: SAMPLE_RATE, maxSeconds: MAX_SECONDS, signal: signal() });
+    const head = await decode(path, { sampleRate: DECODE_RATE, maxSeconds: MAX_SECONDS, signal: signal() });
     const exactSeek = seeksInexactly(track.format);
     const read = (startSeconds: number, maxSeconds: number) =>
-      decode(path, { sampleRate: SAMPLE_RATE, startSeconds, maxSeconds, ...(exactSeek ? { exactSeek } : {}), signal: signal() });
+      decode(path, { sampleRate: DECODE_RATE, startSeconds, maxSeconds, ...(exactSeek ? { exactSeek } : {}), signal: signal() });
     const findEnd = async (): Promise<{ tail: Buffer | null; duration: number }> => {
       // Less than asked for: that's the whole song, to the sample.
       if (secondsOf(head) < MAX_SECONDS - FULL_SLACK_SECONDS) return { tail: null, duration: secondsOf(head) };
@@ -561,9 +624,9 @@ function toMeta(meta: LbRecordingMetadata | undefined): TrackMeta {
   return { tags, year: year && year > 1000 ? year : undefined };
 }
 
-/** Seconds of mono s16le PCM at SAMPLE_RATE. */
-const secondsOf = (pcm: Buffer) => pcm.length / 2 / SAMPLE_RATE;
-/** Where `seconds` into mono s16le PCM at SAMPLE_RATE starts, in bytes. */
-const byteAt = (seconds: number) => Math.round(seconds * SAMPLE_RATE) * 2;
+/** Seconds of mono s16le PCM at DECODE_RATE. */
+const secondsOf = (pcm: Buffer) => pcm.length / 2 / DECODE_RATE;
+/** Where `seconds` into mono s16le PCM at DECODE_RATE starts, in bytes. */
+const byteAt = (seconds: number) => Math.round(seconds * DECODE_RATE) * 2;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms).unref?.());

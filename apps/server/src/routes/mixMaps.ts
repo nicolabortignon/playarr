@@ -7,6 +7,7 @@ import { RECORDING_ID } from './recordingId.ts';
 import { requireLocal } from './settings.ts';
 
 const input = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(50) });
+const analyzeInput = z.object({ again: z.boolean().optional() });
 /** null: back to the detected point; left out: kept as it is. */
 const cueInput = z.object({ mixIn: z.number().min(0).nullable().optional(), mixOut: z.number().min(0).nullable().optional() });
 
@@ -18,7 +19,7 @@ const cueInput = z.object({ mixIn: z.number().min(0).nullable().optional(), mixO
 export function mixMapRoutes(
   app: FastifyInstance,
   deps: {
-    analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure' | 'mixMapProgress' | 'analyzeLibrary'>;
+    analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure' | 'mixMapProgress' | 'analyzeLibrary' | 'reanalyzeLibrary'>;
     library: Pick<Library, 'trackByRecording'>;
     /** A song's cue points changed: its cached transitions are out of date (the transition service's forget). */
     onCuesChanged?: (recordingId: string) => Promise<void>;
@@ -55,16 +56,18 @@ export function mixMapRoutes(
   app.get('/api/mix-maps/progress', () => {
     const libraryScan = deps.libraryScan?.() ?? false;
     // Nothing is analysed without audio analysis: no counts to make.
-    if (!analyzer.canAnalyzeAudio) return { enabled: false, songs: 0, ready: 0, failed: 0, waiting: 0, working: 0, libraryScan };
+    if (!analyzer.canAnalyzeAudio) return { enabled: false, songs: 0, ready: 0, beatModel: 0, failed: 0, waiting: 0, working: 0, libraryScan };
     return { enabled: true, ...analyzer.mixMapProgress(), libraryScan };
   });
 
   // Settings → Playback → Analyse all songs now: the library's backlog queued once, like the
   // Settings → Mixes switch does when turned on (and from the home network, like that setting),
   // without turning that switch on. Pressed twice, the songs already waiting aren't queued again.
-  app.post('/api/mix-maps/analyze', { onRequest: requireLocal }, async (_req, reply) => {
+  // With `again`, Analyse all again: every song's mix map is made anew, ready ones included.
+  app.post('/api/mix-maps/analyze', { onRequest: requireLocal }, async (req, reply) => {
     if (!analyzer.canAnalyzeAudio) return reply.code(409).send({ error: 'Audio analysis is off on this server (set ANALYSIS=on in its .env)' });
-    return { queued: await analyzer.analyzeLibrary() };
+    const again = analyzeInput.safeParse(req.body ?? {}).data?.again === true;
+    return { queued: await (again ? analyzer.reanalyzeLibrary() : analyzer.analyzeLibrary()) };
   });
 
   app.get<{ Params: { id: string } }>('/api/recordings/:id/cues', async (req, reply) => {

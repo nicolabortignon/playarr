@@ -55,11 +55,13 @@ export const useMixMapProgress = (enabled = true) =>
 export function useAnalyzeForMixing() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: api.analyzeForMixing,
-    onSuccess: ({ queued }) => {
+    /** `again`: every song, those already analysed included (Analyse all again). */
+    mutationFn: (again: boolean = false) => api.analyzeForMixing(again),
+    onSuccess: ({ queued }, again) => {
+      const songs = `${queued.toLocaleString('en')} ${queued === 1 ? 'song' : 'songs'}`;
       toast(
         queued
-          ? `Analysing ${queued.toLocaleString('en')} ${queued === 1 ? 'song' : 'songs'} in the background`
+          ? `Analysing ${songs}${again ? ' again' : ''} in the background`
           : 'Every song is already analysed or waiting its turn',
       );
       void client.invalidateQueries({ queryKey: ['mix-map-progress'] });

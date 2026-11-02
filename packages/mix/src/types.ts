@@ -1,5 +1,5 @@
 /** Bump when the mix map changes, so stored maps are measured again. */
-export const MIX_MAP_VERSION = 2;
+export const MIX_MAP_VERSION = 3;
 
 /** Camelot wheel position: 1–12 and A (minor) or B (major), e.g. "8A". */
 export type Camelot = `${number}${'A' | 'B'}`;
@@ -46,6 +46,11 @@ export interface MixMap {
   coldEnd: boolean;
   /** Where sound ends (before trailing silence). */
   soundEnd: number;
+  /**
+   * What found the beats and bars: the beat model (Beat This!, on the server), or the onset analysis
+   * when the model couldn't run. Missing in maps from before the model.
+   */
+  beatsFrom?: 'model' | 'onsets';
   /**
    * Energy 0–1 per 16-beat phrase, relative to the loudest: phraseEnergy[k] is the phrase from
    * phrase line k (firstBeat + (downbeatOffset + 16k) beats), the first line being the music's first

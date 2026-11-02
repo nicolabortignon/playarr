@@ -4,9 +4,9 @@
  * meanwhile.
  */
 import { parentPort } from 'node:worker_threads';
-import { analyzeMix, renderTransition } from '@playarr/mix';
-import { analyzePcm, pcmToFloat, SAMPLE_RATE } from './dsp.ts';
-import type { WorkerAnswer, WorkerJob } from './dspThread.ts';
+import { renderTransition } from '@playarr/mix';
+import { analyzePcm, atSampleRate, pcmToFloat } from './dsp.ts';
+import { mixMapOf, type WorkerAnswer, type WorkerJob } from './dspThread.ts';
 
 parentPort?.on('message', (job: WorkerJob) => {
   try {
@@ -16,11 +16,10 @@ parentPort?.on('message', (job: WorkerJob) => {
       const answer: WorkerAnswer = { id: job.id, audio };
       parentPort!.postMessage(answer, [audio.left.buffer as ArrayBuffer, audio.right.buffer as ArrayBuffer]);
     } else if (job.kind === 'mixmap') {
-      const tail = job.tail ? pcmToFloat(Buffer.from(job.tail)) : null;
-      const mixMap = analyzeMix(pcmToFloat(Buffer.from(job.pcm)), tail, job.duration, SAMPLE_RATE);
+      const mixMap = mixMapOf(Buffer.from(job.pcm), job.tail ? Buffer.from(job.tail) : null, job.duration, job.rate, job.beats);
       parentPort!.postMessage({ id: job.id, mixMap } satisfies WorkerAnswer);
     } else {
-      const answer: WorkerAnswer = { id: job.id, features: analyzePcm(pcmToFloat(Buffer.from(job.pcm))) };
+      const answer: WorkerAnswer = { id: job.id, features: analyzePcm(atSampleRate(pcmToFloat(Buffer.from(job.pcm)), job.rate)) };
       parentPort!.postMessage(answer);
     }
   } catch (err) {

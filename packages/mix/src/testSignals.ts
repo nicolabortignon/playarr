@@ -211,3 +211,23 @@ function random(seed: number): () => number {
 }
 
 const mod = (n: number, m: number) => ((n % m) + m) % m;
+
+/**
+ * What the beat model would answer for these beats and downbeats (see BeatActivations): a peak (logit
+ * 4, about two frames wide) on each, moved by `shift` seconds, and long odds (−8) everywhere else.
+ */
+export function beatModelAnswer(beats: number[], downbeats: number[], seconds: number, shift = 0) {
+  const fps = 50;
+  const frames = Math.ceil(seconds * fps) + 1;
+  const peaks = (times: number[]) => {
+    const logits = new Float32Array(frames).fill(-8);
+    for (const t of times) {
+      const centre = (t + shift) * fps;
+      for (let i = Math.floor(centre) - 3; i <= Math.ceil(centre) + 3; i++) {
+        if (i >= 0 && i < frames) logits[i] = Math.max(logits[i]!, 4 - 3 * (i - centre) ** 2);
+      }
+    }
+    return logits;
+  };
+  return { fps, beat: peaks(beats), downbeat: peaks(downbeats) };
+}

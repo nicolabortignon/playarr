@@ -28,17 +28,23 @@ const KBD =
 const count = (n: number) => n.toLocaleString('en');
 const songs = (n: number) => `${count(n)} ${n === 1 ? 'song' : 'songs'}`;
 
-/** What the line under DJ mix says about the library's songs: how many can be mixed, and what's left to do. */
+/**
+ * What the line under DJ mix says about the library's songs: how many can be mixed, what's left to do,
+ * and how many were analysed without the beat model (it couldn't run on the server).
+ */
 function mixProgressText(p: MixMapProgress): string {
   if (!p.enabled) return 'DJ mix needs audio analysis, which is off on this server (set ANALYSIS=on in its .env).';
-  if (p.ready >= p.songs) return p.songs === 1 ? 'The library’s one song is ready for DJ mix.' : `All ${songs(p.songs)} are ready for DJ mix.`;
+  const withoutModel = p.ready > p.beatModel ? ` (${count(p.ready - p.beatModel)} without the beat model)` : '';
+  if (p.ready >= p.songs) {
+    return p.songs === 1 ? `The library’s one song is ready for DJ mix${withoutModel}.` : `All ${songs(p.songs)} are ready for DJ mix${withoutModel}.`;
+  }
   const failed = p.failed > 0 ? `${count(p.failed)} couldn’t be analysed` : '';
   // Without the library-wide scan there's no backlog to count down: songs are measured when they're needed.
   if (!p.libraryScan) {
-    return `${count(p.ready)} of ${songs(p.songs)} are ready for DJ mix. Others are analysed as they come up to play${failed ? `; ${failed}` : ''}.`;
+    return `${count(p.ready)} of ${songs(p.songs)} are ready for DJ mix${withoutModel}. Others are analysed as they come up to play${failed ? `; ${failed}` : ''}.`;
   }
   const waiting = p.waiting > 0 ? `${count(p.waiting)} waiting to be analysed` : '';
-  return `${[`Ready for DJ mix: ${count(p.ready)} of ${songs(p.songs)}`, waiting, failed].filter(Boolean).join(' · ')}.`;
+  return `${[`Ready for DJ mix: ${count(p.ready)} of ${songs(p.songs)}${withoutModel}`, waiting, failed].filter(Boolean).join(' · ')}.`;
 }
 
 const SECONDARY_BUTTON =
@@ -51,7 +57,10 @@ function MixProgress() {
   if (!data || (data.enabled && data.songs === 0)) return null;
   // Only when there's something to start: songs left that aren't failed lately (those wait a day
   // before another try), and nothing under way already (the counts and the bar show that).
-  const startable = data.enabled && data.ready + data.failed < data.songs && data.waiting === 0 && data.working === 0;
+  const idle = data.enabled && data.waiting === 0 && data.working === 0;
+  const startable = idle && data.ready + data.failed < data.songs;
+  // Every song again (after the analysis improved): whenever nothing is under way and some are ready.
+  const redoable = idle && data.ready > 0;
   // A bar only for a scan that will finish: songs analysed as they come up never all get there.
   const bar = data.enabled && data.libraryScan && data.ready < data.songs;
   return (
@@ -68,10 +77,25 @@ function MixProgress() {
           <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(data.ready / data.songs) * 100}%` }} />
         </div>
       )}
-      {startable && (
-        <button type="button" className={`mt-3 ${SECONDARY_BUTTON}`} disabled={analyze.isPending} onClick={() => analyze.mutate()}>
-          Analyse all songs now
-        </button>
+      {(startable || redoable) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {startable && (
+            <button type="button" className={SECONDARY_BUTTON} disabled={analyze.isPending} onClick={() => analyze.mutate(false)}>
+              Analyse all songs now
+            </button>
+          )}
+          {redoable && (
+            <button
+              type="button"
+              className={SECONDARY_BUTTON}
+              disabled={analyze.isPending}
+              onClick={() => analyze.mutate(true)}
+              title="Every song is analysed again with the current analysis, in the background; each mixes as before until its turn."
+            >
+              Analyse all again
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

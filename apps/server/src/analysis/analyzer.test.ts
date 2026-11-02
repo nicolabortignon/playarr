@@ -9,7 +9,10 @@ import type { Library } from '../library/library.ts';
 import type { PcmOptions } from '../media/source.ts';
 import { Analyzer } from './analyzer.ts';
 import { ANALYSIS_VERSION, SAMPLE_RATE } from './dsp.ts';
-import { DspWorkerLost } from './dspThread.ts';
+
+/** Songs are decoded at the beat model's rate, twice the analysis rate. */
+const DECODE_RATE = 2 * SAMPLE_RATE;
+import { DspWorkerLost, type SongBeats } from './dspThread.ts';
 
 const MBID = '11111111-1111-1111-1111-111111111111';
 
@@ -46,16 +49,16 @@ type Kind = 'click' | 'timed' | 'silent';
  * 120 BPM click over a low tone; `timed` holds in each sample the song time it was taken at, in
  * tenths of a second, so a test can tell which part of the song it was handed.
  */
-function audio(kind: Kind, from: number, to: number): Buffer {
-  const first = Math.round(from * SAMPLE_RATE);
-  const samples = new Int16Array(Math.max(0, Math.round(to * SAMPLE_RATE) - first));
+function audio(kind: Kind, from: number, to: number, rate = SAMPLE_RATE): Buffer {
+  const first = Math.round(from * rate);
+  const samples = new Int16Array(Math.max(0, Math.round(to * rate) - first));
   if (kind === 'silent') return Buffer.from(samples.buffer);
   for (let k = 0; k < samples.length; k++) {
     const i = first + k;
-    if (kind === 'timed') samples[k] = Math.floor((i * 10) / SAMPLE_RATE) % 32768;
+    if (kind === 'timed') samples[k] = Math.floor((i * 10) / rate) % 32768;
     else {
-      const beat = i % (SAMPLE_RATE / 2) < 200 ? 0.8 : 0;
-      const v = beat + 0.2 * Math.sin((2 * Math.PI * 80 * i) / SAMPLE_RATE);
+      const beat = i % (rate / 2) < Math.round(0.018 * rate) ? 0.8 : 0;
+      const v = beat + 0.2 * Math.sin((2 * Math.PI * 80 * i) / rate);
       samples[k] = Math.round(Math.max(-1, Math.min(1, v)) * 32000);
     }
   }
@@ -66,12 +69,13 @@ function audio(kind: Kind, from: number, to: number): Buffer {
 const timeAt = (pcm: Buffer, sample: number) => pcm.readInt16LE(sample * 2) / 10;
 
 type Dsp = NonNullable<ConstructorParameters<typeof Analyzer>[3]['dsp']>;
+type Beats = NonNullable<ConstructorParameters<typeof Analyzer>[3]['beats']>;
 
 /** A DSP thread that measures nothing, and keeps what it was handed. */
 function fakeDsp() {
   return {
-    analyze: vi.fn(async (_pcm: Buffer) => ({ fake: true }) as never),
-    mixMap: vi.fn(async (_head: Buffer, _tail: Buffer | null, duration: number) => ({ duration }) as never),
+    analyze: vi.fn(async (_pcm: Buffer, _rate?: number) => ({ fake: true }) as never),
+    mixMap: vi.fn(async (_head: Buffer, _tail: Buffer | null, duration: number, _rate?: number, _beats?: SongBeats) => ({ duration }) as never),
   } satisfies Dsp;
 }
 
@@ -81,13 +85,13 @@ function fakeDsp() {
  * maxSeconds, and stop at the file's end.
  */
 function withSong(
-  opts: { seconds: number; listed?: number; kind?: Kind; format?: Track['format']; db?: DatabaseSync; dsp?: Dsp; songs?: string[] },
+  opts: { seconds: number; listed?: number; kind?: Kind; format?: Track['format']; db?: DatabaseSync; dsp?: Dsp; songs?: string[]; beats?: Beats },
 ) {
-  const { seconds, listed = seconds, kind = 'timed', format = FLAC, db = freshDb(), dsp, songs = [] } = opts;
+  const { seconds, listed = seconds, kind = 'timed', format = FLAC, db = freshDb(), dsp, songs = [], beats } = opts;
   const pcm = vi.fn(async (_path: string, decode: PcmOptions) => {
     if (decode.fromEnd) throw new Error('The end of a file is found by decoding at known positions');
     const from = decode.startSeconds ?? 0;
-    return audio(kind, Math.min(from, seconds), Math.min(seconds, from + decode.maxSeconds));
+    return audio(kind, Math.min(from, seconds), Math.min(seconds, from + decode.maxSeconds), decode.sampleRate);
   });
   const asked: string[] = [];
   const library = {
@@ -99,7 +103,7 @@ function withSong(
     allTracks: async () => songs.map((recordingId) => ({ recordingId }) as Track),
   } as unknown as Library;
   const files = { resolve: () => ({ media: { pcm }, path: '/music/song.flac' }) } as unknown as FileResolver;
-  const analyzer = new Analyzer(db, library, files, { enabled: true, log: { warn: () => {} }, dsp });
+  const analyzer = new Analyzer(db, library, files, { enabled: true, log: { warn: () => {} }, dsp, ...(beats ? { beats } : {}) });
   analyzers.push(analyzer);
   /** What each decode was asked for, without its timeout signal. */
   const decodes = () => pcm.mock.calls.map(([, { signal, ...rest }]) => rest);
@@ -124,7 +128,7 @@ async function measured(opts: Parameters<typeof withSong>[0]) {
   return { ...song, dsp, head: call?.[0], tail: call?.[1], duration: call?.[2] };
 }
 
-const HEAD = { sampleRate: SAMPLE_RATE, maxSeconds: 420 };
+const HEAD = { sampleRate: DECODE_RATE, maxSeconds: 420 };
 
 describe('Analyzer mix maps', () => {
   it('measures a mix map along with the features, from the start of a short song only', async () => {
@@ -142,6 +146,29 @@ describe('Analyzer mix maps', () => {
     expect(pcm.mock.calls[0]![1].signal).toBeInstanceOf(AbortSignal);
   }, 20_000);
 
+  it('decodes at the beat model’s rate and hands its answer for the head and the tail to the mix map', async () => {
+    const odds = (pcm: Buffer) => {
+      const frames = Math.round((pcm.length / 2 / DECODE_RATE) * 50);
+      return { fps: 50, beat: new Float32Array(frames), downbeat: new Float32Array(frames) };
+    };
+    const beats = { activations: vi.fn(async (pcm: Buffer) => odds(pcm)) };
+    const { dsp, head, tail } = await measured({ seconds: 600, beats });
+    const [, , , rate, answer] = dsp.mixMap.mock.calls[0]!;
+    expect(rate).toBe(DECODE_RATE);
+    expect(beats.activations).toHaveBeenCalledTimes(2);
+    expect(beats.activations.mock.calls[0]![0] === head && beats.activations.mock.calls[1]![0] === tail).toBe(true);
+    expect(answer?.head.beat.length).toBe(420 * 50);
+    expect(answer?.tail?.beat.length).toBe(180 * 50);
+    expect(dsp.analyze.mock.calls[0]![0] === head && dsp.analyze.mock.calls[0]![1] === DECODE_RATE).toBe(true);
+  });
+
+  it('leaves the beats to the onset analysis when the beat model can’t run', async () => {
+    const beats = { activations: vi.fn(async () => null) };
+    const { dsp } = await measured({ seconds: 600, beats });
+    expect(dsp.mixMap.mock.calls[0]![4]).toBeUndefined();
+    expect(beats.activations).toHaveBeenCalledTimes(1); // not asked again for the tail
+  });
+
   it('takes a short song’s length from its audio, longer or shorter than the library says', async () => {
     for (const listed of [180, 230, 0]) {
       const { tail, duration, decodes } = await measured({ seconds: 203.7, listed });
@@ -153,16 +180,16 @@ describe('Analyzer mix maps', () => {
 
   it('decodes a long song’s end at a known position, so its last 3 minutes sit exactly where they are', async () => {
     const { tail, duration, decodes } = await measured({ seconds: 600.4, listed: 600 });
-    expect(decodes()).toEqual([HEAD, { sampleRate: SAMPLE_RATE, startSeconds: 420, maxSeconds: 240 }]);
+    expect(decodes()).toEqual([HEAD, { sampleRate: DECODE_RATE, startSeconds: 420, maxSeconds: 240 }]);
     expect(duration).toBeCloseTo(600.4, 3);
-    expect(tail!.length / 2 / SAMPLE_RATE).toBeCloseTo(180, 3);
+    expect(tail!.length / 2 / DECODE_RATE).toBeCloseTo(180, 3);
     expect(timeAt(tail!, 0)).toBeCloseTo(420.4, 1);
     expect(timeAt(tail!, tail!.length / 2 - 1)).toBeCloseTo(600.3, 1);
   });
 
   it('starts the end’s decode where the library’s length says it is', async () => {
     const { tail, duration, decodes } = await measured({ seconds: 1000.2, listed: 1000 });
-    expect(decodes()[1]).toEqual({ sampleRate: SAMPLE_RATE, startSeconds: 790, maxSeconds: 240 });
+    expect(decodes()[1]).toEqual({ sampleRate: DECODE_RATE, startSeconds: 790, maxSeconds: 240 });
     expect(duration).toBeCloseTo(1000.2, 3);
     expect(timeAt(tail!, 0)).toBeCloseTo(820.2, 1);
   });
@@ -171,7 +198,7 @@ describe('Analyzer mix maps', () => {
     const { tail, duration } = await measured({ seconds: 425, listed: 419 });
     expect(duration).toBeCloseTo(425, 3);
     // The last 3 minutes, partly from the start's decode: none of the last 6 s are lost.
-    expect(tail!.length / 2 / SAMPLE_RATE).toBeCloseTo(180, 3);
+    expect(tail!.length / 2 / DECODE_RATE).toBeCloseTo(180, 3);
     expect(timeAt(tail!, 0)).toBeCloseTo(245, 1);
     expect(timeAt(tail!, tail!.length / 2 - 1)).toBeCloseTo(424.9, 1);
   });
@@ -193,7 +220,7 @@ describe('Analyzer mix maps', () => {
     for (const listed of [700, 2000]) {
       const { tail, duration } = await measured({ seconds: 600, listed });
       expect(duration).toBeCloseTo(600, 3);
-      expect(tail!.length / 2 / SAMPLE_RATE).toBeCloseTo(180, 3);
+      expect(tail!.length / 2 / DECODE_RATE).toBeCloseTo(180, 3);
       expect(timeAt(tail!, 0)).toBeCloseTo(420, 1);
     }
   });
@@ -201,7 +228,7 @@ describe('Analyzer mix maps', () => {
   it('decodes an MP3’s end exactly (its seeking is an estimate)', async () => {
     const mp3 = { codec: 'MP3', container: 'mp3', bits: 16, sampleRate: 44100, lossless: false };
     const { decodes } = await measured({ seconds: 600, format: mp3 });
-    expect(decodes()[1]).toEqual({ sampleRate: SAMPLE_RATE, startSeconds: 420, maxSeconds: 240, exactSeek: true });
+    expect(decodes()[1]).toEqual({ sampleRate: DECODE_RATE, startSeconds: 420, maxSeconds: 240, exactSeek: true });
   });
 
   it('gives up on finding the end of a song that never ends', async () => {
@@ -250,7 +277,7 @@ describe('Analyzer mix maps', () => {
     const { analyzer, pcm, db } = withSong({ seconds: 600, dsp: fakeDsp() });
     pcm.mockImplementation(async (_path, opts) => {
       if (opts.startSeconds !== undefined) throw new Error('No seeking here');
-      return audio('timed', 0, 420);
+      return audio('timed', 0, 420, opts.sampleRate);
     });
     analyzer.ensure([SONG]);
     await vi.waitFor(() => expect(mixMapRow(db, SONG)?.error).toBe('tail: No seeking here'), { timeout: 10_000 });
@@ -288,28 +315,28 @@ describe('Analyzer mix maps', () => {
     expect(analyzer.mixMaps([SONG]).get(SONG)).toEqual({ bpm: 99 });
   });
 
-  it('only hands out mix maps measured by the current version', () => {
+  it('hands out current mix maps, and older ones of today’s shape until their song is redone', () => {
     const { analyzer, db } = withSong({ seconds: 200 });
     const save = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
     const now = new Date().toISOString();
     save.run('current', MIX_MAP_VERSION, JSON.stringify({ bpm: 128 }), null, now);
-    save.run('old', MIX_MAP_VERSION - 1, JSON.stringify({ bpm: 100 }), null, now);
+    save.run('previous', 2, JSON.stringify({ bpm: 100 }), null, now);
+    save.run('ancient', 1, JSON.stringify({ bpm: 90 }), null, now);
     save.run('failed', MIX_MAP_VERSION, null, 'boom', now);
-    const maps = analyzer.mixMaps(['current', 'old', 'failed', 'unknown']);
-    expect([...maps.keys()]).toEqual(['current']);
-    expect(maps.get('current')).toEqual({ bpm: 128 });
+    const maps = analyzer.mixMaps(['current', 'previous', 'ancient', 'failed', 'unknown']);
+    expect(Object.fromEntries(maps)).toEqual({ current: { bpm: 128 }, previous: { bpm: 100 } });
   });
 
-  it('hands out only what blending needs from current mix maps, without the rest of the map', () => {
+  it('hands out only what blending needs from mix maps in use, without the rest of the map', () => {
     const { analyzer, db } = withSong({ seconds: 200 });
     const save = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
     const now = new Date().toISOString();
     const map = { bpm: 128, beatConfidence: 0.9, gridStable: true, key: { camelot: '8A', confidence: 0.7 }, phraseEnergy: [0.2, 0.9], introEnd: 30 };
     save.run('current', MIX_MAP_VERSION, JSON.stringify(map), null, now);
     save.run('keyless', MIX_MAP_VERSION, JSON.stringify({ bpm: 0, beatConfidence: 0.1, gridStable: false }), null, now);
-    save.run('old', MIX_MAP_VERSION - 1, JSON.stringify(map), null, now);
+    save.run('ancient', 1, JSON.stringify(map), null, now);
     save.run('failed', MIX_MAP_VERSION, null, 'boom', now);
-    const summaries = analyzer.mixSummaries(['current', 'keyless', 'old', 'failed', 'unknown']);
+    const summaries = analyzer.mixSummaries(['current', 'keyless', 'ancient', 'failed', 'unknown']);
     expect(Object.fromEntries(summaries)).toEqual({
       current: { bpm: 128, beatConfidence: 0.9, gridStable: true, key: { camelot: '8A', confidence: 0.7 } },
       keyless: { bpm: 0, beatConfidence: 0.1, gridStable: false },
@@ -357,6 +384,21 @@ describe('Analyzer library analysis', () => {
     expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 2, working: 1 });
   });
 
+  it('analyses every song again when asked, keeping their maps in use until each is redone', async () => {
+    const { analyzer, db } = withLibrary(['local:a', 'local:b']);
+    const earlier = new Date(Date.now() - 60_000).toISOString();
+    const feature = db.prepare('INSERT INTO track_features (recording_id, version, features, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)');
+    const map = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)');
+    for (const id of ['local:a', 'local:b']) {
+      feature.run(id, ANALYSIS_VERSION, '{}', earlier);
+      map.run(id, MIX_MAP_VERSION, '{"bpm":120}', earlier);
+    }
+    expect(await analyzer.analyzeLibrary()).toBe(0); // all done
+    expect(await analyzer.reanalyzeLibrary()).toBe(2);
+    expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 1, working: 1 });
+    expect([...analyzer.mixMaps(['local:a', 'local:b']).keys()]).toEqual(['local:a', 'local:b']);
+  });
+
   it('leaves songs someone is waiting for ahead of the backlog', async () => {
     const { analyzer } = withLibrary(['local:a', 'local:b', 'local:c']);
     analyzer.ensure(['local:a'], { urgent: true }); // starts at once
@@ -387,12 +429,27 @@ describe('Analyzer mix map progress', () => {
     map.run('rec-2', MIX_MAP_VERSION, null, 'boom', now);
     map.run('rec-3', MIX_MAP_VERSION, '{}', null, now);
     map.run('gone', MIX_MAP_VERSION, '{}', null, now);
-    expect(analyzer.mixMapProgress()).toEqual({ songs: 2, ready: 1, failed: 1, waiting: 0, working: 0 });
+    expect(analyzer.mixMapProgress()).toEqual({ songs: 2, ready: 1, beatModel: 0, failed: 1, waiting: 0, working: 0 });
 
     // A failure due for another try is neither ready nor failed; an old version's map doesn't count.
     db.prepare('UPDATE mix_maps SET analyzed_at = ? WHERE recording_id = ?').run(longAgo, 'rec-2');
     db.prepare('UPDATE mix_maps SET version = ? WHERE recording_id = ?').run(MIX_MAP_VERSION - 1, 'rec-1');
     expect(analyzer.mixMapProgress()).toMatchObject({ songs: 2, ready: 0, failed: 0 });
+  });
+
+  it('counts the maps whose beats the beat model found, and none from before Analyse all again', async () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    store.applySync(store.ensureSource('lidarr', 'Lidarr'), mezzanine()); // rec-1 and rec-2
+    const { analyzer, pcm } = withSong({ seconds: 200, db });
+    pcm.mockImplementation(() => new Promise(() => {})); // never finishes
+    const earlier = new Date(Date.now() - 60_000).toISOString();
+    const map = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)');
+    map.run('rec-1', MIX_MAP_VERSION, '{"beatsFrom":"model"}', earlier);
+    map.run('rec-2', MIX_MAP_VERSION, '{"beatsFrom":"onsets"}', earlier);
+    expect(analyzer.mixMapProgress()).toMatchObject({ songs: 2, ready: 2, beatModel: 1 });
+    await analyzer.reanalyzeLibrary();
+    expect(analyzer.mixMapProgress()).toMatchObject({ songs: 2, ready: 0, beatModel: 0 });
   });
 
   it('counts the songs waiting in either queue and the one being measured', () => {

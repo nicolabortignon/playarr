@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "assets"
   ],
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env --disable-warning=ExperimentalWarning src/index.ts",
@@ -32,6 +33,7 @@
     "chromotome": "^1.21.4",
     "fastify": "^5.12.7",
     "music-metadata": "^12.3.2",
+    "onnxruntime-web": "1.31.1",
     "opentype.js": "^2.0.0",
     "sharp": "^0.35.5",
     "ssh2": "^1.17.0",

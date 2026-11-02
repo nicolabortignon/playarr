@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clickTrack, noise, song } from '../testSignals.ts';
+import { beatModelAnswer, clickTrack, noise, song } from '../testSignals.ts';
 import { MIX_MAP_VERSION, type MixMap } from '../types.ts';
 import { analyzeMix, MIX_HEAD_SECONDS, MIX_TAIL_SECONDS } from './mixMap.ts';
 
@@ -12,6 +12,13 @@ const phraseLine = (map: MixMap, k: number) => map.firstBeat + (map.downbeatOffs
 function offPhraseGrid(map: MixMap, t: number): number {
   const k = Math.max(0, Math.round((t - phraseLine(map, 0)) / (16 * (60 / map.bpm))));
   return Math.abs(t - phraseLine(map, k));
+}
+
+/** How far `t` is from the nearest of the map's bar lines. */
+function offBarGrid(map: MixMap, t: number): number {
+  const bar = 4 * (60 / map.bpm);
+  const off = (((t - (map.firstBeat + map.downbeatOffset * (60 / map.bpm))) % bar) + bar) % bar;
+  return Math.min(off, bar - off);
 }
 
 /** The first `seconds` and the last `seconds` of a signal, as the server decodes a long song. */
@@ -146,6 +153,44 @@ describe('analyzeMix', () => {
     }
   });
 
+  it('takes the grid and the bars from the beat model when it has its answer', () => {
+    const bpm = 124;
+    const track = song({ bpm, rate: RATE, introBeats: 32, bodyBeats: 256, outroBeats: 64 });
+    const seconds = track.truth.duration;
+    const map = analyzeMix(track.samples, null, seconds, RATE, { head: beatModelAnswer(track.beats, track.downbeats, seconds) });
+    expect(map.beatsFrom).toBe('model');
+    expect(Math.abs(map.bpm - bpm)).toBeLessThan(0.01);
+    expect(map.gridStable).toBe(true);
+    // Bar lines on the song's downbeats, and the intro still found.
+    expect(offBarGrid(map, track.downbeats[8]!)).toBeLessThan(0.01);
+    expect(Math.abs(map.introEnd - track.truth.introEnd)).toBeLessThan(60 / bpm);
+    expectInvariants(map);
+  });
+
+  it('keeps the beat model’s bars even where the kicks would put them elsewhere', () => {
+    const bpm = 124;
+    const track = song({ bpm, rate: RATE, introBeats: 32, bodyBeats: 256, outroBeats: 64 });
+    const seconds = track.truth.duration;
+    // The model hears the bar start one beat after the accented kick.
+    const later = track.downbeats.map((t) => t + 60 / bpm);
+    const map = analyzeMix(track.samples, null, seconds, RATE, { head: beatModelAnswer(track.beats, later, seconds) });
+    expect(offBarGrid(map, later[0]!)).toBeLessThan(0.01);
+  });
+
+  it('checks a long song’s tail on the beat model’s beats there', () => {
+    const { samples, truth, beats, downbeats } = long;
+    const tailStart = truth.duration - MIX_TAIL_SECONDS;
+    const inTail = (times: number[]) => times.filter((t) => t >= tailStart).map((t) => t - tailStart);
+    const map = analyzeMix(head(samples), tail(samples), truth.duration, RATE, {
+      head: beatModelAnswer(beats.filter((t) => t < MIX_HEAD_SECONDS), downbeats.filter((t) => t < MIX_HEAD_SECONDS), MIX_HEAD_SECONDS),
+      tail: beatModelAnswer(inTail(beats), inTail(downbeats), MIX_TAIL_SECONDS),
+    });
+    expect(Math.abs(map.bpm - BPM)).toBeLessThan(0.01);
+    expect(map.gridStable).toBe(true);
+    expect(offPhraseGrid(map, truth.outroStart)).toBeLessThan(0.01);
+    expectInvariants(map);
+  });
+
   it('gives an empty map for silence and for too little audio', () => {
     const empty = (duration: number, soundEnd: number): MixMap => ({
       version: MIX_MAP_VERSION,
@@ -156,6 +201,7 @@ describe('analyzeMix', () => {
       downbeatConfidence: 0,
       gridStable: false,
       beatConfidence: 0,
+      beatsFrom: 'onsets',
       introEnd: 0,
       outroStart: soundEnd,
       coldStart: false,

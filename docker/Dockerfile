@@ -15,7 +15,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build \
  && pnpm --filter @playarr/server deploy --prod --legacy /out/server \
- && rm -rf /out/server/dist && cp -r apps/server/dist /out/server/dist \
+ && rm -rf /out/server/dist /out/server/assets && cp -r apps/server/dist /out/server/dist && cp -r apps/server/assets /out/server/assets \
  && cp -r apps/web/dist /out/web \
  && chmod -R a+rX /out
 # (Readable by any user whatever the source's permissions: the NAS's ACLs leave files 770, and the

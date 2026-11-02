@@ -150,3 +150,15 @@ Where the build differs from the design above:
   clipping, so loud joins don't distort or pump.
 - **Edit mix points** previews 8 s from each marker, appears in song menus only with DJ mix on, and an edit
   refreshes the coming transition straight away.
+- **Beats and bars come from a neural beat tracker** (2026-11-02). The onset comb kept the tempo precise but
+  often locked onto the off-beat (hi-hats, trance's rolling bass) and found bar starts right only about half
+  the time. The server now runs Beat This! (small, MIT, ONNX in onnxruntime-web's WebAssembly build, its own
+  worker thread that stops when idle) on 22050 Hz audio: it picks the tempo octave, the beats' phase and the
+  bars; the onset comb still measures the tempo to 0.01 BPM and nudges the grid onto the transients
+  (`neuralGrid`). On a 41-song test set against the large model: right tempo octave 71% → 85%, beats on the
+  grid 80% → 88%, grids half a beat off 7% → 0%, bars 52% → 80%, songs allowed a long blend 10% → 44%.
+  Without the model (missing, or it can't run) maps come from the onsets as before (`beatsFrom: 'onsets'`).
+- **A new map version doesn't take DJ mix away.** Maps from version 2 on stay in use until their song is
+  measured again; Settings → Playback counts only current ones, and *Analyse all again* re-measures every
+  song (maps made before the press stop counting, but keep mixing until replaced).
+

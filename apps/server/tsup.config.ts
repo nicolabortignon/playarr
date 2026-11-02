@@ -1,8 +1,8 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  // The analysis worker is its own file next to index.js (see analysis/dspThread.ts).
-  entry: { index: 'src/index.ts', dspWorker: 'src/analysis/dspWorker.ts' },
+  // The analysis workers are their own files next to index.js (see analysis/dspThread.ts, beatModelThread.ts).
+  entry: { index: 'src/index.ts', dspWorker: 'src/analysis/dspWorker.ts', beatModelWorker: 'src/analysis/beatModelWorker.ts' },
   format: ['esm'],
   target: 'node22',
   platform: 'node',

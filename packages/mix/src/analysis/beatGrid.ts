@@ -140,6 +140,16 @@ function findGrid(onset: Float64Array, fps: number, lowOnset: Float64Array | und
 }
 
 /**
+ * The tempo within ±2% of `bpm` whose comb collects the most onset energy over the whole excerpt, to
+ * 0.01 BPM: beatGrid's precision for a tempo found some other way (the beat model's, see neuralGrid).
+ */
+export function refineBeatTempo(frames: Pick<Onsets, 'fps' | 'beatOnset'>, bpm: number): number {
+  const { beatOnset: onset, fps } = frames;
+  if (onset.length < MIN_SECONDS * fps || !onset.some((v) => v > 0)) return round(bpm, 2);
+  return round(refineTempo({ onset, smooth: smoothed(onset), fps }, 0, onset.length, bpm, REFINE_RANGE), 2);
+}
+
+/**
  * The strongest autocorrelation peak between 60 and 200 BPM, weighted toward 120 (one octave
  * either side), as in the server's audio features. Only a starting point: steps 2–3 settle the
  * octave and the precision.

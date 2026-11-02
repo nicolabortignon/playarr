@@ -185,6 +185,11 @@ export function sections(
   found: Downbeats,
   duration: number,
   phraseLine?: number,
+  /**
+   * The bar is known (the beat model's): `found.downbeatOffset` stays, and this 0–1 takes the place of
+   * the bass accents' confidence. Section changes still lift or lower it, and still place the phrase.
+   */
+  knownBar?: { confidence: number },
 ): Sections {
   const silence = silenceGate(frames.rms);
   const soundEnd = Math.min(soundEndOf(frames, silence), Math.max(0, duration));
@@ -225,7 +230,7 @@ export function sections(
   const anchorOf = (offset: number) => musicStart + mod(offset - musicStart, BEATS_PER_BAR);
   const changes = sectionChanges(beats, isSounding);
   const accents = found.accents ?? barAccents(frames, grid, duration);
-  const bar = checkBar(accents, changes, anchorOf, givenOffset ?? found.downbeatOffset, givenOffset === undefined);
+  const bar = checkBar(accents, changes, anchorOf, givenOffset ?? found.downbeatOffset, givenOffset === undefined && !knownBar, knownBar?.confidence);
   const downbeatOffset = bar.offset;
   const phrase =
     lineBeat === undefined
@@ -396,9 +401,12 @@ function checkBar(
   anchorOf: (offset: number) => number,
   chosen: number,
   mayMove: boolean,
+  /** How sure the chosen bar is from elsewhere (the beat model), instead of from the bass accents. */
+  sure?: number,
 ): { offset: number; confidence: number } {
   const section = sectionScores(changes, anchorOf);
   const bassConfidence = (offset: number) => {
+    if (sure !== undefined) return offset === chosen ? sure : 0;
     if (!accents) return 0;
     const { low, lowOnset } = accents;
     const others = [0, 1, 2, 3].filter((o) => o !== offset);

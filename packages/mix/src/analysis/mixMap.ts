@@ -5,10 +5,12 @@
 
 import type { MixMap } from '../types.ts';
 import { MIX_MAP_VERSION } from '../types.ts';
+import type { BeatActivations } from './beatThis.ts';
 import { beatGrid } from './beatGrid.ts';
-import { downbeats } from './downbeats.ts';
+import { downbeats, phraseEnergyFrom } from './downbeats.ts';
 import { detectKey } from './key.ts';
 import { ANALYSIS_RATE, BEAT_ONSET_LATENCY_FRAMES, analyzeOnsets, type Onsets } from './onset.ts';
+import { neuralGrid, type NeuralGrid } from './neuralGrid.ts';
 import { sections } from './sections.ts';
 import { BEATS_PER_BAR, BEATS_PER_PHRASE, mod } from './shared.ts';
 
@@ -47,13 +49,25 @@ const BEAT_HALF_WIDTH = 2;
  * tail's own beats re-fit that grid's phase (correcting the tempo's last digits), and if they still
  * stray from it by more than 25 ms the tempo drifts over the song and the grid isn't stable.
  *
+ * `beats`, the beat model's answer for the head (and the tail, when there is one), puts the grid
+ * and the bars in its hands (see neuralGrid): the onset analysis then only puts the beats on the
+ * transients. Without it (the model couldn't run), the onset analysis finds them all as before.
+ *
  * Silence or too little audio gives a map without a beat (bpm 0) whose sound ends at 0.
  */
-export function analyzeMix(head: Float32Array, tail: Float32Array | null, duration: number, rate = ANALYSIS_RATE): MixMap {
+export function analyzeMix(
+  head: Float32Array,
+  tail: Float32Array | null,
+  duration: number,
+  rate = ANALYSIS_RATE,
+  beats?: { head: BeatActivations; tail?: BeatActivations | null },
+): MixMap {
   const songSeconds = Math.max(0, Number.isFinite(duration) ? duration : 0);
   const headSeconds = Math.min(head.length / rate, songSeconds);
   const frames = analyzeOnsets(head, rate);
-  const grid = beatGrid(frames);
+  const neural = beats ? neuralGrid(frames, beats.head, headSeconds) : undefined;
+  const grid = neural ?? beatGrid(frames);
+  const beatsFrom = beats ? 'model' : 'onsets';
   const key = detectKey(head, rate);
   const tailPart = tail && tail.length && songSeconds > headSeconds ? measureTail(tail, songSeconds, rate) : undefined;
 
@@ -73,6 +87,7 @@ export function analyzeMix(head: Float32Array, tail: Float32Array | null, durati
       downbeatConfidence: 0,
       gridStable: false,
       beatConfidence: 0,
+      beatsFrom,
       ...(key ? { key } : {}),
       introEnd: 0,
       outroStart: soundEnd,
@@ -83,8 +98,12 @@ export function analyzeMix(head: Float32Array, tail: Float32Array | null, durati
     });
   }
 
-  const found = downbeats(frames, grid, headSeconds);
-  const start = sections(frames, grid, found, headSeconds);
+  // The model's bars stand as they are (sections only measures how sure they are); the onset analysis's
+  // are provisional, and sections may move them.
+  const found = neural
+    ? { downbeatOffset: neural.downbeatOffset, phraseEnergy: phraseEnergyFrom(frames, grid, neural.downbeatOffset, headSeconds) }
+    : downbeats(frames, grid, headSeconds);
+  const start = sections(frames, grid, found, headSeconds, undefined, neural ? { confidence: neural.barConfidence } : undefined);
 
   // Phrase alignment. The planner draws phrase lines at firstBeat + (downbeatOffset + 16k) beats,
   // k ≥ 0; sections counts phrases from the music's first downbeat (`firstPhrase`), which after
@@ -103,7 +122,8 @@ export function analyzeMix(head: Float32Array, tail: Float32Array | null, durati
   let coldEnd = start.coldEnd;
   if (tailPart) {
     const firstPhrase = firstBeat + beatsBefore * headPeriod;
-    const fit = fitTailGrid(tailPart, grid.bpm, firstPhrase);
+    const tailBeats = beats?.tail ? neuralGrid(tailPart.frames, beats.tail, tailPart.seconds) : undefined;
+    const fit = fitTailGrid(tailPart, grid.bpm, firstPhrase, tailBeats);
     bpm = fit.bpm;
     gridStable &&= fit.stable;
     // The tail's grid in tail time, with a phrase line carried over from the head so its phrases are
@@ -131,6 +151,7 @@ export function analyzeMix(head: Float32Array, tail: Float32Array | null, durati
     downbeatConfidence: start.downbeatConfidence,
     gridStable,
     beatConfidence: grid.beatConfidence,
+    beatsFrom,
     ...(key ? { key } : {}),
     introEnd: start.introEnd,
     outroStart,
@@ -167,10 +188,14 @@ function measureTail(tail: Float32Array, duration: number, rate: number): Tail {
  * better than 0.01 BPM. If that correction is bigger than rounding could explain, or a 30 s window
  * of the tail with a clear beat strays more than 25 ms from the corrected grid, the tempo drifts.
  *
+ * With the beat model's grid for the tail (`model`), its beats fix the phase there instead of the
+ * onsets (which can sit on the off-beats), and its own stability replaces the window check.
+ *
  * Returns the tempo, whether the grid holds, and the tail's first grid beat (tail time) with its
  * beat number n on the head's grid.
  */
-function fitTailGrid(tail: Tail, headBpm: number, firstPhrase: number) {
+function fitTailGrid(tail: Tail, headBpm: number, firstPhrase: number, model?: NeuralGrid) {
+  if (model && model.bpm > 0) return fitTailToModel(tail, headBpm, firstPhrase, model);
   const { beatOnset, fps } = tail.frames;
   const n = beatOnset.length;
   const toSong = (frame: number) => tail.start + (frame + BEAT_ONSET_LATENCY_FRAMES) / fps;
@@ -208,6 +233,27 @@ function fitTailGrid(tail: Tail, headBpm: number, firstPhrase: number) {
   const tailFirstBeat = anchor + firstIndex * period - tail.start;
   const tailFirstBeatIndex = Math.round((anchor + firstIndex * period - firstPhrase) / period);
   return { bpm, stable, tailFirstBeat: Math.max(0, tailFirstBeat), tailFirstBeatIndex };
+}
+
+/**
+ * fitTailGrid with the beat model's grid for the tail: the beat nearest the tail's middle, on the
+ * model's phase, against the head's first downbeat corrects the tempo (or, corrected by more than
+ * rounding explains, shows the tempo drifting), and the model's own window check says whether the
+ * tail holds steady.
+ */
+function fitTailToModel(tail: Tail, headBpm: number, firstPhrase: number, model: NeuralGrid) {
+  const headPeriod = 60 / headBpm;
+  const anchor = tail.start + model.firstBeat;
+  const middle = anchor + Math.round((tail.seconds / 2 - model.firstBeat) / headPeriod) * headPeriod;
+  const span = middle - firstPhrase;
+  const corrected = (60 * Math.round(span / headPeriod)) / span;
+  const close = Math.abs(corrected - headBpm) <= MAX_TEMPO_CORRECTION;
+  const bpm = close ? round(corrected, 4) : headBpm;
+  const period = 60 / bpm;
+  const firstIndex = Math.ceil((tail.start - anchor) / period - 1e-6);
+  const tailFirstBeat = anchor + firstIndex * period - tail.start;
+  const tailFirstBeatIndex = Math.round((anchor + firstIndex * period - firstPhrase) / period);
+  return { bpm, stable: close && model.gridStable, tailFirstBeat: Math.max(0, tailFirstBeat), tailFirstBeatIndex };
 }
 
 /**

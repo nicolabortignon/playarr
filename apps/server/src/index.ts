@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
 import { Analyzer } from './analysis/analyzer.ts';
+import { BeatModelThread } from './analysis/beatModelThread.ts';
 import { DspThread } from './analysis/dspThread.ts';
 import { AcoustId, hasFpcalc } from './catalog/acoustid.ts';
 import { FileResolver } from './catalog/files.ts';
@@ -112,7 +113,11 @@ const files = new FileResolver(store, { media, pathMap: config.pathMap }, folder
 const favorites = new Favorites(db, library);
 // One DSP worker for the whole server: analysis and transition rendering take turns on it.
 const dsp = new DspThread();
-const analyzer = new Analyzer(db, library, files, { enabled: config.ANALYSIS === 'on', log: app.log, dsp });
+// The beat model (beats and bars for DJ mix) in a thread of its own, started only while songs are analysed.
+const beatModel = new BeatModelThread({
+  onError: (reason) => app.log.warn({ reason }, 'the beat model can’t run here: beats come from the onset analysis'),
+});
+const analyzer = new Analyzer(db, library, files, { enabled: config.ANALYSIS === 'on', log: app.log, dsp, beats: beatModel });
 // DJ mix: transitions rendered to cached files. They're planned from mix maps, which only audio
 // analysis makes; without it the player is told "unavailable" and crossfades as before.
 const transitions = analyzer.canAnalyzeAudio
@@ -213,6 +218,7 @@ const shutdown = async () => {
   await Promise.race([transitions?.idle(), new Promise((resolve) => setTimeout(resolve, 2000).unref())]);
   // Shared, so the analyzer leaves it open: closed here, once neither uses it.
   dsp.close();
+  beatModel.close();
   db.close();
   process.exit(0);
 };

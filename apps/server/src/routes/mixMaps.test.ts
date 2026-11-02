@@ -32,8 +32,9 @@ function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CueP
       else cues.delete(id);
     }),
     ensure: vi.fn(),
-    mixMapProgress: () => ({ songs: 5678, ready: 1234, failed: 3, waiting: 4400, working: 1 }),
+    mixMapProgress: () => ({ songs: 5678, ready: 1234, beatModel: 1200, failed: 3, waiting: 4400, working: 1 }),
     analyzeLibrary: vi.fn(async () => 4400),
+    reanalyzeLibrary: vi.fn(async () => 5678),
   };
   const durations = opts.durations ?? {};
   const library = {
@@ -50,7 +51,7 @@ describe('mix map routes', () => {
     const { app } = setup({ libraryScan: false });
     const res = await app.inject({ method: 'GET', url: '/api/mix-maps/progress' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ enabled: true, songs: 5678, ready: 1234, failed: 3, waiting: 4400, working: 1, libraryScan: false });
+    expect(res.json()).toEqual({ enabled: true, songs: 5678, ready: 1234, beatModel: 1200, failed: 3, waiting: 4400, working: 1, libraryScan: false });
   });
 
   it('says so when audio analysis is off', async () => {
@@ -96,6 +97,17 @@ describe('mix map routes', () => {
     const away = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze', remoteAddress: '203.0.113.9' });
     expect(away.statusCode).toBe(403);
     expect(analyzer.analyzeLibrary).toHaveBeenCalledTimes(1);
+    expect(analyzer.reanalyzeLibrary).not.toHaveBeenCalled();
+  });
+
+  it('has every song analysed again when asked to, from the home network only', async () => {
+    const { app, analyzer } = setup();
+    const res = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze', payload: { again: true } });
+    expect(res.json()).toEqual({ queued: 5678 });
+    const away = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze', payload: { again: true }, remoteAddress: '203.0.113.9' });
+    expect(away.statusCode).toBe(403);
+    expect(analyzer.reanalyzeLibrary).toHaveBeenCalledTimes(1);
+    expect(analyzer.analyzeLibrary).not.toHaveBeenCalled();
   });
 
   it('says why nothing can be analysed when audio analysis is off', async () => {
