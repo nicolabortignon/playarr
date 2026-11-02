@@ -237,6 +237,26 @@ describe('Transitions', { timeout: 30_000 }, () => {
     expect(restarted.render).not.toHaveBeenCalled();
   });
 
+  it('fades for as long as the listener asks, and plans again for another length', async () => {
+    const t = setup();
+    const six = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fadeSeconds: 6 });
+    expect(six).toMatchObject({ status: 'pending', plan: { style: 'fade', length: 6 } });
+    const three = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fadeSeconds: 3 });
+    expect(three).toMatchObject({ status: 'pending', plan: { style: 'fade', length: 3 } });
+  });
+
+  it('plays songs of one album in order straight on only when the queue plays that album', async () => {
+    const onAlbum = (id: number, trackNumber: number) => ({ ...track(id), albumId: 7, trackNumber });
+    const t = setup({ tracks: [onAlbum(1, 1), onAlbum(2, 2)] });
+    const straight = { status: 'straight', plan: { reason: 'Same album, in order: straight on' } };
+    // Older players don't say: as before.
+    expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).toMatchObject(straight);
+    expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', albumQueue: true })).toMatchObject(straight);
+    // In order by chance (a playlist): mixed like any two songs.
+    const mixed = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', albumQueue: false });
+    expect(mixed).toMatchObject({ status: 'pending', plan: { style: 'fade' } });
+  });
+
   it('keys the cache by the plan and the files', async () => {
     const t = setup();
     await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
@@ -271,6 +291,8 @@ describe('Transitions', { timeout: 30_000 }, () => {
     });
     try {
       const t = setup();
+      // Song 1 is left at 40 s, or as soon after as A's position allows.
+      t.cues.set('rec-1', { mixOut: 40 });
       const first = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 0 });
       expect(first).toMatchObject({ status: 'pending', plan: { aStart: 40 } });
       expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 30 })).toEqual(first);
@@ -281,6 +303,7 @@ describe('Transitions', { timeout: 30_000 }, () => {
 
       // A restarted server picks the plan up from the cache too.
       const restarted = setup({ dir: t.dir });
+      restarted.cues.set('rec-1', { mixOut: 40 });
       await restarted.transitions.load();
       expect(await restarted.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 33 })).toEqual(ready);
 
@@ -300,8 +323,8 @@ describe('Transitions', { timeout: 30_000 }, () => {
     const old = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' }));
     expect(transitionFiles(t.dir)).toHaveLength(4);
 
-    // Song 1's mix map is measured again (its outro moved), and the analyzer forgets it.
-    t.maps.set('rec-1', mixMap({ outroStart: 35 }));
+    // Song 1's mix map is measured again (its sound ends sooner: the fade starts 8 s before), and the analyzer forgets it.
+    t.maps.set('rec-1', mixMap({ soundEnd: 43 }));
     await t.transitions.forget('rec-1');
     const replanned = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
     expect(replanned).toMatchObject({ status: 'pending', plan: { aStart: 35 } });
@@ -436,15 +459,13 @@ describe('Transitions', { timeout: 30_000 }, () => {
     // A leaves at a time off the 10 ms grid, so B resumes at one too (on a whole sample, for a clean check):
     // a decode started where ffmpeg rounds to the millisecond would be a sample or two off.
     const bResumeFrames = 293_837; // 6.66297… s
-    const maps = new Map([
-      ['rec-1', mixMap({ outroStart: 50 - bResumeFrames / RENDER_RATE })],
-      ['rec-2', mixMap()],
-    ]);
-    const t = setup({ tracks: [track(1), track(2, MP3)], maps });
+    // A fade that long, from B's start.
+    const fadeSeconds = bResumeFrames / RENDER_RATE;
+    const t = setup({ tracks: [track(1), track(2, MP3)] });
     largestPiece = 0;
-    await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
+    await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fadeSeconds });
     await t.transitions.idle();
-    const ready = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' }));
+    const ready = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fadeSeconds }));
     expect(ready.continuationUrl).toBe(ready.url.replace(/\.flac$/, '.rest.flac'));
 
     // B's excerpt and its remainder are each decoded with an exact seek; A (FLAC) needs none.
@@ -478,7 +499,7 @@ describe('Transitions', { timeout: 30_000 }, () => {
     expect(Math.abs(rest[0]! - (2 * Math.cos(step) * last - beforeLast))).toBeLessThan(2e-3);
 
     t.pcm.mockClear();
-    expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).toEqual(ready);
+    expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fadeSeconds })).toEqual(ready);
     expect(t.pcm).not.toHaveBeenCalled();
   });
 

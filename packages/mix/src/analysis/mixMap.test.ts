@@ -26,7 +26,7 @@ const head = (samples: Float32Array) => samples.subarray(0, MIX_HEAD_SECONDS * R
 const tail = (samples: Float32Array) => samples.subarray(samples.length - MIX_TAIL_SECONDS * RATE);
 
 function expectInvariants(map: MixMap) {
-  const times = [map.firstBeat, map.introEnd, map.outroStart, map.soundEnd, map.firstDrop ?? 0];
+  const times = [map.firstBeat, map.introEnd, map.outroStart, map.soundStart ?? 0, map.soundEnd, map.firstDrop ?? 0];
   for (const t of times) {
     expect(Number.isFinite(t)).toBe(true);
     expect(t).toBeGreaterThanOrEqual(0);
@@ -34,6 +34,7 @@ function expectInvariants(map: MixMap) {
   }
   expect(map.introEnd).toBeLessThanOrEqual(map.outroStart);
   expect(map.outroStart).toBeLessThanOrEqual(map.soundEnd);
+  expect(map.soundStart).toBeLessThanOrEqual(map.soundEnd);
   expect([0, 1, 2, 3]).toContain(map.downbeatOffset);
   expect(map.version).toBe(MIX_MAP_VERSION);
 }
@@ -43,7 +44,7 @@ const BPM = 126;
 const long = song({ bpm: BPM, rate: RATE, introBeats: 32, bodyBeats: 1184, outroBeats: 64, key: { root: 'D', minor: true } });
 
 describe('analyzeMix', () => {
-  it('maps a three-minute song: tempo, intro, outro, sound end and key', () => {
+  it('maps a three-minute song: tempo, intro, outro, where the sound starts and ends, and key', () => {
     const bpm = 124;
     const track = song({ bpm, rate: RATE, introBeats: 32, bodyBeats: 256, outroBeats: 64, key: { root: 'A', minor: true } });
     const map = analyzeMix(track.samples, null, track.truth.duration);
@@ -54,6 +55,9 @@ describe('analyzeMix', () => {
     expect(Math.abs(map.introEnd - track.truth.introEnd)).toBeLessThan(beat);
     expect(Math.abs(map.outroStart - track.truth.outroStart)).toBeLessThan(beat);
     expect(Math.abs(map.soundEnd - track.truth.soundEnd)).toBeLessThan(beat);
+    // The first kick is at 0.5 s: found up to a frame (93 ms) early, never late.
+    expect(map.soundStart).toBeLessThanOrEqual(0.5);
+    expect(map.soundStart).toBeGreaterThan(0.4);
     expect(Math.abs(map.firstDrop! - track.truth.introEnd)).toBeLessThan(beat);
     expect(map.key?.camelot).toBe('8A');
     expect(map.gridStable).toBe(true);
@@ -206,6 +210,7 @@ describe('analyzeMix', () => {
       outroStart: soundEnd,
       coldStart: false,
       coldEnd: false,
+      soundStart: 0,
       soundEnd,
       phraseEnergy: [],
     });

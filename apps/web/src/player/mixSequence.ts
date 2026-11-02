@@ -125,3 +125,47 @@ export function beatCut(
   if (bStart >= finiteOr(b.cues?.mixOut ?? b.outroStart, b.duration)) bStart = bOrigin;
   return bStart < b.duration ? { aEnd, bStart } : null;
 }
+
+/** Silence shorter than this at a join isn't worth a cut of its own. */
+const MIN_SILENCE_S = 0.05;
+
+/**
+ * DJ mix with no beat to cut on: A stops where its sound ends and B starts where its sound starts, so
+ * the silence between them goes. Not within an album played in order (its gaps are the album's), nor
+ * with mixing off. Null when there's no silence worth cutting: the songs follow each other as they are.
+ */
+export function silenceCut(
+  a: Song,
+  b: Song,
+  { aDuration, mode, sameAlbumInOrder }: { aDuration: number; mode: MixMode; sameAlbumInOrder: boolean },
+): BeatCut | null {
+  if (mode === 'off' || sameAlbumInOrder) return null;
+  const aEnd = Math.min(finiteOr(a.soundEnd, aDuration), aDuration);
+  const bStart = Math.max(0, Math.min(finiteOr(b.soundStart, 0), finiteOr(b.soundEnd, b.duration)));
+  if (!(aEnd > 0) || (aDuration - aEnd < MIN_SILENCE_S && bStart < MIN_SILENCE_S)) return null;
+  return { aEnd, bStart };
+}
+
+/**
+ * The server's "straight on" as a cut: its plan says where A stops and B starts (where their sounds end
+ * and start, unless the songs are to play as recorded). Null when that's A's end and B's start anyway.
+ */
+export function straightCut(plan: TransitionPlan, aDuration: number): BeatCut | null {
+  const aEnd = Math.min(finiteOr(plan.aStart, aDuration), aDuration);
+  const bStart = Math.max(0, finiteOr(plan.bStart, 0));
+  if (aDuration - aEnd < MIN_SILENCE_S && bStart < MIN_SILENCE_S) return null;
+  return aEnd > 0 ? { aEnd, bStart } : null;
+}
+
+/** A plain fade the engine plays itself (its transition not rendered in time): A from aStart, B from bStart, `seconds` long. */
+export interface PlannedFade {
+  aStart: number;
+  bStart: number;
+  seconds: number;
+}
+
+/** The server's fade, to play without its file: where it starts in each song, and how long it lasts. */
+export function plannedFade(plan: TransitionPlan): PlannedFade | null {
+  if (plan.style !== 'fade' || !(plan.length > 0) || !Number.isFinite(plan.aStart) || !Number.isFinite(plan.bStart)) return null;
+  return { aStart: plan.aStart, bStart: Math.max(0, plan.bStart), seconds: plan.length };
+}

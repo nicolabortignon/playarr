@@ -38,6 +38,16 @@ describe('transition routes', () => {
     expect((await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', toFileId: 'x' } })).statusCode).toBe(400);
   });
 
+  it('passes on the listener’s fade length and whether the queue plays the album', async () => {
+    const { app, request } = await setup();
+    await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', fade: 9, albumQueue: false } });
+    expect(request).toHaveBeenCalledWith({ fromTrackId: 3, toTrackId: 4, mode: 'auto', fadeSeconds: 9, albumQueue: false });
+    for (const payload of [{ fade: -1 }, { fade: 'long' }, { albumQueue: 'yes' }]) {
+      const res = await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto', ...payload } });
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
   it('leaves the position out when the player does', async () => {
     const { app, request } = await setup();
     await app.inject({ method: 'POST', url: '/api/transitions', payload: { from: 3, to: 4, mode: 'auto' } });

@@ -1,10 +1,10 @@
-import type { MixMode } from '@playarr/mix';
+import type { MixMode, TransitionPlan } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { api, ApiError, type TransitionAnswer } from '../lib/api';
-import { usePrefs } from '../lib/prefs';
-import { upNext } from './decks';
+import { djFadeSeconds, usePrefs } from '../lib/prefs';
+import { playsAlbum, upNext } from './decks';
 import { type KeptTransition, offlineTransition } from './offline';
 import { useSleep } from './sleep';
 import { currentTrack, useClock, usePlayer } from './store';
@@ -57,6 +57,13 @@ export const useTransition = create<TransitionState>()(() => ({ fromFileId: null
 /** The transition file to play between the two songs, once rendered. */
 export const readyTransition = (s: TransitionState) => s.ready;
 
+/** The server's plan for these two songs, once it has planned it (ready or not, straight on included). */
+export function upcomingPlan(fromFileId: number, toFileId: number): TransitionPlan | undefined {
+  const { result, fromFileId: from, toFileId: to } = useTransition.getState();
+  if (from !== fromFileId || to !== toFileId || !result || !('plan' in result)) return undefined;
+  return result.plan;
+}
+
 /** Set while the watcher is mounted: forgets the pair's answer if it involves this recording. */
 let refreshFor: ((recordingId: string) => void) | null = null;
 
@@ -75,6 +82,9 @@ interface Pair {
   from: Track;
   to: Track;
   mode: MixMode;
+  /** The listener's fade length, and whether the queue plays the songs' album (see api.transition). */
+  fade: number;
+  albumQueue: boolean;
   /**
    * Where the song was at the first ask, sent unchanged on every ask after: the server's plan (and so
    * its render) depends on it, and a later position could make it start over. Only a seek or restart
@@ -180,7 +190,8 @@ function watchUpcomingTransition() {
     const ask = ++p.asks;
     // The pair changed, started over or gave up meanwhile: this answer is for nothing now.
     const current = () => pair === p && p.asks === ask && !p.ended;
-    api.transition(p.from.id, p.to.id, p.mode, p.position, { fromFileId: p.from.fileId, toFileId: p.to.fileId }).then(
+    const files = { fromFileId: p.from.fileId, toFileId: p.to.fileId };
+    api.transition(p.from.id, p.to.id, p.mode, p.position, files, { fade: p.fade, albumQueue: p.albumQueue }).then(
       (answer) => {
         if (!current()) return;
         p.asking = false;
@@ -236,11 +247,13 @@ function watchUpcomingTransition() {
     }
     const wanted =
       usePrefs.getState().transitions === 'dj' && s.mixMode !== 'off' && !useSleep.getState().endOfSong && !!from && !!to && from.fileId !== to.fileId;
-    const key = wanted ? JSON.stringify([from.id, from.fileId, to.id, to.fileId, s.mixMode]) : null;
+    const fade = djFadeSeconds(usePrefs.getState());
+    const albumQueue = !!from && playsAlbum(s.source, from);
+    const key = wanted ? JSON.stringify([from.id, from.fileId, to.id, to.fileId, s.mixMode, fade, albumQueue]) : null;
     if (key !== (pair?.key ?? null)) {
       drop();
       if (wanted) {
-        pair = { key: key!, from: from!, to: to!, mode: s.mixMode, asks: 0, asking: false, polls: 0, errors: 0, askedAgainUnavailable: false };
+        pair = { key: key!, from: from!, to: to!, mode: s.mixMode, fade, albumQueue, asks: 0, asking: false, polls: 0, errors: 0, askedAgainUnavailable: false };
         later(pair, FIRST_ASK_DELAY_MS);
       }
       useTransition.setState({ fromFileId: wanted ? from!.fileId : null, toFileId: wanted ? to!.fileId : null, result: null, ready: undefined });
@@ -287,7 +300,7 @@ function watchUpcomingTransition() {
   // At mount the clock is the song playing's own; after a song change it isn't until the engine resets it.
   lastTime = useClock.getState().time;
   const offPlayer = usePlayer.subscribe(check);
-  const offPrefs = usePrefs.subscribe((s, prev) => s.transitions !== prev.transitions && check());
+  const offPrefs = usePrefs.subscribe((s, prev) => (s.transitions !== prev.transitions || s.crossfade !== prev.crossfade) && check());
   const offSleep = useSleep.subscribe((s, prev) => s.endOfSong !== prev.endOfSong && check());
   const offClock = useClock.subscribe((s, prev) => {
     const seeked = s.seekRequest !== prev.seekRequest;

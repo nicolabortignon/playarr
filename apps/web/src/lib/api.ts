@@ -209,10 +209,18 @@ export const api = {
   /**
    * `from` into `to` (catalog song ids). `position`: where `from` is now, so the plan doesn't start in
    * the past. `files`: the files the player has for the two songs, so the server never renders from
-   * another one (it answers "unavailable" if the library has since picked a different file).
+   * another one (it answers "unavailable" if the library has since picked a different file). `how`: the
+   * listener's fade length (for songs that can't be mixed on the beat), and whether the queue plays the
+   * songs' album (songs of one album in order then go straight on).
    */
-  transition: (from: number, to: number, mode: MixMode, position?: number, files?: { fromFileId: number; toFileId: number }) =>
-    request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files }) }),
+  transition: (
+    from: number,
+    to: number,
+    mode: MixMode,
+    position?: number,
+    files?: { fromFileId: number; toFileId: number },
+    how?: { fade?: number; albumQueue?: boolean },
+  ) => request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files, ...how }) }),
   mixMapProgress: () => get<MixMapProgress>('/api/mix-maps/progress'),
   /**
    * Queues every song still to be analysed for DJ mix, once (Settings → Mixes' switch stays as it is);

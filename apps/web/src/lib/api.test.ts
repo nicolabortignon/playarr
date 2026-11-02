@@ -13,9 +13,11 @@ describe('api.transition', () => {
     await api.transition(1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 });
     // Older callers leave the files out, and the server then takes the library's files.
     await api.transition(1, 2, 'party');
+    await api.transition(1, 2, 'auto', undefined, undefined, { fade: 9, albumQueue: false });
     expect(bodies).toEqual([
       { from: 1, to: 2, mode: 'auto', position: 5, fromFileId: 101, toFileId: 102 },
       { from: 1, to: 2, mode: 'party' },
+      { from: 1, to: 2, mode: 'auto', fade: 9, albumQueue: false },
     ]);
   });
 });

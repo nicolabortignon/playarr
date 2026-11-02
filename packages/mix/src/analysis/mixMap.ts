@@ -12,7 +12,7 @@ import { detectKey } from './key.ts';
 import { ANALYSIS_RATE, BEAT_ONSET_LATENCY_FRAMES, analyzeOnsets, type Onsets } from './onset.ts';
 import { neuralGrid, type NeuralGrid } from './neuralGrid.ts';
 import { sections } from './sections.ts';
-import { BEATS_PER_BAR, BEATS_PER_PHRASE, mod } from './shared.ts';
+import { BEATS_PER_BAR, BEATS_PER_PHRASE, mod, soundStartOf } from './shared.ts';
 
 /** How much of a song's beginning the server decodes for the mix analysis (all of a shorter song). */
 export const MIX_HEAD_SECONDS = 420;
@@ -70,6 +70,7 @@ export function analyzeMix(
   const beatsFrom = beats ? 'model' : 'onsets';
   const key = detectKey(head, rate);
   const tailPart = tail && tail.length && songSeconds > headSeconds ? measureTail(tail, songSeconds, rate) : undefined;
+  const soundStart = soundStartOf(frames);
 
   if (!(grid.bpm > 0)) {
     // No beat: nothing to mix on, but where the sound ends and whether the song starts and ends on
@@ -93,6 +94,7 @@ export function analyzeMix(
       outroStart: soundEnd,
       coldStart: start.coldStart,
       coldEnd: fromTail ? end.coldEnd : !tailPart && start.coldEnd,
+      soundStart,
       soundEnd,
       phraseEnergy: [],
     });
@@ -158,6 +160,7 @@ export function analyzeMix(
     ...(start.firstDrop !== undefined ? { firstDrop: start.firstDrop } : {}),
     coldStart: start.coldStart,
     coldEnd,
+    soundStart,
     soundEnd,
     // Counted from `firstPhrase`, so phraseEnergy[k] is the phrase from the planner's phrase line k.
     phraseEnergy: start.phraseEnergy,
@@ -301,8 +304,8 @@ function fitPhase(onset: Float64Array, from: number, to: number, period: number)
 }
 
 /**
- * The map with every time inside the song and in order: introEnd ≤ outroStart ≤ soundEnd ≤
- * duration. Each analysis step keeps its own times sensible; this guards the combination (a tail
+ * The map with every time inside the song and in order: soundStart ≤ soundEnd, introEnd ≤ outroStart ≤
+ * soundEnd ≤ duration. Each analysis step keeps its own times sensible; this guards the combination (a tail
  * and a head that disagree, a duration shorter than the decoded audio).
  */
 function finish(duration: number, map: Omit<MixMap, 'version' | 'duration'>): MixMap {
@@ -319,6 +322,7 @@ function finish(duration: number, map: Omit<MixMap, 'version' | 'duration'>): Mi
     introEnd,
     outroStart,
     ...(firstDrop !== undefined ? { firstDrop: clamp(firstDrop) } : {}),
+    soundStart: Math.min(clamp(map.soundStart ?? 0), soundEnd),
     soundEnd,
   };
 }

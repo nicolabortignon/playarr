@@ -1,6 +1,6 @@
 import type { Track } from '@playarr/shared';
 import { describe, expect, it } from 'vitest';
-import { continues, fadeCurve, fadeSeconds, levelGain, upNext } from './decks';
+import { continues, fadeCurve, fadeSeconds, levelGain, playsAlbum, upNext } from './decks';
 
 const song = (fileId: number, over: Partial<Track> = {}) =>
   ({ fileId, id: fileId, recordingId: `r${fileId}`, albumId: 1, discNumber: 1, trackNumber: fileId, duration: 200, ...over }) as Track;
@@ -24,6 +24,16 @@ describe('decks', () => {
     expect(fadeSeconds(song(1), song(3, { duration: 9 }), 6)).toBe(3);
     expect(fadeCurve(0)).toBe(0);
     expect(fadeCurve(1)).toBe(1);
+  });
+
+  it('knows a queue that plays the song’s album, or its artist’s albums, from one that doesn’t', () => {
+    const a = song(1, { albumId: 5, artistId: 3 });
+    expect(playsAlbum({ label: 'Album', href: '/albums/5' }, a)).toBe(true);
+    expect(playsAlbum({ label: 'Artist', href: '/artists/3' }, a)).toBe(true);
+    expect(playsAlbum({ label: 'Mine', href: '/playlists/7' }, a)).toBe(false);
+    expect(playsAlbum({ label: 'Another', href: '/albums/6' }, a)).toBe(false);
+    // Saved before sources were kept: as the album.
+    expect(playsAlbum(undefined, a)).toBe(true);
   });
 
   it('turns songs down by their own level, or by the album’s within an album', () => {

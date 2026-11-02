@@ -6,20 +6,32 @@ import { extractAccent } from '../lib/color';
 import { setFaviconAccent } from '../lib/favicon';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
-import { canSetVolume, continues, fadeCurve, fadeSeconds, levelGain, silentClip, upNext } from './decks';
+import { canSetVolume, continues, fadeCurve, fadeSeconds, levelGain, playsAlbum, silentClip, upNext } from './decks';
 import { useDownloads } from './downloads';
 import { healQueue } from './healQueue';
 import { loadLevels, useLevels } from './levels';
 import { canLiveMix, type LiveMix, type LiveMixPlayback, PREPARE_BUDGET_MS, playLiveMix, prepareLiveMix } from './liveMix';
 import { useLoadAhead } from './loadAhead';
 import { loadMixMaps, mixMapOf } from './mixMaps';
-import { type BeatCut, beatCut, bridgeEntry, bridgeGain, bTimeAt, songTimeDuring, transitionTimeFor } from './mixSequence';
+import {
+  type BeatCut,
+  beatCut,
+  bridgeEntry,
+  bridgeGain,
+  bTimeAt,
+  type PlannedFade,
+  plannedFade,
+  silenceCut,
+  songTimeDuring,
+  straightCut,
+  transitionTimeFor,
+} from './mixSequence';
 import { useOffline } from './offline';
 import { playTracker } from './playTracker';
 import { useAutoplay } from './radio';
 import { sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, nextByPress, takeNextPresses, useClock, useCurrentTrack, usePlayer } from './store';
-import { readyTransition, type ReadyTransition, useTransition, useUpcomingTransition } from './transitions';
+import { readyTransition, type ReadyTransition, upcomingPlan, useTransition, useUpcomingTransition } from './transitions';
 
 const DEFAULT_ACCENT = '#ff7a1a';
 /** Have the next song loaded this long before the current one ends. */
@@ -47,6 +59,10 @@ interface Fade {
   out: HTMLAudioElement;
   in: HTMLAudioElement;
   seconds: number;
+  /** Where in its song the old one is silent: its file's end, or a DJ fade's end (before trailing silence). */
+  outEnd?: number;
+  /** Where in its song the new one starts: 0, or after its leading silence for a DJ fade. */
+  inStart: number;
 }
 
 /**
@@ -286,8 +302,8 @@ export function AudioEngine() {
       if (deck === bridge.current) v *= m ? bridgeGain(m.transition.plan, deck.currentTime, level(m.from), level(m.to)) : 1;
       else v *= level(loaded.current.get(deck));
       const f = fade.current;
-      if (f?.out === deck) v *= fadeCurve(remaining(deck) / f.seconds);
-      else if (f?.in === deck) v *= fadeCurve(deck.currentTime / f.seconds);
+      if (f?.out === deck) v *= fadeCurve(fadeLeft(f) / f.seconds);
+      else if (f?.in === deck) v *= fadeCurve((songTime(deck) - f.inStart) / f.seconds);
       if (o?.out === deck) v *= evenGain(1 - joined);
       else if (o?.in === deck) v *= evenGain(joined);
       deck.volume = Math.max(0, Math.min(1, v));
@@ -304,6 +320,10 @@ export function AudioEngine() {
     return Math.max(0, duration - deck.currentTime) / (deck.playbackRate || 1);
   }
 
+  /** Seconds until the song fading out is silent. */
+  const fadeLeft = (f: Fade) =>
+    f.outEnd === undefined ? remaining(f.out) : Math.max(0, f.outEnd - songTime(f.out)) / (f.out.playbackRate || 1);
+
   function endFade() {
     clearInterval(fadeTimer.current);
     const f = fade.current;
@@ -315,7 +335,7 @@ export function AudioEngine() {
   function tickFade() {
     const f = fade.current;
     if (!f) return;
-    if (f.out.ended || f.out.paused || f.in.currentTime >= f.seconds) endFade();
+    if (f.out.ended || f.out.paused || songTime(f.in) - f.inStart >= f.seconds) endFade();
     else applyVolumes();
   }
 
@@ -334,10 +354,12 @@ export function AudioEngine() {
   }
 
   /**
-   * Start the next song (already loaded) now: the store moves to it once it plays. At a cut on the beat
-   * it starts on its first downbeat, and A stops just after, on its own (instead of playing its tail out).
+   * Start the next song (already loaded) now: the store moves to it once it plays. At a cut (on the beat,
+   * or where the sounds end and start) it starts at `cut.bStart`, and A stops just after, on its own,
+   * instead of playing its tail out. A DJ fade (`planned`) fades A out up to its end and brings B in
+   * from its start.
    */
-  function handOff(seconds: number, onFail: () => void = () => {}, cut?: BeatCut) {
+  function handOff(seconds: number, onFail: () => void = () => {}, cut?: BeatCut, planned?: PlannedFade) {
     const out = active();
     const next = upNext(usePlayer.getState());
     const incoming = standby();
@@ -345,12 +367,14 @@ export function AudioEngine() {
     handedOff.current = next!.fileId;
     swap();
     if (seconds > 0) {
-      fade.current = { out, in: incoming, seconds };
+      fade.current = planned
+        ? { out, in: incoming, seconds, outEnd: planned.aStart + seconds, inStart: planned.bStart }
+        : { out, in: incoming, seconds, inStart: 0 };
       fadeTimer.current = setInterval(tickFade, 100);
     }
     const join: Overlap | null = cut ? { out, in: incoming, startedAt: null } : null;
     if (join) overlap.current = join;
-    seekSong(incoming, cut?.bStart ?? 0);
+    seekSong(incoming, cut?.bStart ?? planned?.bStart ?? 0);
     applyVolumes();
     incoming.play().then(
       () => {
@@ -377,43 +401,68 @@ export function AudioEngine() {
   function approachEnd(deck: HTMLAudioElement) {
     const s = usePlayer.getState();
     const left = remaining(deck);
-    // The sleep timer stops at the end of this song: nothing to start.
-    if (deck.paused || !s.playing || left > PRELOAD_S || !deck.duration || useSleep.getState().endOfSong) return;
+    // The sleep timer stops at the end of this song: nothing to start. With DJ mix, the song may stop
+    // before a silence at its end: that much earlier.
+    if (deck.paused || !s.playing || left > PRELOAD_S + trailingSilence(deck) || !deck.duration || useSleep.getState().endOfSong) return;
     prepareNext();
     const next = upNext(s);
     const incoming = standby();
     if (!incoming || !holds(incoming, next) || handedOff.current !== null || handoffFailed.current) return;
-    const cut = cutInto(deck, next!);
-    const seconds = !cut && canSetVolume() ? fadeSeconds(loaded.current.get(deck), next, crossfadeSeconds(usePrefs.getState())) : 0;
-    // B waits at its first downbeat, so starting it there needs no seek at the join (cued once per cut).
-    const cueKey = cut ? `${incoming.getAttribute('src')}@${cut.bStart}` : undefined;
-    if (cut && cuedFor.current.get(incoming) !== cueKey) {
+    const join = joinInto(deck, next!);
+    const cut = join && 'aEnd' in join ? join : undefined;
+    const planned = join && 'seconds' in join ? join : undefined;
+    const seconds = planned?.seconds ?? (!cut && canSetVolume() ? fadeSeconds(loaded.current.get(deck), next, crossfadeSeconds(usePrefs.getState())) : 0);
+    // B waits where it starts, so starting it there needs no seek at the join (cued once per join).
+    const bStart = cut?.bStart ?? planned?.bStart;
+    const cueKey = bStart !== undefined ? `${incoming.getAttribute('src')}@${bStart}` : undefined;
+    if (bStart !== undefined && cuedFor.current.get(incoming) !== cueKey) {
       cuedFor.current.set(incoming, cueKey!);
-      setTimeOnLoad(incoming, cut.bStart);
+      setTimeOnLoad(incoming, bStart);
     }
-    const wait = cut ? (cut.aEnd - songTime(deck)) / (deck.playbackRate || 1) : left - seconds;
+    const startAt = cut?.aEnd ?? planned?.aStart;
+    const wait = startAt !== undefined ? (startAt - songTime(deck)) / (deck.playbackRate || 1) : left - seconds;
     if (wait > 1.5) return;
     clearTimeout(handoffTimer.current);
     handoffTimer.current = setTimeout(() => {
       const now = active();
-      if (now === deck && !deck.paused && usePlayer.getState().playing && !useSleep.getState().endOfSong) handOff(seconds, undefined, cut ?? undefined);
+      if (now === deck && !deck.paused && usePlayer.getState().playing && !useSleep.getState().endOfSong) handOff(seconds, undefined, cut, planned);
     }, Math.max(0, wait * 1000 - LEAD_MS));
   }
 
   /**
-   * DJ mix with no transition to play (none ready in time, or it failed): where to cut A into B on the
-   * beat, once both songs' mix maps have come. Null plays them the usual way.
+   * DJ mix with no transition to play (none ready in time, or it failed, or none to render): how A goes
+   * into B. The server's plan, once it has one: straight on is a cut where the songs' sounds end and
+   * start, a fade is played here (where the volume can be set). Else, once both songs' mix maps have come,
+   * a cut on the beat, or one that leaves out the silence between them. Null plays them the usual way.
    */
-  function cutInto(deck: HTMLAudioElement, next: Track): BeatCut | null {
+  function joinInto(deck: HTMLAudioElement, next: Track, late = false): BeatCut | PlannedFade | null {
     const from = loaded.current.get(deck);
     if (usePrefs.getState().transitions !== 'dj' || !from) return null;
+    const aDuration = Number.isFinite(deck.duration) ? deck.duration + offsetOf(deck) : from.duration;
+    const now = songTime(deck);
+    // Long past where it should have started (a seek, a timer slowed in the background): not that one,
+    // unless asked for anyway (`late`: A has ended, and only where B starts still matters).
+    const onTime = <T extends BeatCut | PlannedFade>(join: T | null) =>
+      join && (late || now <= ('aEnd' in join ? join.aEnd : join.aStart) + CUT_LATE_S) ? join : null;
+    const plan = upcomingPlan(from.fileId, next.fileId);
+    if (plan?.style === 'straight') return onTime(straightCut(plan, aDuration));
+    const fade = plan && canSetVolume() ? onTime(plannedFade(plan)) : null;
+    if (fade) return fade;
     const a = mixMapOf(from.recordingId);
     const b = mixMapOf(next.recordingId);
     if (!a || !b) return null;
-    const aDuration = Number.isFinite(deck.duration) ? deck.duration + offsetOf(deck) : from.duration;
-    const cut = beatCut(a, b, { aDuration, mode: usePlayer.getState().mixMode, sameAlbumInOrder: continues(from, next) });
-    // Long past the downbeat (a seek, a timer slowed in the background): A plays out, B from its start.
-    return cut && songTime(deck) <= cut.aEnd + CUT_LATE_S ? cut : null;
+    const s = usePlayer.getState();
+    const songs = { aDuration, mode: s.mixMode, sameAlbumInOrder: continues(from, next) && playsAlbum(s.source, from) };
+    return onTime(beatCut(a, b, songs) ?? silenceCut(a, b, songs));
+  }
+
+  /** With DJ mix, the silence at the end of the song playing (from its mix map), which it may stop before. */
+  function trailingSilence(deck: HTMLAudioElement): number {
+    const t = loaded.current.get(deck);
+    const map = t && usePrefs.getState().transitions === 'dj' ? mixMapOf(t.recordingId) : undefined;
+    if (!map || !Number.isFinite(map.soundEnd)) return 0;
+    const duration = Number.isFinite(deck.duration) ? deck.duration + offsetOf(deck) : t!.duration;
+    return Math.max(0, duration - map.soundEnd);
   }
 
   // DJ transitions: the first song (A) → the transition file (the bridge) → the next song (B).
@@ -1507,8 +1556,12 @@ export function AudioEngine() {
         p.setPlaying(false);
         return;
       }
-      // The next song is loaded but wasn't started early (timers are slowed in the background): start it now.
-      if (!handOff(0, () => usePlayer.getState().next(true))) usePlayer.getState().next(true);
+      // The next song is loaded but wasn't started early (timers are slowed in the background): start it
+      // now, after its leading silence with DJ mix.
+      const next = upNext(usePlayer.getState());
+      const join = next ? joinInto(e.currentTarget, next, true) : null;
+      const cut = join?.bStart ? { aEnd: songTime(e.currentTarget), bStart: join.bStart } : undefined;
+      if (!handOff(0, () => usePlayer.getState().next(true), cut)) usePlayer.getState().next(true);
     },
     onError: (e) => {
       const deck = e.currentTarget;

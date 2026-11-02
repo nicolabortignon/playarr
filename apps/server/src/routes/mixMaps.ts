@@ -45,10 +45,10 @@ export function mixMapRoutes(
       const own = cues.get(id);
       out[id] = own ? { ...map, cues: own } : map;
     }
-    // Songs not measured yet are measured in the background, so they mix from a later play: ahead
-    // of the library's backlog, since these are in someone's queue now.
-    const missing = ids.filter((id) => !maps.has(id));
-    if (missing.length) analyzer.ensure(missing, { audio: true, urgent: true });
+    // Songs not measured yet, or only by an older version (their map still serves meanwhile), are
+    // measured in the background, so they mix better from a later play: ahead of the library's
+    // backlog, since these are in someone's queue now. Songs already done are left as they are.
+    analyzer.ensure(ids, { audio: true, urgent: true });
     return out;
   });
 

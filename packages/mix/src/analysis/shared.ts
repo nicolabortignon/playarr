@@ -57,6 +57,17 @@ export function soundEndOf(frames: Pick<Onsets, 'fps' | 'rms'>, silence = silenc
   return round((last + FRAME_CENTRE) / fps);
 }
 
+/**
+ * Where the sound starts (s): the start of the first frame louder than the silence gate, so up to a
+ * frame (~93 ms) early, never late: trimming leading silence mustn't clip the first attack. 0 when
+ * nothing is louder.
+ */
+export function soundStartOf(frames: Pick<Onsets, 'fps' | 'rms'>, silence = silenceGate(frames.rms)): number {
+  const { fps, rms } = frames;
+  for (let i = 0; i < rms.length; i++) if (rms[i]! > silence) return round(i / fps);
+  return 0;
+}
+
 /** The largest value within `halfWidth` frames of the (fractional) frame `x`. */
 export function peak(values: Float64Array, x: number, halfWidth: number): number {
   const centre = Math.round(x);

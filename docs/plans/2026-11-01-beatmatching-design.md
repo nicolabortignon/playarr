@@ -161,4 +161,13 @@ Where the build differs from the design above:
 - **A new map version doesn't take DJ mix away.** Maps from version 2 on stay in use until their song is
   measured again; Settings → Playback counts only current ones, and *Analyse all again* re-measures every
   song (maps made before the press stop counting, but keep mixing until replaced).
+- **No silence between songs, the listener's fade length, crossfades on top** (2026-11-02). Mix maps
+  (version 4) say where a song's sound starts as well as where it ends. Fades end where A's sound ends
+  and start B where its sound starts; straight-on plans say the same (except with mixing off or within an
+  album), and the player cuts there when no file is rendered. A plain fade lasts as long as the fade length
+  in Settings → Playback (now offered with DJ mix too); the player plays the server's fade itself when its
+  file isn't ready. Long blends crossfade over the whole overlap (B up over the first half, A down over
+  the second) on top of the bass swap, and a key clash no longer rules a blend out when both songs have
+  room: 16 beats over the intro and outro. "Same album, in order" only holds when the queue plays that
+  album (or its artist), not a playlist that happens to list two of its songs in order.
 

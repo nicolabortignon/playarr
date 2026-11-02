@@ -134,6 +134,14 @@ export interface TransitionRequest {
    */
   fromFileId?: number;
   toFileId?: number;
+  /** How long a plain fade lasts (the listener's fade length, in seconds); the planner's own when not given. */
+  fadeSeconds?: number;
+  /**
+   * The queue plays the songs' album: then songs of one album in order follow each other straight on, as
+   * recorded. False when they only happen to be in order (a playlist, a mix): they're mixed like any two.
+   * Older players don't say: as true.
+   */
+  albumQueue?: boolean;
 }
 
 export type TransitionAnswer =
@@ -236,7 +244,7 @@ export class Transitions {
     }
   }
 
-  async request({ fromTrackId, toTrackId, mode, aPosition, fromFileId, toFileId }: TransitionRequest): Promise<TransitionAnswer> {
+  async request({ fromTrackId, toTrackId, mode, aPosition, fromFileId, toFileId, fadeSeconds, albumQueue }: TransitionRequest): Promise<TransitionAnswer> {
     const [a, b] = await Promise.all([this.opts.library.track(fromTrackId), this.opts.library.track(toTrackId)]);
     if (!a || !b) return { status: 'unavailable', reason: 'Unknown song' };
     if ((fromFileId !== undefined && fromFileId !== a.fileId) || (toFileId !== undefined && toFileId !== b.fileId)) {
@@ -251,19 +259,19 @@ export class Transitions {
     const cues = this.opts.maps.cues(recordings);
     const aCues = cues.get(a.recordingId);
     const bCues = cues.get(b.recordingId);
-    const sameAlbumInOrder = continuesAlbum(a, b);
+    const sameAlbumInOrder = albumQueue !== false && continuesAlbum(a, b);
 
     // The plan made for this pair before, while it can still be reached: a later poll (A has
     // played on) would otherwise get a plan that starts later, a new file to render, and never be ready.
     const pair = JSON.stringify([a.fileId, b.fileId, mode]);
-    const inputs = hash([aMap, aCues ?? null, bMap, bCues ?? null, sameAlbumInOrder]);
+    const inputs = hash([aMap, aCues ?? null, bMap, bCues ?? null, sameAlbumInOrder, fadeSeconds ?? null]);
     const remembered = this.plans.get(pair);
     const reachable = (plan: TransitionPlan) => plan.aStart >= (aPosition ?? 0) + PLANNING_LEAD;
     let plan: TransitionPlan;
     if (remembered && remembered.inputs === inputs && reachable(remembered.plan)) {
       plan = remembered.plan;
     } else {
-      plan = planTransition({ a: { ...aMap, cues: aCues }, b: { ...bMap, cues: bCues }, mode, sameAlbumInOrder, aPosition });
+      plan = planTransition({ a: { ...aMap, cues: aCues }, b: { ...bMap, cues: bCues }, mode, sameAlbumInOrder, aPosition, fadeSeconds });
       this.remember(pair, { plan, inputs, recordings });
     }
     if (plan.style === 'straight' || plan.length === 0) return { status: 'straight', plan };

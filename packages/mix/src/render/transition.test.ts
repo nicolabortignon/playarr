@@ -567,7 +567,8 @@ function mixSong(
   };
 }
 
-const clash = (camelot: '8A' | '3B') => ({ key: { camelot, confidence: 0.9 } });
+/** A beat that drifts somewhere in the song: no long blend, a quick mix. */
+const drifting = { gridStable: false };
 
 /** Each style with a pair of songs that the planner gives it. */
 const PAIRS: Record<string, { style: TransitionStyle; a: SongOnDisk; b: SongOnDisk; mode?: PlanInput['mode'] }> = {
@@ -577,17 +578,17 @@ const PAIRS: Record<string, { style: TransitionStyle; a: SongOnDisk; b: SongOnDi
     a: mixSong(120, { introBeats: 16, bodyBeats: 32, outroBeats: 48 }),
     b: mixSong(124, { introBeats: 64, bodyBeats: 96, outroBeats: 16 }),
   },
-  // 124 into 126 (1.6%), keys clash: a quick mix with B stretched.
+  // 124 into 126 (1.6%), B's beat drifting: a quick mix with B stretched.
   'quick, stretched': {
     style: 'quick',
-    a: mixSong(124, { introBeats: 16, bodyBeats: 32, outroBeats: 32 }, clash('8A')),
-    b: mixSong(126, { introBeats: 32, bodyBeats: 64, outroBeats: 16 }, clash('3B')),
+    a: mixSong(124, { introBeats: 16, bodyBeats: 32, outroBeats: 32 }),
+    b: mixSong(126, { introBeats: 32, bodyBeats: 64, outroBeats: 16 }, drifting),
   },
-  // 124 into 130 (4.8%), keys clash: a cut, B at its own speed.
+  // 124 into 130 (4.8%), B's beat drifting: a cut, B at its own speed.
   'quick, cut': {
     style: 'quick',
-    a: mixSong(124, { introBeats: 16, bodyBeats: 32, outroBeats: 32 }, clash('8A')),
-    b: mixSong(130, { introBeats: 32, bodyBeats: 64, outroBeats: 16 }, clash('3B')),
+    a: mixSong(124, { introBeats: 16, bodyBeats: 32, outroBeats: 32 }),
+    b: mixSong(130, { introBeats: 32, bodyBeats: 64, outroBeats: 16 }, drifting),
   },
   // A's beat unsure: a crossfade.
   fade: {

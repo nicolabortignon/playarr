@@ -167,9 +167,11 @@ export function PlaybackPanel() {
             )}
             {shown === 'dj' && (
               <>
-                <p className="mt-3 text-[13px] text-muted">
-                  Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on.
+                <p className="mt-3 mb-3 text-[13px] text-muted">
+                  Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on. Songs that can’t be
+                  mixed on the beat fade into each other for this long:
                 </p>
+                <PillGroup label="Fade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} />
                 <MixProgress />
               </>
             )}

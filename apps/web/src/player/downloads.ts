@@ -3,7 +3,7 @@ import type { Track } from '@playarr/shared';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import { usePrefs } from '../lib/prefs';
+import { djFadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
 import {
   canKeepOffline,
@@ -18,6 +18,7 @@ import {
   useOffline,
   workerReady,
 } from './offline';
+import { playsAlbum } from './decks';
 import { useTransition } from './transitions';
 
 /** Downloads keep the transitions the player asks for by default: a queue's mix mode starts out 'auto'. */
@@ -103,7 +104,10 @@ export async function keepNextTransition(): Promise<boolean> {
   pairJob = { key, fromFileId: from.fileId, toFileId: to.fileId, abort };
   try {
     // Another download has it already: no need to ask.
-    const answer = offlineTransition(from.fileId, to.fileId, TRANSITION_MODE) ?? (await askUntilRendered(from, to, abort.signal));
+    // Asked as the player will ask for it, so both get the same plan, and the same file.
+    const download = pins[key];
+    const albumQueue = playsAlbum(download && { label: download.title, href: download.href }, from);
+    const answer = offlineTransition(from.fileId, to.fileId, TRANSITION_MODE) ?? (await askUntilRendered(from, to, albumQueue, abort.signal));
     if (typeof answer === 'string') skip(pair, answer);
     else if (!(await keepTransition(key, { from, to, mode: TRANSITION_MODE }, answer, { signal: abort.signal }))) {
       skip(pair, 'Not enough space on this device');
@@ -121,10 +125,10 @@ export async function keepNextTransition(): Promise<boolean> {
  * No position is sent: the player's first ask comes early in the song, and the server reuses the plan
  * made here for it as long as the plan is still ahead, so both get the same file.
  */
-async function askUntilRendered(from: Track, to: Track, signal: AbortSignal): Promise<KeptTransition | string> {
+async function askUntilRendered(from: Track, to: Track, albumQueue: boolean, signal: AbortSignal): Promise<KeptTransition | string> {
   const started = Date.now();
   for (let polls = 0; ; polls++) {
-    const answer = await api.transition(from.id, to.id, TRANSITION_MODE);
+    const answer = await api.transition(from.id, to.id, TRANSITION_MODE, undefined, undefined, { fade: djFadeSeconds(usePrefs.getState()), albumQueue });
     signal.throwIfAborted();
     if (answer.status === 'ready') return answer;
     if (answer.status === 'unavailable') return answer.reason;

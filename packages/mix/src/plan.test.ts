@@ -145,10 +145,21 @@ describe('planTransition: choosing the style', () => {
     },
     { name: 'tempos exactly 8% apart still blend', a: { bpm: 108 }, b: { bpm: 100 }, style: 'long', reason: /^Tempos 8% apart/ },
     { name: 'the beat grid drifts', b: { gridStable: false }, style: 'quick', reason: /quick mix$/ },
-    { name: 'keys clash', b: { key: { camelot: '3B', confidence: 0.9 } }, style: 'quick', reason: /^Keys clash \(8A, 3B\): quick mix$/ },
+    {
+      name: 'keys clash, over an intro and outro',
+      b: { key: { camelot: '3B', confidence: 0.9 } },
+      style: 'long',
+      reason: /^Keys clash \(8A, 3B\), intro and outro: 16-beat blend$/,
+    },
+    {
+      name: 'keys clash, no room for a blend',
+      b: { key: { camelot: '3B', confidence: 0.9 }, introBeats: 12 },
+      style: 'quick',
+      reason: /^Keys clash \(8A, 3B\): quick mix$/,
+    },
     { name: 'neighbouring keys', b: { key: { camelot: '9A', confidence: 0.9 } }, style: 'long' },
     { name: 'keys clash but one is unsure', b: { key: { camelot: '3B', confidence: 0.2 } }, style: 'long' },
-    { name: 'keys clash, key confidence exactly 0.3', b: { key: { camelot: '3B', confidence: 0.3 } }, style: 'quick' },
+    { name: 'keys clash, key confidence exactly 0.3', b: { key: { camelot: '3B', confidence: 0.3 } }, style: 'long', reason: /16-beat/ },
     { name: 'a key is unknown', b: { key: undefined }, style: 'long', reason: /key unknown/ },
     { name: 'A’s outro too short', a: { outroBeats: 12 }, style: 'quick', reason: /room/ },
     { name: 'B’s intro too short', b: { introBeats: 12 }, style: 'quick', reason: /room/ },
@@ -277,13 +288,13 @@ describe('planTransition: a long blend', () => {
       expect(p.aHighPassHz).toEqual([{ at: 0, value: 20 }]);
     });
 
-    it('brings B in over the first quarter and takes A out over the last quarter', () => {
+    it('crossfades on top: B comes up over the first half, A goes down over the second', () => {
       expect(valueAt(p.bGain, 0)).toBe(0);
-      expect(valueAt(p.bGain, overlap * 0.125)).toBeGreaterThan(0.6); // equal power: ≈ 0.71 halfway
-      expect(valueAt(p.bGain, overlap * 0.25)).toBeCloseTo(1, 12);
+      expect(valueAt(p.bGain, overlap * 0.25)).toBeGreaterThan(0.6); // equal power: ≈ 0.71 halfway
+      expect(valueAt(p.bGain, p.switchAt)).toBeCloseTo(1, 12);
       expect(valueAt(p.bGain, p.length)).toBeCloseTo(1, 12);
-      expect(valueAt(p.aGain, overlap * 0.75)).toBeCloseTo(1, 12);
-      expect(valueAt(p.aGain, overlap * 0.875)).toBeGreaterThan(0.6);
+      expect(valueAt(p.aGain, p.switchAt)).toBeCloseTo(1, 12);
+      expect(valueAt(p.aGain, overlap * 0.75)).toBeGreaterThan(0.6);
       expect(valueAt(p.aGain, overlap)).toBeCloseTo(0, 12);
       expect(p.aGain.length).toBeGreaterThanOrEqual(9);
       expect(p.bGain.length).toBeGreaterThanOrEqual(8);
@@ -420,8 +431,8 @@ describe('planTransition: a long blend', () => {
 
 describe('planTransition: a quick mix', () => {
   it.each([
-    ['keys clash, tempos close', { bpm: 124 }, { bpm: 125, key: { camelot: '3B' as const, confidence: 0.9 } }],
-    ['keys clash, half-time tempos close', { bpm: 87 }, { bpm: 175, key: { camelot: '3B' as const, confidence: 0.9 } }],
+    ['beat drifts, tempos close', { bpm: 124 }, { bpm: 125, gridStable: false }],
+    ['beat drifts, half-time tempos close', { bpm: 87 }, { bpm: 175, gridStable: false }],
   ])('%s: B stretched to A, crossfading over the last two beats', (_name, aOptions, bOptions) => {
     const a = song(aOptions);
     const b = song(bOptions);
@@ -456,7 +467,7 @@ describe('planTransition: a quick mix', () => {
   });
 
   it.each([
-    ['keys clash, tempos 5% apart', { bpm: 124 }, { bpm: 130, key: { camelot: '3B' as const, confidence: 0.9 } }],
+    ['beat drifts, tempos 5% apart', { bpm: 124 }, { bpm: 130, gridStable: false }],
     ['tempos 11% apart', { bpm: 124 }, { bpm: 140 }],
   ])('%s: B unstretched, so a cut on the downbeat with no overlapping beat', (_name, aOptions, bOptions) => {
     const a = song(aOptions);
@@ -493,8 +504,8 @@ describe('planTransition: when a quick mix stretches B', () => {
   it.each([
     [102, 1.02],
     [102.01, 1],
-  ])('A at %f BPM into B at 100 (keys clash): B plays at rate %f', (aBpm, rate) => {
-    const p = plan(song({ bpm: aBpm }), song({ bpm: 100, key: { camelot: '3B', confidence: 0.9 } }));
+  ])('A at %f BPM into B at 100 (its beat drifting): B plays at rate %f', (aBpm, rate) => {
+    const p = plan(song({ bpm: aBpm }), song({ bpm: 100, gridStable: false }));
     expect(p.style).toBe('quick');
     expect(p.bRate).toEqual(steadyThenOwnTempo(rate, p.length));
   });
@@ -503,7 +514,7 @@ describe('planTransition: when a quick mix stretches B', () => {
     // B at 126 into A at 124: B slowed to 0.984, so getting back to its own speed at the end takes it
     // 3.2 ms past its landing. Its outro starts 2 ms after one of its bar lines: landing on that bar
     // would resume B inside the outro, so the landing must go back a bar.
-    const b0 = song({ bpm: 126, key: { camelot: '3B', confidence: 0.9 } });
+    const b0 = song({ bpm: 126, gridStable: false });
     const barLine = firstDownbeatOf(b0) + 16 * beatOf(b0);
     const b = { ...b0, outroStart: barLine + 0.002 };
     const p = plan(song(), b);
@@ -517,11 +528,11 @@ describe('planTransition: when a quick mix stretches B', () => {
 });
 
 describe('planTransition: a crossfade', () => {
-  it('fades over up to 8 seconds from A’s outro, both at their own speed', () => {
+  it('fades over 8 seconds up to where A’s sound ends, both at their own speed', () => {
     const a = song({ beatConfidence: 0.1 });
     const p = plan(a, song());
     expect(p).toMatchObject({ style: 'fade', length: 8, bStart: 0, bResume: 8, switchAt: 4, beats: 0 });
-    expect(p.aStart).toBeCloseTo(a.outroStart, 9);
+    expect(p.aStart).toBeCloseTo(a.soundEnd - 8, 9);
     expect(p.bRate).toEqual([{ at: 0, value: 1 }]);
     expect(valueAt(p.aGain, 0)).toBe(1);
     expect(valueAt(p.aGain, 8)).toBeCloseTo(0, 12);
@@ -530,12 +541,44 @@ describe('planTransition: a crossfade', () => {
     expect(p.aHighPassHz).toEqual([{ at: 0, value: 20 }]);
   });
 
-  it('a short outro makes a shorter fade', () => {
-    const a = song({ beatConfidence: 0.1, soundEnd: 299, outroStart: 296 });
-    const p = plan(a, song());
+  it.each([3, 6, 12])('lasts as long as the listener’s fade length (%i s)', (fadeSeconds) => {
+    const a = song({ beatConfidence: 0.1 });
+    const p = plan(a, song(), { fadeSeconds });
     expect(p.style).toBe('fade');
-    expect(p.length).toBeCloseTo(3, 9);
-    expect(p.switchAt).toBeCloseTo(1.5, 9);
+    expect(p.length).toBeCloseTo(fadeSeconds, 9);
+    expect(p.switchAt).toBeCloseTo(fadeSeconds / 2, 9);
+    expect(p.aStart + p.length).toBeCloseTo(a.soundEnd, 9);
+  });
+
+  it.each([
+    [0, 1],
+    [-5, 1],
+    [Number.NaN, 8],
+    [600, 30],
+  ])('keeps a fade length of %f to one that can be heard (%f s)', (fadeSeconds, length) => {
+    const p = plan(song({ beatConfidence: 0.1 }), song(), { fadeSeconds });
+    expect(p.length).toBeCloseTo(length, 9);
+  });
+
+  it('skips the silence at the end of A and the start of B', () => {
+    const a = song({ beatConfidence: 0.1, soundEnd: 280 });
+    const b = song({ soundStart: 2.5 });
+    const p = plan(a, b, { fadeSeconds: 6 });
+    expect(p).toMatchObject({ style: 'fade', length: 6, bStart: 2.5, bResume: 8.5 });
+    expect(p.aStart).toBeCloseTo(274, 9);
+  });
+
+  it('a hand-set mix-out point starts the fade there', () => {
+    const a = song({ beatConfidence: 0.1, soundEnd: 290 });
+    const p = plan({ ...a, cues: { mixOut: 250 } }, song(), { fadeSeconds: 6 });
+    expect(p).toMatchObject({ style: 'fade', aStart: 250, length: 6 });
+  });
+
+  it('a song with no beat at all fades too: its outro starts where its sound ends', () => {
+    const a = song({ bpm: 0, beatConfidence: 0, soundEnd: 290, outroStart: 290 });
+    const p = plan(a, song(), { fadeSeconds: 9 });
+    expect(p).toMatchObject({ style: 'fade', length: 9 });
+    expect(p.aStart).toBeCloseTo(281, 9);
   });
 
   it('never starts before A’s position + 5 s', () => {
@@ -555,10 +598,22 @@ describe('planTransition: a crossfade', () => {
 });
 
 describe('planTransition: straight on', () => {
-  it('is A to its end, then B from its start', () => {
+  it('with no mixing, is A to its end, then B from its start', () => {
     const a = song();
-    const p = plan(a, song(), { mode: 'off' });
+    const p = plan(a, song({ soundStart: 1 }), { mode: 'off' });
     expect(p).toMatchObject({ style: 'straight', aStart: a.duration, bStart: 0, length: 0, bResume: 0, switchAt: 0, beats: 0 });
+  });
+
+  it('within an album played in order, keeps its gaps', () => {
+    const a = song({ soundEnd: 290 });
+    const p = plan(a, song({ soundStart: 1 }), { sameAlbumInOrder: true });
+    expect(p).toMatchObject({ style: 'straight', aStart: a.duration, bStart: 0, bResume: 0 });
+  });
+
+  it('otherwise skips the silence at the end of A and the start of B', () => {
+    const a = song({ beatConfidence: 0.2, coldEnd: true, soundEnd: 290 });
+    const p = plan(a, song({ soundStart: 1.5 }));
+    expect(p).toMatchObject({ style: 'straight', aStart: 290, bStart: 1.5, length: 0, bResume: 1.5 });
   });
 });
 
@@ -753,8 +808,8 @@ describe('planTransition: a skip', () => {
     expect(onBar(unsureA, landingOf(p))).toBe(false);
   });
 
-  it('a skip time that isn’t a number leaves A playing to its end', () => {
-    expect(skip(Number.NaN)).toMatchObject({ style: 'straight', aStart: a.duration, length: 0 });
+  it('a skip time that isn’t a number leaves A playing to where its sound ends', () => {
+    expect(skip(Number.NaN)).toMatchObject({ style: 'straight', aStart: a.soundEnd, length: 0 });
   });
 
   it('no sure beat: a short crossfade from the skip; into an abrupt start, straight on from the skip', () => {

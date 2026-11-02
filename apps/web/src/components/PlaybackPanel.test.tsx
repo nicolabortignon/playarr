@@ -65,6 +65,15 @@ describe('PlaybackPanel transitions', () => {
     expect(lengths()).toBeNull();
     expect(screen.getByText(/mixed like a DJ would/)).toBeTruthy();
   });
+
+  it('offers DJ mix a fade length, for songs it can’t mix on the beat', () => {
+    usePrefs.setState({ transitions: 'dj', crossfade: 6 });
+    view();
+    const fades = within(screen.getByRole('radiogroup', { name: 'Fade length' }));
+    expect(fades.getByRole('radio', { name: '6 s' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(fades.getByRole('radio', { name: '12 s' }));
+    expect(usePrefs.getState().crossfade).toBe(12);
+  });
 });
 
 describe('PlaybackPanel DJ mix progress', () => {

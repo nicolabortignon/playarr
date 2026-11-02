@@ -20,7 +20,7 @@ import {
 import { useTransition } from './transitions';
 
 const track = (fileId: number, size = 1000): Track =>
-  ({ id: fileId, fileId, size, streamUrl: `/stream/${fileId}`, title: `Song ${fileId}`, duration: 200 }) as Track;
+  ({ id: fileId, fileId, size, streamUrl: `/stream/${fileId}`, title: `Song ${fileId}`, duration: 200, albumId: 1 }) as Track;
 
 describe('load-ahead plan', () => {
   const queue = [1, 2, 3, 4, 5].map((id) => track(id));
@@ -225,7 +225,7 @@ describe('download transitions', () => {
       return new Response(new Uint8Array(size), { headers: { 'Content-Length': String(size) } });
     });
     for (const url of Object.keys(sizes)) delete sizes[url];
-    usePrefs.setState({ transitions: 'dj' });
+    usePrefs.setState({ transitions: 'dj', crossfade: 0 });
     useDownloadState.setState({ failed: {}, skippedPairs: {} });
     useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
     useOffline.setState({ songs: keptSongs(4, 5, 6), pins: {}, limit: 1000, active: null });
@@ -247,9 +247,11 @@ describe('download transitions', () => {
     addDownload(album);
     await keepAll();
 
+    // Asked as the player asks for its album: the same plans, so the same files.
+    const asAlbum = [undefined, undefined, { fade: 6, albumQueue: true }];
     expect(transition.mock.calls).toEqual([
-      [4, 5, 'auto'],
-      [5, 6, 'auto'],
+      [4, 5, 'auto', ...asAlbum],
+      [5, 6, 'auto', ...asAlbum],
     ]);
     expect([...store.keys()].sort()).toEqual(['/transitions/4-5.flac', '/transitions/5-6.flac', '/transitions/5-6.rest.flac']);
     expect(useOffline.getState().pins['album:1']!.transitions).toEqual({ '4-5-auto': ready(4, 5), '5-6-auto': ready(5, 6, true) });
@@ -295,9 +297,10 @@ describe('download transitions', () => {
     answers({ '4-5': [{ status: 'unavailable', reason: 'No mix map yet for the next song' }], '5-6': [{ status: 'straight', plan }], '6-7': [ready(6, 7)] });
     addDownload({ ...album, tracks: [...album.tracks, track(7), track(8)] });
     await keepAll();
+    const asAlbum = [undefined, undefined, { fade: 6, albumQueue: true }];
     expect(transition.mock.calls).toEqual([
-      [4, 5, 'auto'],
-      [5, 6, 'auto'],
+      [4, 5, 'auto', ...asAlbum],
+      [5, 6, 'auto', ...asAlbum],
     ]);
     expect(store.size).toBe(0);
     expect(useOffline.getState().pins['album:1']!.transitions ?? {}).toEqual({});
@@ -336,7 +339,7 @@ describe('download transitions', () => {
     useTransition.setState({ fromFileId: 4, toFileId: 9 });
     addDownload(album);
     await keepAll();
-    expect(transition.mock.calls).toEqual([[5, 6, 'auto']]);
+    expect(transition.mock.calls).toEqual([[5, 6, 'auto', undefined, undefined, { fade: 6, albumQueue: true }]]);
   });
 
   it('fetches nothing unless transitions are DJ mix', async () => {

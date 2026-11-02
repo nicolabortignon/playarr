@@ -13,6 +13,10 @@ const input = z.object({
   /** The files the player has for the songs (older players don't send them). */
   fromFileId: z.number().int().nonnegative().optional(),
   toFileId: z.number().int().nonnegative().optional(),
+  /** The listener's fade length, for plain fades (older players don't send it). */
+  fade: z.number().min(0).max(60).optional(),
+  /** The queue plays the songs' album (older players don't say). */
+  albumQueue: z.boolean().optional(),
 });
 
 /**
@@ -31,7 +35,7 @@ export function transitionRoutes(
     const parsed = input.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
     if (!transitions) return { status: 'unavailable', reason: unavailableReason };
-    const { from, to, mode, position, fromFileId, toFileId } = parsed.data;
+    const { from, to, mode, position, fromFileId, toFileId, fade, albumQueue } = parsed.data;
     try {
       return await transitions.request({
         fromTrackId: from,
@@ -40,6 +44,8 @@ export function transitionRoutes(
         ...(position !== undefined ? { aPosition: position } : {}),
         ...(fromFileId !== undefined ? { fromFileId } : {}),
         ...(toFileId !== undefined ? { toFileId } : {}),
+        ...(fade !== undefined ? { fadeSeconds: fade } : {}),
+        ...(albumQueue !== undefined ? { albumQueue } : {}),
       });
     } catch (err) {
       // The player has a fallback for every answer but an error page: never make it guess.

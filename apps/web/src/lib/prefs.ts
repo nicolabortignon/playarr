@@ -30,7 +30,10 @@ interface Prefs {
   autoplay: boolean;
   /** How songs follow each other. */
   transitions: Transitions;
-  /** Seconds the end of a song and the start of the next overlap, when transitions are 'crossfade'. */
+  /**
+   * Seconds the end of a song and the start of the next overlap, when transitions are 'crossfade'; with
+   * DJ mix, how long songs that can't be mixed on the beat fade into each other.
+   */
   crossfade: Crossfade;
   /** Turn loud songs down so everything plays at about the same volume. */
   levelVolume: boolean;
@@ -69,7 +72,7 @@ function clean(saved: unknown): Saved {
     recordPlays: typeof s.recordPlays === 'boolean' ? s.recordPlays : DEFAULTS.recordPlays,
     autoplay: typeof s.autoplay === 'boolean' ? s.autoplay : DEFAULTS.autoplay,
     transitions,
-    crossfade: transitions === 'crossfade' && crossfade === 0 ? FIRST_CROSSFADE : crossfade,
+    crossfade: transitions !== 'off' && crossfade === 0 ? FIRST_CROSSFADE : crossfade,
     levelVolume: typeof s.levelVolume === 'boolean' ? s.levelVolume : DEFAULTS.levelVolume,
     profileId: Number.isInteger(s.profileId) && (s.profileId as number) > 0 ? (s.profileId as number) : null,
   };
@@ -87,8 +90,8 @@ export const usePrefs = create<Prefs>()(
       setTransitions: (transitions) =>
         set((s) => {
           if (!isTransitions(transitions)) return { transitions: DEFAULTS.transitions };
-          // A crossfade of 0 seconds would sound like Off: start with a length that is heard.
-          return transitions === 'crossfade' && s.crossfade === 0 ? { transitions, crossfade: FIRST_CROSSFADE } : { transitions };
+          // A fade of 0 seconds would sound like Off: start with a length that is heard.
+          return transitions !== 'off' && s.crossfade === 0 ? { transitions, crossfade: FIRST_CROSSFADE } : { transitions };
         }),
       setCrossfade: (crossfade) => set({ crossfade: CROSSFADES.includes(crossfade) ? crossfade : DEFAULTS.crossfade }),
       setLevelVolume: (levelVolume) => set({ levelVolume }),
@@ -116,3 +119,6 @@ export const usePrefs = create<Prefs>()(
 /** Seconds songs should overlap on this setting: only Crossfade fades (DJ mix plays gapless until it can mix). */
 export const crossfadeSeconds = ({ transitions, crossfade }: Pick<Prefs, 'transitions' | 'crossfade'>): number =>
   transitions === 'crossfade' ? crossfade : 0;
+
+/** With DJ mix, how long songs that can't be mixed on the beat fade into each other. */
+export const djFadeSeconds = ({ crossfade }: Pick<Prefs, 'crossfade'>): number => crossfade || FIRST_CROSSFADE;

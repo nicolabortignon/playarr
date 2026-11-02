@@ -1,5 +1,5 @@
 /** Bump when the mix map changes, so stored maps are measured again. */
-export const MIX_MAP_VERSION = 3;
+export const MIX_MAP_VERSION = 4;
 
 /** Camelot wheel position: 1–12 and A (minor) or B (major), e.g. "8A". */
 export type Camelot = `${number}${'A' | 'B'}`;
@@ -44,6 +44,8 @@ export interface MixMap {
    */
   coldStart: boolean;
   coldEnd: boolean;
+  /** Where sound starts (after leading silence). Missing in maps from before version 4: 0. */
+  soundStart?: number;
   /** Where sound ends (before trailing silence). */
   soundEnd: number;
   /**

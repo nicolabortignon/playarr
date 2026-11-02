@@ -1,5 +1,5 @@
 import type { Track, TrackLevel } from '@playarr/shared';
-import type { RepeatMode } from './store';
+import type { PlaySource, RepeatMode } from './store';
 
 type QueueState = { queue: Track[]; order: number[]; pos: number; repeat: RepeatMode };
 
@@ -14,6 +14,15 @@ export function upNext(s: QueueState): Track | undefined {
 export function continues(a: Track | undefined, b: Track | undefined): boolean {
   if (!a || !b || a.albumId !== b.albumId) return false;
   return (b.discNumber === a.discNumber && b.trackNumber === a.trackNumber + 1) || (b.discNumber === a.discNumber + 1 && b.trackNumber === 1);
+}
+
+/**
+ * The queue plays `a`'s album (or its artist's albums, which come whole and in order): there, songs of
+ * the album in order are heard as one. Elsewhere (a playlist, a mix) they only happen to be in order,
+ * and DJ mix mixes them like any two. A queue saved before its source was kept counts as the album.
+ */
+export function playsAlbum(source: PlaySource | undefined, a: Track): boolean {
+  return !source || source.href === `/albums/${a.albumId}` || source.href === `/artists/${a.artistId}`;
 }
 
 /** How long `a`'s end and `b`'s start overlap: none within an album, never more than a third of either song. */

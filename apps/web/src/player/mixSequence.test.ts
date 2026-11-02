@@ -1,6 +1,6 @@
 import type { MixMap, TransitionPlan } from '@playarr/mix';
 import { describe, expect, it } from 'vitest';
-import { beatCut, bridgeEntry, bridgeGain, bTimeAt, songTimeDuring, transitionTimeFor } from './mixSequence';
+import { beatCut, bridgeEntry, bridgeGain, bTimeAt, plannedFade, silenceCut, songTimeDuring, straightCut, transitionTimeFor } from './mixSequence';
 
 /**
  * A long blend: A from 170 s, B from 8 s, 24 s of transition. B starts 10% fast (at A's tempo) and eases
@@ -122,5 +122,41 @@ describe('the cut on the beat, with no transition ready', () => {
     expect(beatCut(song(), song({ beatConfidence: 0.2 }), options)).toBeNull();
     expect(beatCut(song(), song(), { ...options, sameAlbumInOrder: true })).toBeNull();
     expect(beatCut(song(), song(), { ...options, mode: 'off' })).toBeNull();
+  });
+});
+
+describe('the silence between songs, with no beat to cut on', () => {
+  it('stops A where its sound ends and starts B where its sound starts', () => {
+    expect(silenceCut(song({ soundEnd: 195 }), song({ soundStart: 1.5 }), options)).toEqual({ aEnd: 195, bStart: 1.5 });
+    // Maps from before soundStart: B from its start.
+    expect(silenceCut(song({ soundEnd: 195 }), song(), options)).toEqual({ aEnd: 195, bStart: 0 });
+  });
+
+  it('leaves songs with no silence worth cutting as they are', () => {
+    expect(silenceCut(song({ soundEnd: 199.98 }), song({ soundStart: 0.02 }), options)).toBeNull();
+  });
+
+  it('keeps an album’s gaps, and the songs as they are with mixing off', () => {
+    const a = song({ soundEnd: 195 });
+    const b = song({ soundStart: 1.5 });
+    expect(silenceCut(a, b, { ...options, sameAlbumInOrder: true })).toBeNull();
+    expect(silenceCut(a, b, { ...options, mode: 'off' })).toBeNull();
+  });
+});
+
+describe('the server’s plan, played without its file', () => {
+  const straight = { ...plan, style: 'straight', length: 0 } as TransitionPlan;
+
+  it('cuts straight on where the plan says the sounds end and start', () => {
+    expect(straightCut({ ...straight, aStart: 196, bStart: 0.8 }, 200)).toEqual({ aEnd: 196, bStart: 0.8 });
+    // As recorded (an album, no mixing): nothing to cut.
+    expect(straightCut({ ...straight, aStart: 200, bStart: 0 }, 200)).toBeNull();
+  });
+
+  it('plays a fade’s positions and length, and nothing else as a fade', () => {
+    const fade = { ...plan, style: 'fade', aStart: 190, bStart: 0.5, length: 6 } as TransitionPlan;
+    expect(plannedFade(fade)).toEqual({ aStart: 190, bStart: 0.5, seconds: 6 });
+    expect(plannedFade(plan)).toBeNull();
+    expect(plannedFade({ ...fade, length: 0 })).toBeNull();
   });
 });

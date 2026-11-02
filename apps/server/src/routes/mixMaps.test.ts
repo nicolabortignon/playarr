@@ -60,12 +60,13 @@ describe('mix map routes', () => {
     expect(res.json()).toMatchObject({ enabled: false, waiting: 0, working: 0 });
   });
 
-  it('answers the measured maps with their cue points, and has the missing ones measured', async () => {
+  it('answers the measured maps with their cue points, and has the songs measured that need it', async () => {
     const { app, analyzer } = setup({ maps: { [SONG]: map(200) }, cues: { [SONG]: { mixOut: 180 } } });
     const res = await app.inject({ method: 'POST', url: '/api/mix-maps', payload: { ids: [SONG, OTHER, SONG] } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ [SONG]: { ...map(200), cues: { mixOut: 180 } } });
-    expect(analyzer.ensure).toHaveBeenCalledWith([OTHER], { audio: true, urgent: true });
+    // All of them: the analyzer knows which are done, and which only have an older version's map.
+    expect(analyzer.ensure).toHaveBeenCalledWith([SONG, OTHER], { audio: true, urgent: true });
   });
 
   it('leaves cues out for songs without any', async () => {

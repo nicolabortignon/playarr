@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ACCENTS, PREFS_KEY, usePrefs } from './prefs';
+import { ACCENTS, crossfadeSeconds, djFadeSeconds, PREFS_KEY, usePrefs } from './prefs';
 
 const defaults = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, transitions: 'off', crossfade: 0, levelVolume: true, profileId: null } as const;
 const stored = (state: Record<string, unknown>) =>
@@ -72,6 +72,16 @@ describe('device preferences', () => {
     it('gives Crossfade a length when none was picked, so choosing it does something', () => {
       usePrefs.getState().setTransitions('crossfade');
       expect(usePrefs.getState()).toMatchObject({ transitions: 'crossfade', crossfade: 6 });
+    });
+
+    it('gives DJ mix a fade length too, for songs it can’t mix on the beat', async () => {
+      usePrefs.getState().setTransitions('dj');
+      expect(usePrefs.getState()).toMatchObject({ transitions: 'dj', crossfade: 6 });
+      expect(djFadeSeconds(usePrefs.getState())).toBe(6);
+      expect(crossfadeSeconds(usePrefs.getState())).toBe(0);
+      stored({ transitions: 'dj', crossfade: 0 });
+      await usePrefs.persist.rehydrate();
+      expect(usePrefs.getState().crossfade).toBe(6);
     });
 
     it('keeps the length already picked', () => {

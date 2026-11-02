@@ -20,6 +20,11 @@ export interface PlanInput {
    * skipPlan. `aPosition` is not used.
    */
   skip?: { at: number };
+  /**
+   * How long a plain fade lasts, in seconds: the listener's fade length (Settings → Playback).
+   * LONGEST_FADE when not given. Beat-matched mixes keep their own lengths, in beats.
+   */
+  fadeSeconds?: number;
 }
 
 type Song = PlanInput['a'];
@@ -59,7 +64,9 @@ const QUICK_CROSSFADE_BEATS = 2;
 const CUT_TAIL_BEATS = 1;
 /** How fast B comes in at a cut: short enough to land on the downbeat, long enough not to click. */
 const CUT_SECONDS = 0.02;
+/** A plain fade's length when the listener hasn't picked one, and the range a picked one is kept within. */
 const LONGEST_FADE = 8;
+const LONGEST_CHOSEN_FADE = 30;
 /** A skip with no beat to mix on crossfades this long: quick, but not an abrupt cut. */
 const SKIP_FADE = 2.5;
 /** A skip's lead-in in A's beats, preferred first: the second only when it lands a bar sooner. */
@@ -162,6 +169,8 @@ const finiteOr = (value: number, fallback: number) => (Number.isFinite(value) ? 
 const durationOf = (song: Song) => Math.max(0, finiteOr(song.duration, 0));
 /** Where sound ends, kept within the song. */
 const soundEndOf = (song: Song) => Math.min(Math.max(finiteOr(song.soundEnd, durationOf(song)), 0), durationOf(song));
+/** Where sound starts, kept before where it ends (maps from before version 4 don't say: 0). */
+const soundStartOf = (song: Song) => Math.min(Math.max(finiteOr(song.soundStart ?? 0, 0), 0), soundEndOf(song));
 /** Where A can be left: the hand-set mix-out point, else the detected outro. */
 const mixOutPoint = (a: Song) => finiteOr(a.cues?.mixOut ?? a.outroStart, soundEndOf(a));
 /** Where B is fully in: the hand-set mix-in point, else the end of the detected intro. */
@@ -292,10 +301,13 @@ const STYLE_RULES: ((pair: Pair) => Decision | undefined)[] = [
   },
   function longBlendOrQuickMix(pair) {
     if (!pair.a.gridStable || !pair.b.gridStable) return { style: 'quick', reason: 'Beat drifts: quick mix' };
-    if (pair.keys.kind === 'clash') {
-      return { style: 'quick', reason: `Keys clash (${pair.keys.a}, ${pair.keys.b}): quick mix` };
-    }
     const beats = blendBeats(pair);
+    if (pair.keys.kind === 'clash') {
+      // Over A's outro and B's intro only (mostly drums, little to clash), and briefly.
+      const clashing = `Keys clash (${pair.keys.a}, ${pair.keys.b})`;
+      if (beats === undefined) return { style: 'quick', reason: `${clashing}: quick mix` };
+      return { style: 'long', beats: SHORTEST_BLEND_BEATS, reason: `${clashing}, intro and outro: ${SHORTEST_BLEND_BEATS}-beat blend` };
+    }
     if (beats === undefined) return { style: 'quick', reason: 'Not enough intro or outro room for a blend: quick mix' };
     return { style: 'long', beats, reason: longReason(pair, beats) };
   },
@@ -331,6 +343,12 @@ function longReason(pair: Pair, beats: number): string {
 
 // ——— The plans ———
 
+/** The listener's fade length, kept to something that can be heard as a fade; LONGEST_FADE when not given. */
+function chosenFade({ fadeSeconds }: PlanInput): number {
+  if (fadeSeconds === undefined || !Number.isFinite(fadeSeconds)) return LONGEST_FADE;
+  return Math.min(LONGEST_CHOSEN_FADE, Math.max(SHORTEST_FADE, fadeSeconds));
+}
+
 /** Straight lines through an equal-power curve (sin/cos), so the loudness holds steady through a crossfade. */
 function equalPowerCurve(from: number, to: number, direction: 'in' | 'out'): Automation {
   return sampleCurve(from, to, (progress) =>
@@ -356,13 +374,19 @@ function sampleCurve(from: number, to: number, shape: (progress: number) => numb
   return points;
 }
 
-function straightPlan({ a }: Pair, reason: string): TransitionPlan {
+/**
+ * Straight on: A plays to where its sound ends and B starts where its sound starts, so neither song's
+ * silence is heard. Not with mixing off, nor within an album played in order: its gaps are the album's.
+ */
+function straightPlan({ a, b, input }: Pair, reason: string): TransitionPlan {
+  const asRecorded = input.mode === 'off' || input.sameAlbumInOrder;
+  const bStart = asRecorded ? 0 : soundStartOf(b);
   return {
     style: 'straight',
-    aStart: durationOf(a),
-    bStart: 0,
+    aStart: asRecorded ? durationOf(a) : soundEndOf(a),
+    bStart,
     length: 0,
-    bResume: 0,
+    bResume: bStart,
     switchAt: 0,
     bRate: [{ at: 0, value: 1 }],
     aGain: [{ at: 0, value: 0 }],
@@ -375,20 +399,28 @@ function straightPlan({ a }: Pair, reason: string): TransitionPlan {
   };
 }
 
-/** Today's crossfade, from where A's outro begins: no beat to match, so no beats counted. */
-function fadePlan(pair: Pair, reason: string, aStart = pair.leaveFrom, longest = LONGEST_FADE): TransitionPlan {
-  const roomInA = soundEndOf(pair.a) - aStart;
-  // B plays from its start at its own speed and resumes at `length`, which mustn't be inside its outro.
-  const roomInB = resumeLimit(pair.b);
+/**
+ * A plain crossfade, with no beat to match (so no beats counted), as long as the listener's fade length:
+ * A fades out up to where its sound ends (from its hand-set mix-out point, if it has one), while B fades
+ * in from where its sound starts. Neither song's silence is heard. `from`: a skip's, leaving A there.
+ */
+function fadePlan(pair: Pair, reason: string, from?: number, longest = chosenFade(pair.input)): TransitionPlan {
+  const { a, b } = pair;
+  const end = soundEndOf(a);
+  const aStart = from ?? Math.max(pair.earliestStart, finiteOr(a.cues?.mixOut ?? NaN, end - longest));
+  const roomInA = end - aStart;
+  // B plays at its own speed and resumes `length` after its start, which mustn't be inside its outro.
+  const bStart = soundStartOf(b);
+  const roomInB = resumeLimit(b) - bStart;
   if (!(roomInA >= SHORTEST_FADE)) return straightPlan(pair, 'Too close to the end to fade: straight on');
   if (!(roomInB >= SHORTEST_FADE)) return straightPlan(pair, 'B’s outro comes too soon to mix: straight on');
   const length = Math.min(longest, roomInA, roomInB);
   return {
     style: 'fade',
     aStart,
-    bStart: 0,
+    bStart,
     length,
-    bResume: length,
+    bResume: bStart + length,
     switchAt: length / 2,
     bRate: [{ at: 0, value: 1 }],
     aGain: equalPowerCurve(0, length, 'out'),
@@ -496,12 +528,14 @@ function longBlend(
   // aStart is a downbeat of A, so A's bar lines fall on whole bars of transition time.
   const bar = BAR_BEATS * beat;
   const bassSwap = Math.round(overlap / 2 / bar) * bar;
+  // A crossfade on top of the beatmatch: B comes up over the first half, its bass cut, and A goes down
+  // over the second, its bass cut, with the bass swapped where they meet.
   return {
     style: 'long',
     ...shape,
     switchAt: bassSwap,
-    aGain: [{ at: 0, value: 1 }, ...equalPowerCurve(overlap * 0.75, overlap, 'out')],
-    bGain: equalPowerCurve(0, overlap * 0.25, 'in'),
+    aGain: [{ at: 0, value: 1 }, ...equalPowerCurve(bassSwap, overlap, 'out')],
+    bGain: equalPowerCurve(0, bassSwap, 'in'),
     // The swap is a quick move over the beat leading into the bar line, done by the downbeat.
     aLowDb: [
       { at: 0, value: 0 },
