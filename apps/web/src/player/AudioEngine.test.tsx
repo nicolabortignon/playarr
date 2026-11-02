@@ -18,7 +18,7 @@ import { useTransition } from './transitions';
 vi.mock('./loadAhead', () => ({ useLoadAhead: () => {} }));
 vi.mock('./playTracker', () => ({ playTracker: { start: vi.fn(), finish: vi.fn(), tick: vi.fn(), pause: vi.fn() } }));
 // iPhones fix the volume: some tests play as one.
-vi.mock('./decks', async (importOriginal) => ({ ...(await importOriginal<typeof import('./decks')>()), canSetVolume: vi.fn(() => true) }));
+vi.mock('./decks', async (importOriginal) => ({ ...(await importOriginal<typeof import('./decks')>()), canSetVolume: vi.fn(() => true), isDesktop: vi.fn(() => true) }));
 // Live mixes are played by hand: jsdom has no Web Audio.
 vi.mock('./liveMix', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./liveMix')>()),

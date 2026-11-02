@@ -2,7 +2,7 @@ import { EXCERPT_MARGIN, RENDER_RATE, type MixMap, type MixMode, type Transition
 import type { Track } from '@playarr/shared';
 import { api } from '../lib/api';
 import { AUDIO_CACHE } from '../lib/cacheNames';
-import { canSetVolume, continues } from './decks';
+import { canSetVolume, continues, isDesktop } from './decks';
 import type { LiveMixReply, LiveMixRequest, SongAudio } from './liveMix.worker';
 import { useOffline } from './offline';
 
@@ -64,8 +64,7 @@ export function canLiveMix(): boolean {
     typeof AudioContext !== 'undefined' &&
     typeof OfflineAudioContext !== 'undefined' &&
     typeof Worker !== 'undefined' &&
-    typeof matchMedia === 'function' &&
-    matchMedia('(pointer: fine)').matches &&
+    isDesktop() &&
     canSetVolume()
   );
 }

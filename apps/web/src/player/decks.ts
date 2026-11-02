@@ -65,6 +65,20 @@ export function canSetVolume(): boolean {
   return volumeWorks;
 }
 
+/**
+ * A desktop browser (mouse or trackpad, not a phone or tablet). Only there does Web Audio play on with the
+ * page in the background: iPhones, iPads and Android phones suspend it when the screen locks, so there the
+ * sound must stay in the <audio> elements, which the system keeps playing. iPads ask for desktop pages
+ * (as a Mac), but have a touch screen.
+ */
+export function isDesktop(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod|Android|Mobile/i.test(ua)) return false;
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return false;
+  return typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
+}
+
 let silence: string | undefined;
 /** A tenth of a second of silence, to let a player make sound later without a tap (see AudioEngine). */
 export function silentClip(): string {

@@ -6,7 +6,7 @@ import { extractAccent } from '../lib/color';
 import { setFaviconAccent } from '../lib/favicon';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
-import { canSetVolume, continues, fadeCurve, fadeSeconds, levelDb, levelGain, playsAlbum, silentClip, upNext } from './decks';
+import { canSetVolume, continues, fadeCurve, fadeSeconds, isDesktop, levelDb, levelGain, playsAlbum, silentClip, upNext } from './decks';
 import { useDownloads } from './downloads';
 import { healQueue } from './healQueue';
 import { levelledStreamFailed, levelledUrl, loadedAt, loadLevels, streamGain, useLevels } from './levels';
@@ -438,10 +438,11 @@ export function AudioEngine() {
 
   /**
    * Makes the graph, where it can be made (a desktop browser), and plays the elements through it. Only
-   * from a click or key press: browsers only let Web Audio start then.
+   * from a click or key press: browsers only let Web Audio start then. Never on a phone or tablet: an
+   * element played through Web Audio goes silent there when the screen locks (see isDesktop).
    */
   function ensureGraph() {
-    if (!canSetVolume() || typeof AudioContext === 'undefined' || typeof AudioContext.prototype?.createMediaElementSource !== 'function') return;
+    if (!isDesktop() || !canSetVolume() || typeof AudioContext === 'undefined' || typeof AudioContext.prototype?.createMediaElementSource !== 'function') return;
     const context = (audioContext.current ??= new AudioContext());
     if (!graph.current) {
       graph.current = JoinGraph.create(context);

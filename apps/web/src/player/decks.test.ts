@@ -1,6 +1,6 @@
 import type { Track } from '@playarr/shared';
-import { describe, expect, it } from 'vitest';
-import { continues, fadeCurve, fadeSeconds, levelGain, playsAlbum, upNext } from './decks';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { continues, fadeCurve, fadeSeconds, isDesktop, levelGain, playsAlbum, upNext } from './decks';
 
 const song = (fileId: number, over: Partial<Track> = {}) =>
   ({ fileId, id: fileId, recordingId: `r${fileId}`, albumId: 1, discNumber: 1, trackNumber: fileId, duration: 200, ...over }) as Track;
@@ -43,5 +43,29 @@ describe('decks', () => {
     expect(levelGain(song(1), level, s)).toBeCloseTo(10 ** (-3 / 20));
     expect(levelGain(queue[2]!, level, s)).toBeCloseTo(10 ** (-6 / 20));
     expect(levelGain(song(1), undefined, s)).toBe(1);
+  });
+});
+
+describe('desktop or not (where Web Audio plays on with the screen locked)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const device = (userAgent: string, maxTouchPoints: number, fine: boolean) => {
+    vi.stubGlobal('navigator', { userAgent, maxTouchPoints });
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: fine)' && fine }));
+  };
+
+  it('is a desktop browser with a mouse or trackpad', () => {
+    device('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Safari/605.1.15', 0, true);
+    expect(isDesktop()).toBe(true);
+    device('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36', 0, true);
+    expect(isDesktop()).toBe(true);
+  });
+
+  it('isn’t an iPhone, an iPad (even asking for desktop pages, with a trackpad), or an Android phone', () => {
+    device('Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1', 5, false);
+    expect(isDesktop()).toBe(false);
+    device('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Safari/605.1.15', 5, true);
+    expect(isDesktop()).toBe(false);
+    device('Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36', 5, false);
+    expect(isDesktop()).toBe(false);
   });
 });
