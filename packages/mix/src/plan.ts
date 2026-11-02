@@ -502,12 +502,10 @@ function longPlan(pair: Pair, chosenBeats: number, reason: string): TransitionPl
         tooShortForB = true;
         continue;
       }
-      const notes = [
-        note,
-        beats < chosenBeats && (drifts.a || drifts.b) ? ' (the beat drifts over a longer one)' : '',
-        aStart > firstLine + EPSILON ? ' (later in the outro, where the beat holds)' : '',
-      ].join('');
-      const blendReason = (beats === chosenBeats ? reason : longReason(pair, beats)) + notes;
+      const shorter = beats < chosenBeats && (drifts.a || drifts.b);
+      const later = aStart > firstLine + EPSILON;
+      const steadier = shorter && later ? ' (shorter and later in the outro, where the beat holds)' : shorter ? ' (the beat drifts over a longer one)' : later ? ' (later in the outro, where the beat holds)' : '';
+      const blendReason = (beats === chosenBeats ? reason : longReason(pair, beats)) + note + steadier;
       return longBlend(pair, { beats, aStart, bStart, bRate, length, bResume }, blendReason);
     }
   }

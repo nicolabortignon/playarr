@@ -931,6 +931,16 @@ describe('a beat that drifts in places', () => {
     expect(p.reason).toBe('Same tempo, keys compatible: 32-beat blend (the beat drifts over a longer one)');
   });
 
+  it('blends shorter and later when only the end of the outro holds', () => {
+    const a = song(roomy);
+    const out = phraseAt(a, a.outroStart);
+    // The outro's first five phrases drift; the last three hold, room for 32 beats but not 64.
+    const p = plan(drifting(a, Object.fromEntries(Array.from({ length: 5 }, (_, i) => [out + i, 60]))), song(roomy), party);
+    expect(p).toMatchObject({ style: 'long', beats: 32 });
+    expect(phraseAt(a, p.aStart)).toBe(out + 5);
+    expect(p.reason).toBe('Same tempo, keys compatible: 32-beat blend (shorter and later in the outro, where the beat holds)');
+  });
+
   it('says which song’s beat drifts when no blend holds', () => {
     const a = song(roomy);
     const b = song(roomy);
