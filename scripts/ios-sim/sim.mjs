@@ -13,9 +13,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function devices() {
   const { devices } = JSON.parse(simctl('list', 'devices', 'available', '-j'));
-  // Runtimes sort oldest first, so the last match of a name is on the newest iOS.
+  // Oldest iOS first (simctl lists runtimes in no set order), so the last match of a name is on the newest.
+  const version = (runtime) => runtime.match(/iOS-(\d+)-(\d+)/)?.slice(1).map(Number) ?? [0, 0];
   return Object.entries(devices)
     .filter(([runtime]) => runtime.includes('iOS'))
+    .sort(([a], [b]) => version(a)[0] - version(b)[0] || version(a)[1] - version(b)[1])
     .flatMap(([runtime, list]) => list.map((d) => ({ ...d, runtime: runtime.split('.').pop() })));
 }
 
