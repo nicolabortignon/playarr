@@ -75,10 +75,11 @@ const CHUNK_FRAMES = RENDER_RATE;
  */
 const REMAINDER_CHUNK_SECONDS = 30;
 /**
- * The longest remainder made. Each chunk of an MP3 is decoded from the start of the file (that's what
- * makes its start exact), so the work grows with the square of the length: 20 minutes is a few minutes
- * of background work on a NAS; a 60-minute set would hold up every other transition for half an hour.
- * Beyond it B is joined from its own file, as well as the player's seek allows.
+ * The longest remainder made. Sources that stream decode it in one pass (an MP3 from its start once);
+ * the others decode each chunk of an MP3 from the start of the file (that's what makes its start
+ * exact), so their work grows with the square of the length: 20 minutes is a few minutes of background
+ * work on a NAS; a 60-minute set would hold up every other transition for half an hour. Beyond it B
+ * is joined from its own file, as well as the player's seek allows.
  */
 const LONGEST_REMAINDER_SECONDS = 20 * 60;
 /** How long a forgotten transition's files stay servable: a player may be streaming them right now. */
@@ -497,20 +498,66 @@ export class Transitions {
   }
 
   /**
-   * B from song time `from` to its end, REMAINDER_CHUNK_SECONDS at a time, starting exactly at
-   * `from`: the decodes start on the seek grid (the first at or just before `from`, the samples
-   * before it dropped) and each next one where the last ended. Only one chunk is held at a time.
-   * Throws, once the audio runs out, if it ran out much sooner than the song should have.
+   * B from song time `from` to its end, starting exactly at `from`: decoded from the seek grid (the
+   * first step at or just before `from`, the samples before it dropped), as one stream where the
+   * source can (an MP3 decoded from its start once), else REMAINDER_CHUNK_SECONDS at a time, each
+   * chunk starting where the last ended. Either way only a little is held at a time. Throws, once the
+   * audio runs out, if it ran out much sooner than the song should have.
    */
   private async *remainder(source: { media: MediaSource; path: string; track: Track; duration: number }, from: number): AudioChunks {
     const { media, path, track, duration } = source;
-    if (!media.pcm) throw new Error('This source can’t decode audio');
+    if (!media.pcm && !media.pcmStream) throw new Error('This source can’t decode audio');
     // Counted in grid steps (whole numbers), so the chunk starts never drift by a rounding error.
     const firstStep = Math.floor(from * SEEK_GRID_PER_SECOND);
     const stepsPerChunk = REMAINDER_CHUNK_SECONDS * SEEK_GRID_PER_SECOND;
     const end = duration + END_SLACK_SECONDS;
     let skip = Math.round((from - firstStep / SEEK_GRID_PER_SECOND) * RENDER_RATE);
     let decodedSeconds = 0;
+    if (media.pcmStream) {
+      const start = firstStep / SEEK_GRID_PER_SECOND;
+      const stream = media.pcmStream(path, {
+        sampleRate: RENDER_RATE,
+        channels: 2,
+        startSeconds: start,
+        maxSeconds: Math.max(SHORTEST_DECODE_SECONDS, end - start),
+        exactSeek: seeksInexactly(track.format),
+      });
+      try {
+        // Frames can arrive split across reads: a partial one waits for the rest.
+        let pending: Buffer = Buffer.alloc(0);
+        for await (const read of stream as AsyncIterable<Buffer>) {
+          pending = pending.length ? Buffer.concat([pending, read]) : read;
+          const whole = pending.length - (pending.length % PCM_FRAME_BYTES);
+          if (!whole) continue;
+          const { left, right } = deinterleave(pending.subarray(0, whole));
+          pending = pending.subarray(whole);
+          decodedSeconds += left.length / RENDER_RATE;
+          if (left.length > skip) yield { left: left.subarray(skip), right: right.subarray(skip) };
+          skip = Math.max(0, skip - left.length);
+        }
+      } finally {
+        stream.destroy();
+      }
+    } else {
+      yield* this.remainderInChunks(source, firstStep, stepsPerChunk, end, skip, (seconds) => (decodedSeconds += seconds));
+    }
+    const expected = duration - firstStep / SEEK_GRID_PER_SECOND;
+    if (decodedSeconds < expected - SHORT_DECODE_SLACK_SECONDS) {
+      throw new Error(`Decoding “${track.title}” stopped ${(expected - decodedSeconds).toFixed(1)} s short`);
+    }
+  }
+
+  /** The remainder chunk by chunk, for sources that can't stream (see remainder). */
+  private async *remainderInChunks(
+    source: { media: MediaSource; path: string; track: Track },
+    firstStep: number,
+    stepsPerChunk: number,
+    end: number,
+    skip: number,
+    decoded: (seconds: number) => void,
+  ): AudioChunks {
+    const { media, path, track } = source;
+    if (!media.pcm) throw new Error('This source can’t decode audio');
     for (let step = firstStep; step / SEEK_GRID_PER_SECOND < end; step += stepsPerChunk) {
       const start = step / SEEK_GRID_PER_SECOND;
       const seconds = Math.min(REMAINDER_CHUNK_SECONDS, end - start);
@@ -526,14 +573,10 @@ export class Transitions {
       // Never more than the chunk's length: anything past it is the next chunk's first samples.
       const wanted = Math.round(seconds * RENDER_RATE);
       const frames = Math.min(left.length, wanted);
-      decodedSeconds += frames / RENDER_RATE;
+      decoded(frames / RENDER_RATE);
       if (frames > skip) yield { left: left.subarray(skip, frames), right: right.subarray(skip, frames) };
       skip = Math.max(0, skip - frames);
       if (frames < wanted) break; // the song ended
-    }
-    const expected = duration - firstStep / SEEK_GRID_PER_SECOND;
-    if (decodedSeconds < expected - SHORT_DECODE_SLACK_SECONDS) {
-      throw new Error(`Decoding “${track.title}” stopped ${(expected - decodedSeconds).toFixed(1)} s short`);
     }
   }
 

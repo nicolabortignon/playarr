@@ -980,3 +980,20 @@ describe('a beat that drifts in places', () => {
     expect(plan(drifting(a, { [out]: 80 }), song({ ...roomy, ...unsure })).style).toBe('fade');
   });
 });
+
+describe('tempos that are one', () => {
+  it('plays B at its own speed when it would drift less than 2 ms over the longest blend', () => {
+    const p = plan(song({ bpm: 128.0006, introBeats: 128, outroBeats: 128 }), song({ bpm: 128.0009, introBeats: 128, outroBeats: 128 }), { mode: 'party' });
+    expect(p).toMatchObject({ style: 'long', beats: 64, bRate: [{ at: 0, value: 1 }] });
+    // No ease-back: the transition is just the overlap.
+    expect(p.length).toBeCloseTo(64 * (60 / 128.0006), 6);
+    expect(p.reason).toBe('Same tempo, keys compatible: 64-beat blend');
+  });
+
+  it('still stretches B for a difference that would be heard', () => {
+    // 0.05 BPM apart: 12 ms over a 64-beat blend.
+    const p = plan(song({ bpm: 128, introBeats: 128, outroBeats: 128 }), song({ bpm: 128.05, introBeats: 128, outroBeats: 128 }), { mode: 'party' });
+    expect(valueAt(p.bRate, 0)).toBeCloseTo(128 / 128.05, 9);
+    expect(p.length).toBeGreaterThan(64 * (60 / 128) + 1);
+  });
+});

@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { appendFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -133,6 +134,8 @@ interface SetupOptions {
   maxBytes?: number;
   renderTimeoutMs?: number;
   forgetGraceMs?: number;
+  /** The source streams decodes too (as local files and rclone do), in odd-sized reads. */
+  stream?: boolean;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -144,7 +147,14 @@ function setup(options: SetupOptions = {}) {
   const maps = options.maps ?? new Map([...tracks.values()].map((t) => [t.recordingId, mixMap()]));
   const cues = options.cues ?? new Map<string, CuePoints>();
   const pcm = vi.fn(async (path: string, opts: PcmOptions) => synthPcm(path, opts));
-  const media = { kind: 'local', pcm } as unknown as MediaSource;
+  // 1001 bytes a read: frames (4 bytes) split across reads.
+  const pcmStream = vi.fn((path: string, opts: PcmOptions) => {
+    const bytes = synthPcm(path, opts);
+    return Readable.from((function* () {
+      for (let i = 0; i < bytes.length; i += 1001) yield bytes.subarray(i, i + 1001);
+    })());
+  });
+  const media = { kind: 'local', pcm, ...(options.stream ? { pcmStream } : {}) } as unknown as MediaSource;
   const render = vi.fn(
     options.render ?? (async (plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number) => renderTransition(plan, a, b, undefined, tail)),
   );
@@ -168,7 +178,7 @@ function setup(options: SetupOptions = {}) {
     forgetGraceMs: options.forgetGraceMs,
   });
   services.push(transitions);
-  return { dir, transitions, pcm, render, encode, log, maps, cues, tracks };
+  return { dir, transitions, pcm, pcmStream, render, encode, log, maps, cues, tracks };
 }
 
 /** A temporary cache folder, removed after the test. */
@@ -505,6 +515,32 @@ describe('Transitions', { timeout: 30_000 }, () => {
     t.pcm.mockClear();
     expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fadeSeconds })).toEqual(ready);
     expect(t.pcm).not.toHaveBeenCalled();
+  });
+
+  it('streams the rest of an MP3 B in one decode where the source can, joining the transition just the same', async () => {
+    const bResumeFrames = 293_837;
+    const fadeSeconds = bResumeFrames / RENDER_RATE;
+    const t = setup({ tracks: [track(1), track(2, MP3)], stream: true });
+    await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fadeSeconds });
+    await t.transitions.idle();
+    const ready = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', fadeSeconds }));
+
+    // The excerpts as before; the remainder from one exact decode on the 10 ms grid, to the song's end.
+    expect(t.pcm.mock.calls.map(([path]) => path)).toEqual(['/music/1.flac', '/music/2.flac']);
+    expect(t.pcmStream.mock.calls.map(([path, opts]) => [path, opts.startSeconds, opts.exactSeek])).toEqual([['/music/2.flac', 6.66, true]]);
+    expect(t.pcmStream.mock.calls[0]![1].maxSeconds).toBeGreaterThan(SONG_SECONDS - 6.66);
+
+    const rest = readRaw(fileOf(t.dir, ready.continuationUrl!));
+    const bResume = ready.plan.bResume;
+    expect(Math.abs(rest.length / 2 - (SONG_SECONDS - bResume) * RENDER_RATE)).toBeLessThanOrEqual(1);
+    for (const i of [0, 1000, 44100]) {
+      expect(rest[2 * i]).toBeCloseTo(sampleAt('/music/2.flac', bResume + i / RENDER_RATE), 3);
+    }
+    const transition = readRaw(fileOf(t.dir, ready.url));
+    const frames = transition.length / 2;
+    const [beforeLast, last] = [transition[2 * (frames - 2)]!, transition[2 * (frames - 1)]!];
+    const step = (2 * Math.PI * pitchOf('/music/2.flac')) / RENDER_RATE;
+    expect(Math.abs(rest[0]! - (2 * Math.cos(step) * last - beforeLast))).toBeLessThan(2e-3);
   });
 
   it('mixes at the levels the player plays the songs at, B’s remainder too, and keeps each level’s file apart', async () => {

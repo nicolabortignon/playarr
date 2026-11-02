@@ -42,6 +42,12 @@ const QUICK_MIX_CONFIDENCE = 0.5;
 export const MIN_DOWNBEAT_CONFIDENCE = 0.4;
 /** Stretching B more than this is audible: beyond it, no long blend. */
 export const LARGEST_TEMPO_GAP = 0.08;
+/**
+ * Tempos this close count as the same: over the longest blend B, at its own speed, drifts less than
+ * this from A, so it isn't stretched, nor eased back afterwards (an analysis's 128.0006 and 128.0009
+ * BPM are one tempo, and stretching for them would only cost the render time and add a ramp).
+ */
+const SAME_TEMPO_DRIFT_S = 0.002;
 /** A quick mix only stretches B when the tempos are this close (otherwise it cuts unstretched). */
 const QUICK_MIX_STRETCH_GAP = 0.02;
 /** Keys detected with less confidence than this don't count against a blend. */
@@ -214,7 +220,8 @@ interface Pair {
 function describePair(input: PlanInput): Pair {
   const { a, b, aPosition } = input;
   const tempos = hasUsableTempo(a) && hasUsableTempo(b);
-  const ratio = tempos ? tempoRatio(a.bpm, b.bpm) : 1;
+  const matched = tempos ? tempoRatio(a.bpm, b.bpm) : 1;
+  const ratio = Math.abs(matched - 1) * LONGEST_BLEND_BEATS * (tempos ? beatLength(a) : 0) < SAME_TEMPO_DRIFT_S ? 1 : matched;
   const earliestStart = aPosition === undefined || !Number.isFinite(aPosition) ? 0 : Math.max(0, aPosition + PLANNING_LEAD);
   const leaveFrom = Math.max(mixOutPoint(a), earliestStart);
   let outroRoomBeats = 0;
@@ -231,7 +238,7 @@ function describePair(input: PlanInput): Pair {
     b,
     ratio,
     tempoGap: Math.abs(ratio - 1),
-    halfTime: tempos && Math.abs(ratio - a.bpm / b.bpm) > EPSILON,
+    halfTime: tempos && Math.abs(matched - a.bpm / b.bpm) > EPSILON,
     earliestStart,
     leaveFrom,
     outroRoomBeats,
