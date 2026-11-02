@@ -350,6 +350,36 @@ describe('AudioEngine', () => {
     useOffline.setState({ songs: {} });
   });
 
+  it('asks again for a song whose stream broke off, from where it stopped, before giving up', async () => {
+    const fetchMock = vi.fn(async () => new Response('ab', { status: 206 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 50);
+    Object.defineProperty(a, 'error', { configurable: true, value: { code: 2 } });
+    const breakOff = async () => {
+      Object.defineProperty(a, 'readyState', { configurable: true, value: 0 });
+      a.setAttribute('src', '/stream/1#broken'); // the element reloads only when its src is set
+      await act(async () => {
+        a.dispatchEvent(new Event('error'));
+      });
+      await settle();
+    };
+    for (let i = 0; i < 3; i++) {
+      await breakOff();
+      expect(src(a)).toBe('/stream/1');
+      a.dispatchEvent(new Event('loadedmetadata'));
+      expect(fake(a).time).toBe(50);
+      expect(fake(a).paused).toBe(false);
+      expect(useClock.getState().error).toBeNull();
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    await breakOff();
+    expect(now()).toBe(1);
+    expect(useClock.getState().error).toBe('The song kept stopping loading: the Playarr server or the network is too busy');
+    expect(usePlayer.getState().playing).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
   it('turns loud songs down', async () => {
     vi.spyOn(api, 'levels').mockResolvedValue({ r41: { track: -6 } });
     const [a] = await start([song(41), song(42)]);

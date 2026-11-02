@@ -130,6 +130,28 @@ describe('Requests', () => {
     expect(addedArtist(without.lidarr)).toMatchObject({ rootFolderPath: '/music', qualityProfileId: 2 });
   });
 
+  it('refreshes the library when files land, once for each batch rather than at every look', async () => {
+    const { requests, library, lidarr } = setup();
+    await requests.request(ref);
+    library.refreshSoon.mockClear();
+    const withFiles = (trackFileCount: number) => [
+      { id: 42, monitored: true, statistics: { trackFileCount, trackCount: 12, totalTrackCount: 12, sizeOnDisk: 1, percentOfTracks: 0 } },
+    ];
+    const now = vi.spyOn(Date, 'now');
+    const look = async (minute: number) => {
+      now.mockReturnValue(minute * 60_000);
+      return (await requests.availability(MBID)).state;
+    };
+    lidarr.albumsByIds.mockResolvedValue(withFiles(3));
+    expect(await look(1)).toBe('importing');
+    expect(await look(2)).toBe('importing');
+    expect(library.refreshSoon).toHaveBeenCalledTimes(1);
+    lidarr.albumsByIds.mockResolvedValue(withFiles(5));
+    await look(3);
+    expect(library.refreshSoon).toHaveBeenCalledTimes(2);
+    now.mockRestore();
+  });
+
   describe('albums with only some of their songs in the library', () => {
     const partial: LidarrAlbumRef = { monitored: false, albumId: 5, have: 1, total: 12 };
 
@@ -164,6 +186,24 @@ describe('Requests', () => {
       again.lidarr.albumsByIds.mockImplementation(lidarr.albumsByIds);
       await again.requests.request(ref);
       expect((await again.requests.availability(MBID)).state).toBe('available');
+    });
+
+    it('wait for the rest once the library has the songs Lidarr found, without refreshing the library again', async () => {
+      const { requests, library, lidarr } = setup();
+      library.albumByMbid.mockResolvedValue(partial);
+      await requests.request(ref);
+      library.refreshSoon.mockClear();
+      lidarr.commandStatus.mockResolvedValue({ id: 7, name: 'AlbumSearch', status: 'completed' });
+      lidarr.albumsByIds.mockResolvedValue([
+        { id: 42, monitored: true, statistics: { trackFileCount: 1, trackCount: 12, totalTrackCount: 12, sizeOnDisk: 1, percentOfTracks: 8 } },
+      ]);
+      const now = vi.spyOn(Date, 'now');
+      for (let look = 1; look <= 3; look++) {
+        now.mockReturnValue(look * 60_000);
+        expect(await requests.availability(MBID)).toMatchObject({ state: 'waiting', albumId: 5, have: 1, total: 12 });
+      }
+      expect(library.refreshSoon).not.toHaveBeenCalled();
+      now.mockRestore();
     });
 
     it('still refuse an album that is complete', async () => {

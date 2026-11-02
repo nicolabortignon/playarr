@@ -73,6 +73,8 @@ const IN_STEP_START_WATCH_MS = 1500;
 const MIN_TAIL_S = 1;
 /** At a cut on the beat, B's own file starts silenced up to this long before its start, to be in step there. */
 const CUT_PRE_ROLL_S = 0.5;
+/** A song's stream that breaks off is asked for again this many times before playback stops with an error. */
+const STREAM_RETRIES = 3;
 
 interface Fade {
   out: HTMLAudioElement;
@@ -193,6 +195,8 @@ export function AudioEngine() {
   const overlapTimer = useRef<ReturnType<typeof setInterval>>(undefined);
   /** Transition files that wouldn't play: not tried again. */
   const failedBridges = useRef(new Set<string>());
+  /** Stream retries left for a song (see retryStream). */
+  const streamRetries = useRef<{ fileId: number; left: number } | null>(null);
   /** Elements the engine keeps silent while they get in step (iPhones; see inStep). */
   const silenced = useRef(new WeakSet<HTMLAudioElement>());
   /** The changeover being brought into step: `finish` takes over at once, `cancel` leaves the old file playing. */
@@ -1715,6 +1719,8 @@ export function AudioEngine() {
     },
     onEnded: (e) => {
       if (!isActive(e)) return tickFade();
+      // Played through: a later play of it gets its stream retries afresh.
+      streamRetries.current = null;
       // The song ended before a live mix out of it could start: on to the next song as usual.
       if (live.current) stopLive(live.current);
       playTracker.finish('ended');
@@ -1752,9 +1758,25 @@ export function AudioEngine() {
       }
       switching.current = false;
       if (skipToKept()) return;
+      if (t && retryStream(deck, t)) return;
       void reportError(deck);
     },
   };
+
+  /**
+   * A song's stream broke off (the server busy for a while, the network gone for a moment): ask for it
+   * again from where it stopped, a few times for each song. False once its retries are used up.
+   */
+  function retryStream(deck: HTMLAudioElement, t: Track): boolean {
+    if (streamRetries.current?.fileId !== t.fileId) streamRetries.current = { fileId: t.fileId, left: STREAM_RETRIES };
+    if (streamRetries.current.left-- <= 0) return false;
+    const time = songTime(deck);
+    switching.current = true;
+    load(deck, t);
+    setTimeOnLoad(deck, time);
+    if (usePlayer.getState().playing) void play(deck);
+    return true;
+  }
 
   // The transition's element: its events count while it plays the transition.
   const isBridging = (e: { currentTarget: HTMLAudioElement }) => e.currentTarget === bridge.current && !!bridging();
@@ -1845,13 +1867,21 @@ function updatePositionState(position: number, duration: number, playbackRate: n
   }
 }
 
-/** <audio> errors carry no detail, so ask the server why the stream failed. */
+/** MediaError codes: the stream broke off, or the file couldn't be decoded. */
+const MEDIA_ERR_NETWORK = 2;
+const MEDIA_ERR_DECODE = 3;
+
+/** <audio> errors carry little detail, so ask the server why the stream failed. */
 async function reportError(audio: HTMLAudioElement) {
   if (!audio.src) return;
+  const code = audio.error?.code;
   let message = 'Playback failed';
   try {
     const res = await fetch(audio.src, { headers: { Range: 'bytes=0-1' } });
     if (!res.ok) message = ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? message;
+    // The file is there: its stream kept breaking off, it's damaged, or the browser can't play its format.
+    else if (code === MEDIA_ERR_NETWORK) message = 'The song kept stopping loading: the Playarr server or the network is too busy';
+    else if (code === MEDIA_ERR_DECODE) message = 'This file couldn’t be decoded: it may be damaged';
     else message = 'This file format is not supported by your browser';
   } catch {
     message = 'Cannot reach the Playarr server';

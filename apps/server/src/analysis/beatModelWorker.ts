@@ -3,9 +3,14 @@
  * one song at a time, since each run uses several cores and a gigabyte of memory.
  */
 import { parentPort } from 'node:worker_threads';
+import { lowestPriorityThread } from '../lowPriority.ts';
 import { BeatModel } from './beatModel.ts';
 import type { BeatModelAnswer, BeatModelJob } from './beatModelThread.ts';
 import { pcmToFloat } from './dsp.ts';
+
+// Before the model starts its own threads, so they run at this priority too: a song's beats can wait,
+// a transition being rendered or a stream can't.
+lowestPriorityThread();
 
 let model: Promise<BeatModel> | undefined;
 let queue: Promise<void> = Promise.resolve();

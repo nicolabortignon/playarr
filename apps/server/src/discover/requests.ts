@@ -47,6 +47,8 @@ export class Requests {
   private loaded: Promise<void>;
   private statusCache: { at: number; data: Map<string, Availability> } | null = null;
   private statusInflight: Promise<Map<string, Availability>> | null = null;
+  /** How many files Lidarr had for each request at the last look: the library refreshes when that grows. */
+  private filesSeen = new Map<string, number>();
 
   constructor(
     private readonly lidarr: LidarrClient,
@@ -241,6 +243,7 @@ export class Requests {
   async remove(mbid: string) {
     await this.loaded;
     this.requests.delete(mbid);
+    this.filesSeen.delete(mbid);
     await this.save();
   }
 
@@ -318,15 +321,19 @@ export class Requests {
       const items = queue.filter((q) => q.albumId === r.lidarrAlbumId);
       const songs = partial.get(r.mbid);
       const stats = album?.statistics;
+      const files = stats?.trackFileCount ?? 0;
       // Asked for the rest of an album already partly here: done once Lidarr has every track it knows of,
       // even if MusicBrainz lists more (bonus tracks of another edition, say).
       if (songs && stats && stats.trackCount > 0 && stats.trackFileCount >= stats.trackCount && !items.length) {
         result.set(r.mbid, { state: 'available', albumId: songs.albumId });
       } else {
-        result.set(r.mbid, describe(album, items, commands[i]));
+        result.set(r.mbid, describe(album, items, commands[i], songs?.have));
       }
-      // Files have landed: pull them into Playarr's library.
-      if ((album?.statistics?.trackFileCount ?? 0) > 0) this.library.refreshSoon();
+      // Files have landed: pull them into Playarr's library, once each time more land. An album Lidarr
+      // only partly found keeps its few files for good: refreshing at every look would rebuild the
+      // library nonstop.
+      if (files > (this.filesSeen.get(r.mbid) ?? songs?.have ?? 0)) this.library.refreshSoon();
+      this.filesSeen.set(r.mbid, files);
     });
     return result;
   }
@@ -358,9 +365,12 @@ function describe(
   album: LidarrAlbum | undefined,
   items: LidarrQueueItem[],
   command: LidarrCommand | undefined,
+  /** Songs of the album already in the library. */
+  have = 0,
 ): Availability {
   if (!album) return { state: 'failed', message: 'Album was removed from Lidarr' };
-  if ((album.statistics?.trackFileCount ?? 0) > 0 && !items.length) {
+  // Files the library doesn't have yet (the songs it has came from them, or from elsewhere).
+  if ((album.statistics?.trackFileCount ?? 0) > have && !items.length) {
     return { state: 'importing', message: 'Adding to your library…' };
   }
   if (items.length) {
