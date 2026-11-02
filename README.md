@@ -70,6 +70,22 @@ pnpm -C packages/mix test         # unit tests: beats, key and mix points, plann
 pnpm --filter @playarr/web test   # unit tests plus smoke tests against a running server
 ```
 
+### On an iPhone simulator
+
+With Xcode installed, `pnpm sim` drives Playarr in Safari on an iOS Simulator, by default the NAS deployment (`PLAYARR_URL` picks another server):
+
+```bash
+pnpm sim boot --show              # start an iPhone 17 Pro simulator and show its window
+pnpm sim open /albums/123         # load a page and wait for it
+pnpm sim click 'text=Shuffle'     # tap a button or link by what it says (or by CSS selector)
+pnpm sim fill input 'daft punk'   # type into a field
+pnpm sim eval 'document.title'    # run JavaScript in the page
+pnpm sim console --errors         # the page's warnings and errors
+pnpm sim shot                     # screenshot to /tmp/playarr-sim.png
+```
+
+It talks to the simulator's Web Inspector directly, so it needs no WebDriver setup. Taps are JavaScript clicks, not real touches.
+
 ### Docker
 
 Build the image from the repository root, then mount the music folder read-only at the same path Lidarr uses, so no path mapping is needed:
