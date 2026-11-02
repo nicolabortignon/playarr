@@ -146,20 +146,21 @@ describe('planTransition: choosing the style', () => {
     { name: 'tempos exactly 8% apart still blend', a: { bpm: 108 }, b: { bpm: 100 }, style: 'long', reason: /^Tempos 8% apart/ },
     { name: 'the beat grid drifts', b: { gridStable: false }, style: 'quick', reason: /quick mix$/ },
     {
-      name: 'keys clash, over an intro and outro',
+      name: 'keys clash, over an intro and outro: blended as long as auto blends anyway',
       b: { key: { camelot: '3B', confidence: 0.9 } },
       style: 'long',
-      reason: /^Keys clash \(8A, 3B\), intro and outro: 16-beat blend$/,
+      reason: /^Same tempo, keys clash \(8A, 3B\): 32-beat blend$/,
     },
     {
-      name: 'keys clash, no room for a blend',
+      name: 'keys clash, no room for a blend: the room is why',
       b: { key: { camelot: '3B', confidence: 0.9 }, introBeats: 12 },
       style: 'quick',
-      reason: /^Keys clash \(8A, 3B\): quick mix$/,
+      reason: /^Not enough intro or outro room for a blend: quick mix$/,
     },
     { name: 'neighbouring keys', b: { key: { camelot: '9A', confidence: 0.9 } }, style: 'long' },
+    { name: 'keys two steps apart blend as usual', b: { key: { camelot: '10A', confidence: 0.9 } }, style: 'long', reason: /^Same tempo, keys two steps apart: 32-beat blend$/ },
     { name: 'keys clash but one is unsure', b: { key: { camelot: '3B', confidence: 0.2 } }, style: 'long' },
-    { name: 'keys clash, key confidence exactly 0.3', b: { key: { camelot: '3B', confidence: 0.3 } }, style: 'long', reason: /16-beat/ },
+    { name: 'keys clash, key confidence exactly 0.3', b: { key: { camelot: '3B', confidence: 0.3 } }, style: 'long', reason: /keys clash/ },
     { name: 'a key is unknown', b: { key: undefined }, style: 'long', reason: /key unknown/ },
     { name: 'A’s outro too short', a: { outroBeats: 12 }, style: 'quick', reason: /room/ },
     { name: 'B’s intro too short', b: { introBeats: 12 }, style: 'quick', reason: /room/ },
@@ -171,6 +172,17 @@ describe('planTransition: choosing the style', () => {
     const result = plan(song(a), song(b), input);
     expect(result.style).toBe(style);
     if (reason) expect(result.reason).toMatch(reason);
+  });
+
+  it('keeps a party blend between clashing keys to 32 beats, and lets close keys have the longest', () => {
+    const roomy = { introBeats: 128, outroBeats: 128 };
+    const party = { mode: 'party' as const };
+    expect(plan(song(roomy), song({ ...roomy, key: { camelot: '3B', confidence: 0.9 } }), party)).toMatchObject({
+      style: 'long',
+      beats: 32,
+      reason: 'Keys clash (8A, 3B), intro and outro: 32-beat blend',
+    });
+    expect(plan(song(roomy), song({ ...roomy, key: { camelot: '10A', confidence: 0.9 } }), party)).toMatchObject({ style: 'long', beats: 64 });
   });
 
   it('A’s cue point overrides its detected outro', () => {

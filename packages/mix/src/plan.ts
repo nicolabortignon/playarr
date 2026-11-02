@@ -1,5 +1,5 @@
 import { integrate } from './automation.ts';
-import { isCamelot, keysCompatible } from './camelot.ts';
+import { camelotDistance, isCamelot } from './camelot.ts';
 import { beatHolds } from './drift.ts';
 import type { Automation, Camelot, CuePoints, MixMap, MixMode, TransitionPlan } from './types.ts';
 
@@ -11,7 +11,7 @@ import type { Automation, Camelot, CuePoints, MixMap, MixMode, TransitionPlan } 
  * Bump when the planner would plan the same two songs differently, so plans the server remembered
  * (and rendered) are made afresh rather than kept while the songs' maps stay the same.
  */
-export const PLANNER_VERSION = 2;
+export const PLANNER_VERSION = 3;
 
 export interface PlanInput {
   a: MixMap & { cues?: CuePoints };
@@ -58,6 +58,13 @@ const SAME_TEMPO_DRIFT_S = 0.002;
 const QUICK_MIX_STRETCH_GAP = 0.02;
 /** Keys detected with less confidence than this don't count against a blend. */
 export const KEY_CONFIDENCE = 0.3;
+/**
+ * Keys this many steps apart on the Camelot wheel or fewer blend as usual: an intro and an outro are
+ * mostly drums, the bass is swapped, and two steps (an energy boost) is a move DJs make on purpose.
+ */
+const CLOSE_KEY_STEPS = 2;
+/** Keys further apart blend over this many beats at most (auto blends no longer anyway; party would). */
+const CLASHING_KEYS_BEATS = 32;
 const LONGEST_BLEND_BEATS = 64;
 const AUTO_BLEND_BEATS = 32;
 const SHORTEST_BLEND_BEATS = 16;
@@ -220,7 +227,8 @@ interface Pair {
   /** The song's bar starts can be trusted (see MIN_DOWNBEAT_CONFIDENCE). */
   aBarsSure: boolean;
   bBarsSure: boolean;
-  keys: { kind: 'compatible' } | { kind: 'unknown' } | { kind: 'clash'; a: Camelot; b: Camelot };
+  /** Close: two steps apart on the wheel (an energy boost, a common DJ move); clash: further. */
+  keys: { kind: 'compatible' } | { kind: 'close' } | { kind: 'unknown' } | { kind: 'clash'; a: Camelot; b: Camelot };
 }
 
 function describePair(input: PlanInput): Pair {
@@ -264,7 +272,8 @@ function keyRelation(a: Song, b: Song): Pair['keys'] {
   const aKey = trusted(a);
   const bKey = trusted(b);
   if (!aKey || !bKey) return { kind: 'unknown' };
-  return keysCompatible(aKey, bKey) ? { kind: 'compatible' } : { kind: 'clash', a: aKey, b: bKey };
+  const steps = camelotDistance(aKey, bKey);
+  return steps <= 1 ? { kind: 'compatible' } : steps <= CLOSE_KEY_STEPS ? { kind: 'close' } : { kind: 'clash', a: aKey, b: bKey };
 }
 
 type Decision =
@@ -322,13 +331,12 @@ const STYLE_RULES: ((pair: Pair) => Decision | undefined)[] = [
   function longBlendOrQuickMix(pair) {
     // Whether the beats hold where the songs would play together is longPlan's to judge: it knows where that is.
     const beats = blendBeats(pair);
-    if (pair.keys.kind === 'clash') {
-      // Over A's outro and B's intro only (mostly drums, little to clash), and briefly.
-      const clashing = `Keys clash (${pair.keys.a}, ${pair.keys.b})`;
-      if (beats === undefined) return { style: 'quick', reason: `${clashing}: quick mix` };
-      return { style: 'long', beats: SHORTEST_BLEND_BEATS, reason: `${clashing}, intro and outro: ${SHORTEST_BLEND_BEATS}-beat blend` };
-    }
     if (beats === undefined) return { style: 'quick', reason: 'Not enough intro or outro room for a blend: quick mix' };
+    if (pair.keys.kind === 'clash' && beats > CLASHING_KEYS_BEATS) {
+      // Over A's outro and B's intro only (mostly drums, little to clash, and the bass swapped), not the longest.
+      const clashing = `Keys clash (${pair.keys.a}, ${pair.keys.b})`;
+      return { style: 'long', beats: CLASHING_KEYS_BEATS, reason: `${clashing}, intro and outro: ${CLASHING_KEYS_BEATS}-beat blend` };
+    }
     return { style: 'long', beats, reason: longReason(pair, beats) };
   },
 ];
@@ -369,7 +377,14 @@ function tempoText({ tempoGap, halfTime }: Pair): string {
 }
 
 function longReason(pair: Pair, beats: number): string {
-  const keys = pair.keys.kind === 'compatible' ? 'keys compatible' : 'key unknown';
+  const keys =
+    pair.keys.kind === 'compatible'
+      ? 'keys compatible'
+      : pair.keys.kind === 'close'
+        ? 'keys two steps apart'
+        : pair.keys.kind === 'clash'
+          ? `keys clash (${pair.keys.a}, ${pair.keys.b})`
+          : 'key unknown';
   return `${tempoText(pair)}, ${keys}: ${beats}-beat blend`;
 }
 
