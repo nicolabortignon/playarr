@@ -264,7 +264,8 @@ describe('Analyzer mix maps', () => {
     expect(analyzer.pending([SONG], { mixMaps: false })).toBe(0);
     await vi.waitFor(() => expect(analyzer.pending([SONG])).toBe(0), { timeout: 10_000 });
     expect(analyzer.mixMaps([SONG]).has(SONG)).toBe(true);
-    expect(analyzer.features([SONG]).get(SONG)).toEqual({ stored: true });
+    // No tempo yet: its mix map (a stand-in's here) has none.
+    expect(analyzer.features([SONG]).get(SONG)).toEqual({ stored: true, bpm: 0, pulse: 0 });
     expect(dsp.analyze).not.toHaveBeenCalled();
     // Both measured: nothing left to do.
     analyzer.ensure([SONG]);
@@ -322,7 +323,8 @@ describe('Analyzer mix maps', () => {
     const { analyzer } = withSong({ seconds: 200, dsp });
     analyzer.ensure([SONG]);
     await vi.waitFor(() => expect(analyzer.pending([SONG])).toBe(0), { timeout: 10_000 });
-    expect(analyzer.features([SONG]).get(SONG)).toEqual({ given: true });
+    // The tempo from the mix map it made (no beat confidence in this stand-in's).
+    expect(analyzer.features([SONG]).get(SONG)).toEqual({ given: true, bpm: 99, pulse: 0 });
     expect(analyzer.mixMaps([SONG]).get(SONG)).toEqual({ bpm: 99 });
   });
 
@@ -352,6 +354,24 @@ describe('Analyzer mix maps', () => {
       current: { bpm: 128, beatConfidence: 0.9, gridStable: true, key: { camelot: '8A', confidence: 0.7 } },
       keyless: { bpm: 0, beatConfidence: 0.1, gridStable: false },
     });
+  });
+
+  it('takes each song’s tempo and beat from its beat analysis, none until it has one', () => {
+    const { analyzer, db } = withSong({ seconds: 200 });
+    const now = new Date().toISOString();
+    const feature = db.prepare('INSERT INTO track_features (recording_id, version, features, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)');
+    // Features from before sound analysis left the tempo to beat analysis still hold a tempo of their own.
+    feature.run('mapped', ANALYSIS_VERSION, JSON.stringify({ bpm: 99, pulse: 0.2, loudness: 0.5 }), now);
+    feature.run('unmapped', ANALYSIS_VERSION, JSON.stringify({ bpm: 99, pulse: 0.2, loudness: 0.4 }), now);
+    db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)').run(
+      'mapped',
+      MIX_MAP_VERSION,
+      JSON.stringify({ bpm: 127.98, beatConfidence: 0.83, gridStable: true }),
+      now,
+    );
+    const features = analyzer.features(['mapped', 'unmapped']);
+    expect(features.get('mapped')).toMatchObject({ bpm: 128, pulse: 0.83, loudness: 0.5 });
+    expect(features.get('unmapped')).toMatchObject({ bpm: 0, pulse: 0, loudness: 0.4 });
   });
 
   it('counts only features and mix maps measured by the current version, so a new version is noticed', () => {

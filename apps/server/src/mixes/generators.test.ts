@@ -54,7 +54,7 @@ function library(artists: number[], n: number, opts: { tags?: string[]; year?: n
                 bass: 0.5,
                 envelope: [],
                 seconds: 200,
-                raw: { meanDb: 0, rangeDb: 0, centroidHz: 0, onsetsPerSec: 0, lowShare: 0, beatPeak: 0 },
+                raw: { meanDb: 0, rangeDb: 0, centroidHz: 0, onsetsPerSec: 0, lowShare: 0 },
               },
             }
           : {}),

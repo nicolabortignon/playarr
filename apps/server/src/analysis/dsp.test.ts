@@ -35,18 +35,12 @@ function tone(hz: number, seconds = 10, gain = 0.5): Float32Array {
 }
 
 describe('analyzePcm', () => {
-  it.each([90, 120, 128, 140, 174])('finds the tempo of a %d BPM click track', (bpm) => {
-    const f = analyzePcm(clickTrack(bpm));
-    // 174 has no octave inside 70–180 other than itself; others must come back as written.
-    expect(f.bpm).toBeGreaterThan(bpm - 1.5);
-    expect(f.bpm).toBeLessThan(bpm + 1.5);
-    expect(f.pulse).toBeGreaterThan(0.7);
+  it('leaves the tempo to beat analysis', () => {
+    expect(analyzePcm(clickTrack(128))).not.toHaveProperty('bpm');
   });
 
-  it('reports no steady beat for noise', () => {
-    const rand = noise(7);
-    const f = analyzePcm(Float32Array.from({ length: 20 * SR }, () => 0.3 * rand()));
-    expect(f.pulse).toBeLessThan(0.3);
+  it('hears faster clicks as busier', () => {
+    expect(analyzePcm(clickTrack(174)).busyness).toBeGreaterThan(analyzePcm(clickTrack(90)).busyness);
   });
 
   it('hears a high tone as brighter than a low one, and a loud one as louder', () => {
@@ -75,6 +69,6 @@ describe('analyzePcm', () => {
 
   it('returns silence for empty or near-empty input', () => {
     expect(analyzePcm(new Float32Array(SR)).loudness).toBe(0);
-    expect(analyzePcm(new Float32Array(10 * SR)).pulse).toBe(0);
+    expect(analyzePcm(new Float32Array(10 * SR)).busyness).toBe(0);
   });
 });

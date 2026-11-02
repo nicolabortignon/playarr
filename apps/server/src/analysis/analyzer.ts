@@ -5,7 +5,7 @@ import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
 import { seeksInexactly } from '../media/source.ts';
 import type { BeatModelThread } from './beatModelThread.ts';
-import { ANALYSIS_VERSION, type AudioFeatures } from './dsp.ts';
+import { ANALYSIS_VERSION, type AudioFeatures, type SoundFeatures } from './dsp.ts';
 import { DspThread, DspWorkerLost, type SongBeats } from './dspThread.ts';
 import { LOUDNESS_VERSION, LoudnessJobs, type SongLoudness } from './loudnessJobs.ts';
 import { selectIn } from './sql.ts';
@@ -249,13 +249,27 @@ export class Analyzer {
     if (this.canAnalyzeAudio && !this.closed) this.loudnessJobs.remeasure(id);
   }
 
+  /**
+   * The songs' features: how each sounds (sound analysis), with its tempo and how sure the beat is from
+   * its beat analysis (its mix map; 0 until it has one). One tempo for every use: the one DJ mix plays by.
+   */
   features(ids: string[]): Map<string, AudioFeatures> {
     const rows = this.select<{ recording_id: string; features: string }>(
       'SELECT recording_id, features FROM track_features WHERE version = ? AND features IS NOT NULL AND recording_id IN',
       ids,
       [ANALYSIS_VERSION],
     );
-    return new Map(rows.map((r) => [r.recording_id, JSON.parse(r.features) as AudioFeatures]));
+    const beats = this.mixSummaries(rows.map((r) => r.recording_id));
+    return new Map(
+      rows.map((r) => {
+        // Features measured before sound analysis left the tempo to beat analysis still hold their own: left out.
+        const { bpm: _bpm, pulse: _pulse, ...sound } = JSON.parse(r.features) as SoundFeatures & { bpm?: number; pulse?: number };
+        const beat = beats.get(r.recording_id);
+        const bpm = beat && beat.bpm > 0 ? Math.round(beat.bpm * 10) / 10 : 0;
+        const pulse = bpm ? Math.round(Math.min(1, Math.max(0, beat!.beatConfidence || 0)) * 100) / 100 : 0;
+        return [r.recording_id, { ...sound, bpm, pulse }];
+      }),
+    );
   }
 
   /**

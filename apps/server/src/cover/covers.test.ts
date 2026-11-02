@@ -19,7 +19,7 @@ const features = (bpm: number): AudioFeatures => ({
   bass: 0.6,
   envelope: Array.from({ length: ENVELOPE_POINTS }, () => 0.6),
   seconds: 200,
-  raw: { meanDb: -14, rangeDb: 12, centroidHz: 1200, onsetsPerSec: 2.5, lowShare: 0.5, beatPeak: 0.6 },
+  raw: { meanDb: -14, rangeDb: 12, centroidHz: 1200, onsetsPerSec: 2.5, lowShare: 0.5 },
 });
 
 /** Covers over an in-memory analyzer: every song is analyzed unless listed as `pending`. */

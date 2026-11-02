@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { analyzeMix, renderTransition, type BeatActivations, type Excerpt, type MixMap, type StereoAudio, type TransitionPlan } from '@playarr/mix';
-import { analyzePcm, atSampleRate, pcmToFloat, SAMPLE_RATE, type AudioFeatures } from './dsp.ts';
+import { analyzePcm, atSampleRate, pcmToFloat, SAMPLE_RATE, type SoundFeatures } from './dsp.ts';
 
 /**
  * The job failed because the worker went away (crashed, stopped or was closed), not because of what
@@ -13,7 +13,7 @@ export class DspWorkerLost extends Error {}
 type Pending = { resolve: (answer: WorkerAnswer) => void; reject: (e: Error) => void };
 
 /** What the worker sends back: one of these per job, matched up by id. */
-export type WorkerAnswer = { id: number; features?: AudioFeatures; mixMap?: MixMap; audio?: StereoAudio; error?: string };
+export type WorkerAnswer = { id: number; features?: SoundFeatures; mixMap?: MixMap; audio?: StereoAudio; error?: string };
 
 /** The beat model's answer for a song's head, and its tail when it's long (see analyzeMix). */
 export type SongBeats = { head: BeatActivations; tail?: BeatActivations | null };
@@ -41,7 +41,7 @@ export class DspThread {
   constructor(private readonly opts: { startWorker?: () => Worker } = {}) {}
 
   /** A song's features (see analyzePcm) from s16le PCM at `rate` (SAMPLE_RATE or twice it). */
-  async analyze(pcm: Buffer, rate = SAMPLE_RATE): Promise<AudioFeatures> {
+  async analyze(pcm: Buffer, rate = SAMPLE_RATE): Promise<SoundFeatures> {
     const worker = this.start();
     if (!worker) return analyzePcm(atSampleRate(pcmToFloat(pcm), rate));
     const bytes = copyOf(pcm);

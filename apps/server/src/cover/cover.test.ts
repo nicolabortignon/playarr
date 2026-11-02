@@ -35,7 +35,7 @@ function dnaOf(songs: Song[]) {
       bass: 0.6,
       envelope: s.envelope ?? Array.from({ length: ENVELOPE_POINTS }, () => 0.7),
       seconds: 240,
-      raw: { meanDb: -14, rangeDb: 12, centroidHz: 1200, onsetsPerSec: 2.5, lowShare: 0.5, beatPeak: 0.6 },
+      raw: { meanDb: -14, rangeDb: 12, centroidHz: 1200, onsetsPerSec: 2.5, lowShare: 0.5 },
     });
     meta.set(s.id, { tags: s.tags.map((t): [string, number] => [t, 1]), year: s.year });
     items.push({ recordingId: s.id, duration: 240 });

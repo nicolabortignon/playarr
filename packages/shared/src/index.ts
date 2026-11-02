@@ -678,7 +678,16 @@ export interface TrackMetadata {
   /** Every file of this song, the one that plays first. */
   copies: TrackCopyMetadata[];
   /** What the song sounds like (Playarr's own analysis), when measured. */
-  analysis?: { bpm: number; pulse: number; loudness: number; dynamics: number; brightness: number; busyness: number; bass: number };
+  analysis?: {
+    /** Tempo, and how sure the beat is (0–1): from beat analysis, once the song has one. */
+    bpm?: number;
+    pulse?: number;
+    loudness: number;
+    dynamics: number;
+    brightness: number;
+    busyness: number;
+    bass: number;
+  };
   /** Paths and locations were left out: the request didn't come from the home network. */
   pathsHidden: boolean;
 }

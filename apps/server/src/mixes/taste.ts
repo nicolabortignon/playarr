@@ -66,8 +66,13 @@ export function toSong(f: SongFacts): Song {
   let energy: number | undefined;
   if (f.features) {
     const x = f.features;
-    const tempo = Math.min(1, Math.max(0, (x.bpm - 70) / 110)) * x.pulse;
-    energy = clamp(0.35 * x.loudness + 0.3 * x.busyness + 0.2 * x.pulse + 0.15 * tempo);
+    if (x.bpm > 0) {
+      const tempo = Math.min(1, Math.max(0, (x.bpm - 70) / 110)) * x.pulse;
+      energy = clamp(0.35 * x.loudness + 0.3 * x.busyness + 0.2 * x.pulse + 0.15 * tempo);
+    } else {
+      // No beat analysis yet, so no tempo: from how loud and busy it sounds alone, on the same scale.
+      energy = clamp((0.35 * x.loudness + 0.3 * x.busyness) / 0.65);
+    }
   } else if (Object.keys(families).length) {
     let e = 0;
     for (const [family, w] of Object.entries(families)) e += FAMILY_ENERGY[family as StyleFamily] * w!;

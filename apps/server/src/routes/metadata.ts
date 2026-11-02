@@ -60,7 +60,15 @@ export function metadataRoutes(
         features: (recordingId) => {
           const f = deps.features([recordingId]).get(recordingId);
           return f
-            ? { bpm: f.bpm, pulse: f.pulse, loudness: f.loudness, dynamics: f.dynamics, brightness: f.brightness, busyness: f.busyness, bass: f.bass }
+            ? {
+                // Tempo and beat from beat analysis, once the song has one.
+                ...(f.bpm > 0 ? { bpm: f.bpm, pulse: f.pulse } : {}),
+                loudness: f.loudness,
+                dynamics: f.dynamics,
+                brightness: f.brightness,
+                busyness: f.busyness,
+                bass: f.bass,
+              }
             : undefined;
         },
       },

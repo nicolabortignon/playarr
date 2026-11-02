@@ -87,13 +87,15 @@ export function buildDna(
     }
     const family = (Object.entries(profile.families) as [StyleFamily, number][]).sort((a, b) => b[1] - a[1])[0]?.[0];
     const base = f ?? guess(song.recordingId);
-    const tempoDrive = ((base.bpm - 70) / 110) * base.pulse;
+    // The tempo comes from beat analysis: until the song has one, the stand-in's.
+    const beat = base.bpm > 0 ? base : guess(song.recordingId);
+    const tempoDrive = ((beat.bpm - 70) / 110) * beat.pulse;
     return {
       id: song.recordingId,
       seconds: song.duration || f?.seconds || 210,
       analyzed: !!f,
-      bpm: base.bpm,
-      pulse: base.pulse,
+      bpm: beat.bpm,
+      pulse: beat.pulse,
       loudness: base.loudness,
       dynamics: base.dynamics,
       brightness: base.brightness,

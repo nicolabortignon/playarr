@@ -208,7 +208,7 @@ export function AnalysisPanel() {
 
       <SettingsSection
         title="Beat analysis"
-        description="Each song’s beat grid and bars, key, intro and outro, and where its sound starts and ends: what DJ mix needs to join songs on the beat. The heaviest analysis: up to a minute a song on a small server."
+        description="Each song’s tempo, beat grid and bars, key, intro and outro, and where its sound starts and ends: what DJ mix needs to join songs on the beat, and the tempo mixes and covers go by. The heaviest analysis: up to a minute a song on a small server."
       >
         <Analysis
           kind="beats"
@@ -226,7 +226,7 @@ export function AnalysisPanel() {
 
       <SettingsSection
         title="Sound analysis"
-        description="What each song feels like: its tempo, energy, brightness, bass and how busy it is. For Energy boost, Wind down, Deep focus, Vibes of the hour, radio and playlist covers."
+        description="What each song feels like: its energy, brightness, bass and how busy it is. For Energy boost, Wind down, Deep focus, Vibes of the hour, radio and playlist covers."
       >
         <Analysis
           kind="sound"

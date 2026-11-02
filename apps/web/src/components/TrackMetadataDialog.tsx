@@ -95,8 +95,8 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
         <Section title="Sound">
           <Rows
             rows={[
-              ['Tempo', `${Math.round(m.analysis.bpm)} BPM`],
-              ['Beat', <Meter key="p" value={m.analysis.pulse} />],
+              ['Tempo', m.analysis.bpm ? `${Math.round(m.analysis.bpm)} BPM` : 'Not analysed yet'],
+              ['Beat', m.analysis.pulse !== undefined ? <Meter key="p" value={m.analysis.pulse} /> : 'Not analysed yet'],
               ['Loudness', <Meter key="l" value={m.analysis.loudness} />],
               ['Dynamics', <Meter key="d" value={m.analysis.dynamics} />],
               ['Brightness', <Meter key="b" value={m.analysis.brightness} />],
