@@ -23,7 +23,7 @@ export type WorkerJob =
   | { id: number; kind: 'analyze'; pcm: ArrayBuffer; rate: number }
   /** The song's head, and its tail when it's long (see analyzeMix). */
   | { id: number; kind: 'mixmap'; pcm: ArrayBuffer; tail?: ArrayBuffer; duration: number; rate: number; beats?: SongBeats }
-  | { id: number; kind: 'render'; plan: TransitionPlan; a: Excerpt; b: Excerpt };
+  | { id: number; kind: 'render'; plan: TransitionPlan; a: Excerpt; b: Excerpt; tail?: number };
 
 /**
  * The number crunching (analyzePcm, analyzeMix, renderTransition) in a worker thread, one job at a
@@ -70,9 +70,9 @@ export class DspThread {
    * Renders a transition (see renderTransition). The excerpts' samples are handed over to the worker,
    * not copied: the caller must not use them afterwards.
    */
-  async render(plan: TransitionPlan, a: Excerpt, b: Excerpt): Promise<StereoAudio> {
+  async render(plan: TransitionPlan, a: Excerpt, b: Excerpt, tail = 0): Promise<StereoAudio> {
     const worker = this.start();
-    if (!worker) return renderTransition(plan, a, b);
+    if (!worker) return renderTransition(plan, a, b, undefined, tail);
     const owned = [ownBuffer(a.left), ownBuffer(a.right), ownBuffer(b.left), ownBuffer(b.right)];
     const [aLeft, aRight, bLeft, bRight] = owned as [Float32Array, Float32Array, Float32Array, Float32Array];
     const job: WorkerJob = {
@@ -81,6 +81,7 @@ export class DspThread {
       plan,
       a: { left: aLeft, right: aRight, start: a.start },
       b: { left: bLeft, right: bRight, start: b.start },
+      tail,
     };
     const transfer = [...new Set(owned.map((channel) => channel.buffer as ArrayBuffer))];
     const answer = await this.send(worker, job, transfer);

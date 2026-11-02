@@ -65,18 +65,21 @@ const RELEASE_SECONDS = 0.15;
  * each with EXCERPT_MARGIN on both sides. Clamped at 0; the caller clamps to the song's length.
  * Undefined for a straight cut (no transition audio, so nothing to decode).
  */
-export function excerptRanges(plan: TransitionPlan): { a: [from: number, to: number]; b: [from: number, to: number] } | undefined {
+export function excerptRanges(plan: TransitionPlan, tail = 0): { a: [from: number, to: number]; b: [from: number, to: number] } | undefined {
   checkFinite(plan);
   if (plan.length === 0) return undefined;
   return {
     a: [Math.max(0, plan.aStart - EXCERPT_MARGIN), plan.aStart + audibleUntil(plan.aGain, plan.length) + EXCERPT_MARGIN],
-    b: [Math.max(0, plan.bStart - EXCERPT_MARGIN), plan.bResume + EXCERPT_MARGIN],
+    b: [Math.max(0, plan.bStart - EXCERPT_MARGIN), plan.bResume + Math.max(0, tail) + EXCERPT_MARGIN],
   };
 }
 
 /**
  * Renders the transition: `plan.length` seconds of stereo audio at `rate`, to be played after A
- * up to `plan.aStart` and before B from `plan.bResume`.
+ * up to `plan.aStart` and before B from `plan.bResume`; then `tail` seconds of B on its own from
+ * bResume, as B's own playback goes on (B's excerpt must reach that far: see excerptRanges). With a
+ * tail, a player can start B's own file at any moment during it, in step, rather than exactly at
+ * the transition's end.
  *
  * The plan must be consistent (finite times; bResume where bRate takes B from bStart), and the
  * excerpts must reach back to the plan's start in each song: it throws otherwise, as that's a
@@ -89,7 +92,7 @@ export function excerptRanges(plan: TransitionPlan): { a: [from: number, to: num
  * bGain 0 at time 0, A's filters neutral. (The end join likewise wants A silent and B's filter
  * neutral by the end.) Nothing else would make the first sample continue A's normal playback.
  */
-export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, rate = RENDER_RATE): StereoAudio {
+export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, rate = RENDER_RATE, tail = 0): StereoAudio {
   checkFinite(plan);
   const samples = Math.round(plan.length * rate);
   const out: StereoAudio = { left: new Float32Array(samples), right: new Float32Array(samples) };
@@ -126,6 +129,18 @@ export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, r
   }
 
   limitLoudness(out, rate, allowed);
+  return withTail(out, b, bEnd, Math.max(0, Math.round(tail * rate)));
+}
+
+/** `audio` followed by `samples` of B's excerpt from its sample `from` on, as it is (silence past its end). */
+function withTail(audio: StereoAudio, b: Excerpt, from: number, samples: number): StereoAudio {
+  if (samples === 0) return audio;
+  const length = audio.left.length;
+  const out: StereoAudio = { left: new Float32Array(length + samples), right: new Float32Array(length + samples) };
+  for (const side of ['left', 'right'] as const) {
+    out[side].set(audio[side]);
+    out[side].set(copyPadded(b[side], from, samples), length);
+  }
   return out;
 }
 

@@ -170,4 +170,12 @@ Where the build differs from the design above:
   the second) on top of the bass swap, and a key clash no longer rules a blend out when both songs have
   room: 16 beats over the intro and outro. "Same album, in order" only holds when the queue plays that
   album (or its artist), not a playlist that happens to list two of its songs in order.
+- **iPhones change files over in step** (2026-11-02). An iPhone can't fade (its volume is fixed) nor
+  start a file at an exact moment: the transition used to start as A was paused, and B as the transition
+  ended, each a start-up delay late, a short gap heard twice per transition. Now the next file starts
+  muted while the old one plays on, plays a little faster or slower until both are at the same moment,
+  and then takes over (unmuted, the old one paused): at the transition's start (it begins as A itself),
+  in a 3 s tail of B on its own that every transition file now ends with (renderer version 2), and before
+  a cut on the beat. How long starting takes is learned, so the next file starts that much ahead. Files
+  without a tail (older downloads) change over at the end as before.
 

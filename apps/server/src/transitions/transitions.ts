@@ -28,7 +28,13 @@ import { seeksInexactly, type MediaSource } from '../media/source.ts';
 // ready, and falls back to its own mixing (or a plain crossfade) whenever the answer isn't "ready" in time.
 
 /** Bump when the rendered audio changes for the same plan, so cached files are made again. */
-export const RENDERER_VERSION = 1;
+export const RENDERER_VERSION = 2;
+/**
+ * Seconds of B on its own after each transition, in the same file: a phone that can't start one file
+ * exactly as another ends (an iPhone) starts B's own file during them, silently, and changes over
+ * once the two are in step.
+ */
+export const TRANSITION_TAIL_SECONDS = 3;
 
 /** Renders waiting at most: by the time more pile up, the older ones are songs already skipped. */
 const MAX_QUEUED = 3;
@@ -89,7 +95,8 @@ export interface MixMapSource {
 
 /** Turns a plan and the two excerpts into the transition's audio (the DSP worker thread). */
 export interface TransitionRenderer {
-  render(plan: TransitionPlan, a: Excerpt, b: Excerpt): Promise<StereoAudio>;
+  /** `tail`: seconds of B after the transition (see renderTransition). */
+  render(plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number): Promise<StereoAudio>;
 }
 
 /** Stereo audio at RENDER_RATE, a piece at a time (each piece is only valid until the next is asked for). */
@@ -145,7 +152,14 @@ export interface TransitionRequest {
 }
 
 export type TransitionAnswer =
-  | { status: 'ready'; plan: TransitionPlan; url: string; continuationUrl?: string }
+  | {
+      status: 'ready';
+      plan: TransitionPlan;
+      url: string;
+      continuationUrl?: string;
+      /** Seconds of B after the transition in its file (see TRANSITION_TAIL_SECONDS); none in older files. */
+      tail?: number;
+    }
   | { status: 'pending'; plan: TransitionPlan }
   | { status: 'straight'; plan: TransitionPlan }
   | { status: 'unavailable'; reason: string };
@@ -168,6 +182,8 @@ interface Sidecar {
   audio: AudioExtension;
   /** B's remainder, for songs that can't be joined sample-exactly by seeking (MP3). */
   continuation?: AudioExtension;
+  /** Seconds of B after the transition in its file; none in files made before tails. */
+  tail?: number;
   createdAt: number;
   /** The pair (files and mode) and plan inputs, so a restarted server keeps answering with this plan. */
   pair?: string;
@@ -368,6 +384,7 @@ export class Transitions {
       plan: sidecar.plan,
       url: `/transitions/${files[0]}`,
       ...(files[1] ? { continuationUrl: `/transitions/${files[1]}` } : {}),
+      ...(sidecar.tail ? { tail: sidecar.tail } : {}),
     };
   }
 
@@ -422,7 +439,7 @@ export class Transitions {
   }
 
   private async render({ key, pair, inputs, a, b, aDuration, bDuration, plan }: Job): Promise<Sidecar> {
-    const ranges = excerptRanges(plan);
+    const ranges = excerptRanges(plan, TRANSITION_TAIL_SECONDS);
     if (!ranges) throw new Error('A straight cut has no transition audio');
     const [aFile, bFile] = await Promise.all([this.opts.library.file(a.fileId), this.opts.library.file(b.fileId)]);
     if (!aFile || !bFile) throw new Error('The song’s file is gone');
@@ -431,7 +448,7 @@ export class Transitions {
 
     const aExcerpt = await this.decode(aSource, ranges.a[0], ranges.a[1]);
     const bExcerpt = await this.decode(bSource, ranges.b[0], ranges.b[1]);
-    const audio = await withTimeout(this.opts.dsp.render(plan, aExcerpt, bExcerpt), this.renderTimeoutMs, 'The render took too long');
+    const audio = await withTimeout(this.opts.dsp.render(plan, aExcerpt, bExcerpt, TRANSITION_TAIL_SECONDS), this.renderTimeoutMs, 'The render took too long');
     await mkdir(this.dir, { recursive: true });
     const transitionAudio = await this.writeAudio(() => inPieces(audio), key, this.renderTimeoutMs);
 
@@ -455,6 +472,7 @@ export class Transitions {
       plan,
       audio: transitionAudio,
       ...(continuation ? { continuation } : {}),
+      tail: TRANSITION_TAIL_SECONDS,
       createdAt: this.now(),
       pair,
       inputs,

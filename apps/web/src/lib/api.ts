@@ -57,7 +57,7 @@ import { usePrefs } from './prefs';
  * ask again), better played straight on, or not possible (no mix map yet, say).
  */
 export type TransitionAnswer =
-  | { status: 'ready'; plan: TransitionPlan; url: string; continuationUrl?: string }
+  | { status: 'ready'; plan: TransitionPlan; url: string; continuationUrl?: string; tail?: number }
   | { status: 'pending'; plan: TransitionPlan }
   | { status: 'straight'; plan: TransitionPlan }
   | { status: 'unavailable'; reason: string };

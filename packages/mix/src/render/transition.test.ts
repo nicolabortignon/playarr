@@ -75,8 +75,8 @@ function excerpt(whole: StereoAudio, from: number, to: number): Excerpt {
   return { left: whole.left.slice(first, last), right: whole.right.slice(first, last), start: first / rate };
 }
 
-function excerptsFor(plan: TransitionPlan, a: StereoAudio = songA, b: StereoAudio = songB): { a: Excerpt; b: Excerpt } {
-  const ranges = excerptRanges(plan)!;
+function excerptsFor(plan: TransitionPlan, a: StereoAudio = songA, b: StereoAudio = songB, tail = 0): { a: Excerpt; b: Excerpt } {
+  const ranges = excerptRanges(plan, tail)!;
   return { a: excerpt(a, ...ranges.a), b: excerpt(b, ...ranges.b) };
 }
 
@@ -655,6 +655,21 @@ describe('renderTransition with the planner’s plans', () => {
     const n = out.left.length;
     for (const side of ['left', 'right'] as const) {
       expect(maxDifference(out[side].subarray(n - fiftyMs), b[side].subarray(bEnd - fiftyMs, bEnd))).toBe(0);
+    }
+  });
+
+  it.each(['long', 'quick, stretched', 'quick, cut', 'fade'])('%s: runs on into B as it plays from bResume, for the tail asked for', (name) => {
+    const { pair, plan } = planned(name);
+    const { a, b } = excerptsFor(plan, pair.a.audio, pair.b.audio, 3);
+    const plain = renderTransition(plan, a, b);
+    const out = renderTransition(plan, a, b, rate, 3);
+    const n = plain.left.length;
+    expect(out.left.length).toBe(n + 3 * rate);
+    const bEnd = Math.round((plan.bResume - b.start) * rate);
+    for (const side of ['left', 'right'] as const) {
+      // The transition itself is unchanged, and B goes on from its sample at bResume, as its own file does.
+      expect(maxDifference(out[side].subarray(0, n), plain[side])).toBe(0);
+      expect(maxDifference(out[side].subarray(n), b[side].subarray(bEnd, bEnd + 3 * rate))).toBe(0);
     }
   });
 

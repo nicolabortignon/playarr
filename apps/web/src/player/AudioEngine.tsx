@@ -54,6 +54,25 @@ const BRIDGE_SOON_S = 3;
 const LIVE_SLACK_MS = 250;
 /** How often a live mix (no element, so no timeupdate) moves the clock, the history and the levels on. */
 const LIVE_TICK_MS = 100;
+/**
+ * iPhones can't fade, nor start a file at an exact moment: the next file starts there silenced while
+ * the old one plays on, plays a little faster or slower until both are at the same moment, then takes
+ * over (see inStep). This close counts as the same moment.
+ */
+const IN_STEP_S = 0.005;
+/** A silenced file closes its gap over about this long (at up to twice or half its speed). */
+const CATCH_UP_S = 0.1;
+/** Not in step this long after starting (or the page's timers too slow to steer by): it takes over anyway. */
+const IN_STEP_MAX_MS = 1500;
+const IN_STEP_TICK_MS = 4;
+/** Ticks further apart than this (the page in the background) can't steer a file: it takes over as it is. */
+const SLOW_TICK_MS = 60;
+/** A transition starting silenced may take this long to start: A plays on meanwhile. */
+const IN_STEP_START_WATCH_MS = 1500;
+/** A transition file's tail (B on its own after it) this long or more is where B's own file takes over, in step. */
+const MIN_TAIL_S = 1;
+/** At a cut on the beat, B's own file starts silenced up to this long before its start, to be in step there. */
+const CUT_PRE_ROLL_S = 0.5;
 
 interface Fade {
   out: HTMLAudioElement;
@@ -174,6 +193,12 @@ export function AudioEngine() {
   const overlapTimer = useRef<ReturnType<typeof setInterval>>(undefined);
   /** Transition files that wouldn't play: not tried again. */
   const failedBridges = useRef(new Set<string>());
+  /** Elements the engine keeps silent while they get in step (iPhones; see inStep). */
+  const silenced = useRef(new WeakSet<HTMLAudioElement>());
+  /** The changeover being brought into step: `finish` takes over at once, `cancel` leaves the old file playing. */
+  const stepping = useRef<{ finish: () => void; cancel: () => void } | null>(null);
+  /** How long an element takes to start playing (s), learned at each changeover: the next starts that much ahead. */
+  const startLag = useRef(0.05);
   const track = useCurrentTrack();
   const accent = usePrefs((s) => s.accent);
   const playing = usePlayer((s) => s.playing);
@@ -187,6 +212,8 @@ export function AudioEngine() {
   const swap = () => (activeIdx.current ^= 1);
   /** The transition playing, if one is. */
   const bridging = () => (mix.current?.bridging ? mix.current : null);
+  /** iPhones change over from a transition to B's own file in the tail of B after it, in step (see inStep). */
+  const landsInStep = (m: Mix) => !canSetVolume() && (m.transition.tail ?? 0) >= MIN_TAIL_S;
   /** The element making the sound: the transition's while one plays. */
   const playingDeck = () => (bridging() ? bridge.current : active());
 
@@ -296,7 +323,7 @@ export function AudioEngine() {
     const fadingOut = l?.playback && !l.started && l.playback.time() >= 0 ? l.aDeck : undefined;
     for (const deck of [a.current, b.current, bridge.current]) {
       if (!deck || deck === fadingOut) continue;
-      deck.muted = s.muted;
+      deck.muted = s.muted || silenced.current.has(deck);
       let v = s.volume * s.volume * sleepGain(); // perceptual curve; fading out for the sleep timer
       // The transition holds both songs at their own levels: it takes each one's level as it's heard.
       if (deck === bridge.current) v *= m ? bridgeGain(m.transition.plan, deck.currentTime, level(m.from), level(m.to)) : 1;
@@ -365,6 +392,7 @@ export function AudioEngine() {
     const incoming = standby();
     if (!out || !incoming || !holds(incoming, next) || handedOff.current !== null || handoffFailed.current || bridging()) return false;
     handedOff.current = next!.fileId;
+    if (cut && preRollFor(cut) > 0) return handOffInStep(out, incoming, cut, onFail);
     swap();
     if (seconds > 0) {
       fade.current = planned
@@ -397,6 +425,45 @@ export function AudioEngine() {
     return true;
   }
 
+  /** iPhones: how long before a cut B's own file starts, silenced, to be in step at the cut (0: it starts at the cut). */
+  const preRollFor = (cut: BeatCut) => {
+    const preRoll = canSetVolume() ? 0 : Math.min(CUT_PRE_ROLL_S, cut.bStart);
+    return preRoll >= 0.1 ? preRoll : 0;
+  };
+
+  /**
+   * iPhones, at a cut: B starts silenced a moment before its start (from where it's cued, see
+   * approachEnd), in step with A, and takes over as A reaches the cut. Then the store moves on to B.
+   */
+  function handOffInStep(out: HTMLAudioElement, incoming: HTMLAudioElement, cut: BeatCut, onFail: () => void): boolean {
+    const target = () => cut.bStart + (songTime(out) - cut.aEnd);
+    silenced.current.add(incoming);
+    applyVolumes();
+    seekSong(incoming, Math.max(0, target() + startLag.current));
+    incoming.play().then(
+      () =>
+        inStep(
+          out,
+          incoming,
+          target,
+          () => {
+            swap();
+            usePlayer.getState().next(true);
+          },
+          () => songTime(out) >= cut.aEnd,
+        ),
+      () => {
+        silenced.current.delete(incoming);
+        applyVolumes();
+        // Couldn't start it early (autoplay rules on some phones): back to one element.
+        handedOff.current = null;
+        handoffFailed.current = true;
+        onFail();
+      },
+    );
+    return true;
+  }
+
   /** Close to the end: have the next song ready, and start it on time. */
   function approachEnd(deck: HTMLAudioElement) {
     const s = usePlayer.getState();
@@ -412,14 +479,16 @@ export function AudioEngine() {
     const cut = join && 'aEnd' in join ? join : undefined;
     const planned = join && 'seconds' in join ? join : undefined;
     const seconds = planned?.seconds ?? (!cut && canSetVolume() ? fadeSeconds(loaded.current.get(deck), next, crossfadeSeconds(usePrefs.getState())) : 0);
-    // B waits where it starts, so starting it there needs no seek at the join (cued once per join).
-    const bStart = cut?.bStart ?? planned?.bStart;
+    // B waits where it starts (or where it starts silenced, before a cut on an iPhone), so starting it
+    // there needs no seek at the join (cued once per join).
+    const preRoll = cut ? preRollFor(cut) : 0;
+    const bStart = cut ? cut.bStart - preRoll : planned?.bStart;
     const cueKey = bStart !== undefined ? `${incoming.getAttribute('src')}@${bStart}` : undefined;
     if (bStart !== undefined && cuedFor.current.get(incoming) !== cueKey) {
       cuedFor.current.set(incoming, cueKey!);
       setTimeOnLoad(incoming, bStart);
     }
-    const startAt = cut?.aEnd ?? planned?.aStart;
+    const startAt = cut ? cut.aEnd - preRoll : planned?.aStart;
     const wait = startAt !== undefined ? (startAt - songTime(deck)) / (deck.playbackRate || 1) : left - seconds;
     if (wait > 1.5) return;
     clearTimeout(handoffTimer.current);
@@ -537,6 +606,7 @@ export function AudioEngine() {
 
   function clearBridge() {
     const br = bridge.current;
+    if (br) silenced.current.delete(br);
     if (!br?.getAttribute('src') || br.getAttribute('src') === silentClip()) return;
     br.pause();
     br.removeAttribute('src');
@@ -590,21 +660,19 @@ export function AudioEngine() {
     starting.current = m;
     clearTimeout(handoffTimer.current);
     if (fade.current) endFade();
+    if (!settable) return startBridgeInStep(m, out, br, entry);
     setTime(br, entry);
-    const o: Overlap | null = settable ? { out, in: br, startedAt: null } : null;
+    const o: Overlap = { out, in: br, startedAt: null };
     overlap.current = o;
     applyVolumes();
     clearTimeout(startWatch.current);
     startWatch.current = setTimeout(() => starting.current === m && cancelStart(m, true), START_WATCH_MS);
-    const started = br.play();
-    if (!settable) out.pause();
-    started.then(
+    br.play().then(
       () => {
         if (starting.current !== m) return;
         starting.current = null;
         clearTimeout(startWatch.current);
-        if (o) startOverlap(o);
-        else out.pause();
+        startOverlap(o);
       },
       () => {
         // Paused meanwhile: dealt with there.
@@ -616,12 +684,39 @@ export function AudioEngine() {
   }
 
   /**
-   * The transition didn't start: back to A, which plays on from where it is (it stopped only on iPhones).
+   * iPhones: the transition starts silenced (a moment ahead, for the time starting takes) while A plays
+   * on, and takes over from A once the two are in step: the transition starts as A itself, so nothing
+   * is heard but A, going on. A transition that doesn't start in time leaves A playing.
+   */
+  function startBridgeInStep(m: Mix, out: HTMLAudioElement, br: HTMLAudioElement, entry: number) {
+    silenced.current.add(br);
+    applyVolumes();
+    setTime(br, entry + startLag.current);
+    clearTimeout(startWatch.current);
+    startWatch.current = setTimeout(() => starting.current === m && cancelStart(m, true), IN_STEP_START_WATCH_MS);
+    br.play().then(
+      () => {
+        if (starting.current !== m) return;
+        starting.current = null;
+        clearTimeout(startWatch.current);
+        inStep(out, br, () => songTime(out) - m.transition.plan.aStart, () => applyVolumes());
+      },
+      () => {
+        if (starting.current !== m || !usePlayer.getState().playing) return;
+        cancelStart(m, true);
+      },
+    );
+  }
+
+  /**
+   * The transition didn't start: back to A, which plays on from where it is (it never stopped).
    * A failed transition isn't tried again; one paused while starting starts again when played.
    */
   function cancelStart(m: Mix, failed: boolean) {
     clearTimeout(startWatch.current);
     cancelStall();
+    stepping.current?.cancel();
+    if (bridge.current) silenced.current.delete(bridge.current);
     if (starting.current === m) starting.current = null;
     if (overlap.current?.in === bridge.current) {
       clearInterval(overlapTimer.current);
@@ -660,6 +755,58 @@ export function AudioEngine() {
       if (o.out === bridge.current && !bridging()) clearBridge();
     }
     applyVolumes();
+  }
+
+  /**
+   * iPhones: `follower` has just started, silenced, while `lead` plays on and is heard. It plays a little
+   * faster or slower until it's where `target()` says it should be (its time, for where the lead is), then
+   * takes over: heard, as the lead pauses, and `done` runs. `ready` holds the takeover back until the two
+   * play the same sound. The first gap seen teaches how long starting takes, for the next changeover.
+   */
+  function inStep(lead: HTMLAudioElement, follower: HTMLAudioElement, target: () => number, done: () => void, ready: () => boolean = () => true) {
+    stepping.current?.cancel();
+    const began = performance.now();
+    const startedFrom = follower.currentTime;
+    let learned = false;
+    let lastTick = began;
+    const stop = () => {
+      clearInterval(timer);
+      follower.playbackRate = 1;
+      if (stepping.current === step) stepping.current = null;
+    };
+    const finish = () => {
+      stop();
+      silenced.current.delete(follower);
+      applyVolumes();
+      lead.pause();
+      done();
+    };
+    const step = {
+      finish,
+      cancel: () => {
+        stop();
+        silenced.current.delete(follower);
+        applyVolumes();
+      },
+    };
+    const tick = () => {
+      const now = performance.now();
+      const slow = now - lastTick > SLOW_TICK_MS;
+      lastTick = now;
+      // The lead has stopped (its file ended): nothing left to be in step with.
+      if (lead.paused || lead.ended) return finish();
+      if (follower.paused) return;
+      const gap = target() - follower.currentTime;
+      if (!learned && follower.currentTime > startedFrom + 0.01) {
+        learned = true;
+        startLag.current = Math.min(0.5, Math.max(0, startLag.current + gap));
+      }
+      if ((Math.abs(gap) <= IN_STEP_S && ready()) || slow || now - began > IN_STEP_MAX_MS) return finish();
+      follower.playbackRate = Math.min(2, Math.max(0.5, 1 + gap / CATCH_UP_S));
+    };
+    stepping.current = step;
+    const timer = setInterval(tick, IN_STEP_TICK_MS);
+    tick();
   }
 
   /** The transition plays on: the clock and the history follow the song shown, and B starts on time. */
@@ -714,9 +861,11 @@ export function AudioEngine() {
     const left = (m.transition.plan.length - br.currentTime) / (br.playbackRate || 1);
     if (left > 1.5) return;
     clearTimeout(bridgeTimer.current);
+    // Changing over in the tail, B's own file starts once the transition is over, not a moment before.
+    const lead = landsInStep(m) ? 0 : LEAD_MS;
     bridgeTimer.current = setTimeout(() => {
       if (bridging() === m && !br.paused && usePlayer.getState().playing) land(m);
-    }, Math.max(0, left * 1000 - LEAD_MS));
+    }, Math.max(0, left * 1000 - lead));
   }
 
   /** The transition's end: B's file takes over where the transition leaves B, as a gapless start. */
@@ -730,7 +879,11 @@ export function AudioEngine() {
     clearTimeout(bridgeTimer.current);
     cancelStall();
     swap();
-    cue(incoming, m.to, plan.bResume);
+    // iPhones: B's own file starts silenced in the transition's tail, where the transition plays B on
+    // its own, a moment ahead for the time starting takes, and takes over once in step.
+    const inTail = landsInStep(m) && !m.sleepAtLanding;
+    const intoTail = () => Math.max(0, br.currentTime - plan.length);
+    cue(incoming, m.to, plan.bResume + (inTail ? intoTail() + startLag.current : 0));
     const duration = Number.isFinite(incoming.duration) ? incoming.duration + offsetOf(incoming) : m.to.duration;
     useClock.setState({ time: plan.bResume, duration, buffered: bufferedEnd(incoming) });
     if (m.sleepAtLanding) {
@@ -741,15 +894,25 @@ export function AudioEngine() {
       usePlayer.getState().setPlaying(false);
       return;
     }
-    const o: Overlap = { out: br, in: incoming, startedAt: null, ending: m };
+    const o: Overlap | null = inTail ? null : { out: br, in: incoming, startedAt: null, ending: m };
     overlap.current = o;
+    if (inTail) silenced.current.add(incoming);
     applyVolumes();
     incoming.play().then(
-      () => startOverlap(o),
       () => {
-        if (overlap.current === o) {
+        if (o) return startOverlap(o);
+        // B's own song time for where the transition's tail is.
+        const target = () => plan.bResume + intoTail() - offsetOf(incoming);
+        inStep(br, incoming, target, () => clearBridge(), () => br.currentTime >= plan.length);
+      },
+      () => {
+        if (o && overlap.current === o) {
           clearInterval(overlapTimer.current);
           overlap.current = null;
+        }
+        if (inTail) {
+          silenced.current.delete(incoming);
+          clearBridge();
         }
         // Paused meanwhile: B plays when played again.
         if (active() !== incoming || !usePlayer.getState().playing) return;
@@ -767,6 +930,7 @@ export function AudioEngine() {
 
   /** Leave the transition playing; the caller says what plays instead. */
   function stopBridge(m: Mix) {
+    stepping.current?.cancel();
     if (mix.current === m) mix.current = null;
     if (starting.current === m) starting.current = null;
     clearTimeout(bridgeTimer.current);
@@ -1167,6 +1331,8 @@ export function AudioEngine() {
 
   // Load a new source when the track changes, or restart the current one.
   useEffect(() => {
+    // A file getting in step (iPhones) takes over now: whatever plays next goes on from there.
+    stepping.current?.finish();
     const deck = active();
     if (!deck) return;
     clearTimeout(handoffTimer.current);
@@ -1300,6 +1466,8 @@ export function AudioEngine() {
   }, [track?.fileId, restartToken]);
 
   useEffect(() => {
+    // Paused while a file gets in step (iPhones): it takes over now, and pauses with the rest.
+    if (!playing) stepping.current?.finish();
     // Paused during a live mix, or while a press of Next waits for a transition (see interruptLive).
     if (!playing && live.current) interruptLive(live.current);
     if (!playing && pressAwaits.current && !pressAwaits.current.bridging) pressGoesThrough();
@@ -1381,6 +1549,7 @@ export function AudioEngine() {
   useEffect(
     () =>
       useClock.subscribe((s, prev) => {
+        if (s.seekRequest && s.seekRequest !== prev.seekRequest) stepping.current?.finish();
         const deck = active();
         if (deck && s.seekRequest && s.seekRequest !== prev.seekRequest) {
           clearTimeout(handoffTimer.current);

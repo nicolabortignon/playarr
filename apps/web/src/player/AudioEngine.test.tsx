@@ -168,8 +168,14 @@ const plan = (over: Partial<TransitionPlan> = {}) =>
 const TRANSITION = '/transitions/abc.flac';
 
 /** The server has rendered the transition from `from` into `to` (file ids). */
-function transitionReady(from: number, to: number, extra: { plan?: TransitionPlan; continuationUrl?: string } = {}) {
-  const result = { status: 'ready' as const, plan: extra.plan ?? plan(), url: TRANSITION, ...(extra.continuationUrl ? { continuationUrl: extra.continuationUrl } : {}) };
+function transitionReady(from: number, to: number, extra: { plan?: TransitionPlan; continuationUrl?: string; tail?: number } = {}) {
+  const result = {
+    status: 'ready' as const,
+    plan: extra.plan ?? plan(),
+    url: TRANSITION,
+    ...(extra.continuationUrl ? { continuationUrl: extra.continuationUrl } : {}),
+    ...(extra.tail ? { tail: extra.tail } : {}),
+  };
   useTransition.setState({ fromFileId: from, toFileId: to, result, ready: { ...result, fromFileId: from, toFileId: to } });
 }
 
@@ -923,14 +929,63 @@ describe('AudioEngine', () => {
         vi.mocked(canSetVolume).mockReturnValue(false);
       });
 
-      it('stops the first song as the transition starts, and the transition as the next song starts', async () => {
+      it('starts the transition silenced while the first song plays on, and changes over once they’re in step', async () => {
+        transitionReady(1, 2, { tail: 3 });
+        const [a, b, bridge] = await start([song(1), song(2), song(3)]);
+        await at(a, 145);
+        await at(a, 169.99);
+        // A moment ahead (for the time starting takes), and catching up or waiting meanwhile: A is what's heard.
+        expect(fake(bridge).paused).toBe(false);
+        expect(bridge.muted).toBe(true);
+        expect(fake(bridge).time).toBeCloseTo(0.05, 9);
+        expect(fake(a).paused).toBe(false);
+        expect(bridge.playbackRate).toBeLessThan(1);
+        // Both at the same moment of A: the transition takes over.
+        fake(bridge).time = 0.3;
+        await at(a, 170.3);
+        expect(fake(a).paused).toBe(true);
+        expect(bridge.muted).toBe(false);
+        expect(bridge.playbackRate).toBe(1);
+        expect(usePlayer.getState().playing).toBe(true);
+        await at(bridge, 6);
+        expect(clock()).toBe(176);
+        await at(bridge, 12.1);
+        expect(now()).toBe(2);
+        // The transition over, B's own file starts silenced in its tail (B on its own), and takes over in step.
+        await at(bridge, 23.99);
+        expect(fake(b).paused).toBe(false);
+        expect(b.muted).toBe(true);
+        expect(fake(bridge).paused).toBe(false);
+        fake(bridge).time = 24.4;
+        await at(b, 32.4);
+        expect(b.muted).toBe(false);
+        expect(fake(bridge).paused).toBe(true);
+        expect(src(bridge)).toBeNull();
+        await at(b, 40);
+        expect(clock()).toBe(40);
+      });
+
+      it('lets a paused changeover take over at once, so nothing plays on', async () => {
+        transitionReady(1, 2, { tail: 3 });
+        const [a, , bridge] = await start([song(1), song(2), song(3)]);
+        await at(a, 145);
+        await at(a, 169.99);
+        expect(bridge.muted).toBe(true);
+        await act(async () => usePlayer.getState().setPlaying(false));
+        await settle();
+        expect(fake(a).paused).toBe(true);
+        expect(fake(bridge).paused).toBe(true);
+        expect(bridge.muted).toBe(false);
+      });
+
+      it('changes over at the end of an older transition file, with no tail', async () => {
         transitionReady(1, 2);
         const [a, b, bridge] = await start([song(1), song(2), song(3)]);
         await at(a, 145);
         await at(a, 169.99);
-        expect(fake(bridge).paused).toBe(false);
+        fake(bridge).time = 0.3;
+        await at(a, 170.3);
         expect(fake(a).paused).toBe(true);
-        expect(usePlayer.getState().playing).toBe(true);
         await at(bridge, 6);
         expect(clock()).toBe(176);
         await at(bridge, 12.1);
@@ -944,17 +999,17 @@ describe('AudioEngine', () => {
         expect(clock()).toBe(40);
       });
 
-      it('plays the first song on from where it stopped when the transition doesn’t start', async () => {
+      it('plays the first song on when the transition doesn’t start', async () => {
         transitionReady(1, 2);
         const [a, , bridge] = await start([song(1), song(2)]);
         slow.set(bridge, 'never');
         await at(a, 145);
         await at(a, 169.99);
-        expect(fake(a).paused).toBe(true);
-        await wait(250);
         expect(fake(a).paused).toBe(false);
-        expect(fake(a).time).toBe(169.99);
+        await wait(1500);
+        expect(fake(a).paused).toBe(false);
         expect(fake(bridge).paused).toBe(true);
+        expect(bridge.muted).toBe(false);
         expect(usePlayer.getState().playing).toBe(true);
       });
     });
@@ -1002,6 +1057,24 @@ describe('AudioEngine', () => {
       await overlap();
       expect(fake(a).paused).toBe(true); // its tail isn't played out
       expect(playTracker.finish).toHaveBeenCalledWith('ended');
+    });
+
+    it('on an iPhone, starts the next song silenced just before its downbeat, and changes over on the downbeat', async () => {
+      vi.mocked(canSetVolume).mockReturnValue(false);
+      vi.spyOn(api, 'mixMaps').mockResolvedValue({ r67: map(), r68: map() });
+      const [a, b] = await start([song(67), song(68)]);
+      await at(a, 175);
+      expect(fake(b).time).toBe(0.5); // half a second before its first downbeat, at 1 s
+      await at(a, 194);
+      await wait(470); // A at 194.5 (its clock is the test's): B starts, silenced, a moment ahead
+      expect(fake(b).paused).toBe(false);
+      expect(b.muted).toBe(true);
+      expect(now()).toBe(67);
+      fake(b).time = 1;
+      await at(a, 195);
+      expect(b.muted).toBe(false);
+      expect(fake(a).paused).toBe(true);
+      expect(now()).toBe(68);
     });
 
     it('plays the songs one after the other as usual without their maps', async () => {

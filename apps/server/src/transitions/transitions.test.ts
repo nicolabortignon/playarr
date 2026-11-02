@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FileRecord } from '../catalog/build.ts';
 import { tempDir } from '../catalog/testFixtures.ts';
 import type { MediaSource, PcmOptions } from '../media/source.ts';
-import { ffmpegFlacEncoder, Transitions, type Encoder, type TransitionAnswer } from './transitions.ts';
+import { ffmpegFlacEncoder, TRANSITION_TAIL_SECONDS, Transitions, type Encoder, type TransitionAnswer } from './transitions.ts';
 
 // planTransition as itself, but watchable: one test makes it depend on A's position the way some plans do.
 vi.mock('@playarr/mix', async (importOriginal) => {
@@ -145,7 +145,9 @@ function setup(options: SetupOptions = {}) {
   const cues = options.cues ?? new Map<string, CuePoints>();
   const pcm = vi.fn(async (path: string, opts: PcmOptions) => synthPcm(path, opts));
   const media = { kind: 'local', pcm } as unknown as MediaSource;
-  const render = vi.fn(options.render ?? (async (plan: TransitionPlan, a: Excerpt, b: Excerpt) => renderTransition(plan, a, b)));
+  const render = vi.fn(
+    options.render ?? (async (plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number) => renderTransition(plan, a, b, undefined, tail)),
+  );
   const encode = vi.fn(options.encode ?? rawEncoder);
   const log = { info: vi.fn(), warn: vi.fn() };
   const transitions = new Transitions({
@@ -198,8 +200,10 @@ describe('Transitions', { timeout: 30_000 }, () => {
     expect(ready.plan).toEqual(expectedPlan);
     expect(ready.url).toMatch(/^\/transitions\/[0-9a-f]{40}\.flac$/);
     expect(ready.continuationUrl).toBeUndefined();
+    // The transition, then B on its own for a few seconds, as its own file goes on (for phones to change over in).
+    expect(ready.tail).toBe(TRANSITION_TAIL_SECONDS);
     const samples = readRaw(fileOf(t.dir, ready.url));
-    expect(samples.length).toBe(2 * Math.round(expectedPlan.length * RENDER_RATE));
+    expect(samples.length).toBe(2 * (Math.round(expectedPlan.length * RENDER_RATE) + TRANSITION_TAIL_SECONDS * RENDER_RATE));
 
     // A's excerpt is decoded in stereo from just before the transition, clamped to the song's length.
     expect(t.pcm).toHaveBeenCalledTimes(2);
@@ -542,7 +546,7 @@ describe('Transitions', { timeout: 30_000 }, () => {
     expect(wav.readUInt16LE(22)).toBe(2); // stereo
     expect(wav.readUInt32LE(24)).toBe(RENDER_RATE);
     expect(wav.readUInt16LE(34)).toBe(16);
-    expect(wav.readUInt32LE(40)).toBe(Math.round(ready.plan.length * RENDER_RATE) * 4);
+    expect(wav.readUInt32LE(40)).toBe((Math.round(ready.plan.length * RENDER_RATE) + TRANSITION_TAIL_SECONDS * RENDER_RATE) * 4);
     expect(t.encode).toHaveBeenCalledTimes(1);
 
     await t.transitions.request({ fromTrackId: 2, toTrackId: 3, mode: 'auto' });
