@@ -7,7 +7,7 @@ import { MixCard } from '../components/Mixes';
 import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
-import { formatDuration, greeting } from '../lib/format';
+import { formatDuration } from '../lib/format';
 import { switchProfile, useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMixes, usePlaylists, useProfiles, useRandomAlbums, useRecentAlbums } from '../lib/queries';
 import { usePrefs } from '../lib/prefs';
 import { useCurrentProfile } from '../components/ProfilesPanel';
@@ -28,7 +28,6 @@ export function HomePage() {
   const [seed, setSeed] = useState(0);
   const { data: random, isFetching: rolling } = useRandomAlbums(12, seed);
   const lib = health?.library;
-  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <div className="px-5 pt-6 md:px-10 md:pt-14">
@@ -36,19 +35,11 @@ export function HomePage() {
         <Wordmark />
       </div>
 
-      <header className="mb-8 animate-rise md:mb-10">
-        <div className="font-mono text-[11px] tracking-[0.25em] text-muted uppercase">{today}</div>
-        <h1 className="mt-3 font-display text-[3.25rem] leading-[0.95] tracking-tight text-paper md:text-[5.5rem]">
-          {greeting()}
-          {profiles && profiles.length > 1 && current && <>, {current.name}</>}
-          <span className="text-accent">.</span>
-        </h1>
-        {profiles && profiles.length > 1 && <WhoIsListening profiles={profiles} current={current} />}
-      </header>
-
-      <MadeForYou />
-      <YearInReview />
-      <JumpBackIn />
+      {profiles && profiles.length > 1 && (
+        <div className="mb-8 animate-rise">
+          <WhoIsListening profiles={profiles} current={current} />
+        </div>
+      )}
 
       <section className="relative mb-14 grid items-end gap-10 md:mb-20 xl:grid-cols-[1fr_auto]">
         <div className="animate-rise">
@@ -75,6 +66,10 @@ export function HomePage() {
         </div>
         <CoverStack albums={recent?.slice(0, 3)} />
       </section>
+
+      <MadeForYou />
+      <YearInReview />
+      <JumpBackIn />
 
       {favorites && favorites.length > 0 && (
         <section className="mb-14 max-w-4xl">
@@ -164,7 +159,7 @@ const MIX_CARD = 'w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52';
 
 /**
  * Several people listen here: who is it on this device? Asked once (until picked), then a quiet switch
- * under the greeting.
+ * at the top of Home.
  */
 function WhoIsListening({ profiles, current }: { profiles: Profile[]; current?: Profile }) {
   const picked = usePrefs((s) => s.profileId !== null);

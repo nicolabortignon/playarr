@@ -45,14 +45,6 @@ export function plural(n: number, word: string, pluralWord = `${word}s`) {
   return `${n} ${n === 1 ? word : pluralWord}`;
 }
 
-export function greeting(date = new Date()): string {
-  const h = date.getHours();
-  if (h < 5) return 'Late night';
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
 /** A rough wait: "4 s", "2 min". */
 export function formatWait(seconds: number): string {
   return seconds < 60 ? `${Math.max(1, Math.round(seconds))} s` : `${Math.round(seconds / 60)} min`;
