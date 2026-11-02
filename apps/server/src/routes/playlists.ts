@@ -3,8 +3,7 @@ import type { CoverLayout } from '@playarr/shared';
 import type { CoverArt, PlaylistCovers } from '../cover/index.ts';
 import type { Recommendations } from '../discover/recommendations.ts';
 import { PlaylistError, type Playlists } from '../playlists.ts';
-
-const RECORDING_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|track:\d+)$/i;
+import { RECORDING_ID } from './recordingId.ts';
 
 function recordingIds(value: unknown): string[] | null {
   if (value === undefined) return [];

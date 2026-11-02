@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Favorites } from '../favorites.ts';
 import type { Library } from '../library/library.ts';
-
-const RECORDING_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|track:\d+)$/i;
+import { RECORDING_ID } from './recordingId.ts';
 
 export function favoriteRoutes(app: FastifyInstance, deps: { favorites: Favorites; library: Library }) {
   const { favorites, library } = deps;

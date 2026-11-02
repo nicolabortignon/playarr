@@ -3,9 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import type { Library } from '../library/library.ts';
+import { RECORDING_ID } from './recordingId.ts';
 import { requireLocal } from './settings.ts';
-
-const RECORDING_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|track:\d+)$/i;
 
 const input = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(50) });
 /** null: back to the detected point; left out: kept as it is. */

@@ -140,6 +140,14 @@ describe('mix map routes', () => {
     expect((await app.inject({ method: 'GET', url: '/api/recordings/not%20an%20id/cues' })).statusCode).toBe(400);
   });
 
+  it('takes the ids of songs from a folder that aren’t matched on MusicBrainz', async () => {
+    const folderSong = 'local:8e34783d37e7032b';
+    const { app } = setup({ maps: { [folderSong]: map(200) }, cues: { [folderSong]: { mixIn: 12.5 } } });
+    expect((await app.inject({ method: 'GET', url: `/api/recordings/${folderSong}/cues` })).json()).toEqual({ mixIn: 12.5 });
+    const res = await app.inject({ method: 'PUT', url: `/api/recordings/${folderSong}/cues`, payload: { mixOut: 190 } });
+    expect(res.statusCode).toBe(200);
+  });
+
   it('saves cue points within the song, then forgets its transitions', async () => {
     const { app, analyzer, forget } = setup({ maps: { [SONG]: map(200) } });
     const res = await app.inject({ method: 'PUT', url: `/api/recordings/${SONG}/cues`, payload: { mixIn: 8, mixOut: 190 } });
