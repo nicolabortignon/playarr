@@ -70,7 +70,6 @@ function Analysis({
   failed,
   of,
   canRun,
-  idle,
   verb,
   meter,
   again,
@@ -83,8 +82,6 @@ function Analysis({
   failed: number;
   of: number;
   canRun: boolean;
-  /** Nothing of this kind under way. */
-  idle: boolean;
   /** "Analyse", "Look up". */
   verb: string;
   meter: string;
@@ -95,8 +92,6 @@ function Analysis({
   const run = useRunAnalysis();
   const left = Math.max(0, of - done - failed);
   const allowed = canRun && !away && of > 0;
-  // Not while songs are being done already: the line says so, and they'd only be queued twice.
-  const showLeft = allowed && idle && left > 0;
   return (
     <div>
       <p className="text-[13px] text-paper-dim">{text}</p>
@@ -107,9 +102,10 @@ function Analysis({
       )}
       {allowed && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {showLeft && (
+          {/* Also while songs are under way: the server queues only those not waiting already. */}
+          {left > 0 && (
             <button type="button" className={SECONDARY_BUTTON} disabled={run.isPending} onClick={() => run.mutate({ kind })}>
-              {`${verb} the ${songs(left)} left`}
+              {`${verb} the ${count(left)} of ${songs(of)} left`}
             </button>
           )}
           <AskFirst
@@ -212,7 +208,6 @@ export function AnalysisPanel() {
   if (!p) return <Loading />;
 
   const away = settings.error instanceof ApiError && settings.error.status === 403;
-  const audioIdle = p.waiting === 0 && p.working === 0;
   const queue = queueText(p);
   let switchRow: ReactNode = null;
   if (settings.data) {
@@ -251,7 +246,6 @@ export function AnalysisPanel() {
           failed={p.beats.failed}
           of={p.songs}
           canRun={p.enabled}
-          idle={audioIdle}
           verb="Analyse"
           meter="Songs ready for DJ mix"
           again={{
@@ -274,7 +268,6 @@ export function AnalysisPanel() {
           failed={p.sound.failed}
           of={p.songs}
           canRun={p.enabled}
-          idle={audioIdle}
           verb="Analyse"
           meter="Songs measured for their sound"
           again={{
@@ -296,7 +289,6 @@ export function AnalysisPanel() {
           failed={p.loudness.failed}
           of={p.songs}
           canRun={p.enabled}
-          idle={p.loudnessWaiting === 0 && p.loudnessWorking === 0}
           verb="Analyse"
           meter="Songs measured for their loudness"
           again={{
@@ -318,7 +310,6 @@ export function AnalysisPanel() {
           failed={0}
           of={p.tags.songs}
           canRun
-          idle={p.tagsWaiting === 0}
           verb="Look up"
           meter="Songs looked up"
           again={{
