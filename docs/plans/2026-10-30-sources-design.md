@@ -1,6 +1,6 @@
 # Settings and catalog sources: design
 
-Date: 2026-10-30. Status: approved design, not yet implemented.
+Date: 2026-10-30. Status: built 2026-10-30 (phases 1 to 6, plus 4b), one plan per phase in this folder. Later changes are in PLAN.md's decisions log.
 
 ## Goal
 
