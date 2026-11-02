@@ -10,10 +10,8 @@ import { FavoriteButton } from '../components/FavoriteButton';
 import { FormatBadge } from '../components/FormatBadge';
 import { Menu } from '../components/Menu';
 import { OfflineMark } from '../components/OfflineMark';
-import { Tempo } from '../components/Tempo';
 import { TransitionView } from '../components/TransitionView';
 import { formatDuration, formatTime, plural } from '../lib/format';
-import { useTempos } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -126,19 +124,10 @@ function UpNext({ ids, queue }: { ids: number[]; queue: Track[] }) {
   const [order, setOrder] = useState(ids);
   useEffect(() => setOrder(ids), [ids]);
   const commit = () => usePlayer.getState().setUpcoming(order);
-  const tempos = useTempos(order.map((i) => queue[i]));
   return (
     <Reorder.Group axis="y" values={order} onReorder={setOrder} as="ol" className="-mx-3">
       {order.map((queueIndex, i) => (
-        <UpNextRow
-          key={queueIndex}
-          queueIndex={queueIndex}
-          track={queue[queueIndex]!}
-          bpm={tempos.get(queue[queueIndex]!.recordingId)}
-          position={i}
-          order={order}
-          onDragEnd={commit}
-        />
+        <UpNextRow key={queueIndex} queueIndex={queueIndex} track={queue[queueIndex]!} position={i} order={order} onDragEnd={commit} />
       ))}
     </Reorder.Group>
   );
@@ -147,15 +136,12 @@ function UpNext({ ids, queue }: { ids: number[]; queue: Track[] }) {
 function UpNextRow({
   queueIndex,
   track: t,
-  bpm,
   position,
   order,
   onDragEnd,
 }: {
   queueIndex: number;
   track: Track;
-  /** Its measured tempo, if any. */
-  bpm: number | undefined;
   position: number;
   order: number[];
   onDragEnd: () => void;
@@ -193,10 +179,7 @@ function UpNextRow({
         <div className="truncate text-[13px] text-muted">{t.artistName}</div>
       </div>
       <FavoriteButton track={t} reveal />
-      <span className="font-mono text-[13px] text-muted tabular max-sm:hidden">
-        <Tempo bpm={bpm} />
-        {formatTime(t.duration)}
-      </span>
+      <span className="font-mono text-[13px] text-muted tabular max-sm:hidden">{formatTime(t.duration)}</span>
       <div onClick={(e) => e.stopPropagation()} className="md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
         <Menu
           label={`Actions for ${t.title}`}

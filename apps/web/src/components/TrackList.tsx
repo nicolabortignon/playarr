@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
 import { useUI } from '../lib/ui';
 import { formatTime } from '../lib/format';
-import { useTempos } from '../lib/queries';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer, type PlaySource } from '../player/store';
 import { Cover } from './Cover';
@@ -16,7 +15,6 @@ import { InlineLink } from './InlineLink';
 import { Menu, type MenuItem } from './Menu';
 import { useMixPointsItem } from './MixPointsDialog';
 import { startRadio } from '../player/radio';
-import { Tempo } from './Tempo';
 
 interface TrackListProps {
   tracks: Track[];
@@ -41,7 +39,6 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing, sourc
   const navigate = useNavigate();
   const openPicker = useUI((s) => s.openPlaylistPicker);
   const showMetadata = useUI((s) => s.showMetadata);
-  const tempos = useTempos(tracks);
 
   const rows: Row[] = tracks.map((track, index) => ({ track, index }));
   if (missing?.length) {
@@ -122,10 +119,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing, sourc
                 )}
               </div>
               <FavoriteButton track={t} reveal />
-              <span className="font-mono text-[13px] text-muted tabular">
-                <Tempo bpm={tempos.get(t.recordingId)} />
-                {formatTime(t.duration)}
-              </span>
+              <span className="font-mono text-[13px] text-muted tabular">{formatTime(t.duration)}</span>
               <div onClick={(e) => e.stopPropagation()} className="opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
                 <SongMenu
                   track={t}
