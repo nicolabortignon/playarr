@@ -128,7 +128,7 @@ interface SetupOptions {
   maps?: Map<string, MixMap>;
   cues?: Map<string, CuePoints>;
   encode?: Encoder;
-  render?: (plan: TransitionPlan, a: Excerpt, b: Excerpt) => Promise<StereoAudio>;
+  render?: (plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number, lead?: number, progress?: (done: number) => void) => Promise<StereoAudio>;
   now?: () => number;
   dir?: string;
   maxBytes?: number;
@@ -203,7 +203,7 @@ describe('Transitions', { timeout: 30_000 }, () => {
     const t = setup();
     const first = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
     const expectedPlan = planTransition({ a: mixMap(), b: mixMap(), mode: 'auto', sameAlbumInOrder: false });
-    expect(first).toEqual({ status: 'pending', plan: expectedPlan });
+    expect(first).toEqual({ status: 'pending', plan: expectedPlan, render: { step: 'decoding', done: 0 } });
     expect(expectedPlan.style).toBe('fade');
 
     await t.transitions.idle();
@@ -316,7 +316,8 @@ describe('Transitions', { timeout: 30_000 }, () => {
       t.cues.set('rec-1', { mixOut: 40 });
       const first = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 0 });
       expect(first).toMatchObject({ status: 'pending', plan: { aStart: 40 } });
-      expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 30 })).toEqual(first);
+      // The same plan (only how far its render has got moves on).
+      expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 30 })).toMatchObject({ status: 'pending', plan: (first as { plan: object }).plan });
       await t.transitions.idle();
       expect(t.render).toHaveBeenCalledTimes(1);
       const ready = expectReady(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto', aPosition: 35 }));
@@ -445,6 +446,32 @@ describe('Transitions', { timeout: 30_000 }, () => {
 
     expect(rendered).toEqual(['1→2', '8→9', '7→8', '6→7']);
     expect((await t.transitions.request({ fromTrackId: 3, toTrackId: 4, mode: 'auto' })).status).toBe('pending');
+  });
+
+  it('says how far a transition being made has got, and how many are ahead of one waiting', async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const t = setup({
+      tracks: [1, 2, 3].map((id) => track(id)),
+      render: async (plan, a, b, tail, lead, progress) => {
+        progress?.(0.5);
+        await gate;
+        return renderTransition(plan, a, b, undefined, tail, lead);
+      },
+    });
+    expect(await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).toMatchObject({ status: 'pending', render: { step: 'decoding', done: 0 } });
+    await vi.waitFor(() => expect(t.render).toHaveBeenCalledTimes(1));
+    // Half of the mix done: past the decoding (10%), half of the mixing (60%).
+    const mixing = await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' });
+    expect(mixing).toMatchObject({ status: 'pending', render: { step: 'mixing' } });
+    expect((mixing as { render: { done: number } }).render.done).toBeCloseTo(0.4, 9);
+    expect(await t.transitions.request({ fromTrackId: 2, toTrackId: 3, mode: 'auto' })).toMatchObject({
+      status: 'pending',
+      render: { step: 'waiting', done: 0, ahead: 1 },
+    });
+    release();
+    await t.transitions.idle();
+    expect((await t.transitions.request({ fromTrackId: 1, toTrackId: 2, mode: 'auto' })).status).toBe('ready');
   });
 
   it('is unavailable for unknown songs or songs without a mix map, saying which', async () => {

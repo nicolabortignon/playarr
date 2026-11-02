@@ -6,12 +6,21 @@
 import { parentPort } from 'node:worker_threads';
 import { renderTransition } from '@playarr/mix';
 import { analyzePcm, atSampleRate, pcmToFloat } from './dsp.ts';
-import { mixMapOf, type WorkerAnswer, type WorkerJob } from './dspThread.ts';
+import { mixMapOf, type WorkerAnswer, type WorkerJob, type WorkerProgress } from './dspThread.ts';
+
+/** A render says how far it has got at most this often (in its 0–1), so the messages stay few. */
+const PROGRESS_STEP = 0.02;
 
 parentPort?.on('message', (job: WorkerJob) => {
   try {
     if (job.kind === 'render') {
-      const audio = renderTransition(job.plan, job.a, job.b, undefined, job.tail, job.lead);
+      let told = -1;
+      const progress = (done: number) => {
+        if (done - told < PROGRESS_STEP && done < 1) return;
+        told = done;
+        parentPort!.postMessage({ id: job.id, progress: done } satisfies WorkerProgress);
+      };
+      const audio = renderTransition(job.plan, job.a, job.b, undefined, job.tail, job.lead, progress);
       // Handed back, not copied: a long blend is tens of megabytes.
       const answer: WorkerAnswer = { id: job.id, audio };
       parentPort!.postMessage(answer, [audio.left.buffer as ArrayBuffer, audio.right.buffer as ArrayBuffer]);

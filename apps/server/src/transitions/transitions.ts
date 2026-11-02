@@ -104,8 +104,8 @@ export interface MixMapSource {
 
 /** Turns a plan and the two excerpts into the transition's audio (the DSP worker thread). */
 export interface TransitionRenderer {
-  /** `tail`: seconds of B after the transition; `lead`: of A before it (see renderTransition). */
-  render(plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number, lead?: number): Promise<StereoAudio>;
+  /** `tail`: seconds of B after the transition; `lead`: of A before it; `progress`: told how far it's got (see renderTransition). */
+  render(plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number, lead?: number, progress?: (done: number) => void): Promise<StereoAudio>;
 }
 
 /** Stereo audio at RENDER_RATE, a piece at a time (each piece is only valid until the next is asked for). */
@@ -178,9 +178,26 @@ export type TransitionAnswer =
       /** The songs' gains (dB) made into the audio (and B's remainder), when they were asked for. */
       levels?: { a: number; b: number };
     }
-  | { status: 'pending'; plan: TransitionPlan }
+  | { status: 'pending'; plan: TransitionPlan; render?: RenderProgress }
   | { status: 'straight'; plan: TransitionPlan }
   | { status: 'unavailable'; reason: string };
+
+/**
+ * How far a transition being made has got: waiting its turn (behind `ahead` others), decoding the two
+ * songs around the mix, mixing them, saving the file, then (for an MP3 next song) saving the rest of it.
+ * `done` is the whole job's share done, 0–1, the steps weighted by about how long each takes.
+ */
+export interface RenderProgress {
+  step: 'waiting' | 'decoding' | 'mixing' | 'saving' | 'saving the rest of the next song';
+  done: number;
+  ahead?: number;
+}
+
+/** Each step's share of a render, roughly as long as each takes on a NAS: the mix is most of it. */
+const DECODING_SHARE = 0.1;
+const MIXING_SHARE = 0.6;
+/** Saving the transition: its share when the rest of B is saved too, then that. */
+const SAVING_SHARE = 0.1;
 
 type AudioExtension = 'flac' | 'wav';
 
@@ -244,6 +261,8 @@ export class Transitions {
   /** Renders waiting, newest first. */
   private queue: Job[] = [];
   private running: Job | null = null;
+  /** How far the job running has got (see RenderProgress). */
+  private runningProgress: RenderProgress = { step: 'decoding', done: 0 };
   private idleWaiters: (() => void)[] = [];
   /** ffmpeg turned out not to exist here: transitions are written as WAV from then on. */
   private noEncoder = false;
@@ -326,7 +345,15 @@ export class Transitions {
     if (failure) return { status: 'unavailable', reason: failure.reason };
     const songLength = (map: MixMap, track: Track) => (Number.isFinite(map.duration) && map.duration > 0 ? map.duration : track.duration);
     this.enqueue({ key, pair, inputs, ...(levels ? { levels } : {}), fromTrackId, a, b, aDuration: songLength(aMap, a), bDuration: songLength(bMap, b), plan });
-    return { status: 'pending', plan };
+    const render = this.progressOf(key);
+    return { status: 'pending', plan, ...(render ? { render } : {}) };
+  }
+
+  /** How far the transition with this key has got: the one being made, or one waiting its turn. */
+  private progressOf(key: string): RenderProgress | undefined {
+    if (this.running?.key === key) return { ...this.runningProgress };
+    const waiting = this.queue.findIndex((job) => job.key === key);
+    return waiting < 0 ? undefined : { step: 'waiting', done: 0, ahead: waiting + (this.running ? 1 : 0) };
   }
 
   /**
@@ -432,6 +459,7 @@ export class Transitions {
       return;
     }
     this.running = job;
+    this.runningProgress = { step: 'decoding', done: 0 };
     void this.run(job).finally(() => {
       this.running = null;
       this.pump();
@@ -475,11 +503,26 @@ export class Transitions {
     const bSource = { ...this.opts.files.resolve(bFile), track: b, duration: bDuration };
 
     // At the levels the player plays the songs at, so the transition sounds as loud as they do.
+    const remainderSeconds = bDuration - plan.bResume;
+    const withRest = seeksInexactly(b.format) && remainderSeconds <= LONGEST_REMAINDER_SECONDS;
+    const saving = withRest ? SAVING_SHARE : 1 - DECODING_SHARE - MIXING_SHARE;
+    const step = (name: RenderProgress['step'], from: number, share: number) => (done: number) => {
+      this.runningProgress = { step: name, done: from + share * Math.min(1, Math.max(0, done)) };
+    };
+    const decoding = step('decoding', 0, DECODING_SHARE);
     const aExcerpt = withGain(await this.decode(aSource, ranges.a[0], ranges.a[1]), levels?.a);
+    decoding(0.5);
     const bExcerpt = withGain(await this.decode(bSource, ranges.b[0], ranges.b[1]), levels?.b);
-    const audio = await withTimeout(this.opts.dsp.render(plan, aExcerpt, bExcerpt, TRANSITION_TAIL_SECONDS, lead), this.renderTimeoutMs, 'The render took too long');
+    const mixing = step('mixing', DECODING_SHARE, MIXING_SHARE);
+    mixing(0);
+    const audio = await withTimeout(
+      this.opts.dsp.render(plan, aExcerpt, bExcerpt, TRANSITION_TAIL_SECONDS, lead, mixing),
+      this.renderTimeoutMs,
+      'The render took too long',
+    );
     await mkdir(this.dir, { recursive: true });
-    const transitionAudio = await this.writeAudio(() => inPieces(audio), key, this.renderTimeoutMs);
+    const saved = step('saving', DECODING_SHARE + MIXING_SHARE, saving);
+    const transitionAudio = await this.writeAudio(() => counted(inPieces(audio), audio.left.length / RENDER_RATE, saved), key, this.renderTimeoutMs);
 
     // An MP3 can't be started sample-exactly in the middle by a player (see seeksInexactly), so
     // the player plays B's remainder from here, decoded exactly like the transition's B: the
@@ -487,13 +530,13 @@ export class Transitions {
     // ever plays it): ffmpeg skips the LAME encoder delay and padding the file declares, and a
     // browser that doesn't would hear A shifted by those ~25 ms against the transition.
     let continuation: AudioExtension | undefined;
-    const remainderSeconds = bDuration - plan.bResume;
     if (seeksInexactly(b.format) && remainderSeconds > LONGEST_REMAINDER_SECONDS) {
       this.opts.log.info({ recordingId: b.recordingId, remainderSeconds }, 'remainder too long to make: B joins from its own file');
     } else if (seeksInexactly(b.format)) {
       const chunks = Math.ceil((remainderSeconds + END_SLACK_SECONDS) / REMAINDER_CHUNK_SECONDS);
       const timeoutMs = this.renderTimeoutMs + chunks * this.decodeTimeoutMs;
-      continuation = await this.writeAudio(() => gained(this.remainder(bSource, plan.bResume), levels?.b), `${key}.rest`, timeoutMs);
+      const rest = step('saving the rest of the next song', DECODING_SHARE + MIXING_SHARE + SAVING_SHARE, 1 - DECODING_SHARE - MIXING_SHARE - SAVING_SHARE);
+      continuation = await this.writeAudio(() => counted(gained(this.remainder(bSource, plan.bResume), levels?.b), remainderSeconds, rest), `${key}.rest`, timeoutMs);
     }
     const sidecar: Sidecar = {
       aRecording: a.recordingId,
@@ -678,6 +721,16 @@ export function continuesAlbum(a: Track, b: Track): boolean {
 function* bySecond({ left, right }: StereoAudio): Generator<StereoAudio> {
   for (let from = 0; from < left.length; from += CHUNK_FRAMES) {
     yield { left: left.subarray(from, from + CHUNK_FRAMES), right: right.subarray(from, from + CHUNK_FRAMES) };
+  }
+}
+
+/** `audio` as it is, telling `done` the share of `seconds` that has gone by as each piece is taken. */
+async function* counted(audio: AudioChunks, seconds: number, done: (share: number) => void): AudioChunks {
+  let taken = 0;
+  for await (const piece of audio) {
+    yield piece;
+    taken += piece.left.length / RENDER_RATE;
+    if (seconds > 0) done(taken / seconds);
   }
 }
 

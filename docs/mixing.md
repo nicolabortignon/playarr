@@ -247,7 +247,7 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 
 - **The plan** is made at once. It is remembered per pair (500 pairs, kept on disk beside the audio) and reused while it still starts at least 5 s ahead. It is made afresh when either map, the mode, the cues or `PLANNER_VERSION` changes.
 - **The audio** is rendered in the background, one transition at a time, with at most 3 waiting. It is cached on disk by `RENDERER_VERSION` + both files + plan, up to `TRANSITIONS_CACHE_MB` (1 GB). So the same plan between the same files is rendered once.
-- The player polls (every 3 s, then every 10 s) until the answer is "ready".
+- The player polls (every 3 s, then every 10 s) until the answer is "ready". Until then the answer says how far the render has got: its step (waiting, decoding, mixing, saving, saving the rest of the next song) and the share done, which Stats for nerds shows as "Making".
 
 ### 3.2 The render
 

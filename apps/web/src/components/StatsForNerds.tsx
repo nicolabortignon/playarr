@@ -398,6 +398,7 @@ function Upcoming({ result, time }: { result: UpcomingResult | null; time: numbe
   return (
     <>
       <Row label="Mix" value={plan ? `${STATUS[result.status]} · ${plan.style}${plan.beats ? `, ${plan.beats} beats` : ''}` : STATUS[result.status]} />
+      {result.status === 'pending' && result.render && <Row label="Making" value={makingOf(result.render)} />}
       {plan && (
         <>
           <Row label="Mix at" value={`${at(plan.aStart)}${plan.aStart > time ? ` (in ${formatTime(plan.aStart - time)})` : ''} → ${at(plan.bStart)} of the next`} />
@@ -494,4 +495,10 @@ function Row({ label, value }: { label: string; value: ReactNode | undefined }) 
 export function joinOf({ join, gapMs, tookMs }: JoinReport): string {
   const gap = gapMs === null ? 'not measured' : `in step to ${gapMs < 10 ? gapMs.toFixed(1) : Math.round(gapMs)} ms`;
   return `${join} · ${gap}, after ${Math.round(tookMs)} ms`;
+}
+
+/** How far the server has got making the transition: "43% · mixing", "waiting · 2 ahead". */
+export function makingOf({ step, done, ahead }: { step: string; done: number; ahead?: number }): string {
+  if (step === 'waiting') return ahead ? `waiting · ${ahead} ahead` : 'waiting';
+  return `${Math.floor(Math.min(1, Math.max(0, done)) * 100)}% · ${step}`;
 }

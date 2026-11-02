@@ -10,10 +10,12 @@ import { analyzePcm, atSampleRate, pcmToFloat, SAMPLE_RATE, type SoundFeatures }
  */
 export class DspWorkerLost extends Error {}
 
-type Pending = { resolve: (answer: WorkerAnswer) => void; reject: (e: Error) => void };
+type Pending = { resolve: (answer: WorkerAnswer) => void; reject: (e: Error) => void; progress?: (done: number) => void };
 
 /** What the worker sends back: one of these per job, matched up by id. */
 export type WorkerAnswer = { id: number; features?: SoundFeatures; mixMap?: MixMap; audio?: StereoAudio; error?: string };
+/** Sent along the way for a render: how much of it is done (0–1). Not an answer: one still follows. */
+export type WorkerProgress = { id: number; progress: number };
 
 /** The beat model's answer for a song's head, and its tail when it's long (see analyzeMix). */
 export type SongBeats = { head: BeatActivations; tail?: BeatActivations | null };
@@ -70,9 +72,9 @@ export class DspThread {
    * Renders a transition (see renderTransition). The excerpts' samples are handed over to the worker,
    * not copied: the caller must not use them afterwards.
    */
-  async render(plan: TransitionPlan, a: Excerpt, b: Excerpt, tail = 0, lead = 0): Promise<StereoAudio> {
+  async render(plan: TransitionPlan, a: Excerpt, b: Excerpt, tail = 0, lead = 0, progress?: (done: number) => void): Promise<StereoAudio> {
     const worker = this.start();
-    if (!worker) return renderTransition(plan, a, b, undefined, tail, lead);
+    if (!worker) return renderTransition(plan, a, b, undefined, tail, lead, progress);
     const owned = [ownBuffer(a.left), ownBuffer(a.right), ownBuffer(b.left), ownBuffer(b.right)];
     const [aLeft, aRight, bLeft, bRight] = owned as [Float32Array, Float32Array, Float32Array, Float32Array];
     const job: WorkerJob = {
@@ -85,7 +87,7 @@ export class DspThread {
       lead,
     };
     const transfer = [...new Set(owned.map((channel) => channel.buffer as ArrayBuffer))];
-    const answer = await this.send(worker, job, transfer);
+    const answer = await this.send(worker, job, transfer, progress);
     if (!answer.audio) throw new Error(answer.error ?? 'Rendering failed');
     return answer.audio;
   }
@@ -97,9 +99,9 @@ export class DspThread {
     void worker.terminate();
   }
 
-  private send(worker: Worker, job: WorkerJob, transfer: ArrayBuffer[]): Promise<WorkerAnswer> {
+  private send(worker: Worker, job: WorkerJob, transfer: ArrayBuffer[], progress?: (done: number) => void): Promise<WorkerAnswer> {
     return new Promise((resolve, reject) => {
-      this.pending.set(job.id, { resolve, reject });
+      this.pending.set(job.id, { resolve, reject, ...(progress ? { progress } : {}) });
       try {
         worker.postMessage(job, transfer);
       } catch (err) {
@@ -119,8 +121,9 @@ export class DspThread {
         return null;
       }
       worker.unref();
-      worker.on('message', (answer: WorkerAnswer) => {
+      worker.on('message', (answer: WorkerAnswer | WorkerProgress) => {
         const p = this.pending.get(answer.id);
+        if ('progress' in answer) return p?.progress?.(answer.progress);
         this.pending.delete(answer.id);
         p?.resolve(answer);
       });

@@ -202,6 +202,16 @@ describe('Stats for nerds', () => {
     expect(screen.queryByText('Next’s rate')).toBeNull();
   });
 
+  it('shows how far the server has got making the next transition', async () => {
+    useTransition.setState({ result: { status: 'pending', plan, render: { step: 'mixing', done: 0.437 } } });
+    view();
+    await expectRow('Making', '43% · mixing');
+    cleanup();
+    useTransition.setState({ result: { status: 'pending', plan, render: { step: 'waiting', done: 0, ahead: 2 } } });
+    view();
+    await expectRow('Making', 'waiting · 2 ahead');
+  });
+
   it('says what isn’t known yet', async () => {
     useLevels.setState({ levels: {}, loaded: {} });
     vi.mocked(api.mixMaps).mockResolvedValue({});

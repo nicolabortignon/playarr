@@ -58,8 +58,13 @@ describe('DspThread', () => {
     const inline = excerpts();
     const expected = renderTransition(plan, inline.a, inline.b);
     const sent = excerpts();
-    const audio = await thread.render(plan, sent.a, sent.b);
+    const told: number[] = [];
+    const audio = await thread.render(plan, sent.a, sent.b, 0, 0, (done) => told.push(done));
     expect(audio.left).toEqual(expected.left);
+    // It said how far it had got along the way, up to all of it, before answering.
+    expect(told.length).toBeGreaterThan(1);
+    expect(told).toEqual([...told].sort((x, y) => x - y));
+    expect(told.at(-1)).toBe(1);
     expect(audio.right).toEqual(expected.right);
     expect(audio.left.length).toBe(2 * rate);
   });

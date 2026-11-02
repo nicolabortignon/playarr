@@ -39,6 +39,10 @@ export const EXCERPT_MARGIN = 0.25;
  */
 const MAX_RESUME_MISMATCH_SAMPLES = 0.5;
 
+/** Roughly how much of a render's time goes on A (its filters), and on B's filters and the limiter after the stretch. */
+const A_SHARE = 0.1;
+const REST_SHARE = 0.1;
+
 /** The limiter's ceiling where the songs alone are quieter: −1 dBFS. */
 export const LIMIT_CEILING = 10 ** (-1 / 20);
 /**
@@ -98,7 +102,16 @@ export function excerptRanges(
  * bGain 0 at time 0, A's filters neutral. (The end join likewise wants A silent and B's filter
  * neutral by the end.) Nothing else would make the first sample continue A's normal playback.
  */
-export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, rate = RENDER_RATE, tail = 0, lead = 0): StereoAudio {
+export function renderTransition(
+  plan: TransitionPlan,
+  a: Excerpt,
+  b: Excerpt,
+  rate = RENDER_RATE,
+  tail = 0,
+  lead = 0,
+  /** Told how much of the render is done (0–1) as it goes, B's time-stretch being most of it. */
+  progress?: (done: number) => void,
+): StereoAudio {
   checkFinite(plan);
   const samples = Math.round(plan.length * rate);
   const out: StereoAudio = { left: new Float32Array(samples), right: new Float32Array(samples) };
@@ -128,7 +141,11 @@ export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, r
   // (which is where the player picks B up); B's start moves by under a sample for it.
   const bEnd = Math.round((plan.bResume - b.start) * rate);
   const bFrom = bEnd - rate * integrate(plan.bRate, 0, samples / rate);
-  const stretched = stretchStereo(b.left, b.right, (t) => valueAt(plan.bRate, t), samples, rate, bFrom);
+  progress?.(A_SHARE);
+  const stretched = stretchStereo(b.left, b.right, (t) => valueAt(plan.bRate, t), samples, rate, bFrom, (done) =>
+    progress?.(A_SHARE + (1 - A_SHARE - REST_SHARE) * done),
+  );
+  progress?.(1 - REST_SHARE);
   const bGain = sampleCurve(plan.bGain, samples, rate);
   for (const side of ['left', 'right'] as const) {
     applyLowShelf(stretched[side], (t) => valueAt(plan.bLowDb, t), rate);
@@ -136,6 +153,7 @@ export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, r
   }
 
   limitLoudness(out, rate, allowed);
+  progress?.(1);
   return withEdges(out, a, aFrom, leadSamples, b, bEnd, Math.max(0, Math.round(tail * rate)));
 }
 

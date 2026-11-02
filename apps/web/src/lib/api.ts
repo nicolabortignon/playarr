@@ -68,7 +68,12 @@ export type TransitionAnswer =
       /** The songs' gains (dB) made into the audio, when the player asked for them (even volume). */
       levels?: { a: number; b: number };
     }
-  | { status: 'pending'; plan: TransitionPlan }
+  | {
+      status: 'pending';
+      plan: TransitionPlan;
+      /** How far making it has got: its step, the whole job's share done (0–1), and renders ahead of it while it waits. */
+      render?: { step: string; done: number; ahead?: number };
+    }
   | { status: 'straight'; plan: TransitionPlan }
   | { status: 'unavailable'; reason: string };
 

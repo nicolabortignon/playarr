@@ -27,6 +27,8 @@ const HOP_AT_44K = 1024;
 const SEARCH_AT_44K = 512;
 /** The coarse search runs on the signal averaged down by this factor, then refines at full rate. */
 const DECIMATION = 4;
+/** How often (in frames, about 1.5 s of audio) the stretch says how far it has got. */
+const PROGRESS_SEGMENTS = 64;
 /** Full-rate positions tried on each side of the coarse winner. */
 const REFINE = DECIMATION;
 /**
@@ -79,6 +81,8 @@ export function stretchStereo(
   outSamples: number,
   sampleRate: number,
   startOffset = 0,
+  /** Told how much of the stretch is done (0–1) as it goes: the search for each frame is most of the work. */
+  progress?: (done: number) => void,
 ): { left: Float32Array; right: Float32Array } {
   if (left.length !== right.length) throw new RangeError(`stereo channels differ in length: ${left.length} and ${right.length}`);
   const length = left.length;
@@ -87,7 +91,7 @@ export function stretchStereo(
     const to = Math.min(length, base + into.length);
     for (let i = from; i < to; i++) into[i - base] = 0.5 * (left[i]! + right[i]!);
   };
-  const splices = planSplices(fillMid, length, rate, outSamples, sampleRate, startOffset);
+  const splices = planSplices(fillMid, length, rate, outSamples, sampleRate, startOffset, progress);
   return { left: overlapAdd(left, splices, outSamples), right: overlapAdd(right, splices, outSamples) };
 }
 
@@ -122,6 +126,7 @@ function planSplices(
   outSamples: number,
   sampleRate: number,
   startOffset: number,
+  progress?: (done: number) => void,
 ): Splices {
   const scale = sampleRate / RENDER_RATE;
   const hop = Math.max(DECIMATION, DECIMATION * Math.round((HOP_AT_44K * scale) / DECIMATION));
@@ -172,6 +177,7 @@ function planSplices(
   const positions = new Float64Array(segments + 1);
   positions[0] = ideal[0]!;
   for (let k = 0; k < segments; k++) {
+    if (progress && k % PROGRESS_SEGMENTS === 0) progress(k / segments);
     const target = ideal[k + 1]!;
     // The previous frame's continuation: input positions[k] … + hop, matched against the first
     // half of the next frame, which starts hop before its centre.
