@@ -7,6 +7,12 @@ import type { Automation, Camelot, CuePoints, MixMap, MixMode, TransitionPlan } 
 // how fast B plays, and the gain and EQ moves. It is pure and deterministic so the server
 // (which renders the transition file) and the desktop live mixer always agree on a plan.
 
+/**
+ * Bump when the planner would plan the same two songs differently, so plans the server remembered
+ * (and rendered) are made afresh rather than kept while the songs' maps stay the same.
+ */
+export const PLANNER_VERSION = 2;
+
 export interface PlanInput {
   a: MixMap & { cues?: CuePoints };
   b: MixMap & { cues?: CuePoints };

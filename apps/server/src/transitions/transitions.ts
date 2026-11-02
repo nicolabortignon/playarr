@@ -7,6 +7,7 @@ import type { Writable } from 'node:stream';
 import {
   excerptRanges,
   planTransition,
+  PLANNER_VERSION,
   RENDER_RATE,
   type CuePoints,
   type Excerpt,
@@ -291,7 +292,7 @@ export class Transitions {
     // The plan made for this pair before, while it can still be reached: a later poll (A has
     // played on) would otherwise get a plan that starts later, a new file to render, and never be ready.
     const pair = JSON.stringify([a.fileId, b.fileId, mode]);
-    const inputs = hash([aMap, aCues ?? null, bMap, bCues ?? null, sameAlbumInOrder, fadeSeconds ?? null]);
+    const inputs = hash([PLANNER_VERSION, aMap, aCues ?? null, bMap, bCues ?? null, sameAlbumInOrder, fadeSeconds ?? null]);
     const remembered = this.plans.get(pair);
     const reachable = (plan: TransitionPlan) => plan.aStart >= (aPosition ?? 0) + PLANNING_LEAD;
     let plan: TransitionPlan;
