@@ -58,6 +58,19 @@ export interface Sections {
    * enough music to count from, the grid's first downbeat.
    */
   firstPhrase: number;
+  /** The song's main groove (see Groove), for measuring another stretch of it against; none without phrases. */
+  mainGroove?: Groove;
+}
+
+/**
+ * How a phrase grooves: the median kick, bass line and loudness of its beats. The main part of a song
+ * has all three near their usual levels; an intro or outro lacks at least one (no bass line yet, a
+ * filtered kick, everything quieter), even when it has pads or chords.
+ */
+export interface Groove {
+  kick: number;
+  bass: number;
+  loudness: number;
 }
 
 type Frames = BarFrames & Pick<Onsets, 'energy' | 'onset'>;
@@ -106,6 +119,26 @@ const FADE_BARS = 4;
 const FADE_DROP = 0.85;
 /** Without a beat grid, cold edges are judged on half-second slices, as if at 120 BPM. */
 const SLICE_GRID = { bpm: 120, firstBeat: 0 };
+/** A song's main groove: each of its phrases' levels at this percentile (most of a song is its main part). */
+const MAIN_PERCENTILE = 0.8;
+/**
+ * A phrase is in the main groove when its kick and bass line are within 6 dB of the main groove's and
+ * its loudness within 4 dB: an intro with pads but no bass line, or a lighter, filtered kick, isn't.
+ */
+const MAIN_KICK_SHARE = 10 ** (-6 / 10);
+const MAIN_BASS_SHARE = 10 ** (-6 / 10);
+const MAIN_LOUDNESS_SHARE = 10 ** (-4 / 20);
+/**
+ * Out of the main groove but with a kick within 12 dB of its: still beat-led, an intro or outro to
+ * mix over. A phrase with less (a piano or vocal opening) is music to hear, not to mix over.
+ */
+const LED_KICK_SHARE = 10 ** (-12 / 10);
+/**
+ * Intros and outros found by their groove are at most this many phrases (64 beats, a club intro's
+ * length). More is a song whose verses are lighter than its choruses (pop, disco): its "main groove"
+ * is its loudest part, and the verses aren't intro.
+ */
+const MAX_GROOVE_PHRASES = 4;
 
 /** A loudness step of at least this ratio between consecutive bars is a section change. */
 const SECTION_JUMP = Math.log(1.5);
@@ -151,6 +184,8 @@ interface Beat {
    * next, so the kick's and the next kick's attacks don't count: the chords, pads and vocals.
    */
   fill: number;
+  /** Mean bass power (below ~150 Hz) over the beat's second half, once its kick has died away: the bass line. */
+  bass: number;
 }
 
 /** A beat where the song's loudness steps up or down by at least 1.5×, and by how much (log ratio). */
@@ -190,6 +225,8 @@ export function sections(
    * the bass accents' confidence. Section changes still lift or lower it, and still place the phrase.
    */
   knownBar?: { confidence: number },
+  /** The song's main groove, measured elsewhere in it (its beginning, when this is its last minutes). */
+  mainGroove?: Groove,
 ): Sections {
   const silence = silenceGate(frames.rms);
   const soundEnd = Math.min(soundEndOf(frames, silence), Math.max(0, duration));
@@ -243,8 +280,27 @@ export function sections(
   const dense = phrases.map((p) => p.dense);
   const firstDense = dense.indexOf(true);
   const lastDense = dense.lastIndexOf(true);
-  const outroStart = lastDense < 0 ? soundEnd : Math.min(soundEnd, phraseStart(lastDense + 1));
-  const introEnd = Math.min(outroStart, firstDense < 0 ? phraseStart(0) : phraseStart(firstDense));
+  // Intro and outro: sparse phrases, and beat-led phrases out of the main groove, whichever reach further.
+  const grooves = groovesOf(beats, anchor);
+  const main = mainGroove ?? mainGrooveOf(grooves);
+  const mixable = (g: Groove | undefined) =>
+    !!g &&
+    !!main &&
+    g.kick >= LED_KICK_SHARE * main.kick &&
+    !(g.kick >= MAIN_KICK_SHARE * main.kick && g.bass >= MAIN_BASS_SHARE * main.bass && g.loudness >= MAIN_LOUDNESS_SHARE * main.loudness);
+  let leading = 0;
+  while (leading < grooves.length && mixable(grooves[leading])) leading++;
+  // A last phrase too short to judge goes with the one before it.
+  const whole = grooves.length - (grooves.at(-1) === undefined ? 1 : 0);
+  let trailing = whole;
+  while (trailing > leading && mixable(grooves[trailing - 1])) trailing--;
+  // No main groove at all (all intro, say): nothing to go by.
+  const grooved = trailing > leading;
+  let outroStart = lastDense < 0 ? soundEnd : Math.min(soundEnd, phraseStart(lastDense + 1));
+  if (grooved && trailing < whole && whole - trailing <= MAX_GROOVE_PHRASES) outroStart = Math.min(outroStart, phraseStart(trailing));
+  let introEnd = firstDense < 0 ? phraseStart(0) : phraseStart(firstDense);
+  if (grooved && leading > 0 && leading <= MAX_GROOVE_PHRASES) introEnd = Math.max(introEnd, phraseStart(leading));
+  introEnd = Math.min(outroStart, introEnd);
 
   const loudest = Math.max(...phrases.map((p) => p.loudness)) || 1;
   const rise = phrases.findIndex((p, k) => k > 0 && (p.loudness - phrases[k - 1]!.loudness) / loudest >= DROP_RISE);
@@ -261,7 +317,31 @@ export function sections(
     downbeatOffset,
     phraseEnergy: phraseEnergyFrom(frames, { bpm: grid.bpm, firstBeat: firstPhrase }, 0, duration),
     firstPhrase,
+    ...(main ? { mainGroove: main } : {}),
   };
+}
+
+/** Each whole-enough phrase's groove from beat `anchor` (see Groove); a last phrase under 8 beats has none. */
+function groovesOf(beats: Beat[], anchor: number): (Groove | undefined)[] {
+  const grooves: (Groove | undefined)[] = [];
+  const median = (values: number[]) => percentile(values, 0.5);
+  for (let start = Math.max(0, anchor); start < beats.length; start += BEATS_PER_PHRASE) {
+    const phrase = beats.slice(start, start + BEATS_PER_PHRASE);
+    grooves.push(
+      phrase.length < MIN_LAST_PHRASE_BEATS
+        ? undefined
+        : { kick: median(phrase.map((b) => b.kick)), bass: median(phrase.map((b) => b.bass)), loudness: median(phrase.map((b) => b.loudness)) },
+    );
+  }
+  return grooves;
+}
+
+/** The song's main groove: each level at MAIN_PERCENTILE of its phrases'. None without whole phrases. */
+function mainGrooveOf(grooves: (Groove | undefined)[]): Groove | undefined {
+  const whole = grooves.filter((g): g is Groove => g !== undefined);
+  if (!whole.length) return undefined;
+  const at = (key: keyof Groove) => percentile(whole.map((g) => g[key]), MAIN_PERCENTILE);
+  return { kick: at('kick'), bass: at('bass'), loudness: at('loudness') };
 }
 
 /** Loudness, kick and fill of every grid beat with some sound in it (see MIN_BEAT_SOUND). */
@@ -287,11 +367,14 @@ function beatsOf(frames: Frames, grid: Pick<BeatGrid, 'bpm' | 'firstBeat'>, soun
     if (fillTo <= fillFrom) [fillFrom, fillTo] = [from, to];
     let fill = 0;
     for (let f = fillFrom; f < fillTo; f++) fill += Math.max(0, energy[f]! - lowEnergy[f]!);
+    // The bass line: windows from halfway to the next beat, past the kick's decay.
+    const bassFrom = Math.min(rms.length - 1, Math.ceil((t + period / 2) * fps));
     beats.push({
       loudness: meanOf(rms, from, to),
       kick: peak(lowEnergy, t * fps - FRAME_CENTRE, KICK_HALF_WIDTH),
       attack: maxOf(onset, onsetFrame(t) - 1, onsetFrame(t + period)),
       fill: fill / (fillTo - fillFrom),
+      bass: meanOf(lowEnergy, bassFrom, Math.max(bassFrom + 1, lastInside)),
     });
   }
   return beats;

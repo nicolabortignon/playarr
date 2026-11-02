@@ -178,4 +178,14 @@ Where the build differs from the design above:
   in a 3 s tail of B on its own that every transition file now ends with (renderer version 2), and before
   a cut on the beat. How long starting takes is learned, so the next file starts that much ahead. Files
   without a tail (older downloads) change over at the end as before.
+- **Intros and outros by groove, not only by sparseness** (2026-11-02, map version 5). An intro was the
+  phrases of kick with little else; a club intro with pads over a lighter, filtered kick (ATB's "9 PM",
+  Sequential One remix: 64 beats) counted as the main part, so blends had little room and quick mixes
+  landed early. Each phrase now also gets its groove: the median kick, bass line (bass power in the
+  second half of each beat, past the kick) and loudness of its beats. The song's main groove is each at
+  the 80th percentile of its phrases; leading and trailing phrases with a kick (within 12 dB of the
+  main one) but out of the main groove (kick or bass more than 6 dB down, or 4 dB quieter) are intro and
+  outro too, up to 64 beats (more is a pop song whose verses are lighter than its choruses: on the 41-song
+  set, "In The Navy" and "Chop Me Up" would otherwise get 112- and 176-beat intros). Openings without a kick (a piano or vocal start) still count as music. A long song's tail
+  is measured against the groove of its beginning.
 

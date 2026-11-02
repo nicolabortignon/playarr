@@ -133,7 +133,8 @@ export function analyzeMix(
     const tailGrid = { bpm, firstBeat: fit.tailFirstBeat };
     const phraseLine = fit.tailFirstBeat - mod(fit.tailFirstBeatIndex, BEATS_PER_PHRASE) * (60 / bpm);
     const offset = { downbeatOffset: mod(-fit.tailFirstBeatIndex, BEATS_PER_BAR), phraseEnergy: [] };
-    const end = sections(tailPart.frames, tailGrid, offset, tailPart.seconds, phraseLine);
+    // The tail is mostly the song's end: its main groove is the one measured on the song's beginning.
+    const end = sections(tailPart.frames, tailGrid, offset, tailPart.seconds, phraseLine, undefined, start.mainGroove);
     if (end.soundEnd > 0) {
       outroStart = tailPart.start + end.outroStart;
       soundEnd = tailPart.start + end.soundEnd;

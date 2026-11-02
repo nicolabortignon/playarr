@@ -18,10 +18,11 @@ function analyse(samples: Float32Array) {
 
 /**
  * A song built from sections of whole beats at 128 BPM, first beat at 0.5 s: `kick` (kick and
- * ticks only), `body` (adds a chord and a snare on beats 2 and 4) and `pad` (a chord, no beat). The
- * kick is accented on the "one" unless `equalKicks`. Returns the samples and each section's start.
+ * ticks only), `body` (adds a chord and a snare on beats 2 and 4), `light` (a body with its kick 9 dB
+ * lighter, as a filtered intro's) and `pad` (a chord, no beat). The kick is accented on the "one"
+ * unless `equalKicks`. Returns the samples and each section's start.
  */
-function build(spec: [kind: 'kick' | 'body' | 'pad', beats: number][], { equalKicks = false, padLevel = 1 } = {}) {
+function build(spec: [kind: 'kick' | 'body' | 'light' | 'pad', beats: number][], { equalKicks = false, padLevel = 1 } = {}) {
   const bpm = 128;
   const beat = 60 / bpm;
   const total = spec.reduce((sum, [, n]) => sum + n, 0);
@@ -33,11 +34,12 @@ function build(spec: [kind: 'kick' | 'body' | 'pad', beats: number][], { equalKi
     starts.push(0.5 + at * beat);
     const from = Math.round((0.5 + at * beat) * RATE);
     if (kind === 'pad') samples.fill(0, from, Math.round((0.5 + (at + n) * beat) * RATE));
+    if (kind === 'light') for (let i = from; i < Math.round((0.5 + (at + n) * beat) * RATE); i++) samples[i]! *= 0.35;
     if (kind !== 'kick') {
       const level = kind === 'pad' ? padLevel : 1;
       chord({ root: 'A', minor: true, seconds: n * beat, rate: RATE }).forEach((v, i) => (samples[from + i]! += level * v));
     }
-    if (kind === 'body') {
+    if (kind === 'body' || kind === 'light') {
       for (let b = at + 1; b < at + n; b += 2) {
         const snare = noise(0.1, RATE, b);
         const start = Math.round((0.5 + b * beat) * RATE);
@@ -71,6 +73,17 @@ describe('sections', () => {
       expect(result.coldStart).toBe(false);
       expect(result.coldEnd).toBe(false);
     }
+  });
+
+  it('calls an intro and outro with full chords but a lighter kick intro and outro, out of the main groove', () => {
+    const { samples, starts, beat } = build([
+      ['light', 32],
+      ['body', 64],
+      ['light', 32],
+    ]);
+    const result = analyse(samples);
+    expect(Math.abs(result.introEnd - starts[1]!)).toBeLessThan(beat);
+    expect(Math.abs(result.outroStart - starts[2]!)).toBeLessThan(beat);
   });
 
   it('puts the intro end at the start when the song starts full, and calls the start cold', () => {
