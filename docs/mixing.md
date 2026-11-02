@@ -13,7 +13,7 @@ It runs in four stages:
 
 ## 1. Analysis: the mix map
 
-`analyzeMix` (`packages/mix/src/analysis/mixMap.ts`) measures a song. The server decodes it once with ffmpeg at 22 050 Hz mono:
+`analyzeMix` (`packages/mix/src/analysis/mixMap.ts`) measures a song. The server decodes it with ffmpeg at 22 050 Hz mono (the head is shared with sound analysis; the tail is a second decode):
 
 - the first 7 minutes (`MIX_HEAD_SECONDS = 420`; all of a shorter song);
 - for a longer song, also its last 3 minutes (`MIX_TAIL_SECONDS = 180`), because that's where it gets mixed out. The tail is placed in the song to the sample, since the beat grid is carried from the head to the tail with only 25 ms of tolerance.
@@ -32,7 +32,7 @@ Two analyses run on that audio.
 5. **Stability** (`gridStable`).
    - Confidence must be at least 0.35.
    - Every 30-second window's beats must sit within 25 ms of the song's.
-   - For a long song, the tail's beats re-fit the head's grid. The tail may correct the tempo's last digits by up to 0.01 BPM. If the tail still strays by more than 25 ms, the song's tempo drifts and the grid isn't stable.
+   - For a long song, the tail's beats re-fit the head's grid. The tail may correct the tempo's last digits by up to 0.01 BPM; a bigger correction means the song's tempo drifts, and the grid isn't stable. With the beat model, the tail's own beats must also pass the window check above; without it, the tail's windows are checked against the head's grid, 25 ms each.
 
 Without the model (it failed to run), `beatGrid` does everything from onsets alone: autocorrelation for a rough tempo, a bass-based check for which tempo octave is right, then the same comb refinement. The map records which path was used in `beatsFrom: 'model' | 'onsets'`.
 
@@ -122,7 +122,7 @@ The best key becomes a **Camelot code**, with a confidence. On the Camelot wheel
 
 ### 1.6 Loudness
 
-Measured separately (EBU R128 via ffmpeg). Every song is streamed at −14 LUFS: loud songs turned down, quiet ones up as far as their peak allows. Transitions are rendered at the same levels (see 3.3).
+Measured separately by *loudness analysis*: EBU R128 (ITU-R BS.1770) loudness and peak, in Playarr's own code, from ffmpeg's decode of the whole song in stereo at 44.1 kHz. With Even volume on, every song is streamed at −14 LUFS: loud songs turned down (at most 20 dB), quiet ones up (at most 12 dB, and only as far as the peak stays under −1 dBFS). Transitions are rendered at the same levels (see 3.3).
 
 ### 1.7 Hand-set cues
 
@@ -225,7 +225,7 @@ How it sounds depends on the tempo gap:
 
 ### 2.6 Skips (`skipPlan`)
 
-When the listener presses Next, A is left as soon as possible, mid-song if need be. Outros, keys and the same-album rule don't count, but No mixing still does.
+When the listener presses Next on a desktop browser and no server transition starts within 3 s, the live mixer (section 4) leaves A as soon as possible, mid-song if need be. The server never plans skips. Outros, keys and the same-album rule don't count, but No mixing still does.
 
 - **Both beats sure** → a quick mix landing on A's next bar line with a 4-beat lead-in, or 2 beats if that lands a bar sooner. The cut comes under 6 beats after the press.
 - **Otherwise** → a 2.5 s crossfade, or straight if B starts cold.
@@ -245,8 +245,9 @@ Into the Trees (Trentemøller) ends with about a minute and a half of beat witho
 
 While A plays (after 5 s of it, and 2 s after the queue settles), the player asks `POST /api/transitions` for A→B.
 
-- **The plan** is made at once. It is remembered per pair (500 pairs, kept on disk beside the audio) and reused while it still starts at least 5 s ahead. It is made afresh when either map, the mode, the cues or `PLANNER_VERSION` changes.
-- **The audio** is rendered in the background, one transition at a time, with at most 3 waiting. It is cached on disk by `RENDERER_VERSION` + both files + plan, up to `TRANSITIONS_CACHE_MB` (1 GB). So the same plan between the same files is rendered once.
+- **The plan** is made at once. It is remembered per pair (500 pairs, kept on disk beside the audio) and reused while it still starts at least 5 s ahead. It is made afresh when either map, the cues, the fade length, whether B follows A on the same album, or `PLANNER_VERSION` changes. Each mix mode has its own plan.
+- **The audio** is rendered in the background, one transition at a time, with at most 3 waiting. It is cached on disk by `RENDERER_VERSION`, both files (and their sizes), the plan and the levels, up to `TRANSITIONS_CACHE_MB` (1 GB). So the same plan between the same files at the same levels is rendered once.
+- **Failures.** A pair whose render failed is answered "unavailable" for 10 minutes; the player asks once more after a minute (the analysis may have finished meanwhile).
 - The player polls (every 3 s, then every 10 s) until the answer is "ready". Until then the answer says how far the render has got: its step (waiting, decoding, mixing, saving, saving the rest of the next song) and the share done, which Stats for nerds shows as "Making".
 
 ### 3.2 The render
@@ -260,8 +261,9 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 
 ### 3.3 Levels, and B's remainder
 
-- **Levels.** The transition is rendered with each song at the gain its levelled stream plays at, so the volume doesn't jump at either join.
-- **B's remainder.** An MP3 can't be started at an exact sample. When B is an MP3, the server also writes B's remainder from `bResume` as its own file. It is decoded in one streaming pass where the source allows, otherwise in 30 s chunks. The player can then continue from it without seeking in the MP3.
+- **Levels.** With Even volume on, the transition must sound as loud as the songs around it, or the volume jumps at both joins. The player sends the gain it loaded each song at (`playsAt` in `levels.ts`), and asks again when a song's level is learned. The server applies them to both excerpts, and to B's remainder. A song playing its own file (kept on the device, or not measured yet) is sent as 0 dB, and its level comes from the transition element's volume instead, following the plan's gain curve (desktop). Downloads keep transitions at 0 dB for the same reason: kept songs play their own files. With Even volume off, no levels are sent, and the transition is at the songs' own volume.
+- **B's remainder.** An MP3 can't be started at an exact sample. When B is an MP3, the server also writes B's remainder from `bResume` as its own file. It is decoded in one streaming pass where the source allows, otherwise in 30 s chunks, for up to 20 minutes of song. The player can then continue from it without seeking in the MP3.
+- **Rate.** Transitions are rendered at 44.1 kHz.
 
 ---
 
@@ -270,9 +272,11 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 - **The handoffs.** No browser starts a file at an exact moment, so each takeover is done **in step**, and only where the two files hold the same sound:
   1. 2 s before `aStart`, the player starts the transition file (its lead is A as it is) silenced, while A's own file plays on. At the transition's end, it starts B's own file (or its remainder) silenced, while the transition's tail (B as it is) plays on.
   2. The new file plays slightly faster or slower until both are at the same moment. It goes by the median of the last 5 measurements, every 4 ms, because an element's reported time jitters by a millisecond or so. It asks for 1 ms, loosening to 5 ms as the shared sound runs out.
-  3. Then it takes over: a 15 ms equal-gain fade on desktop (two copies of one sound, so the level holds), an instant switch on iPhone (where volume is fixed in hardware).
+  3. Then it takes over: a 15 ms equal-gain fade where the element's volume can be set (two copies of one sound, so the level holds), or an instant switch where it can't (older iPhones fix it in hardware). A join lined up on the sound (below) cross-fades over 20 ms instead.
 
   **On desktop the changeover is lined up on the sound itself** (`joinGraph.ts`). An element's reported time isn't the sample being heard, so two files that agree to a millisecond by their times can still be a few apart as heard. After the first click or key press (when browsers let Web Audio start), every `<audio>` element plays through one Web Audio graph: element → delay → gain → speakers.
+
+  "Desktop" is `isDesktop()` in `decks.ts`: no iPhone, iPad, iPod, Android or other mobile browser, no touch-screen Mac (an iPad asking for desktop pages), and a fine pointer (mouse or trackpad). The element's volume must also be settable. Phones and tablets stay on plain `<audio>` elements because they suspend Web Audio when the screen locks: playing through the graph, a locked iPhone went silent. The system keeps plain elements playing.
 
   At a join, once the new file plays, the graph records both outputs together (a script processor sees both in the same block). It then finds the gap by cross-correlation over ±300 ms, done by FFT so the wide range costs little. It correlates each signal's sample-to-sample change, which weighs hats and attacks over a bass line whose cycles all look alike, and refuses to answer if two lags match almost equally.
 
@@ -283,10 +287,10 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 
   Stats for nerds shows each join ("Mix in", "Mix out") and, for one not measured on the sound, why.
 
-  Both changeovers finish before anything changes: before B comes in at `aStart`, and in B's tail after the transition. Before the lead, the switch into the transition had to happen after `aStart`, with B already coming in. A late switch then brought B in with a small step in its level, and the 5 ms allowed between the two copies let a kick's low end partly cancel. Both were heard as a bump. Stats for nerds shows how close the last changeover came ("Last join").
+  Both changeovers finish before anything changes: before B comes in at `aStart`, and in B's tail after the transition. Before the lead, the switch into the transition had to happen after `aStart`, with B already coming in. A late switch then brought B in with a small step in its level, and the 5 ms allowed between the two copies let a kick's low end partly cancel. Both were heard as a bump.
 - **Giving up.** If the transition isn't ready 20 s before `aStart`, the player gives up on it and the pair plays the usual way. A render that takes too long ends up there.
-- **Fallback: a cut on the beat** (`beatCut`). With no transition, DJ mix still joins the songs on the beat: A stops on its last downbeat before its sound ends (at most 20 s early), and B comes in on its first downbeat. If B's intro is longer than 8 bars, B comes in a bar before the intro ends.
-- **Live mix on desktop** (`liveMix.ts`). When the listener skips and no server transition is ready, a desktop browser can mix one itself. It fetches and decodes both songs around the mix, plans and renders a quick mix in a worker, and plays it through Web Audio. It has 1.5 s to do so, otherwise the song switches straight away.
+- **Fallback: a cut on the beat** (`beatCut`, `mixSequence.ts`). With no transition, DJ mix still joins the songs on the beat: A stops on its last downbeat before its sound ends, no earlier than 20 s before A's end, nor before its outro or hand-set mix-out. B comes in on its first downbeat. If B's intro is longer than 8 bars, B comes in a bar before the intro ends. With unsure bars, beats stand in for downbeats. With no steady beat, the silence between the songs is still cut out (`silenceCut`), except within an album or with mixing off.
+- **Live mix on desktop** (`liveMix.ts`). When the listener skips and no server transition starts within 3 s, a desktop browser (as above) can mix one itself. It fetches and decodes both songs around the mix, plans the skip (2.6) and renders it in a worker: a quick mix, or a short crossfade with no sure beat. It plays it through Web Audio, at the songs' even-volume levels. It has 1.5 s to do so, otherwise the song switches straight away. Files over 60 MB and songs over 15 minutes aren't mixed live.
 - **What the listener sees.** Lock screen, seek bar and history only ever show the two songs. The transition's time maps to A's until `switchAt`, then to B's (following B's stretched clock).
 - **Downloads** keep their transitions for offline listening.
 
