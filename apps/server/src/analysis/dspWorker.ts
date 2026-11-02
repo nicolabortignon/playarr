@@ -11,7 +11,7 @@ import { mixMapOf, type WorkerAnswer, type WorkerJob } from './dspThread.ts';
 parentPort?.on('message', (job: WorkerJob) => {
   try {
     if (job.kind === 'render') {
-      const audio = renderTransition(job.plan, job.a, job.b, undefined, job.tail);
+      const audio = renderTransition(job.plan, job.a, job.b, undefined, job.tail, job.lead);
       // Handed back, not copied: a long blend is tens of megabytes.
       const answer: WorkerAnswer = { id: job.id, audio };
       parentPort!.postMessage(answer, [audio.left.buffer as ArrayBuffer, audio.right.buffer as ArrayBuffer]);

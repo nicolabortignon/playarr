@@ -46,14 +46,15 @@ export function transitionTimeFor(plan: TransitionPlan, bTime: number): number |
 }
 
 /**
- * Where to start the transition file with A at `aTime`, or null to let A play on (followed by B the usual
- * way). With the sleep timer stopping at the end of the song, A plays out: there's nothing to blend into.
+ * Where to start the transition with A at `aTime`, in transition time (negative in the file's `lead` of A
+ * before it), or null to let A play on (followed by B the usual way). With the sleep timer stopping at the
+ * end of the song, A plays out: there's nothing to blend into.
  */
-export function bridgeEntry(plan: TransitionPlan, aTime: number, stopsAtSongEnd: boolean): number | null {
+export function bridgeEntry(plan: TransitionPlan, aTime: number, stopsAtSongEnd: boolean, lead = 0): number | null {
   const late = aTime - plan.aStart;
-  if (stopsAtSongEnd || late > MAX_LATE_S || late < -MAX_EARLY_S) return null;
+  if (stopsAtSongEnd || late > MAX_LATE_S || late < -lead - MAX_EARLY_S) return null;
   // A timer that came late joins where A is by now: the transition starts as A itself, so it stays in step.
-  return Math.max(0, late);
+  return lead > 0 ? Math.max(-lead, late) : Math.max(0, late);
 }
 
 /**

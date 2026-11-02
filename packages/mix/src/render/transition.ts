@@ -65,11 +65,15 @@ const RELEASE_SECONDS = 0.15;
  * each with EXCERPT_MARGIN on both sides. Clamped at 0; the caller clamps to the song's length.
  * Undefined for a straight cut (no transition audio, so nothing to decode).
  */
-export function excerptRanges(plan: TransitionPlan, tail = 0): { a: [from: number, to: number]; b: [from: number, to: number] } | undefined {
+export function excerptRanges(
+  plan: TransitionPlan,
+  tail = 0,
+  lead = 0,
+): { a: [from: number, to: number]; b: [from: number, to: number] } | undefined {
   checkFinite(plan);
   if (plan.length === 0) return undefined;
   return {
-    a: [Math.max(0, plan.aStart - EXCERPT_MARGIN), plan.aStart + audibleUntil(plan.aGain, plan.length) + EXCERPT_MARGIN],
+    a: [Math.max(0, plan.aStart - Math.max(0, lead) - EXCERPT_MARGIN), plan.aStart + audibleUntil(plan.aGain, plan.length) + EXCERPT_MARGIN],
     b: [Math.max(0, plan.bStart - EXCERPT_MARGIN), plan.bResume + Math.max(0, tail) + EXCERPT_MARGIN],
   };
 }
@@ -79,7 +83,9 @@ export function excerptRanges(plan: TransitionPlan, tail = 0): { a: [from: numbe
  * up to `plan.aStart` and before B from `plan.bResume`; then `tail` seconds of B on its own from
  * bResume, as B's own playback goes on (B's excerpt must reach that far: see excerptRanges). With a
  * tail, a player can start B's own file at any moment during it, in step, rather than exactly at
- * the transition's end.
+ * the transition's end. Likewise `lead`: that many seconds of A on its own, as it is, before the
+ * transition (rounded to whole samples; A's excerpt must reach back that far), so a player can change
+ * over from A's own file to this one before anything changes, wherever the two meet in that time.
  *
  * The plan must be consistent (finite times; bResume where bRate takes B from bStart), and the
  * excerpts must reach back to the plan's start in each song: it throws otherwise, as that's a
@@ -92,14 +98,15 @@ export function excerptRanges(plan: TransitionPlan, tail = 0): { a: [from: numbe
  * bGain 0 at time 0, A's filters neutral. (The end join likewise wants A silent and B's filter
  * neutral by the end.) Nothing else would make the first sample continue A's normal playback.
  */
-export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, rate = RENDER_RATE, tail = 0): StereoAudio {
+export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, rate = RENDER_RATE, tail = 0, lead = 0): StereoAudio {
   checkFinite(plan);
   const samples = Math.round(plan.length * rate);
   const out: StereoAudio = { left: new Float32Array(samples), right: new Float32Array(samples) };
   if (samples === 0) return out;
   checkCurves(plan);
   checkResume(plan, rate);
-  checkReachesBack(a, plan.aStart, 'A', rate);
+  const leadSamples = Math.max(0, Math.round(lead * rate));
+  checkReachesBack(a, plan.aStart - leadSamples / rate, 'A', rate);
   checkReachesBack(b, plan.bStart, 'B', rate);
 
   // A at its own tempo. Only the part where it's still audible is worth filtering and mixing.
@@ -129,17 +136,21 @@ export function renderTransition(plan: TransitionPlan, a: Excerpt, b: Excerpt, r
   }
 
   limitLoudness(out, rate, allowed);
-  return withTail(out, b, bEnd, Math.max(0, Math.round(tail * rate)));
+  return withEdges(out, a, aFrom, leadSamples, b, bEnd, Math.max(0, Math.round(tail * rate)));
 }
 
-/** `audio` followed by `samples` of B's excerpt from its sample `from` on, as it is (silence past its end). */
-function withTail(audio: StereoAudio, b: Excerpt, from: number, samples: number): StereoAudio {
-  if (samples === 0) return audio;
+/**
+ * `audio` with `lead` samples of A's excerpt before it, up to its sample `aFrom`, and `tail` samples of
+ * B's after it, from its sample `bFrom` on: each as it is (silence where the excerpt doesn't reach).
+ */
+function withEdges(audio: StereoAudio, a: Excerpt, aFrom: number, lead: number, b: Excerpt, bFrom: number, tail: number): StereoAudio {
+  if (lead === 0 && tail === 0) return audio;
   const length = audio.left.length;
-  const out: StereoAudio = { left: new Float32Array(length + samples), right: new Float32Array(length + samples) };
+  const out: StereoAudio = { left: new Float32Array(lead + length + tail), right: new Float32Array(lead + length + tail) };
   for (const side of ['left', 'right'] as const) {
-    out[side].set(audio[side]);
-    out[side].set(copyPadded(b[side], from, samples), length);
+    out[side].set(copyPadded(a[side], aFrom - lead, lead));
+    out[side].set(audio[side], lead);
+    out[side].set(copyPadded(b[side], bFrom, tail), lead + length);
   }
   return out;
 }

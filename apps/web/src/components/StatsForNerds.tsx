@@ -11,6 +11,7 @@ import { useMixMaps, useTrackMetadata } from '../lib/queries';
 import { useToasts } from '../lib/toast';
 import { soundingNow, type Sounding } from '../player/AudioEngine';
 import { canSetVolume, levelDb, upNext, type QueueState } from '../player/decks';
+import { useJoins, type JoinReport } from '../player/joins';
 import { useLevels } from '../player/levels';
 import { useOffline } from '../player/offline';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
@@ -197,6 +198,7 @@ function useSongTime(playing: boolean): number {
 function Details({ track, time, map, grid, level }: { track: Track; time: number; map?: MixMap & { cues?: CuePoints }; grid: GridPosition | null; level?: TrackLevel }) {
   const meta = useTrackMetadata(track.id).data;
   const clock = useClock(useShallow((s) => ({ duration: s.duration, buffered: s.buffered, loading: s.loading, error: s.error })));
+  const lastJoin = useJoins((s) => s.last);
   const queue = usePlayer(useShallow((s) => ({ queue: s.queue, order: s.order, pos: s.pos, repeat: s.repeat })));
   const { playing, mixMode } = usePlayer(useShallow((s) => ({ playing: s.playing, mixMode: s.mixMode })));
   const prefs = usePrefs(useShallow((s) => ({ transitions: s.transitions, crossfade: s.crossfade, levelVolume: s.levelVolume })));
@@ -229,6 +231,7 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
           label="Transitions"
           value={prefs.transitions === 'dj' ? `DJ mix · ${mixMode}` : prefs.transitions === 'crossfade' ? `crossfade ${crossfadeSeconds(prefs)} s` : 'gapless'}
         />
+        {lastJoin && <Row label="Last join" value={joinOf(lastJoin)} />}
         {clock.error && <Row label="Error" value={<span className="text-red-300/90">{clock.error}</span>} />}
       </Group>
 
@@ -485,4 +488,10 @@ function Row({ label, value }: { label: string; value: ReactNode | undefined }) 
       <dd className="min-w-0 break-words tabular">{value}</dd>
     </>
   );
+}
+
+/** How close the last changeover between files came: "into the next song · in step to 0.4 ms, after 180 ms". */
+export function joinOf({ join, gapMs, tookMs }: JoinReport): string {
+  const gap = gapMs === null ? 'not measured' : `in step to ${gapMs < 10 ? gapMs.toFixed(1) : Math.round(gapMs)} ms`;
+  return `${join} · ${gap}, after ${Math.round(tookMs)} ms`;
 }

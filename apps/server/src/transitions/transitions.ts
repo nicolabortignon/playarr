@@ -29,13 +29,20 @@ import { seeksInexactly, type MediaSource } from '../media/source.ts';
 // ready, and falls back to its own mixing (or a plain crossfade) whenever the answer isn't "ready" in time.
 
 /** Bump when the rendered audio changes for the same plan, so cached files are made again. */
-export const RENDERER_VERSION = 2;
+export const RENDERER_VERSION = 3;
 /**
  * Seconds of B on its own after each transition, in the same file: a phone that can't start one file
  * exactly as another ends (an iPhone) starts B's own file during them, silently, and changes over
  * once the two are in step.
  */
 export const TRANSITION_TAIL_SECONDS = 3;
+/**
+ * Seconds of A on its own before each transition, in the same file: the player starts the file this
+ * early, silenced, and changes over from A's own file once the two are in step, all before the
+ * transition begins, so the changeover is between two copies of the same sound (not A alone for one
+ * moment, A with B coming in the next). Less for a transition starting sooner into A.
+ */
+export const TRANSITION_LEAD_SECONDS = 2;
 
 /** Renders waiting at most: by the time more pile up, the older ones are songs already skipped. */
 const MAX_QUEUED = 3;
@@ -97,8 +104,8 @@ export interface MixMapSource {
 
 /** Turns a plan and the two excerpts into the transition's audio (the DSP worker thread). */
 export interface TransitionRenderer {
-  /** `tail`: seconds of B after the transition (see renderTransition). */
-  render(plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number): Promise<StereoAudio>;
+  /** `tail`: seconds of B after the transition; `lead`: of A before it (see renderTransition). */
+  render(plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number, lead?: number): Promise<StereoAudio>;
 }
 
 /** Stereo audio at RENDER_RATE, a piece at a time (each piece is only valid until the next is asked for). */
@@ -166,6 +173,8 @@ export type TransitionAnswer =
       continuationUrl?: string;
       /** Seconds of B after the transition in its file (see TRANSITION_TAIL_SECONDS); none in older files. */
       tail?: number;
+      /** Seconds of A before the transition in its file (see TRANSITION_LEAD_SECONDS): the file starts at aStart − lead. None in older files. */
+      lead?: number;
       /** The songs' gains (dB) made into the audio (and B's remainder), when they were asked for. */
       levels?: { a: number; b: number };
     }
@@ -193,6 +202,8 @@ interface Sidecar {
   continuation?: AudioExtension;
   /** Seconds of B after the transition in its file; none in files made before tails. */
   tail?: number;
+  /** Seconds of A before the transition in its file; none in files made before leads. */
+  lead?: number;
   /** The songs' gains (dB) made into the audio; none for songs at their own volume. */
   levels?: { a: number; b: number };
   createdAt: number;
@@ -398,6 +409,7 @@ export class Transitions {
       url: `/transitions/${files[0]}`,
       ...(files[1] ? { continuationUrl: `/transitions/${files[1]}` } : {}),
       ...(sidecar.tail ? { tail: sidecar.tail } : {}),
+      ...(sidecar.lead ? { lead: sidecar.lead } : {}),
       ...(sidecar.levels ? { levels: sidecar.levels } : {}),
     };
   }
@@ -453,7 +465,9 @@ export class Transitions {
   }
 
   private async render({ key, pair, inputs, levels, a, b, aDuration, bDuration, plan }: Job): Promise<Sidecar> {
-    const ranges = excerptRanges(plan, TRANSITION_TAIL_SECONDS);
+    // A whole number of samples, so the player's file time and the transition's meet exactly.
+    const lead = Math.floor(Math.min(TRANSITION_LEAD_SECONDS, Math.max(0, plan.aStart)) * RENDER_RATE) / RENDER_RATE;
+    const ranges = excerptRanges(plan, TRANSITION_TAIL_SECONDS, lead);
     if (!ranges) throw new Error('A straight cut has no transition audio');
     const [aFile, bFile] = await Promise.all([this.opts.library.file(a.fileId), this.opts.library.file(b.fileId)]);
     if (!aFile || !bFile) throw new Error('The song’s file is gone');
@@ -463,7 +477,7 @@ export class Transitions {
     // At the levels the player plays the songs at, so the transition sounds as loud as they do.
     const aExcerpt = withGain(await this.decode(aSource, ranges.a[0], ranges.a[1]), levels?.a);
     const bExcerpt = withGain(await this.decode(bSource, ranges.b[0], ranges.b[1]), levels?.b);
-    const audio = await withTimeout(this.opts.dsp.render(plan, aExcerpt, bExcerpt, TRANSITION_TAIL_SECONDS), this.renderTimeoutMs, 'The render took too long');
+    const audio = await withTimeout(this.opts.dsp.render(plan, aExcerpt, bExcerpt, TRANSITION_TAIL_SECONDS, lead), this.renderTimeoutMs, 'The render took too long');
     await mkdir(this.dir, { recursive: true });
     const transitionAudio = await this.writeAudio(() => inPieces(audio), key, this.renderTimeoutMs);
 
@@ -488,6 +502,7 @@ export class Transitions {
       audio: transitionAudio,
       ...(continuation ? { continuation } : {}),
       tail: TRANSITION_TAIL_SECONDS,
+      ...(lead ? { lead } : {}),
       ...(levels ? { levels } : {}),
       createdAt: this.now(),
       pair,

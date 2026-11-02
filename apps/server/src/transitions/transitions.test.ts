@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FileRecord } from '../catalog/build.ts';
 import { tempDir } from '../catalog/testFixtures.ts';
 import type { MediaSource, PcmOptions } from '../media/source.ts';
-import { ffmpegFlacEncoder, TRANSITION_TAIL_SECONDS, Transitions, type Encoder, type TransitionAnswer } from './transitions.ts';
+import { ffmpegFlacEncoder, TRANSITION_LEAD_SECONDS, TRANSITION_TAIL_SECONDS, Transitions, type Encoder, type TransitionAnswer } from './transitions.ts';
 
 // planTransition as itself, but watchable: one test makes it depend on A's position the way some plans do.
 vi.mock('@playarr/mix', async (importOriginal) => {
@@ -156,7 +156,8 @@ function setup(options: SetupOptions = {}) {
   });
   const media = { kind: 'local', pcm, ...(options.stream ? { pcmStream } : {}) } as unknown as MediaSource;
   const render = vi.fn(
-    options.render ?? (async (plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number) => renderTransition(plan, a, b, undefined, tail)),
+    options.render ??
+      (async (plan: TransitionPlan, a: Excerpt, b: Excerpt, tail?: number, lead?: number) => renderTransition(plan, a, b, undefined, tail, lead)),
   );
   const encode = vi.fn(options.encode ?? rawEncoder);
   const log = { info: vi.fn(), warn: vi.fn() };
@@ -210,17 +211,23 @@ describe('Transitions', { timeout: 30_000 }, () => {
     expect(ready.plan).toEqual(expectedPlan);
     expect(ready.url).toMatch(/^\/transitions\/[0-9a-f]{40}\.flac$/);
     expect(ready.continuationUrl).toBeUndefined();
-    // The transition, then B on its own for a few seconds, as its own file goes on (for phones to change over in).
+    // A on its own for a couple of seconds, the transition, then B on its own for a few, as each song's own
+    // file goes on there (for the player to change over in, between two copies of the same sound).
     expect(ready.tail).toBe(TRANSITION_TAIL_SECONDS);
+    expect(ready.lead).toBe(TRANSITION_LEAD_SECONDS);
     const samples = readRaw(fileOf(t.dir, ready.url));
-    expect(samples.length).toBe(2 * (Math.round(expectedPlan.length * RENDER_RATE) + TRANSITION_TAIL_SECONDS * RENDER_RATE));
+    const leadSamples = TRANSITION_LEAD_SECONDS * RENDER_RATE;
+    expect(samples.length).toBe(2 * (leadSamples + Math.round(expectedPlan.length * RENDER_RATE) + TRANSITION_TAIL_SECONDS * RENDER_RATE));
+    // The lead is A as it is in the song, up to the mix point.
+    const leadAt = 1000;
+    expect(samples[2 * leadAt]!).toBeCloseTo(sampleAt('/music/1.flac', expectedPlan.aStart - (leadSamples - leadAt) / RENDER_RATE), 3);
 
-    // A's excerpt is decoded in stereo from just before the transition, clamped to the song's length.
+    // A's excerpt is decoded in stereo from just before the lead, clamped to the song's length.
     expect(t.pcm).toHaveBeenCalledTimes(2);
     const [aPath, aOpts] = t.pcm.mock.calls[0]!;
     expect(aPath).toBe('/music/1.flac');
     // From the 10 ms step at or before the excerpt's start: a time ffmpeg seeks to exactly.
-    const excerptStart = Math.floor((expectedPlan.aStart - 0.25) * 100) / 100;
+    const excerptStart = Math.floor((expectedPlan.aStart - TRANSITION_LEAD_SECONDS - 0.25) * 100) / 100;
     expect(aOpts).toMatchObject({ sampleRate: RENDER_RATE, channels: 2, startSeconds: excerptStart, exactSeek: false });
     expect(aOpts.signal).toBeInstanceOf(AbortSignal);
     expect(aOpts.startSeconds! + aOpts.maxSeconds).toBeLessThanOrEqual(SONG_SECONDS + 1);
@@ -605,7 +612,7 @@ describe('Transitions', { timeout: 30_000 }, () => {
     expect(wav.readUInt16LE(22)).toBe(2); // stereo
     expect(wav.readUInt32LE(24)).toBe(RENDER_RATE);
     expect(wav.readUInt16LE(34)).toBe(16);
-    expect(wav.readUInt32LE(40)).toBe((Math.round(ready.plan.length * RENDER_RATE) + TRANSITION_TAIL_SECONDS * RENDER_RATE) * 4);
+    expect(wav.readUInt32LE(40)).toBe(((TRANSITION_LEAD_SECONDS + TRANSITION_TAIL_SECONDS) * RENDER_RATE + Math.round(ready.plan.length * RENDER_RATE)) * 4);
     expect(t.encode).toHaveBeenCalledTimes(1);
 
     await t.transitions.request({ fromTrackId: 2, toTrackId: 3, mode: 'auto' });

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { useToasts } from '../lib/toast';
+import { useJoins } from '../player/joins';
 import { useLevels } from '../player/levels';
 import { useClock, usePlayer } from '../player/store';
 import { useTransition } from '../player/transitions';
@@ -175,6 +176,13 @@ describe('Stats for nerds', () => {
     await expectRow('Format', 'FLAC · 16-bit / 44.1 kHz · stereo · lossless');
     await expectRow('Texture', 'bright 0.40 · busy 0.30 · bass 0.55');
     await expectRow('Genres', 'trip hop');
+  });
+
+  it('shows how close the last changeover between files came', async () => {
+    useJoins.setState({ last: { join: 'into the next song', gapMs: 0.42, tookMs: 183.4 } });
+    view();
+    await expectRow('Last join', 'into the next song · in step to 0.4 ms, after 183 ms');
+    useJoins.setState({ last: null });
   });
 
   it('shows the next transition', async () => {

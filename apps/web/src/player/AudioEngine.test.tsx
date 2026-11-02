@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { AudioEngine } from './AudioEngine';
 import { canSetVolume } from './decks';
+import { useJoins } from './joins';
 import { canLiveMix, type LiveMix, playLiveMix, prepareLiveMix } from './liveMix';
 import { playTracker } from './playTracker';
 import { useLevels } from './levels';
@@ -172,7 +173,7 @@ const TRANSITION = '/transitions/abc.flac';
 function transitionReady(
   from: number,
   to: number,
-  extra: { plan?: TransitionPlan; continuationUrl?: string; tail?: number; levels?: { a: number; b: number } } = {},
+  extra: { plan?: TransitionPlan; continuationUrl?: string; tail?: number; lead?: number; levels?: { a: number; b: number } } = {},
 ) {
   const result = {
     status: 'ready' as const,
@@ -180,6 +181,7 @@ function transitionReady(
     url: TRANSITION,
     ...(extra.continuationUrl ? { continuationUrl: extra.continuationUrl } : {}),
     ...(extra.tail ? { tail: extra.tail } : {}),
+    ...(extra.lead ? { lead: extra.lead } : {}),
     ...(extra.levels ? { levels: extra.levels } : {}),
   };
   useTransition.setState({ fromFileId: from, toFileId: to, result, ready: { ...result, fromFileId: from, toFileId: to } });
@@ -235,6 +237,7 @@ async function intoTransition(t: number, tracks = [song(1), song(2), song(3)]) {
 async function inStepWith(lead: HTMLAudioElement, leadTime: number, follower: HTMLAudioElement, followerTime: number) {
   fake(follower).time = followerTime;
   await at(lead, leadTime);
+  await wait(12); // steadily in step: the median of the last few checks
   await overlap();
 }
 
@@ -804,7 +807,7 @@ describe('AudioEngine', () => {
         fake(a).time = 170.3;
         a.dispatchEvent(new Event('timeupdate'));
       });
-      await wait(4); // the next check: in step, so the overlap starts
+      await wait(12); // the next checks: steadily in step (the median of the last few), so the overlap starts
       await wait(8);
       // Both heard, evenly, partway across.
       expect(bridge.muted).toBe(false);
@@ -814,6 +817,29 @@ describe('AudioEngine', () => {
       await overlap();
       expect(fake(a).paused).toBe(true);
       expect(fake(bridge).volume).toBe(1);
+    });
+
+    it('starts a transition with a lead of A that much early, and changes over in the lead, before B comes in', async () => {
+      transitionReady(1, 2, { tail: 3, lead: 2 });
+      const [a, , bridge] = await start([song(1), song(2)]);
+      await at(a, 145);
+      await at(a, 167.99); // 2 s before the mix point: the file's start
+      await wait(20);
+      expect(fake(bridge).paused).toBe(false);
+      expect(bridge.muted).toBe(true);
+      expect(fake(bridge).time).toBeCloseTo(0.05, 9); // the file's start, a moment ahead
+      // In step in the lead, where both files play A as it is: the transition takes over there.
+      await inStepWith(a, 168.5, bridge, 0.5);
+      expect(fake(a).paused).toBe(true);
+      expect(bridge.muted).toBe(false);
+      expect(useJoins.getState().last).toMatchObject({ join: 'into the transition', gapMs: 0 });
+      // The file runs 2 s ahead of the transition: 8 s in is 6 s into the transition, still A.
+      await at(bridge, 8);
+      expect(clock()).toBe(176);
+      expect(now()).toBe(1);
+      // Past the switch (12 s into the transition): the next song.
+      await at(bridge, 14.1);
+      expect(now()).toBe(2);
     });
 
     it('changes over to the next song’s own file in the transition’s tail, in step, fading across', async () => {
@@ -1094,6 +1120,7 @@ describe('AudioEngine', () => {
         expect(fake(bridge).paused).toBe(false);
         fake(bridge).time = 24.4;
         await at(b, 32.4);
+        await wait(12); // steadily in step
         expect(b.muted).toBe(false);
         expect(fake(bridge).paused).toBe(true);
         expect(src(bridge)).toBeNull();

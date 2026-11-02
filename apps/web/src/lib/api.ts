@@ -63,6 +63,8 @@ export type TransitionAnswer =
       url: string;
       continuationUrl?: string;
       tail?: number;
+      /** Seconds of A before the transition in its file: the file starts at plan.aStart − lead. */
+      lead?: number;
       /** The songs' gains (dB) made into the audio, when the player asked for them (even volume). */
       levels?: { a: number; b: number };
     }

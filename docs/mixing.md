@@ -235,7 +235,7 @@ When the listener presses Next, A is left as soon as possible, mid-song if need 
 Into the Trees (Trentemøller) ends with about a minute and a half of beat without its main groove. The last of it has no kick at all.
 
 - **Before the fixes**, the beat model's beats wandered in that kick-less minute. Those phrases read as "drifting", and the planner pushed the blend to the last phrase that held: 32 beats from 6:52.
-- **Now**, kick-less phrases have no drift verdict, and the outro is found before the ending. The plan is a 32-beat blend (15 s at 128 BPM) from 6:07.5, where a DJ would start it. Both songs are the same tempo, so Hung Up isn't stretched.
+- **Now**, kick-less phrases have no drift verdict, and the outro is found before the ending, at 6:00. Both songs have the room, so the plan is a 64-beat blend (30 s at 128 BPM) from 6:00, where a DJ would start it. Both songs are the same tempo, so Hung Up isn't stretched.
 
 ---
 
@@ -251,12 +251,12 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 
 ### 3.2 The render
 
-1. **Decode the excerpts.** A from `aStart` until it's silent, B from `bStart` to `bResume` plus a 3 s tail, each with 0.25 s of margin. Decodes start on a 10 ms grid, so the start asked for is the start decoded, to the sample.
+1. **Decode the excerpts.** A from 2 s before `aStart` (the lead) until it's silent, B from `bStart` to `bResume` plus a 3 s tail, each with 0.25 s of margin. Decodes start on a 10 ms grid, so the start asked for is the start decoded, to the sample.
 2. **A** plays at its own tempo, through the high-pass sweep (quick mix) and the bass shelf. The filters are redesigned every 128 samples from their curves, in state-variable form, so moving cutoffs don't burst.
 3. **B** is time-stretched with **WSOLA**. It keeps pitch and keeps kicks sharp (a phase vocoder smears them), and it is exact at rate 1. B is placed by where it must *end*, so the transition's last sample runs exactly into B's sample at `bResume`.
 4. **Gains** are applied per sample from the curves.
 5. **Limiter.** Two loud masters together can reach +6 dB. A look-ahead limiter (5 ms look-ahead, 1 s hold so it doesn't pump on every kick, 0.15 s release) keeps the sum no louder than the louder song alone, or −1 dBFS. Where only one song plays, the audio is that song sample for sample.
-6. **The tail.** 3 s of B on its own follow the transition in the same file, so a player can switch to B's own file at any moment during it, in step.
+6. **The lead and the tail.** 2 s of A as it is come before the transition in the same file, and 3 s of B as it is follow it, so the player can switch between the transition file and each song's own file while both hold the very same sound, sample for sample.
 
 ### 3.3 Levels, and B's remainder
 
@@ -267,12 +267,12 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 
 ## 4. Playing it (`apps/web/src/player`)
 
-- **The handoffs.** At `aStart` the player starts the transition file; at its end, B's own file (or its remainder). No browser starts a file at an exact moment, so each takeover is done **in step**:
-  1. the next file starts silenced while the current one plays on;
-  2. it plays slightly faster or slower until both are within 5 ms of the same moment;
-  3. then it takes over.
+- **The handoffs.** No browser starts a file at an exact moment, so each takeover is done **in step**, and only where the two files hold the same sound:
+  1. 2 s before `aStart`, the player starts the transition file (its lead is A as it is) silenced, while A's own file plays on. At the transition's end, it starts B's own file (or its remainder) silenced, while the transition's tail (B as it is) plays on.
+  2. The new file plays slightly faster or slower until both are at the same moment. It goes by the median of the last 5 measurements, every 4 ms, because an element's reported time jitters by a millisecond or so. It asks for 1 ms, loosening to 5 ms as the shared sound runs out.
+  3. Then it takes over: a 15 ms equal-gain fade on desktop (two copies of one sound, so the level holds), an instant switch on iPhone (where volume is fixed in hardware).
 
-  On desktop the takeover is a 15 ms overlap fade; on iPhone (where volume is fixed in hardware) it's an instant switch. This used to be iPhone-only. Desktop now uses it too, which removed a tiny gap at the handoff.
+  Both changeovers finish before anything changes: before B comes in at `aStart`, and in B's tail after the transition. Before the lead, the switch into the transition had to happen after `aStart`, with B already coming in. A late switch then brought B in with a small step in its level, and the 5 ms allowed between the two copies let a kick's low end partly cancel. Both were heard as a bump. Stats for nerds shows how close the last changeover came ("Last join").
 - **Giving up.** If the transition isn't ready 20 s before `aStart`, the player gives up on it and the pair plays the usual way. A render that takes too long ends up there.
 - **Fallback: a cut on the beat** (`beatCut`). With no transition, DJ mix still joins the songs on the beat: A stops on its last downbeat before its sound ends (at most 20 s early), and B comes in on its first downbeat. If B's intro is longer than 8 bars, B comes in a bar before the intro ends.
 - **Live mix on desktop** (`liveMix.ts`). When the listener skips and no server transition is ready, a desktop browser can mix one itself. It fetches and decodes both songs around the mix, plans and renders a quick mix in a worker, and plays it through Web Audio. It has 1.5 s to do so, otherwise the song switches straight away.
@@ -299,7 +299,7 @@ Whatever isn't known counts as 0.8 ("fine, not a match"), so it neither jumps th
 |---|---|---|
 | `MIX_MAP_VERSION` (now 7) | `packages/mix/src/types.ts` | the analysis would measure a song differently: stored maps are re-measured in the background. Maps from version 2 on stay usable meanwhile. |
 | `PLANNER_VERSION` (now 3) | `plan.ts` | the planner would plan the same two maps differently: remembered plans are made afresh. |
-| `RENDERER_VERSION` (now 2) | server `transitions.ts` | the rendered audio would differ for the same plan: cached files are made again. |
+| `RENDERER_VERSION` (now 3) | server `transitions.ts` | the rendered audio would differ for the same plan: cached files are made again. |
 
 Settings → Analysis shows how much of the library has a current mix map. It can analyse the songs left, or the whole collection again. After a restart, the background analysis picks up where it left off, if its switch is on.
 

@@ -28,6 +28,7 @@ import {
 } from './mixSequence';
 import { useOffline } from './offline';
 import { playTracker } from './playTracker';
+import { reportJoin } from './joins';
 import { useAutoplay } from './radio';
 import { sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, nextByPress, takeNextPresses, useClock, useCurrentTrack, usePlayer } from './store';
@@ -56,13 +57,23 @@ const LIVE_TICK_MS = 100;
  * No browser starts a file at an exact moment (and iPhones can't fade either): where a transition joins
  * a song's own file, the next file starts silenced while the old one plays on, plays a little faster or
  * slower until both are at the same moment, then takes over (see inStep). This close counts as the same
- * moment.
+ * moment at first: two copies of a sound a millisecond apart cross-fade without a trace (5 ms apart, a
+ * kick's low end partly cancels for a moment, heard as a bump)…
  */
+const IN_STEP_TIGHT_S = 0.001;
+/** …and, as the time for it runs out, up to this close (a millisecond is more than some browsers' clocks can tell). */
 const IN_STEP_S = 0.005;
+/** The gaps a changeover goes by: the median of the last few, as an element's reported time jitters by a millisecond or so. */
+const IN_STEP_GAPS = 5;
 /** A silenced file closes its gap over about this long (at up to twice or half its speed). */
 const CATCH_UP_S = 0.1;
-/** Not in step this long after starting (or the page's timers too slow to steer by): it takes over anyway. */
+/**
+ * Not in step this long after starting (or the page's timers too slow to steer by): it takes over anyway.
+ * Where the two files hold the same sound for longer (a transition's lead of A, its tail of B), as long as they do.
+ */
 const IN_STEP_MAX_MS = 1500;
+/** A changeover in a transition's lead or tail is done this long before the shared sound runs out. */
+const IN_STEP_MARGIN_S = 0.3;
 const IN_STEP_TICK_MS = 4;
 /** Ticks further apart than this (the page in the background) can't steer a file: it takes over as it is. */
 const SLOW_TICK_MS = 60;
@@ -235,6 +246,10 @@ export function AudioEngine() {
   const bridging = () => (mix.current?.bridging ? mix.current : null);
   /** From a transition to B's own file in the tail of B after it, in step (see inStep): where the file has one. */
   const landsInStep = (m: Mix) => (m.transition.tail ?? 0) >= MIN_TAIL_S;
+  /** Seconds of A before the transition in its file: its file time runs this far ahead of the transition's. */
+  const leadOf = (m: Mix) => m.transition.lead ?? 0;
+  /** How far into the transition its file is (negative in its lead of A). */
+  const bridgeTime = (m: Mix, br: HTMLAudioElement) => br.currentTime - leadOf(m);
   /** The element making the sound: the transition's while one plays. */
   const playingDeck = () => (bridging() ? bridge.current : active());
 
@@ -287,7 +302,7 @@ export function AudioEngine() {
     const l = liveHeard();
     if (l) return liveShownTime(l);
     const m = bridging();
-    if (m && bridge.current) return shownTime(m, bridge.current.currentTime);
+    if (m && bridge.current) return shownTime(m, bridgeTime(m, bridge.current));
     const deck = active();
     return deck ? songTime(deck) : 0;
   }
@@ -371,7 +386,7 @@ export function AudioEngine() {
       // (none for a song whose level was made into it).
       if (deck === bridge.current) {
         const baked = m?.transition.levels;
-        v *= m ? bridgeGain(m.transition.plan, deck.currentTime, baked?.a ? 1 : level(m.from), baked?.b ? 1 : level(m.to)) : 1;
+        v *= m ? bridgeGain(m.transition.plan, bridgeTime(m, deck), baked?.a ? 1 : level(m.from), baked?.b ? 1 : level(m.to)) : 1;
       } else v *= level(loaded.current.get(deck), deck);
       const f = fade.current;
       if (f?.out === deck) v *= fadeCurve(fadeLeft(f) / f.seconds);
@@ -606,7 +621,7 @@ export function AudioEngine() {
       !useSleep.getState().endOfSong &&
       fade.current?.out !== next &&
       aTime >= r.plan.aStart - PRELOAD_S &&
-      (bridgeEntry(r.plan, aTime, false) !== null || aTime < r.plan.aStart);
+      (bridgeEntry(r.plan, aTime, false, r.lead) !== null || aTime < r.plan.aStart);
     if (!wanted) return dropPrepared();
     if (m && m.transition.url === r.url && m.from.fileId === from.fileId && m.to.fileId === to.fileId) return;
     dropPrepared();
@@ -675,7 +690,8 @@ export function AudioEngine() {
     const m = mix.current;
     if (!m || m.bridging) return !!m;
     if (deck.paused || !usePlayer.getState().playing) return true;
-    const wait = (m.transition.plan.aStart - songTime(deck)) / (deck.playbackRate || 1);
+    // The file starts with A's lead: that much before the mix point.
+    const wait = (m.transition.plan.aStart - leadOf(m) - songTime(deck)) / (deck.playbackRate || 1);
     if (wait > 1.5) return true;
     clearTimeout(bridgeTimer.current);
     bridgeTimer.current = setTimeout(() => {
@@ -690,7 +706,7 @@ export function AudioEngine() {
    */
   function startBridge(m: Mix, out: HTMLAudioElement) {
     const br = bridge.current;
-    const entry = bridgeEntry(m.transition.plan, songTime(out), useSleep.getState().endOfSong);
+    const entry = bridgeEntry(m.transition.plan, songTime(out), useSleep.getState().endOfSong, leadOf(m));
     if (!br || entry === null) return dropPrepared();
     // Not loaded enough by now (a slow connection): A plays on. iPhones don't load ahead (they also fix
     // the volume), so there knowing the file is enough.
@@ -708,15 +724,16 @@ export function AudioEngine() {
 
   /**
    * The transition starts silenced (a moment ahead, for the time starting takes) while A plays on, and
-   * takes over from A once the two are in step: the transition starts as A itself, so nothing is heard
-   * but A, going on. Starting a file takes a moment that's never quite the same, so one started on a
-   * timer alone would skip or repeat a few milliseconds of the music (heard as a tiny gap). A transition
-   * that doesn't start in time leaves A playing.
+   * takes over from A once the two are in step: the transition starts as A itself (its lead, A as it is,
+   * then the transition), so nothing is heard but A, going on. Starting a file takes a moment that's never
+   * quite the same, so one started on a timer alone would skip or repeat a few milliseconds of the music
+   * (heard as a tiny gap). In the lead, the two files hold the very same sound: the changeover is done
+   * there, before B comes in. A transition that doesn't start in time leaves A playing.
    */
   function startBridgeInStep(m: Mix, out: HTMLAudioElement, br: HTMLAudioElement, entry: number) {
     silenced.current.add(br);
     applyVolumes();
-    setTime(br, entry + startLag.current);
+    setTime(br, entry + leadOf(m) + startLag.current);
     clearTimeout(startWatch.current);
     startWatch.current = setTimeout(() => starting.current === m && cancelStart(m, true), IN_STEP_START_WATCH_MS);
     br.play().then(
@@ -724,7 +741,13 @@ export function AudioEngine() {
         if (starting.current !== m) return;
         starting.current = null;
         clearTimeout(startWatch.current);
-        inStep(out, br, () => songTime(out) - m.transition.plan.aStart, () => applyVolumes());
+        const { aStart } = m.transition.plan;
+        // Until the transition begins (A alone in both files), but never less time than a changeover takes.
+        const sharedMs = ((aStart - IN_STEP_MARGIN_S - songTime(out)) / (out.playbackRate || 1)) * 1000;
+        inStep(out, br, () => songTime(out) - aStart + leadOf(m), () => applyVolumes(), () => true, {
+          budgetMs: Math.max(IN_STEP_MAX_MS, sharedMs),
+          join: 'into the transition',
+        });
       },
       () => {
         // Paused meanwhile: dealt with there.
@@ -788,9 +811,12 @@ export function AudioEngine() {
    * `follower` has just started, silenced, while `lead` plays on and is heard. It plays a little faster or
    * slower until it's where `target()` says it should be (its time, for where the lead is), then takes
    * over: heard, as the lead stops (where the volume can be set, across a short overlap, as the two are
-   * the same sound at most IN_STEP_S apart; at once on iPhones), and `done` runs. `ready` holds the takeover
-   * back until the two play the same sound. `ending`: the transition the lead plays, ending (its level
-   * holds as it fades). The first gap seen teaches how long starting takes, for the next changeover.
+   * the same sound a millisecond or so apart; at once on iPhones), and `done` runs. `ready` holds the
+   * takeover back until the two play the same sound. `ending`: the transition the lead plays, ending (its
+   * level holds as it fades). `budgetMs`: how long the two hold the same sound, to get in step in; the
+   * closeness asked for loosens from IN_STEP_TIGHT_S to IN_STEP_S over it. `join` names the changeover in
+   * the report of how close it came (see joins.ts). The first gap seen teaches how long starting takes,
+   * for the next changeover.
    */
   function inStep(
     lead: HTMLAudioElement,
@@ -798,13 +824,15 @@ export function AudioEngine() {
     target: () => number,
     done: () => void,
     ready: () => boolean = () => true,
-    ending?: Mix,
+    { ending, budgetMs = IN_STEP_MAX_MS, join }: { ending?: Mix; budgetMs?: number; join?: string } = {},
   ) {
     stepping.current?.cancel();
     const began = performance.now();
     const startedFrom = follower.currentTime;
     let learned = false;
     let lastTick = began;
+    const gaps: number[] = [];
+    const median = () => [...gaps].sort((x, y) => x - y)[gaps.length >> 1] ?? Infinity;
     const stop = () => {
       clearInterval(timer);
       follower.playbackRate = 1;
@@ -812,6 +840,7 @@ export function AudioEngine() {
     };
     const finish = () => {
       stop();
+      if (join) reportJoin({ join, gapMs: gaps.length ? median() * 1000 : null, tookMs: performance.now() - began });
       silenced.current.delete(follower);
       // The overlap stops the lead (at once where the volume can't be set), and the transition with it when that's done with.
       const o: Overlap = { out: lead, in: follower, startedAt: null, ...(ending ? { ending } : {}) };
@@ -839,7 +868,15 @@ export function AudioEngine() {
         learned = true;
         startLag.current = Math.min(0.5, Math.max(0, startLag.current + gap));
       }
-      if ((Math.abs(gap) <= IN_STEP_S && ready()) || slow || now - began > IN_STEP_MAX_MS) return finish();
+      gaps.push(Math.abs(gap));
+      if (gaps.length > IN_STEP_GAPS) gaps.shift();
+      const elapsed = now - began;
+      // A changeover between copies of one sound (a `join`) asks for a millisecond, steadily; a cut, where
+      // the follower comes in on a beat of its own, for IN_STEP_S.
+      const close = join ? IN_STEP_TIGHT_S + (IN_STEP_S - IN_STEP_TIGHT_S) * Math.min(1, elapsed / budgetMs) : IN_STEP_S;
+      const steady = !join || (gaps.length === IN_STEP_GAPS && median() <= close);
+      const inStepNow = Math.abs(gap) <= close && steady;
+      if ((inStepNow && ready()) || slow || elapsed > budgetMs) return finish();
       follower.playbackRate = Math.min(2, Math.max(0.5, 1 + gap / CATCH_UP_S));
     };
     stepping.current = step;
@@ -852,9 +889,9 @@ export function AudioEngine() {
     const m = bridging();
     const br = bridge.current;
     if (!m || !br) return;
-    if (!m.switched && songTimeDuring(m.transition.plan, br.currentTime).song === 'b') switchToB(m);
+    if (!m.switched && songTimeDuring(m.transition.plan, bridgeTime(m, br)).song === 'b') switchToB(m);
     if (bridging() !== m) return;
-    const time = shownTime(m, br.currentTime);
+    const time = shownTime(m, bridgeTime(m, br));
     useClock.setState({ time });
     // Not while the store moves on to B (the history starts B then).
     if (!br.paused && handedOff.current === null) playTracker.tick(time);
@@ -869,7 +906,7 @@ export function AudioEngine() {
   function approachSwitch(m: Mix, br: HTMLAudioElement) {
     clearTimeout(switchTimer.current);
     if (m.switched || br.paused || !usePlayer.getState().playing) return;
-    const wait = (m.transition.plan.switchAt - br.currentTime) / (br.playbackRate || 1);
+    const wait = (m.transition.plan.switchAt - bridgeTime(m, br)) / (br.playbackRate || 1);
     if (wait > 1.5) return;
     switchTimer.current = setTimeout(() => {
       if (bridging() === m && !m.switched && !br.paused && usePlayer.getState().playing) switchToB(m);
@@ -896,7 +933,7 @@ export function AudioEngine() {
   /** Close to the transition's end: start B's file on time. */
   function approachLanding(m: Mix, br: HTMLAudioElement) {
     if (br.paused || !usePlayer.getState().playing) return;
-    const left = (m.transition.plan.length - br.currentTime) / (br.playbackRate || 1);
+    const left = (m.transition.plan.length - bridgeTime(m, br)) / (br.playbackRate || 1);
     if (left > 1.5) return;
     clearTimeout(bridgeTimer.current);
     // Changing over in the tail, B's own file starts once the transition is over, not a moment before.
@@ -920,7 +957,7 @@ export function AudioEngine() {
     // iPhones: B's own file starts silenced in the transition's tail, where the transition plays B on
     // its own, a moment ahead for the time starting takes, and takes over once in step.
     const inTail = landsInStep(m) && !m.sleepAtLanding;
-    const intoTail = () => Math.max(0, br.currentTime - plan.length);
+    const intoTail = () => Math.max(0, bridgeTime(m, br) - plan.length);
     cue(incoming, m.to, plan.bResume + (inTail ? intoTail() + startLag.current : 0));
     const duration = Number.isFinite(incoming.duration) ? incoming.duration + offsetOf(incoming) : m.to.duration;
     useClock.setState({ time: plan.bResume, duration, buffered: bufferedEnd(incoming) });
@@ -942,7 +979,12 @@ export function AudioEngine() {
         // B's own song time for where the transition's tail is.
         const target = () => plan.bResume + intoTail() - offsetOf(incoming);
         // The overlap clears the transition once it has faded out.
-        inStep(br, incoming, target, () => {}, () => br.currentTime >= plan.length, m);
+        const sharedMs = (((m.transition.tail ?? 0) - IN_STEP_MARGIN_S - intoTail()) / (br.playbackRate || 1)) * 1000;
+        inStep(br, incoming, target, () => {}, () => bridgeTime(m, br) >= plan.length, {
+          ending: m,
+          budgetMs: Math.max(IN_STEP_MAX_MS, sharedMs),
+          join: 'into the next song',
+        });
       },
       () => {
         if (o && overlap.current === o) {
@@ -1020,7 +1062,7 @@ export function AudioEngine() {
     const t = m.switched ? transitionTimeFor(plan, time) : intoA >= 0 && intoA < plan.switchAt ? intoA : null;
     if (t !== null) {
       clearTimeout(switchTimer.current);
-      br.currentTime = t;
+      br.currentTime = t + leadOf(m);
       updatePosition();
     } else if (m.switched) abandonToB(m, time);
     else abandonToA(m, time);
@@ -1035,7 +1077,7 @@ export function AudioEngine() {
       const br = bridge.current;
       if (bridging() !== m || !br) return;
       if (!m.switched && (standby()?.readyState ?? 0) < 3 /* HAVE_FUTURE_DATA */) return abandonToA(m, currentSongTime());
-      const time = bTimeAt(m.transition.plan, br.currentTime);
+      const time = bTimeAt(m.transition.plan, bridgeTime(m, br));
       const moveOn = !m.switched;
       abandonToB(m, time);
       if (moveOn) {
@@ -1063,7 +1105,7 @@ export function AudioEngine() {
     const m = bridging();
     if (m && bridge.current) {
       positionAt.current = performance.now();
-      const t = bridge.current.currentTime;
+      const t = bridgeTime(m, bridge.current);
       return updatePositionState(currentSongTime(), useClock.getState().duration, m.switched ? valueAt(m.transition.plan.bRate, t) : 1);
     }
     const deck = active();
@@ -1439,7 +1481,7 @@ export function AudioEngine() {
     if (m && track.fileId === m.to.fileId) {
       // Next during the transition: B, where the transition had it. Past the switch, B played again from the start.
       const again = m.switched;
-      const time = startAt ?? (again ? 0 : bTimeAt(m.transition.plan, bridge.current!.currentTime));
+      const time = startAt ?? (again ? 0 : bTimeAt(m.transition.plan, bridgeTime(m, bridge.current!)));
       handedOff.current = null;
       playTracker.finish(again ? 'ended' : 'changed');
       playTracker.start(track);
@@ -1866,7 +1908,7 @@ export function AudioEngine() {
       const m = mix.current;
       if (m?.transition.url !== url) return;
       if (!m.bridging) return dropPrepared();
-      const time = shownTime(m, e.currentTarget.currentTime);
+      const time = shownTime(m, bridgeTime(m, e.currentTarget));
       if (m.switched) abandonToB(m, time);
       else abandonToA(m, time);
     },

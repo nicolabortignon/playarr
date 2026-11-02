@@ -673,6 +673,26 @@ describe('renderTransition with the planner’s plans', () => {
     }
   });
 
+  it.each(['long', 'quick, stretched', 'quick, cut', 'fade'])('%s: plays A as it is up to aStart first, for the lead asked for', (name) => {
+    const { pair, plan } = planned(name);
+    const ranges = excerptRanges(plan, 0, 2)!;
+    expect(ranges.a[0]).toBeCloseTo(Math.max(0, plan.aStart - 2.25), 9);
+    const a = excerpt(pair.a.audio, ...ranges.a);
+    const b = excerpt(pair.b.audio, ...ranges.b);
+    const plain = renderTransition(plan, a, b);
+    const out = renderTransition(plan, a, b, rate, 0, 2);
+    const lead = 2 * rate;
+    expect(out.left.length).toBe(lead + plain.left.length);
+    const aFrom = Math.round((plan.aStart - a.start) * rate);
+    for (const side of ['left', 'right'] as const) {
+      // A's own samples up to its sample at aStart, as its own file plays them, then the transition, unchanged.
+      expect(maxDifference(out[side].subarray(0, lead), a[side].subarray(aFrom - lead, aFrom))).toBe(0);
+      expect(maxDifference(out[side].subarray(lead), plain[side])).toBe(0);
+    }
+    // An excerpt that doesn't reach back that far is a caller's mistake.
+    expect(() => renderTransition(plan, excerpt(pair.a.audio, plan.aStart - 1, ranges.a[1]), b, rate, 0, 2)).toThrow(/excerpt starts/);
+  });
+
   it.each(['long', 'quick, stretched'])('%s: B’s kicks land on A’s through the overlap', (name) => {
     const { pair, plan } = planned(name);
     const { a, b } = excerptsFor(plan, pair.a.audio, pair.b.audio);

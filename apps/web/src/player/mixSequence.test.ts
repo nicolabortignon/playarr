@@ -56,6 +56,13 @@ describe('the songs during a transition', () => {
     expect(bridgeEntry(plan, 160, false)).toBeNull();
   });
 
+  it('starts a transition with a lead of A that much before the mix point, as early as A is', () => {
+    expect(bridgeEntry(plan, 167.5, false, 2)).toBeCloseTo(-2, 9);
+    expect(bridgeEntry(plan, 168.5, false, 2)).toBeCloseTo(-1.5, 9);
+    expect(bridgeEntry(plan, 170.5, false, 2)).toBeCloseTo(0.5, 9);
+    expect(bridgeEntry(plan, 166.5, false, 2)).toBeNull();
+  });
+
   it('never starts the transition when the sleep timer stops at the end of the song', () => {
     expect(bridgeEntry(plan, 170, true)).toBeNull();
   });
