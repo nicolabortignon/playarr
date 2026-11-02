@@ -17,6 +17,16 @@ const OTHER = '0b6a2c1e-1111-4222-8333-944455557777';
 
 const map = (duration: number) => ({ version: 1, duration, bpm: 120 }) as MixMap;
 
+const PROGRESS = {
+  songs: 5678,
+  beats: { ready: 1234, beatModel: 1200, failed: 3 },
+  sound: { ready: 5000, failed: 2 },
+  tags: { ready: 4000, songs: 5100 },
+  waiting: 4400,
+  working: 1,
+  tagsWaiting: 0,
+};
+
 /** The routes over an in-memory analyzer: `maps` and `cues` by recording, `durations` the library's. */
 function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CuePoints>; durations?: Record<string, number>; available?: boolean; libraryScan?: boolean } = {}) {
   const maps = new Map(Object.entries(opts.maps ?? {}));
@@ -32,7 +42,7 @@ function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CueP
       else cues.delete(id);
     }),
     ensure: vi.fn(),
-    mixMapProgress: () => ({ songs: 5678, ready: 1234, beatModel: 1200, failed: 3, waiting: 4400, working: 1 }),
+    analysisProgress: () => PROGRESS,
     analyzeLibrary: vi.fn(async () => 4400),
     reanalyzeLibrary: vi.fn(async () => 5678),
   };
@@ -47,19 +57,6 @@ function setup(opts: { maps?: Record<string, MixMap>; cues?: Record<string, CueP
 }
 
 describe('mix map routes', () => {
-  it('reports how many songs are ready for DJ mix, and whether the whole library is being analysed', async () => {
-    const { app } = setup({ libraryScan: false });
-    const res = await app.inject({ method: 'GET', url: '/api/mix-maps/progress' });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ enabled: true, songs: 5678, ready: 1234, beatModel: 1200, failed: 3, waiting: 4400, working: 1, libraryScan: false });
-  });
-
-  it('says so when audio analysis is off', async () => {
-    const { app } = setup({ available: false });
-    const res = await app.inject({ method: 'GET', url: '/api/mix-maps/progress' });
-    expect(res.json()).toMatchObject({ enabled: false, waiting: 0, working: 0 });
-  });
-
   it('answers the measured maps with their cue points, and has the songs measured that need it', async () => {
     const { app, analyzer } = setup({ maps: { [SONG]: map(200) }, cues: { [SONG]: { mixOut: 180 } } });
     const res = await app.inject({ method: 'POST', url: '/api/mix-maps', payload: { ids: [SONG, OTHER, SONG] } });
@@ -90,33 +87,37 @@ describe('mix map routes', () => {
     expect(analyzer.ensure).not.toHaveBeenCalled();
   });
 
-  it('queues the library for analysis on request, from the home network only', async () => {
-    const { app, analyzer } = setup();
-    const res = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze' });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ queued: 4400 });
-    const away = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze', remoteAddress: '203.0.113.9' });
-    expect(away.statusCode).toBe(403);
-    expect(analyzer.analyzeLibrary).toHaveBeenCalledTimes(1);
-    expect(analyzer.reanalyzeLibrary).not.toHaveBeenCalled();
+  it('reports each analysis’s progress over the library, and whether the whole library is being analysed', async () => {
+    const { app } = setup({ libraryScan: false });
+    const res = await app.inject({ method: 'GET', url: '/api/analysis/progress' });
+    expect(res.json()).toEqual({ enabled: true, ...PROGRESS, libraryScan: false });
   });
 
-  it('has every song analysed again when asked to, from the home network only', async () => {
-    const { app, analyzer } = setup();
-    const res = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze', payload: { again: true } });
-    expect(res.json()).toEqual({ queued: 5678 });
-    const away = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze', payload: { again: true }, remoteAddress: '203.0.113.9' });
-    expect(away.statusCode).toBe(403);
-    expect(analyzer.reanalyzeLibrary).toHaveBeenCalledTimes(1);
-    expect(analyzer.analyzeLibrary).not.toHaveBeenCalled();
+  it('says when audio analysis is off, still reporting the tag lookups', async () => {
+    const { app } = setup({ available: false });
+    const res = await app.inject({ method: 'GET', url: '/api/analysis/progress' });
+    expect(res.json()).toMatchObject({ enabled: false, tags: PROGRESS.tags });
   });
 
-  it('says why nothing can be analysed when audio analysis is off', async () => {
+  it.each(['beats', 'sound', 'tags'] as const)('runs %s analysis on every song, once or again, from the home network only', async (kind) => {
+    const { app, analyzer } = setup();
+    expect((await app.inject({ method: 'POST', url: `/api/analysis/${kind}` })).json()).toEqual({ queued: 4400 });
+    expect(analyzer.analyzeLibrary).toHaveBeenCalledWith(kind);
+    expect((await app.inject({ method: 'POST', url: `/api/analysis/${kind}`, payload: { again: true } })).json()).toEqual({ queued: 5678 });
+    expect(analyzer.reanalyzeLibrary).toHaveBeenCalledWith(kind);
+    expect((await app.inject({ method: 'POST', url: `/api/analysis/${kind}`, remoteAddress: '203.0.113.9' })).statusCode).toBe(403);
+  });
+
+  it('looks tags up without audio analysis, says why the rest can’t run, and turns away unknown analyses', async () => {
     const { app, analyzer } = setup({ available: false });
-    const res = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze' });
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error).toMatch(/audio analysis is off/i);
-    expect(analyzer.analyzeLibrary).not.toHaveBeenCalled();
+    expect((await app.inject({ method: 'POST', url: '/api/analysis/tags' })).statusCode).toBe(200);
+    for (const kind of ['beats', 'sound']) {
+      const res = await app.inject({ method: 'POST', url: `/api/analysis/${kind}` });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toMatch(/audio analysis is off/i);
+    }
+    expect((await app.inject({ method: 'POST', url: '/api/analysis/lyrics' })).statusCode).toBe(404);
+    expect(analyzer.analyzeLibrary).toHaveBeenCalledTimes(1);
   });
 
   it('queues only the songs still needing a mix map, once, and leaves the library setting alone', async () => {
@@ -137,9 +138,9 @@ describe('mix map routes', () => {
     const app = Fastify();
     mixMapRoutes(app, { analyzer, library });
     try {
-      const first = await app.inject({ method: 'POST', url: '/api/mix-maps/analyze' });
+      const first = await app.inject({ method: 'POST', url: '/api/analysis/beats' });
       expect(first.json()).toEqual({ queued: 2 });
-      expect((await app.inject({ method: 'POST', url: '/api/mix-maps/analyze' })).json()).toEqual({ queued: 0 });
+      expect((await app.inject({ method: 'POST', url: '/api/analysis/beats' })).json()).toEqual({ queued: 0 });
       expect(JSON.parse(store.appSetting(MIXES_KEY)!)).toEqual({ analyzeLibrary: false });
     } finally {
       analyzer.close();

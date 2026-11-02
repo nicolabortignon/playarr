@@ -159,7 +159,7 @@ Where the build differs from the design above:
   grid 80% → 88%, grids half a beat off 7% → 0%, bars 52% → 80%, songs allowed a long blend 10% → 44%.
   Without the model (missing, or it can't run) maps come from the onsets as before (`beatsFrom: 'onsets'`).
 - **A new map version doesn't take DJ mix away.** Maps from version 2 on stay in use until their song is
-  measured again; Settings → Playback counts only current ones, and *Analyse all again* re-measures every
+  measured again; Settings → Analysis counts only current ones, and *Analyse all again* re-measures every
   song (maps made before the press stop counting, but keep mixing until replaced).
 - **No silence between songs, the listener's fade length, crossfades on top** (2026-11-02). Mix maps
   (version 4) say where a song's sound starts as well as where it ends. Fades end where A's sound ends

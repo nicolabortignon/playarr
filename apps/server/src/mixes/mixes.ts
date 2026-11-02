@@ -333,7 +333,7 @@ export class Mixes {
     const seen = new Set<string>();
     const unique = tracks.filter((t) => !seen.has(t.recordingId) && seen.add(t.recordingId));
     const ids = unique.map((t) => t.recordingId);
-    // Tags are cheap and fetched for everything; measuring sound only when Settings → Mixes asks for it.
+    // Tags are cheap and fetched for everything; measuring sound only when Settings → Analysis asks for it.
     analyzer.ensure(ids, { audio: settings.analyzeLibrary });
     const features = analyzer.features(ids);
     const meta = analyzer.meta(ids);

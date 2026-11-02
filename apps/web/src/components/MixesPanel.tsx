@@ -1,6 +1,7 @@
 import type { MixKind, MixSettings } from '@playarr/shared';
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { ApiError } from '../lib/api';
 import { plural } from '../lib/format';
 import { useClearHistory, useMixSettings, useSaveMixSettings } from '../lib/queries';
@@ -147,23 +148,15 @@ export function MixesPanel() {
 
       <ListenBrainzSection />
 
-      <SettingsSection
-        title="Sound"
-        description="Energy boost, Wind down, Deep focus and Vibes of the hour are better when Playarr has measured how songs sound (tempo, loudness, energy). Without it they go by genre."
-      >
-        <div className="divide-y divide-line">
-          <Switch
-            label="Measure every song in the library"
-            description={
-              data.analysisAvailable
-                ? 'Runs in the background at low priority; each song is measured once. Takes a while on a big library.'
-                : 'Sound analysis is off on this server (ANALYSIS=off in its .env).'
-            }
-            checked={data.analyzeLibrary && data.analysisAvailable}
-            disabled={!data.analysisAvailable}
-            onChange={(analyzeLibrary) => change({ analyzeLibrary })}
-          />
-        </div>
+      <SettingsSection title="Sound">
+        <p className="text-sm text-muted">
+          Energy boost, Wind down, Deep focus and Vibes of the hour are better once Playarr has measured how songs sound (tempo,
+          loudness, energy); until then they go by genre. Measure every song in{' '}
+          <Link to="/settings/analysis" className="text-paper-dim underline underline-offset-2 hover:text-paper">
+            Settings → Analysis
+          </Link>
+          .
+        </p>
       </SettingsSection>
 
       <Dialog open={confirmClear} onClose={() => setConfirmClear(false)} title="Clear listening history?">

@@ -8,6 +8,7 @@ import { requireLocal } from './settings.ts';
 
 const input = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(50) });
 const analyzeInput = z.object({ again: z.boolean().optional() });
+const ANALYSIS_KINDS = ['beats', 'sound', 'tags'] as const;
 /** null: back to the detected point; left out: kept as it is. */
 const cueInput = z.object({ mixIn: z.number().min(0).nullable().optional(), mixOut: z.number().min(0).nullable().optional() });
 
@@ -19,13 +20,13 @@ const cueInput = z.object({ mixIn: z.number().min(0).nullable().optional(), mixO
 export function mixMapRoutes(
   app: FastifyInstance,
   deps: {
-    analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure' | 'mixMapProgress' | 'analyzeLibrary' | 'reanalyzeLibrary'>;
+    analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure' | 'analysisProgress' | 'analyzeLibrary' | 'reanalyzeLibrary'>;
     library: Pick<Library, 'trackByRecording'>;
     /** A song's cue points changed: its cached transitions are out of date (the transition service's forget). */
     onCuesChanged?: (recordingId: string) => Promise<void>;
     /**
-     * Whether the whole library is analysed in the background (Settings → Mixes → analyse the
-     * library); otherwise songs are only analysed as they're needed (played, queued, opened).
+     * Whether the whole library is analysed in the background (Settings → Analysis → Analyse every
+     * song in the library); otherwise songs are only analysed as they're needed (played, queued, opened).
      */
     libraryScan?: () => boolean;
   },
@@ -52,22 +53,26 @@ export function mixMapRoutes(
     return out;
   });
 
-  // Settings → Playback: how many songs are ready for DJ mix, polled while work remains.
-  app.get('/api/mix-maps/progress', () => {
-    const libraryScan = deps.libraryScan?.() ?? false;
-    // Nothing is analysed without audio analysis: no counts to make.
-    if (!analyzer.canAnalyzeAudio) return { enabled: false, songs: 0, ready: 0, beatModel: 0, failed: 0, waiting: 0, working: 0, libraryScan };
-    return { enabled: true, ...analyzer.mixMapProgress(), libraryScan };
-  });
+  // Settings → Analysis: each analysis's progress over the library, polled while work remains. Tags
+  // are looked up even without audio analysis.
+  app.get('/api/analysis/progress', () => ({
+    enabled: analyzer.canAnalyzeAudio,
+    ...analyzer.analysisProgress(),
+    libraryScan: deps.libraryScan?.() ?? false,
+  }));
 
-  // Settings → Playback → Analyse all songs now: the library's backlog queued once, like the
-  // Settings → Mixes switch does when turned on (and from the home network, like that setting),
-  // without turning that switch on. Pressed twice, the songs already waiting aren't queued again.
-  // With `again`, Analyse all again: every song's mix map is made anew, ready ones included.
-  app.post('/api/mix-maps/analyze', { onRequest: requireLocal }, async (req, reply) => {
-    if (!analyzer.canAnalyzeAudio) return reply.code(409).send({ error: 'Audio analysis is off on this server (set ANALYSIS=on in its .env)' });
+  // Settings → Analysis → Analyse all songs now: the songs it hasn't done queued once, like the Settings
+  // → Analysis switch does when turned on (and from the home network, like that setting), without
+  // turning it on; pressed twice, the songs already waiting aren't queued again. With `again`, Analyse
+  // all again: every song, done ones included. Beat analysis, sound analysis or tag lookup.
+  app.post<{ Params: { kind: string } }>('/api/analysis/:kind', { onRequest: requireLocal }, async (req, reply) => {
+    const kind = ANALYSIS_KINDS.find((k) => k === req.params.kind);
+    if (!kind) return reply.code(404).send({ error: 'Unknown analysis' });
+    if (kind !== 'tags' && !analyzer.canAnalyzeAudio) {
+      return reply.code(409).send({ error: 'Audio analysis is off on this server (set ANALYSIS=on in its .env)' });
+    }
     const again = analyzeInput.safeParse(req.body ?? {}).data?.again === true;
-    return { queued: await (again ? analyzer.reanalyzeLibrary() : analyzer.analyzeLibrary()) };
+    return { queued: await (again ? analyzer.reanalyzeLibrary(kind) : analyzer.analyzeLibrary(kind)) };
   });
 
   app.get<{ Params: { id: string } }>('/api/recordings/:id/cues', async (req, reply) => {

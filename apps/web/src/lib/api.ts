@@ -62,21 +62,27 @@ export type TransitionAnswer =
   | { status: 'straight'; plan: TransitionPlan }
   | { status: 'unavailable'; reason: string };
 
-/** How many of the library's songs are ready for DJ mix (GET /api/mix-maps/progress). */
-export interface MixMapProgress {
-  /** Audio analysis is on: without it there's no DJ mix. */
+/** The analyses Settings → Analysis runs over the library. */
+export type AnalysisKind = 'beats' | 'sound' | 'tags';
+
+/** How far each analysis has got over the library (GET /api/analysis/progress). */
+export interface AnalysisProgress {
+  /** Audio analysis is on (beat and sound analysis need it; tags are looked up without). */
   enabled: boolean;
+  /** Songs in the library. */
   songs: number;
-  /** Songs with a mix map. */
-  ready: number;
-  /** Of those, the ones whose beats and bars the beat model found (the rest: the older onset analysis). */
-  beatModel: number;
-  /** Songs whose analysis failed lately (tried again a day later). */
-  failed: number;
-  /** Songs queued for analysis, and being analysed now. */
+  /** Songs with a mix map; of those, the ones whose beats the beat model found; failed lately (tried again a day later). */
+  beats: { ready: number; beatModel: number; failed: number };
+  /** Songs with their tempo, loudness and energy measured; failed lately. */
+  sound: { ready: number; failed: number };
+  /** Of the songs with a MusicBrainz id (the only ones ListenBrainz knows), those looked up. */
+  tags: { ready: number; songs: number };
+  /** Songs queued for audio analysis (beat or sound), and being analysed now. */
   waiting: number;
   working: number;
-  /** The whole library is analysed in the background (Settings → Mixes); otherwise songs as they come up to play. */
+  /** Songs queued for a tag lookup. */
+  tagsWaiting: number;
+  /** The whole library is analysed in the background; otherwise songs as they come up to play. */
   libraryScan: boolean;
 }
 
@@ -221,13 +227,13 @@ export const api = {
     files?: { fromFileId: number; toFileId: number },
     how?: { fade?: number; albumQueue?: boolean },
   ) => request<TransitionAnswer>('/api/transitions', { method: 'POST', body: JSON.stringify({ from, to, mode, position, ...files, ...how }) }),
-  mixMapProgress: () => get<MixMapProgress>('/api/mix-maps/progress'),
+  analysisProgress: () => get<AnalysisProgress>('/api/analysis/progress'),
   /**
-   * Queues every song still to be analysed for DJ mix, once (Settings → Mixes' switch stays as it is);
-   * `again`: every song, those ready included.
+   * Queues every song this analysis hasn't done yet, once (the background switch stays as it is);
+   * `again`: every song, those done included.
    */
-  analyzeForMixing: (again = false) =>
-    request<{ queued: number }>('/api/mix-maps/analyze', { method: 'POST', body: JSON.stringify({ again }) }),
+  runAnalysis: (kind: AnalysisKind, again = false) =>
+    request<{ queued: number }>(`/api/analysis/${kind}`, { method: 'POST', body: JSON.stringify({ again }) }),
   /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
   mixMaps: (ids: string[]) =>
     request<Record<string, MixMap & { cues?: CuePoints }>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),

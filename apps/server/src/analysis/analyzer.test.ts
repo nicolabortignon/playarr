@@ -378,10 +378,10 @@ describe('Analyzer library analysis', () => {
     map.run('local:failed', MIX_MAP_VERSION, null, 'boom', now); // failed lately: not yet
     map.run('local:retry', MIX_MAP_VERSION, null, 'boom', longAgo); // due for another try
     expect(await analyzer.analyzeLibrary()).toBe(3); // new, old and retry; never track: ids
-    expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 2, working: 1 });
+    expect(analyzer.analysisProgress()).toMatchObject({ waiting: 2, working: 1 });
     // Pressed again: the same songs are already waiting or being measured.
     expect(await analyzer.analyzeLibrary()).toBe(0);
-    expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 2, working: 1 });
+    expect(analyzer.analysisProgress()).toMatchObject({ waiting: 2, working: 1 });
   });
 
   it('analyses every song again when asked, keeping their maps in use until each is redone', async () => {
@@ -395,8 +395,37 @@ describe('Analyzer library analysis', () => {
     }
     expect(await analyzer.analyzeLibrary()).toBe(0); // all done
     expect(await analyzer.reanalyzeLibrary()).toBe(2);
-    expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 1, working: 1 });
+    expect(analyzer.analysisProgress()).toMatchObject({ waiting: 1, working: 1 });
     expect([...analyzer.mixMaps(['local:a', 'local:b']).keys()]).toEqual(['local:a', 'local:b']);
+  });
+
+  it('measures only the sound for sound analysis, leaving mix maps to beat analysis', async () => {
+    const dsp = fakeDsp();
+    const { analyzer, db } = withSong({ seconds: 200, dsp, songs: [SONG] });
+    expect(await analyzer.analyzeLibrary('sound')).toBe(1);
+    await vi.waitFor(() => expect(analyzer.analysisProgress()).toMatchObject({ waiting: 0, working: 0 }), { timeout: 10_000 });
+    expect(dsp.analyze).toHaveBeenCalledTimes(1);
+    expect(dsp.mixMap).not.toHaveBeenCalled();
+    expect(mixMapRow(db, SONG)).toBeUndefined();
+    expect(await analyzer.analyzeLibrary('sound')).toBe(0); // its sound is measured
+    expect(await analyzer.analyzeLibrary('beats')).toBe(1); // its beats aren't
+  });
+
+  it('makes the mix map of a song being measured for its sound alone once it’s wanted for a play', async () => {
+    const dsp = fakeDsp();
+    const { analyzer, pcm } = withSong({ seconds: 200, dsp, songs: [SONG] });
+    const decode = pcm.getMockImplementation()!;
+    let finish!: () => void;
+    pcm.mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => (finish = resolve));
+      return decode(...args);
+    });
+    await analyzer.analyzeLibrary('sound');
+    await vi.waitFor(() => expect(pcm).toHaveBeenCalled());
+    expect(analyzer.ensure([SONG], { urgent: true })).toBe(1);
+    finish();
+    await vi.waitFor(() => expect(analyzer.mixMaps([SONG]).has(SONG)).toBe(true), { timeout: 10_000 });
+    expect(dsp.analyze).toHaveBeenCalledTimes(1); // its sound, measured once
   });
 
   it('leaves songs someone is waiting for ahead of the backlog', async () => {
@@ -408,7 +437,7 @@ describe('Analyzer library analysis', () => {
   });
 });
 
-describe('Analyzer mix map progress', () => {
+describe('Analyzer analysis progress', () => {
   it('counts the library’s songs, those mapped for mixing and those that failed, from the current version', () => {
     const db = freshDb();
     const store = new CatalogStore(db);
@@ -429,12 +458,20 @@ describe('Analyzer mix map progress', () => {
     map.run('rec-2', MIX_MAP_VERSION, null, 'boom', now);
     map.run('rec-3', MIX_MAP_VERSION, '{}', null, now);
     map.run('gone', MIX_MAP_VERSION, '{}', null, now);
-    expect(analyzer.mixMapProgress()).toEqual({ songs: 2, ready: 1, beatModel: 0, failed: 1, waiting: 0, working: 0 });
+    expect(analyzer.analysisProgress()).toEqual({
+      songs: 2,
+      beats: { ready: 1, beatModel: 0, failed: 1 },
+      sound: { ready: 0, failed: 0 },
+      tags: { ready: 0, songs: 0 }, // no MusicBrainz ids: nothing to look up
+      waiting: 0,
+      working: 0,
+      tagsWaiting: 0,
+    });
 
     // A failure due for another try is neither ready nor failed; an old version's map doesn't count.
     db.prepare('UPDATE mix_maps SET analyzed_at = ? WHERE recording_id = ?').run(longAgo, 'rec-2');
     db.prepare('UPDATE mix_maps SET version = ? WHERE recording_id = ?').run(MIX_MAP_VERSION - 1, 'rec-1');
-    expect(analyzer.mixMapProgress()).toMatchObject({ songs: 2, ready: 0, failed: 0 });
+    expect(analyzer.analysisProgress()).toMatchObject({ songs: 2, beats: { ready: 0, failed: 0 } });
   });
 
   it('counts the maps whose beats the beat model found, and none from before Analyse all again', async () => {
@@ -447,9 +484,9 @@ describe('Analyzer mix map progress', () => {
     const map = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)');
     map.run('rec-1', MIX_MAP_VERSION, '{"beatsFrom":"model"}', earlier);
     map.run('rec-2', MIX_MAP_VERSION, '{"beatsFrom":"onsets"}', earlier);
-    expect(analyzer.mixMapProgress()).toMatchObject({ songs: 2, ready: 2, beatModel: 1 });
-    await analyzer.reanalyzeLibrary();
-    expect(analyzer.mixMapProgress()).toMatchObject({ songs: 2, ready: 0, beatModel: 0 });
+    expect(analyzer.analysisProgress()).toMatchObject({ songs: 2, beats: { ready: 2, beatModel: 1 } });
+    await analyzer.reanalyzeLibrary('beats');
+    expect(analyzer.analysisProgress()).toMatchObject({ songs: 2, beats: { ready: 0, beatModel: 0 } });
   });
 
   it('counts the songs waiting in either queue and the one being measured', () => {
@@ -457,7 +494,34 @@ describe('Analyzer mix map progress', () => {
     pcm.mockImplementation(() => new Promise(() => {})); // never finishes
     analyzer.ensure(['local:a', 'local:b']);
     analyzer.ensure(['local:c'], { urgent: true });
-    expect(analyzer.mixMapProgress()).toMatchObject({ waiting: 2, working: 1 });
+    expect(analyzer.analysisProgress()).toMatchObject({ waiting: 2, working: 1 });
+  });
+  it('counts sound analysis and tag lookups, each from its own Analyse all again', async () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    const sync = mezzanine();
+    sync.tracks = sync.tracks.map((t, i) => ({ ...t, recordingId: [MBID, 'local:abc'][i]! }));
+    store.applySync(store.ensureSource('lidarr', 'Lidarr'), sync);
+    const { analyzer, pcm } = withSong({ seconds: 200, db, songs: [MBID, 'local:abc'] });
+    pcm.mockImplementation(() => new Promise(() => {})); // never finishes
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(() => {})); // nor does ListenBrainz
+    const earlier = new Date(Date.now() - 60_000).toISOString();
+    const feature = db.prepare('INSERT INTO track_features (recording_id, version, features, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
+    feature.run(MBID, ANALYSIS_VERSION, '{}', null, earlier);
+    feature.run('local:abc', ANALYSIS_VERSION, null, 'boom', earlier);
+    db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, NULL, ?)').run(MBID, MIX_MAP_VERSION, '{}', earlier);
+    db.prepare('INSERT INTO track_meta (recording_id, tags, year, fetched_at) VALUES (?, ?, NULL, ?)').run(MBID, '[]', earlier);
+    expect(analyzer.analysisProgress()).toMatchObject({
+      songs: 2,
+      beats: { ready: 1 },
+      sound: { ready: 1, failed: 1 },
+      tags: { ready: 1, songs: 1 }, // only the song with a MusicBrainz id can be looked up
+    });
+
+    expect(await analyzer.reanalyzeLibrary('sound')).toBe(2);
+    expect(analyzer.analysisProgress()).toMatchObject({ beats: { ready: 1 }, sound: { ready: 0, failed: 0 }, tags: { ready: 1 } });
+    expect(await analyzer.reanalyzeLibrary('tags')).toBe(1);
+    expect(analyzer.analysisProgress()).toMatchObject({ beats: { ready: 1 }, tags: { ready: 0, songs: 1 }, tagsWaiting: 1 });
   });
 });
 

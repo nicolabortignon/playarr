@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router';
+import { AnalysisPanel } from '../components/AnalysisPanel';
 import { AppearancePanel } from '../components/AppearancePanel';
 import { MixesPanel } from '../components/MixesPanel';
 import { PlaybackPanel } from '../components/PlaybackPanel';
@@ -16,6 +17,7 @@ const PANELS = [
   { id: 'profiles', label: 'Profiles', scope: 'Profiles are for everyone; which one listens here is set for this device.', Panel: ProfilesPanel },
   { id: 'listening', label: 'Your listening', scope: undefined, Panel: ListeningStatsView },
   { id: 'mixes', label: 'Mixes', scope: 'These settings apply to everyone.', Panel: MixesPanel },
+  { id: 'analysis', label: 'Analysis', scope: 'These settings apply to everyone.', Panel: AnalysisPanel },
   { id: 'requests', label: 'Requests', scope: 'These settings apply to everyone.', Panel: RequestsPanel },
   { id: 'appearance', label: 'Appearance', scope: 'These settings are for this device.', Panel: AppearancePanel },
   { id: 'updates', label: 'Updates', scope: 'These settings apply to everyone.', Panel: UpdatesPanel },

@@ -24,7 +24,7 @@ import type {
 import type { MixMap } from '@playarr/mix';
 import { keepPreviousData, queryOptions, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
-import { api, ApiError } from './api';
+import { api, ApiError, type AnalysisKind } from './api';
 import { plural } from './format';
 import { usePrefs } from './prefs';
 import { queryClient } from './queryClient';
@@ -42,29 +42,33 @@ export const useMusicBrainzStatus = (enabled = true) =>
     refetchInterval: (q) => (q.state.data?.queued ? 1500 : 15_000),
   });
 
-/** How far the library is from ready for DJ mix: polled while songs are waiting or being analysed, then left alone. */
-export const useMixMapProgress = (enabled = true) =>
+/** How far each analysis has got over the library: polled while songs are waiting or being analysed, then left alone. */
+export const useAnalysisProgress = (enabled = true) =>
   useQuery({
-    queryKey: ['mix-map-progress'],
-    queryFn: api.mixMapProgress,
+    queryKey: ['analysis-progress'],
+    queryFn: api.analysisProgress,
     enabled,
-    refetchInterval: (q) => (q.state.data && (q.state.data.waiting > 0 || q.state.data.working > 0) ? 10_000 : false),
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      return d && (d.waiting > 0 || d.working > 0 || d.tagsWaiting > 0) ? 10_000 : false;
+    },
   });
 
-/** Settings → Playback → Analyse all songs now: the progress line then polls while they're analysed. */
-export function useAnalyzeForMixing() {
+/** Settings → Analysis → Analyse all songs now (or again): the progress then polls while they're analysed. */
+export function useRunAnalysis() {
   const client = useQueryClient();
   return useMutation({
-    /** `again`: every song, those already analysed included (Analyse all again). */
-    mutationFn: (again: boolean = false) => api.analyzeForMixing(again),
-    onSuccess: ({ queued }, again) => {
+    /** `again`: every song, those already done included. */
+    mutationFn: ({ kind, again = false }: { kind: AnalysisKind; again?: boolean }) => api.runAnalysis(kind, again),
+    onSuccess: ({ queued }, { kind, again }) => {
       const songs = `${queued.toLocaleString('en')} ${queued === 1 ? 'song' : 'songs'}`;
+      const doing = kind === 'tags' ? 'Looking up' : 'Analysing';
       toast(
         queued
-          ? `Analysing ${songs}${again ? ' again' : ''} in the background`
-          : 'Every song is already analysed or waiting its turn',
+          ? `${doing} ${songs}${again ? ' again' : ''} in the background`
+          : `Every song is already ${kind === 'tags' ? 'looked up' : 'analysed'} or waiting its turn`,
       );
-      void client.invalidateQueries({ queryKey: ['mix-map-progress'] });
+      void client.invalidateQueries({ queryKey: ['analysis-progress'] });
     },
     onError: (err) => toast((err as Error).message, 'error'),
   });
@@ -712,10 +716,12 @@ export function useSaveMixSettings() {
       }
       return { previous };
     },
-    onSuccess: (data) => {
+    onSuccess: (data, patch) => {
       client.setQueryData(['mix-settings'], data);
       void client.invalidateQueries({ queryKey: ['mixes'] });
       void client.invalidateQueries({ queryKey: ['mix'] });
+      // Turned on, the library is queued for analysis: Settings → Analysis follows it.
+      if (patch.analyzeLibrary !== undefined) void client.invalidateQueries({ queryKey: ['analysis-progress'] });
     },
     onError: (err: Error, _patch, ctx) => {
       if (ctx?.previous) client.setQueryData(['mix-settings'], ctx.previous);

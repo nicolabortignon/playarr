@@ -54,10 +54,15 @@ const FULL_SLACK_SECONDS = 0.05;
 const WORKER_LOST_RETRIES = 2;
 const RETRY_FAILED_MS = 24 * 60 * 60_000;
 /**
- * app_settings key: when Settings → Playback → Analyse all again was last pressed (an ISO time). Mix
- * maps made before then are made again, and don't count as ready meanwhile.
+ * app_settings keys: when each kind of analysis was last asked to run again on every song (Settings →
+ * Analysis; an ISO time). What was made before doesn't count as done or ready, though it stays in use
+ * until its song is redone.
  */
-const REDO_KEY = 'mixMapsRedoneFrom';
+const REDO_KEYS = { beats: 'mixMapsRedoneFrom', sound: 'featuresRedoneFrom', tags: 'tagsRedoneFrom' } as const;
+/** The analyses Settings → Analysis runs: beat analysis (mix maps), sound analysis (features), tag lookup. */
+export type AnalysisKind = keyof typeof REDO_KEYS;
+/** A MusicBrainz recording id, as SQL LIKE sees one: only those have tags to look up. */
+const MBID_LIKE = '________-____-____-____-____________';
 /**
  * Mix maps from this version on have today's shape and meaning (version 2 put firstBeat up to three
  * beats before the music's first downbeat). An older map than the current one stays in use until its
@@ -85,6 +90,8 @@ export class Analyzer {
   private closed = false;
   private readonly running = new Set<string>();
   private readonly metaQueue = new Set<string>();
+  /** Queued for sound analysis only (Settings → Analysis): their mix maps wait for a play or a beat analysis. */
+  private readonly soundOnly = new Set<string>();
   private metaTimer: NodeJS.Timeout | undefined;
   private metaRunning = false;
   /** The number crunching runs off the main thread. */
@@ -116,6 +123,7 @@ export class Analyzer {
     this.audioQueue.clear();
     this.urgentQueue.clear();
     this.metaQueue.clear();
+    this.soundOnly.clear();
     clearTimeout(this.metaTimer);
     this.ownDsp?.close();
   }
@@ -140,17 +148,25 @@ export class Analyzer {
   }
 
   /**
-   * How far the library is from being ready for DJ mix, cheap enough to poll: one query over the
-   * catalog (reading one field of each map) and the queue sizes.
-   * - songs: recordings with a file in an enabled source (what the library shows), leaving out
-   *   `track:` ids, which are never analyzed;
-   * - ready: of those, the ones with a mix map from the current version (and since Analyse all
-   *   again was last pressed);
-   * - beatModel: of the ready ones, those whose beats and bars the beat model found (see analyzeMix);
-   * - failed: the ones whose current-version mix map failed recently (tried again a day later);
-   * - waiting / working: songs queued for analysis (features or mix map), and being measured now.
+   * Settings → Analysis: how far each analysis has got over the library (songs with a file in an
+   * enabled source, `track:` ids left out), cheap enough to poll.
+   * - beats: mix maps from the current version since Analyse all again, those whose beats the beat
+   *   model found, and recent failures;
+   * - sound: features from the current version since Analyse all again, and recent failures;
+   * - tags: of the songs with a MusicBrainz id (the only ones ListenBrainz knows), those looked up
+   *   since Look up all again (a lookup that found no tags counts: there's nothing more to find);
+   * - waiting / working: songs queued for audio analysis and being measured; tagsWaiting: for lookup.
    */
-  mixMapProgress(): { songs: number; ready: number; beatModel: number; failed: number; waiting: number; working: number } {
+  analysisProgress(): {
+    songs: number;
+    beats: { ready: number; beatModel: number; failed: number };
+    sound: { ready: number; failed: number };
+    tags: { ready: number; songs: number };
+    waiting: number;
+    working: number;
+    tagsWaiting: number;
+  } {
+    const retryAfter = new Date(Date.now() - RETRY_FAILED_MS).toISOString();
     const row = this.db
       .prepare(
         `WITH library AS (
@@ -159,24 +175,37 @@ export class Analyzer {
            WHERE s.enabled = 1 AND t.recording_id NOT LIKE 'track:%'
          )
          SELECT COUNT(*) AS songs,
-           COUNT(CASE WHEN m.data IS NOT NULL THEN 1 END) AS ready,
+           COUNT(CASE WHEN m.data IS NOT NULL THEN 1 END) AS beatsReady,
            COUNT(CASE WHEN m.data IS NOT NULL AND json_extract(m.data, '$.beatsFrom') = 'model' THEN 1 END) AS beatModel,
-           COUNT(CASE WHEN m.data IS NULL AND m.analyzed_at > ? THEN 1 END) AS failed
-         FROM library l LEFT JOIN mix_maps m ON m.recording_id = l.id AND m.version = ? AND m.analyzed_at >= ?`,
+           COUNT(CASE WHEN m.recording_id IS NOT NULL AND m.data IS NULL AND m.analyzed_at > ? THEN 1 END) AS beatsFailed,
+           COUNT(CASE WHEN f.features IS NOT NULL THEN 1 END) AS soundReady,
+           COUNT(CASE WHEN f.recording_id IS NOT NULL AND f.features IS NULL AND f.analyzed_at > ? THEN 1 END) AS soundFailed,
+           COUNT(CASE WHEN l.id LIKE ? THEN 1 END) AS taggable,
+           COUNT(CASE WHEN l.id LIKE ? AND tm.recording_id IS NOT NULL THEN 1 END) AS tagsReady
+         FROM library l
+         LEFT JOIN mix_maps m ON m.recording_id = l.id AND m.version = ? AND m.analyzed_at >= ?
+         LEFT JOIN track_features f ON f.recording_id = l.id AND f.version = ? AND f.analyzed_at >= ?
+         LEFT JOIN track_meta tm ON tm.recording_id = l.id AND tm.fetched_at >= ?`,
       )
-      .get(new Date(Date.now() - RETRY_FAILED_MS).toISOString(), MIX_MAP_VERSION, this.redoneFrom()) as {
-      songs: number;
-      ready: number;
-      beatModel: number;
-      failed: number;
-    };
+      .get(
+        retryAfter,
+        retryAfter,
+        MBID_LIKE,
+        MBID_LIKE,
+        MIX_MAP_VERSION,
+        this.redoneFrom('beats'),
+        ANALYSIS_VERSION,
+        this.redoneFrom('sound'),
+        this.redoneFrom('tags'),
+      ) as Record<'songs' | 'beatsReady' | 'beatModel' | 'beatsFailed' | 'soundReady' | 'soundFailed' | 'taggable' | 'tagsReady', number>;
     return {
       songs: row.songs,
-      ready: row.ready,
-      beatModel: row.beatModel,
-      failed: row.failed,
+      beats: { ready: row.beatsReady, beatModel: row.beatModel, failed: row.beatsFailed },
+      sound: { ready: row.soundReady, failed: row.soundFailed },
+      tags: { ready: row.tagsReady, songs: row.taggable },
       waiting: this.urgentQueue.size + this.audioQueue.size,
       working: this.running.size,
+      tagsWaiting: this.metaQueue.size,
     };
   }
 
@@ -282,18 +311,24 @@ export class Analyzer {
    * after an upgrade can be every song in it. Answers how many songs it queued for audio analysis
    * (songs already waiting or being measured aren't counted again).
    */
-  ensure(ids: string[], opts: { audio?: boolean; urgent?: boolean } = {}): number {
+  ensure(ids: string[], opts: { audio?: boolean; urgent?: boolean; beats?: boolean } = {}): number {
     const unique = [...new Set(ids)].filter((id) => !id.startsWith('track:'));
     if (!unique.length || this.closed) return 0;
     let queued = 0;
     if (this.canAnalyzeAudio && opts.audio !== false) {
       // Done once both the features and the mix map are measured by their current versions (or
       // failed recently): a song measured before mix maps existed, or before a version bump, is
-      // measured again in the background.
+      // measured again in the background. `beats: false` asks for the features alone.
+      const beats = opts.beats !== false;
       const features = this.featuresDone(unique);
-      const maps = this.mixMapsDone(unique);
+      const maps = beats ? this.mixMapsDone(unique) : new Set<string>();
       for (const id of unique) {
-        if ((features.has(id) && maps.has(id)) || this.running.has(id) || this.urgentQueue.has(id)) continue;
+        // Being measured for its sound alone: measured again once that's done, for its mix map.
+        const forSoundAlone = beats && this.running.has(id) && this.soundOnly.has(id);
+        if (beats) this.soundOnly.delete(id);
+        const busy = (this.running.has(id) && !forSoundAlone) || this.urgentQueue.has(id);
+        if ((features.has(id) && (!beats || maps.has(id))) || busy) continue;
+        if (!beats && !this.audioQueue.has(id)) this.soundOnly.add(id);
         if (opts.urgent) {
           if (!this.audioQueue.delete(id)) queued++;
           this.urgentQueue.add(id);
@@ -306,12 +341,12 @@ export class Analyzer {
     }
     // ListenBrainz knows songs by MusicBrainz id only, and one unknown id fails a whole batch.
     const known = unique.filter((id) => MBID.test(id));
+    // Tags a month old are looked up again, and all of them after Look up all again.
+    const fresh = [new Date(Date.now() - REFRESH_META_MS).toISOString(), this.redoneFrom('tags')].sort().at(-1)!;
     const tagged = new Set(
-      this.select<{ recording_id: string }>(
-        'SELECT recording_id FROM track_meta WHERE fetched_at > ? AND recording_id IN',
-        known,
-        [new Date(Date.now() - REFRESH_META_MS).toISOString()],
-      ).map((r) => r.recording_id),
+      this.select<{ recording_id: string }>('SELECT recording_id FROM track_meta WHERE fetched_at > ? AND recording_id IN', known, [fresh]).map(
+        (r) => r.recording_id,
+      ),
     );
     const before = this.metaQueue.size;
     for (const id of known) if (!tagged.has(id)) this.metaQueue.add(id);
@@ -320,31 +355,37 @@ export class Analyzer {
   }
 
   /**
-   * Every song in the library still to be measured goes in the backlog (Settings → Mixes → Measure
-   * every song, or a one-off from Settings → Playback): songs someone is waiting for still go first.
-   * Answers how many were queued.
+   * Every song in the library still to be measured goes in the backlog (Settings → Analysis → Analyse
+   * every song in the library, or a one-off from Analyse all songs now), for one kind of analysis or,
+   * left out, beat and sound analysis and tags: songs someone is waiting for still go first. Answers how
+   * many were queued.
    */
-  async analyzeLibrary(): Promise<number> {
-    const tracks = await this.library.allTracks();
-    return this.ensure(tracks.map((t) => t.recordingId));
+  async analyzeLibrary(kind?: AnalysisKind): Promise<number> {
+    const ids = (await this.library.allTracks()).map((t) => t.recordingId);
+    if (kind === 'tags') {
+      const before = this.metaQueue.size;
+      this.ensure(ids, { audio: false });
+      return this.metaQueue.size - before;
+    }
+    return this.ensure(ids, kind === 'sound' ? { beats: false } : {});
   }
 
   /**
-   * Settings → Playback → Analyse all again: every song's mix map is made again, those the current
-   * version already made included (after the analysis changed without a new version, say), queued as
-   * analyzeLibrary does. Maps made before now stop counting as done and as ready, but stay in use until
-   * their song is redone, so mixing carries on meanwhile. Returns how many songs were queued.
+   * Settings → Analysis → Analyse all again: every song is analysed again, those the current version
+   * already did included (after the analysis changed without a new version, say), queued as
+   * analyzeLibrary does. What was made before now stops counting as done and as ready, but stays in use
+   * until its song is redone, so mixing carries on meanwhile. Returns how many songs were queued.
    */
-  async reanalyzeLibrary(): Promise<number> {
+  async reanalyzeLibrary(kind: AnalysisKind = 'beats'): Promise<number> {
     this.db
       .prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
-      .run(REDO_KEY, new Date().toISOString());
-    return this.analyzeLibrary();
+      .run(REDO_KEYS[kind], new Date().toISOString());
+    return this.analyzeLibrary(kind);
   }
 
-  /** When Analyse all again was last pressed ('' if never: every map counts). */
-  private redoneFrom(): string {
-    const row = this.db.prepare('SELECT value FROM app_settings WHERE key = ?').get(REDO_KEY) as { value: string } | undefined;
+  /** When this kind of analysis was last asked to run again on every song ('' if never: everything counts). */
+  private redoneFrom(kind: AnalysisKind = 'beats'): string {
+    const row = this.db.prepare('SELECT value FROM app_settings WHERE key = ?').get(REDO_KEYS[kind]) as { value: string } | undefined;
     return row?.value ?? '';
   }
 
@@ -363,7 +404,7 @@ export class Analyzer {
 
   /** Songs whose features are measured by the current version, or failed too recently to try again. */
   private featuresDone(ids: string[]): Set<string> {
-    return this.doneIn('track_features', 'features', ANALYSIS_VERSION, ids);
+    return this.doneIn('track_features', 'features', ANALYSIS_VERSION, ids, this.redoneFrom('sound'));
   }
 
   /**
@@ -396,6 +437,7 @@ export class Analyzer {
       this.running.add(id);
       void this.analyze(id).finally(() => {
         this.running.delete(id);
+        this.soundOnly.delete(id);
         this.pump();
       });
     }
@@ -415,7 +457,7 @@ export class Analyzer {
     // Only what's missing (or failed long enough ago): a song measured before mix maps existed
     // keeps its features.
     const needsFeatures = !this.featuresDone([id]).has(id);
-    const needsMixMap = !this.mixMapsDone([id]).has(id);
+    const needsMixMap = !this.soundOnly.has(id) && !this.mixMapsDone([id]).has(id);
     let lost = false;
     const fail = (save: typeof saveFeatures, version: number, what: string, err: unknown) => {
       if (err instanceof DspWorkerLost) {

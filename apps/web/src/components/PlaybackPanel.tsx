@@ -1,7 +1,6 @@
 import { Fragment } from 'react';
-import type { MixMapProgress } from '../lib/api';
+import { Link } from 'react-router';
 import { CROSSFADES, usePrefs, type Transitions } from '../lib/prefs';
-import { useAnalyzeForMixing, useMixMapProgress } from '../lib/queries';
 import { canSetVolume } from '../player/decks';
 import { OfflineStorage } from './OfflineStorage';
 import { PillGroup, SettingsSection, Switch } from './SettingsControls';
@@ -23,83 +22,6 @@ const CROSSFADE_LENGTHS = CROSSFADES.filter((s) => s > 0).map((s) => ({ value: s
 
 const KBD =
   'inline-flex h-6 min-w-6 items-center justify-center rounded border border-line bg-ink-800 px-1.5 font-mono text-[11px] tracking-wider text-paper-dim uppercase';
-
-/** 5678 → "5,678": the rest of the panel is in English, so its numbers are too. */
-const count = (n: number) => n.toLocaleString('en');
-const songs = (n: number) => `${count(n)} ${n === 1 ? 'song' : 'songs'}`;
-
-/**
- * What the line under DJ mix says about the library's songs: how many can be mixed, what's left to do,
- * and how many were analysed without the beat model (it couldn't run on the server).
- */
-function mixProgressText(p: MixMapProgress): string {
-  if (!p.enabled) return 'DJ mix needs audio analysis, which is off on this server (set ANALYSIS=on in its .env).';
-  const withoutModel = p.ready > p.beatModel ? ` (${count(p.ready - p.beatModel)} without the beat model)` : '';
-  if (p.ready >= p.songs) {
-    return p.songs === 1 ? `The library’s one song is ready for DJ mix${withoutModel}.` : `All ${songs(p.songs)} are ready for DJ mix${withoutModel}.`;
-  }
-  const failed = p.failed > 0 ? `${count(p.failed)} couldn’t be analysed` : '';
-  // Without the library-wide scan there's no backlog to count down: songs are measured when they're needed.
-  if (!p.libraryScan) {
-    return `${count(p.ready)} of ${songs(p.songs)} are ready for DJ mix${withoutModel}. Others are analysed as they come up to play${failed ? `; ${failed}` : ''}.`;
-  }
-  const waiting = p.waiting > 0 ? `${count(p.waiting)} waiting to be analysed` : '';
-  return `${[`Ready for DJ mix: ${count(p.ready)} of ${songs(p.songs)}${withoutModel}`, waiting, failed].filter(Boolean).join(' · ')}.`;
-}
-
-const SECONDARY_BUTTON =
-  'inline-flex h-10 items-center justify-center rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5 disabled:opacity-50';
-
-/** Under the DJ mix choice: how much of the library can be mixed yet. Asked for only while it's shown. */
-function MixProgress() {
-  const { data } = useMixMapProgress();
-  const analyze = useAnalyzeForMixing();
-  if (!data || (data.enabled && data.songs === 0)) return null;
-  // Only when there's something to start: songs left that aren't failed lately (those wait a day
-  // before another try), and nothing under way already (the counts and the bar show that).
-  const idle = data.enabled && data.waiting === 0 && data.working === 0;
-  const startable = idle && data.ready + data.failed < data.songs;
-  // Every song again (after the analysis improved): whenever nothing is under way and some are ready.
-  const redoable = idle && data.ready > 0;
-  // A bar only for a scan that will finish: songs analysed as they come up never all get there.
-  const bar = data.enabled && data.libraryScan && data.ready < data.songs;
-  return (
-    <div className="mt-3">
-      <p className="text-[13px] text-paper-dim">{mixProgressText(data)}</p>
-      {bar && (
-        <div
-          className="mt-2 h-1 overflow-hidden rounded-full bg-paper/10"
-          role="meter"
-          aria-label="Songs ready for DJ mix"
-          aria-valuenow={data.ready}
-          aria-valuemax={data.songs}
-        >
-          <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(data.ready / data.songs) * 100}%` }} />
-        </div>
-      )}
-      {(startable || redoable) && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {startable && (
-            <button type="button" className={SECONDARY_BUTTON} disabled={analyze.isPending} onClick={() => analyze.mutate(false)}>
-              Analyse all songs now
-            </button>
-          )}
-          {redoable && (
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              disabled={analyze.isPending}
-              onClick={() => analyze.mutate(true)}
-              title="Every song is analysed again with the current analysis, in the background; each mixes as before until its turn."
-            >
-              Analyse all again
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** Settings → Playback: for this device. */
 export function PlaybackPanel() {
@@ -172,7 +94,13 @@ export function PlaybackPanel() {
                   mixed on the beat fade into each other for this long:
                 </p>
                 <PillGroup label="Fade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} />
-                <MixProgress />
+                <p className="mt-3 text-[13px] text-muted">
+                  How many songs are ready for DJ mix, and analysing the rest now:{' '}
+                  <Link to="/settings/analysis" className="text-paper-dim underline underline-offset-2 hover:text-paper">
+                    Settings → Analysis
+                  </Link>
+                  .
+                </p>
               </>
             )}
           </div>
