@@ -176,6 +176,33 @@ describe('sections: edges, fades and breakdowns', () => {
     expect(result.soundEnd).toBeGreaterThan(track.truth.soundEnd + 1);
   });
 
+  it('finds the outro before a quiet beatless ending, and runs it on through the ending', () => {
+    for (const padLevel of [0.2, 0.4]) {
+      const { samples, starts } = build(
+        [
+          ['light', 32],
+          ['body', 96],
+          ['light', 32],
+          ['pad', 32],
+        ],
+        { padLevel },
+      );
+      const result = analyse(samples);
+      expect(Math.abs(result.outroStart - starts[2]!), `pad at ${padLevel}`).toBeLessThan(beat);
+      expect(result.soundEnd).toBeGreaterThan(starts[3]! + 32 * beat - 1);
+    }
+  });
+
+  it('can leave a song that fades out from the phrase where the fade gets going', () => {
+    const track = song({ bpm: 128, rate: RATE, introBeats: 32, bodyBeats: 128, outroBeats: 0, fadeOutSeconds: 20 });
+    const result = analyse(track.samples);
+    const fadeFrom = track.truth.soundEnd - 20;
+    // Phrases are 15 s at 128 BPM: the outro starts within one of the fade's start, not in its last seconds.
+    expect(result.outroStart).toBeGreaterThanOrEqual(fadeFrom - 32 * beat);
+    expect(result.outroStart).toBeLessThanOrEqual(fadeFrom + 32 * beat);
+    expect(result.soundEnd - result.outroStart).toBeGreaterThan(14);
+  });
+
   it('counts a beatless pad before the kicks as intro, however loud', () => {
     for (const padLevel of [0.4, 1]) {
       const { samples, starts } = build(

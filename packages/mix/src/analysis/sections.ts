@@ -139,6 +139,12 @@ const LED_KICK_SHARE = 10 ** (-12 / 10);
  * is its loudest part, and the verses aren't intro.
  */
 const MAX_GROOVE_PHRASES = 4;
+/**
+ * The last phrases of a song that is ending (fading out, a last hit ringing out) aren't a groove: the
+ * outro is looked for before them, and runs on through them. Ending: this much quieter than the main
+ * groove (12 dB), or quieter than it (see MAIN_LOUDNESS_SHARE) with its beat gone (see LED_KICK_SHARE).
+ */
+const ENDING_SHARE = 10 ** (-12 / 20);
 
 /** A loudness step of at least this ratio between consecutive bars is a section change. */
 const SECTION_JUMP = Math.log(1.5);
@@ -292,12 +298,21 @@ export function sections(
   while (leading < grooves.length && mixable(grooves[leading])) leading++;
   // A last phrase too short to judge goes with the one before it.
   const whole = grooves.length - (grooves.at(-1) === undefined ? 1 : 0);
-  let trailing = whole;
+  // The song ending (a fade out) after its outro: the outro is the beat-led phrases before it.
+  const ending = (g: Groove | undefined) =>
+    !!g &&
+    !!main &&
+    (g.loudness < ENDING_SHARE * main.loudness || (g.loudness < MAIN_LOUDNESS_SHARE * main.loudness && g.kick < LED_KICK_SHARE * main.kick));
+  let beforeEnding = whole;
+  while (beforeEnding > leading && ending(grooves[beforeEnding - 1])) beforeEnding--;
+  let trailing = beforeEnding;
   while (trailing > leading && mixable(grooves[trailing - 1])) trailing--;
   // No main groove at all (all intro, say): nothing to go by.
   const grooved = trailing > leading;
   let outroStart = lastDense < 0 ? soundEnd : Math.min(soundEnd, phraseStart(lastDense + 1));
-  if (grooved && trailing < whole && whole - trailing <= MAX_GROOVE_PHRASES) outroStart = Math.min(outroStart, phraseStart(trailing));
+  if (grooved && trailing < beforeEnding && beforeEnding - trailing <= MAX_GROOVE_PHRASES) outroStart = Math.min(outroStart, phraseStart(trailing));
+  // A song fading out can be left from where the fade begins, at the latest: the next one comes in as it fades.
+  if (grooved && beforeEnding < whole) outroStart = Math.min(outroStart, phraseStart(beforeEnding));
   let introEnd = firstDense < 0 ? phraseStart(0) : phraseStart(firstDense);
   if (grooved && leading > 0 && leading <= MAX_GROOVE_PHRASES) introEnd = Math.max(introEnd, phraseStart(leading));
   introEnd = Math.min(outroStart, introEnd);

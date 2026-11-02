@@ -211,6 +211,19 @@ describe('analyzeMix', () => {
       expect(map.phraseDrift![phraseOf(map, track.truth.outroStart + beat)]).toBeGreaterThan(70);
     });
 
+    it('doesn’t count the drift where the kick is gone: there’s no beat there to flam with', () => {
+      // The outro 20 dB down: its kick too light to lead, and the model 80 ms late on it.
+      const quiet = track.samples.slice();
+      quiet.subarray(Math.round(track.truth.outroStart * RATE)).forEach((v, i, rest) => (rest[i] = v * 0.1));
+      const map = analyzeMix(quiet, null, seconds, RATE, {
+        head: beatModelAnswer(track.beats.map((t) => (t >= track.truth.outroStart - beat / 4 ? t + 0.08 : t)), track.downbeats, seconds),
+      });
+      const k = phraseOf(map, track.truth.outroStart + beat);
+      expect(map.phraseDrift!.slice(k).every((d) => d === null), JSON.stringify(map.phraseDrift)).toBe(true);
+      expect(map.phraseDrift!.slice(0, k).every((d) => d !== null && Math.abs(d) <= 5)).toBe(true);
+      expect(map.edgesStable).toBe(true);
+    });
+
     it('has no phrase drift without the beat model', () => {
       const map = analyzeMix(track.samples, null, seconds, RATE);
       expect(map.phraseDrift).toBeUndefined();

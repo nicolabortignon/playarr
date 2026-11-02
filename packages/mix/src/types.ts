@@ -1,5 +1,5 @@
 /** Bump when the mix map changes, so stored maps are measured again. */
-export const MIX_MAP_VERSION = 6;
+export const MIX_MAP_VERSION = 7;
 
 /** Camelot wheel position: 1–12 and A (minor) or B (major), e.g. "8A". */
 export type Camelot = `${number}${'A' | 'B'}`;

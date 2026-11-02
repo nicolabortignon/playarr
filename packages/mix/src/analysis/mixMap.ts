@@ -13,7 +13,7 @@ import { detectKey } from './key.ts';
 import { ANALYSIS_RATE, BEAT_ONSET_LATENCY_FRAMES, analyzeOnsets, type Onsets } from './onset.ts';
 import { modelBeatTimes, neuralGrid, type NeuralGrid } from './neuralGrid.ts';
 import { sections } from './sections.ts';
-import { BEATS_PER_BAR, BEATS_PER_PHRASE, mod, percentile, soundStartOf } from './shared.ts';
+import { BEATS_PER_BAR, BEATS_PER_PHRASE, FRAME_CENTRE, mod, peak, percentile, soundStartOf } from './shared.ts';
 
 /** How much of a song's beginning the server decodes for the mix analysis (all of a shorter song). */
 export const MIX_HEAD_SECONDS = 420;
@@ -44,6 +44,16 @@ const BEAT_HALF_WIDTH = 2;
 const MIN_PHRASE_BEATS = 8;
 /** edgesStable looks this far into the intro and the outro: as far as the longest blend reaches. */
 const EDGE_BEATS = 64;
+/** Frames either side of a beat searched for its kick (as sections.ts and downbeats.ts measure it). */
+const KICK_HALF_WIDTH = 2;
+/** The song's kick: its phrases' kicks at this percentile (most of a song is its main part, as in sections.ts). */
+const MAIN_KICK_PERCENTILE = 0.8;
+/**
+ * A phrase whose kick is this far below the song's (12 dB, as an intro or outro still "beat-led" in
+ * sections.ts) has no beat for another song's kick to flam with: however the model's beats wander
+ * there (and they do, with little to go by), its drift doesn't count.
+ */
+const WEAK_KICK_SHARE = 10 ** (-12 / 10);
 
 /**
  * Measures a song for mixing. `head` is its first min(duration, 420) s, mono at `rate`; `tail`, only
@@ -171,7 +181,14 @@ export function analyzeMix(
     // Counted from `firstPhrase`, so phraseEnergy[k] is the phrase from the planner's phrase line k.
     phraseEnergy: start.phraseEnergy,
   });
-  return beats ? withDrift(map, modelBeats(beats, headSeconds, tailPart)) : map;
+  if (!beats) return map;
+  // The kick at a song time: from the head's frames, or the tail's past the head.
+  const kickAt = (t: number) => {
+    const inTail = tailPart !== undefined && t >= headSeconds;
+    const f = inTail ? tailPart.frames : frames;
+    return peak(f.lowEnergy, (inTail ? t - tailPart.start : t) * f.fps - FRAME_CENTRE, KICK_HALF_WIDTH);
+  };
+  return withDrift(map, modelBeats(beats, headSeconds, tailPart), kickAt);
 }
 
 /** The model's beats over the song, in song time and in order: the head's, then the tail's past the head. */
@@ -183,24 +200,35 @@ function modelBeats(beats: { head: BeatActivations; tail?: BeatActivations | nul
 
 /**
  * The map with its phraseDrift and edgesStable (see MixMap), from the model's beats (song time, in
- * order) against the map's own grid: the one the planner draws its lines from.
+ * order) against the map's own grid: the one the planner draws its lines from. Phrases with too few
+ * of the model's beats, or too light a kick (`kickAt`, song time), have none.
  */
-function withDrift(map: MixMap, beats: number[]): MixMap {
+function withDrift(map: MixMap, beats: number[], kickAt: (t: number) => number): MixMap {
   if (!(map.bpm > 0) || !beats.length) return map;
   const period = 60 / map.bpm;
   const offsets = beats.map((t) => wrap(t - map.firstBeat, period));
   const overall = percentile(offsets, 0.5);
   const firstLine = map.firstBeat + map.downbeatOffset * period;
+  const phrases = Math.max(0, Math.ceil((map.soundEnd - firstLine) / (BEATS_PER_PHRASE * period)));
+  // Each phrase's kick: the median over its grid beats.
+  const kicks = Array.from({ length: phrases }, (_, k) =>
+    percentile(
+      Array.from({ length: BEATS_PER_PHRASE }, (_, b) => kickAt(firstLine + (k * BEATS_PER_PHRASE + b) * period)),
+      0.5,
+    ),
+  );
+  const mainKick = percentile(kicks.filter((x) => x > 0), MAIN_KICK_PERCENTILE);
   const phraseDrift: (number | null)[] = [];
   let i = 0;
-  for (let k = 0; firstLine + k * BEATS_PER_PHRASE * period < map.soundEnd; k++) {
+  for (let k = 0; k < phrases; k++) {
     // The phrase's beats: from half a beat before its line to half a beat before the next phrase's.
     const from = firstLine + (k * BEATS_PER_PHRASE - 0.5) * period;
     const to = from + BEATS_PER_PHRASE * period;
     while (i < beats.length && beats[i]! < from) i++;
     const inside: number[] = [];
     for (let j = i; j < beats.length && beats[j]! < to; j++) inside.push(offsets[j]!);
-    phraseDrift.push(inside.length >= MIN_PHRASE_BEATS ? Math.round((percentile(inside, 0.5) - overall) * 1000) : null);
+    const judged = inside.length >= MIN_PHRASE_BEATS && kicks[k]! >= WEAK_KICK_SHARE * mainKick;
+    phraseDrift.push(judged ? Math.round((percentile(inside, 0.5) - overall) * 1000) : null);
   }
   const drifting = { ...map, phraseDrift };
   const edge = EDGE_BEATS * period;
