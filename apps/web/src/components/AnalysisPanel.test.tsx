@@ -138,16 +138,17 @@ describe('AnalysisPanel', () => {
     expect(asked).toHaveLength(2);
   });
 
-  it('offers one button: the songs left while there are some, else every song again, and nothing while songs are being analysed', async () => {
+  it('offers the songs left while there are some and nothing is under way, and the entire collection again always', async () => {
     const buttons = () => section('Beat analysis').queryAllByRole('button').map((b) => b.textContent);
+    const AGAIN = 'Reanalyse the entire collection';
     for (const [answer, shown] of [
-      [IDLE, ['Analyse the 4,441 songs left']],
-      [{ ...IDLE, working: 1 }, []],
-      [{ ...IDLE, waiting: 3 }, []],
-      [ALL_DONE, ['Analyse all again']],
+      [IDLE, ['Analyse the 4,441 songs left', AGAIN]],
+      [{ ...IDLE, working: 1 }, [AGAIN]],
+      [{ ...IDLE, waiting: 3 }, [AGAIN]],
+      [ALL_DONE, [AGAIN]],
       // The rest failed lately and are tried again tomorrow: there's nothing left to start now.
-      [{ ...IDLE, beats: { ready: 5675, beatModel: 5675, failed: 3 } }, ['Analyse all again']],
-      [{ ...IDLE, beats: { ready: 0, beatModel: 0, failed: 0 } }, ['Analyse the 5,678 songs left']],
+      [{ ...IDLE, beats: { ready: 5675, beatModel: 5675, failed: 3 } }, [AGAIN]],
+      [{ ...IDLE, beats: { ready: 0, beatModel: 0, failed: 0 } }, ['Analyse the 5,678 songs left', AGAIN]],
     ] as const) {
       view(answer);
       await screen.findByText(/DJ mix/, { selector: 'p.text-paper-dim' });
@@ -177,32 +178,41 @@ describe('AnalysisPanel', () => {
     await waitFor(() => expect(asked).toHaveLength(2));
   });
 
-  it('runs an analysis on every song again whenever nothing of it is under way', async () => {
-    const { ran } = view(ALL_DONE);
+  it.each([
+    ['Beat analysis', 'Reanalyse the entire collection', '/api/analysis/beats'],
+    ['Sound analysis', 'Reanalyse the entire collection', '/api/analysis/sound'],
+    ['Loudness analysis', 'Reanalyse the entire collection', '/api/analysis/loudness'],
+    ['Tag lookup', 'Look up the entire collection again', '/api/analysis/tags'],
+  ])('runs %s on the entire collection again, after asking, even while it’s busy', async (title, label, url) => {
+    const { ran } = view({ waiting: 10, working: 1, loudnessWaiting: 10, tagsWaiting: 10 });
     ran.answer = () => json({ queued: 5678 });
-    fireEvent.click(await (await findSection('Sound analysis')).findByRole('button', { name: 'Analyse all again' }));
-    await waitFor(() => expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Analysing 5,678 songs again in the background']));
-    expect(ran.calls).toEqual([{ url: '/api/analysis/sound', body: { again: true } }]);
-    // Each queue holds up its own analysis only.
-    cleanup();
-    view({ ...ALL_DONE, tagsWaiting: 5, loudnessWorking: 1 });
-    expect(await (await findSection('Beat analysis')).findByRole('button', { name: 'Analyse all again' })).toBeTruthy();
-    expect(section('Loudness analysis').queryByRole('button')).toBeNull();
-    expect(section('Tag lookup').queryByRole('button')).toBeNull();
+    fireEvent.click(await (await findSection(title)).findByRole('button', { name: label }));
+    expect(ran.calls).toEqual([]);
+    fireEvent.click(within(screen.getByRole('dialog', { name: `${label}?` })).getByRole('button', { name: label }));
+    const doing = title === 'Tag lookup' ? 'Looking up' : 'Analysing';
+    await waitFor(() => expect(useToasts.getState().toasts.map((t) => t.message)).toEqual([`${doing} 5,678 songs again in the background`]));
+    expect(ran.calls).toEqual([{ url, body: { again: true } }]);
   });
 
-  it('asks before analysing everything again, then runs every analysis on every song', async () => {
+  it('holds back only the analysis whose queue is busy from starting the songs it has left', async () => {
+    view({ ...IDLE, tagsWaiting: 5, loudnessWorking: 1 });
+    expect(await (await findSection('Beat analysis')).findByRole('button', { name: 'Analyse the 4,441 songs left' })).toBeTruthy();
+    expect(section('Loudness analysis').queryByRole('button', { name: /songs left/ })).toBeNull();
+    expect(section('Tag lookup').queryByRole('button', { name: /songs left/ })).toBeNull();
+  });
+
+  it('asks before reanalysing everything, then runs every analysis on every song', async () => {
     const first = view();
-    fireEvent.click(await screen.findByRole('button', { name: 'Analyse everything again' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Analyse every song again?' })).getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reanalyse everything' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Reanalyse every song with every analysis?' })).getByRole('button', { name: 'Cancel' }));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(first.ran.calls).toEqual([]);
     cleanup();
 
     const { ran } = view();
     ran.answer = () => json({ queued: 5678 });
-    fireEvent.click(await screen.findByRole('button', { name: 'Analyse everything again' }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Analyse everything again' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reanalyse everything' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Reanalyse everything' }));
     await waitFor(() => expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Analysing 5,678 songs again in the background']));
     expect(ran.calls).toEqual([{ url: '/api/analysis/all', body: { again: true } }]);
   });

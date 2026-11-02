@@ -60,8 +60,8 @@ function tagsText(p: AnalysisProgress): string {
 }
 
 /**
- * How much of the library one analysis has done: a line, a bar, and one button: for the songs it has
- * left while there are some, else to do every song again (after the analysis improved, say).
+ * How much of the library one analysis has done: a line, a bar, a button for the songs it has left
+ * (while it's not busy with songs already), and one to do the entire collection again, after asking.
  */
 function Analysis({
   kind,
@@ -73,6 +73,7 @@ function Analysis({
   idle,
   verb,
   meter,
+  again,
   away,
 }: {
   kind: AnalysisKind;
@@ -87,12 +88,15 @@ function Analysis({
   /** "Analyse", "Look up". */
   verb: string;
   meter: string;
+  /** Doing the entire collection again: its button, and what the question before it says. */
+  again: { label: string; explain: string };
   away: boolean;
 }) {
   const run = useRunAnalysis();
   const left = Math.max(0, of - done - failed);
-  // Nothing while songs are being done (the line says so), nor away from home (it can't start there).
-  const button = !canRun || away || !idle ? null : left > 0 ? { label: `${verb} the ${songs(left)} left`, again: false } : done > 0 ? { label: `${verb} all again`, again: true } : null;
+  const allowed = canRun && !away && of > 0;
+  // Not while songs are being done already: the line says so, and they'd only be queued twice.
+  const showLeft = allowed && idle && left > 0;
   return (
     <div>
       <p className="text-[13px] text-paper-dim">{text}</p>
@@ -101,56 +105,86 @@ function Analysis({
           <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(done / of) * 100}%` }} />
         </div>
       )}
-      {button && (
-        <div className="mt-3">
-          <button
-            type="button"
-            className={SECONDARY_BUTTON}
-            disabled={run.isPending}
-            onClick={() => run.mutate({ kind, again: button.again })}
-            title={button.again ? 'Every song again with the current analysis, in the background; what each song has now stays in use until its turn.' : undefined}
-          >
-            {button.label}
-          </button>
+      {allowed && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {showLeft && (
+            <button type="button" className={SECONDARY_BUTTON} disabled={run.isPending} onClick={() => run.mutate({ kind })}>
+              {`${verb} the ${songs(left)} left`}
+            </button>
+          )}
+          <AskFirst
+            label={again.label}
+            question={`${again.label}?`}
+            explain={again.explain}
+            onConfirm={(done) => run.mutate({ kind, again: true }, { onSettled: done })}
+            busy={run.isPending}
+          />
         </div>
       )}
     </div>
   );
 }
 
-/** Every analysis on every song again, after asking: beat analysis alone takes hours over a big library. */
-function EverythingAgain({ audio }: { audio: boolean }) {
-  const run = useRunAnalysis();
+/** A button that asks before it goes ahead: for work that takes hours, or undoes what's done. */
+function AskFirst({
+  label,
+  question,
+  explain,
+  onConfirm,
+  busy,
+}: {
+  label: string;
+  question: string;
+  explain: string;
+  /** Goes ahead; calls `done` once it has, to close the question. */
+  onConfirm: (done: () => void) => void;
+  busy: boolean;
+}) {
   const [asking, setAsking] = useState(false);
   return (
     <>
-      <div className="mt-3">
-        <button type="button" className={SECONDARY_BUTTON} disabled={run.isPending} onClick={() => setAsking(true)}>
-          Analyse everything again
-        </button>
-      </div>
-      <Dialog open={asking} onClose={() => setAsking(false)} title="Analyse every song again?">
+      <button type="button" className={SECONDARY_BUTTON} disabled={busy} onClick={() => setAsking(true)}>
+        {label}
+      </button>
+      <Dialog open={asking} onClose={() => setAsking(false)} title={question}>
         <div className="space-y-5 p-5">
-          <p className="text-[15px] text-paper-dim">
-            {audio
-              ? 'Beat, sound and loudness analysis and a tag lookup for every song, from scratch, at low priority. Each song keeps what it has until its turn. On a small server this takes many hours: beat analysis alone can take a minute a song.'
-              : 'A tag lookup for every song matched on MusicBrainz, from scratch. Each song keeps its tags until its turn.'}
-          </p>
+          <p className="text-[15px] text-paper-dim">{explain}</p>
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setAsking(false)} className={SECONDARY_BUTTON}>
               Cancel
             </button>
             <button
               type="button"
-              onClick={() => run.mutate({ kind: 'all', again: true }, { onSettled: () => setAsking(false) })}
-              className="inline-flex h-10 items-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110"
+              disabled={busy}
+              onClick={() => onConfirm(() => setAsking(false))}
+              className="inline-flex h-10 items-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110 disabled:opacity-50"
             >
-              Analyse everything again
+              {label}
             </button>
           </div>
         </div>
       </Dialog>
     </>
+  );
+}
+
+/** Every analysis on every song again, after asking: beat analysis alone takes hours over a big library. */
+function EverythingAgain({ audio }: { audio: boolean }) {
+  const run = useRunAnalysis();
+  return (
+    <div className="mt-3">
+      <AskFirst
+        label="Reanalyse everything"
+        question="Reanalyse every song with every analysis?"
+        explain={
+          audio
+            ? 'Beat, sound and loudness analysis and a tag lookup for every song, from scratch, at low priority. Each song keeps what it has until its turn. On a small server this takes many hours: beat analysis alone can take a minute a song.'
+            : 'A tag lookup for every song matched on MusicBrainz, from scratch. Each song keeps its tags until its turn.'
+        }
+        onConfirm={(done) => run.mutate({ kind: 'all', again: true }, { onSettled: done })}
+        busy={run.isPending}
+      />
+    </div>
   );
 }
 
@@ -220,6 +254,11 @@ export function AnalysisPanel() {
           idle={audioIdle}
           verb="Analyse"
           meter="Songs ready for DJ mix"
+          again={{
+            label: 'Reanalyse the entire collection',
+            explain:
+              'Beat analysis for every song, from scratch, at low priority. Each song mixes as it does now until its turn. On a small server this takes many hours: up to a minute a song.',
+          }}
           away={away}
         />
       </SettingsSection>
@@ -238,6 +277,10 @@ export function AnalysisPanel() {
           idle={audioIdle}
           verb="Analyse"
           meter="Songs measured for their sound"
+          again={{
+            label: 'Reanalyse the entire collection',
+            explain: 'Sound analysis for every song, from scratch, at low priority. Each song keeps what it has until its turn.',
+          }}
           away={away}
         />
       </SettingsSection>
@@ -256,6 +299,10 @@ export function AnalysisPanel() {
           idle={p.loudnessWaiting === 0 && p.loudnessWorking === 0}
           verb="Analyse"
           meter="Songs measured for their loudness"
+          again={{
+            label: 'Reanalyse the entire collection',
+            explain: 'Loudness analysis for every song, from scratch, a second or two a song. Each song keeps its level until its turn.',
+          }}
           away={away}
         />
       </SettingsSection>
@@ -274,6 +321,10 @@ export function AnalysisPanel() {
           idle={p.tagsWaiting === 0}
           verb="Look up"
           meter="Songs looked up"
+          again={{
+            label: 'Look up the entire collection again',
+            explain: 'A tag lookup for every song matched on MusicBrainz, from scratch. Each song keeps its tags until its turn.',
+          }}
           away={away}
         />
       </SettingsSection>
