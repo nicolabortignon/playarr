@@ -14,11 +14,12 @@ import { PlaylistRecommendations } from '../components/PlaylistRecommendations';
 import { BackButton, ErrorState, Skeleton } from '../components/Section';
 import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
-import { usePlaylist, usePlaylistMutations } from '../lib/queries';
+import { usePlaylist, usePlaylistMutations, useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { DownloadButton } from '../components/DownloadButton';
+import { Tempo } from '../components/Tempo';
 
 export function PlaylistPage() {
   const id = Number(useParams().id);
@@ -30,6 +31,7 @@ export function PlaylistPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editing, setEditing] = useState(false);
   const [pickingCover, setPickingCover] = useState(false);
+  const tempos = useTempos(items.map((i) => i.track));
 
   // Local copy so drag-reordering is instant; resync whenever the server copy changes.
   useEffect(() => {
@@ -166,6 +168,7 @@ export function PlaylistPage() {
             <PlaylistRow
               key={item.itemId}
               item={item}
+              bpm={item.track && tempos[item.track.recordingId]}
               onPlay={() => playFrom(item)}
               onDragEnd={commitOrder}
               onRemove={() => mutations.remove.mutate({ id, itemId: item.itemId })}
@@ -211,11 +214,14 @@ export function PlaylistPage() {
 
 function PlaylistRow({
   item,
+  bpm,
   onPlay,
   onDragEnd,
   onRemove,
 }: {
   item: PlaylistItem;
+  /** Its measured tempo, if any. */
+  bpm: number | undefined;
   onPlay: () => void;
   onDragEnd: () => void;
   onRemove: () => void;
@@ -266,7 +272,10 @@ function PlaylistRow({
         </div>
       </div>
       {track ? <FavoriteButton track={track} reveal /> : <span />}
-      <span className="font-mono text-[13px] text-muted tabular">{track ? formatTime(track.duration) : ''}</span>
+      <span className="font-mono text-[13px] text-muted tabular">
+        <Tempo bpm={bpm} />
+        {track ? formatTime(track.duration) : ''}
+      </span>
       <div onClick={(e) => e.stopPropagation()} className="md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
         <Menu
           items={[

@@ -21,8 +21,9 @@ import type {
   UpdateInfo,
   UpdateSettings,
 } from '@playarr/shared';
-import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import type { MixMap } from '@playarr/mix';
+import { keepPreviousData, queryOptions, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef } from 'react';
 import { api, ApiError } from './api';
 import { plural } from './format';
 import { usePrefs } from './prefs';
@@ -487,8 +488,10 @@ export const useLyrics = (trackId: number, enabled = true) =>
  * missing and gets measured on the server meanwhile, so it's asked for again a minute later (a few
  * times: a server that can't analyse audio never has them).
  */
-export const useMixMaps = (recordingIds: string[], enabled = true) =>
-  useQuery({
+export const useMixMaps = (recordingIds: string[], enabled = true) => useQuery(mixMapsQuery(recordingIds, enabled));
+
+const mixMapsQuery = (recordingIds: string[], enabled = true) =>
+  queryOptions({
     queryKey: ['mix-maps', ...recordingIds],
     queryFn: () => api.mixMaps(recordingIds),
     enabled: enabled && recordingIds.length > 0,
@@ -496,6 +499,35 @@ export const useMixMaps = (recordingIds: string[], enabled = true) =>
     refetchInterval: (q) =>
       q.state.data && q.state.dataUpdateCount < 5 && recordingIds.some((id) => !q.state.data![id]) ? 60_000 : false,
   });
+
+/** The server answers mix maps for at most this many songs at a time. */
+const MIX_MAPS_PER_REQUEST = 50;
+
+/**
+ * Each song's measured tempo in BPM, by recording id, for song lists to show next to the length.
+ * From the songs' mix maps, asked for 50 songs at a time; a song not measured yet (or without a
+ * beat) is left out.
+ */
+export function useTempos(tracks: readonly (Track | undefined)[]): Record<string, number> {
+  const key = [...new Set(tracks.flatMap((t) => (t ? [t.recordingId] : [])))].join('\n');
+  const queries = useMemo(() => {
+    const ids = key ? key.split('\n') : [];
+    const batches: string[][] = [];
+    for (let i = 0; i < ids.length; i += MIX_MAPS_PER_REQUEST) batches.push(ids.slice(i, i + MIX_MAPS_PER_REQUEST));
+    return batches.map((batch) => mixMapsQuery(batch));
+  }, [key]);
+  return useQueries({ queries, combine: temposOf });
+}
+
+/**
+ * The tempos in mix-map answers. Kept outside the hook and a plain object: useQueries then reuses the
+ * last result while the answers are the same, rather than handing every render a new one.
+ */
+function temposOf(results: { data?: Record<string, MixMap> }[]): Record<string, number> {
+  const tempos: Record<string, number> = {};
+  for (const { data } of results) for (const [id, map] of Object.entries(data ?? {})) if (map.bpm > 0) tempos[id] = map.bpm;
+  return tempos;
+}
 
 export const useTrackMetadata = (id: number | null) =>
   useQuery({ queryKey: ['track-metadata', id], queryFn: () => api.trackMetadata(id!), enabled: id !== null, staleTime: 0 });

@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
+import { useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { useShallow } from 'zustand/react/shallow';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -17,6 +18,7 @@ import { Menu } from './Menu';
 import { useMixPointsItem } from './MixPointsDialog';
 import { SeekBar, Transport } from './Transport';
 import { SleepTimer } from './SleepTimer';
+import { Tempo } from './Tempo';
 import { TransitionView } from './TransitionView';
 import { startRadio } from '../player/radio';
 
@@ -201,6 +203,7 @@ function UpNext({ onNavigate }: { onNavigate: () => void }) {
   const upcoming = usePlayer(useShallow((s) => s.order.slice(s.pos + 1, s.pos + 5).map((i) => s.queue[i]!)));
   const pos = usePlayer((s) => s.pos);
   const jumpTo = usePlayer((s) => s.jumpTo);
+  const tempos = useTempos(upcoming);
   if (!upcoming.length) return null;
   return (
     <div className="hidden md:block">
@@ -229,7 +232,10 @@ function UpNext({ onNavigate }: { onNavigate: () => void }) {
               <span className="block truncate text-xs text-muted">{t.artistName}</span>
             </span>
             <FavoriteButton track={t} reveal />
-            <span className="font-mono text-xs text-muted tabular">{formatTime(t.duration)}</span>
+            <span className="font-mono text-xs text-muted tabular">
+              <Tempo bpm={tempos[t.recordingId]} />
+              {formatTime(t.duration)}
+            </span>
           </li>
         ))}
       </ol>
