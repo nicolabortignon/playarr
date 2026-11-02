@@ -356,6 +356,18 @@ describe('Analyzer mix maps', () => {
     });
   });
 
+  it('calls a song steady by where it’s mixed, when its map knows', () => {
+    const { analyzer, db } = withSong({ seconds: 200 });
+    const save = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
+    const now = new Date().toISOString();
+    // Wanders in a breakdown, holds in its intro and outro; and the other way round.
+    save.run('breakdown', MIX_MAP_VERSION, JSON.stringify({ bpm: 128, beatConfidence: 0.8, gridStable: false, edgesStable: true }), null, now);
+    save.run('outro', MIX_MAP_VERSION, JSON.stringify({ bpm: 128, beatConfidence: 0.8, gridStable: true, edgesStable: false }), null, now);
+    const summaries = analyzer.mixSummaries(['breakdown', 'outro']);
+    expect(summaries.get('breakdown')?.gridStable).toBe(true);
+    expect(summaries.get('outro')?.gridStable).toBe(false);
+  });
+
   it('takes each song’s tempo and beat from its beat analysis, none until it has one', () => {
     const { analyzer, db } = withSong({ seconds: 200 });
     const now = new Date().toISOString();

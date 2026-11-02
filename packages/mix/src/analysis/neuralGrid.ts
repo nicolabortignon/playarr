@@ -91,6 +91,11 @@ export function neuralGrid(frames: Pick<Onsets, 'fps' | 'beatOnset'>, activation
   };
 }
 
+/** The model's beats in seconds (see peakTimes), for judging the grid phrase by phrase. */
+export function modelBeatTimes({ beat, fps }: Pick<BeatActivations, 'beat' | 'fps'>): number[] {
+  return peakTimes(beat, fps);
+}
+
 /**
  * The model's beats in seconds: frames over even odds that are the highest within 3 frames either
  * side (the model's own rule), one per run of equal peaks, each refined by a parabola through it and

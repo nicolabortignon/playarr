@@ -1,5 +1,6 @@
 import { integrate } from './automation.ts';
 import { isCamelot, keysCompatible } from './camelot.ts';
+import { beatHolds } from './drift.ts';
 import type { Automation, Camelot, CuePoints, MixMap, MixMode, TransitionPlan } from './types.ts';
 
 // The planner decides how song A hands over to song B: which style, where in each song,
@@ -96,6 +97,11 @@ const PHRASE_BEATS = 16;
 const BAR_BEATS = 4;
 /** Slack for comparing times and ratios that went through floating-point arithmetic. */
 const EPSILON = 1e-9;
+/**
+ * A time this close to a grid line counts as on it. Section times are placed on the analysis's grid
+ * before its tempo's last digits are settled, so an outro "on" a phrase line can sit a hair past it.
+ */
+const LINE_SLACK_S = 0.01;
 
 const FLAT_DB: Automation = [{ at: 0, value: 0 }];
 const HIGH_PASS_OFF: Automation = [{ at: 0, value: HIGH_PASS_OFF_HZ }];
@@ -146,8 +152,9 @@ function linesAt(song: MixMap, beatsPerLine: number, t: number): number {
   return (t - gridLine(song, beatsPerLine, 0)) / (beatsPerLine * beatLength(song));
 }
 
-function firstLineAtOrAfter(song: MixMap, beatsPerLine: number, t: number): number {
-  const index = Math.max(0, Math.ceil(linesAt(song, beatsPerLine, t) - EPSILON));
+/** `slack`: seconds before `t` a line may be and still count (LINE_SLACK_S where `t` is a section time). */
+function firstLineAtOrAfter(song: MixMap, beatsPerLine: number, t: number, slack = 0): number {
+  const index = Math.max(0, Math.ceil(linesAt(song, beatsPerLine, t - slack) - EPSILON));
   return gridLine(song, beatsPerLine, index);
 }
 
@@ -214,7 +221,7 @@ function describePair(input: PlanInput): Pair {
   let introRoomBeats = 0;
   if (tempos) {
     // A long blend starts on a phrase line, so its room runs from the first one A may leave on.
-    outroRoomBeats = (soundEndOf(a) - firstLineAtOrAfter(a, PHRASE_BEATS, leaveFrom)) / beatLength(a);
+    outroRoomBeats = (soundEndOf(a) - firstLineAtOrAfter(a, PHRASE_BEATS, leaveFrom, LINE_SLACK_S)) / beatLength(a);
     // B can start no earlier than its first downbeat; its seconds pass `ratio` times faster than the blend's.
     introRoomBeats = (mixInPoint(b) - gridLine(b, BAR_BEATS, 0)) / ratio / beatLength(a);
   }
@@ -281,9 +288,9 @@ const STYLE_RULES: ((pair: Pair) => Decision | undefined)[] = [
         : pair.aBarsSure
           ? 'B’s bar starts are unsure'
           : 'A’s bar starts are unsure';
-    // Without phrases to meet on, a quick mix on the beat, if the beat itself is sure and steady.
+    // Without phrases to meet on, a quick mix on the beat, if the beat itself is sure and steady there.
     const { a, b } = pair;
-    const solidBeats = Math.min(a.beatConfidence, b.beatConfidence) >= QUICK_MIX_CONFIDENCE && a.gridStable && b.gridStable;
+    const solidBeats = Math.min(a.beatConfidence, b.beatConfidence) >= QUICK_MIX_CONFIDENCE && steadyWhereQuick(pair);
     if (solidBeats) return { style: 'quick', reason: `${which}: quick mix` };
     if (abruptEdgeAtTheJoin(pair)) {
       return { style: 'straight', reason: `${which}, the beat isn’t solid and an edge is abrupt: straight on` };
@@ -300,7 +307,7 @@ const STYLE_RULES: ((pair: Pair) => Decision | undefined)[] = [
     return { style: 'fade', reason: `${tempoText(pair)} and an unsure beat: crossfade` };
   },
   function longBlendOrQuickMix(pair) {
-    if (!pair.a.gridStable || !pair.b.gridStable) return { style: 'quick', reason: 'Beat drifts: quick mix' };
+    // Whether the beats hold where the songs would play together is longPlan's to judge: it knows where that is.
     const beats = blendBeats(pair);
     if (pair.keys.kind === 'clash') {
       // Over A's outro and B's intro only (mostly drums, little to clash), and briefly.
@@ -327,6 +334,18 @@ function blendBeats({ input, outroRoomBeats, introRoomBeats }: Pair): number | u
   const longest = BLEND_BEATS.find((beats) => beats <= room + EPSILON);
   if (longest === undefined || input.mode === 'party') return longest;
   return Math.min(longest, room >= ROOM_FOR_AUTO_LONGEST_BLEND ? LONGEST_BLEND_BEATS : AUTO_BLEND_BEATS);
+}
+
+/**
+ * Both beats hold around where a quick mix would join the songs: A's phrase from where it may leave,
+ * B's 8 beats either side of its mix-in point (see beatHolds).
+ */
+function steadyWhereQuick(pair: Pair): boolean {
+  const { a, b } = pair;
+  const leave = firstLineAtOrAfter(a, PHRASE_BEATS, pair.leaveFrom, LINE_SLACK_S);
+  const land = mixInPoint(b);
+  const half = (PHRASE_BEATS / 2) * beatLength(b);
+  return beatHolds(a, leave, leave + PHRASE_BEATS * beatLength(a)) && beatHolds(b, land - half, land + half);
 }
 
 function tempoText({ tempoGap, halfTime }: Pair): string {
@@ -436,9 +455,15 @@ function fadePlan(pair: Pair, reason: string, from?: number, longest = chosenFad
 /**
  * A long blend: A leaves from a phrase line inside its outro and B's phrase line lands on that same downbeat.
  * B is stretched to A's tempo through the overlap, then eases back to its own over 16 of its bars.
+ *
+ * Both beats must hold where the songs play together (see beatHolds): B's over the stretch of its intro the
+ * overlap covers, A's over the overlap from its phrase line. A leaves from the first phrase line of its outro
+ * where its beat holds; a later one when the first's drifts. When no line holds for this length, a shorter
+ * blend is tried (it covers fewer phrases), then a quick mix.
+ *
  * B mustn't resume inside its own outro: then the ease-back goes (all of it: a shortened ramp would be a
  * second, odd-sounding tempo move; and only for tempos within 3%, as B then snaps to its own tempo), then
- * shorter blends are tried, then a quick mix. Shorter blends rarely rescue it: B's start is picked so the
+ * shorter blends are tried, then a quick mix. Shorter blends rarely rescue that: B's start is picked so the
  * overlap ends near its mix-in point whatever the length, and the ease-back's length doesn't depend on the
  * blend's, so B resumes at about the same place. They help only when phrase rounding falls differently.
  */
@@ -446,14 +471,24 @@ function longPlan(pair: Pair, chosenBeats: number, reason: string): TransitionPl
   const { a, b, ratio } = pair;
   const beat = beatLength(a);
   let tooShortForB = false;
+  const drifts = { a: false, b: false };
   for (const beats of BLEND_BEATS.filter((candidate) => candidate <= chosenBeats)) {
     const overlap = beats * beat;
-    const aStart = firstLineAtOrAfter(a, PHRASE_BEATS, pair.leaveFrom);
-    if (aStart + overlap > soundEndOf(a) + EPSILON) continue;
+    const firstLine = firstLineAtOrAfter(a, PHRASE_BEATS, pair.leaveFrom, LINE_SLACK_S);
+    if (firstLine + overlap > soundEndOf(a) + EPSILON) continue;
 
     // B plays `ratio` of its own seconds per second of blend; its intro should end about when the overlap does.
     const overlapInB = overlap * ratio;
     const bStart = Math.max(0, nearestLine(b, PHRASE_BEATS, mixInPoint(b) - overlapInB, Math.max(0, gridLine(b, BAR_BEATS, 0))));
+    if (!beatHolds(b, bStart, bStart + overlapInB)) {
+      drifts.b = true;
+      continue;
+    }
+    const aStart = steadyLeavingLine(pair, firstLine, overlap);
+    if (aStart === undefined) {
+      drifts.a = true;
+      continue;
+    }
 
     const eased = easedBack(pair, overlap);
     const candidates = [{ ...eased, note: '' }];
@@ -467,14 +502,36 @@ function longPlan(pair: Pair, chosenBeats: number, reason: string): TransitionPl
         tooShortForB = true;
         continue;
       }
-      const blendReason = (beats === chosenBeats ? reason : longReason(pair, beats)) + note;
+      const notes = [
+        note,
+        beats < chosenBeats && (drifts.a || drifts.b) ? ' (the beat drifts over a longer one)' : '',
+        aStart > firstLine + EPSILON ? ' (later in the outro, where the beat holds)' : '',
+      ].join('');
+      const blendReason = (beats === chosenBeats ? reason : longReason(pair, beats)) + notes;
       return longBlend(pair, { beats, aStart, bStart, bRate, length, bResume }, blendReason);
     }
+  }
+  if (drifts.a || drifts.b) {
+    const which = drifts.a && drifts.b ? 'Both beats drift where they’d blend' : drifts.a ? 'A’s beat drifts in its outro' : 'B’s beat drifts in its intro';
+    return quickPlan(pair, `${which}: quick mix`);
   }
   return quickPlan(
     pair,
     tooShortForB ? 'B’s outro comes too soon for a blend: quick mix' : 'Too close to the end for a blend: quick mix',
   );
+}
+
+/**
+ * The first phrase line of A, from `firstLine` on, where its beat holds for `overlap` and the overlap ends
+ * before its sound does; undefined when there's none.
+ */
+function steadyLeavingLine(pair: Pair, firstLine: number, overlap: number): number | undefined {
+  const { a } = pair;
+  const phrase = PHRASE_BEATS * beatLength(a);
+  for (let line = firstLine; line + overlap <= soundEndOf(a) + EPSILON; line += phrase) {
+    if (beatHolds(a, line, line + overlap)) return line;
+  }
+  return undefined;
 }
 
 /**
@@ -657,10 +714,10 @@ function quickPlacement(pair: Pair, tailBeats: number): { aStart: number; beats:
   const latestLanding = soundEndOf(a) - tailBeats * beat;
   for (const beats of QUICK_MIX_BEATS) {
     const lead = beats * beat;
-    const landing = firstLineAtOrAfter(a, phrase, leaveFrom + lead);
+    const landing = firstLineAtOrAfter(a, phrase, leaveFrom + lead, LINE_SLACK_S);
     if (landing <= latestLanding + EPSILON) return { aStart: landing - lead, beats };
   }
-  const downbeat = firstLineAtOrAfter(a, bar, leaveFrom);
+  const downbeat = firstLineAtOrAfter(a, bar, leaveFrom, LINE_SLACK_S);
   for (const beats of QUICK_MIX_BEATS) {
     if (downbeat + beats * beat <= latestLanding + EPSILON) return { aStart: downbeat, beats };
   }

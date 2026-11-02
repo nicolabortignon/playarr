@@ -3,6 +3,7 @@
 // reads. This is where the pieces have to agree with each other: the planner draws its bar and
 // phrase lines from the map's grid, so the grid must be counted from where the music's phrases start.
 
+import { beatHolds } from '../drift.ts';
 import type { MixMap } from '../types.ts';
 import { MIX_MAP_VERSION } from '../types.ts';
 import type { BeatActivations } from './beatThis.ts';
@@ -10,9 +11,9 @@ import { beatGrid } from './beatGrid.ts';
 import { downbeats, phraseEnergyFrom } from './downbeats.ts';
 import { detectKey } from './key.ts';
 import { ANALYSIS_RATE, BEAT_ONSET_LATENCY_FRAMES, analyzeOnsets, type Onsets } from './onset.ts';
-import { neuralGrid, type NeuralGrid } from './neuralGrid.ts';
+import { modelBeatTimes, neuralGrid, type NeuralGrid } from './neuralGrid.ts';
 import { sections } from './sections.ts';
-import { BEATS_PER_BAR, BEATS_PER_PHRASE, mod, soundStartOf } from './shared.ts';
+import { BEATS_PER_BAR, BEATS_PER_PHRASE, mod, percentile, soundStartOf } from './shared.ts';
 
 /** How much of a song's beginning the server decodes for the mix analysis (all of a shorter song). */
 export const MIX_HEAD_SECONDS = 420;
@@ -39,6 +40,10 @@ const WINDOW_MIN_CONFIDENCE = 0.3;
 const PHASE_STEP = 0.05;
 /** Frames either side of a beat that count as "at the beat" for a window's confidence. */
 const BEAT_HALF_WIDTH = 2;
+/** A phrase with fewer of the model's beats than this (of its 16) has no beat to judge: a breakdown. */
+const MIN_PHRASE_BEATS = 8;
+/** edgesStable looks this far into the intro and the outro: as far as the longest blend reaches. */
+const EDGE_BEATS = 64;
 
 /**
  * Measures a song for mixing. `head` is its first min(duration, 420) s, mono at `rate`; `tail`, only
@@ -147,7 +152,7 @@ export function analyzeMix(
     }
   }
 
-  return finish(songSeconds, {
+  const map = finish(songSeconds, {
     bpm,
     firstBeat,
     downbeatOffset: beatsBefore,
@@ -166,6 +171,41 @@ export function analyzeMix(
     // Counted from `firstPhrase`, so phraseEnergy[k] is the phrase from the planner's phrase line k.
     phraseEnergy: start.phraseEnergy,
   });
+  return beats ? withDrift(map, modelBeats(beats, headSeconds, tailPart)) : map;
+}
+
+/** The model's beats over the song, in song time and in order: the head's, then the tail's past the head. */
+function modelBeats(beats: { head: BeatActivations; tail?: BeatActivations | null }, headSeconds: number, tail?: Tail): number[] {
+  const head = modelBeatTimes(beats.head).filter((t) => t < headSeconds);
+  const after = tail && beats.tail ? modelBeatTimes(beats.tail).map((t) => tail.start + t).filter((t) => t >= headSeconds) : [];
+  return [...head, ...after];
+}
+
+/**
+ * The map with its phraseDrift and edgesStable (see MixMap), from the model's beats (song time, in
+ * order) against the map's own grid: the one the planner draws its lines from.
+ */
+function withDrift(map: MixMap, beats: number[]): MixMap {
+  if (!(map.bpm > 0) || !beats.length) return map;
+  const period = 60 / map.bpm;
+  const offsets = beats.map((t) => wrap(t - map.firstBeat, period));
+  const overall = percentile(offsets, 0.5);
+  const firstLine = map.firstBeat + map.downbeatOffset * period;
+  const phraseDrift: (number | null)[] = [];
+  let i = 0;
+  for (let k = 0; firstLine + k * BEATS_PER_PHRASE * period < map.soundEnd; k++) {
+    // The phrase's beats: from half a beat before its line to half a beat before the next phrase's.
+    const from = firstLine + (k * BEATS_PER_PHRASE - 0.5) * period;
+    const to = from + BEATS_PER_PHRASE * period;
+    while (i < beats.length && beats[i]! < from) i++;
+    const inside: number[] = [];
+    for (let j = i; j < beats.length && beats[j]! < to; j++) inside.push(offsets[j]!);
+    phraseDrift.push(inside.length >= MIN_PHRASE_BEATS ? Math.round((percentile(inside, 0.5) - overall) * 1000) : null);
+  }
+  const drifting = { ...map, phraseDrift };
+  const edge = EDGE_BEATS * period;
+  const edgesStable = beatHolds(drifting, map.introEnd - edge, map.introEnd) && beatHolds(drifting, map.outroStart, map.outroStart + edge);
+  return { ...drifting, edgesStable };
 }
 
 /** The tail's onset pass and where it sits in the song. */

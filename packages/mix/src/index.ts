@@ -15,6 +15,7 @@ export * from './analysis/mixMap.ts';
 export * from './automation.ts';
 export * from './blend.ts';
 export * from './camelot.ts';
+export * from './drift.ts';
 export * from './plan.ts';
 export * from './render/filters.ts';
 export * from './render/stretch.ts';

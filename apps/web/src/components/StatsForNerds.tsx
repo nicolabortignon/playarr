@@ -1,4 +1,4 @@
-import { toCamelot, type Camelot, type CuePoints, type MixMap, type TransitionPlan } from '@playarr/mix';
+import { DRIFT_LIMIT_MS, toCamelot, type Camelot, type CuePoints, type MixMap, type TransitionPlan } from '@playarr/mix';
 import type { Track, TrackLevel } from '@playarr/shared';
 import { Minus, Plus, X } from 'lucide-react';
 import { motion, useDragControls } from 'motion/react';
@@ -236,12 +236,23 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
         {map && map.bpm > 0 ? (
           <>
             <Row label="Tempo" value={`${n2(map.bpm)} BPM · ${Math.round(60_000 / map.bpm)} ms a beat`} />
-            <Row label="Beat" value={`${pct(map.beatConfidence)} sure · ${map.gridStable ? 'steady' : 'wandering'} · ${map.beatsFrom === 'onsets' ? 'onsets' : 'beat model'}`} />
+            <Row
+              label="Beat"
+              value={[
+                `${pct(map.beatConfidence)} sure`,
+                map.gridStable ? 'steady' : 'wandering',
+                map.edgesStable !== undefined ? (map.edgesStable ? 'holds where mixed' : 'drifts where mixed') : undefined,
+                map.beatsFrom === 'onsets' ? 'onsets' : 'beat model',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            />
             <Row label="Bars" value={`${pct(map.downbeatConfidence ?? 1)} sure · first beat ${at(map.firstBeat)} +${map.downbeatOffset}`} />
             <Row
               label="Now"
               value={grid ? `bar ${grid.bar}.${grid.beat} · phrase ${grid.phrase} (bar ${grid.barOfPhrase}/4)` : time < map.firstBeat ? 'before the first beat' : 'pickup'}
             />
+            <Row label="Drift" value={map.phraseDrift && driftOf(map.phraseDrift, grid)} />
           </>
         ) : (
           <Row label="Tempo" value={map ? 'no steady beat' : 'not analysed yet'} />
@@ -291,6 +302,15 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
       )}
     </div>
   );
+}
+
+/** "+34 ms, drifts · 12 of 58 phrases drift": the phrase playing's, and the song's. */
+function driftOf(drift: (number | null)[], grid: GridPosition | null): string {
+  const drifting = drift.filter((d) => d !== null && Math.abs(d) > DRIFT_LIMIT_MS).length;
+  const d = grid ? drift[grid.phrase - 1] : undefined;
+  const now =
+    d === undefined ? undefined : d === null ? 'no beat to judge' : `${d > 0 ? '+' : d < 0 ? '−' : '±'}${Math.abs(d)} ms, ${Math.abs(d) > DRIFT_LIMIT_MS ? 'drifts' : 'holds'}`;
+  return [now, `${drifting} of ${drift.length} phrases drift`].filter(Boolean).join(' · ');
 }
 
 const READY_STATES = ['nothing', 'metadata', 'current data', 'future data', 'enough data'];

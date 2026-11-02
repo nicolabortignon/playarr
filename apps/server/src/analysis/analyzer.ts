@@ -288,12 +288,13 @@ export class Analyzer {
   /**
    * What blending needs from the current mix maps (tempo, how sure and steady the beat is, key), for every song a
    * mix might hold: SQLite picks the fields out, so the rest of each map (beat grid, phrase energy) is
-   * never parsed.
+   * never parsed. Steady means where the song is mixed (edgesStable), for maps that know it; older ones
+   * only know whether it holds over the whole song.
    */
   mixSummaries(ids: string[]): Map<string, MixMapSummary> {
     const rows = this.select<{ recording_id: string; bpm: number; beat_confidence: number; grid_stable: number | null; key: string | null }>(
       `SELECT recording_id, json_extract(data, '$.bpm') AS bpm, json_extract(data, '$.beatConfidence') AS beat_confidence,
-         json_extract(data, '$.gridStable') AS grid_stable, json_extract(data, '$.key') AS key
+         COALESCE(json_extract(data, '$.edgesStable'), json_extract(data, '$.gridStable')) AS grid_stable, json_extract(data, '$.key') AS key
        FROM mix_maps WHERE version >= ? AND data IS NOT NULL AND recording_id IN`,
       ids,
       [OLDEST_USABLE_MIX_MAP],

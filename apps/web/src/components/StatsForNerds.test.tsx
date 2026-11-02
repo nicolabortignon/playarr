@@ -48,6 +48,9 @@ const MAP: MixMap = {
   soundEnd: 239,
   beatsFrom: 'model',
   phraseEnergy: Array.from({ length: 29 }, (_, k) => 0.3 + (k % 5) / 10),
+  // Phrase 5 (where the song is at 34.6 s) strays; so do two others.
+  phraseDrift: Array.from({ length: 30 }, (_, k) => (k === 4 ? 34 : k === 9 ? -60 : k === 20 ? null : k === 25 ? 30 : 3)),
+  edgesStable: true,
 };
 
 const plan: TransitionPlan = {
@@ -143,6 +146,8 @@ describe('Stats for nerds', () => {
     await expectRow('Tempo', '120.00 BPM · 500 ms a beat');
     await expectRow('Key', '8A · A minor · 80% sure');
     await expectRow('Now', 'bar 17.4 · phrase 5 (bar 1/4)');
+    await expectRow('Beat', '90% sure · steady · holds where mixed · beat model');
+    await expectRow('Drift', '+34 ms, drifts · 3 of 30 phrases drift');
     await expectRow('Section', 'main, past the drop');
     await expectRow('Intro', 'to 0:17.0 · eases in');
     await expectRow('Outro', 'from 3:20.0 · cold end');

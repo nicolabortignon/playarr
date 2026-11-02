@@ -1,5 +1,5 @@
 /** Bump when the mix map changes, so stored maps are measured again. */
-export const MIX_MAP_VERSION = 5;
+export const MIX_MAP_VERSION = 6;
 
 /** Camelot wheel position: 1–12 and A (minor) or B (major), e.g. "8A". */
 export type Camelot = `${number}${'A' | 'B'}`;
@@ -59,6 +59,19 @@ export interface MixMap {
    * phrase start. Long songs: the first 7 minutes only.
    */
   phraseEnergy: number[];
+  /**
+   * How far the beat strays in each 16-beat phrase (same phrase lines as phraseEnergy, but over the
+   * whole song), in ms: the median offset of the beat model's beats in the phrase from the grid, less
+   * the song's (so a beat sitting a little off the grid all through counts as steady). Null: too few
+   * beats to tell (a breakdown without one), or a long song's middle, which isn't analysed. Read with
+   * beatHolds, which judges just the phrases a mix covers; from version 6, and only from the beat model.
+   */
+  phraseDrift?: (number | null)[];
+  /**
+   * The beat holds where the song is mixed: over the 64 beats before its intro ends and the 64 from its
+   * outro's start (see phraseDrift). What blend scores go by; from version 6, with phraseDrift.
+   */
+  edgesStable?: boolean;
 }
 
 /** Hand-set mix points that override the detected ones (Edit mix points). */

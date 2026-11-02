@@ -887,3 +887,86 @@ describe('planTransition: a skip', () => {
     for (let i = 0; i < 128; i++) expect(Math.abs(out.left[i]! - ea.left[aFrom + i]!)).toBeLessThan(3e-3);
   });
 });
+
+describe('a beat that drifts in places', () => {
+  /** The song with its beat drifting by `ms` in the phrases given (counted from its first downbeat), steady elsewhere. */
+  function drifting(s: Song, phrases: Record<number, number | null>): Song {
+    const count = Math.ceil((s.duration - firstDownbeatOf(s)) / (16 * beatOf(s)));
+    return { ...s, gridStable: false, phraseDrift: Array.from({ length: count }, (_, k) => (k in phrases ? phrases[k]! : 2)) };
+  }
+  /** The phrase (from the first downbeat) a time falls in. */
+  const phraseAt = (m: MixMap, t: number) => Math.floor(linesFromFirstDownbeat(m, t, 16) + 1e-6);
+  // Roomy songs, so party mode blends over 64 beats: 8-phrase intros and outros.
+  const roomy = { introBeats: 128, outroBeats: 128 };
+  const party = { mode: 'party' as const };
+
+  it('blends where both beats hold, though they wander elsewhere in the songs', () => {
+    const a = song(roomy);
+    const b = song(roomy);
+    const p = plan(drifting(a, { 6: 80, 7: -60, 8: 90 }), drifting(b, { 12: 70 }), party);
+    expect(p.style).toBe('long');
+    expect(p.beats).toBe(64);
+    expect(p.reason).toBe('Same tempo, keys compatible: 64-beat blend');
+  });
+
+  it('leaves later in the outro when its first phrase drifts', () => {
+    const a = song(roomy);
+    const out = phraseAt(a, a.outroStart);
+    const p = plan(drifting(a, { [out]: 60 }), song(roomy), party);
+    expect(p.style).toBe('long');
+    expect(p.beats).toBe(64);
+    expect(phraseAt(a, p.aStart)).toBe(out + 1);
+    expect(p.reason).toBe('Same tempo, keys compatible: 64-beat blend (later in the outro, where the beat holds)');
+  });
+
+  it('blends over fewer beats when the beat drifts further into the outro', () => {
+    const a = song(roomy);
+    const out = phraseAt(a, a.outroStart);
+    // Steady for the outro's first two phrases only.
+    const later = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [out + 2 + i, 50]));
+    const p = plan(drifting(a, later), song(roomy), party);
+    expect(p.style).toBe('long');
+    expect(p.beats).toBe(32);
+    expect(phraseAt(a, p.aStart)).toBe(out);
+    expect(p.reason).toBe('Same tempo, keys compatible: 32-beat blend (the beat drifts over a longer one)');
+  });
+
+  it('says which song’s beat drifts when no blend holds', () => {
+    const a = song(roomy);
+    const b = song(roomy);
+    const allOf = (s: Song, value: number) => drifting(s, Object.fromEntries(Array.from({ length: 60 }, (_, k) => [k, value])));
+    expect(plan(song(roomy), allOf(b, 40), party).reason).toBe('B’s beat drifts in its intro: quick mix');
+    expect(plan(allOf(a, -40), song(roomy), party).reason).toBe('A’s beat drifts in its outro: quick mix');
+    expect(plan(allOf(a, 40), allOf(b, 40), party)).toMatchObject({ style: 'quick', reason: 'B’s beat drifts in its intro: quick mix' });
+  });
+
+  it('counts phrases without a beat to judge as holding, and drift within 25 ms as steady', () => {
+    const a = song(roomy);
+    const out = phraseAt(a, a.outroStart);
+    const p = plan(drifting(a, { [out]: null, [out + 1]: 25, [out + 2]: -20, [out + 3]: null }), song(roomy), party);
+    expect(p).toMatchObject({ style: 'long', beats: 64 });
+    expect(phraseAt(a, p.aStart)).toBe(out);
+  });
+
+  it('leaves from the outro’s first phrase line when the outro sits a hair past it', () => {
+    const a = song(roomy);
+    const out = phraseAt(a, a.outroStart);
+    const p = plan({ ...a, outroStart: a.outroStart + 0.0001 }, song(roomy), party);
+    expect(phraseAt(a, p.aStart)).toBe(out);
+    expect(onPhrase(a, p.aStart)).toBe(true);
+  });
+
+  it('goes by the whole song for maps from before phrase drift', () => {
+    const p = plan(song({ ...roomy, gridStable: false }), song(roomy), party);
+    expect(p).toMatchObject({ style: 'quick', reason: 'A’s beat drifts in its outro: quick mix' });
+  });
+
+  it('quick-mixes songs with unsure bars when the beats hold where they join', () => {
+    const a = song(roomy);
+    const unsure = { downbeatConfidence: 0.2 };
+    // A wanders in a breakdown, far from where it's left: the quick mix still lands on a steady beat.
+    expect(plan(drifting(a, { 5: 80 }), song({ ...roomy, ...unsure }))).toMatchObject({ style: 'quick', reason: 'B’s bar starts are unsure: quick mix' });
+    const out = phraseAt(a, a.outroStart);
+    expect(plan(drifting(a, { [out]: 80 }), song({ ...roomy, ...unsure })).style).toBe('fade');
+  });
+});

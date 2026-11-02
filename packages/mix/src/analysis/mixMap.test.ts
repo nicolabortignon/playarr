@@ -181,6 +181,43 @@ describe('analyzeMix', () => {
     expect(offBarGrid(map, later[0]!)).toBeLessThan(0.01);
   });
 
+  describe('the beat phrase by phrase', () => {
+    const bpm = 124;
+    const beat = 60 / bpm;
+    const track = song({ bpm, rate: RATE, introBeats: 32, bodyBeats: 256, outroBeats: 64 });
+    const seconds = track.truth.duration;
+    /** The map with the model hearing the beats from `from` to `to` (seconds) 80 ms late: a breakdown it can't follow. */
+    const drifting = (from: number, to: number) =>
+      analyzeMix(track.samples, null, seconds, RATE, {
+        head: beatModelAnswer(track.beats.map((t) => (t >= from && t < to ? t + 0.08 : t)), track.downbeats, seconds),
+      });
+    const phraseOf = (map: MixMap, t: number) => Math.floor((t - map.firstBeat - map.downbeatOffset * beat) / (16 * beat));
+
+    it('says how far the beat strays in each phrase, so a breakdown’s drift stays in the breakdown', () => {
+      // Phrases 6–11 of the song (from its first downbeat), well away from the intro and the outro.
+      const from = track.downbeats[0]! + 6 * 16 * beat;
+      const map = drifting(from - beat / 4, from + 96 * beat - beat / 4);
+      const k = phraseOf(map, from + beat);
+      expect(map.phraseDrift!.slice(k, k + 6).every((d) => d !== null && Math.abs(d - 80) <= 5), JSON.stringify(map.phraseDrift)).toBe(true);
+      expect(map.phraseDrift!.filter((_, i) => i < k || i >= k + 6).every((d) => d === null || Math.abs(d) <= 5)).toBe(true);
+      // The song as a whole wanders; where it's mixed, it holds.
+      expect(map.gridStable).toBe(false);
+      expect(map.edgesStable).toBe(true);
+    });
+
+    it('says when the beat strays where the song is mixed', () => {
+      const map = drifting(track.truth.outroStart - beat / 4, seconds);
+      expect(map.edgesStable).toBe(false);
+      expect(map.phraseDrift![phraseOf(map, track.truth.outroStart + beat)]).toBeGreaterThan(70);
+    });
+
+    it('has no phrase drift without the beat model', () => {
+      const map = analyzeMix(track.samples, null, seconds, RATE);
+      expect(map.phraseDrift).toBeUndefined();
+      expect(map.edgesStable).toBeUndefined();
+    });
+  });
+
   it('checks a long song’s tail on the beat model’s beats there', () => {
     const { samples, truth, beats, downbeats } = long;
     const tailStart = truth.duration - MIX_TAIL_SECONDS;

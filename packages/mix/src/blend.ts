@@ -22,7 +22,7 @@ const TEMPO_HALVING_GAP = 0.03;
 const FARTHEST_TEMPO = 0.1;
 /** A beat is fully trusted from this confidence; between the planner's threshold and here, partly. */
 const SURE_BEAT_CONFIDENCE = 0.6;
-/** A tempo that wanders through the song may not hold where the blend is: trusted this much. */
+/** A beat that wanders where the songs are mixed (gridStable false: see the summaries) may not hold in the blend: trusted this much. */
 const WANDERING_TEMPO_TRUST = 0.5;
 /** Keys two steps apart on the wheel are bearable; further apart they clash. */
 const TWO_STEPS_KEY = 0.8;
