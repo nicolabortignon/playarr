@@ -178,11 +178,17 @@ describe('Stats for nerds', () => {
     await expectRow('Genres', 'trip hop');
   });
 
-  it('shows how close the last changeover between files came', async () => {
-    useJoins.setState({ last: { join: 'into the next song', gapMs: 0.42, tookMs: 183.4 } });
+  it('shows how close the last changeovers into and out of a mix came, and why one wasn’t measured on the sound', async () => {
+    useJoins.setState({
+      byJoin: {
+        'into the transition': { join: 'into the transition', gapMs: 0.004, tookMs: 640.2, heard: true },
+        'into the next song': { join: 'into the next song', gapMs: 1.24, tookMs: 903, fellBack: 'no match in the sound' },
+      },
+    });
     view();
-    await expectRow('Last join', 'into the next song · in step to 0.4 ms, after 183 ms');
-    useJoins.setState({ last: null });
+    await expectRow('Mix in', 'in step to 0.00 ms on the sound, after 640 ms');
+    await expectRow('Mix out', 'in step to 1.2 ms by the players’ times (no match in the sound), after 903 ms');
+    useJoins.setState({ last: null, byJoin: {} });
   });
 
   it('shows the next transition', async () => {

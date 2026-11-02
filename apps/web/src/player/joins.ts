@@ -13,8 +13,11 @@ export interface JoinReport {
   tookMs: number;
   /** Measured on the sound as it comes out (desktop), rather than by the elements' reported times. */
   heard?: boolean;
+  /** Why it was lined up by the elements' times after all, where it could have been measured on the sound. */
+  fellBack?: string;
 }
 
-export const useJoins = create<{ last: JoinReport | null }>()(() => ({ last: null }));
+/** The last changeover, and the last of each kind (into the transition, into the next song). */
+export const useJoins = create<{ last: JoinReport | null; byJoin: Record<string, JoinReport> }>()(() => ({ last: null, byJoin: {} }));
 
-export const reportJoin = (report: JoinReport) => useJoins.setState({ last: report });
+export const reportJoin = (report: JoinReport) => useJoins.setState((s) => ({ last: report, byJoin: { ...s.byJoin, [report.join]: report } }));

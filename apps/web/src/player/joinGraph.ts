@@ -10,7 +10,7 @@
 const CAPTURE_FRAMES = 8192;
 /** The script processor's block: the capture is whole blocks of both outputs, recorded together. */
 const BLOCK_FRAMES = 4096;
-/** How far apart the two may be and still be found: well over a changeover's coarse step (see AHEAD_S). */
+/** How far apart the two may be and still be found, unless asked otherwise. */
 const MAX_LAG_S = 0.06;
 /** Two copies of one sound correlate near 1; below this the match isn't trusted (silence, or not the same sound). */
 const MIN_CORRELATION = 0.9;
@@ -21,8 +21,8 @@ const GAIN_SMOOTHING_S = 0.005;
 /** The longest delay an element can be given (the coarse step aims for about AHEAD_S). */
 const MAX_DELAY_S = 1;
 /**
- * The new file is brought this far ahead of the old one by its reported time (coarse, a few ms either
- * way), so the measured gap is one a delay can take up: the one ahead can be held back, not pulled forward.
+ * A new file found behind the old one (a delay can't bring it forward), or far ahead, jumps to this far
+ * ahead of it, so the gap is one a delay can take up.
  */
 export const AHEAD_S = 0.02;
 
@@ -40,7 +40,8 @@ const PEAK_HALF_WIDTH = 8;
  * there's too little sound, no clear match, or more than one (a sound that repeats within the range).
  *
  * Correlated on each signal's sample-to-sample change rather than the signal: that weighs the highs
- * (hats, attacks, the grain of the sound) over a bass line, whose cycles all look alike.
+ * (hats, attacks, the grain of the sound) over a bass line, whose cycles all look alike. Every lag at
+ * once, by FFT, so a wide range costs little.
  */
 export function measureLag(lead: Float32Array, follower: Float32Array, maxLag: number): { lag: number; correlation: number } | null {
   const n = Math.min(lead.length, follower.length);
@@ -52,18 +53,30 @@ export function measureLag(lead: Float32Array, follower: Float32Array, maxLag: n
   const from = maxLag;
   let followerEnergy = 0;
   for (let i = from; i < from + window; i++) followerEnergy += df[i]! * df[i]!;
-  let leadEnergy = 0;
-  for (let i = from - maxLag; i < from - maxLag + window; i++) leadEnergy += dl[i]! * dl[i]!;
   if (Math.sqrt(followerEnergy / window) < MIN_RMS || rms(lead, 0, n) < MIN_RMS) return null;
-  const scores = new Float32Array(2 * maxLag + 1);
+  // cross[k] = Σ dl[i + k]·df[from + i]: the lead's transform times the conjugate of the stretch's.
+  const size = 2 ** Math.ceil(Math.log2(n + window));
+  const [lr, li] = [new Float64Array(size), new Float64Array(size)];
+  const [fr, fi] = [new Float64Array(size), new Float64Array(size)];
+  lr.set(dl);
+  for (let i = 0; i < window; i++) fr[i] = df[from + i]!;
+  fft(lr, li, false);
+  fft(fr, fi, false);
+  for (let k = 0; k < size; k++) {
+    const re = lr[k]! * fr[k]! + li[k]! * fi[k]!;
+    const im = li[k]! * fr[k]! - lr[k]! * fi[k]!;
+    lr[k] = re;
+    li[k] = im;
+  }
+  fft(lr, li, true);
+  // The lead's energy under the stretch at each lag, from running sums.
+  const sums = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) sums[i + 1] = sums[i]! + dl[i]! * dl[i]!;
+  const scores = new Float64Array(2 * maxLag + 1);
   for (let lag = -maxLag; lag <= maxLag; lag++) {
-    let cross = 0;
-    for (let i = from; i < from + window; i++) cross += dl[i + lag]! * df[i]!;
-    scores[lag + maxLag] = leadEnergy > 0 && followerEnergy > 0 ? cross / Math.sqrt(leadEnergy * followerEnergy) : 0;
-    // The lead's energy for the next lag: one sample in at the end, one out at the start.
-    const enter = dl[from + window + lag]!;
-    const leave = dl[from + lag]!;
-    leadEnergy += enter * enter - leave * leave;
+    const start = from + lag;
+    const energy = sums[start + window]! - sums[start]!;
+    scores[lag + maxLag] = energy > 0 ? lr[start]! / Math.sqrt(energy * followerEnergy) : 0;
   }
   let best = 0;
   for (let k = 1; k < scores.length; k++) if (scores[k]! > scores[best]!) best = k;
@@ -72,6 +85,39 @@ export function measureLag(lead: Float32Array, follower: Float32Array, maxLag: n
   const correlation = scores[best]!;
   if (correlation < MIN_CORRELATION || correlation - rival < MIN_MARGIN) return null;
   return { lag: best - maxLag, correlation };
+}
+
+/** In-place radix-2 FFT of (re, im), whose length is a power of two; `inverse` scales by 1/n. */
+function fft(re: Float64Array, im: Float64Array, inverse: boolean) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      [re[i], re[j]] = [re[j]!, re[i]!];
+      [im[i], im[j]] = [im[j]!, im[i]!];
+    }
+  }
+  for (let length = 2; length <= n; length <<= 1) {
+    const angle = ((inverse ? 2 : -2) * Math.PI) / length;
+    const [wr, wi] = [Math.cos(angle), Math.sin(angle)];
+    for (let i = 0; i < n; i += length) {
+      let [cr, ci] = [1, 0];
+      for (let k = 0; k < length / 2; k++) {
+        const a = i + k;
+        const b = a + length / 2;
+        const tr = re[b]! * cr - im[b]! * ci;
+        const ti = re[b]! * ci + im[b]! * cr;
+        re[b] = re[a]! - tr;
+        im[b] = im[a]! - ti;
+        re[a] = re[a]! + tr;
+        im[a] = im[a]! + ti;
+        [cr, ci] = [cr * wr - ci * wi, cr * wi + ci * wr];
+      }
+    }
+  }
+  if (inverse) for (let i = 0; i < n; i++) (re[i] = re[i]! / n), (im[i] = im[i]! / n);
 }
 
 /** Each sample's change from the one before (the first, from silence). */
@@ -158,7 +204,7 @@ export class JoinGraph {
    * How far `follower` is ahead of `lead` as they come out (s, after their delays), and how well the two
    * match; null when they couldn't be compared (too quiet, not the same sound, or no way to record).
    */
-  async lag(lead: HTMLMediaElement, follower: HTMLMediaElement): Promise<number | null> {
+  async lag(lead: HTMLMediaElement, follower: HTMLMediaElement, maxLagS = MAX_LAG_S): Promise<number | null> {
     const leadRoute = this.routes.get(lead);
     const followerRoute = this.routes.get(follower);
     if (!leadRoute || !followerRoute || this.context.state !== 'running') return null;
@@ -169,7 +215,8 @@ export class JoinGraph {
     leadRoute.delay.connect(merger, 0, 0);
     followerRoute.delay.connect(merger, 0, 1);
     const recorder = context.createScriptProcessor(BLOCK_FRAMES, 2, 1);
-    const blocks = Math.ceil(CAPTURE_FRAMES / BLOCK_FRAMES) + 1;
+    const maxLag = Math.round(maxLagS * context.sampleRate);
+    const blocks = Math.ceil((CAPTURE_FRAMES + 2 * maxLag + 1) / BLOCK_FRAMES) + 1;
     const leadSound = new Float32Array(blocks * BLOCK_FRAMES);
     const followerSound = new Float32Array(blocks * BLOCK_FRAMES);
     try {
@@ -204,8 +251,32 @@ export class JoinGraph {
         }
       }
     }
-    const found = measureLag(leadSound, followerSound, Math.round(MAX_LAG_S * context.sampleRate));
+    const found = measureLag(leadSound, followerSound, maxLag);
     return found ? found.lag / context.sampleRate : null;
+  }
+
+  /**
+   * Resolves once the audio clock has moved on by `seconds`: by the audio itself, which a page in the
+   * background doesn't slow down the way it does its timers.
+   */
+  async after(seconds: number): Promise<void> {
+    const { context } = this;
+    const until = context.currentTime + seconds;
+    const ticker = context.createScriptProcessor(1024, 1, 1);
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(safety);
+        ticker.onaudioprocess = null;
+        ticker.disconnect();
+        resolve();
+      };
+      // Should the audio stop meanwhile (a suspended context), not forever.
+      const safety = setTimeout(done, seconds * 2000 + 1000);
+      ticker.onaudioprocess = () => {
+        if (context.currentTime >= until) done();
+      };
+      ticker.connect(context.destination);
+    });
   }
 
   /**

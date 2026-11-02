@@ -75,10 +75,21 @@ const CATCH_UP_S = 0.1;
 const IN_STEP_MAX_MS = 1500;
 /** A changeover in a transition's lead or tail is done this long before the shared sound runs out. */
 const IN_STEP_MARGIN_S = 0.3;
-/** Measured on the sound (see joinGraph.ts): how long a file takes to settle at its own speed after being steered, before it's measured. */
-const SETTLE_MS = 150;
-/** …and after its delay is set, before it's checked. */
-const DELAY_SETTLE_MS = 60;
+/** Measured on the sound (see joinGraph.ts): how often it looks whether the new file plays yet (s, audio clock)… */
+const WAIT_S = 0.03;
+/** …how long it lets it settle once it does, before measuring… */
+const SETTLE_S = 0.1;
+/** …and after it jumps (seeking restarts it), and after its delay is set, before checking. */
+const SEEK_SETTLE_S = 0.2;
+const DELAY_SETTLE_S = 0.06;
+/** How far apart the two are looked for at first (a file just started can be well off where it says it is)… */
+const WIDE_LAG_S = 0.3;
+/** …and when checking, once held back. */
+const NARROW_LAG_S = 0.01;
+/** A file further ahead than this jumps nearer rather than being held back so long (delays would build up join after join). */
+const LONGEST_HOLD_S = 0.15;
+/** Jumps tried before lining up by the elements' times instead. */
+const MEASURE_ATTEMPTS = 3;
 /** Off by more than this after the first correction (s, about a sample), it's corrected once more. */
 const RESIDUAL_S = 0.00003;
 /** The cross-fade between two files lined up on the sound: the same sound, so short and smooth does it. */
@@ -898,16 +909,16 @@ export function AudioEngine() {
     let lastTick = began;
     const gaps: number[] = [];
     const median = () => [...gaps].sort((x, y) => x - y)[gaps.length >> 1] ?? Infinity;
-    // On desktop, a join between copies of one sound is lined up on the sound itself (see joinGraph.ts):
-    // the follower is brought AHEAD_S ahead of what's heard of the lead by the elements' times, then
-    // measured as it comes out, and held back by exactly the gap.
+    // On desktop both play through the graph (see joinGraph.ts): a join between copies of one sound is
+    // lined up on the sound itself, as it comes out. By the elements' times, the follower aims for what's
+    // heard of the lead: its time plus the lead's own delay.
     const g = graph.current;
-    // Not in a page in the background, whose timers are slowed to a second or more: measuring would outlast the shared sound.
-    const onSound = !!join && !!g && g.routed(lead) && g.routed(follower) && !document.hidden;
-    const bias = onSound ? AHEAD_S + g.delayOf(lead) : 0;
-    if (onSound) g.setDelay(follower, 0);
+    const routed = !!g && g.routed(lead) && g.routed(follower);
+    const bias = routed ? g.delayOf(lead) : 0;
+    if (routed) g.setDelay(follower, 0);
+    let fellBack: string | undefined;
     let settled = false;
-    let measuring = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
     const stop = () => {
       clearInterval(timer);
       follower.playbackRate = 1;
@@ -922,62 +933,84 @@ export function AudioEngine() {
       startOverlap(o);
       done();
     };
-    /**
-     * By the elements' times: a follower brought ahead for measuring is held back by as much first (or by
-     * `held`, what the sound measured, when it was measured but not yet checked).
-     */
-    const finish = (held = AHEAD_S) => {
+    /** By the elements' times, the follower held back by `held` (what the sound measured, if it got that far). */
+    const finish = (held = 0) => {
       if (settled) return;
-      if (onSound) g.setDelay(follower, held);
+      if (routed) g.setDelay(follower, held);
       silenced.current.delete(follower);
-      takeOver({ out: lead, in: follower, startedAt: null, ...(ending ? { ending } : {}) }, { gapMs: gaps.length ? median() * 1000 : null });
+      takeOver(
+        { out: lead, in: follower, startedAt: null, ...(ending ? { ending } : {}) },
+        { gapMs: gaps.length ? median() * 1000 : null, ...(fellBack ? { fellBack } : {}) },
+      );
     };
-    const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    /** Measured on the sound, held back by the gap, checked (corrected once more if need be), then cross-faded on the audio clock. */
+    /** Lined up by the elements' times after all (see tick), saying why. */
+    const byTimes = (reason?: string) => {
+      if (settled) return;
+      fellBack = reason;
+      clearInterval(timer);
+      timer = setInterval(tick, IN_STEP_TICK_MS);
+      tick();
+    };
+    /**
+     * Measured on the sound and held back by exactly the gap, checked (and corrected once more if need be),
+     * then cross-faded on the audio clock. Waits go by the audio clock too: a page in the background slows
+     * its timers, not its audio. A follower behind the lead (a delay can't bring it forward), or far ahead
+     * (it would be held back a long way), jumps nearer and is measured again.
+     */
     const measure = async () => {
       if (!g) return;
-      measuring = true;
-      clearInterval(timer);
-      follower.playbackRate = 1;
-      // Each wait may run long (the page hidden meanwhile): past the shared sound, it takes over as it is.
-      const late = () => document.hidden || performance.now() - began > budgetMs;
-      await pause(SETTLE_MS);
-      if (settled) return;
-      if (late()) return finish();
-      const first = await g.lag(lead, follower);
-      if (settled) return;
-      if (first === null || first < 0) return finish();
-      if (late()) return finish(first);
-      g.setDelay(follower, first);
-      await pause(DELAY_SETTLE_MS);
-      if (settled) return;
-      let left = await g.lag(lead, follower);
-      if (settled) return;
-      if (left !== null && Math.abs(left) > RESIDUAL_S && first + left >= 0 && !late()) {
-        g.setDelay(follower, first + left);
-        await pause(DELAY_SETTLE_MS);
+      const late = () => performance.now() - began > budgetMs;
+      while (follower.paused || follower.currentTime <= startedFrom + 0.01 || !ready()) {
         if (settled) return;
-        left = await g.lag(lead, follower);
-        if (settled) return;
+        if (late()) return byTimes('the new file was slow to start');
+        await g.after(WAIT_S);
       }
-      const leadLevel = levelOf(lead);
-      silenced.current.delete(follower);
-      const followerLevel = levelOf(follower);
-      const until = g.crossfade(lead, follower, leadLevel.muted ? 0 : leadLevel.level, followerLevel.muted ? 0 : followerLevel.level, GRAPH_FADE_S);
-      takeOver({ out: lead, in: follower, startedAt: null, graphUntil: until, ...(ending ? { ending } : {}) }, { gapMs: left === null ? null : Math.abs(left) * 1000, heard: true });
+      await g.after(SETTLE_S);
+      for (let attempt = 0; attempt < MEASURE_ATTEMPTS; attempt++) {
+        if (settled) return;
+        if (late()) return byTimes('out of time');
+        const found = await g.lag(lead, follower, WIDE_LAG_S);
+        if (settled) return;
+        if (found === null) return byTimes('no match in the sound');
+        if (found < 0 || found > LONGEST_HOLD_S) {
+          follower.currentTime = Math.max(0, follower.currentTime - found + AHEAD_S);
+          await g.after(SEEK_SETTLE_S);
+          continue;
+        }
+        g.setDelay(follower, found);
+        await g.after(DELAY_SETTLE_S);
+        if (settled) return;
+        let left = await g.lag(lead, follower, NARROW_LAG_S);
+        if (settled) return;
+        if (left !== null && Math.abs(left) > RESIDUAL_S && found + left >= 0 && !late()) {
+          g.setDelay(follower, found + left);
+          await g.after(DELAY_SETTLE_S);
+          if (settled) return;
+          left = await g.lag(lead, follower, NARROW_LAG_S);
+          if (settled) return;
+        }
+        const leadLevel = levelOf(lead);
+        silenced.current.delete(follower);
+        const followerLevel = levelOf(follower);
+        const until = g.crossfade(lead, follower, leadLevel.muted ? 0 : leadLevel.level, followerLevel.muted ? 0 : followerLevel.level, GRAPH_FADE_S);
+        return takeOver(
+          { out: lead, in: follower, startedAt: null, graphUntil: until, ...(ending ? { ending } : {}) },
+          { gapMs: left === null ? null : Math.abs(left) * 1000, heard: true },
+        );
+      }
+      byTimes('it kept starting too far off');
     };
     const step = {
-      finish: () => finish(onSound ? g.delayOf(follower) || AHEAD_S : AHEAD_S),
+      finish: () => finish(routed ? g.delayOf(follower) : 0),
       cancel: () => {
         settled = true;
         stop();
-        if (onSound) g.release(follower);
+        if (routed) g.release(follower);
         silenced.current.delete(follower);
         applyVolumes();
       },
     };
     const tick = () => {
-      if (measuring) return;
       const now = performance.now();
       const slow = now - lastTick > SLOW_TICK_MS;
       lastTick = now;
@@ -993,18 +1026,16 @@ export function AudioEngine() {
       if (gaps.length > IN_STEP_GAPS) gaps.shift();
       const elapsed = now - began;
       // A changeover between copies of one sound (a `join`) asks for a millisecond, steadily; a cut, where
-      // the follower comes in on a beat of its own, for IN_STEP_S. Measured on the sound, the elements'
-      // times only need to bring the two close: the measure does the rest.
-      const close = join && !onSound ? IN_STEP_TIGHT_S + (IN_STEP_S - IN_STEP_TIGHT_S) * Math.min(1, elapsed / budgetMs) : IN_STEP_S;
+      // the follower comes in on a beat of its own, for IN_STEP_S.
+      const close = join ? IN_STEP_TIGHT_S + (IN_STEP_S - IN_STEP_TIGHT_S) * Math.min(1, elapsed / budgetMs) : IN_STEP_S;
       const steady = !join || (gaps.length === IN_STEP_GAPS && median() <= close);
       const inStepNow = Math.abs(gap) <= close && steady;
-      if (inStepNow && ready() && onSound) return void measure();
       if ((inStepNow && ready()) || slow || elapsed > budgetMs) return finish();
       follower.playbackRate = Math.min(2, Math.max(0.5, 1 + gap / CATCH_UP_S));
     };
     stepping.current = step;
-    const timer = setInterval(tick, IN_STEP_TICK_MS);
-    tick();
+    if (join && routed) void measure();
+    else byTimes();
   }
 
   /** The transition plays on: the clock and the history follow the song shown, and B starts on time. */

@@ -142,3 +142,11 @@ describe('measuring through a steady bass line', () => {
     expect(measureLag(tone(0), tone(500), 2880)).toBeNull();
   });
 });
+
+describe('a wide search', () => {
+  it('finds a follower a quarter of a second ahead or behind', () => {
+    for (const lag of [12_000, -9_000, 5]) {
+      expect(measureLag(sound(8192 + 2 * 14_400 + 1, 300_000), sound(8192 + 2 * 14_400 + 1, 300_000 + lag), 14_400), `lag ${lag}`).toMatchObject({ lag });
+    }
+  });
+});

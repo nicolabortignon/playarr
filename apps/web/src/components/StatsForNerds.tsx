@@ -198,7 +198,7 @@ function useSongTime(playing: boolean): number {
 function Details({ track, time, map, grid, level }: { track: Track; time: number; map?: MixMap & { cues?: CuePoints }; grid: GridPosition | null; level?: TrackLevel }) {
   const meta = useTrackMetadata(track.id).data;
   const clock = useClock(useShallow((s) => ({ duration: s.duration, buffered: s.buffered, loading: s.loading, error: s.error })));
-  const lastJoin = useJoins((s) => s.last);
+  const joins = useJoins((s) => s.byJoin);
   const queue = usePlayer(useShallow((s) => ({ queue: s.queue, order: s.order, pos: s.pos, repeat: s.repeat })));
   const { playing, mixMode } = usePlayer(useShallow((s) => ({ playing: s.playing, mixMode: s.mixMode })));
   const prefs = usePrefs(useShallow((s) => ({ transitions: s.transitions, crossfade: s.crossfade, levelVolume: s.levelVolume })));
@@ -231,7 +231,8 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
           label="Transitions"
           value={prefs.transitions === 'dj' ? `DJ mix · ${mixMode}` : prefs.transitions === 'crossfade' ? `crossfade ${crossfadeSeconds(prefs)} s` : 'gapless'}
         />
-        {lastJoin && <Row label="Last join" value={joinOf(lastJoin)} />}
+        {joins['into the transition'] && <Row label="Mix in" value={joinOf(joins['into the transition'])} />}
+        {joins['into the next song'] && <Row label="Mix out" value={joinOf(joins['into the next song'])} />}
         {clock.error && <Row label="Error" value={<span className="text-red-300/90">{clock.error}</span>} />}
       </Group>
 
@@ -491,10 +492,14 @@ function Row({ label, value }: { label: string; value: ReactNode | undefined }) 
   );
 }
 
-/** How close the last changeover between files came: "into the next song · in step to 0.02 ms on the sound, after 640 ms". */
-export function joinOf({ join, gapMs, tookMs, heard }: JoinReport): string {
-  const gap = gapMs === null ? 'not measured' : `in step to ${gapMs < 0.1 ? gapMs.toFixed(2) : gapMs < 10 ? gapMs.toFixed(1) : Math.round(gapMs)} ms${heard ? ' on the sound' : ''}`;
-  return `${join} · ${gap}, after ${Math.round(tookMs)} ms`;
+/**
+ * How close the last changeover of a kind came: "in step to 0.02 ms on the sound, after 640 ms", or by the
+ * players' times and why: "in step to 1.2 ms by the players' times (no match in the sound), after 900 ms".
+ */
+export function joinOf({ gapMs, tookMs, heard, fellBack }: JoinReport): string {
+  const ms = gapMs === null ? undefined : `${gapMs < 0.1 ? gapMs.toFixed(2) : gapMs < 10 ? gapMs.toFixed(1) : Math.round(gapMs)} ms`;
+  const how = heard ? 'on the sound' : `by the players’ times${fellBack ? ` (${fellBack})` : ''}`;
+  return `${ms ? `in step to ${ms}` : 'not measured'} ${how}, after ${Math.round(tookMs)} ms`;
 }
 
 /** How far the server has got making the transition: "43% · mixing", "waiting · 2 ahead". */

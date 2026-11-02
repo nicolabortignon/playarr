@@ -861,7 +861,8 @@ describe('AudioEngine', () => {
           setLevel: vi.fn(),
           delayOf: (el: HTMLMediaElement) => delays.get(el) ?? 0,
           setDelay: vi.fn((el: HTMLMediaElement, s: number) => delays.set(el, s)),
-          lag: vi.fn(async () => lags.shift() ?? null),
+          lag: vi.fn(async (_lead: HTMLMediaElement, _follower: HTMLMediaElement, _range?: number) => lags.shift() ?? null),
+          after: (seconds: number) => new Promise<void>((resolve) => setTimeout(resolve, seconds * 1000)),
           crossfade: vi.fn(() => 10.04),
           release: vi.fn(),
           delays,
@@ -880,65 +881,83 @@ describe('AudioEngine', () => {
         vi.unstubAllGlobals();
       });
 
-      it('measures how far apart the two files sound, holds the new one back by that, and cross-fades on the audio clock', async () => {
-        const g = fakeGraph([0.0213, 0.00001]);
+      /** Into a transition with a 2 s lead, through the graph, up to the transition file playing (silenced) in step with A by their times. */
+      async function intoLead() {
         transitionReady(1, 2, { tail: 3, lead: 2 });
-        const [a, , bridge] = await start([song(1), song(2)]);
+        const [a, b, bridge] = await start([song(1), song(2)]);
         document.dispatchEvent(new Event('pointerdown')); // the first click: the elements go through the graph
-        expect(g.routed(a) && g.routed(bridge)).toBe(true);
-        expect(a.volume).toBe(1); // the level is the graph's
         await at(a, 145);
         await at(a, 167.99);
         await wait(20);
         expect(fake(bridge).paused).toBe(false);
-        // Brought 20 ms ahead of A by the elements' times, then measured on the sound.
-        fake(bridge).time = 0.52;
+        fake(bridge).time = 0.5;
         await at(a, 168.5);
-        await wait(12);
+        return [a, b, bridge] as const;
+      }
+
+      it('measures how far apart the two files sound, holds the new one back by that, and cross-fades on the audio clock', async () => {
+        const g = fakeGraph([0.0213, 0.00001]);
+        const [a, , bridge] = await intoLead();
+        expect(g.routed(a) && g.routed(bridge)).toBe(true);
+        expect(a.volume).toBe(1); // the level is the graph's
         await wait(400);
         expect(g.setDelay.mock.calls).toEqual([
           [bridge, 0],
           [bridge, 0.0213],
         ]);
+        // Looked for widely first, then checked closely.
+        expect(g.lag.mock.calls.map((c) => (c as unknown[])[2])).toEqual([0.3, 0.01]);
         expect(g.crossfade).toHaveBeenCalledWith(a, bridge, 1, 1, 0.02);
-        expect(useJoins.getState().last).toMatchObject({ join: 'into the transition', heard: true });
+        expect(useJoins.getState().byJoin['into the transition']).toMatchObject({ heard: true });
         expect(useJoins.getState().last!.gapMs).toBeCloseTo(0.01, 6);
         // A has stopped, the cross-fade over (by the audio clock: 40 ms from when it was asked).
         expect(fake(a).paused).toBe(true);
       });
 
-      it('corrects once more when the check finds it still off, and falls back to the elements’ times when the sound can’t be measured', async () => {
+      it('corrects once more when the check finds it still off', async () => {
         const g = fakeGraph([0.03, 0.0004, 0]);
-        transitionReady(1, 2, { tail: 3, lead: 2 });
-        const [a, , bridge] = await start([song(1), song(2)]);
-        document.dispatchEvent(new Event('pointerdown'));
-        await at(a, 145);
-        await at(a, 167.99);
-        await wait(20);
-        fake(bridge).time = 0.52;
-        await at(a, 168.5);
+        await intoLead();
         await wait(600);
         expect(g.setDelay.mock.calls.map(([, s]) => s)).toEqual([0, 0.03, 0.0304]);
         expect(useJoins.getState().last).toMatchObject({ gapMs: 0, heard: true });
+      });
 
-        // Nothing to measure by (silence, say): held back by the 20 ms it was brought ahead, cross-faded as before.
-        cleanup();
-        const silent = fakeGraph([null]);
-        transitionReady(1, 2, { tail: 3, lead: 2 });
-        const [a2, , bridge2] = await start([song(1), song(2)]);
-        document.dispatchEvent(new Event('pointerdown'));
-        await at(a2, 145);
-        await at(a2, 167.99);
-        await wait(20);
-        fake(bridge2).time = 0.52;
-        await at(a2, 168.5);
+      it('jumps a new file that started behind ahead of the old one, then measures again', async () => {
+        const g = fakeGraph([-0.05, 0.02, 0.00001]);
+        const [, , bridge] = await intoLead();
+        await wait(800);
+        expect(fake(bridge).time).toBeCloseTo(0.5 + 0.05 + 0.02, 9);
+        expect(g.setDelay.mock.calls.map(([, s]) => s)).toEqual([0, 0.02]);
+        expect(useJoins.getState().last).toMatchObject({ heard: true });
+      });
+
+      it('lines up the change to the next song’s own file on the sound too, in the transition’s tail', async () => {
+        const g = fakeGraph([0.02, 0, 0.04, 0]);
+        const [, b, bridge] = await intoLead();
+        await wait(400); // into the transition, measured
+        await at(bridge, 14.1); // past the switch (12 s into the transition, its file 2 s ahead)
+        expect(now()).toBe(2);
+        await at(bridge, 25.99); // the transition's end: B's own file starts, silenced, in the tail
+        expect(fake(b).paused).toBe(false);
+        fake(b).time = 32.4;
+        await at(bridge, 26.4);
         await wait(400);
-        expect(silent.setDelay.mock.calls.map(([, s]) => s)).toEqual([0, 0.02]);
-        expect(silent.crossfade).not.toHaveBeenCalled();
-        expect(useJoins.getState().last).toMatchObject({ join: 'into the transition' });
-        expect(useJoins.getState().last!.heard).toBeUndefined();
+        expect(g.setDelay.mock.calls.filter(([el]) => el === b).map(([, s]) => s)).toEqual([0, 0.04]);
+        expect(g.crossfade).toHaveBeenLastCalledWith(bridge, b, 1, 1, 0.02);
+        expect(useJoins.getState().byJoin['into the next song']).toMatchObject({ heard: true, gapMs: 0 });
+        expect(fake(bridge).paused).toBe(true);
+      });
+
+      it('lines up by the players’ times when the sound can’t be measured, and says why', async () => {
+        const g = fakeGraph([null]);
+        const [a] = await intoLead();
+        await wait(400);
         await overlap();
-        expect(fake(a2).paused).toBe(true);
+        expect(g.crossfade).not.toHaveBeenCalled();
+        expect(g.setDelay.mock.calls.map(([, s]) => s)).toEqual([0, 0]);
+        expect(useJoins.getState().byJoin['into the transition']).toMatchObject({ fellBack: 'no match in the sound' });
+        expect(useJoins.getState().last!.heard).toBeUndefined();
+        expect(fake(a).paused).toBe(true);
       });
     });
 
