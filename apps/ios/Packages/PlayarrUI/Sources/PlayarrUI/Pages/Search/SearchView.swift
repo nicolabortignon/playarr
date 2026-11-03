@@ -28,6 +28,11 @@ struct SearchView: View {
     .searchable(text: $model.text, prompt: "Artists, albums, tracks")
     .overlay(alignment: .top) { if model.isSearching { ProgressView().padding(.top, 4) } }
     .task { await model.loadSuggestions() }
+    .onChange(of: session.router.searchQuery, initial: true) { _, query in
+      guard let query else { return }
+      model.text = query
+      session.router.searchQuery = nil
+    }
     .task(id: model.text) {
       // A moment between keystrokes: typing doesn't ask for every letter.
       try? await Task.sleep(for: .milliseconds(250))

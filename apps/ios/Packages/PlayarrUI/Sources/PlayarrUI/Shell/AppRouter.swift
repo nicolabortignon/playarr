@@ -8,6 +8,8 @@ public final class AppRouter {
   public var paths: [AppTab: [Route]] = [:]
   public var nowPlaying = false
   public var lyrics = false
+  /// A query for Search to take (`search(_:)`); Search clears it once it has.
+  public var searchQuery: String?
 
   public init() {}
 
@@ -38,6 +40,14 @@ public final class AppRouter {
   public func go(_ route: Route) {
     nowPlaying = false
     open(route)
+  }
+
+  /// Search for `query` (Find artist's "Search for … instead", Requests' "Search"): the Search tab, at its first page.
+  public func search(_ query: String) {
+    nowPlaying = false
+    tab = .search
+    paths[.search] = []
+    searchQuery = query
   }
 
   /// Now Playing → Open queue.

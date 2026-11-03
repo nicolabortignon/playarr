@@ -45,4 +45,14 @@ import Testing
     #expect(router.tab == .queue)
     #expect(!router.nowPlaying)
   }
+
+  @Test func searchesFromAnywhere() {
+    let router = AppRouter()
+    router.open(.findArtist(name: "Ayr", album: nil))
+    router.paths[.search] = [.requests]
+    router.search("Ayr")
+    #expect(router.tab == .search)
+    #expect(router.paths[.search] == [])
+    #expect(router.searchQuery == "Ayr")
+  }
 }

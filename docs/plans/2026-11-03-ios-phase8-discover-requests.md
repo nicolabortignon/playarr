@@ -3500,6 +3500,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** no `DiscoverDestinationView.swift` and no `.discoverDestinations()`: `RouteDestination` shows `DiscoverArtistPage`, `FindArtistPage` and `RequestsPage` for the three new `Route` cases, and Find artist shows the page it found in place through `RouteDestination`. "Search for … instead" and Requests' "Search" call the new `AppRouter.search(_:)` (the Search tab at its first page; `SearchView` takes `router.searchQuery` into its field), tested in `RouterTests`. Phase 4's `SectionHeader`, `Shelf`, `Kicker`, `Skeleton`, `Cover` and `inlineTitle()` for the layout.
+
 ---
 
 ### Task 13: Show metadata's wording
