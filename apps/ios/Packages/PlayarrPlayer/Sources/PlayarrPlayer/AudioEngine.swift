@@ -1,5 +1,6 @@
 import AVFoundation
 import AudioToolbox
+import PlayarrAPI
 
 /// The audio engine: AVAudioEngine with two decks taking turns and a third player node for transition files, each
 /// through its own mixer into a bus, an EQ (flat for now) and a peak limiter, then out.
@@ -33,9 +34,26 @@ public final class AudioEngine {
     public init() {}
   }
 
+  /// A mix placed on the timeline, from where it starts until the next song plays on its own.
+  public struct MixInProgress: Sendable, Equatable {
+    /// The item mixed into.
+    public let to: UUID
+    public let plan: TransitionPlan
+    public let way: MixReport.Way
+    /// Timeline samples: transition time 0 (the plan's `aStart`), the switch to the next song, the end.
+    public let start: SampleTime
+    public let switchSample: SampleTime
+    public let end: SampleTime
+  }
+
   public private(set) var state: EngineState = .idle
   public var onEvent: ((EngineEvent) -> Void)?
-  public let tuning: Tuning
+  /// Changeable while playing: DJ mix keeps less scheduled ahead, so a mix can be placed a few seconds ahead.
+  public var tuning: Tuning
+  /// The mix playing (or placed and about to), if any.
+  public private(set) var mix: MixInProgress?
+  /// The last mix's changeovers, for Stats for nerds.
+  public private(set) var mixReports: [MixReport.Kind: MixReport] = [:]
 
   let engine = AVAudioEngine()
   let decks: [Deck]
@@ -60,6 +78,8 @@ public final class AudioEngine {
   private var pumpAgain = false
   private var events: [EngineEvent] = []
   private var configurationWatch: Task<Void, Never>?
+  /// The deck and segment whose first scheduled block each report's headroom is read from.
+  private var reportSources: [MixReport.Kind: (deck: Deck, id: UUID)] = [:]
 
   /// `makeSource` opens a song's audio from a frame (44.1 kHz) on. `manualRendering` renders offline, for tests.
   public init(tuning: Tuning = Tuning(), manualRendering: Bool = false, makeSource: @escaping @MainActor (EngineItem, Int64) -> any PCMSource) throws {
@@ -118,11 +138,19 @@ public final class AudioEngine {
   /// reloaded where it is (a new epoch), so its end is as it should be for the new one.
   public func setUpcoming(_ item: EngineItem?, join: Join = .crossfade(seconds: 0)) {
     let placed = upcomingDeck?.segment?.timelineStart != nil
-    if let item, item.id == upcoming?.item.id {
+    if let item, let old = upcoming, item.id == old.item.id {
       guard !placed else { return }
       upcoming = (item, join)
       items[item.id] = item
-      upcomingDeck?.setGain(item.gainDb)
+      let opening = sourcePlan(item, join)
+      if opening != sourcePlan(old.item, old.join) {
+        // Its audio has to come from elsewhere now (another frame, the server's rest, resampled): opened again.
+        upcomingDeck?.release()
+        upcomingDeck = nil
+      } else {
+        upcomingDeck?.setGain(opening.gainDb)
+      }
+      pump()
       return
     }
     upcomingDeck?.release()
@@ -189,8 +217,17 @@ public final class AudioEngine {
 
   public var currentItem: EngineItem? { current?.segment.flatMap { items[$0.id] } }
 
+  /// The next item is placed on the timeline: changing it now means a new epoch.
+  public var upcomingPlaced: Bool { upcomingDeck?.segment?.timelineStart != nil }
+
   /// Seconds into the current item.
   public var position: Double {
+    let now = self.now
+    if let m = mix, let id = current?.segment?.id, now < m.end {
+      // In a mix the listener sees A until the switch, then B (on B's clock, at its rate).
+      let t = EngineFormat.seconds(now - m.start)
+      return id == m.to ? MixSequence.bTimeAt(m.plan, t) : m.plan.aStart + t
+    }
     guard let s = current?.segment, let start = s.timelineStart else { return currentItem?.startAt ?? 0 }
     let played = min(max(0, now - start), s.finished ? s.decoded : .max)
     return EngineFormat.seconds(s.firstFrame + played)
@@ -254,21 +291,25 @@ public final class AudioEngine {
     startWhenReady(now: now)
     watchBuffer(now: now)
     reportEnd(now: now)
+    refreshReports()
   }
 
   private func prepareUpcoming() {
-    guard let (item, _) = upcoming, upcomingDeck == nil, let cur = current, let s = cur.segment, let curItem = items[s.id],
+    guard let (item, join) = upcoming, upcomingDeck == nil, let cur = current, let s = cur.segment, let curItem = items[s.id],
       let deck = decks.first(where: { $0 !== cur && $0.segment == nil })
     else { return }
-    let remaining = curItem.track.duration - position
+    // A DJ join begins before A's end: the next song is made ready that long before it begins.
+    let remaining = (join.leaveTime ?? curItem.track.duration) - position
     guard remaining <= tuning.preload || s.finished else { return }
-    open(item, on: deck)
+    open(item, on: deck, join: join)
     upcomingDeck = deck
   }
 
   private func placeUpcoming(now: SampleTime) {
+    guard let join = upcoming?.join else { return }
+    guard case .crossfade(let seconds) = join else { return placeMix(join, now: now) }
     guard let next = upcomingDeck, next.segment?.timelineStart == nil, let cur = current?.segment, let end = cur.end,
-      let scheduledEnd = cur.scheduledEnd, case .crossfade(let seconds)? = upcoming?.join
+      let scheduledEnd = cur.scheduledEnd
     else { return }
     let soonest = now + EngineFormat.frames(tuning.startMargin)
     // A fade can't reach back into what's already scheduled, nor start before the soonest moment.
@@ -284,8 +325,98 @@ public final class AudioEngine {
     pumpAgain = true
   }
 
+  /// Places a DJ join, as late as it can still be: once its start is within what's scheduled ahead (plus a block), so
+  /// until then the join can change without a new epoch. If the next song isn't decoded by then, A's scheduling is
+  /// held at the join's start while it gets ready, up to just before A would run short; then the join is missed.
+  private func placeMix(_ join: Join, now: SampleTime) {
+    guard let next = upcomingDeck, let b = next.segment, b.timelineStart == nil, let cur = current, let a = cur.segment,
+      let aStart = a.timelineStart, let item = upcoming?.item, let leave = join.leaveTime
+    else { return }
+    let sampleOfA = { (seconds: Double) in aStart + EngineFormat.frames(seconds) - a.firstFrame }
+    var at = sampleOfA(leave)
+    if case .transition(let t) = join { at += t.leadFrames / 2 }
+    guard at <= now + EngineFormat.frames(tuning.scheduleAhead + tuning.block) else { return }
+    let soonest = now + EngineFormat.frames(tuning.startMargin)
+    let scheduledEnd = a.scheduledEnd ?? aStart
+    let bReady: Bool = if case .transition = join { true } else { b.finished || b.decoded > 0 }
+    if !bReady {
+      guard at - now > EngineFormat.frames(tuning.lowWater + tuning.startMargin + 0.1), scheduledEnd <= at else { return missed(item) }
+      return cur.hold(at: at)
+    }
+    let songs = "\(items[a.id]?.track.title ?? "?") → \(item.track.title)"
+    switch join {
+    case .crossfade:
+      return
+    case .cut(let c):
+      guard at >= max(soonest, scheduledEnd) else { return missed(item) }
+      cur.end(at: at)
+      next.place(at: at)
+      report(.mixIn, MixReport(kind: .mixIn, way: .cut, songs: songs, sample: at, songTime: c.aEnd), from: next)
+      mixReports[.mixOut] = nil
+    case .mix(let plan):
+      guard at >= max(soonest, scheduledEnd) else { return missed(item) }
+      let silent = at + EngineFormat.frames(plan.aGain.silentFrom(limit: plan.length))
+      cur.setAutomation(.a(plan, start: at))
+      cur.end(at: silent)
+      next.setAutomation(.b(plan, start: at))
+      next.place(at: at)
+      mix = MixInProgress(
+        to: item.id, plan: plan, way: .live, start: at, switchSample: at + EngineFormat.frames(plan.switchAt),
+        end: at + EngineFormat.frames(plan.length))
+      report(.mixIn, MixReport(kind: .mixIn, way: .live, songs: songs, sample: at, songTime: plan.aStart), from: next)
+      report(.mixOut, MixReport(kind: .mixOut, way: .live, songs: songs, sample: silent, songTime: plan.aStart + plan.aGain.silentFrom(limit: plan.length)), from: next)
+    case .transition(let t):
+      let t0 = sampleOfA(t.plan.aStart) - t.leadFrames
+      // Anywhere in the lead the two files hold the same sound: the middle, or as soon after it as can still be.
+      let cut = max(at, scheduledEnd, soonest)
+      guard cut <= t0 + t.leadFrames, transitionDeck.segment == nil else { return missed(item) }
+      let bAt = t0 + t.leadFrames + t.lengthFrames
+      let id = UUID()
+      cur.end(at: cut)
+      transitionDeck.load(
+        id: id, source: TransitionFileSource(t, from: cut - t0, to: t.leadFrames + t.lengthFrames), firstFrame: 0, expectedFrames: .max,
+        holdback: 0, envelope: GainEnvelope())
+      transitionDeck.place(at: cut)
+      next.place(at: bAt)
+      mix = MixInProgress(
+        to: item.id, plan: t.plan, way: .server, start: t0 + t.leadFrames, switchSample: t0 + t.leadFrames + EngineFormat.frames(t.plan.switchAt),
+        end: bAt)
+      let cutTime = t.plan.aStart + EngineFormat.seconds(cut - t0 - t.leadFrames)
+      report(.mixIn, MixReport(kind: .mixIn, way: .server, songs: songs, sample: cut, songTime: cutTime), from: transitionDeck, id: id)
+      report(.mixOut, MixReport(kind: .mixOut, way: .server, songs: songs, sample: bAt, songTime: t.plan.bResume), from: next)
+    }
+    pumpAgain = true
+  }
+
+  /// The join couldn't be placed in time: the next song follows gapless instead, from its start.
+  private func missed(_ item: EngineItem) {
+    current?.hold(at: nil)
+    upcomingDeck?.release()
+    upcomingDeck = nil
+    upcoming = (item, .crossfade(seconds: 0))
+    events.append(.mixMissed(item.id))
+    pumpAgain = true
+  }
+
+  private func report(_ kind: MixReport.Kind, _ report: MixReport, from deck: Deck, id: UUID? = nil) {
+    mixReports[kind] = report
+    if let id = id ?? deck.segment?.id { reportSources[kind] = (deck, id) }
+  }
+
+  /// Each report's headroom, once its first audio is scheduled.
+  private func refreshReports() {
+    for (kind, source) in reportSources {
+      guard let s = source.deck.segment, s.id == source.id, let headroom = s.firstHeadroom else { continue }
+      mixReports[kind]?.headroom = EngineFormat.seconds(headroom)
+      reportSources[kind] = nil
+    }
+  }
+
   private func advance(now: SampleTime) {
-    guard nodesStarted, let next = upcomingDeck, let s = next.segment, let start = s.timelineStart, now >= start else { return }
+    guard nodesStarted, let next = upcomingDeck, let s = next.segment, let start = s.timelineStart else { return }
+    // In a mix the next song takes over at the switch, in the middle of the blend.
+    let switchAt = mix.flatMap { $0.to == s.id ? $0.switchSample : nil } ?? start
+    guard now >= switchAt else { return }
     current = next
     upcomingDeck = nil
     upcoming = nil
@@ -301,6 +432,7 @@ public final class AudioEngine {
       }
     }
     if let s = transitionDeck.segment, let end = s.end, s.fullyScheduled, now >= end { transitionDeck.release() }
+    if let m = mix, now >= m.end { mix = nil }
   }
 
   private func startWhenReady(now: SampleTime) {
@@ -314,7 +446,7 @@ public final class AudioEngine {
   private func watchBuffer(now: SampleTime) {
     guard state == .playing || state == .buffering else { return }
     let low = EngineFormat.frames(tuning.lowWater)
-    let audible = decks.compactMap(\.segment).filter { s in
+    let audible = (decks + [transitionDeck]).compactMap(\.segment).filter { s in
       guard let start = s.timelineStart else { return false }
       return start <= now + low && !s.fullyScheduled
     }
@@ -339,14 +471,56 @@ public final class AudioEngine {
 
   // MARK: Epochs
 
-  private func open(_ item: EngineItem, on deck: Deck) {
+  /// Where an item's audio comes from for a join: the frame its source opens at, the song frame its segment starts at
+  /// (they differ when B is resampled), the server's rest of it, and the gain.
+  struct SourcePlan: Equatable {
+    var readFrom: Int64
+    var firstFrame: Int64
+    var varispeed: TransitionPlan?
+    var continuation: EngineItem.Continuation?
+    var gainDb: Double
+  }
+
+  func sourcePlan(_ item: EngineItem, _ join: Join?) -> SourcePlan {
+    var frame = EngineFormat.frames(item.startAt)
+    switch join {
+    case .transition(let t)?:
+      frame = EngineFormat.frames(t.plan.bResume)
+    case .cut(let c)?:
+      frame = EngineFormat.frames(c.bStart)
+    case .mix(let plan)? where plan.bRate.contains(where: { abs($0.value - 1) > 1e-9 }):
+      // B resampled through the mix: its segment counts B's frames as they are after it.
+      let length = EngineFormat.frames(plan.length), end = EngineFormat.frames(plan.bResume)
+      let from = VarispeedSource.baseStart(plan: plan, lengthFrames: length, endFrame: end)
+      return SourcePlan(readFrom: from, firstFrame: end - length, varispeed: plan, continuation: nil, gainDb: item.gainDb)
+    case .mix(let plan)?:
+      frame = EngineFormat.frames(plan.bStart)
+    case .crossfade?, nil:
+      break
+    }
+    // The server's rest of the song serves any frame from where it starts.
+    if let c = item.continuation, frame >= EngineFormat.frames(c.from) {
+      return SourcePlan(readFrom: frame, firstFrame: frame, varispeed: nil, continuation: c, gainDb: c.gainDb)
+    }
+    return SourcePlan(readFrom: frame, firstFrame: frame, varispeed: nil, continuation: nil, gainDb: item.gainDb)
+  }
+
+  private func open(_ item: EngineItem, on deck: Deck, join: Join? = nil) {
     items[item.id] = item
-    let firstFrame = EngineFormat.frames(item.startAt)
+    let plan = sourcePlan(item, join)
+    var opened = item
+    opened.continuation = plan.continuation
+    var source = makeSource(opened, plan.readFrom)
+    if let mix = plan.varispeed {
+      source = VarispeedSource(
+        base: source, baseStart: plan.readFrom, rate: mix.bRate, lengthFrames: EngineFormat.frames(mix.length),
+        endFrame: EngineFormat.frames(mix.bResume), plan: mix)
+    }
     let length = EngineFormat.frames(item.track.duration)
     // A fade is never longer than a third of the song (see JoinRules.fadeSeconds): no need to hold back more.
     deck.load(
-      id: item.id, source: makeSource(item, firstFrame), firstFrame: firstFrame, expectedFrames: max(0, length - firstFrame),
-      holdback: min(EngineFormat.frames(tuning.maxFade), length / 3), envelope: GainEnvelope(gainDb: item.gainDb))
+      id: item.id, source: source, firstFrame: plan.firstFrame, expectedFrames: max(0, length - plan.firstFrame),
+      holdback: min(EngineFormat.frames(tuning.maxFade), length / 3), envelope: GainEnvelope(gainDb: plan.gainDb))
   }
 
   /// Stops all nodes (clearing what they had scheduled and their clocks): the next start begins a new epoch at 0.
@@ -357,6 +531,9 @@ public final class AudioEngine {
     nodesStarted = false
     lastNow = 0
     endReported = nil
+    // A mix doesn't survive a new epoch: the song shown plays on from where it was, on its own.
+    mix = nil
+    reportSources = [:]
   }
 
   /// Starts the three nodes at the same moment, so they share one timeline.
@@ -415,7 +592,9 @@ public final class AudioEngine {
       wantsToPlay = false
       state = .idle
     } else if id == transitionDeck.segment?.id {
+      // The transition file wouldn't play: the song shown goes on from where it is, on its own.
       transitionDeck.release()
+      if mix != nil { reloadCurrent() }
     }
     events.append(.failed(id, playbackError))
     pump()

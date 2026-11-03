@@ -369,6 +369,8 @@ public final class Player {
       // The sleep timer's "end of song": on to the next song, paused, for when you're back.
       if sleep.stopsAtSongEnd() { queue.playing = false }
       sync()
+    case .mixMissed:
+      break  // Task 12 handles it.
     case .failed(let id, let failure):
       guard loaded?.item.id == id else { return }
       error = failure.message

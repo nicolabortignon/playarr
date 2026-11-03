@@ -24,6 +24,14 @@ final class Deck {
     var decoded: Int64 = 0
     var scheduled: Int64 = 0
     var finished = false
+    /// The song stops at this timeline sample (a mix leaves it there): nothing past it is read or scheduled.
+    var limit: SampleTime?
+    /// Nothing from this sample on is scheduled yet: a mix is waiting for the next song to be ready.
+    var hold: SampleTime?
+    /// A mix's curves and filters for this song, applied as blocks are scheduled.
+    var automation: DeckAutomation?
+    /// How far ahead of the playhead its first block was scheduled (frames), once it has been.
+    var firstHeadroom: Int64?
 
     var end: SampleTime? { finished ? timelineStart.map { $0 + decoded } : nil }
     var scheduledEnd: SampleTime? { timelineStart.map { $0 + scheduled } }
@@ -51,6 +59,15 @@ final class Deck {
   func setFadeOut(_ ramp: Ramp) { segment?.envelope.fadeOut = ramp }
   func setGain(_ gainDb: Double) { segment?.envelope.gain = GainEnvelope(gainDb: gainDb).gain }
 
+  /// The song stops at timeline sample `sample`: a mix leaves it there.
+  func end(at sample: SampleTime) {
+    segment?.limit = sample
+    segment?.hold = nil
+  }
+
+  func hold(at sample: SampleTime?) { segment?.hold = sample }
+  func setAutomation(_ automation: DeckAutomation?) { segment?.automation = automation }
+
   /// Forgets the segment (its source is closed). What's already scheduled still plays: only `stop` clears that.
   func release() {
     reading?.cancel()
@@ -69,6 +86,7 @@ final class Deck {
   func pump(now: SampleTime, ahead: Int64, block: Int64) {
     scheduleReady(now: now, ahead: ahead)
     guard reading == nil, let s = segment, !s.finished else { return }
+    if let limit = s.limit, let start = s.timelineStart, start + s.decoded >= limit { return }
     let decodedAhead = s.timelineStart.map { $0 + s.decoded - now } ?? s.decoded
     guard decodedAhead < ahead + s.holdback + block else { return }
     let (source, id) = (s.source, s.id)
@@ -87,6 +105,8 @@ final class Deck {
   private func received(_ pcm: PCMBlock?, for id: UUID) {
     guard segment?.id == id else { return }
     reading = nil
+    // Read before the song was cut short at its limit: not needed.
+    guard segment?.finished == false else { return }
     if let pcm {
       if pcm.frames > 0 {
         segment?.pending.append(pcm)
@@ -109,17 +129,37 @@ final class Deck {
     let holdFrom = s.expectedFrames - s.holdback
     while let pcm = s.pending.first {
       let at = start + s.scheduled
-      let blockEnd = s.scheduled + Int64(pcm.frames)
+      var blockEnd = s.scheduled + Int64(pcm.frames)
       guard at < now + ahead else { break }
-      // Near the end, a block waits until the end is known or enough beyond it is decoded: it might fade out.
-      if !s.finished && s.holdback > 0 && blockEnd > holdFrom && blockEnd > s.decoded - s.holdback { break }
+      if let hold = s.hold, start + blockEnd > hold { break }
+      // Near the end, a block waits until the end is known or enough beyond it is decoded: it might fade out. A song
+      // a mix leaves has its end known already.
+      if s.limit == nil && !s.finished && s.holdback > 0 && blockEnd > holdFrom && blockEnd > s.decoded - s.holdback { break }
       s.pending.removeFirst()
       var scaled = pcm
+      if let limit = s.limit, start + blockEnd > limit {
+        let keep = Int(max(0, limit - at))
+        scaled = pcm.slice(0..<keep)
+        blockEnd = s.scheduled + Int64(keep)
+      }
       s.envelope.apply(to: &scaled, at: at)
+      s.automation?.apply(to: &scaled, at: at)
+      if s.firstHeadroom == nil { s.firstHeadroom = at - now }
       if let buffer = scaled.makeBuffer() {
         node.scheduleBuffer(buffer, at: AVAudioTime(sampleTime: at, atRate: EngineFormat.sampleRate), options: [], completionHandler: nil)
       }
       s.scheduled = blockEnd
+      if let limit = s.limit, start + blockEnd >= limit {
+        // The mix has left the song: it ends here, and the rest isn't read.
+        s.pending = []
+        s.decoded = s.scheduled
+        s.finished = true
+        reading?.cancel()
+        reading = nil
+        let source = s.source
+        Task { await source.close() }
+        break
+      }
     }
     segment = s
   }
