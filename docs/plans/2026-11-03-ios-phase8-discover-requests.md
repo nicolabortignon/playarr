@@ -3813,6 +3813,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `describe(_:)` is phase 5's `NerdFormat.format(_:)` (Stats for nerds' port of the same `describeFormat`); `Format.time`, `Format.jsRound` and `Format.parseDate` for the rest. Tests as written.
+
 ---
 
 ### Task 14: Show metadata's model: loading, and matching a file again
