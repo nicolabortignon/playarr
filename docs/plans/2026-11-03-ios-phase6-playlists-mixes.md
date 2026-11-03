@@ -2564,8 +2564,11 @@ MSG
 
 `components/PlaylistRecommendations.tsx`: hidden without seeds, the last set kept while the next comes, Add takes a song off the list, eight songs you don't have until "Show all 14".
 
+Phase 8 has landed, so the row is finished here: a song you don't have gets phase 8's `RequestButton` for its album, each row's artist and album lead on through `DiscoverDestination` (lib/links.ts `artistHref`/`albumHref`, as `PlaylistRecommendations.tsx` links them), and the section asks again when phase 8 marks the `recommendations` family stale (a request landed or an album was asked for), as the web invalidates `['recommendations']`. This removes the `// Phase 6:` note phase 8 left in `RouteDestination`.
+
 **Files:**
-- Create: `UI/Pages/Playlists/RecommendationsModel.swift`
+- Create: `UI/Pages/Playlists/RecommendationsModel.swift`, `UI/Pages/Playlists/RecommendationsSection.swift`
+- Modify: `UI/Shell/RouteDestination.swift` (drop phase 8's `// Phase 6:` note about this row)
 - Test: `UITests/RecommendationsModelTests.swift`
 
 **Step 1: Write the failing test**
@@ -2623,8 +2626,22 @@ import Testing
     api.on(.get, "/api/playlists/5/recommendations", Recommendations(owned: [], missing: [], seedCount: 0))
     let recs = await model()
     await recs.newMix()
-    #expect(api.queries(.get, "/api/playlists/5/recommendations") == ["variant=1"])
+    #expect(api.queries(.get, "/api/playlists/5/recommendations", "variant") == ["1"])
     #expect(recs.hidden)
+  }
+
+  @Test func linksItsArtistAndAlbumAsTheWebDoes() {
+    var heard = recommendation(nil, "Roads")
+    heard.artistMbid = "mb-portishead"
+    #expect(RecommendationsModel.artist(heard) == .discoverArtist(mbid: "mb-portishead", album: nil))
+    #expect(RecommendationsModel.album(heard) == .discoverArtist(mbid: "mb-portishead", album: "Dummy"))
+    heard.availability = Availability(state: .partial, albumId: 3, have: 2, total: 11)
+    #expect(RecommendationsModel.album(heard) == .libraryAlbum(id: 3))
+    heard.availability = Availability(state: .downloading, albumId: 3)
+    #expect(RecommendationsModel.album(heard) == .discoverArtist(mbid: "mb-portishead", album: "Dummy"))
+    let owned = recommendation(Demo.dummyTracks[0], "Mysterons")
+    #expect(RecommendationsModel.album(owned) == .libraryAlbum(id: Demo.dummyTracks[0].albumId))
+    #expect(RecommendationsModel.artist(RecommendedTrack(recordingId: "r", title: "t", artistName: "Tricky", albumTitle: "", because: "")) == .findArtist(name: "Tricky", album: nil))
   }
 }
 ```
@@ -2647,7 +2664,7 @@ import Observation
 import PlayarrAPI
 
 /// "Songs like these" under your own playlist: ListenBrainz neighbours, split into songs you have (Add) and songs you
-/// don't (requested in phase 8). New mix asks for another set (apps/web/src/components/PlaylistRecommendations.tsx).
+/// don't (phase 8's Request button). New mix asks for another set (apps/web/src/components/PlaylistRecommendations.tsx).
 @MainActor @Observable
 final class RecommendationsModel {
   static let missingPreview = 8
@@ -2703,6 +2720,20 @@ final class RecommendationsModel {
     guard let track = recommendation.track else { return }
     playlist.session.player.play([track])
   }
+
+  /// Where a row's artist leads (lib/links.ts artistHref): the library's artist, else the discography.
+  static func artist(_ recommendation: RecommendedTrack) -> DiscoverDestination {
+    .artist(id: recommendation.artistId, mbid: recommendation.artistMbid, name: recommendation.artistName)
+  }
+
+  /// Where a row's album leads: its page when (some of) it is in the library, else the artist's discography with it
+  /// highlighted (PlaylistRecommendations.tsx Row).
+  static func album(_ recommendation: RecommendedTrack) -> DiscoverDestination {
+    let here = recommendation.availability.flatMap { $0.state == .available || $0.have != nil ? $0.albumId : nil }
+    return .album(
+      id: recommendation.track?.albumId ?? here, artistMbid: recommendation.artistMbid, artistName: recommendation.artistName,
+      title: recommendation.albumTitle)
+  }
 }
 ```
 
@@ -2712,14 +2743,132 @@ final class RecommendationsModel {
 swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrUI --filter RecommendationsModelTests
 ```
 
-Expected: `Test run with 3 tests in 1 suite passed`.
+Expected: `Test run with 4 tests in 1 suite passed`.
+
+**Step 5: The section**
+
+`apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/RecommendationsSection.swift`:
+
+```swift
+import PlayarrAPI
+import SwiftUI
+
+/// "Songs like these" under your own playlist: Add the songs you have, request the albums of the ones you don't (phase
+/// 8's Request button), and each row's artist and album lead on (apps/web/src/components/PlaylistRecommendations.tsx).
+/// Asked for again when a request lands or an album is requested (the `recommendations` family).
+struct RecommendationsSection: View {
+  @State private var model: RecommendationsModel
+  @Environment(AccountSession.self) private var session
+  @Environment(DiscoverContext.self) private var discover: DiscoverContext?
+
+  init(playlist: PlaylistModel) {
+    _model = State(initialValue: RecommendationsModel(playlist: playlist))
+  }
+
+  var body: some View {
+    Group {
+      if !model.hidden {
+        Section {
+          if model.recommendations == nil, model.loading {
+            ProgressView().frame(maxWidth: .infinity)
+          } else if let error = model.error, model.recommendations == nil {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Couldn’t reach ListenBrainz. \(error)").foregroundStyle(.secondary)
+              Button("Try again") { Task { await model.load() } }.buttonStyle(.borderless)
+            }
+          } else if model.empty {
+            Text("ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try a new mix or add a few more songs.")
+              .foregroundStyle(.secondary)
+          }
+          if !model.owned.isEmpty {
+            Kicker(text: "Already in your library")
+            ForEach(model.owned, id: \.recordingId) { recommendation in
+              row(recommendation) {
+                Button("Add", systemImage: "plus") { Task { await model.add(recommendation) } }
+                  .buttonStyle(.bordered)
+                  .controlSize(.small)
+                  .accessibilityLabel("Add \(recommendation.title) to playlist")
+              }
+            }
+          }
+          if !model.missing.isEmpty {
+            Kicker(text: "Not in your library yet")
+            ForEach(model.shownMissing, id: \.recordingId) { recommendation in
+              row(recommendation) {
+                if let album = recommendation.album, let availability = recommendation.availability {
+                  RequestButton(album: album, availability: availability, small: true)
+                }
+              }
+            }
+            if let more = model.moreLabel {
+              Button(more) { model.showAll.toggle() }.font(.caption.monospaced()).buttonStyle(.borderless)
+            }
+          }
+        } header: {
+          HStack(alignment: .lastTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+              Kicker(text: "From ListenBrainz")
+              Text("Songs like these").font(.title2.weight(.semibold)).foregroundStyle(.primary).textCase(nil)
+            }
+            Spacer()
+            Button("New mix", systemImage: "dice") { Task { await model.newMix() } }
+              .disabled(model.loading)
+              .textCase(nil)
+          }
+        }
+        .opacity(model.loading && model.recommendations != nil ? 0.6 : 1)
+      }
+    }
+    .task(id: discover?.generation(.recommendations) ?? 0) { await model.load() }
+  }
+
+  /// The cover and title play a song you have; the artist and album open their pages (or the discography).
+  private func row(_ recommendation: RecommendedTrack, @ViewBuilder action: () -> some View) -> some View {
+    HStack(spacing: 12) {
+      Button { model.play(recommendation) } label: {
+        Cover(path: recommendation.coverUrl, points: 44, label: recommendation.albumTitle).frame(width: 44, height: 44)
+      }
+      .buttonStyle(.plain)
+      .disabled(recommendation.track == nil)
+      .accessibilityLabel(recommendation.track == nil ? recommendation.title : "Play \(recommendation.title)")
+      VStack(alignment: .leading, spacing: 2) {
+        Button { model.play(recommendation) } label: {
+          Text(recommendation.title).lineLimit(1).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .disabled(recommendation.track == nil)
+        // The cover says it already.
+        .accessibilityHidden(true)
+        HStack(spacing: 4) {
+          Button(recommendation.artistName) { session.router.open(RecommendationsModel.artist(recommendation).route) }
+          if !recommendation.albumTitle.isEmpty {
+            Text("·").foregroundStyle(.tertiary)
+            Button(recommendation.albumTitle) { session.router.open(RecommendationsModel.album(recommendation).route) }
+          }
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        if !recommendation.because.isEmpty {
+          Text("like \(recommendation.because)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+      }
+      // Each button takes only its own taps in a list row.
+      .buttonStyle(.plain)
+      action()
+    }
+  }
+}
+```
+
+Build it for the Mac and the iPhone simulator (both without warnings). `PlaylistView` (Task 16) puts it under your own playlist.
 
 **Commit**
 
 ```bash
-git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/RecommendationsModel.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/RecommendationsModelTests.swift
+git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/RecommendationsModel.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/RecommendationsSection.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Shell/RouteDestination.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/RecommendationsModelTests.swift
 git commit -F - <<'MSG'
-"Songs like these" under your own playlist: add the ones you have, see the ones you don't
+iOS: "Songs like these" under your own playlist: add the ones you have, request the ones you don't
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 MSG
@@ -2882,12 +3031,12 @@ MSG
 
 ### Task 16: The playlist screens
 
-The Playlists grid ("New playlist" first), the playlist page (pages/Playlist.tsx: cover tap → New cover, tap the name or description to edit them, the facts and whose it is, the cover note, Play, Shuffle, ⋯, the songs with their hearts and menus, greyed out when not in your library, hold-and-drag or Edit to reorder, "Songs like these" under your own, Delete with the web's confirmation), the cover picker sheet, and the recommendations section. A playlist card says whose it is when it isn't yours ("12 songs · Sam").
+The Playlists grid ("New playlist" first), the playlist page (pages/Playlist.tsx: cover tap → New cover, tap the name or description to edit them, the facts and whose it is, the cover note, Play, Shuffle, ⋯, the songs with their hearts and menus, greyed out when not in your library, hold-and-drag or Edit to reorder, "Songs like these" under your own, Delete with the web's confirmation), and the cover picker sheet. A playlist card says whose it is when it isn't yours ("12 songs · Sam").
 
 Notes from building it: buttons in one `List` row need a bordered or plain style each (or a tap on the row fires them all); a plain-styled button in a list row takes taps only on its words unless it has a `contentShape`; `FlowLayout` squeezes bordered buttons in a list row, so the action rows are `HStack`s.
 
 **Files:**
-- Create in `UI/Pages/Playlists/`: `PlaylistsView.swift`, `PlaylistView.swift`, `PlaylistItemRow.swift`, `CoverPickerView.swift`, `RecommendationsSection.swift`
+- Create in `UI/Pages/Playlists/`: `PlaylistsView.swift`, `PlaylistView.swift`, `PlaylistItemRow.swift`, `CoverPickerView.swift` ("Songs like these"' `RecommendationsSection` came with its model in Task 14)
 - Modify: `UI/Components/PlaylistCard.swift`, `UI/Shell/RouteDestination.swift`
 
 **Step 1: Write the views**
@@ -3057,101 +3206,6 @@ struct CoverPickerView: View {
           .disabled(playlist.busy)
         }
       }
-    }
-  }
-}
-```
-
-`apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/RecommendationsSection.swift`:
-
-```swift
-import PlayarrAPI
-import SwiftUI
-
-/// "Songs like these" under your own playlist: Add the songs you have; the ones you don't get a request button in
-/// phase 8 (apps/web/src/components/PlaylistRecommendations.tsx).
-struct RecommendationsSection: View {
-  @State private var model: RecommendationsModel
-
-  init(playlist: PlaylistModel) {
-    _model = State(initialValue: RecommendationsModel(playlist: playlist))
-  }
-
-  var body: some View {
-    Group {
-      if !model.hidden {
-        Section {
-          if model.recommendations == nil, model.loading {
-            ProgressView().frame(maxWidth: .infinity)
-          } else if let error = model.error, model.recommendations == nil {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Couldn’t reach ListenBrainz. \(error)").foregroundStyle(.secondary)
-              Button("Try again") { Task { await model.load() } }
-            }
-          } else if model.empty {
-            Text("ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try a new mix or add a few more songs.")
-              .foregroundStyle(.secondary)
-          }
-          if !model.owned.isEmpty {
-            Kicker(text: "Already in your library")
-            ForEach(model.owned, id: \.recordingId) { recommendation in
-              row(recommendation) {
-                Button("Add", systemImage: "plus") { Task { await model.add(recommendation) } }
-                  .buttonStyle(.bordered)
-                  .controlSize(.small)
-                  .accessibilityLabel("Add \(recommendation.title) to playlist")
-              }
-            }
-          }
-          if !model.missing.isEmpty {
-            Kicker(text: "Not in your library yet")
-            ForEach(model.shownMissing, id: \.recordingId) { recommendation in
-              row(recommendation) {
-                // Phase 8: RequestButton(album: recommendation.album, availability: recommendation.availability).
-                EmptyView()
-              }
-            }
-            if let more = model.moreLabel {
-              Button(more) { model.showAll.toggle() }.font(.caption.monospaced())
-            }
-          }
-        } header: {
-          HStack(alignment: .lastTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-              Kicker(text: "From ListenBrainz")
-              Text("Songs like these").font(.title2.weight(.semibold)).foregroundStyle(.primary).textCase(nil)
-            }
-            Spacer()
-            Button("New mix", systemImage: "dice") { Task { await model.newMix() } }
-              .disabled(model.loading)
-              .textCase(nil)
-          }
-        }
-        .opacity(model.loading && model.recommendations != nil ? 0.6 : 1)
-      }
-    }
-    .task { await model.load() }
-  }
-
-  private func row(_ recommendation: RecommendedTrack, @ViewBuilder action: () -> some View) -> some View {
-    HStack(spacing: 12) {
-      Button { model.play(recommendation) } label: {
-        HStack(spacing: 12) {
-          Cover(path: recommendation.coverUrl, points: 44, label: recommendation.albumTitle).frame(width: 44, height: 44)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(recommendation.title).lineLimit(1)
-            Text("\(recommendation.artistName) · \(recommendation.albumTitle)").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
-            if !recommendation.because.isEmpty {
-              Text("like \(recommendation.because)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-          }
-          Spacer(minLength: 8)
-        }
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .disabled(recommendation.track == nil)
-      action()
     }
   }
 }
@@ -3406,7 +3460,7 @@ Expected: both build with no errors or warnings.
 **Commit**
 
 ```bash
-git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/PlaylistsView.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/PlaylistView.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/PlaylistItemRow.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/CoverPickerView.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/RecommendationsSection.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Components/PlaylistCard.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Shell/RouteDestination.swift
+git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/PlaylistsView.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/PlaylistView.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/PlaylistItemRow.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/CoverPickerView.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Components/PlaylistCard.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Shell/RouteDestination.swift
 git commit -F - <<'MSG'
 iOS: the Playlists grid and a playlist's page: new cover, rename, reorder, share, delete, and songs like these
 
