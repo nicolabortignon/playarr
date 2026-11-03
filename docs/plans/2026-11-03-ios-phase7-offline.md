@@ -1084,13 +1084,15 @@ Make these replacements in `apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlaye
   }
 ```
 
+**As implemented (phase 5 had landed):** `Support/Recorder.swift` already existed (phase 5 made it with `Shared`), so it isn't created. Phase 5 keeps the player's transition files in `stream/` as `transition-<name>` and its `transition(named:request:)` also finished through `finished()`; with a ledger those would never go. So transitions finish through their own `finishedTransition()` (evict, pump), and `evict()` only looks at `transition-*` files once a ledger is set (songs are the ledger's). A second test, `stillDropsThePlayersOldTransitionFilesWithALedger`, pins that down (it checks the files exist without `completedTransition`, which marks them as just played).
+
 **Step 4: Run it to see it pass**
 
 ```bash
 swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrPlayer --filter 'StreamCacheTests|StreamCacheLedgerTests'
 ```
 
-Expected: `Test run with 5 tests` … `passed` (phase 3's 4 and the new one).
+Expected: `Test run with 7 tests` … `passed` (the 5 already there and the two new ones).
 
 **Step 5: Commit**
 

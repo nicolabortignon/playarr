@@ -3,8 +3,9 @@ import PlayarrAPI
 
 /// Songs' own files on disk, fetched ahead of playback: one `Download` per file at a time, shared by whoever reads
 /// it. Files are named by file id (`<fileId>.<ext>`, `.part` while incomplete), one folder per server and account
-/// (the caller's `directory`). The least recently played go first past `maxBytes`. Keeping songs for offline
-/// listening is phase 7's, outside this cache.
+/// (the caller's `directory`). The least recently played go first past `maxBytes`, until a ledger keeps the books
+/// (`keepBooks(with:)`): then `DownloadStore` decides which songs go, with the user's limit and downloads' songs kept,
+/// and the cache's own limit only applies to the transition files the player fetched.
 public actor StreamCache {
   public let directory: URL
   private let maxBytes: Int64
@@ -13,6 +14,15 @@ public actor StreamCache {
   private var downloads: [Int: Download] = [:]
   private var transitions: [String: Download] = [:]
   private var waiting: [(Track, URLRequest)] = []
+  private var ledger: (@Sendable (Event) -> Void)?
+
+  /// What the cache tells whoever keeps its books (phase 7's `DownloadStore`).
+  public enum Event: Sendable, Equatable {
+    /// A song's whole file arrived.
+    case completed(fileId: Int, file: URL, bytes: Int64)
+    /// A song's whole file was opened to play.
+    case used(fileId: Int)
+  }
 
   public init(
     directory: URL, maxBytes: Int64 = 1 << 30, retryDelay: Duration = .seconds(1),
@@ -32,6 +42,7 @@ public actor StreamCache {
     let url = file(for: track)
     guard FileManager.default.fileExists(atPath: url.path()) else { return nil }
     try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path())
+    ledger?(.used(fileId: track.fileId))
     return url
   }
 
@@ -42,7 +53,7 @@ public actor StreamCache {
     let d = Download(
       request: request, file: final.appendingPathExtension("part"), finalFile: final, retryDelay: retryDelay,
       configuration: configuration)
-    d.onFinish { [weak self] in Task { await self?.finished() } }
+    d.onFinish { [weak self] in Task { await self?.finished(track.fileId) } }
     downloads[track.fileId] = d
     d.start()
     return d
@@ -67,7 +78,7 @@ public actor StreamCache {
     let final = transitionFile(named: name)
     let d = Download(
       request: request, file: final.appendingPathExtension("part"), finalFile: final, retryDelay: retryDelay, configuration: configuration)
-    d.onFinish { [weak self] in Task { await self?.finished() } }
+    d.onFinish { [weak self] in Task { await self?.finishedTransition() } }
     transitions[name] = d
     d.start()
     return d
@@ -103,9 +114,45 @@ public actor StreamCache {
     waiting.removeAll { !fileIds.contains($0.0.fileId) }
   }
 
-  private func finished() {
+  /// Hands the books to `ledger`: it hears of every whole file and every play, and decides which songs go
+  /// (`remove(_:)`). The cache's own limit applies only to transition files from then on.
+  public func keepBooks(with ledger: @escaping @Sendable (Event) -> Void) {
+    self.ledger = ledger
+    // Files that came in before there was a ledger.
+    for (id, d) in downloads where d.isFinished { report(id, d) }
+  }
+
+  /// Drops these songs' files, whole or partial; not one being downloaded right now (it's being played).
+  public func remove(_ fileIds: Set<Int>) {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path())) ?? []
+    for id in fileIds where downloads[id]?.isActive != true {
+      downloads[id] = nil
+      for name in names where name.hasPrefix("\(id).") {
+        try? FileManager.default.removeItem(at: directory.appending(path: name))
+      }
+    }
+  }
+
+  /// Whether this song's file is being fetched now (for playback or ahead of it).
+  public func isDownloading(_ fileId: Int) -> Bool { downloads[fileId]?.isActive == true }
+
+  private func finished(_ fileId: Int) {
+    if ledger != nil {
+      if let d = downloads[fileId] { report(fileId, d) }
+    } else {
+      evict()
+    }
+    pump()
+  }
+
+  private func finishedTransition() {
     evict()
     pump()
+  }
+
+  private func report(_ fileId: Int, _ d: Download) {
+    let size = (try? d.file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+    ledger?(.completed(fileId: fileId, file: d.file, bytes: Int64(size)))
   }
 
   private func pump() {
@@ -118,8 +165,10 @@ public actor StreamCache {
     let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
     guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return }
     let busy = Set((Array(downloads.values) + Array(transitions.values)).filter(\.isActive).map(\.file))
+    // With a ledger, songs are its to drop: only the player's transition files are the cache's.
+    let onlyTransitions = ledger != nil
     var entries = files.compactMap { url -> (URL, Date, Int64)? in
-      guard !busy.contains(url), let v = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
+      guard !busy.contains(url), !onlyTransitions || url.lastPathComponent.hasPrefix("transition-"), let v = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
       return (url, v.contentModificationDate ?? .distantPast, Int64(v.fileSize ?? 0))
     }
     var total = entries.reduce(0) { $0 + $1.2 }

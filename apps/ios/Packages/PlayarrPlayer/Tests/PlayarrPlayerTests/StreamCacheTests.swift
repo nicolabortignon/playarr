@@ -61,3 +61,54 @@ struct StreamCacheTests {
     #expect(StubServer.requests("/transitions/abc.flac").count == 1)
   }
 }
+
+@Suite(.serialized)
+struct StreamCacheLedgerTests {
+  let body = Data(repeating: 7, count: 100_000)
+
+  @Test func tellsItsLedgerOfWholeFilesAndPlaysAndLeavesTheDroppingToIt() async throws {
+    for id in 231...233 { StubServer.serve("/stream/\(id)", .init(body: body)) }
+    let events = Recorder<StreamCache.Event>()
+    let cache = StreamCache(directory: temporaryDirectory(), maxBytes: 150_000, retryDelay: .milliseconds(5), configuration: StubServer.configuration)
+    await cache.keepBooks { events.append($0) }
+    for id in 231...233 {
+      try await cache.download(for: song(id), request: StubServer.request("/stream/\(id)")).waitUntilFinished()
+    }
+    await eventuallyAsync { events.all.count == 3 }
+    // Past its own limit, nothing went: the ledger decides.
+    #expect(await cache.completedFile(for: song(231)) != nil)
+    let completed = events.all.compactMap { event -> Int? in
+      if case .completed(let id, let file, let bytes) = event, bytes == 100_000, file.lastPathComponent == "\(id).flac" { return id }
+      return nil
+    }
+    #expect(completed.sorted() == [231, 232, 233])
+    #expect(events.all.last == .used(fileId: 231))
+    await cache.remove([231, 232])
+    #expect(await cache.completedFile(for: song(231)) == nil)
+    #expect(await cache.completedFile(for: song(233)) != nil)
+  }
+
+  @Test func stillDropsThePlayersOldTransitionFilesWithALedger() async throws {
+    for name in ["t1.flac", "t2.flac"] { StubServer.serve("/transitions/\(name)", .init(body: body)) }
+    StubServer.serve("/stream/234", .init(body: body))
+    let cache = StreamCache(directory: temporaryDirectory(), maxBytes: 150_000, retryDelay: .milliseconds(5), configuration: StubServer.configuration)
+    await cache.keepBooks { _ in }
+    try await cache.download(for: song(234), request: StubServer.request("/stream/234")).waitUntilFinished()
+    try await cache.transition(named: "t1.flac", request: StubServer.request("/transitions/t1.flac")).waitUntilFinished()
+    try await Task.sleep(for: .milliseconds(20))
+    try await cache.transition(named: "t2.flac", request: StubServer.request("/transitions/t2.flac")).waitUntilFinished()
+    // Looking without opening (opening marks a file as just played).
+    @Sendable func here(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path()) }
+    let t1 = await cache.transitionFile(named: "t1.flac")
+    await eventuallyAsync { !here(t1) }
+    // Transitions the player fetched stay within the cache's own limit; songs are the ledger's.
+    #expect(!here(t1))
+    #expect(here(await cache.transitionFile(named: "t2.flac")))
+    #expect(here(await cache.file(for: song(234))))
+  }
+}
+
+/// Waits (up to a second) for something another task does.
+func eventuallyAsync(_ condition: @Sendable () async -> Bool) async {
+  for _ in 0..<1000 where !(await condition()) { try? await Task.sleep(for: .milliseconds(1)) }
+}
