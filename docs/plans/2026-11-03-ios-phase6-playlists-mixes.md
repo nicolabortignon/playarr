@@ -568,14 +568,14 @@ import Testing
     let favorites = store()
     await favorites.load()
     let gate = Gate()
-    api.before { call in if call.method == .put { await gate.wait() } }
+    api.hold(.put, "/api/favorites/rec-700", until: gate)
     api.on(.put, "/api/favorites/rec-700", json: "")
     let toggling = Task { await favorites.toggle(Listening.angel) }
     while api.calls(.put, "/api/favorites/rec-700").isEmpty { await Task.yield() }
     #expect(favorites.isFavorite("rec-700"))
     #expect(favorites.tracks?.map(\.title) == ["Angel", "Risingson"])
     api.on(.get, "/api/favorites", [FavoriteTrack(Listening.angel, favoritedAt: "2026-11-03T10:00:00.000Z"), Demo.favorite])
-    await gate.release()
+    await gate.open()
     await toggling.value
     #expect(api.calls(.get, "/api/favorites").count == 2)
     #expect(favorites.tracks?.map(\.title) == ["Angel", "Risingson"])
@@ -597,14 +597,17 @@ import Testing
     let gate = Gate()
     api.on(.get, "/api/favorites", json: "[]")
     api.on(.put, "/api/favorites/rec-703", json: "")
-    api.before { call in if call.method == .get { await gate.wait() } }
+    api.hold(.get, "/api/favorites", until: gate)
     let favorites = store()
     let loading = Task { await favorites.load() }
     while api.calls(.get, "/api/favorites").isEmpty { await Task.yield() }
-    api.before { _ in }
+    // Only that first list is held: the one asked for after the toggle answers at once.
+    let free = Gate()
+    await free.open()
+    api.hold(.get, "/api/favorites", until: free)
     api.on(.get, "/api/favorites", [FavoriteTrack(Listening.inertia, favoritedAt: "2026-11-03T10:00:00.000Z")])
     await favorites.toggle(Listening.inertia)
-    await gate.release()
+    await gate.open()
     await loading.value
     #expect(favorites.isFavorite("rec-703"))
   }
