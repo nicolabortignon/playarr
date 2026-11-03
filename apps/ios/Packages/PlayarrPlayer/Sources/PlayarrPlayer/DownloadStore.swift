@@ -40,6 +40,10 @@ public final class DownloadStore {
   public let folder: OfflineFolder
   /// Shows a toast (the Player's notice).
   @ObservationIgnored public var announce: @MainActor (_ text: String, _ isError: Bool) -> Void = { _, _ in }
+  /// The pair the player is asking the server about (phase 5's planner): the server keeps one waiting render per
+  /// song, so a download asking about the same song into another one would push the player's out.
+  @ObservationIgnored public var playerPair: @MainActor () -> (fromFileId: Int, toFileId: Int)? = { nil }
+
   @ObservationIgnored private let settings: PlaybackSettings
   @ObservationIgnored private let cache: StreamCache
   @ObservationIgnored private let transport: any DownloadTransport
@@ -97,6 +101,15 @@ public final class DownloadStore {
       Task { [weak self, cache] in
         await cache.keepBooks { event in Task { @MainActor in self?.handle(event) } }
         await self?.adoptRunningJobs()
+      })
+    // Switched to DJ mix: downloads made before fetch their transitions now; switched away: stop asking.
+    watchers.append(
+      Task { [weak self, settings] in
+        for await mode in Observations({ settings.transitions }) {
+          guard let self else { return }
+          if mode != .dj { self.stopTransitionWork() }
+          self.pump()
+        }
       })
   }
 
@@ -159,6 +172,23 @@ public final class DownloadStore {
     let freeable = keptAsYouListen.bytes
     let available = free + freeable - Self.reserve
     return needed <= available ? .enough : .short(needed: needed, free: max(0, available))
+  }
+
+  /// A transition kept with a download for this pair, its files on this device, for the player offline (the server
+  /// can't be asked then). Offline a Party queue takes the Auto one: a mix beats none. `levelled`: whether the player
+  /// plays the two songs at even-volume gains; a transition made at other gains would jump in level, so it's left out.
+  public func keptTransition(from: Track, to: Track, mode: MixMode, online: Bool, levelled: Bool) -> KeptTransitionFiles? {
+    func find(_ mode: MixMode) -> KeptTransitionFiles? {
+      let pair = OfflineRules.pair(from.fileId, to.fileId, mode)
+      for d in OfflineRules.inOrder(manifest.pins) {
+        guard let kept = d.transitions[pair], kept.levelled == levelled, OfflineRules.transitionKept(kept, files: manifest.transitionFiles)
+        else { continue }
+        let files = kept.fileNames.map { folder.url(folder.transitionPath($0)) }
+        return KeptTransitionFiles(transition: kept, file: files[0], continuation: files.count > 1 ? files[1] : nil)
+      }
+      return nil
+    }
+    return find(mode) ?? (!online && mode == .party ? find(.auto) : nil)
   }
 
   // MARK: Changing
@@ -233,6 +263,12 @@ public final class DownloadStore {
 
   public func appBecameActive() {
     inBackground = false
+    pump()
+  }
+
+  /// The player moved on to another pair: one left aside for it may be fetched now, or must wait.
+  public func playerMoved() {
+    if let work = transitionWork, clashesWithPlayer(work.pair) { stopTransitionWork() }
     pump()
   }
 
@@ -452,11 +488,133 @@ public final class DownloadStore {
     save()
   }
 
-  // MARK: Asking for transitions (Task 8)
+  // MARK: Asking for transitions
 
-  private func keepNextTransition() {}
-  private func transitionFileArrived(_ id: String, path: String, bytes: Int64) { dropUnwantedTransitionFiles() }
-  private func transitionFileFailed(_ id: String, _ failure: TransportFailure) {}
+  private func clashesWithPlayer(_ pair: String) -> Bool {
+    guard let playing = playerPair() else { return false }
+    let ids = pair.split(separator: "-").compactMap { Int($0) }
+    return ids.count >= 2 && ids[0] == playing.fromFileId && ids[1] != playing.toFileId
+  }
+
+  /// Fetch the next transition a download is missing, while transitions are DJ mix: ask the server, ask again until
+  /// it's rendered, then keep its files.
+  private func keepNextTransition() {
+    guard transitionWork == nil, online, !inBackground, settings.transitions == .dj else { return }
+    let playing = playerPair()
+    let busy: (Track, Track) -> Bool = { from, to in playing.map { $0.fromFileId == from.fileId && $0.toFileId != to.fileId } ?? false }
+    guard let next = OfflineRules.nextTransition(manifest.pins, manifest: manifest, skipped: Set(skippedPairs.keys), busy: busy) else { return }
+    let pair = OfflineRules.pair(next.from.fileId, next.to.fileId, OfflineRules.transitionMode)
+    let request = transitionRequest(next.key, next.from, next.to)
+    let levelled = request.levels != nil
+    // Another download has it already, at the same gains: no need to ask.
+    if let shared = manifest.pins.values.lazy.compactMap({ $0.transitions[pair] }).first(where: {
+      $0.levelled == levelled && OfflineRules.transitionKept($0, files: manifest.transitionFiles)
+    }) {
+      manifest.pins[next.key]?.transitions[pair] = shared
+      save()
+      return keepNextTransition()
+    }
+    var work = TransitionWork(key: next.key, pair: pair)
+    work.task = Task { [poller, backend] in
+      let outcome: Result<TransitionPoller.Outcome, any Error>
+      do {
+        outcome = .success(try await poller.ask { try await backend.transition(request) })
+      } catch {
+        outcome = .failure(error)
+      }
+      self.answered(pair, outcome, levelled: levelled)
+    }
+    transitionWork = work
+  }
+
+  /// Asked as the player will ask for it, so both get the same plan, and the same file: no position (the server reuses
+  /// this plan for the player's first ask while it's still ahead), the files, the fade, whether it plays the album, and
+  /// the gains even volume plays the songs at.
+  func transitionRequest(_ key: String, _ from: Track, _ to: Track) -> TransitionRequest {
+    let d = manifest.pins[key]
+    var levels: TransitionAnswer.Ready.Levels?
+    if settings.levelVolume, let d, let a = d.levels[from.recordingId], let b = d.levels[to.recordingId],
+      let at = d.tracks.firstIndex(where: { $0.fileId == from.fileId })
+    {
+      var queue = QueueState()
+      queue.queue = d.tracks
+      queue.order = Array(d.tracks.indices)
+      queue.pos = at
+      let gains = TransitionAnswer.Ready.Levels(a: JoinRules.levelDb(from, a, in: queue), b: JoinRules.levelDb(to, b, in: queue))
+      // As the player: songs both at 0 dB send no levels (it plays them as they are).
+      levels = gains.a != 0 || gains.b != 0 ? gains : nil
+    }
+    return TransitionRequest(
+      from: from.id, to: to.id, mode: OfflineRules.transitionMode, fromFileId: from.fileId, toFileId: to.fileId,
+      fade: OfflineRules.transitionFade(crossfade: settings.crossfade), albumQueue: OfflineRules.playsAlbum(d?.href, from), levels: levels)
+  }
+
+  private func answered(_ pair: String, _ outcome: Result<TransitionPoller.Outcome, any Error>, levelled: Bool) {
+    guard var work = transitionWork, work.pair == pair else { return }  // stopped meanwhile
+    switch outcome {
+    case .failure(let error):
+      transitionWork = nil
+      if !(error is CancellationError) { skip(pair, error.localizedDescription) }
+    case .success(.none(let reason)):
+      transitionWork = nil
+      skip(pair, reason)
+    case .success(.ready(let answer)):
+      let kept = KeptTransition(answer: answer, levelled: levelled)
+      let missing = zip(kept.urls, kept.fileNames).filter { manifest.transitionFiles[$0.1] == nil }
+      // Room before the server says how big: uncompressed, which the FLAC files never exceed.
+      guard makeRoom(for: Int64((answer.plan.length + 60) * 44_100 * 4)) else {
+        transitionWork = nil
+        skip(pair, OfflineRules.noRoom)
+        break
+      }
+      work.kept = kept
+      for (url, name) in missing {
+        let id = folder.jobID(folder.transitionPath(name))
+        work.waiting.insert(id)
+        transport.start(TransportJob(id: id, request: allowed(backend.transitionRequest(url))))
+      }
+      transitionWork = work
+      if missing.isEmpty { finishTransition() }
+      return
+    }
+    pump()
+  }
+
+  private func transitionFileArrived(_ id: String, path: String, bytes: Int64) {
+    let name = String(path.dropFirst("offline/transitions/".count))
+    manifest.transitionFiles[name] = KeptFile(file: path, bytes: bytes, usedAt: now())
+    save()
+    guard var work = transitionWork, work.waiting.remove(id) != nil else {
+      dropUnwantedTransitionFiles()  // from before a relaunch, or stopped meanwhile
+      return
+    }
+    work.fetched.append(name)
+    transitionWork = work
+    if work.waiting.isEmpty { finishTransition() }
+  }
+
+  private func transitionFileFailed(_ id: String, _ failure: TransportFailure) {
+    guard let work = transitionWork, work.waiting.contains(id) else { return }
+    stopTransitionWork()
+    skip(work.pair, failure.reason)
+  }
+
+  /// Every file of the fetched transition is here: it goes with its download, unless the download is gone or its songs
+  /// no longer follow each other.
+  private func finishTransition() {
+    guard let work = transitionWork, let kept = work.kept else { return }
+    transitionWork = nil
+    if let d = manifest.pins[work.key], OfflineRules.pairs(of: d.tracks, mode: OfflineRules.transitionMode).contains(work.pair) {
+      manifest.pins[work.key]?.transitions[work.pair] = kept
+      save()
+    }
+    dropUnwantedTransitionFiles()
+    pump()
+  }
+
+  private func skip(_ pair: String, _ reason: String) {
+    skippedPairs[pair] = reason
+  }
 
   // MARK: Levels
 

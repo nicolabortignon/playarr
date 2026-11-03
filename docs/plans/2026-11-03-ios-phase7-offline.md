@@ -2991,7 +2991,9 @@ Make these replacements in `apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlaye
       queue.queue = d.tracks
       queue.order = Array(d.tracks.indices)
       queue.pos = at
-      levels = .init(a: JoinRules.levelDb(from, a, in: queue), b: JoinRules.levelDb(to, b, in: queue))
+      let gains = TransitionAnswer.Ready.Levels(a: JoinRules.levelDb(from, a, in: queue), b: JoinRules.levelDb(to, b, in: queue))
+      // As the player: songs both at 0 dB send no levels (it plays them as they are).
+      levels = gains.a != 0 || gains.b != 0 ? gains : nil
     }
     return TransitionRequest(
       from: from.id, to: to.id, mode: OfflineRules.transitionMode, fromFileId: from.fileId, toFileId: to.fileId,
@@ -3065,6 +3067,8 @@ Make these replacements in `apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlaye
     skippedPairs[pair] = reason
   }
 ```
+
+(As implemented: phase 5's Player sends `levels` only when one of the two gains isn't 0, and its planner's `kept` hook passes `levelled: pair.levels != nil`; the download's ask follows the same rule so the two agree.)
 
 **Step 4: Run it to see it pass**
 
