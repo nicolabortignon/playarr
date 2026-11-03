@@ -277,7 +277,7 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
   At a join, once the new file plays, the graph records both outputs together (a script processor sees both in the same block). It then finds the gap by cross-correlation over ±300 ms, done by FFT so the wide range costs little. It correlates each signal's sample-to-sample change, which weighs hats and attacks over a bass line whose cycles all look alike, and refuses to answer if two lags match almost equally.
 
   - A new file behind the old one (a delay can't bring it forward), or more than 150 ms ahead, jumps to 20 ms ahead and is measured again.
-  - Otherwise it's held back by exactly the gap with a delay node, checked within ±10 ms (and corrected once more if it's still off by more than a sample), then cross-faded over 20 ms on the audio clock.
+  - Otherwise it's held back by exactly the gap with a delay node, checked within ±10 ms (and corrected once more if it's still off by more than a sample), then cross-faded over 80 ms on the audio clock (the transition kept at the next song’s level meanwhile).
   - Every wait goes by the audio clock, not the page's timers, which a hidden window slows down.
   - If the sound can't be measured (silence, a pure tone), the changeover falls back to the elements' times.
 
