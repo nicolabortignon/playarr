@@ -26,7 +26,7 @@ Two consequences, both deliberate: loudness is measured for the full library's b
 
 **Bonjour through `bonjour-service`.** Pure JavaScript (on `multicast-dns`), MIT, TypeScript types included, maintained, and used by webpack-dev-server. `mdns` needs native builds against Avahi or dns_sd (not on the Alpine image); `@homebridge/ciao` is more complete (RFC probing and conflict handling) but larger than this needs. It runs only after `listen`, can be turned off with `BONJOUR=off`, and never throws into the server.
 
-**No new dependency for passwords, sessions or rate limiting.** scrypt with a per-password salt and `timingSafeEqual` from `node:crypto`; tokens are 32 random bytes in base64url, stored as SHA-256; failed sign-ins are counted in memory per address and per username (10 per 15 minutes).
+**No new dependency for passwords, sessions or rate limiting.** scrypt with a per-password salt and `timingSafeEqual` from `node:crypto`; tokens are 32 random bytes in base64url, stored as SHA-256; failed sign-ins and setup codes are counted in memory per client address only (10 per 15 minutes; Task 9b: a per-username lockout would let anyone keep the owner out by guessing at their username).
 
 ## Conventions
 
@@ -52,6 +52,7 @@ Two consequences, both deliberate: loudness is measured for the full library's b
 7. Account admin routes
 8. Wire accounts into the server; profiles go
 9. Admins instead of the home network
+9b. Setup-time answers: whose username it is, per-address rate limits, and setup links behind a proxy
 10. Library views: each account's catalog
 11. The catalog routes show each account its own library
 12. Streams, artwork and transitions only for songs the account may hear
@@ -2616,6 +2617,33 @@ EOF
 ```
 
 ---
+
+### Task 9b: Setup-time answers: whose username it is, per-address rate limits, and setup links behind a proxy
+
+Added by the coordinator after Tasks 1-9 ran, deciding three open questions.
+
+**Files:**
+- Modify: `apps/server/src/accounts/rateLimit.ts` (one key: the client address), `apps/server/src/routes/auth.ts` (sign-in and redeem count `req.ip` only; setup says whose username it is), `apps/server/src/accounts/accounts.ts` (`byUsername`)
+- Modify: `apps/server/src/config.ts` (`PUBLIC_URL`, `TRUST_PROXY` → `trustProxy`), `apps/server/src/accounts/auth.ts` (`originOf(req, publicUrl?)`), `apps/server/src/routes/accounts.ts` (`publicUrl` dependency), `apps/server/src/index.ts` (`Fastify({ trustProxy })`, `publicUrl: config.PUBLIC_URL`)
+- Modify: `.env.example` (two commented lines each for `TRUST_PROXY` and `PUBLIC_URL`, after `LOCAL_HOSTNAMES`; Task 23 does the rest)
+- Test: `apps/server/src/accounts/rateLimit.test.ts` (rewritten), `apps/server/src/routes/auth.test.ts`, `apps/server/src/routes/accounts.test.ts`, `apps/server/src/config.test.ts` (create)
+
+**a. The owner's username clashes with another account's.** Profiles became accounts with usernames (Task 1), so the name the owner picks at `/setup` may be someone else's. `POST /api/auth/setup` answers 409 `That username belongs to <display name>. Pick another; you can rename them later.` (`accounts.byUsername(username)`, any case; the owner's own current username is fine). So the setup page can pre-fill the owner's current username, `ServerInfo` gains `ownerUsername?: string`, present only while `setup` is true: that part lands with `GET /api/server` in Task 16 (shared type, conventions line and test in that commit), since the route doesn't exist before it.
+
+**b. Rate limiting per client address only.** `RateLimiter` takes one key (`allows(address)`, `fail(address)`; `clear` goes: clearing on a success would let anyone with one account reset their budget and keep guessing others). Sign-in and redeem use `req.ip`. Fastify's `trustProxy` comes from `TRUST_PROXY`: unset/empty/`false` → off; `true` → any proxy; otherwise a comma-separated list of addresses, CIDRs or proxy-addr's range names (`loopback`, `linklocal`, `uniquelocal`) → `string[]`, anything else a configuration error. *Deviation:* hop counts are refused with a clear configuration error: Fastify 5.12 dropped `number` from `trustProxy`'s type and treats a number as trusting nobody (a visitor reaching the server directly could forge enough hops), so passing one through would silently do nothing.
+
+**c. Setup-code links.** Origin = `PUBLIC_URL` when set (validated as an `http(s)` URL, trailing slashes removed); otherwise `${req.protocol}://${req.host}`, which Fastify computes from `X-Forwarded-Proto`/`-Host` only when the socket is a proxy trusted by `trustProxy`, and from the Host header and the socket's own protocol otherwise (`localhost` when there's no Host). The session cookie's `Secure` flag still follows `X-Forwarded-Proto` regardless (a forged header only makes the forger's own cookie stricter).
+
+**Tests (written first, seen failing):**
+- `rateLimit.test.ts`: an address is refused after `max` failures until they age out; two addresses don't share a budget.
+- `auth.test.ts`: 10 failed sign-ins from one address → 429 there, 200 from another (the username isn't locked); redeem likewise (429 there, 400 elsewhere); with `Fastify({ trustProxy: true })`, failures count per `X-Forwarded-For` visitor; setup with another account's username (any case) → 409 with the message above and setup mode unchanged, then the owner's own username → 200.
+- `accounts.test.ts` (`setup({ trustProxy, publicUrl })`, reset with `X-Forwarded-Host: music.example.com` and `-Proto: https`, Host `nas:4000`): `PUBLIC_URL` wins → `https://playarr.example.org/redeem`; trusted proxy → `https://music.example.com/redeem`; neither → `http://nas:4000/redeem`.
+- `config.test.ts`: `TRUST_PROXY` parsing (off, `true`, list, bad entry and hop count rejected); `PUBLIC_URL` trailing slash removed, `ftp://` and scheme-less values rejected.
+
+**Commit:** "Say whose username it is at setup, rate-limit sign-ins per address, and make setup links right behind a proxy".
+
+---
+
 ### Task 10: Library views: each account's catalog
 
 **Files:**
@@ -6951,7 +6979,7 @@ CRUD /api/accounts (+ :id/reset, :id/sessions)  → admins; each account its own
 
 and the last line of the block `     /api/settings/{sources,folders,matching,requests,mixes,listenbrainz,updates}  (changes: home network only)` with `     /api/settings/{sources,folders,matching,requests,mixes,listenbrainz,updates}  (changes: admins; ListenBrainz and history: each account)`.
 
-Replace the **Security** paragraph's last sentence `Playarr's own login is still to come (Phase 5).` and the sentence before it about local-only actions with: `Once the owner has set a password, every /api, /stream, /art and /transitions request needs a session (Bearer token from the app, HttpOnly cookie from the web; tokens stored as SHA-256), except finding the server and signing in; sign-ins are rate-limited per address and username. Admins change settings; before setup, local-only actions need a home address, no proxy in between, and the server addressed by IP or a local name (no DNS rebinding). Each account hears every source or a chosen list, enforced in the catalog, search, streams, art, transitions, mixes, radio and stats through a per-account view of the catalog.`
+Replace the **Security** paragraph's last sentence `Playarr's own login is still to come (Phase 5).` and the sentence before it about local-only actions with: `Once the owner has set a password, every /api, /stream, /art and /transitions request needs a session (Bearer token from the app, HttpOnly cookie from the web; tokens stored as SHA-256), except finding the server and signing in; sign-ins are rate-limited per client address (the visitor's, behind a proxy trusted with TRUST_PROXY). Admins change settings; before setup, local-only actions need a home address, no proxy in between, and the server addressed by IP or a local name (no DNS rebinding). Each account hears every source or a chosen list, enforced in the catalog, search, streams, art, transitions, mixes, radio and stats through a per-account view of the catalog.`
 
 In §17, replace the **Profiles** bullet (line 361) with:
 
@@ -6980,7 +7008,7 @@ Replace lines 54-57 (the `LOCAL_HOSTNAMES` comment block) with:
 LOCAL_HOSTNAMES=
 ```
 
-and append:
+(`TRUST_PROXY` and `PUBLIC_URL` were added after it by Task 9b) and append:
 
 ```
 

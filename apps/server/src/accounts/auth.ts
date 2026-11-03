@@ -59,11 +59,13 @@ export function sessionCookie(req: FastifyRequest, token: string | null): string
   return parts.join('; ');
 }
 
-/** This server as the visitor reached it (for setup links). */
-export function originOf(req: FastifyRequest): string {
-  const forwardedHost = req.headers['x-forwarded-host'];
-  const host = (typeof forwardedHost === 'string' && forwardedHost) || req.headers.host || 'localhost';
-  return `${overHttps(req) ? 'https' : 'http'}://${host}`;
+/**
+ * This server's origin for setup-code links: PUBLIC_URL when set; otherwise as the visitor reached it.
+ * Fastify reads X-Forwarded-Host and -Proto for req.host and req.protocol only from a proxy trusted
+ * with TRUST_PROXY; without one, the Host header and the connection's own protocol.
+ */
+export function originOf(req: FastifyRequest, publicUrl?: string): string {
+  return publicUrl ?? `${req.protocol}://${req.host || 'localhost'}`;
 }
 
 /** Decides who every request is for (req.auth), and turns away what it may not do. */

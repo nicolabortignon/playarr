@@ -20,8 +20,12 @@ const accountPatch = accountInput.partial();
 type Id = { Params: { id: string } };
 
 /** Settings → Accounts: admins manage everyone; each account sees and signs out its own devices. */
-export function accountRoutes(app: FastifyInstance, deps: { accounts: Accounts; sessions: Sessions; setupCodes: SetupCodes }) {
+export function accountRoutes(
+  app: FastifyInstance,
+  deps: { accounts: Accounts; sessions: Sessions; setupCodes: SetupCodes; /** PUBLIC_URL, for setup links. */ publicUrl?: string },
+) {
   const { accounts, sessions, setupCodes } = deps;
+  const origin = (req: FastifyRequest) => originOf(req, deps.publicUrl);
   // A code redeemed before the owner has a password would end setup mode and lock the owner out.
   const ownerFirst = async (_req: FastifyRequest, reply: FastifyReply) => {
     if (accounts.setupMode()) return reply.code(409).send({ error: 'Set up the owner’s account first (Settings → Accounts)' });
@@ -37,7 +41,7 @@ export function accountRoutes(app: FastifyInstance, deps: { accounts: Accounts; 
   app.post('/api/accounts', { onRequest: [requireAdmin, ownerFirst] }, (req, reply) =>
     handleAccountErrors(reply, () => {
       const account = accounts.create(parseInput(accountInput, req.body));
-      return reply.code(201).send({ account, setup: setupCodes.issue(account.id, originOf(req)) } satisfies CreatedAccount);
+      return reply.code(201).send({ account, setup: setupCodes.issue(account.id, origin(req)) } satisfies CreatedAccount);
     }),
   );
 
@@ -64,7 +68,7 @@ export function accountRoutes(app: FastifyInstance, deps: { accounts: Accounts; 
       const id = known(Number(req.params.id));
       accounts.clearPassword(id);
       sessions.removeAll(id);
-      return setupCodes.issue(id, originOf(req));
+      return setupCodes.issue(id, origin(req));
     }),
   );
 

@@ -1,6 +1,7 @@
 /**
- * Failed tries per key (an address, a username) within a sliding window: past `max`, a key is refused
- * until its oldest failure is `windowMs` old. In memory: a restart forgives, which is fine at home.
+ * Failed tries per client address within a sliding window: past `max`, an address is refused until its
+ * oldest failure is `windowMs` old. Only addresses count, never usernames, so someone guessing at a
+ * username can't lock its owner out. In memory: a restart forgives, which is fine at home.
  */
 export class RateLimiter {
   private readonly failures = new Map<string, number[]>();
@@ -11,25 +12,20 @@ export class RateLimiter {
     private readonly now: () => number = Date.now,
   ) {}
 
-  /** True when none of the keys has used up its tries. */
-  allows(keys: string[]): boolean {
-    return keys.every((key) => this.recent(key).length < this.max);
+  /** True while the address has tries left. */
+  allows(address: string): boolean {
+    return this.recent(address).length < this.max;
   }
 
-  fail(keys: string[]) {
-    const at = this.now();
-    for (const key of keys) this.failures.set(key, [...this.recent(key), at]);
+  fail(address: string) {
+    this.failures.set(address, [...this.recent(address), this.now()]);
   }
 
-  clear(key: string) {
-    this.failures.delete(key);
-  }
-
-  private recent(key: string): number[] {
+  private recent(address: string): number[] {
     const from = this.now() - this.windowMs;
-    const list = (this.failures.get(key) ?? []).filter((at) => at > from);
-    if (list.length) this.failures.set(key, list);
-    else this.failures.delete(key);
+    const list = (this.failures.get(address) ?? []).filter((at) => at > from);
+    if (list.length) this.failures.set(address, list);
+    else this.failures.delete(address);
     return list;
   }
 }

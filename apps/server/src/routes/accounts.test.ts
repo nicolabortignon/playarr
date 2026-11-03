@@ -9,17 +9,17 @@ import { CatalogStore } from '../catalog/store.ts';
 import { freshDb } from '../catalog/testFixtures.ts';
 import { accountRoutes } from './accounts.ts';
 
-async function setup({ claimed = true } = {}) {
+async function setup({ claimed = true, trustProxy = false, publicUrl = undefined as string | undefined } = {}) {
   const db = freshDb();
   const store = new CatalogStore(db);
   const cc = store.addSource('folder', 'Creative Commons');
   const accounts = new Accounts(db);
   const sessions = new Sessions(db);
   const setupCodes = new SetupCodes(db);
-  const app = Fastify();
+  const app = Fastify({ trustProxy });
   app.decorateRequest('auth', null);
   app.addHook('onRequest', authHook({ accounts, sessions }));
-  accountRoutes(app, { accounts, sessions, setupCodes });
+  accountRoutes(app, { accounts, sessions, setupCodes, publicUrl });
   const sam = accounts.create({ username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null });
   if (claimed) {
     await accounts.setPassword(1, 'correct horse');
@@ -93,5 +93,26 @@ describe('account routes', () => {
     expect((await app.inject({ url: '/api/accounts', headers })).statusCode).toBe(200); // the home network, as before
     expect((await app.inject({ method: 'POST', url: '/api/accounts', headers, payload: { username: 'x', name: 'X', role: 'member', canRequest: false, sources: null } })).statusCode).toBe(409);
     expect((await app.inject({ method: 'POST', url: '/api/accounts/2/reset', headers })).statusCode).toBe(409);
+  });
+
+  describe('setup links', () => {
+    const forwarded = { 'x-forwarded-host': 'music.example.com', 'x-forwarded-proto': 'https' };
+    const linkOf = async (options: Parameters<typeof setup>[0]) => {
+      const { app, sam, admin, as } = await setup(options);
+      const res = await app.inject({ method: 'POST', url: `/api/accounts/${sam.id}/reset`, headers: { ...as(admin), ...forwarded } });
+      return (res.json() as SetupCode).link.replace(/\?code=.*$/, '');
+    };
+
+    it('use PUBLIC_URL when it’s set', async () => {
+      expect(await linkOf({ publicUrl: 'https://playarr.example.org', trustProxy: true })).toBe('https://playarr.example.org/redeem');
+    });
+
+    it('follow the forwarded host and protocol only behind a trusted proxy', async () => {
+      expect(await linkOf({ trustProxy: true })).toBe('https://music.example.com/redeem');
+    });
+
+    it('otherwise use the Host header and the connection’s own protocol', async () => {
+      expect(await linkOf({})).toBe('http://nas:4000/redeem');
+    });
   });
 });

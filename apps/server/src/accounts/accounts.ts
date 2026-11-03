@@ -64,6 +64,12 @@ export class Accounts {
     return row && this.toAccount(row);
   }
 
+  /** The account with this username (any case), if there is one. */
+  byUsername(username: string): Account | undefined {
+    const row = this.db.prepare(`SELECT ${COLUMNS} FROM accounts WHERE username = ?`).get(username.trim().toLowerCase()) as unknown as Row | undefined;
+    return row && this.toAccount(row);
+  }
+
   /** The owner: the first admin (account 1, the old "Home" profile, on every install that had profiles). */
   owner(): Account {
     const row = this.db.prepare(`SELECT ${COLUMNS} FROM accounts ORDER BY role = 'admin' DESC, id LIMIT 1`).get() as unknown as Row | undefined;

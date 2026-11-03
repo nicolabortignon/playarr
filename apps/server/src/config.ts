@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { posix } from 'node:path';
 import { z } from 'zod';
 
@@ -19,6 +20,14 @@ const schema = z.object({
   // User data (favorites…). Unlike the cache, don't delete this.
   DATA_DIR: z.string().default('data'),
   WEB_DIST: z.string().optional(),
+  // This server's address as people reach it (e.g. https://music.example.com), for setup-code links.
+  PUBLIC_URL: z
+    .url({ protocol: /^https?$/, error: 'must be an http:// or https:// URL' })
+    .transform((u) => u.replace(/\/+$/, ''))
+    .optional(),
+  // Behind a reverse proxy: which proxies to believe about the visitor (X-Forwarded-For, -Host, -Proto).
+  // true, or comma-separated addresses/CIDRs (see trustProxyOf).
+  TRUST_PROXY: z.string().optional(),
   // The folder shared with the updater container (Settings → Updates). docker/compose.yaml sets /update.
   UPDATE_DIR: z.string().optional(),
 
@@ -53,7 +62,31 @@ const schema = z.object({
   SSH_PASSWORD: z.string().optional(),
 });
 
-export type Config = z.infer<typeof schema> & { pathMap: [from: string, to: string][]; folderRoots: string[] };
+/** Fastify's `trustProxy`: false (no proxy), true (any), or the proxies' addresses. */
+export type TrustProxy = boolean | string[];
+
+export type Config = z.infer<typeof schema> & { pathMap: [from: string, to: string][]; folderRoots: string[]; trustProxy: TrustProxy };
+
+/** proxy-addr's names for address ranges, accepted in TRUST_PROXY's list. */
+const RANGES = new Set(['loopback', 'linklocal', 'uniquelocal']);
+
+/**
+ * TRUST_PROXY as Fastify takes it; throws on anything else. Not a hop count: Fastify 5 refuses those as
+ * unsafe (a visitor reaching the server directly could forge the hops) and would trust nobody.
+ */
+export function trustProxyOf(value: string | undefined): TrustProxy {
+  const v = value?.trim() ?? '';
+  if (v === '' || v === 'false') return false;
+  if (v === 'true') return true;
+  if (/^\d+$/.test(v)) throw new Error('Invalid configuration:\n  TRUST_PROXY: a hop count isn’t supported; give the proxy’s address (or true)');
+  const list = v.split(',').map((a) => a.trim()).filter(Boolean);
+  for (const entry of list) {
+    const [address, bits, extra] = entry.split('/');
+    const ok = RANGES.has(entry) || (isIP(address!) !== 0 && extra === undefined && (bits === undefined || /^\d{1,3}$/.test(bits)));
+    if (!ok) throw new Error(`Invalid configuration:\n  TRUST_PROXY: "${entry}" is not true, a hop count, an address or a CIDR`);
+  }
+  return list;
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // Treat empty strings in .env as "unset" so defaults and optionals apply.
@@ -75,5 +108,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     .map((r) => r.trim())
     .filter((r) => r.startsWith('/'))
     .map((r) => posix.normalize(r).replace(/(.)\/+$/, '$1'));
-  return { ...parsed.data, pathMap, folderRoots: folderRoots.length ? folderRoots : ['/'] };
+  return { ...parsed.data, pathMap, folderRoots: folderRoots.length ? folderRoots : ['/'], trustProxy: trustProxyOf(parsed.data.TRUST_PROXY) };
 }

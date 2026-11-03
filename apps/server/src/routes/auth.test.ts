@@ -12,12 +12,12 @@ const AWAY = '203.0.113.5';
 const H = { 'x-playarr': '1' };
 const device = { device: 'Safari on Mac', platform: 'web' };
 
-function setup() {
+function setup(options: { trustProxy?: boolean } = {}) {
   const db = freshDb();
   const accounts = new Accounts(db);
   const sessions = new Sessions(db);
   const setupCodes = new SetupCodes(db);
-  const app = Fastify();
+  const app = Fastify(options);
   app.decorateRequest('auth', null);
   app.addHook('onRequest', authHook({ accounts, sessions }));
   authRoutes(app, { accounts, sessions, setupCodes });
@@ -75,13 +75,41 @@ describe('auth routes', () => {
     expect(res.headers['set-cookie']).toMatch(/; Secure$/);
   });
 
-  it('turns sign-ins away after 10 failures, per address and per username', async () => {
+  it('turns sign-ins away after 10 failures from an address, and only from that address', async () => {
     const { accounts, post } = setup();
     await accounts.setPassword(1, 'correct horse');
     const right = { username: 'home', password: 'correct horse', ...device };
     for (let i = 0; i < 10; i++) await post('/api/auth/sign-in', { ...right, password: 'wrong horse' }, { remoteAddress: '192.168.1.30' });
     expect((await post('/api/auth/sign-in', right, { remoteAddress: '192.168.1.30' })).statusCode).toBe(429);
-    expect((await post('/api/auth/sign-in', right, { remoteAddress: '192.168.1.31' })).statusCode).toBe(429);
+    // The username isn't locked: someone guessing it from elsewhere can't keep its owner out.
+    expect((await post('/api/auth/sign-in', right, { remoteAddress: '192.168.1.31' })).statusCode).toBe(200);
+  });
+
+  it('counts redeem failures per address too', async () => {
+    const { post } = setup();
+    for (let i = 0; i < 10; i++) await post('/api/auth/redeem', { code: 'WRONGONE', password: 'sams password' }, { remoteAddress: '192.168.1.30' });
+    expect((await post('/api/auth/redeem', { code: 'WRONGONE', password: 'sams password' }, { remoteAddress: '192.168.1.30' })).statusCode).toBe(429);
+    expect((await post('/api/auth/redeem', { code: 'WRONGONE', password: 'sams password' }, { remoteAddress: '192.168.1.31' })).statusCode).toBe(400);
+  });
+
+  it('behind a trusted proxy, counts failures per visitor (X-Forwarded-For), not per proxy', async () => {
+    const { accounts, post } = setup({ trustProxy: true });
+    await accounts.setPassword(1, 'correct horse');
+    const right = { username: 'home', password: 'correct horse', ...device };
+    const from = (visitor: string) => ({ headers: { 'x-forwarded-for': visitor } });
+    for (let i = 0; i < 10; i++) await post('/api/auth/sign-in', { ...right, password: 'wrong horse' }, from('198.51.100.7'));
+    expect((await post('/api/auth/sign-in', right, from('198.51.100.7'))).statusCode).toBe(429);
+    expect((await post('/api/auth/sign-in', right, from('198.51.100.8'))).statusCode).toBe(200);
+  });
+
+  it('says whose username it is when the owner picks one another account has', async () => {
+    const { accounts, post } = setup();
+    accounts.create({ username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null });
+    const res = await post('/api/auth/setup', { ...owner, username: 'Sam' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'That username belongs to Sam. Pick another; you can rename them later.' });
+    expect(accounts.setupMode()).toBe(true);
+    expect((await post('/api/auth/setup', { ...owner, username: 'home' })).statusCode).toBe(200); // the owner's own is fine
   });
 
   it('redeems a setup code once, for the account’s first password', async () => {

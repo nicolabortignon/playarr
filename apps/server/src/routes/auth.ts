@@ -42,6 +42,7 @@ export function authRoutes(
   deps: { accounts: Accounts; sessions: Sessions; setupCodes: SetupCodes; limiter?: RateLimiter },
 ) {
   const { accounts, sessions, setupCodes } = deps;
+  // Failed sign-ins and codes count per client address: req.ip, the visitor's behind a proxy trusted with TRUST_PROXY.
   const limiter = deps.limiter ?? new RateLimiter();
   const signedIn = (account: Account, input: { device: string; platform: string }): SignInResponse => ({
     token: sessions.create(account.id, input.device, input.platform).token,
@@ -54,6 +55,11 @@ export function authRoutes(
       const input = parseInput(setupInput, req.body);
       checkPassword(input.password);
       const owner = accounts.owner();
+      // Profiles became accounts with usernames of their own: say whose, so the owner knows what to do.
+      const holder = accounts.byUsername(input.username);
+      if (holder && holder.id !== owner.id) {
+        return reply.code(409).send({ error: `That username belongs to ${holder.name}. Pick another; you can rename them later.` });
+      }
       accounts.update(owner.id, { username: input.username, name: input.name, role: 'admin' });
       await accounts.setPassword(owner.id, input.password);
       return signedIn(accounts.get(owner.id)!, input);
@@ -63,14 +69,12 @@ export function authRoutes(
   app.post('/api/auth/sign-in', (req, reply) =>
     handleAccountErrors(reply, async () => {
       const input = parseInput(signInInput, req.body);
-      const keys = [`ip:${req.ip}`, `user:${input.username.toLowerCase()}`];
-      if (!limiter.allows(keys)) return reply.code(429).send({ error: TOO_MANY });
+      if (!limiter.allows(req.ip)) return reply.code(429).send({ error: TOO_MANY });
       const account = await accounts.verify(input.username, input.password);
       if (!account) {
-        limiter.fail(keys);
+        limiter.fail(req.ip);
         return reply.code(401).send({ error: 'Wrong username or password', setup: accounts.setupMode() });
       }
-      limiter.clear(keys[1]!);
       return signedIn(account, input);
     }),
   );
@@ -79,11 +83,10 @@ export function authRoutes(
   app.post('/api/auth/redeem', (req, reply) =>
     handleAccountErrors(reply, async () => {
       const input = parseInput(redeemInput, req.body);
-      const keys = [`ip:${req.ip}`];
-      if (!limiter.allows(keys)) return reply.code(429).send({ error: TOO_MANY });
+      if (!limiter.allows(req.ip)) return reply.code(429).send({ error: TOO_MANY });
       const id = setupCodes.accountFor(input.code);
       if (id === undefined) {
-        limiter.fail(keys);
+        limiter.fail(req.ip);
         return reply.code(400).send({ error: 'That code is wrong, used or expired. Ask for a new one.' });
       }
       await accounts.setPassword(id, input.password); // a password too short leaves the code unused

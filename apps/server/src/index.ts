@@ -58,6 +58,8 @@ import { readMixSettings } from './mixes/settings.ts';
 
 const config = loadConfig();
 const app = Fastify({
+  // Behind a reverse proxy (TRUST_PROXY): the visitor's address, host and protocol from the proxy's headers.
+  trustProxy: config.trustProxy,
   logger: { level: process.env.LOG_LEVEL ?? 'info' },
   logController: new LogController({ disableRequestLogging: process.env.LOG_REQUESTS !== '1' }),
 });
@@ -163,7 +165,7 @@ const recommendations = new Recommendations(playlists, library, requests, musicb
 app.decorateRequest('auth', null);
 app.addHook('onRequest', authHook({ accounts, sessions }));
 authRoutes(app, { accounts, sessions, setupCodes });
-accountRoutes(app, { accounts, sessions, setupCodes });
+accountRoutes(app, { accounts, sessions, setupCodes, publicUrl: config.PUBLIC_URL });
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
