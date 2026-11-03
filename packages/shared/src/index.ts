@@ -378,6 +378,12 @@ export interface SourceInfo {
   syncing: boolean;
   songs: number;
   albums: number;
+  /** Albums this source has every song of (their length known from Lidarr, a MusicBrainz match or the files' track total). */
+  albumsComplete: number;
+  /** Albums this source has some of the songs of. */
+  albumsIncomplete: number;
+  /** Albums whose length isn't known (not identified on MusicBrainz). Loose songs are none of these. */
+  albumsUnknown: number;
   /** Folder sources: album groups matched on MusicBrainz (automatically, by you, or by their tags), or named by you. */
   matched: number;
   /** Folder sources: album groups waiting for the user's review (to pick a match, or found nowhere). */

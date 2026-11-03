@@ -1,7 +1,7 @@
 import type { SourceInfo } from '@playarr/shared';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MatchSummary } from './SourcesPanel';
+import { AlbumSummary, MatchSummary } from './SourcesPanel';
 
 const folder = (counts: Partial<SourceInfo>): SourceInfo => ({
   id: 2,
@@ -13,6 +13,9 @@ const folder = (counts: Partial<SourceInfo>): SourceInfo => ({
   syncing: false,
   songs: 1501,
   albums: 1400,
+  albumsComplete: 0,
+  albumsIncomplete: 0,
+  albumsUnknown: 0,
   matched: 0,
   review: 0,
   ignored: 0,
@@ -42,5 +45,17 @@ describe('MatchSummary', () => {
   it('shows nothing before anything was matched', () => {
     const { container } = render(<MatchSummary source={folder({})} canEdit onReview={() => {}} />);
     expect(container.textContent).toBe('');
+  });
+});
+
+describe('AlbumSummary', () => {
+  it('says how many albums the source has whole, in part, or of unknown length', () => {
+    render(<AlbumSummary source={folder({ albumsComplete: 10, albumsIncomplete: 918, albumsUnknown: 511 })} />);
+    expect(screen.getByText('Albums: 10 complete · 918 incomplete · 511 of unknown length')).toBeTruthy();
+  });
+
+  it('leaves out what it has none of', () => {
+    render(<AlbumSummary source={folder({ albumsComplete: 107, albumsIncomplete: 7 })} />);
+    expect(screen.getByText('Albums: 107 complete · 7 incomplete')).toBeTruthy();
   });
 });

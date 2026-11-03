@@ -159,6 +159,7 @@ function SourceRow({
           {!s.enabled && <span className="font-mono text-[10px] tracking-wider text-muted uppercase">Off</span>}
         </div>
         <div className="truncate font-mono text-[12px] text-muted">{details}</div>
+        <AlbumSummary source={s} />
         <SourceStatus source={s} />
         {s.kind === 'folder' && <MatchSummary source={s} canEdit={canEdit} onReview={onReview} />}
       </div>
@@ -188,6 +189,17 @@ function SourceRow({
       )}
     </Reorder.Item>
   );
+}
+
+/** How much of its albums a source has: complete, incomplete, or of a length nobody knows. */
+export function AlbumSummary({ source: s }: { source: SourceInfo }) {
+  const parts = [
+    s.albumsComplete > 0 && `${s.albumsComplete} complete`,
+    s.albumsIncomplete > 0 && `${s.albumsIncomplete} incomplete`,
+    s.albumsUnknown > 0 && `${s.albumsUnknown} of unknown length`,
+  ].filter(Boolean);
+  if (!parts.length) return null;
+  return <div className="mt-1 text-[13px] text-paper-dim">Albums: {parts.join(' · ')}</div>;
 }
 
 /** How a folder's albums were matched: those not matched open the review, to match them by hand. */

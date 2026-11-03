@@ -95,6 +95,15 @@ function isoDate(value: string | undefined): string | null {
   return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
+/** What a source has (see sourceCounts). */
+export interface SourceCounts {
+  songs: number;
+  albums: number;
+  complete: number;
+  incomplete: number;
+  unknown: number;
+}
+
 /** A folder source's album groups by how matching went (see matchCounts). */
 export interface MatchCounts {
   matched: number;
@@ -213,15 +222,35 @@ export class CatalogStore {
   }
 
   /** How many songs and albums each source has a copy of. */
-  sourceCounts(): Map<number, { songs: number; albums: number }> {
+  /**
+   * The songs and albums each source has, its albums by how much of them it has: complete or incomplete
+   * when the album's length is known (Lidarr's, a MusicBrainz match's, or the files' track total),
+   * unknown otherwise. Loose songs count as one album, in none of those.
+   */
+  sourceCounts(): Map<number, SourceCounts> {
     const rows = this.db
       .prepare(
-        `SELECT c.source_id AS id, COUNT(DISTINCT c.track_id) AS songs, COUNT(DISTINCT t.album_id) AS albums
-         FROM copies c JOIN catalog_tracks t ON t.id = c.track_id
-         GROUP BY c.source_id`,
+        `WITH size AS (
+           SELECT a.id AS album_id,
+             MAX(COUNT(t.id), IFNULL(json_extract(a.meta, '$.totalTrackCount'), 0)) AS total,
+             json_extract(a.meta, '$.totalTrackCount') IS NOT NULL AS known,
+             IFNULL(json_extract(a.meta, '$.albumType') = 'Loose', 0) AS loose
+           FROM catalog_albums a JOIN catalog_tracks t ON t.album_id = a.id
+           GROUP BY a.id
+         ), have AS (
+           SELECT c.source_id AS id, t.album_id, COUNT(DISTINCT c.track_id) AS songs
+           FROM copies c JOIN catalog_tracks t ON t.id = c.track_id
+           GROUP BY c.source_id, t.album_id
+         )
+         SELECT h.id, SUM(h.songs) AS songs, COUNT(*) AS albums,
+           SUM(s.known AND NOT s.loose AND h.songs >= s.total) AS complete,
+           SUM(s.known AND NOT s.loose AND h.songs < s.total) AS incomplete,
+           SUM(NOT s.known AND NOT s.loose) AS unknown
+         FROM have h JOIN size s ON s.album_id = h.album_id
+         GROUP BY h.id`,
       )
-      .all() as { id: number; songs: number; albums: number }[];
-    return new Map(rows.map((r) => [r.id, { songs: r.songs, albums: r.albums }]));
+      .all() as { id: number; songs: number; albums: number; complete: number; incomplete: number; unknown: number }[];
+    return new Map(rows.map(({ id, ...counts }) => [id, counts]));
   }
 
   appSetting(key: string): string | undefined {

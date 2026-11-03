@@ -204,11 +204,24 @@ describe('CatalogStore: managing sources', () => {
     expect(() => store.reorderSources([a])).toThrow(/every source/);
   });
 
-  it('counts the songs and albums each source has', () => {
+  it('counts the songs and albums each source has, complete, incomplete or of unknown length', () => {
     const store = new CatalogStore(freshDb());
     const id = store.ensureSource('lidarr', 'Lidarr');
+    // Two of Mezzanine's 11 songs.
     store.applySync(id, mezzanine());
-    expect(store.sourceCounts().get(id)).toEqual({ songs: 2, albums: 1 });
+    expect(store.sourceCounts().get(id)).toEqual({ songs: 2, albums: 1, complete: 0, incomplete: 1, unknown: 0 });
+
+    const folder = store.addSource('folder', 'Music', { path: '/m' });
+    const album = (key: string, title: string, extra: object = {}) => ({ key, artistKey: 'a', title, albumType: 'Album', secondaryTypes: [], genres: [], ...extra });
+    const track = (key: string, albumKey: string) => ({ key, albumKey, recordingId: key, title: key, trackNumber: 1, discNumber: 1, duration: 200, explicit: false });
+    const copy = (ref: string, trackKey: string) => ({ ref, trackKey, path: `/m/${ref}`, size: 1, format: FLAC });
+    store.applySync(folder, {
+      artists: [{ key: 'a', name: 'A', sortName: 'A', genres: [] }],
+      albums: [album('whole', 'Whole', { totalTrackCount: 2 }), album('demo', 'Demo'), { ...album('loose:a', 'Loose songs'), albumType: 'Loose' }],
+      tracks: [track('w1', 'whole'), track('w2', 'whole'), track('d1', 'demo'), track('l1', 'loose:a')],
+      copies: [copy('w1.flac', 'w1'), copy('w2.flac', 'w2'), copy('d1.flac', 'd1'), copy('l1.flac', 'l1')],
+    });
+    expect(store.sourceCounts().get(folder)).toEqual({ songs: 4, albums: 3, complete: 1, incomplete: 0, unknown: 1 });
   });
 
   it('keeps app settings', () => {

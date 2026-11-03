@@ -7,7 +7,7 @@ import { FolderSource, isAudioFile } from './folderSource.ts';
 import { LidarrSource } from './lidarr.ts';
 import { isWritable } from './organizer.ts';
 import { checkFolder, listFolders } from './paths.ts';
-import type { CatalogStore, MatchCounts, SourceRecord } from './store.ts';
+import type { CatalogStore, MatchCounts, SourceCounts, SourceRecord } from './store.ts';
 import type { CatalogSource } from './types.ts';
 
 interface LidarrSettings {
@@ -335,7 +335,7 @@ export class SourceManager {
 
 function toInfo(
   s: SourceRecord,
-  counts: { songs: number; albums: number } | undefined,
+  counts: SourceCounts | undefined,
   matching: MatchCounts & { matching: number },
   opts: { includeSettings: boolean; syncing: boolean },
 ): SourceInfo {
@@ -354,6 +354,9 @@ function toInfo(
     syncing: opts.syncing && s.enabled,
     songs: counts?.songs ?? 0,
     albums: counts?.albums ?? 0,
+    albumsComplete: counts?.complete ?? 0,
+    albumsIncomplete: counts?.incomplete ?? 0,
+    albumsUnknown: counts?.unknown ?? 0,
     matched: matching.matched,
     review: matching.review,
     ignored: matching.ignored,
