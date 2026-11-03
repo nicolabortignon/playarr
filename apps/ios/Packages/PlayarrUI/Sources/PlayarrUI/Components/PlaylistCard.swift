@@ -1,0 +1,38 @@
+import PlayarrAPI
+import SwiftUI
+
+/// A playlist: its generated cover (drawn by the server; no title on it below 120 points), name and songs.
+struct PlaylistCard: View {
+  let playlist: PlaylistSummary
+  var width: CGFloat = ShelfCard.width
+
+  var body: some View {
+    NavigationLink(value: Route.playlist(playlist.id)) {
+      VStack(alignment: .leading, spacing: 6) {
+        PlaylistCover(cover: playlist.cover, points: width, name: playlist.name)
+        Text(playlist.name).font(.subheadline).lineLimit(1)
+        Text(Format.plural(playlist.trackCount, "song")).font(.caption.monospaced()).foregroundStyle(.secondary)
+      }
+      .frame(width: width)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(playlist.name), \(Format.plural(playlist.trackCount, "song"))")
+    .accessibilityAddTraits(.isButton)
+  }
+}
+
+/// The playlist's artwork (apps/web/src/components/PlaylistCover.tsx).
+struct PlaylistCover: View {
+  /// Below this the title on the cover would be unreadable, and lists show the name beside it anyway.
+  static let titleMinPoints: CGFloat = 120
+
+  let cover: PlaylistCoverInfo
+  let points: CGFloat
+  let name: String
+
+  var body: some View {
+    let separator = cover.url.contains("?") ? "&" : "?"
+    let path = points < Self.titleMinPoints ? cover.url + separator + "title=0" : cover.url
+    Cover(path: path, points: points, label: name)
+  }
+}
