@@ -57,7 +57,8 @@ The server must be able to **read the same music files Lidarr manages**. Path ma
 playarr/
 ├── apps/
 │   ├── web/        # React client (Vite), PWA with its own service worker
-│   └── server/     # Fastify API, streaming, analysis, transitions
+│   ├── server/     # Fastify API, streaming, analysis, transitions
+│   └── ios/        # SwiftUI app for iPhone and iPad, outside the workspace: XcodeGen spec, Makefile, App Store Connect scripts
 ├── packages/
 │   ├── shared/     # Shared TS types (Playarr API contracts) and the byte-range parser
 │   └── mix/        # DJ mixing, no dependencies: analysis, planner, renderer (server and browser)
@@ -407,3 +408,4 @@ Settings → Playback → Transitions: Off, Crossfade or DJ mix. With DJ mix, so
 | 2026-11-02 | **Even volume through levelled streams**: the server serves each song as a WAV at its level (`/stream/:id/levelled.wav?gain=`), turned up as well as down, because iPhones ignore an element's volume. Loudness is our own EBU R128 measurement (−14 LUFS target), not ReplayGain tags, so every song gets one. DJ transitions are rendered at the same levels, so the volume never jumps at a join; with even volume off, none are applied. Cost: uncompressed audio over the network until there's transcoding. |
 | 2026-11-02 | One tempo for everything: beat analysis's (the mix map), so covers, mixes and DJ mix never disagree; sound analysis no longer measures its own. Settings → Analysis shows four analyses that don't overlap (beat, sound, loudness, tags), each with one button. |
 | 2026-11-02 | Joins between files are lined up on the sound itself on desktop (cross-correlation through a Web Audio graph, delay nodes, audio-clock waits), since an element's reported time isn't the sample heard. Web Audio is kept to desktop browsers (no iPhone, iPad or Android; a fine pointer): iOS suspends it when the screen locks, which silenced the players. There, files take over in step by their reported times. |
+| 2026-11-03 | Native iOS app (design: `docs/plans/2026-11-03-ios-app-design.md`), phase 0: an XcodeGen project that isn't committed, with XcodeGen pinned and checksummed in `apps/ios/.tools/` (Homebrew isn't writable here). Signing and uploads only through the App Store Connect API key, no Apple ID, no fastlane: the archive is unsigned, `xcodebuild -exportArchive` signs it with the cloud-managed distribution certificate, and `altool` uploads it, so TestFlight needs no registered device and no certificate in a keychain. `pnpm ios:beta` uploads to TestFlight's internal "Household" group; GitHub Actions on `macos-26` does the same for pushes to main that change `apps/ios`. Build number = commit count. |

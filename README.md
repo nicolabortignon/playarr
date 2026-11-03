@@ -34,12 +34,13 @@ The server keeps the Lidarr API key to itself; the browser only ever talks to Pl
 
 ## Repository layout
 
-A pnpm monorepo, all TypeScript:
+A pnpm monorepo, all TypeScript, plus the native iOS app in Swift:
 
 | Package | What it is |
 |---|---|
 | `apps/server` | Fastify 5 server. Keeps a snapshot of the Lidarr library, refreshed every 10 minutes. Streams audio with HTTP range support, serves resized artwork, and stores favorites, playlists and song analysis in SQLite (`node:sqlite`). In production it also serves the built web app, so everything runs as one process on one port. |
 | `apps/web` | React 19 app built with Vite 8, Tailwind 4, React Router 7, TanStack Query and Zustand. Installable as a PWA, with its own service worker that can play songs saved on the device. |
+| `apps/ios` | The native iPhone and iPad app in SwiftUI, being built in phases ([design](docs/plans/2026-11-03-ios-app-design.md)). Outside the pnpm workspace: XcodeGen generates the Xcode project from `project.yml`, a Makefile has every entry point, and two Node scripts talk to App Store Connect. |
 | `packages/shared` | Types shared by both sides, plus the byte-range parser used by the server and the service worker. |
 | `packages/mix` | DJ transitions, with no dependencies: finding beats, bars, key and mix points in a song, planning how two songs join, and rendering the mix. Used by the server and the web app alike. |
 | `docker/` | Dockerfile for a single image containing the server, the web app, ffmpeg, fpcalc and rclone; the compose stack, `update.sh` and the updater container that keep a server up to date. |
@@ -88,6 +89,26 @@ pnpm sim shot                     # screenshot to /tmp/playarr-sim.png
 ```
 
 It talks to the simulator's Web Inspector directly, so it needs no WebDriver setup. Taps are JavaScript clicks, not real touches.
+
+### iOS app
+
+The native app in `apps/ios` needs Xcode 26 or later; nothing else is installed system-wide.
+
+```bash
+pnpm ios:bootstrap   # download the pinned XcodeGen into apps/ios/.tools and generate Playarr.xcodeproj
+pnpm ios:build       # build for the iPhone 17 Pro simulator
+pnpm ios:test        # the scripts' tests, the Swift package tests, then the UI tests on the simulator
+pnpm ios:beta        # test, archive, upload, and hand the build to the "Household" TestFlight group
+pnpm ios:device      # optional: build and install on an iPhone cabled to this Mac (Developer Mode on)
+```
+
+The Xcode project is generated, not committed: every `make` target regenerates it, so new files are picked up. Open `apps/ios/Playarr.xcodeproj` to work in Xcode.
+
+Signing and uploads go through an App Store Connect API key, with no Apple ID signed in. Put the key at `~/.appstoreconnect/private_keys/AuthKey_<id>.p8`, and `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID` and `IOS_BUNDLE_ID` in `.env`. `pnpm ios:setup` registers the bundle id and creates the TestFlight group (`TESTERS="a@example.com"` adds App Store Connect users to it); it's safe to run again. `node --env-file=.env apps/ios/scripts/asc.mjs check` tells what's set up.
+
+Phones get the app through TestFlight, which needs no registered device: `pnpm ios:beta` archives unsigned, the export signs the app with Apple's cloud-managed distribution certificate through the key (no certificate in the keychain), and `altool` uploads it. `pnpm ios:device` is only for a phone that can be cabled to the Mac; it registers that phone with Apple. The build number is the commit count; the version is `MARKETING_VERSION` in `apps/ios/Config/Base.xcconfig`, changed only for App Store releases.
+
+GitHub Actions (`.github/workflows/ios.yml`, on `macos-26`) runs the tests for every push and pull request that changes `apps/ios`, and uploads a TestFlight build for each such push to main, with the key in the repository's secrets (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID`, `ASC_KEY_P8_BASE64`).
 
 ### Docker
 

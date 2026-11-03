@@ -62,7 +62,7 @@ apps/ios/
 └── scripts/               # asc.mjs (App Store Connect API), model generation
 ```
 
-Swift 6 with strict concurrency, `@Observable` state, no third-party dependencies. A new Mac needs Xcode, `brew install xcodegen`, and the App Store Connect key (section 5).
+Swift 6 with strict concurrency, `@Observable` state, no third-party dependencies. A new Mac needs Xcode and the App Store Connect key (section 5); `pnpm ios:bootstrap` downloads a pinned XcodeGen into `apps/ios/.tools/`.
 
 **Models.** `pnpm ios:models` turns the shared TypeScript types into Swift Codable types (TypeScript → JSON Schema → Swift). The server's route tests save real responses as fixtures; Swift contract tests decode them, so a change on either side fails CI until the other follows.
 
