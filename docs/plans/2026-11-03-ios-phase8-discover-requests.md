@@ -1275,6 +1275,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `RequestsModel(api:clock:notifier:toast:invalidate:)`; the 2-second "Looking up" sleep goes through the clock and is cancelled once the server answers. The tests use `FakeAPI` (`hold` with a `Gate` keeps the POST's answer back) and `TestClock` (the polling test reads each `nextSleep()`: 10, 10, 60, 60 s), and check the request's body.
+
 ---
 
 ### Task 5: The MusicBrainz queue, and the words for a wait
