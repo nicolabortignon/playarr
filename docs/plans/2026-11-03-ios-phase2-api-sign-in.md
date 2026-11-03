@@ -1427,7 +1427,7 @@ import Testing
 swift test --package-path apps/ios/Packages/PlayarrAPI --filter EndpointTests
 ```
 
-Expected: build fails with `cannot find 'API' in scope`.
+Expected: build fails with `cannot find type 'Endpoint' in scope` (and `API`). Until Task 8 bundles them, SwiftPM also warns that the fixtures recorded in Task 4 are unhandled files.
 
 **Step 3: Write `Endpoint`, the extra answers and the device's name**
 
