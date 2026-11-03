@@ -7193,8 +7193,34 @@ MSG
 
 **Files:**
 - Test: `apps/ios/PlayarrUITests/BrowseTests.swift`
+- Modify: `apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift`, test in `apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/PlayerTests.swift` (found by `testTheQueueClearsWithUndo`, see below)
 
-Against the demo library, so no server is needed. The swipe is a press-and-drag from 30 % down the screen (the cover), 300 points down and fast: XCUITest's `swipeDown()` on an element starts at its centre, which is below the cover where nothing closes.
+Against the demo library, so no server is needed.
+
+Found while running these against phase 3's real code: its `Player.continueRadio()` asked for a radio continuation on every queue change, so Clear (leaving the song playing as the last one) brought three radio songs straight back and "The queue ends after this track." never showed. The web asks only when a song starts (`useAutoplay` runs on the current `fileId`). The fix: `continueRadio()` checks each song once, when it becomes the current entry (`radioAskedAt` is set before `Radio.continuation` is asked), with the test `clearingUpNextDoesntStartARadio` in `PlayerTests`:
+
+```swift
+  @Test func clearingUpNextDoesntStartARadio() async throws {
+    // The web asks for more only when the last song starts (radio.ts), so Clear leaves the queue ending here.
+    let backend = FakeBackend()
+    backend.radioAnswer.withLock { $0 = [song(10), song(11)] }
+    let player = try Player.testing(backend)
+    player.play([song(1), song(2), song(3)])
+    player.clearUpcoming()
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(backend.radioAsks.withLock { $0.isEmpty })
+    #expect(player.queue.queue.count == 3)
+    #expect(player.queue.upcoming(5).isEmpty)
+  }
+```
+
+```swift
+  private func continueRadio() {
+    guard let entry = currentEntry, entry != radioAskedAt else { return }
+    radioAskedAt = entry
+    guard let ask = Radio.continuation(for: queue, autoplay: settings.autoplay) else { return }
+    // … as before
+``` The swipe is a press-and-drag from 30 % down the screen (the cover), 300 points down and fast: XCUITest's `swipeDown()` on an element starts at its centre, which is below the cover where nothing closes.
 
 **Step 1: Write the tests**
 
@@ -7301,7 +7327,7 @@ Expected: `BrowseTests` (4 tests) and `LaunchTests` pass. If the log says "Resta
 **Step 3: Commit**
 
 ```bash
-git add apps/ios/PlayarrUITests/BrowseTests.swift
+git add apps/ios/PlayarrUITests/BrowseTests.swift apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/PlayerTests.swift docs/plans/2026-11-03-ios-phase4-browse-now-playing.md
 git commit -F - <<'MSG'
 iOS UI tests: play an album from Home, open and close Now Playing, clear the queue with Undo, search, choose an accent
 

@@ -51,6 +51,7 @@ public final class Player {
   @ObservationIgnored private var policy = SessionPolicy()
   @ObservationIgnored private var firstLoad = true
   @ObservationIgnored private var lastSaved = Date.distantPast
+  /// The song whose start was last checked for a radio continuation.
   @ObservationIgnored private var radioAskedAt: Entry?
   @ObservationIgnored private var ticker: Task<Void, Never>?
 
@@ -309,10 +310,12 @@ public final class Player {
     }
   }
 
-  /// When the last song of the queue starts (nothing repeating, autoplay on): songs like the last few.
+  /// When the last song of the queue starts (nothing repeating, autoplay on): songs like the last few. Only when a
+  /// song starts, as the web's `useAutoplay`: clearing Up next leaves the queue ending after this song.
   private func continueRadio() {
-    guard let entry = currentEntry, entry != radioAskedAt, let ask = Radio.continuation(for: queue, autoplay: settings.autoplay) else { return }
+    guard let entry = currentEntry, entry != radioAskedAt else { return }
     radioAskedAt = entry
+    guard let ask = Radio.continuation(for: queue, autoplay: settings.autoplay) else { return }
     Task {
       guard let more = try? await backend.radio(seeds: ask.seeds, exclude: ask.exclude, count: Radio.count), !more.isEmpty else { return }
       // Still on that last song (nothing was queued meanwhile): carry on with these.

@@ -117,6 +117,19 @@ struct PlayerTests {
     #expect(backend.radioAsks.withLock { $0.first?.seeds } == ["rec-1", "rec-2"])
   }
 
+  @Test func clearingUpNextDoesntStartARadio() async throws {
+    // The web asks for more only when the last song starts (radio.ts), so Clear leaves the queue ending here.
+    let backend = FakeBackend()
+    backend.radioAnswer.withLock { $0 = [song(10), song(11)] }
+    let player = try Player.testing(backend)
+    player.play([song(1), song(2), song(3)])
+    player.clearUpcoming()
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(backend.radioAsks.withLock { $0.isEmpty })
+    #expect(player.queue.queue.count == 3)
+    #expect(player.queue.upcoming(5).isEmpty)
+  }
+
   @Test func evenVolumeUsesTheServersLevels() async throws {
     let backend = FakeBackend()
     backend.levelTable.withLock { $0 = ["rec-1": TrackLevel(track: -5, album: -3), "rec-2": TrackLevel(track: 4, album: -3)] }
