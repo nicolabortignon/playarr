@@ -71,7 +71,7 @@ public final class NowPlayingBridge {
   }
 
   /// Album art at this size (px) from the server's `?size=`.
-  public static let artworkSize = 512
+  nonisolated public static let artworkSize = 512
 
   private let commands: Commands
   private let artwork: @Sendable (Track) async -> Data?
@@ -124,9 +124,14 @@ public final class NowPlayingBridge {
 
   private func show(_ data: Data, for trackId: Int) {
     guard artworkTrack == trackId else { return }
-    let size = CGSize(width: Self.artworkSize, height: Self.artworkSize)
-    art = MPMediaItemArtwork(boundsSize: size) { _ in Self.image(data) }
+    art = Self.artwork(data)
     publish()
+  }
+
+  /// Made outside the main actor: MediaPlayer asks for the image on its own queue, and a closure made in
+  /// here would be the main actor's, trapping when called there.
+  nonisolated private static func artwork(_ data: Data) -> MPMediaItemArtwork {
+    MPMediaItemArtwork(boundsSize: CGSize(width: artworkSize, height: artworkSize)) { _ in image(data) }
   }
 
   private func publish() {
