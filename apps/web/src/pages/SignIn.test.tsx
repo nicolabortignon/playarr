@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { remember, useAccounts } from '../lib/accounts';
 import { api, ApiError } from '../lib/api';
+import { publicAddress } from '../lib/publicAddress';
 import { queryClient } from '../lib/queryClient';
 import { RedeemPage, SetupPage, SignInPage } from './SignIn';
 
@@ -131,5 +132,77 @@ describe('sign-in pages', () => {
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'nope nope' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect((await screen.findByRole('alert')).textContent).toBe('Too many tries. Wait a few minutes and try again.');
+  });
+});
+
+// The page is served from http://localhost:4000 (vitest.config.ts): another origin than the public address.
+describe('the public address (PUBLIC_URL)', () => {
+  const PUBLIC: ServerInfo = { ...SERVER, publicUrl: 'https://tracklist.me' };
+
+  it('after claiming the server at home, sends the browser to sign in again on the public address', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue({ ...PUBLIC, setup: true });
+    vi.spyOn(api, 'setup').mockResolvedValue({ token: 'tok-1', account: NICOLA });
+    vi.spyOn(api, 'switchAccount').mockResolvedValue(NICOLA);
+    const go = vi.spyOn(publicAddress, 'go').mockImplementation(() => {});
+    renderAt('/setup');
+    fireEvent.change(await screen.findByLabelText('Your name'), { target: { value: 'Nicola' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'nicola' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct horse' } });
+    fireEvent.change(screen.getByLabelText('Repeat it'), { target: { value: 'correct horse' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Set up Playarr' }));
+    await waitFor(() => expect(go).toHaveBeenCalledWith('https://tracklist.me/sign-in?username=nicola'));
+    expect(screen.queryByText('Accounts settings')).toBeNull();
+  });
+
+  it('does the same after signing in or choosing a password elsewhere', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue(PUBLIC);
+    vi.spyOn(api, 'signIn').mockResolvedValue({ token: 'tok-1', account: NICOLA });
+    vi.spyOn(api, 'redeem').mockResolvedValue({ token: 'tok-3', account: SAM });
+    vi.spyOn(api, 'switchAccount').mockImplementation(async (token) => (token === 'tok-1' ? NICOLA : SAM));
+    const go = vi.spyOn(publicAddress, 'go').mockImplementation(() => {});
+    renderAt('/sign-in?next=%2Falbums');
+    fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'Nicola ' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct horse' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(go).toHaveBeenCalledWith('https://tracklist.me/sign-in?username=nicola'));
+    expect(screen.queryByText('Albums page')).toBeNull();
+    cleanup();
+
+    renderAt('/redeem?code=ABCD2345');
+    fireEvent.change(await screen.findByLabelText('New password'), { target: { value: 'sams password' } });
+    fireEvent.change(screen.getByLabelText('Repeat it'), { target: { value: 'sams password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose password' }));
+    await waitFor(() => expect(go).toHaveBeenLastCalledWith('https://tracklist.me/sign-in?username=sam'));
+  });
+
+  it('says where the server lives on the sign-in and setup-code pages', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue(PUBLIC);
+    renderAt('/sign-in');
+    const link = await screen.findByRole('link', { name: 'tracklist.me' });
+    expect(link.getAttribute('href')).toBe('https://tracklist.me');
+    expect(link.parentElement?.textContent).toBe('This server’s address is tracklist.me');
+    cleanup();
+    renderAt('/redeem');
+    expect((await screen.findByRole('link', { name: 'tracklist.me' })).getAttribute('href')).toBe('https://tracklist.me');
+  });
+
+  it('pre-fills the username it was sent with', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue(SERVER);
+    renderAt('/sign-in?username=nicola');
+    expect(((await screen.findByLabelText('Username')) as HTMLInputElement).value).toBe('nicola');
+  });
+
+  it('stays put on the public address itself, and without one', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue({ ...SERVER, publicUrl: 'http://localhost:4000' });
+    vi.spyOn(api, 'signIn').mockResolvedValue({ token: 'tok-1', account: NICOLA });
+    vi.spyOn(api, 'switchAccount').mockResolvedValue(NICOLA);
+    const go = vi.spyOn(publicAddress, 'go').mockImplementation(() => {});
+    renderAt('/sign-in?next=%2Falbums');
+    fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'nicola' } });
+    expect(screen.queryByText(/This server’s address/)).toBeNull();
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct horse' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('Albums page')).toBeTruthy();
+    expect(go).not.toHaveBeenCalled();
   });
 });

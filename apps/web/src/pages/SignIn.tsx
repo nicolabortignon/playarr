@@ -2,8 +2,11 @@ import { useState, type FormEvent, type InputHTMLAttributes, type ReactNode } fr
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Wordmark } from '../components/Nav';
 import { deviceName, signedIn, switchTo, useAccounts } from '../lib/accounts';
+import type { SignInResponse } from '@playarr/shared';
 import { api, ApiError } from '../lib/api';
+import { elsewhere, publicAddress, signInThere } from '../lib/publicAddress';
 import { useServerInfo } from '../lib/queries';
+import { queryClient } from '../lib/queryClient';
 
 const INPUT =
   'mt-1 h-11 w-full rounded-lg border border-line bg-ink-900 px-3 text-[15px] text-paper outline-none transition placeholder:text-muted focus:border-accent';
@@ -61,6 +64,32 @@ function useStep() {
   return { error, busy, run };
 }
 
+/**
+ * Keeps the account on this device, then carries on: on another origin than the server's public address
+ * (PUBLIC_URL), to its sign-in page, username filled in; otherwise `next()`.
+ */
+async function finish(response: SignInResponse, next: () => void) {
+  await signedIn(response);
+  const server = await queryClient.ensureQueryData({ queryKey: ['server'], queryFn: api.server });
+  const there = elsewhere(server.publicUrl);
+  if (there && server.publicUrl) publicAddress.go(signInThere(server.publicUrl, response.account.username));
+  else next();
+}
+
+/** "This server's address is tracklist.me", on a page served from another origin. */
+function PublicAddress({ publicUrl }: { publicUrl: string | undefined }) {
+  const there = elsewhere(publicUrl);
+  if (!there || !publicUrl) return null;
+  return (
+    <p className="mt-6 text-[13px] text-muted">
+      This server’s address is{' '}
+      <a href={publicUrl} className="text-paper-dim underline underline-offset-2 hover:text-paper">
+        {there.host}
+      </a>
+    </p>
+  );
+}
+
 const Problem = ({ error }: { error: string | null }) =>
   error ? (
     <p role="alert" className="text-sm text-red-300/90">
@@ -76,7 +105,8 @@ export function SignInPage() {
   const navigate = useNavigate();
   const { data: server } = useServerInfo();
   const stored = useAccounts((s) => s.accounts);
-  const [username, setUsername] = useState('');
+  // Filled in when another address sent us here (see `finish`).
+  const [username, setUsername] = useState(params.get('username') ?? '');
   const [password, setPassword] = useState('');
   const { error, busy, run } = useStep();
   const done = () => navigate(next, { replace: true });
@@ -97,8 +127,7 @@ export function SignInPage() {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
-      await signedIn(await api.signIn({ username: username.trim(), password, device: deviceName(), platform: 'web' }));
-      done();
+      await finish(await api.signIn({ username: username.trim(), password, device: deviceName(), platform: 'web' }), done);
     });
   };
 
@@ -139,6 +168,7 @@ export function SignInPage() {
           Choose your password
         </Link>
       </p>
+      <PublicAddress publicUrl={server?.publicUrl} />
     </AuthLayout>
   );
 }
@@ -157,8 +187,7 @@ export function RedeemPage() {
     e.preventDefault();
     void run(async () => {
       if (password !== again) throw new Error('The passwords don’t match');
-      await signedIn(await api.redeem({ code: code.trim(), password, device: deviceName(), platform: 'web' }));
-      navigate('/', { replace: true });
+      await finish(await api.redeem({ code: code.trim(), password, device: deviceName(), platform: 'web' }), () => navigate('/', { replace: true }));
     });
   };
 
@@ -179,6 +208,7 @@ export function RedeemPage() {
           Sign in
         </Link>
       </p>
+      <PublicAddress publicUrl={server?.publicUrl} />
     </AuthLayout>
   );
 }
@@ -210,8 +240,10 @@ export function SetupPage() {
     e.preventDefault();
     void run(async () => {
       if (password !== again) throw new Error('The passwords don’t match');
-      await signedIn(await api.setup({ username: username.trim(), name: name.trim(), password, device: deviceName(), platform: 'web' }));
-      navigate('/settings/accounts', { replace: true });
+      // Claimed at home (setup works only there); with a public address, everyone signs in there afterwards.
+      await finish(await api.setup({ username: username.trim(), name: name.trim(), password, device: deviceName(), platform: 'web' }), () =>
+        navigate('/settings/accounts', { replace: true }),
+      );
     });
   };
 
