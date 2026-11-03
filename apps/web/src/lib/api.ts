@@ -34,7 +34,6 @@ import type {
   PlaylistDetail,
   PlaylistSummary,
   PlayReport,
-  Profile,
   Recommendations,
   RematchResult,
   RequestSettingsInfo,
@@ -57,7 +56,6 @@ import type {
   UpdateInfo,
   UpdateSettings,
 } from '@playarr/shared';
-import { usePrefs } from './prefs';
 
 /**
  * The server's answer for one song into the next: the file to play (ready), still rendering (pending,
@@ -147,8 +145,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       Accept: 'application/json',
       'X-Playarr': '1',
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      // Who's listening on this device: their mixes, stats and history.
-      ...(usePrefs.getState().profileId ? { 'X-Playarr-Profile': String(usePrefs.getState().profileId) } : {}),
     },
   });
   if (!res.ok) {
@@ -250,10 +246,6 @@ export const api = {
   /** keepalive: a report sent as the page closes still arrives. */
   reportPlays: (plays: PlayReport[]) =>
     request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),
-  profiles: () => get<Profile[]>('/api/profiles'),
-  createProfile: (name: string) => request<Profile>('/api/profiles', { method: 'POST', body: JSON.stringify({ name }) }),
-  renameProfile: (id: number, name: string) => request<Profile>(`/api/profiles/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
-  deleteProfile: (id: number) => request<Profile[]>(`/api/profiles/${id}`, { method: 'DELETE' }),
   // Accounts (Settings → Accounts) and signing in.
   server: () => get<ServerInfo>('/api/server'),
   me: () => get<Account>('/api/auth/me'),

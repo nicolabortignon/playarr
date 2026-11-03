@@ -65,7 +65,6 @@ export class PlayTracker {
         weekday: c.startedAt.getDay(),
         seconds: Math.round(c.heard),
         skipped,
-        ...(usePrefs.getState().profileId ? { profile: usePrefs.getState().profileId! } : {}),
       },
     ]);
   }

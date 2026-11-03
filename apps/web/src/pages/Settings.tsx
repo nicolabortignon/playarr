@@ -4,7 +4,7 @@ import { AppearancePanel } from '../components/AppearancePanel';
 import { MixesPanel } from '../components/MixesPanel';
 import { PlaybackPanel } from '../components/PlaybackPanel';
 import { ListeningStatsView } from './Stats';
-import { ProfilesPanel } from '../components/ProfilesPanel';
+import { AccountsPanel } from '../components/AccountsPanel';
 import { RequestsPanel } from '../components/RequestsPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
 import { UpdatesPanel } from '../components/UpdatesPanel';
@@ -14,7 +14,7 @@ import { PageTitle } from './Albums';
 const PANELS = [
   { id: 'sources', label: 'Sources', scope: undefined, Panel: SourcesPanel },
   { id: 'playback', label: 'Playback', scope: 'These settings are for this device.', Panel: PlaybackPanel },
-  { id: 'profiles', label: 'Profiles', scope: 'Profiles are for everyone; which one listens here is set for this device.', Panel: ProfilesPanel },
+  { id: 'accounts', label: 'Accounts', scope: 'Who signs in to this server, and what each account may hear and change.', Panel: AccountsPanel },
   { id: 'listening', label: 'Your listening', scope: undefined, Panel: ListeningStatsView },
   { id: 'mixes', label: 'Mixes', scope: 'These settings apply to everyone.', Panel: MixesPanel },
   { id: 'analysis', label: 'Analysis', scope: 'These settings apply to everyone.', Panel: AnalysisPanel },

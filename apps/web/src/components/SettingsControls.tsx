@@ -25,11 +25,11 @@ export function SettingsSection({
   );
 }
 
-/** Shown in place of settings that can only be seen and changed from the home network. */
+/** Shown in place of settings only an admin can see and change. */
 export function AwayNotice({ children }: { children?: ReactNode }) {
   return (
     <p className="mb-6 rounded-lg border border-line px-4 py-3 text-sm text-paper-dim">
-      {children ?? 'You’re using Playarr from outside your home network, so settings are read-only.'}
+      {children ?? 'Only an admin can change these settings.'}
     </p>
   );
 }

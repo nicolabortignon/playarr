@@ -56,7 +56,7 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
         </div>
         {primary && <RematchButton key={primary.fileId} copy={primary} />}
         {m.pathsHidden && (
-          <p className="mt-3 text-[13px] text-muted">Matching a song again on MusicBrainz works from your home network.</p>
+          <p className="mt-3 text-[13px] text-muted">Matching a song again on MusicBrainz is for admins.</p>
         )}
       </div>
 
@@ -81,7 +81,7 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
 
       <Section title={m.copies.length === 1 ? 'File' : `Files (${m.copies.length})`}>
         {m.pathsHidden && (
-          <p className="mb-3 text-[13px] text-muted">File paths and where sources live are shown on your home network only.</p>
+          <p className="mb-3 text-[13px] text-muted">File paths and where sources live are shown to admins only.</p>
         )}
         <div className="space-y-3">
           {m.copies.map((c) => (

@@ -228,7 +228,7 @@ export function AnalysisPanel() {
 
   return (
     <div>
-      {away && <AwayNotice>Analyses can be started from your home network.</AwayNotice>}
+      {away && <AwayNotice>Analyses can be started by an admin.</AwayNotice>}
       <SettingsSection title="In the background">
         {switchRow && <div className="divide-y divide-line">{switchRow}</div>}
         <p className="mt-2 text-[13px] text-paper-dim">{queue ?? 'Nothing is being analysed right now.'}</p>

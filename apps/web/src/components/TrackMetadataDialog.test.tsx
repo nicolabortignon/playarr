@@ -81,11 +81,11 @@ describe('TrackMetadataDialog', () => {
     const away = meta({ pathsHidden: true });
     away.copies = away.copies.map(({ path: _p, ...c }) => ({ ...c, source: { ...c.source, location: undefined } }));
     open(away);
-    expect(await screen.findByText(/shown on your home network only/)).toBeTruthy();
+    expect(await screen.findByText(/shown to admins only/)).toBeTruthy();
     expect(screen.queryByText(/\/host\/volume2/)).toBeNull();
-    // Matching again changes the catalog: offered on the home network only, and the dialog says so.
+    // Matching again changes the catalog: offered to admins only, and the dialog says so.
     expect(screen.queryByRole('button', { name: /match again|refresh in lidarr/i })).toBeNull();
-    expect(screen.getByText(/Matching a song again on MusicBrainz works from your home network/)).toBeTruthy();
+    expect(screen.getByText(/Matching a song again on MusicBrainz is for admins/)).toBeTruthy();
   });
 
   it('puts the main Match again button at the top, once per song', async () => {

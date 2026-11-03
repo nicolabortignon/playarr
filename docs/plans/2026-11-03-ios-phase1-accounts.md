@@ -6807,6 +6807,8 @@ EOF
 )"
 ```
 
+*As executed:* fitted as written once found by content (line numbers had moved with Tasks 18-20); the commit also stages the two deleted ProfilesPanel files (`git rm`). A device's stored prefs that still carry `profileId` load fine: `clean` ignores it and the next save drops it. Checks: 468 web tests (exit 0), web and server typechecks, server suite 584 passed, the grep prints nothing.
+
 ---
 
 ### Task 22: Web: whose playlist it is

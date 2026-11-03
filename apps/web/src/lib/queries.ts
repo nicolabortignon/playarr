@@ -26,7 +26,6 @@ import { keepPreviousData, queryOptions, useMutation, useQueries, useQuery, useQ
 import { useEffect, useMemo, useRef } from 'react';
 import { api, ApiError, type AnalysisKind } from './api';
 import { plural } from './format';
-import { usePrefs } from './prefs';
 import { queryClient } from './queryClient';
 import { toast } from './toast';
 
@@ -776,28 +775,6 @@ export function useListenBrainzAction<T>(fn: (arg: T) => Promise<ListenBrainzInf
 /** Your listening, for a period. */
 export const useListeningStats = (range: StatsRange, enabled = true) =>
   useQuery({ queryKey: ['stats', range], queryFn: () => api.stats(range), enabled, staleTime: 5 * 60_000, placeholderData: (prev) => prev });
-
-export const useProfiles = () => useQuery({ queryKey: ['profiles'], queryFn: api.profiles, staleTime: 60_000 });
-
-/** What depends on who's listening: dropped when the device switches profile, so nothing shows someone else's. */
-const PERSONAL = ['mixes', 'mix', 'stats', 'recent-albums', 'mix-settings', 'listenbrainz'];
-
-/** This device listens as someone else from now on. */
-export function switchProfile(id: number) {
-  usePrefs.getState().setProfileId(id);
-  // Reset, not just refetched: the last profile's data mustn't stay on screen meanwhile.
-  for (const key of PERSONAL) void queryClient.resetQueries({ queryKey: [key] });
-}
-
-/** Add, rename or remove a profile; the list shows what the server answers. */
-export function useProfileAction<T>(fn: (arg: T) => Promise<unknown>) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: fn,
-    onSuccess: () => void client.invalidateQueries({ queryKey: ['profiles'] }),
-    onError: (err: Error) => toast(err.message, 'error'),
-  });
-}
 
 /** Which server this is, and whether it's set up (sign-in is on). */
 export const useServerInfo = () => useQuery({ queryKey: ['server'], queryFn: api.server, staleTime: 60_000 });

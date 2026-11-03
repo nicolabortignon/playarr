@@ -37,8 +37,6 @@ interface Prefs {
   crossfade: Crossfade;
   /** Turn loud songs down so everything plays at about the same volume. */
   levelVolume: boolean;
-  /** Who listens on this device (Settings → Profiles); null until picked. */
-  profileId: number | null;
   /** An overlay with everything known about the song playing: tempo, beat grid, sections, loudness, stream. */
   statsForNerds: boolean;
   setAccent(a: AccentPref): void;
@@ -49,14 +47,13 @@ interface Prefs {
   setTransitions(t: Transitions): void;
   setCrossfade(seconds: Crossfade): void;
   setLevelVolume(on: boolean): void;
-  setProfileId(id: number | null): void;
   setStatsForNerds(on: boolean): void;
 }
 
-type Saved = Pick<Prefs, 'accent' | 'motion' | 'formatBadges' | 'recordPlays' | 'autoplay' | 'transitions' | 'crossfade' | 'levelVolume' | 'profileId' | 'statsForNerds'>;
+type Saved = Pick<Prefs, 'accent' | 'motion' | 'formatBadges' | 'recordPlays' | 'autoplay' | 'transitions' | 'crossfade' | 'levelVolume' | 'statsForNerds'>;
 
 export const PREFS_KEY = 'playarr.prefs';
-const DEFAULTS: Saved = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, transitions: 'off', crossfade: 0, levelVolume: true, profileId: null, statsForNerds: false };
+const DEFAULTS: Saved = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, transitions: 'off', crossfade: 0, levelVolume: true, statsForNerds: false };
 
 const isTransitions = (v: unknown): v is Transitions => (TRANSITIONS as readonly unknown[]).includes(v);
 
@@ -77,7 +74,6 @@ function clean(saved: unknown): Saved {
     transitions,
     crossfade: transitions !== 'off' && crossfade === 0 ? FIRST_CROSSFADE : crossfade,
     levelVolume: typeof s.levelVolume === 'boolean' ? s.levelVolume : DEFAULTS.levelVolume,
-    profileId: Number.isInteger(s.profileId) && (s.profileId as number) > 0 ? (s.profileId as number) : null,
     statsForNerds: typeof s.statsForNerds === 'boolean' ? s.statsForNerds : DEFAULTS.statsForNerds,
   };
 }
@@ -99,13 +95,12 @@ export const usePrefs = create<Prefs>()(
         }),
       setCrossfade: (crossfade) => set({ crossfade: CROSSFADES.includes(crossfade) ? crossfade : DEFAULTS.crossfade }),
       setLevelVolume: (levelVolume) => set({ levelVolume }),
-      setProfileId: (profileId) => set({ profileId }),
       setStatsForNerds: (statsForNerds) => set({ statsForNerds }),
     }),
     {
       name: PREFS_KEY,
       version: 1,
-      partialize: ({ accent, motion, formatBadges, recordPlays, autoplay, transitions, crossfade, levelVolume, profileId, statsForNerds }) => ({
+      partialize: ({ accent, motion, formatBadges, recordPlays, autoplay, transitions, crossfade, levelVolume, statsForNerds }) => ({
         accent,
         motion,
         formatBadges,
@@ -114,7 +109,6 @@ export const usePrefs = create<Prefs>()(
         transitions,
         crossfade,
         levelVolume,
-        profileId,
         statsForNerds,
       }),
       merge: (saved, current) => ({ ...current, ...clean(saved) }),

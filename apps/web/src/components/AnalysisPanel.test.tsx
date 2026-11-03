@@ -240,7 +240,7 @@ describe('AnalysisPanel', () => {
   it('shows progress but no switch or buttons away from home', async () => {
     away = true;
     view(IDLE);
-    expect(await screen.findByText('Analyses can be started from your home network.')).toBeTruthy();
+    expect(await screen.findByText('Analyses can be started by an admin.')).toBeTruthy();
     expect(screen.getByText(/^Ready for DJ mix/)).toBeTruthy();
     expect(screen.queryByRole('switch')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();

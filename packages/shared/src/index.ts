@@ -713,8 +713,6 @@ export interface PlayReport {
   seconds: number;
   /** Left for another song early: a "not now". */
   skipped: boolean;
-  /** Who was listening (the device's profile when it was played); else whoever the device is now. */
-  profile?: number;
 }
 
 export type MixKind =
@@ -855,12 +853,6 @@ export interface ListeningStats {
   firstSong?: { track: Track; at: string };
   /** Calendar years with history, newest first: each has a year in review. */
   years: number[];
-}
-
-/** Someone who listens: their history, mixes, stats and ListenBrainz account are their own. */
-export interface Profile {
-  id: number;
-  name: string;
 }
 
 // ── Accounts ────────────────────────────────────────────────────────────────

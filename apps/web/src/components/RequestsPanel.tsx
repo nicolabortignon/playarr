@@ -17,7 +17,7 @@ export function RequestsPanel() {
   const change = (patch: RequestSettingsPatch) => save.mutate(patch);
 
   if (error instanceof ApiError && error.status === 403) {
-    return <AwayNotice>Settings can be changed from your home network.</AwayNotice>;
+    return <AwayNotice />;
   }
   if (error && !data) return <p className="text-sm text-red-300/80">{error.message}</p>;
   if (!data) return <PanelSkeleton />;
