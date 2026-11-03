@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { beatModelAnswer, clickTrack, noise, song } from '../testSignals.ts';
 import { MIX_MAP_VERSION, type MixMap } from '../types.ts';
+import { LoudnessFrames } from './loudness.ts';
 import { analyzeMix, MIX_HEAD_SECONDS, MIX_TAIL_SECONDS } from './mixMap.ts';
 
 const RATE = 11025;
@@ -244,6 +245,34 @@ describe('analyzeMix', () => {
     expect(offPhraseGrid(map, truth.outroStart)).toBeLessThan(0.01);
     expectInvariants(map);
   });
+
+  it('measures a long song’s phrase energy all through it: the middle from its loudness alone', () => {
+    // A 14-minute song with its middle turned 12 dB down (a long breakdown), measured as the server streams it.
+    const longer = song({ bpm: BPM, rate: RATE, introBeats: 32, bodyBeats: 1700, outroBeats: 64 });
+    const samples = longer.samples;
+    const from = MIX_HEAD_SECONDS;
+    const to = longer.truth.duration - MIX_TAIL_SECONDS;
+    samples.subarray(Math.round(from * RATE), Math.round(to * RATE)).forEach((v, i, rest) => (rest[i] = v / 4));
+    const frames = new LoudnessFrames();
+    frames.push(samples.subarray(Math.round(from * RATE), Math.round(to * RATE)));
+    const map = analyzeMix(head(samples), tail(samples), longer.truth.duration, RATE, undefined, { start: from, rms: frames.frames() });
+    const phrase = 16 * (60 / map.bpm);
+    const firstLine = map.firstBeat + map.downbeatOffset * (60 / map.bpm);
+    // Every phrase to the end (a last partial one only with 8 beats or more).
+    expect(map.phraseEnergy.length).toBeGreaterThanOrEqual(Math.floor((map.soundEnd - firstLine) / phrase));
+    expect(map.phraseEnergy.length).toBeLessThanOrEqual(Math.floor((map.soundEnd - firstLine) / phrase) + 1);
+    expect(map.phraseEnergy.every((e) => e !== null)).toBe(true);
+    // A phrase well inside the middle: about a quarter of the body's level.
+    const middle = map.phraseEnergy[Math.floor(((from + to) / 2 - firstLine) / phrase)]!;
+    const body = map.phraseEnergy[Math.floor((200 - firstLine) / phrase)]!;
+    expect(middle / body).toBeGreaterThan(0.2);
+    expect(middle / body).toBeLessThan(0.3);
+
+    // Without the middle measured: those phrases are null, the rest as before.
+    const gappy = analyzeMix(head(samples), tail(samples), longer.truth.duration, RATE);
+    expect(gappy.phraseEnergy[Math.floor(((from + to) / 2 - firstLine) / phrase)]).toBeNull();
+    expect(gappy.phraseEnergy.at(-2)).not.toBeNull();
+  }, 30_000);
 
   it('gives an empty map for silence and for too little audio', () => {
     const empty = (duration: number, soundEnd: number): MixMap => ({

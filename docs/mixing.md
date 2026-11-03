@@ -93,7 +93,7 @@ The section analysis also finds these:
 - **`coldStart`**: the first sounding beat is already full sound (no intro, no fade-in).
 - **`coldEnd`**: the last sounding beat is full sound and the song doesn't fade to it; it ends abruptly. A fade-out is the last 4 bars falling to 85% or less, bar after bar.
 - **`soundStart` / `soundEnd`**: where the music starts and stops, before and after any silence.
-- **`phraseEnergy`**: each phrase's loudness, 0–1 relative to the loudest. It covers the first 7 minutes and is shown in Stats for nerds.
+- **`phraseEnergy`**: each phrase's loudness, 0–1 relative to the loudest, over the whole song. A long song's middle (between the 7-minute head and the 3-minute tail) is streamed by the server and measured for its loudness alone (`LoudnessFrames`); intro and outro detection still only looks at the head and the tail. Drawn (Stats for nerds, the song's energy strip) as loud as it sounds: height ∝ level^0.6, so a breakdown 10 dB down shows at about half height.
 
 For a long song, the outro, cold end and sound end come from the tail, analysed on the head's grid and phrase lines and measured against the **head's** main groove (the tail is mostly the song's end, so its own "main groove" would be outro material).
 
@@ -308,7 +308,7 @@ Whatever isn't known counts as 0.8 ("fine, not a match"), so it neither jumps th
 
 | constant | where | bump it when |
 |---|---|---|
-| `MIX_MAP_VERSION` (now 7) | `packages/mix/src/types.ts` | the analysis would measure a song differently: stored maps are re-measured in the background. Maps from version 2 on stay usable meanwhile. |
+| `MIX_MAP_VERSION` (now 8) | `packages/mix/src/types.ts` | the analysis would measure a song differently: stored maps are re-measured in the background. Maps from version 2 on stay usable meanwhile. |
 | `PLANNER_VERSION` (now 3) | `plan.ts` | the planner would plan the same two maps differently: remembered plans are made afresh. |
 | `RENDERER_VERSION` (now 3) | server `transitions.ts` | the rendered audio would differ for the same plan: cached files are made again. |
 

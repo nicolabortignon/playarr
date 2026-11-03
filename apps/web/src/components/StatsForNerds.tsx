@@ -16,7 +16,7 @@ import { useLevels } from '../player/levels';
 import { useOffline } from '../player/offline';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 import { useTransition, type UpcomingResult } from '../player/transitions';
-import { beatGrid } from './EnergyStrip';
+import { beatGrid, heardHeight } from './EnergyStrip';
 import { describeFormat } from './TrackMetadataDialog';
 
 /** How often the panel follows the song while it plays: often enough for the beat counter… */
@@ -416,9 +416,9 @@ function Upcoming({ result, time }: { result: UpcomingResult | null; time: numbe
 }
 
 /**
- * Each phrase's energy over the whole song, the one playing in the accent color, with lines where the
- * intro ends and the outro starts. Energy is measured over a song's first 7 minutes: a longer song's
- * later phrases are left blank, so its outro still shows where it is.
+ * Each phrase's energy over the whole song (drawn as loud as it sounds: see heardHeight), the one playing
+ * in the accent color, with lines where the intro ends and the outro starts. A phrase that wasn't measured
+ * (an older map of a long song, after its first 7 minutes) is left blank, so the outro still shows where it is.
  */
 function Energy({ map, time }: { map: MixMap; time: number }) {
   const grid = beatGrid(map);
@@ -441,10 +441,10 @@ function Energy({ map, time }: { map: MixMap; time: number }) {
                 return (
                   <span
                     key={k}
-                    style={{ height: e === undefined ? '8%' : `${Math.max(8, e * 100)}%` }}
+                    style={{ height: e == null ? '8%' : `${Math.max(8, heardHeight(e) * 100)}%` }}
                     className={cn(
                       'min-w-px flex-1 rounded-[1px]',
-                      e === undefined ? 'bg-paper/5' : k === now ? 'bg-accent' : k < now ? 'bg-paper/35' : 'bg-paper/15',
+                      e == null ? 'bg-paper/5' : k === now ? 'bg-accent' : k < now ? 'bg-paper/35' : 'bg-paper/15',
                     )}
                   />
                 );
@@ -452,7 +452,7 @@ function Energy({ map, time }: { map: MixMap; time: number }) {
               <span data-marker="intro" style={{ left: place(map.introEnd) }} className={cn(MARKER, 'bg-sky-300')} />
               <span data-marker="outro" style={{ left: place(map.outroStart) }} className={cn(MARKER, 'bg-rose-300')} />
             </span>
-            <span className="shrink-0 tabular">{energy !== undefined ? n2(energy) : '–'}</span>
+            <span className="shrink-0 tabular">{energy != null ? n2(energy) : '–'}</span>
           </span>
           <span className="mt-0.5 flex flex-wrap gap-x-3 text-[10px] text-muted">
             <span>

@@ -10,6 +10,7 @@ export * from './analysis/neuralGrid.ts';
 export * from './analysis/resample.ts';
 export * from './analysis/downbeats.ts';
 export * from './analysis/sections.ts';
+export * from './analysis/loudness.ts';
 export * from './analysis/key.ts';
 export * from './analysis/mixMap.ts';
 export * from './automation.ts';

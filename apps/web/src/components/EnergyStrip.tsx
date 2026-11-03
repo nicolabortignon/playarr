@@ -21,6 +21,13 @@ export interface PhraseColumn {
   width: number;
 }
 
+/**
+ * How tall to draw a phrase of this energy (0–1, its loudness against the loudest): as loud as it sounds,
+ * not as its level reads. Loudness as heard goes about as the level to the power 0.6: a breakdown 10 dB
+ * down (a third of the level) sounds about half as loud, and is drawn half as tall.
+ */
+export const heardHeight = (energy: number) => Math.max(0, energy) ** 0.6;
+
 /** A bar line in the picture, 0–1; `phrase` marks every fourth (a phrase start). */
 export interface BarTick {
   left: number;
@@ -47,6 +54,8 @@ export function phrasesAndBars(map: MixMap, clock: (songTime: number) => number,
   if (grid) {
     const { beat, firstBar } = grid;
     map.phraseEnergy.forEach((energy, k) => {
+      // Not measured (an older map of a long song): left blank.
+      if (energy === null) return;
       const at = firstBar + k * 16 * beat;
       const start = clock(at);
       const end = clock(Math.min(at + 16 * beat, map.duration));
@@ -90,7 +99,7 @@ export function PhraseColumns({
         >
           <div
             className={cn('w-full rounded-t-[4px] bg-accent transition-opacity duration-150', hovered != null && hovered !== k && 'opacity-45')}
-            style={{ height: `max(${p.energy * 100}%, 2px)` }}
+            style={{ height: `max(${heardHeight(p.energy) * 100}%, 2px)` }}
           />
         </div>
       ))}

@@ -17,6 +17,9 @@ export type WorkerAnswer = { id: number; features?: SoundFeatures; mixMap?: MixM
 /** Sent along the way for a render: how much of it is done (0–1). Not an answer: one still follows. */
 export type WorkerProgress = { id: number; progress: number };
 
+/** A long song's middle, measured for its loudness alone: frame loudness at SAMPLE_RATE from `start` (see analyzeMix). */
+export type MiddleLoudness = { start: number; rms: Float64Array };
+
 /** The beat model's answer for a song's head, and its tail when it's long (see analyzeMix). */
 export type SongBeats = { head: BeatActivations; tail?: BeatActivations | null };
 
@@ -24,7 +27,7 @@ export type SongBeats = { head: BeatActivations; tail?: BeatActivations | null }
 export type WorkerJob =
   | { id: number; kind: 'analyze'; pcm: ArrayBuffer; rate: number }
   /** The song's head, and its tail when it's long (see analyzeMix). */
-  | { id: number; kind: 'mixmap'; pcm: ArrayBuffer; tail?: ArrayBuffer; duration: number; rate: number; beats?: SongBeats }
+  | { id: number; kind: 'mixmap'; pcm: ArrayBuffer; tail?: ArrayBuffer; duration: number; rate: number; beats?: SongBeats; middle?: MiddleLoudness }
   | { id: number; kind: 'render'; plan: TransitionPlan; a: Excerpt; b: Excerpt; tail?: number; lead?: number };
 
 /**
@@ -55,14 +58,23 @@ export class DspThread {
   /**
    * A song's mix map (see analyzeMix) from s16le PCM at `rate` (SAMPLE_RATE or twice it): its head,
    * and its tail (null for a song short enough for the head to hold all of it), with the beat model's
-   * answer for them if there is one. The caller's buffers are left alone.
+   * answer for them if there is one, and its middle's loudness when it's long. The caller's buffers are left alone.
    */
-  async mixMap(pcm: Buffer, tail: Buffer | null, duration: number, rate = SAMPLE_RATE, beats?: SongBeats): Promise<MixMap> {
+  async mixMap(pcm: Buffer, tail: Buffer | null, duration: number, rate = SAMPLE_RATE, beats?: SongBeats, middle?: MiddleLoudness): Promise<MixMap> {
     const worker = this.start();
-    if (!worker) return mixMapOf(pcm, tail, duration, rate, beats);
+    if (!worker) return mixMapOf(pcm, tail, duration, rate, beats, middle);
     const head = copyOf(pcm);
     const end = tail && copyOf(tail);
-    const job: WorkerJob = { id: this.nextId++, kind: 'mixmap', pcm: head, ...(end ? { tail: end } : {}), duration, rate, ...(beats ? { beats } : {}) };
+    const job: WorkerJob = {
+      id: this.nextId++,
+      kind: 'mixmap',
+      pcm: head,
+      ...(end ? { tail: end } : {}),
+      duration,
+      rate,
+      ...(beats ? { beats } : {}),
+      ...(middle ? { middle } : {}),
+    };
     const answer = await this.send(worker, job, end ? [head, end] : [head]);
     if (!answer.mixMap) throw new Error(answer.error ?? 'Mix analysis failed');
     return answer.mixMap;
@@ -152,9 +164,9 @@ export class DspThread {
 }
 
 /** analyzeMix on s16le PCM at `rate`: what the worker does for a 'mixmap' job. */
-export function mixMapOf(pcm: Buffer, tail: Buffer | null, duration: number, rate: number, beats?: SongBeats): MixMap {
+export function mixMapOf(pcm: Buffer, tail: Buffer | null, duration: number, rate: number, beats?: SongBeats, middle?: MiddleLoudness): MixMap {
   const at = (buf: Buffer) => atSampleRate(pcmToFloat(buf), rate);
-  return analyzeMix(at(pcm), tail && at(tail), duration, SAMPLE_RATE, beats);
+  return analyzeMix(at(pcm), tail && at(tail), duration, SAMPLE_RATE, beats, middle);
 }
 
 /** A copy of just these bytes, to hand over to the worker rather than copy again. */

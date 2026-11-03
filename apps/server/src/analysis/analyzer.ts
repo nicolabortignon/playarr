@@ -1,12 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { BEAT_THIS_RATE, MIX_HEAD_SECONDS, MIX_MAP_VERSION, MIX_TAIL_SECONDS, type CuePoints, type MixMap, type MixMapSummary } from '@playarr/mix';
+import { BEAT_THIS_RATE, LoudnessFrames, MIX_HEAD_SECONDS, MIX_MAP_VERSION, MIX_TAIL_SECONDS, type CuePoints, type MixMap, type MixMapSummary } from '@playarr/mix';
 import { RateLimited, recordingTags, type LbRecordingMetadata, type LbTag } from '../discover/listenbrainz.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import type { Library } from '../library/library.ts';
 import { seeksInexactly } from '../media/source.ts';
 import type { BeatModelThread } from './beatModelThread.ts';
-import { ANALYSIS_VERSION, type AudioFeatures, type SoundFeatures } from './dsp.ts';
-import { DspThread, DspWorkerLost, type SongBeats } from './dspThread.ts';
+import { ANALYSIS_VERSION, pcmToFloat, SAMPLE_RATE, type AudioFeatures, type SoundFeatures } from './dsp.ts';
+import { DspThread, DspWorkerLost, type MiddleLoudness, type SongBeats } from './dspThread.ts';
 import { LOUDNESS_VERSION, LoudnessJobs, type SongLoudness } from './loudnessJobs.ts';
 import { selectIn } from './sql.ts';
 
@@ -26,6 +26,8 @@ const MAX_SECONDS = MIX_HEAD_SECONDS;
  * the rest of the mix analysis (SAMPLE_RATE).
  */
 const DECODE_RATE = BEAT_THIS_RATE;
+/** A long song's middle is decoded this much at a time where the source can't stream it. */
+const MIDDLE_CHUNK_SECONDS = 120;
 /** A decode still going after this is stuck (a hung share or ffmpeg): the song fails, to be tried another day. */
 const DECODE_TIMEOUT_MS = 5 * 60_000;
 /**
@@ -575,7 +577,9 @@ export class Analyzer {
         const { tail, duration } = await findEnd().catch((err: Error) => {
           throw new Error(`tail: ${err.message}`, { cause: err });
         });
-        const map = await this.dsp.mixMap(pcm, tail, duration, DECODE_RATE, await this.songBeats(pcm, tail));
+        // A long song's middle, between head and tail, for its phrase energy. Without it the map still serves.
+        const middle = tail ? await decoded.middle(secondsOf(pcm), duration - MIX_TAIL_SECONDS).catch(() => undefined) : undefined;
+        const map = await this.dsp.mixMap(pcm, tail, duration, DECODE_RATE, await this.songBeats(pcm, tail), middle);
         saveMixMap.run(id, MIX_MAP_VERSION, JSON.stringify(map), null, new Date().toISOString());
       } catch (err) {
         fail(saveMixMap, MIX_MAP_VERSION, 'mix analysis', err);
@@ -615,7 +619,31 @@ export class Analyzer {
       if (secondsOf(head) < MAX_SECONDS - FULL_SLACK_SECONDS) return { tail: null, duration: secondsOf(head) };
       return this.findEnd(read, head, track.duration);
     };
-    return { pcm: head, findEnd };
+    /**
+     * The song from `from` to `to` measured for its loudness alone (see LoudnessFrames), decoded at the
+     * analysis rate and streamed, so an hour-long set never sits in memory. Seeks needn't be exact for this.
+     */
+    const middle = async (from: number, to: number): Promise<MiddleLoudness | undefined> => {
+      if (!(to - from > 1)) return undefined;
+      const frames = new LoudnessFrames();
+      let odd: Buffer = Buffer.alloc(0);
+      const take = (pcm: Buffer) => {
+        const all = odd.length ? Buffer.concat([odd, pcm]) : pcm;
+        const whole = all.length - (all.length % 2);
+        frames.push(pcmToFloat(all.subarray(0, whole)));
+        odd = all.subarray(whole);
+      };
+      const opts = { sampleRate: SAMPLE_RATE, startSeconds: from, maxSeconds: to - from, signal: signal() };
+      if (media.pcmStream) {
+        for await (const chunk of media.pcmStream(path, { ...opts, priority: 'low' })) take(chunk as Buffer);
+      } else {
+        for (let at = from; at < to; at += MIDDLE_CHUNK_SECONDS) {
+          take(await decode(path, { ...opts, startSeconds: at, maxSeconds: Math.min(MIDDLE_CHUNK_SECONDS, to - at) }));
+        }
+      }
+      return { start: from, rms: frames.frames() };
+    };
+    return { pcm: head, findEnd, middle };
   }
 
   /**
