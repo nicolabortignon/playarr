@@ -1,8 +1,9 @@
 import PlayarrAPI
+import PlayarrPlayer
 import SwiftUI
 
 /// A mix's page: why these songs, when it changes, Play, Shuffle, New mix, the ⋯ menu (Save as playlist, Play next,
-/// Add to queue) and the songs (apps/web/src/pages/Mix.tsx). Download joins in phase 7.
+/// Add to queue), Download and the songs (apps/web/src/pages/Mix.tsx).
 struct MixView: View {
   let session: AccountSession
   @State private var model: MixModel
@@ -44,7 +45,11 @@ struct MixView: View {
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
                 .disabled(model.regenerating)
-              // Phase 7: Download for this mix.
+              DownloadButton(
+                store: session.player.downloads,
+                item: DownloadItem(
+                  key: PinnedDownload.Key.mix(mix.key), title: mix.title, subtitle: "Mix", coverUrl: mix.covers.first, href: "/mixes/\(mix.key)"),
+                tracks: mix.tracks)
               Menu {
                 Button("Save as playlist", systemImage: "bookmark") {
                   // Opens the new playlist, so it's clear what was made and where it lives.

@@ -1,3 +1,4 @@
+import PlayarrPlayer
 import SwiftUI
 
 /// The page for a route: the same in every tab's stack (and, later, in an iPad split view).
@@ -24,6 +25,14 @@ struct RouteDestination: View {
     case .discoverArtist(let mbid, let album): DiscoverArtistPage(mbid: mbid, album: album)
     case .findArtist(let name, let album): FindArtistPage(name: name, album: album)
     case .requests: RequestsPage()
+    case .downloads:
+      DownloadsView(
+        store: session.player.downloads,
+        play: { d in session.player.play(d.tracks, source: PlaySource(label: d.title, href: d.href)) },
+        open: { session.router.open(href: $0) }
+      ) { path in
+        Cover(path: path, points: 56)
+      }
     }
   }
 }

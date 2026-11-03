@@ -14,6 +14,8 @@ public enum Route: Hashable, Sendable {
   case mixes
   case mix(String)
   case listening
+  /// Library → Downloads: albums, playlists, mixes and Favorites on this device (phase 7).
+  case downloads
   /// Your listening for a period or a calendar year ("halfyear", "2025"): the web's `?range=`.
   case listeningRange(StatsRange)
   case settings
@@ -42,6 +44,7 @@ public enum Route: Hashable, Sendable {
     case ("mixes", 2): self = .mix(parts[1])
     case ("stats", 1): self = query("range").map(Route.listeningRange) ?? .listening
     case ("requests", 1): self = .requests
+    case ("downloads", 1): self = .downloads
     case ("settings", 1): self = .settings
     case ("settings", 2):
       if parts[1] == "listening" { self = query("range").map(Route.listeningRange) ?? .listening } else { self = SettingsPanel(rawValue: parts[1]).map(Route.settingsPanel) ?? .settings }

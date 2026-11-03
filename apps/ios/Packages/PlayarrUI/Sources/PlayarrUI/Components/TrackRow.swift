@@ -1,4 +1,5 @@
 import PlayarrAPI
+import PlayarrPlayer
 import SwiftUI
 
 /// A song in a list (apps/web/src/components/TrackList.tsx): its number on album pages, or its cover with the
@@ -26,6 +27,7 @@ struct TrackRow: View {
               Text("\(track.artistName) · \(track.albumTitle)").font(.footnote).lineLimit(1).foregroundStyle(.secondary)
             }
           }
+          OfflineMark(store: session.player.downloads, fileId: track.fileId)
           Spacer(minLength: 8)
           Text(Format.time(track.duration)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
         }
