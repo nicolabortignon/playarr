@@ -2658,6 +2658,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** no `DiscoverCover.swift`: this phase's screens use phase 4's `Cover(path:points:label:circle:)`. The buttons push `Route`s (`DiscoverDestination.libraryAlbum(id:).route`, `Route.requests`). Phase 4 had only `Demo.album(_:)`, so `Album(_ detail:)` is added as written.
+
 ---
 
 ### Task 11: Discover's cards, rows and Search section; the MusicBrainz wait and queue
