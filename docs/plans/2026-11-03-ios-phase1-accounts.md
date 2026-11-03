@@ -6331,6 +6331,8 @@ EOF
 )"
 ```
 
+*As executed:* fitted as written (Home's `Profile` type import was line 14 with the other two; all four lines went). In setup mode `GET /api/auth/me` answers 401 and the switcher renders nothing, so Home looks as it did before the owner claims the server.
+
 ---
 ### Task 21: Web: Settings → Accounts; profiles go
 
