@@ -29,7 +29,7 @@ import { seeksInexactly, type MediaSource } from '../media/source.ts';
 // ready, and falls back to its own mixing (or a plain crossfade) whenever the answer isn't "ready" in time.
 
 /** Bump when the rendered audio changes for the same plan, so cached files are made again. */
-export const RENDERER_VERSION = 3;
+export const RENDERER_VERSION = 4;
 /**
  * Seconds of B on its own after each transition, in the same file: a phone that can't start one file
  * exactly as another ends (an iPhone) starts B's own file during them, silently, and changes over
@@ -42,7 +42,7 @@ export const TRANSITION_TAIL_SECONDS = 3;
  * transition begins, so the changeover is between two copies of the same sound (not A alone for one
  * moment, A with B coming in the next). Less for a transition starting sooner into A.
  */
-export const TRANSITION_LEAD_SECONDS = 2;
+export const TRANSITION_LEAD_SECONDS = 3;
 
 /** Renders waiting at most: by the time more pile up, the older ones are songs already skipped. */
 const MAX_QUEUED = 3;

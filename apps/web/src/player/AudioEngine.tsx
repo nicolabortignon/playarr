@@ -819,8 +819,9 @@ export function AudioEngine() {
         // Until the transition begins (A alone in both files), but never less time than a changeover takes.
         const sharedMs = ((aStart - IN_STEP_MARGIN_S - songTime(out)) / (out.playbackRate || 1)) * 1000;
         inStep(out, br, () => songTime(out) - aStart + leadOf(m), () => applyVolumes(), () => true, {
+          songs: `${m.from.title} → ${m.to.title}`,
           budgetMs: Math.max(IN_STEP_MAX_MS, sharedMs),
-          join: 'into the transition',
+          join: 'mix in',
         });
       },
       () => {
@@ -905,7 +906,7 @@ export function AudioEngine() {
     target: () => number,
     done: () => void,
     ready: () => boolean = () => true,
-    { ending, budgetMs = IN_STEP_MAX_MS, join }: { ending?: Mix; budgetMs?: number; join?: string } = {},
+    { ending, budgetMs = IN_STEP_MAX_MS, join, songs }: { ending?: Mix; budgetMs?: number; join?: string; songs?: string } = {},
   ) {
     stepping.current?.cancel();
     const began = performance.now();
@@ -922,6 +923,8 @@ export function AudioEngine() {
     const bias = routed ? g.delayOf(lead) : 0;
     if (routed) g.setDelay(follower, 0);
     let fellBack: string | undefined;
+    /** The gap first measured on the sound (s, + the follower ahead), for the report. */
+    let firstFound: number | undefined;
     let settled = false;
     let timer: ReturnType<typeof setInterval> | undefined;
     // While it gets in step, the transition's level is B's (as at its end), not its file's own.
@@ -935,7 +938,15 @@ export function AudioEngine() {
     const takeOver = (o: Overlap, report: Omit<JoinReport, 'join' | 'tookMs'>) => {
       settled = true;
       stop();
-      if (join) reportJoin({ join, tookMs: performance.now() - began, ...report });
+      if (join) {
+        reportJoin({
+          join,
+          tookMs: performance.now() - began,
+          ...(songs ? { songs } : {}),
+          ...(firstFound !== undefined ? { foundMs: firstFound * 1000 } : {}),
+          ...report,
+        });
+      }
       // The overlap stops the lead (at once where the volume can't be set), and the transition with it when that's done with.
       overlap.current = o;
       startOverlap(o);
@@ -980,6 +991,7 @@ export function AudioEngine() {
         const found = await g.lag(lead, follower, WIDE_LAG_S);
         if (settled) return;
         if (found === null) return byTimes('no match in the sound');
+        firstFound ??= found;
         if (found < 0 || found > LONGEST_HOLD_S) {
           follower.currentTime = Math.max(0, follower.currentTime - found + AHEAD_S);
           await g.after(SEEK_SETTLE_S);
@@ -1143,9 +1155,10 @@ export function AudioEngine() {
         // The overlap clears the transition once it has faded out.
         const sharedMs = (((m.transition.tail ?? 0) - IN_STEP_MARGIN_S - intoTail()) / (br.playbackRate || 1)) * 1000;
         inStep(br, incoming, target, () => {}, () => bridgeTime(m, br) >= plan.length, {
+          songs: `${m.from.title} → ${m.to.title}`,
           ending: m,
           budgetMs: Math.max(IN_STEP_MAX_MS, sharedMs),
-          join: 'into the next song',
+          join: 'mix out',
         });
       },
       () => {

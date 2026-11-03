@@ -253,12 +253,12 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 
 ### 3.2 The render
 
-1. **Decode the excerpts.** A from 2 s before `aStart` (the lead) until it's silent, B from `bStart` to `bResume` plus a 3 s tail, each with 0.25 s of margin. Decodes start on a 10 ms grid, so the start asked for is the start decoded, to the sample.
+1. **Decode the excerpts.** A from 3 s before `aStart` (the lead) until it's silent, B from `bStart` to `bResume` plus a 3 s tail, each with 0.25 s of margin. Decodes start on a 10 ms grid, so the start asked for is the start decoded, to the sample.
 2. **A** plays at its own tempo, through the high-pass sweep (quick mix) and the bass shelf. The filters are redesigned every 128 samples from their curves, in state-variable form, so moving cutoffs don't burst.
 3. **B** is time-stretched with **WSOLA**. It keeps pitch and keeps kicks sharp (a phase vocoder smears them), and it is exact at rate 1. B is placed by where it must *end*, so the transition's last sample runs exactly into B's sample at `bResume`.
 4. **Gains** are applied per sample from the curves.
 5. **Limiter.** Two loud masters together can reach +6 dB. A look-ahead limiter (5 ms look-ahead, 1 s hold so it doesn't pump on every kick, 0.15 s release) keeps the sum no louder than the louder song alone, or −1 dBFS. Where only one song plays, the audio is that song sample for sample.
-6. **The lead and the tail.** 2 s of A as it is come before the transition in the same file, and 3 s of B as it is follow it, so the player can switch between the transition file and each song's own file while both hold the very same sound, sample for sample.
+6. **The lead and the tail.** 3 s of A as it is come before the transition in the same file, and 3 s of B as it is follow it, so the player can switch between the transition file and each song's own file while both hold the very same sound, sample for sample.
 
 ### 3.3 Levels, and B's remainder
 
@@ -270,7 +270,7 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 ## 4. Playing it (`apps/web/src/player`)
 
 - **The handoffs.** No browser starts a file at an exact moment, so each takeover is done **in step**, and only where the two files hold the same sound:
-  1. 2 s before `aStart`, the player starts the transition file (its lead is A as it is) silenced, while A's own file plays on. At the transition's end, it starts B's own file (or its remainder) silenced, while the transition's tail (B as it is) plays on.
+  1. 3 s before `aStart`, the player starts the transition file (its lead is A as it is) silenced, while A's own file plays on. At the transition's end, it starts B's own file (or its remainder) silenced, while the transition's tail (B as it is) plays on.
   2. The new file plays slightly faster or slower until both are at the same moment. It goes by the median of the last 5 measurements, every 4 ms, because an element's reported time jitters by a millisecond or so. It asks for 1 ms, loosening to 5 ms as the shared sound runs out.
   3. Then it takes over: a 15 ms equal-gain fade on desktop (two copies of one sound, so the level holds), an instant switch on iPhone (where volume is fixed in hardware).
 
@@ -283,7 +283,7 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
   - Every wait goes by the audio clock, not the page's timers, which a hidden window slows down.
   - If the sound can't be measured (silence, a pure tone), the changeover falls back to the elements' times.
 
-  Stats for nerds shows each join ("Mix in", "Mix out") and, for one not measured on the sound, why.
+  Stats for nerds shows each join of the last mix ("Mix in": the transition lined up on A; "Mix out": B lined up on the transition): which songs, how far apart the two files were when first measured (and which was ahead), how close they ended up, and, for one not measured on the sound, why.
 
   Both changeovers finish before anything changes: before B comes in at `aStart`, and in B's tail after the transition. Before the lead, the switch into the transition had to happen after `aStart`, with B already coming in. A late switch then brought B in with a small step in its level, and the 5 ms allowed between the two copies let a kick's low end partly cancel. Both were heard as a bump. Stats for nerds shows how close the last changeover came ("Last join").
 - **Giving up.** If the transition isn't ready 20 s before `aStart`, the player gives up on it and the pair plays the usual way. A render that takes too long ends up there.
@@ -312,7 +312,7 @@ Whatever isn't known counts as 0.8 ("fine, not a match"), so it neither jumps th
 |---|---|---|
 | `MIX_MAP_VERSION` (now 8) | `packages/mix/src/types.ts` | the analysis would measure a song differently: stored maps are re-measured in the background. Maps from version 2 on stay usable meanwhile. |
 | `PLANNER_VERSION` (now 4) | `plan.ts` | the planner would plan the same two maps differently: remembered plans are made afresh. |
-| `RENDERER_VERSION` (now 3) | server `transitions.ts` | the rendered audio would differ for the same plan: cached files are made again. |
+| `RENDERER_VERSION` (now 4) | server `transitions.ts` | the rendered audio would differ for the same plan: cached files are made again. |
 
 Settings → Analysis shows how much of the library has a current mix map. It can analyse the songs left, or the whole collection again. After a restart, the background analysis picks up where it left off, if its switch is on.
 

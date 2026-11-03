@@ -840,7 +840,7 @@ describe('AudioEngine', () => {
       await inStepWith(a, 168.5, bridge, 0.5);
       expect(fake(a).paused).toBe(true);
       expect(bridge.muted).toBe(false);
-      expect(useJoins.getState().last).toMatchObject({ join: 'into the transition', gapMs: 0 });
+      expect(useJoins.getState().last).toMatchObject({ join: 'mix in', gapMs: 0 });
       // The file runs 2 s ahead of the transition: 8 s in is 6 s into the transition, still A.
       await at(bridge, 8);
       expect(clock()).toBe(176);
@@ -908,7 +908,9 @@ describe('AudioEngine', () => {
         // Looked for widely first, then checked closely.
         expect(g.lag.mock.calls.map((c) => (c as unknown[])[2])).toEqual([0.3, 0.01]);
         expect(g.crossfade).toHaveBeenCalledWith(a, bridge, 1, 1, 0.08);
-        expect(useJoins.getState().byJoin['into the transition']).toMatchObject({ heard: true });
+        // Reported for the mix: how far apart the files were found, and how close they ended up.
+        expect(useJoins.getState().byJoin['mix in']).toMatchObject({ heard: true, songs: 'Song 1 → Song 2' });
+        expect(useJoins.getState().byJoin['mix in']!.foundMs).toBeCloseTo(21.3, 6);
         expect(useJoins.getState().last!.gapMs).toBeCloseTo(0.01, 6);
         // A has stopped, the cross-fade over (by the audio clock: 40 ms from when it was asked).
         expect(fake(a).paused).toBe(true);
@@ -944,7 +946,8 @@ describe('AudioEngine', () => {
         await wait(400);
         expect(g.setDelay.mock.calls.filter(([el]) => el === b).map(([, s]) => s)).toEqual([0, 0.04]);
         expect(g.crossfade).toHaveBeenLastCalledWith(bridge, b, 1, 1, 0.08);
-        expect(useJoins.getState().byJoin['into the next song']).toMatchObject({ heard: true, gapMs: 0 });
+        expect(useJoins.getState().byJoin['mix out']).toMatchObject({ heard: true, gapMs: 0 });
+        expect(useJoins.getState().byJoin['mix out']!.foundMs).toBeCloseTo(40, 6);
         expect(fake(bridge).paused).toBe(true);
       });
 
@@ -977,7 +980,7 @@ describe('AudioEngine', () => {
         await overlap();
         expect(g.crossfade).not.toHaveBeenCalled();
         expect(g.setDelay.mock.calls.map(([, s]) => s)).toEqual([0, 0]);
-        expect(useJoins.getState().byJoin['into the transition']).toMatchObject({ fellBack: 'no match in the sound' });
+        expect(useJoins.getState().byJoin['mix in']).toMatchObject({ fellBack: 'no match in the sound' });
         expect(useJoins.getState().last!.heard).toBeUndefined();
         expect(fake(a).paused).toBe(true);
       });

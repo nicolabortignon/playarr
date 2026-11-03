@@ -231,8 +231,8 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
           label="Transitions"
           value={prefs.transitions === 'dj' ? `DJ mix · ${mixMode}` : prefs.transitions === 'crossfade' ? `crossfade ${crossfadeSeconds(prefs)} s` : 'gapless'}
         />
-        {joins['into the transition'] && <Row label="Mix in" value={joinOf(joins['into the transition'])} />}
-        {joins['into the next song'] && <Row label="Mix out" value={joinOf(joins['into the next song'])} />}
+        <Row label="Mix in" value={joins['mix in'] ? joinOf(joins['mix in']) : 'none yet'} />
+        <Row label="Mix out" value={joins['mix out'] ? joinOf(joins['mix out']) : 'none yet'} />
         {clock.error && <Row label="Error" value={<span className="text-red-300/90">{clock.error}</span>} />}
       </Group>
 
@@ -493,13 +493,16 @@ function Row({ label, value }: { label: string; value: ReactNode | undefined }) 
 }
 
 /**
- * How close the last changeover of a kind came: "in step to 0.02 ms on the sound, after 640 ms", or by the
- * players' times and why: "in step to 1.2 ms by the players' times (no match in the sound), after 900 ms".
+ * How the last changeover of a kind went: which mix, how far apart the two files were when first measured,
+ * and how close they ended up. "Into the Trees → Nanana · 23.4 ms apart, the new file ahead · in step to
+ * 0.02 ms on the sound, after 640 ms"; or by the players' times and why.
  */
-export function joinOf({ gapMs, tookMs, heard, fellBack }: JoinReport): string {
-  const ms = gapMs === null ? undefined : `${gapMs < 0.1 ? gapMs.toFixed(2) : gapMs < 10 ? gapMs.toFixed(1) : Math.round(gapMs)} ms`;
+export function joinOf({ songs, foundMs, gapMs, tookMs, heard, fellBack }: JoinReport): string {
+  const ms = (v: number) => `${v < 0.1 ? v.toFixed(2) : v < 10 ? v.toFixed(1) : Math.round(v)} ms`;
+  const found = foundMs === undefined ? undefined : `${ms(Math.abs(foundMs))} apart, the new file ${foundMs >= 0 ? 'ahead' : 'behind'}`;
   const how = heard ? 'on the sound' : `by the players’ times${fellBack ? ` (${fellBack})` : ''}`;
-  return `${ms ? `in step to ${ms}` : 'not measured'} ${how}, after ${Math.round(tookMs)} ms`;
+  const result = `${gapMs === null ? 'not measured' : `in step to ${ms(gapMs)}`} ${how}, after ${Math.round(tookMs)} ms`;
+  return [songs, found, result].filter(Boolean).join(' · ');
 }
 
 /** How far the server has got making the transition: "43% · mixing", "waiting · 2 ahead". */
