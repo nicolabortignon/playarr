@@ -50,6 +50,8 @@ export interface MatcherDeps {
 const SEARCH_MIN_SCORE = 70;
 const CANDIDATES = 3;
 const FINGERPRINT_MIN_SCORE = 0.8;
+/** releaseGroupRank up to here is a song's own album: studio album, EP, soundtrack (not a single or compilation). */
+const ALBUM_RANK = 2;
 
 /**
  * Files by album (album tag, else folder). Skips files already identified by their tags. A compilation
@@ -374,12 +376,16 @@ export class Matcher {
     const fp = await fingerprint(sourceId, f.path);
     const m = fp && (await acoustid.lookup(fp));
     if (!m || m.score < FINGERPRINT_MIN_SCORE) return null;
-    const groups = offCompilation ? m.releaseGroups.filter((g) => !g.secondaryTypes.includes('Compilation')) : m.releaseGroups;
+    // Nor albums by various artists, typed as compilations or not ("Jule CD'n 2000" is a plain album).
+    const groups = offCompilation
+      ? m.releaseGroups.filter((g) => !g.secondaryTypes.includes('Compilation') && !isVariousArtists(g.artistName ?? ''))
+      : m.releaseGroups;
     const rg = originalReleaseGroup(groups);
     if (!rg) return null;
     return {
       overlay: { recordingMbid: m.recordingId, title: m.title, albumArtist: m.artistName, albumArtistMbid: m.artistId, releaseGroupMbid: rg.id, album: rg.title },
       score: m.score,
+      rank: 0,
     };
   }
 
@@ -415,16 +421,19 @@ export class Matcher {
   }
 
   /**
-   * One song's album: its recording within 5 s of the file's length; else any length up to 45 s off (a
-   * radio edit is still its album's song); else, for a compilation's song, by its sound.
+   * One song's album: its recording within 5 s of the file's length, on a studio album, EP or soundtrack;
+   * else any version up to 90 s off on a better one (a radio edit found only on its single still belongs
+   * to its album: Madonna's 4 Minutes to Hard Candy); else the close one; else, for a compilation's
+   * song, by its sound.
    */
   private async songOf(sourceId: number, f: GroupFile, compilation: boolean): Promise<SongMatch | null> {
     const search = this.deps.mb.searchRecordings!;
     const title = bareTitle(f.title);
     const close = songMatch(f, await search(f.artist, title, f.duration));
-    if (close) return close;
+    if (close && close.rank <= ALBUM_RANK) return close;
     const wide = f.duration > 0 ? songMatch(f, await search(f.artist, title, 0), WIDE_LENGTH_S) : null;
-    if (wide) return wide;
+    const best = wide && (!close || wide.rank < close.rank) ? wide : close;
+    if (best) return best;
     return compilation ? this.fingerprintMatch(sourceId, f, true) : null;
   }
 

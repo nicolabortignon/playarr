@@ -44,6 +44,7 @@ export interface MbRecordingHit {
     title: string;
     status?: string | null;
     date?: string | null;
+    'track-count'?: number;
     /** Only where it differs from the recording's. */
     'artist-credit'?: MbArtistCredit[];
     'release-group'?: MbReleaseGroup;

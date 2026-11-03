@@ -17,13 +17,15 @@ export interface SongFacts {
 export interface SongMatch {
   overlay: MatchOverlay;
   score: number;
+  /** releaseGroupRank of the album found: 0 a studio album … 6 a live one. */
+  rank: number;
 }
 
 const MIN_TITLE = 0.8;
 const MIN_ARTIST = 0.8;
 /** How far a recording's length may be from the file's: a close search, and a wide one for radio edits. */
 export const CLOSE_LENGTH_S = 5;
-export const WIDE_LENGTH_S = 45;
+export const WIDE_LENGTH_S = 90;
 const VARIOUS_ARTISTS = new Set(['various artists', 'various', 'va']);
 
 export const isVariousArtists = (name: string) => VARIOUS_ARTISTS.has(normalize(name));
@@ -103,6 +105,7 @@ export function songMatch(file: SongFacts, hits: MbRecordingHit[], maxLengthDiff
   const medium = release.media?.find((m) => m.track?.length) ?? release.media?.[0];
   const number = Number(medium?.track?.[0]?.number);
   const year = Number(release.date?.slice(0, 4)) || undefined;
+  const total = release['track-count'];
   return {
     overlay: {
       recordingMbid: recording.id,
@@ -112,8 +115,10 @@ export function songMatch(file: SongFacts, hits: MbRecordingHit[], maxLengthDiff
       ...(credit?.[0] ? { albumArtistMbid: credit[0].artist.id } : {}),
       releaseGroupMbid: rg.id,
       ...(medium ? { trackNumber: Number.isInteger(number) && number > 0 ? number : (medium['track-offset'] ?? 0) + 1, discNumber: medium.position ?? 1 } : {}),
+      ...(total ? { trackTotal: total } : {}),
       ...(year ? { year } : {}),
     },
     score: Math.round(best.score * 100) / 100,
+    rank: best.rank,
   };
 }

@@ -183,6 +183,7 @@ describe('Matcher', () => {
         artistId: 'art-rupee',
         releaseGroups: [
           { id: 'rg-hits', title: 'Soca Gold 2003', type: 'Album', secondaryTypes: ['Compilation'] },
+          { id: 'rg-xmas', title: 'Jule CD’n 2000', type: 'Album', secondaryTypes: [], artistName: 'Various Artists' },
           { id: 'rg-1o1', title: '1 on 1', type: 'Album', secondaryTypes: [] },
         ],
       },
@@ -203,6 +204,18 @@ describe('Matcher', () => {
     expect(fingerprint).toHaveBeenCalledWith(sourceId, '/music/68. Rupee - Tempted to Touch.mp3');
     expect(acoustid.lookup).toHaveBeenCalledTimes(1);
     expect(store.matches(sourceId).get('03. Coldplay - Yellow.mp3')).toMatchObject({ overlay: { album: 'Parachutes' } });
+  });
+
+  it('files a radio edit found only on its single under its studio album', async () => {
+    const files = { '10. Madonna - 4 Minutes.mp3': hitsTags({ artist: 'Madonna', title: '4 Minutes', duration: 189 }) };
+    const { matcher, store, sourceId, mb } = setup(files, { hits: [] });
+    const single = recordingOf('Madonna', '4 Minutes', '4 Minutes', 189);
+    single.releases![0]!['release-group']!['primary-type'] = 'Single';
+    Object.assign(mb, {
+      searchRecordings: vi.fn(async (artist: string, title: string, seconds: number) => (seconds ? [single] : [single, recordingOf(artist, title, 'Hard Candy', 245)])),
+    });
+    await matcher.matchSource(sourceId);
+    expect(store.matches(sourceId).get('10. Madonna - 4 Minutes.mp3')).toMatchObject({ overlay: { album: 'Hard Candy' } });
   });
 
   it('keeps the songs found when MusicBrainz fails for one, and tries that one again after the next scan', async () => {

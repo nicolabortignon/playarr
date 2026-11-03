@@ -74,8 +74,7 @@ export function folderSync(
   for (const e of [...entries].sort((a, b) => a.rel.localeCompare(b.rel))) {
     const d = describeFile(e.rel, e.tags);
     // A various-artists compilation's song no match placed is its own artist's, never "Various Artists'",
-    // and never on the compilation: on the album the library already has it on, else unidentified (a loose
-    // song of theirs) until it's matched or reviewed.
+    // and on no album: unidentified (a loose song of theirs) until it's matched or reviewed.
     const various = isVariousArtists(d.artistName) && !!e.tags.artist && !isVariousArtists(e.tags.artist);
     const t: TagInfo = various
       ? { ...e.tags, albumArtist: undefined, albumArtistMbid: undefined, album: undefined, releaseGroupMbid: undefined, releaseId: undefined, year: undefined, trackTotal: undefined }
@@ -99,8 +98,9 @@ export function folderSync(
         : (index.albums.get(albumNameKey(artistName, albumTitle))?.key ?? albumKeyFor(undefined, artistName, albumTitle));
       known = index.tracks.get(`${albumKey}|${normalize(title)}`);
     } else {
-      // A loose song: file it under the album the library already has it on, else under "Loose songs".
-      known = index.songs.get(songNameKey(artistName, title));
+      // A loose song: file it under the album the library already has it on, else under "Loose songs". Not a
+      // compilation's song no match placed: that album may be any compilation it's on, too.
+      known = various ? undefined : index.songs.get(songNameKey(artistName, title));
       if (known) {
         artistKey = known.artistKey;
         artistName = known.artistName;

@@ -11,6 +11,7 @@ const on = (id: string, title: string, date: string, type: string, secondary: st
   date,
   'release-group': { id: `rg-${id}`, title, 'primary-type': type, 'secondary-types': secondary },
   media: [{ position: 1, 'track-offset': 1, track: [{ id: `t-${id}`, number: '2' }] }],
+  'track-count': 12,
   ...extra,
 });
 const recording = (id: string, seconds: number, releases: Release[], title = 'Can’t Stop', credit = rhcp): MbRecordingHit => ({
@@ -44,9 +45,11 @@ describe('songMatch', () => {
         releaseGroupMbid: 'rg-btw',
         trackNumber: 2,
         discNumber: 1,
+        trackTotal: 12,
         year: 2002,
       },
       score: 1,
+      rank: 0,
     });
   });
 

@@ -12,7 +12,7 @@ export interface AcoustIdMatch {
   title?: string;
   artistName?: string;
   artistId?: string;
-  releaseGroups: { id: string; title: string; type?: string; secondaryTypes: string[] }[];
+  releaseGroups: { id: string; title: string; type?: string; secondaryTypes: string[]; artistName?: string }[];
 }
 
 /** AcoustID lookups (https://acoustid.org/webservice): at most 3 requests per second. */
@@ -47,7 +47,7 @@ export class AcoustId {
             id: string;
             title?: string;
             artists?: { id: string; name: string }[];
-            releasegroups?: { id: string; title: string; type?: string; secondarytypes?: string[] }[];
+            releasegroups?: { id: string; title: string; type?: string; secondarytypes?: string[]; artists?: { id: string; name: string }[] }[];
           }[];
         }[];
       };
@@ -61,7 +61,13 @@ export class AcoustId {
         title: rec.title,
         artistName: rec.artists?.map((a) => a.name).join(', ') || undefined,
         artistId: rec.artists?.[0]?.id,
-        releaseGroups: (rec.releasegroups ?? []).map((g) => ({ id: g.id, title: g.title, type: g.type, secondaryTypes: g.secondarytypes ?? [] })),
+        releaseGroups: (rec.releasegroups ?? []).map((g) => ({
+          id: g.id,
+          title: g.title,
+          type: g.type,
+          secondaryTypes: g.secondarytypes ?? [],
+          ...(g.artists?.length ? { artistName: g.artists.map((a) => a.name).join(', ') } : {}),
+        })),
       };
     };
     const result = this.queue.then(run, run);

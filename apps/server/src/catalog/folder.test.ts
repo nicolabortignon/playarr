@@ -109,18 +109,14 @@ describe('folderSync', () => {
       lidarrIndex(),
     );
     expect(sync.artists.map((a) => a.name).sort()).toEqual(['Coldplay', 'Massive Attack']);
-    // A song the library has joins its album; the other is unidentified, a loose song of its artist.
-    expect(sync.copies.find((c) => c.ref.includes('Angel'))!.trackKey).toBe('mb:rg-1#rec-1');
-    expect(sync.albums.map((a) => a.title).sort()).toEqual(['Loose songs', 'Mezzanine']);
-    expect(sync.albums.find((a) => a.title === 'Loose songs')).toMatchObject({ albumType: 'Loose', fileArt: false });
-    expect(sync.albums.find((a) => a.title === 'Loose songs')!.releaseDate).toBeUndefined();
+    // Unidentified, loose songs of their artists, even one the library has on an album (that album may be
+    // any compilation it's on): only a match or a review places it.
+    expect(sync.albums.map((a) => a.title)).toEqual(['Loose songs', 'Loose songs']);
+    expect(sync.albums.every((a) => a.albumType === 'Loose' && a.fileArt === false && a.releaseDate === undefined)).toBe(true);
   });
 
   it('never gives a compilation’s cover to the albums its songs land on', () => {
     const va = { albumArtist: 'Various Artists', album: '00s Hits - 100 Top Songs' };
-    // Joined to an album the library has: none drawn from the file.
-    const joined = folderSync([entry('01. Massive Attack - Angel.mp3', { ...va, artist: 'Massive Attack', title: 'Angel' })], lidarrIndex());
-    expect(joined.albums[0]).toMatchObject({ key: 'mb:rg-1', fileArt: false });
     // Matched song by song (the overlay laid over its tags): the album's own cover, from the Cover Art Archive.
     const matched = folderSync(
       [

@@ -129,6 +129,33 @@ describe('FolderSource', () => {
     expect(rebuilt.copies.find((c) => c.ref.endsWith('Angel.flac'))!.trackKey).toBe('mb:rg-1#rec-1'); // the new match
   });
 
+  it('gives a compilation’s song matched to its own album that album’s length and year, not the compilation’s', () => {
+    const store = new CatalogStore(freshDb());
+    const sourceId = store.addSource('folder', '00s Hits', { path: '/hits' });
+    const va = { albumArtist: 'Various Artists', album: '00s Hits - 100 Top Songs', trackTotal: 100, year: 2025 };
+    const tags = (t: object) => ({ genres: [], duration: 189, format: FLAC, ...va, ...t });
+    const files = ['10. Madonna - 4 Minutes.mp3', '94. Madonna - Music.mp3'];
+    store.saveFolderFiles(
+      sourceId,
+      [
+        { rel: files[0]!, size: 1, mtimeMs: 1, tags: tags({ artist: 'Madonna', title: '4 Minutes', trackNumber: 10 }) },
+        { rel: files[1]!, size: 1, mtimeMs: 1, tags: tags({ artist: 'Madonna', title: 'Music', trackNumber: 94 }) },
+      ],
+      files,
+    );
+    const matched = (rel: string, overlay: object) => ({ rel, groupKey: rel, state: 'auto' as const, overlay, size: 1, mtimeMs: 1 });
+    store.saveMatches(sourceId, [
+      matched(files[0]!, { album: 'Hard Candy', albumArtist: 'Madonna', releaseGroupMbid: 'rg-hc', recordingMbid: 'rec-4m', trackNumber: 2, trackTotal: 12, year: 2008 }),
+      // By its sound: no length nor year known.
+      matched(files[1]!, { album: 'Music', albumArtist: 'Madonna', releaseGroupMbid: 'rg-m', recordingMbid: 'rec-m' }),
+    ]);
+    const sync = new FolderSource({ sourceId, root: '/hits', store, fs: new LocalFolderFs() }).cached();
+    expect(sync.albums.find((a) => a.title === 'Hard Candy')).toMatchObject({ totalTrackCount: 12, releaseDate: '2008-01-01T00:00:00Z' });
+    const music = sync.albums.find((a) => a.title === 'Music')!;
+    expect(music.totalTrackCount).toBeUndefined();
+    expect(music.releaseDate).toBeUndefined();
+  });
+
   it('scans a folder on another machine through its filesystem alone', async () => {
     const store = new CatalogStore(freshDb());
     const sourceId = store.addSource('folder', 'NAS', { path: '/volume1/music', access: 'ssh', host: 'nas', user: 'me' });

@@ -28,7 +28,10 @@ export interface TagInfo {
 
 /** What a match lays over a file's own tags. */
 export type MatchOverlay = Partial<
-  Pick<TagInfo, 'title' | 'album' | 'albumArtist' | 'albumArtistMbid' | 'trackNumber' | 'discNumber' | 'year' | 'recordingMbid' | 'releaseGroupMbid' | 'releaseId'>
+  Pick<
+    TagInfo,
+    'title' | 'album' | 'albumArtist' | 'albumArtistMbid' | 'trackNumber' | 'discNumber' | 'trackTotal' | 'year' | 'recordingMbid' | 'releaseGroupMbid' | 'releaseId'
+  >
 >;
 
 export type MatchState = 'auto' | 'manual' | 'review' | 'unmatched' | 'ignored';

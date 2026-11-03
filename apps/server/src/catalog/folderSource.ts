@@ -81,7 +81,10 @@ export class FolderSource implements CatalogSource {
       if (isVariousArtists(e.tags.albumArtist ?? '')) e.compilation = true;
       const m = matches.get(e.rel);
       if (!m?.overlay || (m.state !== 'auto' && m.state !== 'manual')) continue;
-      e.tags = { ...e.tags, ...m.overlay };
+      // A compilation's song matched to its own album: the compilation's track total and year aren't that
+      // album's ("1 of 100", 2025); the match brings the album's own where it knows them.
+      const own = e.compilation ? { ...e.tags, trackTotal: undefined, year: undefined } : e.tags;
+      e.tags = { ...own, ...m.overlay };
       const id = m.overlay.releaseId;
       const release = id && !releases.has(id) ? store.cachedRelease(id) : undefined;
       if (release) releases.set(release.id, release);
