@@ -170,7 +170,7 @@ const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE
   metadataProfileId: config.LIDARR_METADATA_PROFILE_ID,
 });
 const discover = new Discover(lidarr, musicbrainz, library, requests);
-const recommendations = new Recommendations(playlists, library, requests, musicbrainz);
+const recommendations = new Recommendations(playlists, requests, musicbrainz);
 
 // Every request's account (req.auth), from a Bearer token or the session cookie; 401 once set up.
 app.decorateRequest('auth', null);
@@ -193,7 +193,7 @@ transitionRoutes(app, { transitions, library, unavailableReason: 'DJ mixing need
 lyricsRoutes(app, { lyrics: new LyricsService(db, library, files, { log: app.log }), library });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
-playlistRoutes(app, { playlists, recommendations, covers });
+playlistRoutes(app, { playlists, recommendations, covers, library });
 mixRoutes(app, {
   mixes,
   history,

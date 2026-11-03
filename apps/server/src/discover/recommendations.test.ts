@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Library } from '../library/library.ts';
+import type { LibraryView } from '../library/library.ts';
 import type { Playlists } from '../playlists.ts';
 import { Recommendations } from './recommendations.ts';
 import type { Requests } from './requests.ts';
@@ -32,12 +32,13 @@ describe('Recommendations', () => {
     const searchRecordings = vi.fn(async (_artist: string, title: string) =>
       title === 'Bye Bye Bye' ? [{ id: FOUND, score: 100 }] : [{ id: 'weak', score: 40 }],
     );
-    const recs = new Recommendations(playlists, {} as Library, {} as Requests, { searchRecordings });
-    const result = await recs.forPlaylist(76);
+    const recs = new Recommendations(playlists, {} as Requests, { searchRecordings });
+    const viewer = { account: 1, library: {} as LibraryView };
+    const result = await recs.forPlaylist(viewer, 76);
     expect(asked.sort()).toEqual([KNOWN, FOUND].sort());
     expect(result.seedCount).toBe(2);
     // Found once, remembered after.
-    await recs.forPlaylist(76, 0);
+    await recs.forPlaylist(viewer, 76, 0);
     expect(searchRecordings).toHaveBeenCalledTimes(2);
   });
 });

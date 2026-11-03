@@ -1,8 +1,10 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CoverLayout } from '@playarr/shared';
+import { accountId, libraryOf } from '../accounts/rights.ts';
 import type { CoverArt, PlaylistCovers } from '../cover/index.ts';
 import type { Recommendations } from '../discover/recommendations.ts';
-import { PlaylistError, type Playlists } from '../playlists.ts';
+import type { Library } from '../library/library.ts';
+import { PlaylistError, type Playlists, type Viewer } from '../playlists.ts';
 import { RECORDING_ID } from './recordingId.ts';
 
 function recordingIds(value: unknown): string[] | null {
@@ -23,13 +25,15 @@ async function handle<T>(reply: FastifyReply, fn: () => T | Promise<T>) {
   }
 }
 
+/** Each account's playlists and those shared with everyone; only an owner changes theirs. */
 export function playlistRoutes(
   app: FastifyInstance,
-  deps: { playlists: Playlists; recommendations: Recommendations; covers: PlaylistCovers },
+  deps: { playlists: Playlists; recommendations: Recommendations; covers: PlaylistCovers; library: Library },
 ) {
   const { playlists, recommendations, covers } = deps;
   type Id = { Params: { id: string } };
   const id = (raw: string) => Number.parseInt(raw, 10);
+  const viewer = (req: FastifyRequest): Viewer => ({ account: accountId(req), library: libraryOf(deps.library, req) });
 
   type ArtQuery = { size?: string; v?: string; format?: string; title?: string };
   // Snap to a few sizes so the image cache stays small.
@@ -45,7 +49,7 @@ export function playlistRoutes(
   /** The playlist's cover: WebP at `size` (default 600), `title=0` without the title, `format=svg` for the source. */
   app.get<Id & { Querystring: ArtQuery }>('/art/playlist/:id', (req, reply) =>
     handle(reply, async () => {
-      const cover = await playlists.cover(id(req.params.id));
+      const cover = await playlists.cover(id(req.params.id), viewer(req));
       return sendCover(reply, cover, req.query, req.query.v === cover.version);
     }),
   );
@@ -56,7 +60,7 @@ export function playlistRoutes(
       const layout = coverLayout(req.query.layout);
       if (!layout) return reply.code(400).send({ error: 'Unknown layout' });
       const variant = Math.max(0, Math.min(1_000_000, Number.parseInt(req.query.variant ?? '0', 10) || 0));
-      return sendCover(reply, await playlists.coverCandidate(id(req.params.id), layout, variant), req.query, false);
+      return sendCover(reply, await playlists.coverCandidate(id(req.params.id), layout, variant, viewer(req)), req.query, false);
     }),
   );
 
@@ -64,26 +68,30 @@ export function playlistRoutes(
     const layout = coverLayout(req.body?.layout);
     const variant = req.body?.variant ?? 0;
     if (!layout || !Number.isInteger(variant) || variant < 0) return reply.code(400).send({ error: 'layout and variant are required' });
-    return handle(reply, () => playlists.setCover(id(req.params.id), layout, variant));
+    return handle(reply, () => playlists.setCover(id(req.params.id), layout, variant, viewer(req)));
   });
 
-  app.get('/api/playlists', () => playlists.list());
+  app.get('/api/playlists', (req) => playlists.list(viewer(req)));
 
-  app.post<{ Body: { name?: string; description?: string; recordingIds?: string[] } }>('/api/playlists', (req, reply) => {
+  app.post<{ Body: { name?: string; description?: string; recordingIds?: string[]; shared?: boolean } }>('/api/playlists', (req, reply) => {
     const ids = recordingIds(req.body?.recordingIds);
     if (!ids) return reply.code(400).send({ error: 'recordingIds must be a list of song ids' });
-    return handle(reply, async () => reply.code(201).send(await playlists.create(req.body?.name ?? '', req.body?.description, ids)));
+    return handle(reply, async () =>
+      reply.code(201).send(await playlists.create(viewer(req), req.body?.name ?? '', req.body?.description, ids, req.body?.shared === true)),
+    );
   });
 
-  app.get<Id>('/api/playlists/:id', (req, reply) => handle(reply, () => playlists.get(id(req.params.id))));
+  app.get<Id>('/api/playlists/:id', (req, reply) => handle(reply, () => playlists.get(id(req.params.id), viewer(req))));
 
-  app.patch<Id & { Body: { name?: string; description?: string } }>('/api/playlists/:id', (req, reply) =>
-    handle(reply, () => playlists.update(id(req.params.id), req.body ?? {})),
-  );
+  app.patch<Id & { Body: { name?: string; description?: string; shared?: boolean } }>('/api/playlists/:id', (req, reply) => {
+    const body = req.body ?? {};
+    if (body.shared !== undefined && typeof body.shared !== 'boolean') return reply.code(400).send({ error: 'shared must be true or false' });
+    return handle(reply, () => playlists.update(id(req.params.id), body, viewer(req)));
+  });
 
   app.delete<Id>('/api/playlists/:id', (req, reply) =>
     handle(reply, () => {
-      playlists.remove(id(req.params.id));
+      playlists.remove(id(req.params.id), viewer(req));
       return reply.code(204).send();
     }),
   );
@@ -91,20 +99,18 @@ export function playlistRoutes(
   app.post<Id & { Body: { recordingIds?: string[] } }>('/api/playlists/:id/items', (req, reply) => {
     const ids = recordingIds(req.body?.recordingIds);
     if (!ids?.length) return reply.code(400).send({ error: 'recordingIds must be a non-empty list of song ids' });
-    return handle(reply, () => playlists.addItems(id(req.params.id), ids));
+    return handle(reply, () => playlists.addItems(id(req.params.id), ids, viewer(req)));
   });
 
   app.delete<{ Params: { id: string; itemId: string } }>('/api/playlists/:id/items/:itemId', (req, reply) =>
-    handle(reply, () => playlists.removeItem(id(req.params.id), id(req.params.itemId))),
+    handle(reply, () => playlists.removeItem(id(req.params.id), id(req.params.itemId), viewer(req))),
   );
 
   app.get<Id & { Querystring: { variant?: string } }>('/api/playlists/:id/recommendations', async (req, reply) => {
     const ctrl = new AbortController();
     reply.raw.once('close', () => !reply.raw.writableFinished && ctrl.abort());
     try {
-      return await handle(reply, () =>
-        recommendations.forPlaylist(id(req.params.id), Number(req.query.variant) || 0, ctrl.signal),
-      );
+      return await handle(reply, () => recommendations.forPlaylist(viewer(req), id(req.params.id), Number(req.query.variant) || 0, ctrl.signal));
     } catch (err) {
       return reply.code(502).send({ error: (err as Error).message });
     }
@@ -115,6 +121,6 @@ export function playlistRoutes(
     if (!Array.isArray(itemIds) || !itemIds.every(Number.isInteger)) {
       return reply.code(400).send({ error: 'itemIds must be a list of item ids' });
     }
-    return handle(reply, () => playlists.reorder(id(req.params.id), itemIds));
+    return handle(reply, () => playlists.reorder(id(req.params.id), itemIds, viewer(req)));
   });
 }

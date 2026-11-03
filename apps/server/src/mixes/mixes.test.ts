@@ -77,7 +77,7 @@ function setup(mixMaps = new Map<string, MixMapSummary>(), views: Record<number,
     progress: () => ({ features: 0, meta: 0, mixMaps: mixMaps.size }),
   } as unknown as Analyzer;
   const history = new History(db, library);
-  const playlists = { create: vi.fn(async (name: string) => ({ id: 1, name })) } as unknown as Playlists;
+  const playlists = { create: vi.fn(async (_viewer: unknown, name: string) => ({ id: 1, name })) } as unknown as Playlists;
   const mixes = new Mixes({ db, store, library, analyzer, history, playlists, similar: async () => [], libraryFor: (account: number) => views[account] ?? library });
   const app = Fastify();
   mixRoutes(app, { mixes, history, store, analysisAvailable: false, analyzeLibrary: vi.fn(), library });
@@ -145,7 +145,7 @@ describe('Mixes', () => {
     expect(after.tracks.map((t) => t.id)).not.toEqual(before.tracks.map((t) => t.id));
     expect((await mixes.get('genre-rock', 'UTC', now)).tracks).toEqual(after.tracks);
     await mixes.saveAsPlaylist('genre-rock', 'UTC', now);
-    expect(playlists.create).toHaveBeenCalledWith('Rock mix · 1 Nov', expect.any(String), after.tracks.map((t) => t.recordingId));
+    expect(playlists.create).toHaveBeenCalledWith(expect.objectContaining({ account: 1 }), 'Rock mix · 1 Nov', expect.any(String), after.tracks.map((t) => t.recordingId));
   });
 
   it('asks for tags of the whole library, and its sound only when Settings says so', async () => {

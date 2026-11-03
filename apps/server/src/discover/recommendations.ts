@@ -1,8 +1,7 @@
 import type { RecommendedTrack, Recommendations as RecommendationsResult } from '@playarr/shared';
-import type { Library } from '../library/library.ts';
 import { songKey } from '../library/library.ts';
 import { normalize, primaryArtist } from '../library/search.ts';
-import type { Playlists } from '../playlists.ts';
+import type { Playlists, Viewer } from '../playlists.ts';
 import { remoteArtUrl } from './art.ts';
 import { recordingMetadata, similarRecordings, type LbSimilarRecording } from './listenbrainz.ts';
 import type { Requests } from './requests.ts';
@@ -25,7 +24,6 @@ export class Recommendations {
 
   constructor(
     private readonly playlists: Playlists,
-    private readonly library: Library,
     private readonly requests: Requests,
     /** Finds a song's MusicBrainz recording by name, for songs known only from their tags. */
     private readonly mb?: { searchRecordings(artistName: string, title: string, signal?: AbortSignal): Promise<{ id: string; score: number }[]> },
@@ -48,8 +46,9 @@ export class Recommendations {
   }
 
   /** `variant` picks a different random set of seeds (0 = evenly spread through the playlist). */
-  async forPlaylist(playlistId: number, variant = 0, signal?: AbortSignal): Promise<RecommendationsResult> {
-    const playlist = await this.playlists.get(playlistId);
+  async forPlaylist(viewer: Viewer, playlistId: number, variant = 0, signal?: AbortSignal): Promise<RecommendationsResult> {
+    const playlist = await this.playlists.get(playlistId, viewer);
+    const library = viewer.library;
     const songs = uniqueBy(playlist.items, (i) => i.recordingId);
     const random = seededRandom(variant);
     const picked = pickSeeds(songs, MAX_SEEDS, variant, random);
@@ -99,8 +98,8 @@ export class Recommendations {
       const artistKey = normalize(primaryArtist(rec.artist_credit_name));
 
       const track =
-        (await this.library.trackByRecording(rec.recording_mbid)) ??
-        (await this.library.trackByName(rec.artist_credit_name, rec.recording_name));
+        (await library.trackByRecording(rec.recording_mbid)) ??
+        (await library.trackByName(rec.artist_credit_name, rec.recording_name));
       const base = {
         recordingId: rec.recording_mbid,
         title: rec.recording_name,
@@ -135,7 +134,7 @@ export class Recommendations {
         const groupMbid = info?.release?.release_group_mbid;
         if (artistMbid) {
           m.artistMbid = artistMbid;
-          m.artistId = await this.library.artistIdByMbid(artistMbid);
+          m.artistId = await library.artistIdByMbid(artistMbid);
         }
         if (groupMbid) m.album!.mbid = groupMbid;
         const byMbid = groupMbid ? await this.requests.availability(groupMbid) : undefined;

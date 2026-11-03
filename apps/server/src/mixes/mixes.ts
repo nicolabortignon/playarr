@@ -215,7 +215,7 @@ export class Mixes {
     const tz = this.timeZone(clientTimeZone);
     const mix = await this.get(key, tz, now, account);
     const day = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: tz });
-    return this.deps.playlists.create(`${mix.title} · ${day}`, mix.description.slice(0, 300), mix.tracks.map((t) => t.recordingId));
+    return this.deps.playlists.create({ account, library: this.view(account) }, `${mix.title} · ${day}`, mix.description.slice(0, 300), mix.tracks.map((t) => t.recordingId));
   }
 
   /** Forget someone's mixes (everyone's, without an account), so they're made again: after the history was cleared, say. */
@@ -313,9 +313,13 @@ export class Mixes {
       (db.prepare('SELECT recording_id FROM favorites WHERE account_id = ?').all(account) as { recording_id: string }[]).map((r) => r.recording_id),
     );
     const inPlaylists = new Map(
-      (db.prepare('SELECT recording_id, COUNT(*) AS n FROM playlist_items GROUP BY recording_id').all() as { recording_id: string; n: number }[]).map(
-        (r) => [r.recording_id, r.n],
-      ),
+      (
+        db
+          .prepare(
+            'SELECT recording_id, COUNT(*) AS n FROM playlist_items WHERE playlist_id IN (SELECT id FROM playlists WHERE account_id = ? OR shared = 1) GROUP BY recording_id',
+          )
+          .all(account) as { recording_id: string; n: number }[]
+      ).map((r) => [r.recording_id, r.n]),
     );
     const taste = buildTaste(songs, plays, favorites, inPlaylists, now.getTime());
     return {

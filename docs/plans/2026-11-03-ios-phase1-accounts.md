@@ -5004,6 +5004,8 @@ corepack pnpm -C apps/server typecheck
 
 Expected: PASS. (The web typecheck fails on nothing: it only reads playlists; task 22 uses the new fields.)
 
+*As executed:* fitted as written (stale line numbers aside). Web typecheck passes; the web suite's 452 tests pass but vitest exits 1 on 22 unhandled `AbortError: The animation was canceled` rejections (motion-dom under happy-dom, from `AnalysisPanel.test.tsx` and others), which happen on the commit before this one too: not caused by this task.
+
 **Step 5: Commit**
 
 ```bash

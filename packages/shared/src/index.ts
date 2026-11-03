@@ -292,6 +292,12 @@ export interface PlaylistSummary {
   duration: number; // seconds, playable tracks only
   cover: PlaylistCoverInfo;
   updatedAt: string;
+  /** The display name of the account it belongs to. */
+  owner: string;
+  /** Visible to every account on this server (only its owner changes it). */
+  shared: boolean;
+  /** It belongs to the account asking. */
+  mine: boolean;
 }
 
 export interface PlaylistItem {
