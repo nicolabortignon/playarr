@@ -225,7 +225,7 @@ export class CatalogStore {
   /**
    * The songs and albums each source has, its albums by how much of them it has: complete or incomplete
    * when the album's length is known (Lidarr's, a MusicBrainz match's, or the files' track total),
-   * unknown otherwise. Loose songs count as one album, in none of those.
+   * unidentified otherwise, loose songs included (one album per artist).
    */
   sourceCounts(): Map<number, SourceCounts> {
     const rows = this.db
@@ -245,7 +245,7 @@ export class CatalogStore {
          SELECT h.id, SUM(h.songs) AS songs, COUNT(*) AS albums,
            SUM(s.known AND NOT s.loose AND h.songs >= s.total) AS complete,
            SUM(s.known AND NOT s.loose AND h.songs < s.total) AS incomplete,
-           SUM(NOT s.known AND NOT s.loose) AS unknown
+           SUM(NOT s.known OR s.loose) AS unknown
          FROM have h JOIN size s ON s.album_id = h.album_id
          GROUP BY h.id`,
       )

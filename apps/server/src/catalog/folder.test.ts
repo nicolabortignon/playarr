@@ -99,7 +99,7 @@ describe('folderSync', () => {
     expect(sync.copies[0]!.trackKey).toBe('mb:rg-1#rec-1');
   });
 
-  it('files a various-artists compilation’s songs under their own artists, never “Various Artists”', () => {
+  it('files a various-artists compilation’s songs under their own artists, never “Various Artists” nor the compilation', () => {
     const va = { albumArtist: 'Various Artists', album: '00s Hits - 100 Top Songs', year: 2025, trackTotal: 100 };
     const sync = folderSync(
       [
@@ -109,20 +109,15 @@ describe('folderSync', () => {
       lidarrIndex(),
     );
     expect(sync.artists.map((a) => a.name).sort()).toEqual(['Coldplay', 'Massive Attack']);
-    // A song the library has joins its album; the other stays on the compilation it came from, under its artist.
+    // A song the library has joins its album; the other is unidentified, a loose song of its artist.
     expect(sync.copies.find((c) => c.ref.includes('Angel'))!.trackKey).toBe('mb:rg-1#rec-1');
-    expect(sync.albums.map((a) => a.title).sort()).toEqual(['00s Hits - 100 Top Songs', 'Mezzanine']);
-    const coldplay = sync.artists.find((a) => a.name === 'Coldplay')!;
-    expect(sync.albums.find((a) => a.title === '00s Hits - 100 Top Songs')).toMatchObject({ artistKey: coldplay.key, albumType: 'Album' });
-    expect(sync.albums.some((a) => a.albumType === 'Loose')).toBe(false);
+    expect(sync.albums.map((a) => a.title).sort()).toEqual(['Loose songs', 'Mezzanine']);
+    expect(sync.albums.find((a) => a.title === 'Loose songs')).toMatchObject({ albumType: 'Loose', fileArt: false });
+    expect(sync.albums.find((a) => a.title === 'Loose songs')!.releaseDate).toBeUndefined();
   });
 
-  it('never gives a compilation’s cover to another album its songs land on', () => {
+  it('never gives a compilation’s cover to the albums its songs land on', () => {
     const va = { albumArtist: 'Various Artists', album: '00s Hits - 100 Top Songs' };
-    // Left on the compilation, under its artist: the compilation's own picture is right there.
-    const left = folderSync([entry('03. Coldplay - Yellow.mp3', { ...va, artist: 'Coldplay', title: 'Yellow' })], EMPTY);
-    expect(left.albums[0]).toMatchObject({ title: '00s Hits - 100 Top Songs' });
-    expect(left.albums[0]).not.toHaveProperty('fileArt');
     // Joined to an album the library has: none drawn from the file.
     const joined = folderSync([entry('01. Massive Attack - Angel.mp3', { ...va, artist: 'Massive Attack', title: 'Angel' })], lidarrIndex());
     expect(joined.albums[0]).toMatchObject({ key: 'mb:rg-1', fileArt: false });

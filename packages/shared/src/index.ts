@@ -382,7 +382,7 @@ export interface SourceInfo {
   albumsComplete: number;
   /** Albums this source has some of the songs of. */
   albumsIncomplete: number;
-  /** Albums whose length isn't known (not identified on MusicBrainz). Loose songs are none of these. */
+  /** Albums whose length isn't known (not identified on MusicBrainz), and each artist's loose songs. */
   albumsUnknown: number;
   /** Folder sources: album groups matched on MusicBrainz (automatically, by you, or by their tags), or named by you. */
   matched: number;

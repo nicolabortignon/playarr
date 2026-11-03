@@ -24,6 +24,8 @@ export interface FileGroup {
   artistName: string;
   albumTitle?: string;
   files: GroupFile[];
+  /** One song of a compilation, matched and reviewed on its own (see groupFiles). */
+  compilation?: true;
 }
 
 export interface MatcherDeps {
@@ -49,7 +51,11 @@ const SEARCH_MIN_SCORE = 70;
 const CANDIDATES = 3;
 const FINGERPRINT_MIN_SCORE = 0.8;
 
-/** Files by album (album tag, else folder). Skips files already identified by their tags. */
+/**
+ * Files by album (album tag, else folder). Skips files already identified by their tags. A compilation
+ * (songs by many artists under one album name) is split into its songs, each a group of its own under its
+ * artist: each is matched, and reviewed, apart from the others.
+ */
 export function groupFiles(
   root: string,
   files: { rel: string; size: number; mtimeMs: number; tags: TagInfo | null }[],
@@ -69,7 +75,11 @@ export function groupFiles(
     if (!group) groups.set(key, (group = { key, artistName: d.artistName, albumTitle: d.albumTitle, files: [] }));
     group.files.push({ rel: f.rel, artist: f.tags.artist || d.artistName, path: posix.join(root, f.rel), size: f.size, mtimeMs: f.mtimeMs, ...pick(d) });
   }
-  return [...groups.values()];
+  return [...groups.values()].flatMap((g) =>
+    isCompilation(g)
+      ? g.files.map((f) => ({ key: `${g.key}|${f.rel}`, artistName: f.artist, albumTitle: g.albumTitle, files: [f], compilation: true as const }))
+      : [g],
+  );
 }
 
 const pick = (d: ReturnType<typeof describeFile>): Omit<FileFacts, 'rel'> => ({
@@ -235,32 +245,29 @@ export class Matcher {
 
   reviewGroups(sourceId: number): ReviewGroup[] {
     const matches = this.deps.store.matches(sourceId);
+    // The folder as it groups now (once, not once per album: a folder of loose songs has hundreds), not
+    // as it grouped when matched, so files matched under an older grouping are still listed.
+    const waiting = this.allGroups(sourceId, matches).flatMap((group) => {
+      const records = group.files.map((f) => matches.get(f.rel));
+      const review = records.find((m) => m?.state === 'review');
+      const notFound = records.some((m) => m?.state === 'unmatched');
+      return review || notFound ? [{ group, ids: review?.candidates ?? [], notFound }] : [];
+    });
     // Albums with candidates to choose from first, then those nothing was found for.
-    const review = [...matches.values()].filter((m) => m.state === 'review');
-    const unmatched = [...matches.values()].filter((m) => m.state === 'unmatched');
-    const notFound = new Set(unmatched.map((m) => m.groupKey));
-    const keys = [...new Set([...review.map((m) => m.groupKey), ...notFound])];
-    const candidatesOf = new Map(review.map((m) => [m.groupKey, m.candidates ?? []]));
-    // The folder grouped once, not once per album: a folder of loose songs has hundreds of them.
-    const groups = new Map(this.allGroups(sourceId, matches).map((g) => [g.key, g]));
-    return keys.flatMap((key) => {
-      const group = groups.get(key);
-      if (!group) return [];
-      const ids = candidatesOf.get(key) ?? [];
+    waiting.sort((a, b) => Number(!a.ids.length) - Number(!b.ids.length));
+    return waiting.map(({ group, ids, notFound }) => {
       const candidates = ids.flatMap((id) => {
         const release = this.deps.store.cachedRelease(id);
         return release ? [toCandidate(scoreRelease(group.files, release))] : [];
       });
-      return [
-        {
-          groupKey: key,
-          artistName: group.artistName,
-          albumTitle: group.albumTitle,
-          files: waitingIn(group, matches).map(({ rel, title, trackNumber, discNumber, duration }) => ({ rel, title, trackNumber, discNumber, duration })),
-          candidates,
-          ...(!candidates.length && notFound.has(key) ? { notFound: true } : {}),
-        },
-      ];
+      return {
+        groupKey: group.key,
+        artistName: group.artistName,
+        albumTitle: group.albumTitle,
+        files: waitingIn(group, matches).map(({ rel, title, trackNumber, discNumber, duration }) => ({ rel, title, trackNumber, discNumber, duration })),
+        candidates,
+        ...(!candidates.length && notFound ? { notFound: true as const } : {}),
+      };
     });
   }
 
@@ -291,7 +298,8 @@ export class Matcher {
   }
 
   private async matchGroup(sourceId: number, group: FileGroup): Promise<MatchRecord[]> {
-    const scored = group.albumTitle ? await this.candidates(group, group.artistName, group.albumTitle) : [];
+    // A compilation's song is never matched to an album by the compilation's name.
+    const scored = group.albumTitle && !group.compilation ? await this.candidates(group, group.artistName, group.albumTitle) : [];
     const best = scored[0];
     const outcome = verdict(best);
     if (outcome === 'auto') return this.fromAlignment(group, best!, 'auto');
@@ -301,7 +309,7 @@ export class Matcher {
       const bySong = await this.bySong(sourceId, group, true);
       if (bySong) return bySong;
     }
-    const byFingerprint = await this.byFingerprint(sourceId, group);
+    const byFingerprint = compilation ? null : await this.byFingerprint(sourceId, group);
     if (byFingerprint) return byFingerprint;
     // An album MusicBrainz doesn't know: its songs may still be on others.
     if (!compilation && outcome === 'unmatched') {
@@ -462,7 +470,7 @@ function waitingIn(group: FileGroup, matches: Map<string, MatchRecord>): GroupFi
 
 /** Songs by many artists under one album name: a compilation, a mixtape, a playlist's folder. */
 function isCompilation(group: FileGroup): boolean {
-  if (isVariousArtists(group.artistName)) return true;
+  if (group.compilation || isVariousArtists(group.artistName)) return true;
   return new Set(group.files.map((f) => normalize(leadArtist(f.artist)))).size > 1;
 }
 

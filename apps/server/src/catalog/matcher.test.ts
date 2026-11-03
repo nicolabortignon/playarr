@@ -158,7 +158,9 @@ describe('Matcher', () => {
     expect(store.matches(sourceId).get('99. Nobody - Unknown.mp3')!.state).toBe('unmatched');
 
     // The song left over goes up for review alone; ignoring it leaves the others matched.
-    const [group] = matcher.reviewGroups(sourceId);
+    const [group, ...more] = matcher.reviewGroups(sourceId);
+    expect(more).toEqual([]);
+    expect(group).toMatchObject({ artistName: 'Nobody', albumTitle: '00s Hits - 100 Top Songs', notFound: true });
     expect(group!.files.map((f) => f.rel)).toEqual(['99. Nobody - Unknown.mp3']);
     matcher.ignore(sourceId, group!.groupKey);
     expect(store.matches(sourceId).get('99. Nobody - Unknown.mp3')!.state).toBe('ignored');
@@ -217,6 +219,21 @@ describe('Matcher', () => {
     searchRecordings.mockClear();
     await matcher.matchSource(sourceId);
     expect(searchRecordings.mock.calls).toEqual([['Coldplay', 'Yellow', 240]]);
+  });
+
+  it('lists a compilation’s songs for review one by one, even those matched when it was one group', async () => {
+    const files = Object.fromEntries(Object.entries(hitsFolder).map(([rel, t]) => [rel, hitsTags(t)]));
+    const { matcher, store, sourceId } = setup(files);
+    // As an earlier version saved them: one group for the whole compilation.
+    store.saveMatches(
+      sourceId,
+      Object.keys(files).map((rel) => ({ rel, groupKey: 'various artists|00s hits 100 top songs', state: 'unmatched' as const, size: 100, mtimeMs: 1 })),
+    );
+    expect(matcher.reviewGroups(sourceId).map((g) => [g.artistName, g.files.length])).toEqual([
+      ['Red Hot Chili Peppers', 1],
+      ['Coldplay', 1],
+      ['Nobody', 1],
+    ]);
   });
 
   it('tells a compilation by its songs’ artists, whoever the album artist is', async () => {

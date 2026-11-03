@@ -73,18 +73,18 @@ export function folderSync(
 
   for (const e of [...entries].sort((a, b) => a.rel.localeCompare(b.rel))) {
     const d = describeFile(e.rel, e.tags);
-    // A various-artists compilation's song no match placed is its own artist's, never "Various Artists'":
-    // on the album the library already has it on, else still on the compilation it came from, under them.
+    // A various-artists compilation's song no match placed is its own artist's, never "Various Artists'",
+    // and never on the compilation: on the album the library already has it on, else unidentified (a loose
+    // song of theirs) until it's matched or reviewed.
     const various = isVariousArtists(d.artistName) && !!e.tags.artist && !isVariousArtists(e.tags.artist);
     const t: TagInfo = various
-      ? { ...e.tags, albumArtist: undefined, albumArtistMbid: undefined, releaseGroupMbid: undefined, releaseId: undefined }
+      ? { ...e.tags, albumArtist: undefined, albumArtistMbid: undefined, album: undefined, releaseGroupMbid: undefined, releaseId: undefined, year: undefined, trackTotal: undefined }
       : e.tags;
     let artistName = various ? e.tags.artist! : d.artistName;
+    const albumTitle = various ? undefined : d.albumTitle;
     const title = d.title;
-    const elsewhere = various ? index.songs.get(songNameKey(artistName, title)) : undefined;
-    const albumTitle = elsewhere ? undefined : d.albumTitle;
-    // Its pictures, embedded or beside it, are the compilation's cover: wrong for any album but that one.
-    const offCompilation = (various && !albumTitle) || (!various && !!e.compilation);
+    // Its pictures, embedded or beside it, are the compilation's cover, wrong for any other album.
+    const offCompilation = various || !!e.compilation;
     let artistKey = t.albumArtistMbid
       ? `mb:${t.albumArtistMbid}`
       : (index.artists.get(normalize(artistName))?.key ?? artistKeyFor(undefined, artistName));

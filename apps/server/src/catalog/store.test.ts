@@ -204,7 +204,7 @@ describe('CatalogStore: managing sources', () => {
     expect(() => store.reorderSources([a])).toThrow(/every source/);
   });
 
-  it('counts the songs and albums each source has, complete, incomplete or of unknown length', () => {
+  it('counts the songs and albums each source has, complete, incomplete or unidentified', () => {
     const store = new CatalogStore(freshDb());
     const id = store.ensureSource('lidarr', 'Lidarr');
     // Two of Mezzanine's 11 songs.
@@ -221,7 +221,8 @@ describe('CatalogStore: managing sources', () => {
       tracks: [track('w1', 'whole'), track('w2', 'whole'), track('d1', 'demo'), track('l1', 'loose:a')],
       copies: [copy('w1.flac', 'w1'), copy('w2.flac', 'w2'), copy('d1.flac', 'd1'), copy('l1.flac', 'l1')],
     });
-    expect(store.sourceCounts().get(folder)).toEqual({ songs: 4, albums: 3, complete: 1, incomplete: 0, unknown: 1 });
+    // The demo and the loose songs are unidentified.
+    expect(store.sourceCounts().get(folder)).toEqual({ songs: 4, albums: 3, complete: 1, incomplete: 0, unknown: 2 });
   });
 
   it('keeps app settings', () => {
