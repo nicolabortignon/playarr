@@ -30,7 +30,7 @@
 - **Your listening keeps its period in the route.** Phase 4's `Route.listening` has no period, so the year in review card and "Playing from" links to `/settings/listening?range=2025` lost it. Task 20 adds `Route.listeningRange(StatsRange)` (`Route(href:)` reads `range`), and Home's year in review opens its year. The charts are Swift Charts bars in the accent colour, the busiest column named above them ("Most: 9 PM · 2 h 5 min") and the one under the finger instead; each chart reads its numbers to VoiceOver.
 - **The lock screen's like command toggles the song playing.** Phase 3's `NowPlayingBridge.Commands.like` is fixed when the player is made, and `AccountSession.live` makes the player before the session. So `Player.live` gains a `like: (Track) -> Void` parameter, and the session passes a closure that finds the session through a weak `SessionReference` filled in once it exists. `NowPlayingBridge.setLiked(_:)` shows the state (the command's `isActive`, "Add to favorites" / "Remove from favorites"), kept in step by the shell.
 - **The demo server remembers.** Phase 4's `DemoAPI` answers from fixed routes. `DemoState` (a `Mutex`) now answers favorites, playlists (create, rename, share, add, remove, reorder, cover, delete, recommendations), the mix's page, regenerate and save, and stats, so the UI tests (`-UITestsDemo`) need no server, as phase 4's do.
-- **Deviations from the web, all small.** A playlist row's ⋯ menu also has "Add to playlist…" (the brief asks for it from every song's menu; the web's playlist rows lack it). "Tune your mixes" isn't on Made for you until phase 9 brings Settings → Mixes. Download (phase 7), Show metadata and the request button (phase 8) have marked places. Out-of-gamut OKLCH colours are clipped in sRGB, where Safari would draw them in Display P3 on an iPhone: the mix washes are dark and well inside sRGB, so they look the same.
+- **Deviations from the web, all small.** A playlist row's ⋯ menu also has "Add to playlist…" (the brief asks for it from every song's menu; the web's playlist rows lack it). "Tune your mixes" isn't on Made for you until phase 9 brings Settings → Mixes. Download (phase 7) has marked places; phase 8 landed first, so a playlist row's menu has Show metadata and Edit mix points and "Songs like these" has the Request button and links (Tasks 14 and 16). Out-of-gamut OKLCH colours are clipped in sRGB, where Safari would draw them in Display P3 on an iPhone: the mix washes are dark and well inside sRGB, so they look the same.
 
 ## Conventions
 
@@ -5291,7 +5291,7 @@ Stop here until the user confirms the checklist.
 
 **Files:** `docs/plans/2026-11-03-ios-conventions.md` (only with the coordinator's agreement: phase plans don't edit it on their own here).
 
-Add to the `PlayarrUI` line under "Key types": `AccountSession.favorites` (`FavoritesStore`), `.playlists` (`PlaylistsStore`), `.mixes` (`MixesStore`), `.picking` and `addToPlaylist(_:)`; `Route.listeningRange(StatsRange)`; `Polling.run(clock:interval:refresh:)` in `UI/Support/Polling.swift` (phase 9 uses it instead of its own `Settings/Admin/Support/Polling.swift`); `FakeAPI.queries(_:_:)`/`before(_:)` and `Gate` in the shared test helpers; and the demo server's `DemoState`. Commit with the subject "Conventions: phase 6's stores, route and polling loop" and the `Co-Authored-By` line.
+Add to the `PlayarrUI` line under "Key types": `AccountSession.favorites` (`FavoritesStore`), `.playlists` (`PlaylistsStore`), `.mixes` (`MixesStore`), `.picking` and `addToPlaylist(_:)`; `Route.listeningRange(StatsRange)`; `Polling.run(clock:interval:refresh:)` in `UI/Support/Polling.swift` (phase 9 uses it instead of its own `Settings/Admin/Support/Polling.swift`); the phase 6 test fixtures (`Listening`; the tests reuse phase 8's `FakeAPI.queries(_:_:_:)`, `hold(_:_:until:)` and `Gate`); and the demo server's `DemoState`. Commit with the subject "Conventions: phase 6's stores, route and polling loop" and the `Co-Authored-By` line.
 
 ---
 
@@ -5339,10 +5339,10 @@ public enum PlaylistRowAction { playNext, addToQueue, addToPlaylist, goToAlbum, 
 // Polling.run(clock:interval:refresh:), CSSGradient.points(angle:width:height:), SessionReference, DemoState
 extension Format { static func number(_:locale:), minutes(_:locale:), changes(at:now:locale:timeZone:) }
 public enum Route { …, listeningRange(StatsRange) }            // Route(href:) reads ?range=
-extension View { func addToPlaylistSheet(_ session: AccountSession) -> some View }
+extension View { func addToPlaylistSheet(_ session: AccountSession, active: Bool = true) -> some View }  // on the app and inside Now Playing
 ```
 
-Pages: `FavoritesView(session:)`, `PlaylistsView(session:)`, `PlaylistView(id:session:)`, `MixesView(session:)`, `MixView(key:session:)`, `StatsView(range:session:)`. Marked places for later phases: Download on Favorites, a playlist and a mix (phase 7); "Show metadata" in a playlist row's menu and the request button in "Songs like these" (phase 8); "Tune your mixes" on Made for you (phase 9). Tests: `FakeAPI.queries(_:_:)`, `FakeAPI.before(_:)`, `Gate`, and the `Listening` fixtures.
+Pages: `FavoritesView(session:)`, `PlaylistsView(session:)`, `PlaylistView(id:session:)`, `MixesView(session:)`, `MixView(key:session:)`, `StatsView(range:session:)`. Marked places for later phases: Download on Favorites, a playlist and a mix (phase 7); "Tune your mixes" on Made for you (phase 9). Tests: the `Listening` fixtures, with phase 8's `FakeAPI.queries(_:_:_:)`, `FakeAPI.hold(_:_:until:)` and `Gate`.
 
 ## Verified while writing (2026-11-03)
 
