@@ -1350,8 +1350,9 @@ MSG
 **Files:**
 - Create: `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Data/ImageCache.swift`
 - Test: `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/ImageCacheTests.swift`
+- Modify: `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/AddServerModelTests.swift` (`FakeServer` fails a host without a handler as unreachable instead of crashing)
 
-The tests use phase 2's `FakeServer` (in `AddServerModelTests.swift`): its handler answers `(status, body)` per host.
+The tests use phase 2's `FakeServer` (in `AddServerModelTests.swift`): its handler answers `(status, body)` per host. Since this plan was written, `ServerRecord` gained a `localURL` (the home-network address) and `MediaURLs.onLocalAddress(_:)`: like `APIClient`, the image cache tries the home address when the public one can't be reached (implemented with Task 7). For that test, `FakeServer.startLoading` answers a host it has no handler for with `URLError(.cannotFindHost)` instead of force-unwrapping a missing handler.
 
 **Step 1: Write the failing test**
 
@@ -1416,6 +1417,15 @@ import Testing
     await images.prune(now: Date().addingTimeInterval(ImageCache.maxAge + 60))
     #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
   }
+
+  @Test func triesTheHomeAddressWhenThePublicOneCantBeReached() async {
+    let home = "home-\(UUID().uuidString.lowercased()).invalid"
+    // The public host has no handler: FakeServer fails it as an unreachable host.
+    let session = FakeServer.session(host: home) { request in (200, "from home \(request.value(forHTTPHeaderField: "Authorization") ?? "")") }
+    let media = MediaURLs(baseURL: URL(string: "https://\(host)")!, localURL: URL(string: "http://\(home)")!, token: "tok")
+    let images = ImageCache(directory: directory, media: media, session: session, retryDelay: .zero)
+    #expect(await images.data("/art/album/70/cover", size: 96) == Data("from home Bearer tok".utf8))
+  }
 }
 ```
 
@@ -1438,7 +1448,8 @@ import PlayarrAPI
 
 /// Covers and artist photos, per server and account: in memory, on disk, else from the server at one of the sizes it
 /// makes (`apps/server/src/routes/art.ts` snaps every `?size=` to these), with the token in the header. A failed
-/// image is asked once more after 1.5 s with `&retry=1`, as the web's `Cover` does.
+/// image is asked once more after 1.5 s with `&retry=1`, as the web's `Cover` does. When the server's public address
+/// can't be reached, its home-network one is tried (`MediaURLs.onLocalAddress`), as `APIClient` does.
 public actor ImageCache {
   /// The sizes the server makes (px); asking for one of them hits its cache, and ours.
   public static let sizes = [96, 160, 240, 320, 480, 640, 960, 1200]
@@ -1526,10 +1537,16 @@ public actor ImageCache {
   }
 
   private func get(_ url: URL) async -> Data? {
-    guard let (data, response) = try? await session.data(for: media.request(for: url)),
-      (response as? HTTPURLResponse)?.statusCode == 200, !data.isEmpty
-    else { return nil }
-    return data
+    let answer: (Data, URLResponse)
+    do {
+      answer = try await session.data(for: media.request(for: url))
+    } catch {
+      // The public address can't be reached (at home, behind a router that doesn't loop back): the home one.
+      guard let local = media.onLocalAddress(url), let fromHome = try? await session.data(for: media.request(for: local)) else { return nil }
+      answer = fromHome
+    }
+    guard (answer.1 as? HTTPURLResponse)?.statusCode == 200, !answer.0.isEmpty else { return nil }
+    return answer.0
   }
 
   private func remember(_ data: Data, for url: URL) {
@@ -1549,12 +1566,12 @@ public actor ImageCache {
 swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrUI --filter ImageCacheTests
 ```
 
-Expected: 5 tests pass.
+Expected: 6 tests pass.
 
 **Step 5: Commit**
 
 ```bash
-git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Data/ImageCache.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/ImageCacheTests.swift
+git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Data/ImageCache.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/ImageCacheTests.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/AddServerModelTests.swift docs/plans/2026-11-03-ios-phase4-browse-now-playing.md
 git commit -F - <<'MSG'
 iOS: keep covers on disk per account, asking for the sizes the server makes, with one retry like the web
 
