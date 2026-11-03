@@ -10,6 +10,7 @@ final class FakeAPI: APISending, @unchecked Sendable {
     var path: String
     /// The body as JSON with sorted keys; nil without one.
     var body: String?
+    var query: [URLQueryItem] = []
 
     var description: String { "\(method.rawValue) \(path)\(body.map { " \($0)" } ?? "")" }
   }
@@ -22,6 +23,7 @@ final class FakeAPI: APISending, @unchecked Sendable {
   private struct State {
     var answers: [String: [Answer]] = [:]
     var calls: [Call] = []
+    var holds: [String: Gate] = [:]
   }
 
   private let state = Mutex(State())
@@ -50,10 +52,20 @@ final class FakeAPI: APISending, @unchecked Sendable {
     state.withLock { $0.answers[key(method, path)] = [.failure(APIError.server(status: status, message: message))] }
   }
 
+  /// From now on, `method path` answers only once `gate` is opened (an answer that takes its time), once per opening.
+  func hold(_ method: HTTPMethod, _ path: String, until gate: Gate) {
+    state.withLock { $0.holds[key(method, path)] = gate }
+  }
+
   var calls: [Call] { state.withLock { $0.calls } }
 
   func calls(_ method: HTTPMethod, _ path: String) -> [Call] {
     calls.filter { $0.method == method && $0.path == path }
+  }
+
+  /// The values of the query parameter `name` sent to `method path`, in order.
+  func queries(_ method: HTTPMethod, _ path: String, _ name: String) -> [String] {
+    calls(method, path).compactMap { call in call.query.first { $0.name == name }?.value }
   }
 
   /// The bodies sent to `method path`, in order.
@@ -63,16 +75,18 @@ final class FakeAPI: APISending, @unchecked Sendable {
 
   func send<T: Decodable & Sendable>(_ endpoint: Endpoint<T>) async throws -> T {
     let body = try endpoint.bodyData().map(Self.sorted)
-    let answer: Answer? = state.withLock { state in
-      state.calls.append(Call(method: endpoint.method, path: endpoint.path, body: body))
+    let (answer, hold): (Answer?, Gate?) = state.withLock { state in
+      state.calls.append(Call(method: endpoint.method, path: endpoint.path, body: body, query: endpoint.query))
       let key = key(endpoint.method, endpoint.path)
-      guard var queue = state.answers[key], let first = queue.first else { return nil }
+      let hold = state.holds[key]
+      guard var queue = state.answers[key], let first = queue.first else { return (nil, hold) }
       if queue.count > 1 {
         queue.removeFirst()
         state.answers[key] = queue
       }
-      return first
+      return (first, hold)
     }
+    await hold?.wait()
     switch answer {
     case nil:
       throw APIError.server(status: 404, message: "No fake answer for \(endpoint.method.rawValue) \(endpoint.path)")

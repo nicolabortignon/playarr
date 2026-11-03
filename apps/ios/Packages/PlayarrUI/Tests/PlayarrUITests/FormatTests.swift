@@ -22,6 +22,18 @@ import Testing
     #expect(Format.plural(12, "track") == "12 tracks")
   }
 
+  @Test func writesAWaitRoughly() {
+    #expect(Format.wait(0.2) == "1 s")
+    #expect(Format.wait(3.2) == "3 s")
+    #expect(Format.wait(130) == "2 min")
+  }
+
+  @Test func roundsHalvesUpAsJavaScriptDoes() {
+    #expect(Format.jsRound(2.5) == 3)
+    #expect(Format.jsRound(-2.5) == -2)
+    #expect(Format.jsRound(0.425 * 100) == 43)
+  }
+
   @Test func namesTheFormat() {
     let hiRes = AudioFormat(codec: "FLAC", container: "flac", bits: 24, sampleRate: 88_200, lossless: true)
     let cd = AudioFormat(codec: "FLAC", container: "flac", bits: 16, sampleRate: 44_100, lossless: true)

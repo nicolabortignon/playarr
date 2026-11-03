@@ -26,6 +26,14 @@ public enum Format {
     "\(n) \(n == 1 ? word : pluralWord ?? "\(word)s")"
   }
 
+  /// A rough wait: "4 s", "2 min" (`formatWait`).
+  public static func wait(_ seconds: Double) -> String {
+    seconds < 60 ? "\(max(1, Int(jsRound(seconds)))) s" : "\(Int(jsRound(seconds / 60))) min"
+  }
+
+  /// JavaScript's Math.round: halves go up (Swift's `rounded()` takes -2.5 to -3, JavaScript to -2).
+  public static func jsRound(_ value: Double) -> Double { (value + 0.5).rounded(.down) }
+
   /// "FLAC 24/88.2", "MP3 320", "AAC".
   public static func badge(_ format: AudioFormat?) -> String? {
     guard let format else { return nil }

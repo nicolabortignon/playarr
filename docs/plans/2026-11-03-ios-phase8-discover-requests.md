@@ -13,6 +13,25 @@
 
 > **Coordinator's note (2026-11-03), read before Task 1:** the conventions (written after this plan) fix the shared seams: view models take `api: any APISending` and, for polling and debouncing, `clock: any Clock<Duration> = ContinuousClock()`; tests use the shared `FakeAPI` and `TestClock` from `PlayarrUITests` (added by phase 4, or phase 9's Tasks 1–2 if phase 4 didn't). Where this plan defines `Sleeper`, `ScriptedSleeper` or `ManualSleeper`, use the clock and `TestClock` instead (same behaviour: `sleep(for:)` and advancing time), and reuse `FakeAPI` rather than a new fake. Move `FakeServer` into `Tests/PlayarrUITests/Support/` if it isn't there yet. Hand-written Swift uses 2-space indentation. Health polling: reuse a single app-wide poller if phase 4 created one.
 
+> **As built (Task 0's findings on main after phase 5, 2026-11-03).** Phases 0–5 are implemented; phase 6 isn't. Phase 4 and 5 named things differently from the "Before you start" table, so the tasks below were built against the real names; each task ends with an **As built** note for its own differences. The mappings used throughout:
+>
+> | This plan | On main |
+> |---|---|
+> | `client: APIClient`, `FakeServer`/`fakeClient`, `jsonText` | `api: any APISending`; tests use `FakeAPI` (now records each call's query, and `hold(_:_:until: Gate)` keeps an answer back) |
+> | `Sleeper`, `ScriptedSleeper`, `ManualSleeper` | `clock: any Clock<Duration> = ContinuousClock()`; tests use `TestClock` (`nextSleep()`, `advance(by:)`) |
+> | `TextFormat.clock/plural/wait/jsRound`, `ServerDate.parse` | `Format.time/plural` (phase 4), `Format.wait` and `Format.jsRound` (added here), `Format.parseDate` |
+> | `AppModel.discover`, `AppModel.player/toasts/cache` | `AccountSession.discover` (the per-account root), `session.player`, `session.toasts` (`ToastCenter.push(_:tone:)`), `session.queries` (`QueryCache.invalidate(_ name:)`) |
+> | `DiscoverDestination` pushed with `.discoverDestinations()` | Tab stacks are typed `[Route]`: `Route` gains `.discoverArtist(mbid:album:)`, `.findArtist(name:album:)`, `.requests`; `DiscoverDestination.route` maps to it and `RouteDestination` shows the pages |
+> | `ArtistPage`, `AlbumPage`, `libraryArtistPage`/`libraryAlbumPage` closures | `Route.artist(id)`, `Route.album(id)` through `RouteDestination` |
+> | `CoverImage(path:size:)` / `DiscoverCover` | `Cover(path:points:label:circle:)` |
+> | `AppModel.openSearch(_:)` | `AppRouter.search(_:)` (Search tab, query handed to `SearchView`) |
+> | `DiscoverSectionHeader`, `DiscoverShelf` | phase 4's `SectionHeader`, `Shelf`, `Kicker`, `Skeleton` |
+> | `EnergyLayout` | phase 5's `EnergyPicture.phrasesAndBars(_:clock:from:to:)` and `heardHeight(_:)` |
+> | `UITestServer` (`PLAYARR_UI_STUB=requests`) | `DemoRequestsAPI` behind the launch argument `-UITestsRequests` (the demo library plus Lidarr and a request flow), like phase 4's `-UITestsDemo` |
+> | Phase 6's recommendation row | not built yet: a `// Phase 6:` TODO marks where its Request button goes |
+>
+> No app-wide health poller existed (phase 4's Library page asks for health itself), so `DiscoverContext` polls health once a minute for the account. `Player.mixPointsChanged(recordingId:)` exists (phase 5). `FakeServer` moved to `Tests/PlayarrUITests/Support/`.
+
 ---
 
 ## Before you start
@@ -433,6 +452,8 @@ iOS: shared pieces for Discover and requests: a fake-able clock, families of ans
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
+
+**As built:** no `Sleeper.swift` or `TestSleepers.swift` (the clock and `TestClock` instead) and no `TextFormat.swift`: `Format` gained `wait(_:)` and `jsRound(_:)`, tested in `FormatTests`. `Phase8Fixtures.swift` keeps `availability`, `albumRequest`, `account`, `health`, `album`, `EventLog` and `eventually` (no `fakeClient`, `jsonText` or `bodyText`). `FakeAPI` records each call's query (`queries(_:_:_:)`) and can hold an answer until a `Gate` (new `Support/Gate.swift`) opens; `FakeServer` moved from `AddServerModelTests.swift` to `Support/FakeServer.swift`.
 
 ---
 
