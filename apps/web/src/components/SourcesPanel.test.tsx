@@ -49,13 +49,13 @@ describe('MatchSummary', () => {
 });
 
 describe('AlbumSummary', () => {
-  it('says how many albums the source has whole, in part, or of unknown length', () => {
+  it('says how many albums the source has whole, in part, or unidentified', () => {
     render(<AlbumSummary source={folder({ albumsComplete: 10, albumsIncomplete: 918, albumsUnknown: 511 })} />);
-    expect(screen.getByText('Albums: 10 complete · 918 incomplete · 511 of unknown length')).toBeTruthy();
+    expect(screen.getByText('10 Complete Albums · 918 Incomplete Albums · 511 Unidentified')).toBeTruthy();
   });
 
   it('leaves out what it has none of', () => {
-    render(<AlbumSummary source={folder({ albumsComplete: 107, albumsIncomplete: 7 })} />);
-    expect(screen.getByText('Albums: 107 complete · 7 incomplete')).toBeTruthy();
+    render(<AlbumSummary source={folder({ albumsComplete: 1, albumsIncomplete: 7 })} />);
+    expect(screen.getByText('1 Complete Album · 7 Incomplete Albums')).toBeTruthy();
   });
 });

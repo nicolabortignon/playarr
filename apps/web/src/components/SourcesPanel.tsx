@@ -191,15 +191,15 @@ function SourceRow({
   );
 }
 
-/** How much of its albums a source has: complete, incomplete, or of a length nobody knows. */
+/** How much of its albums a source has: complete, incomplete, or unidentified (their length unknown). */
 export function AlbumSummary({ source: s }: { source: SourceInfo }) {
   const parts = [
-    s.albumsComplete > 0 && `${s.albumsComplete} complete`,
-    s.albumsIncomplete > 0 && `${s.albumsIncomplete} incomplete`,
-    s.albumsUnknown > 0 && `${s.albumsUnknown} of unknown length`,
+    s.albumsComplete > 0 && plural(s.albumsComplete, 'Complete Album'),
+    s.albumsIncomplete > 0 && plural(s.albumsIncomplete, 'Incomplete Album'),
+    s.albumsUnknown > 0 && `${s.albumsUnknown} Unidentified`,
   ].filter(Boolean);
   if (!parts.length) return null;
-  return <div className="mt-1 text-[13px] text-paper-dim">Albums: {parts.join(' · ')}</div>;
+  return <div className="mt-1 text-[13px] text-paper-dim">{parts.join(' · ')}</div>;
 }
 
 /** How a folder's albums were matched: those not matched open the review, to match them by hand. */
