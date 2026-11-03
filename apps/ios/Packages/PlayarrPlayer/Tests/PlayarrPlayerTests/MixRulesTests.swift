@@ -50,6 +50,14 @@ struct MixRulesTests {
     }
   }
 
+  @Test func skipsArePlannedAsTheTypeScriptPlansThem() {
+    #expect(fixtures.skips.contains { $0.plan.style == .quick } && fixtures.skips.contains { $0.plan.style == .fade })
+    for s in fixtures.skips {
+      let plan = SkipPlanner.plan(a: fixtures.song(s.a), b: fixtures.song(s.b), mode: s.mode, sameAlbumInOrder: s.sameAlbumInOrder, at: s.at)
+      #expect(close(plan, s.plan), "\(s.a) → \(s.b) at \(s.at): \(plan.reason) vs \(s.plan.reason)")
+    }
+  }
+
   private func same(_ x: BeatCut?, _ y: BeatCut?) -> Bool {
     switch (x, y) {
     case (nil, nil): true
