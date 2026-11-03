@@ -4970,6 +4970,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** the replacements as written, plus: `previewEvent` ignores phase 5's `.mixMissed` like `.advanced`, and `shutDown()` ends a preview (a closed session stops the second engine too; one more test). Phase 3–5's player tests still pass (164 in the package).
+
 ---
 
 ### Task 18: Edit mix points' model

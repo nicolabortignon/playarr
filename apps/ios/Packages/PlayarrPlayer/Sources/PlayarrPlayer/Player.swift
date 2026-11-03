@@ -56,6 +56,10 @@ public final class Player {
   /// The song whose start was last checked for a radio continuation.
   @ObservationIgnored private var radioAskedAt: Entry?
   @ObservationIgnored private var ticker: Task<Void, Never>?
+  /// Edit mix points' "Play from": the song previewing now, if any.
+  public private(set) var preview: Preview?
+  /// The previews of one edit, on their own engine, while the queue waits paused.
+  @ObservationIgnored private(set) var previews: PreviewSession?
   /// A press of Next being mixed live into the next song: its item and the mix (kept over later syncs).
   @ObservationIgnored private var pressed: (id: UUID, join: Join)?
   /// A press of Next waiting for the mix into that song about to start.
@@ -144,6 +148,7 @@ public final class Player {
 
   /// Plays `tracks` from `startAt` (an index), in order unless `shuffle` ("Play means in order"), from `at` seconds.
   public func play(_ tracks: [Track], startAt index: Int = 0, source: PlaySource? = nil, shuffle: Bool = false, at seconds: Double? = nil) {
+    endPreviews(resume: false)
     queue.playTracks(tracks, startIndex: index, shuffle: shuffle, source: source, at: seconds)
     sync()
   }
@@ -176,6 +181,7 @@ public final class Player {
   public func togglePlay() { setPlaying(!queue.playing) }
 
   public func seek(to seconds: Double) {
+    endPreviews(resume: false)
     guard loaded != nil else { return }
     tracker.pause()
     seekedSinceTick = true
@@ -240,6 +246,7 @@ public final class Player {
   public func shutDown() {
     ticker?.cancel()
     ticker = nil
+    endPreviews(resume: false)
     appWillTerminate()
     queue.playing = false
     // A closed session asks the server nothing more.
@@ -253,6 +260,7 @@ public final class Player {
   /// The 10 Hz clock: moves the engine on, the time, the history, the sleep timer's fade; saves where it is every 5 s.
   public func tick(now: Date = Date()) {
     engine.pump()
+    tickPreview()
     if loaded != nil { time = engine.position }
     buffered = engine.bufferedAhead
     loading = engine.state == .loading || engine.state == .buffering
@@ -279,6 +287,8 @@ public final class Player {
   // MARK: Keeping the engine in step
 
   private func change(_ edit: (inout QueueState) -> Void) {
+    // The listener took over: a preview stops, and the queue does what they asked.
+    endPreviews(resume: false)
     edit(&queue)
     sync()
   }
@@ -552,5 +562,82 @@ public final class Player {
     loaded = nil
     queue.startAt = at
     sync()
+  }
+}
+
+// MARK: Previews (Edit mix points → Play from)
+
+extension Player {
+  /// How long a preview plays.
+  public static let previewSeconds: Double = 8
+
+  /// Plays `track` from `seconds` for `length` seconds on a second engine, with the queue paused where it is: its
+  /// engine keeps every buffer it scheduled (a transition too), so it goes on from the same sample. More previews
+  /// may follow; `endPreviews()` lets the queue go on if it was playing before the first. A preview is never
+  /// reported as a play, and the queue, its order and "Playing from" stay as they were.
+  public func preview(_ track: Track, from seconds: Double, length: Double = Player.previewSeconds) {
+    var previewing = previews ?? PreviewSession(resume: queue.playing)
+    previewing.engine?.stop()
+    previewing.engine = nil
+    if queue.playing {
+      queue.playing = false
+      sync()
+    }
+    do {
+      let audition = try makeEngine()
+      let item = EngineItem(track: track, gainDb: gainDb(track), startAt: max(0, seconds))
+      audition.onEvent = { [weak self] event in self?.previewEvent(event) }
+      try? session?.activate()
+      audition.load(item, playing: true)
+      previewing.engine = audition
+      previewing.until = item.startAt + length
+      previews = previewing
+      preview = Preview(recordingId: track.recordingId, from: item.startAt)
+    } catch {
+      previews = previewing
+      preview = nil
+      notice = Notice(text: "Couldn’t play a preview: \(error.localizedDescription)", isError: true)
+    }
+  }
+
+  /// The edit is over (Edit mix points closed): a preview still playing stops, and the queue goes on if it was
+  /// playing before the first preview.
+  public func endPreviews() { endPreviews(resume: true) }
+
+  func endPreviews(resume: Bool) {
+    guard let ended = previews else { return }
+    ended.engine?.stop()
+    previews = nil
+    preview = nil
+    if resume, ended.resume, queue.pos >= 0 {
+      queue.playing = true
+      sync()
+    }
+  }
+
+  /// The 10 Hz tick moves the preview on, and stops it after its few seconds.
+  func tickPreview() {
+    guard let previewing = previews, let audition = previewing.engine else { return }
+    audition.pump()
+    if audition.position >= previewing.until { stopPreview() }
+  }
+
+  private func previewEvent(_ event: EngineEvent) {
+    switch event {
+    case .advanced, .mixMissed:
+      break
+    case .ended:
+      stopPreview()
+    case .failed(_, let failure):
+      notice = Notice(text: failure.message, isError: true)
+      stopPreview()
+    }
+  }
+
+  /// This preview is done; the queue waits for `endPreviews()`.
+  private func stopPreview() {
+    previews?.engine?.stop()
+    previews?.engine = nil
+    preview = nil
   }
 }
