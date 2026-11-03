@@ -73,17 +73,18 @@ export function folderSync(
 
   for (const e of [...entries].sort((a, b) => a.rel.localeCompare(b.rel))) {
     const d = describeFile(e.rel, e.tags);
-    // A various-artists compilation's song is its artist's: filed as a loose song of theirs below (on the
-    // album the library has it on, if any), never under "Various Artists" and the compilation's name.
+    // A various-artists compilation's song no match placed is its own artist's, never "Various Artists'":
+    // on the album the library already has it on, else still on the compilation it came from, under them.
     const various = isVariousArtists(d.artistName) && !!e.tags.artist && !isVariousArtists(e.tags.artist);
     const t: TagInfo = various
-      ? { ...e.tags, albumArtist: undefined, albumArtistMbid: undefined, album: undefined, releaseGroupMbid: undefined, releaseId: undefined, year: undefined, trackTotal: undefined }
+      ? { ...e.tags, albumArtist: undefined, albumArtistMbid: undefined, releaseGroupMbid: undefined, releaseId: undefined }
       : e.tags;
-    // Its pictures, embedded or beside it, are the compilation's cover.
-    const fromCompilation = various || !!e.compilation;
     let artistName = various ? e.tags.artist! : d.artistName;
-    const albumTitle = various ? undefined : d.albumTitle;
     const title = d.title;
+    const elsewhere = various ? index.songs.get(songNameKey(artistName, title)) : undefined;
+    const albumTitle = elsewhere ? undefined : d.albumTitle;
+    // Its pictures, embedded or beside it, are the compilation's cover: wrong for any album but that one.
+    const offCompilation = (various && !albumTitle) || (!various && !!e.compilation);
     let artistKey = t.albumArtistMbid
       ? `mb:${t.albumArtistMbid}`
       : (index.artists.get(normalize(artistName))?.key ?? artistKeyFor(undefined, artistName));
@@ -133,7 +134,7 @@ export function folderSync(
     }
     album.releaseDate ??= t.year ? `${t.year}-01-01T00:00:00Z` : undefined;
     for (const g of t.genres) if (album.genres.length < 3 && !album.genres.includes(g)) album.genres.push(g);
-    if (fromCompilation) {
+    if (offCompilation) {
       if (album.mbid) album.coverUrl ??= remoteArtUrl(coverArtArchive(album.mbid, 500));
       else album.fileArt = false;
     }
