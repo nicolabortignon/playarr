@@ -732,6 +732,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** as written, with `Format.plural` and `Format.jsRound` for `TextFormat`'s.
+
 ---
 
 ### Task 3: How often requests are asked for, and noticing the ones that landed
