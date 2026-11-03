@@ -247,41 +247,18 @@ MSG
 - Modify: `package.json` (root: devDependency and script), `pnpm-lock.yaml`
 - Modify: `apps/ios/Makefile` (targets `models`, `models-check`)
 - Create: `apps/ios/scripts/gen-models.mjs`
-- Modify: `apps/ios/Packages/PlayarrAPI/Package.swift`
-- Delete: phase 0's placeholder source and test in `apps/ios/Packages/PlayarrAPI`
 - Create: `apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/GeneratedModelsTests.swift`
 - Create (generated): `apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift`
 
-**Step 1: The package manifest, without placeholders**
+**Step 1: The package as phase 0 left it**
 
-List phase 0's placeholders and remove them (their names may differ; remove the placeholder source and the placeholder test of `PlayarrAPI` only):
+Phase 0's `PlayarrAPI` has no placeholder to remove: its one source, `AppVersion.swift` (with `AppVersionTests.swift`), is real and stays (Task 12 adds comparison to it). Its `Package.swift` already declares the library and test target with no dependencies (iOS 26 and macOS 26), so it stays as it is:
 
 ```bash
 ls apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests
-git rm apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/PlayarrAPI.swift apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/PlayarrAPITests.swift
-grep -rn "PlayarrAPI\." apps/ios/Packages/PlayarrPlayer apps/ios/Packages/PlayarrUI apps/ios/Playarr || true
 ```
 
-If the last command finds a use of a placeholder symbol, delete that use too.
-
-Replace `apps/ios/Packages/PlayarrAPI/Package.swift` with:
-
-```swift
-// swift-tools-version: 6.2
-import PackageDescription
-
-let package = Package(
-    name: "PlayarrAPI",
-    platforms: [.iOS(.v26), .macOS(.v26)],
-    products: [
-        .library(name: "PlayarrAPI", targets: ["PlayarrAPI"]),
-    ],
-    targets: [
-        .target(name: "PlayarrAPI"),
-        .testTarget(name: "PlayarrAPITests", dependencies: ["PlayarrAPI"]),
-    ]
-)
-```
+Expected: `AppVersion.swift` and `AppVersionTests.swift`.
 
 **Step 2: Write the failing test**
 
@@ -379,10 +356,10 @@ import Testing
 **Step 3: Run it to see it fail**
 
 ```bash
-swift test --package-path apps/ios/Packages/PlayarrAPI --filter GeneratedModelsTests
+swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrAPI --filter GeneratedModelsTests
 ```
 
-Expected: build fails with `cannot find type 'Availability' in scope` (and the other model types).
+Expected: build fails with `cannot find 'Availability' in scope` (and the other model types).
 
 **Step 4: Install the schema generator**
 
@@ -740,11 +717,9 @@ if (process.argv.includes('--check')) {
 
 **Step 6: Make and pnpm entry points**
 
-Add to `apps/ios/Makefile` (recipe lines start with a tab):
+Add `models models-check` to the Makefile's `.PHONY` line and a line for `make models` to its header comment, then add these targets before `setup:` (recipe lines start with a tab):
 
 ```make
-.PHONY: models models-check
-
 # Swift models from the shared TypeScript types (committed).
 models:
 	node scripts/gen-models.mjs
@@ -754,7 +729,7 @@ models-check:
 	node scripts/gen-models.mjs --check
 ```
 
-In the root `package.json` `scripts`, make sure this entry exists (phase 0 may already have it; leave it if it reads the same):
+In the root `package.json` `scripts`, add this entry after `ios:test` (phase 0 didn't add it):
 
 ```json
 "ios:models": "make -C apps/ios models"
@@ -767,18 +742,17 @@ corepack pnpm ios:models
 corepack pnpm ios:models   # twice: the second run must not change the file
 git diff --stat apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift
 make -C apps/ios models-check
-swift test --package-path apps/ios/Packages/PlayarrAPI --filter GeneratedModelsTests
+swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrAPI --filter GeneratedModelsTests
 ```
 
-Expected: `Wrote …/Models.generated.swift` (about 3,100 lines). `Models.generated.swift is up to date.` All `GeneratedModelsTests` pass.
+Expected: `Wrote …/Models.generated.swift` (about 3,250 lines with the phase 1 account types). `Models.generated.swift is up to date.` All `GeneratedModelsTests` pass.
 
-Check the output for one of each kind: `grep -n "public enum TransitionAnswer\|case noneValue\|public var sources: \[Int\]?\|rootFolderPath: String??\|public typealias StatsRange = String\|public let mixMapVersion" apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift`. Expected: one line for each.
+Check the output for one of each kind: `grep -n "public enum TransitionAnswer\|case noneValue\|public var sources: \[Int\]?\|rootFolderPath: String??\|public typealias StatsRange = String\|public let mixMapVersion" apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift`. Expected: at least one line for each (`noneValue` is in two enums, and `rootFolderPath` shows in its property and its `init`).
 
 **Step 8: Commit**
 
 ```bash
-git add package.json pnpm-lock.yaml apps/ios/Makefile apps/ios/scripts/gen-models.mjs apps/ios/Packages/PlayarrAPI/Package.swift apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/GeneratedModelsTests.swift
-git add -u apps/ios/Packages/PlayarrAPI
+git add package.json pnpm-lock.yaml apps/ios/Makefile apps/ios/scripts/gen-models.mjs apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/GeneratedModelsTests.swift docs/plans/2026-11-03-ios-phase2-api-sign-in.md
 git commit -F - <<'MSG'
 Generate the iOS app's Swift models from the shared TypeScript types (pnpm ios:models)
 

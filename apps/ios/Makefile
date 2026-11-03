@@ -7,7 +7,8 @@
 #                    (TESTERS="a@example.com b@example.com" adds those App Store Connect users to it)
 #   make beta        test, then archive, upload and hand the build to TestFlight (beta-upload skips the tests)
 #   make device      build and install on a paired iPhone (DEVICE="name or UDID" picks one)
-#   make clean       remove build output and the generated project
+#   make models      regenerate PlayarrAPI's Swift models from the shared TypeScript types (models-check: up to date?)
+#   make clean      remove build output and the generated project
 #
 # Every target that builds regenerates Playarr.xcodeproj first, so added and removed files are picked up.
 # macOS ships GNU Make 3.81: no .ONESHELL or .SHELLFLAGS, so a line with several commands starts with `set -e`.
@@ -30,7 +31,7 @@ XCODEBUILD = xcodebuild -project Playarr.xcodeproj -scheme Playarr -derivedDataP
 # The repo's .env has ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and IOS_BUNDLE_ID; CI sets them itself.
 NODE = node --env-file-if-exists=../../.env
 
-.PHONY: bootstrap tools project build test test-scripts test-packages test-app setup beta beta-upload device clean
+.PHONY: bootstrap tools project build test test-scripts test-packages test-app models models-check setup beta beta-upload device clean
 
 bootstrap: project
 
@@ -64,6 +65,14 @@ test-packages:
 
 test-app: project
 	$(XCODEBUILD) test
+
+# Swift models from the shared TypeScript types (committed).
+models:
+	node scripts/gen-models.mjs
+
+# Fails when Models.generated.swift is out of date.
+models-check:
+	node scripts/gen-models.mjs --check
 
 setup:
 	$(NODE) scripts/asc.mjs setup $(TESTERS)
