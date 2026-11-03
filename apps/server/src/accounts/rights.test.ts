@@ -1,9 +1,9 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { freshDb } from '../catalog/testFixtures.ts';
+import { CC_REC, freshDb } from '../catalog/testFixtures.ts';
 import { Accounts } from './accounts.ts';
-import { accountId, requireAdmin, requireCanRequest, requireLocalSetup, requireOwn } from './rights.ts';
-import { account, actAs, asAccount } from './testAccess.ts';
+import { accountId, libraryOf, requireAdmin, requireCanRequest, requireLocalSetup, requireOwn, visibleRecordings } from './rights.ts';
+import { account, actAs, asAccount, twoSources } from './testAccess.ts';
 
 const HOME = '192.168.1.20';
 const AWAY = '203.0.113.5';
@@ -71,3 +71,16 @@ function setupMode() {
   });
   return routes(app);
 }
+
+describe('libraryOf', () => {
+  it('narrows the library to the account’s sources, and leaves it whole otherwise', async () => {
+    const { library, cc } = await twoSources();
+    const as = (sources: number[] | null) => ({ auth: { setup: false, account: account(2, { sources }), session: null } }) as unknown as FastifyRequest;
+    expect(libraryOf(library, as(null))).toBe(library);
+    expect(libraryOf(library, {} as FastifyRequest)).toBe(library);
+    expect(libraryOf(library, as([cc])).sources).toEqual([cc]);
+    expect(await visibleRecordings(library, as([cc]), ['rec-1', CC_REC])).toEqual([CC_REC]);
+    expect(await visibleRecordings(library, as(null), ['rec-1', 'gone'])).toEqual(['rec-1', 'gone']);
+    expect(() => libraryOf({ track: async () => undefined }, as([cc]))).toThrow(/narrowed/);
+  });
+});

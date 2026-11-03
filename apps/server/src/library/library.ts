@@ -1,77 +1,41 @@
-import type {
-  Album,
-  AlbumDetail,
-  AlbumSort,
-  Artist,
-  ArtistDetail,
-  LibraryStats,
-  SearchResults,
-  Track,
-} from '@playarr/shared';
+import type { Album, AlbumDetail, AlbumSort, Artist, ArtistDetail, LibraryStats, SearchResults, Track } from '@playarr/shared';
 import { buildCatalog, type Catalog, type FileRecord, type LidarrAlbumRef } from '../catalog/build.ts';
-import type { CatalogStore } from '../catalog/store.ts';
+import type { CatalogRows, CatalogStore } from '../catalog/store.ts';
 import type { CatalogSource } from '../catalog/types.ts';
 import { albumKey, normalize, primaryArtist, scoreMatch } from './search.ts';
 
 export type { FileRecord, LidarrAlbumRef };
 
-interface Snapshot extends Catalog {
+/** The sources a view shows (Settings → Accounts), or null for every source. */
+export type SourceFilter = readonly number[] | null;
+
+export interface Snapshot extends Catalog {
   albumIdByKey: Map<string, number>;
   trackById: Map<number, Track>;
   trackByRecording: Map<string, Track>;
   trackByName: Map<string, Track>;
+  /** `album/<id>` and `artist/<id>` of every /art/… URL the snapshot's albums and artists use. */
+  artwork: Set<string>;
 }
 
-export class Library {
-  private snapshot: Snapshot | null = null;
-  private inflight: Promise<void> | null = null;
-  private timer: NodeJS.Timeout | null = null;
-  private refreshTimer: NodeJS.Timeout | null = null;
-  private rebuildTimer: NodeJS.Timeout | null = null;
-  private listeners: ((library: Library) => void)[] = [];
-  lastError: string | null = null;
+/**
+ * The library as someone may see it. The Library itself shows every source; `library.view(sources)`
+ * shows only the songs with a copy in those sources, built from those copies alone, so albums, artists,
+ * search, files and artwork outside them don't exist for whoever reads it (an account's library access).
+ */
+export abstract class LibraryView {
   /** Goes up with every new snapshot, so others can tell when what they derived from it is out of date. */
-  version = 0;
-
-  constructor(
-    private readonly store: CatalogStore,
-    /** The sources to sync, read on every refresh (Settings can change them). */
-    private readonly sources: () => { id: number; source: CatalogSource }[],
-    private readonly log: { info: (msg: string) => void; error: (msg: string) => void },
-  ) {}
-
-  private setSnapshot(snap: Snapshot) {
-    this.snapshot = snap;
-    this.version++;
-  }
-
-  /** Called after every successful refresh. */
-  onRefresh(listener: (library: Library) => void) {
-    this.listeners.push(listener);
-  }
-
-  /** Serve the catalog saved by a previous run, so a restart doesn't wait on the sources. */
-  loadStored(): boolean {
-    if (!this.store.hasData()) return false;
-    this.setSnapshot(toSnapshot(buildCatalog(this.store.load())));
-    this.log.info(`Library loaded from the database: ${this.snapshot!.stats.albums} albums`);
-    return true;
-  }
-
-  /** True while the sources are syncing. */
-  get refreshing(): boolean {
-    return this.inflight !== null;
-  }
-
-  /** Rebuild from the stored catalog without syncing, e.g. after a source was removed or reordered. */
-  reload() {
-    this.setSnapshot(toSnapshot(buildCatalog(this.store.load())));
-    for (const listener of this.listeners) listener(this);
-  }
+  abstract readonly version: number;
+  /** The sources shown, in id order; null for every source. */
+  abstract readonly sources: SourceFilter;
+  /** The snapshot, waiting for the first one if need be. */
+  protected abstract ready(): Promise<Snapshot>;
+  /** The snapshot, if there is one yet, without waiting. */
+  protected abstract current(): Snapshot | null;
 
   /** Every artwork URL the library references (for cache warming). */
   artworkUrls(): string[] {
-    const snap = this.snapshot;
+    const snap = this.current();
     if (!snap) return [];
     const urls = [
       ...[...snap.albums.values()].map((a) => a.coverUrl),
@@ -80,94 +44,9 @@ export class Library {
     return [...new Set(urls.filter((u): u is string => !!u))];
   }
 
-  startAutoRefresh(minutes: number) {
-    this.timer = setInterval(() => void this.refresh().catch(() => {}), minutes * 60_000);
-    this.timer.unref();
-  }
-
-  stop() {
-    if (this.timer) clearInterval(this.timer);
-  }
-
-  /**
-   * Sync every source (or just `only`; the others keep their last sync) into the catalog and rebuild.
-   * Concurrent callers share one refresh.
-   */
-  refresh(only?: number): Promise<void> {
-    const started = Date.now();
-    this.inflight ??= this.build(only)
-      .then((snap) => {
-        this.setSnapshot(snap);
-        this.lastError = null;
-        const s = snap.stats;
-        this.log.info(
-          `Library refreshed: ${s.artists} artists, ${s.albums} albums, ${s.tracks} tracks in ${((Date.now() - started) / 1000).toFixed(1)}s`,
-        );
-        for (const listener of this.listeners) listener(this);
-      })
-      .catch((err: Error) => {
-        this.lastError = err.message;
-        this.log.error(`Library refresh failed: ${err.message}`);
-        throw err;
-      })
-      .finally(() => {
-        this.inflight = null;
-      });
-    return this.inflight;
-  }
-
-  private async ready(): Promise<Snapshot> {
-    if (!this.snapshot) await this.refresh();
-    return this.snapshot!;
-  }
-
-  private async build(only?: number): Promise<Snapshot> {
-    const sources = this.sources().filter((s) => only === undefined || s.id === only);
-    const failures: Error[] = [];
-    // In Settings order: later sources match their files against what earlier ones reported.
-    for (const { id, source } of sources) {
-      try {
-        this.store.applySync(id, await source.sync());
-        this.store.setSyncError(id, null);
-      } catch (err) {
-        this.store.setSyncError(id, (err as Error).message);
-        failures.push(err as Error);
-      }
-    }
-    // One unreachable source shouldn't hide the others: its last sync stays in the catalog.
-    if (failures.length && failures.length === sources.length) throw failures[0];
-    for (const err of failures) this.log.error(`A source failed to sync: ${err.message}`);
-    return toSnapshot(buildCatalog(this.store.load()));
-  }
-
-  /**
-   * Rebuild from what the sources reported last, without scanning folders or asking Lidarr again: for
-   * when only matches changed. Runs after any refresh in progress.
-   */
-  async rebuild(): Promise<void> {
-    await this.inflight?.catch(() => {});
-    const started = Date.now();
-    for (const { id, source } of this.sources()) {
-      if (!source.cached) continue;
-      try {
-        this.store.applySync(id, source.cached());
-      } catch (err) {
-        this.log.error(`Rebuilding a source failed: ${(err as Error).message}`);
-      }
-    }
-    this.setSnapshot(toSnapshot(buildCatalog(this.store.load())));
-    this.log.info(`Library rebuilt from the last scan in ${((Date.now() - started) / 1000).toFixed(1)}s`);
-    for (const listener of this.listeners) listener(this);
-  }
-
-  /** Rebuild soon (see rebuild), coalescing bursts such as matches landing album after album. */
-  rebuildSoon(delayMs = 10_000) {
-    if (this.rebuildTimer) return;
-    this.rebuildTimer = setTimeout(() => {
-      this.rebuildTimer = null;
-      void this.rebuild().catch(() => {});
-    }, delayMs);
-    this.rebuildTimer.unref?.();
+  /** Whether an album or artist of this view uses /art/<kind>/<id>/… artwork. */
+  async hasArtwork(kind: 'album' | 'artist', id: number): Promise<boolean> {
+    return (await this.ready()).artwork.has(`${kind}/${id}`);
   }
 
   async albumByMbid(mbid: string): Promise<LidarrAlbumRef | undefined> {
@@ -203,17 +82,8 @@ export class Library {
     return undefined;
   }
 
-  /** Refresh soon, coalescing bursts (e.g. several downloads finishing together). */
-  refreshSoon(delayMs = 3000) {
-    if (this.refreshTimer) return;
-    this.refreshTimer = setTimeout(() => {
-      this.refreshTimer = null;
-      void this.refresh().catch(() => {});
-    }, delayMs);
-  }
-
   async stats(): Promise<LibraryStats | undefined> {
-    return this.snapshot?.stats;
+    return this.current()?.stats;
   }
 
   async artists(): Promise<Artist[]> {
@@ -319,6 +189,210 @@ export class Library {
   }
 }
 
+/** The whole library: every enabled source, synced into the catalog and served from memory. */
+export class Library extends LibraryView {
+  readonly sources = null;
+  version = 0;
+  lastError: string | null = null;
+  private snapshot: Snapshot | null = null;
+  /** The rows the snapshot was built from: views build theirs from the same rows. */
+  private rows: CatalogRows | null = null;
+  /** One view per distinct set of sources, shared by every account with that set. */
+  private readonly views = new Map<string, LibraryView>();
+  private inflight: Promise<void> | null = null;
+  private timer: NodeJS.Timeout | null = null;
+  private refreshTimer: NodeJS.Timeout | null = null;
+  private rebuildTimer: NodeJS.Timeout | null = null;
+  private listeners: ((library: Library) => void)[] = [];
+
+  constructor(
+    private readonly store: CatalogStore,
+    /** The sources to sync, read on every refresh (Settings can change them). */
+    private readonly syncSources: () => { id: number; source: CatalogSource }[],
+    private readonly log: { info: (msg: string) => void; error: (msg: string) => void },
+  ) {
+    super();
+  }
+
+  /** The library as an account with these sources sees it; the whole library for null. */
+  view(sources: SourceFilter): LibraryView {
+    if (sources === null) return this;
+    const ids = [...new Set(sources)].sort((a, b) => a - b);
+    const key = ids.join(',');
+    let view = this.views.get(key);
+    if (!view) {
+      view = new SourceView(ids, { version: () => this.version, rows: () => this.rows, ready: () => this.ready() });
+      this.views.set(key, view);
+    }
+    return view;
+  }
+
+  protected current(): Snapshot | null {
+    return this.snapshot;
+  }
+
+  protected async ready(): Promise<Snapshot> {
+    if (!this.snapshot) await this.refresh();
+    return this.snapshot!;
+  }
+
+  private setSnapshot(rows: CatalogRows) {
+    this.rows = rows;
+    this.snapshot = toSnapshot(buildCatalog(rows));
+    this.version++;
+  }
+
+  /** Called after every successful refresh. */
+  onRefresh(listener: (library: Library) => void) {
+    this.listeners.push(listener);
+  }
+
+  /** Serve the catalog saved by a previous run, so a restart doesn't wait on the sources. */
+  loadStored(): boolean {
+    if (!this.store.hasData()) return false;
+    this.setSnapshot(this.store.load());
+    this.log.info(`Library loaded from the database: ${this.snapshot!.stats.albums} albums`);
+    return true;
+  }
+
+  /** True while the sources are syncing. */
+  get refreshing(): boolean {
+    return this.inflight !== null;
+  }
+
+  /** Rebuild from the stored catalog without syncing, e.g. after a source was removed or reordered. */
+  reload() {
+    this.setSnapshot(this.store.load());
+    for (const listener of this.listeners) listener(this);
+  }
+
+  startAutoRefresh(minutes: number) {
+    this.timer = setInterval(() => void this.refresh().catch(() => {}), minutes * 60_000);
+    this.timer.unref();
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * Sync every source (or just `only`; the others keep their last sync) into the catalog and rebuild.
+   * Concurrent callers share one refresh.
+   */
+  refresh(only?: number): Promise<void> {
+    const started = Date.now();
+    this.inflight ??= this.build(only)
+      .then((rows) => {
+        this.setSnapshot(rows);
+        this.lastError = null;
+        const s = this.snapshot!.stats;
+        this.log.info(
+          `Library refreshed: ${s.artists} artists, ${s.albums} albums, ${s.tracks} tracks in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+        );
+        for (const listener of this.listeners) listener(this);
+      })
+      .catch((err: Error) => {
+        this.lastError = err.message;
+        this.log.error(`Library refresh failed: ${err.message}`);
+        throw err;
+      })
+      .finally(() => {
+        this.inflight = null;
+      });
+    return this.inflight;
+  }
+
+  private async build(only?: number): Promise<CatalogRows> {
+    const sources = this.syncSources().filter((s) => only === undefined || s.id === only);
+    const failures: Error[] = [];
+    // In Settings order: later sources match their files against what earlier ones reported.
+    for (const { id, source } of sources) {
+      try {
+        this.store.applySync(id, await source.sync());
+        this.store.setSyncError(id, null);
+      } catch (err) {
+        this.store.setSyncError(id, (err as Error).message);
+        failures.push(err as Error);
+      }
+    }
+    // One unreachable source shouldn't hide the others: its last sync stays in the catalog.
+    if (failures.length && failures.length === sources.length) throw failures[0];
+    for (const err of failures) this.log.error(`A source failed to sync: ${err.message}`);
+    return this.store.load();
+  }
+
+  /**
+   * Rebuild from what the sources reported last, without scanning folders or asking Lidarr again: for
+   * when only matches changed. Runs after any refresh in progress.
+   */
+  async rebuild(): Promise<void> {
+    await this.inflight?.catch(() => {});
+    const started = Date.now();
+    for (const { id, source } of this.syncSources()) {
+      if (!source.cached) continue;
+      try {
+        this.store.applySync(id, source.cached());
+      } catch (err) {
+        this.log.error(`Rebuilding a source failed: ${(err as Error).message}`);
+      }
+    }
+    this.setSnapshot(this.store.load());
+    this.log.info(`Library rebuilt from the last scan in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    for (const listener of this.listeners) listener(this);
+  }
+
+  /** Rebuild soon (see rebuild), coalescing bursts such as matches landing album after album. */
+  rebuildSoon(delayMs = 10_000) {
+    if (this.rebuildTimer) return;
+    this.rebuildTimer = setTimeout(() => {
+      this.rebuildTimer = null;
+      void this.rebuild().catch(() => {});
+    }, delayMs);
+    this.rebuildTimer.unref?.();
+  }
+
+  /** Refresh soon, coalescing bursts (e.g. several downloads finishing together). */
+  refreshSoon(delayMs = 3000) {
+    if (this.refreshTimer) return;
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      void this.refresh().catch(() => {});
+    }, delayMs);
+  }
+}
+
+/** Some sources only: the catalog built from their copies, made once per library snapshot. */
+class SourceView extends LibraryView {
+  private built: { version: number; snap: Snapshot } | null = null;
+
+  constructor(
+    readonly sources: readonly number[],
+    private readonly library: { version: () => number; rows: () => CatalogRows | null; ready: () => Promise<unknown> },
+  ) {
+    super();
+  }
+
+  get version(): number {
+    return this.library.version();
+  }
+
+  protected current(): Snapshot | null {
+    const rows = this.library.rows();
+    if (!rows) return null;
+    const version = this.library.version();
+    if (this.built?.version !== version) {
+      const keep = new Set(this.sources);
+      this.built = { version, snap: toSnapshot(buildCatalog({ ...rows, sources: rows.sources.filter((s) => keep.has(s.id)) })) };
+    }
+    return this.built.snap;
+  }
+
+  protected async ready(): Promise<Snapshot> {
+    await this.library.ready();
+    return this.current()!;
+  }
+}
+
 function toSnapshot(catalog: Catalog): Snapshot {
   return {
     ...catalog,
@@ -326,7 +400,22 @@ function toSnapshot(catalog: Catalog): Snapshot {
     trackById: new Map(catalog.tracks.map((t) => [t.id, t])),
     trackByRecording: indexByRecording(catalog.tracks),
     trackByName: indexByName(catalog.tracks),
+    artwork: artworkKeys(catalog),
   };
+}
+
+const ART_URL = /^\/art\/(artist|album)\/(\d+)\//;
+
+/** `album/<id>` and `artist/<id>` for the /art/… URLs the catalog's albums and artists use. */
+function artworkKeys(catalog: Catalog): Set<string> {
+  const keys = new Set<string>();
+  const add = (url: string | undefined) => {
+    const m = url?.match(ART_URL);
+    if (m) keys.add(`${m[1]}/${m[2]}`);
+  };
+  for (const a of catalog.albums.values()) add(a.coverUrl);
+  for (const a of catalog.artists.values()) for (const url of [a.imageUrl, a.fanartUrl, a.logoUrl]) add(url);
+  return keys;
 }
 
 /** An album as lists show it: no tracks, text or missing songs (those are on its own page, and lists are big). */

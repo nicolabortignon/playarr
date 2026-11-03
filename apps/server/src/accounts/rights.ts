@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { LibraryView, SourceFilter } from '../library/library.ts';
 import { isLocalRequest } from '../net.ts';
 import type { Accounts } from './accounts.ts';
 
@@ -42,4 +43,32 @@ export function canRequest(req: FastifyRequest): boolean {
 
 export async function requireCanRequest(req: FastifyRequest, reply: FastifyReply) {
   if (!canRequest(req)) return reply.code(403).send({ error: 'Your account can’t request albums' });
+}
+
+/** The sources the request's account may hear, or null for all of them (and without accounts). */
+export const sourcesOf = (req: FastifyRequest): readonly number[] | null => req.auth?.account.sources ?? null;
+
+type Narrowable = { view?: (sources: SourceFilter) => LibraryView };
+
+/**
+ * The library as the request's account may see it: the library itself when it may hear every source,
+ * otherwise the view of its sources. A library that can't be narrowed is refused rather than shown whole.
+ */
+export function libraryOf<L extends object>(library: L & Narrowable, req: FastifyRequest): L | LibraryView {
+  const sources = sourcesOf(req);
+  if (sources === null) return library;
+  if (!library.view) throw new Error('This library can’t be narrowed to an account’s sources');
+  return library.view(sources);
+}
+
+/** Those of these recordings the request's account may hear (all of them when it hears every source). */
+export async function visibleRecordings(
+  library: Pick<LibraryView, 'trackByRecording'> & Narrowable,
+  req: FastifyRequest,
+  ids: string[],
+): Promise<string[]> {
+  if (sourcesOf(req) === null) return ids;
+  const view = libraryOf(library, req);
+  const found = await Promise.all(ids.map((id) => view.trackByRecording(id)));
+  return ids.filter((_, i) => found[i]);
 }

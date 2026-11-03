@@ -3308,6 +3308,8 @@ corepack pnpm -C apps/server typecheck
 
 Expected: PASS (every existing caller of `Library` is unchanged).
 
+*As executed:* fitted the code as written (the constructor's `sources` parameter is renamed `syncSources`, since `sources` is now the view's filter). Measured (vitest, M-series Mac): on the two-source fixture a view builds in about 0.1 ms the first time and 0.04 ms after a reload; on synthetic libraries of 6,000 / 30,000 / 60,000 songs (two sources, 80/20), a full `reload()` (load the rows and build) takes 34 / 188 / 355 ms, a view of the small source 3 / 15 / 32 ms, a view of the big one 11 / 51 / 113 ms, and a cached view about 0.02 ms. The cost is linear in the rows (every copy is looked at) plus the songs kept, and is paid once per library change per distinct source set, on the first request that needs it.
+
 **Step 5: Commit**
 
 ```bash

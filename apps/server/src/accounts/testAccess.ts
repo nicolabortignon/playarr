@@ -1,5 +1,8 @@
 import type { Account } from '@playarr/shared';
 import type { FastifyInstance } from 'fastify';
+import { CatalogStore } from '../catalog/store.ts';
+import { creativeCommons, freshDb, mezzanine } from '../catalog/testFixtures.ts';
+import { Library } from '../library/library.ts';
 
 /** Tests: requests on an app set up with actAs act as the account whose id this header names. */
 export const TEST_ACCOUNT_HEADER = 'x-test-account';
@@ -23,3 +26,26 @@ export function actAs(app: FastifyInstance, accounts: Account[]) {
 
 /** Headers for a request as this account (with Playarr's own header, for changes). */
 export const asAccount = (id: number) => ({ [TEST_ACCOUNT_HEADER]: String(id), 'x-playarr': '1' });
+
+/**
+ * A library of two sources: Lidarr with Mezzanine (album 70, songs 700 and 701, files 9000 and 9001,
+ * cover /art/album/70/cover) and a folder of Creative Commons music (one song, CC_REC).
+ */
+export async function twoSources() {
+  const db = freshDb();
+  const store = new CatalogStore(db);
+  const lidarr = store.addSource('lidarr', 'Lidarr');
+  const cc = store.addSource('folder', 'Creative Commons');
+  const mezz = mezzanine();
+  const withCover = { ...mezz, albums: mezz.albums.map((a) => ({ ...a, coverUrl: '/art/album/70/cover' })) };
+  const library = new Library(
+    store,
+    () => [
+      { id: lidarr, source: { kind: 'lidarr', sync: async () => withCover } },
+      { id: cc, source: { kind: 'folder', sync: async () => creativeCommons() } },
+    ],
+    { info: () => {}, error: () => {} },
+  );
+  await library.refresh();
+  return { db, store, library, lidarr, cc };
+}

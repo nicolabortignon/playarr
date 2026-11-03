@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CatalogStore } from '../catalog/store.ts';
-import { freshDb, mezzanine } from '../catalog/testFixtures.ts';
-import type { CatalogSource } from '../catalog/types.ts';
+import { twoSources } from '../accounts/testAccess.ts';
+import { CC_REC, freshDb, mezzanine, MP3 } from '../catalog/testFixtures.ts';
+import type { CatalogSource, SourceSync } from '../catalog/types.ts';
 import { Library, stripAlbum } from './library.ts';
 
 const log = { info: () => {}, error: () => {} };
@@ -114,5 +115,67 @@ describe('stripAlbum', () => {
     expect(listed).not.toHaveProperty('overview');
     // What cards need stays: how complete it is, and what to request.
     expect(listed).toMatchObject({ trackCount: 2, totalTrackCount: 11, mbid: 'rg-1' });
+  });
+});
+
+describe('library views', () => {
+  it('shows only the songs with a copy in the view’s sources, and their albums and artists', async () => {
+    const { library, lidarr, cc } = await twoSources();
+    const ccOnly = library.view([cc]);
+    expect((await ccOnly.artists()).map((a) => a.name)).toEqual(['Kevin MacLeod']);
+    expect((await ccOnly.albums()).map((a) => a.title)).toEqual(['Royalty Free']);
+    expect((await ccOnly.allTracks()).map((t) => t.recordingId)).toEqual([CC_REC]);
+    expect(await ccOnly.album(70)).toBeUndefined();
+    expect(await ccOnly.artist(7)).toBeUndefined();
+    expect(await ccOnly.track(700)).toBeUndefined();
+    expect(await ccOnly.trackByRecording('rec-1')).toBeUndefined();
+    expect(await ccOnly.file(9000)).toBeUndefined();
+    expect(await ccOnly.search('angel')).toEqual({ artists: [], albums: [], tracks: [] });
+    expect((await ccOnly.stats())?.tracks).toBe(1);
+    expect(await ccOnly.hasArtwork('album', 70)).toBe(false);
+    expect(await library.hasArtwork('album', 70)).toBe(true);
+    expect((await library.view([lidarr]).albums()).map((a) => a.title)).toEqual(['Mezzanine']);
+    expect(library.view(null)).toBe(library);
+    expect(await library.allTracks()).toHaveLength(3);
+  });
+
+  it('builds a view once per snapshot, shared by every account with the same sources', async () => {
+    const { library, lidarr, cc } = await twoSources();
+    expect(library.view([cc, lidarr])).toBe(library.view([lidarr, cc]));
+    const view = library.view([cc]);
+    const first = await view.allTracks();
+    expect(await view.allTracks()).toBe(first);
+    library.reload();
+    expect(await view.allTracks()).not.toBe(first);
+    expect(view.version).toBe(library.version);
+    expect(view.sources).toEqual([cc]);
+  });
+
+  it('plays the best copy the view’s sources have', async () => {
+    const store = new CatalogStore(freshDb());
+    const lidarr = store.addSource('lidarr', 'Lidarr');
+    const cc = store.addSource('folder', 'Creative Commons');
+    const mezz = mezzanine();
+    const angel = mezz.tracks.find((t) => t.recordingId === 'rec-1')!;
+    const alsoHere: SourceSync = {
+      artists: mezz.artists,
+      albums: mezz.albums,
+      tracks: [angel],
+      copies: [{ ref: 'angel.mp3', trackKey: angel.key, path: '/cc/angel.mp3', size: 9_000_000, format: MP3 }],
+    };
+    const library = new Library(
+      store,
+      () => [
+        { id: lidarr, source: { kind: 'lidarr', sync: async () => mezz } },
+        { id: cc, source: { kind: 'folder', sync: async () => alsoHere } },
+      ],
+      log,
+    );
+    await library.refresh();
+    expect((await library.track(700))?.fileId).toBe(9000); // lossless wins
+    const mp3 = (await library.view([cc]).track(700))!;
+    expect(mp3.format.codec).toBe('MP3');
+    expect(await library.view([cc]).file(9000)).toBeUndefined();
+    expect(await library.view([cc]).file(mp3.fileId)).toMatchObject({ sourceId: cc });
   });
 });

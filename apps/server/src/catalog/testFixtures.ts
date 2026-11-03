@@ -52,6 +52,25 @@ export function mezzanine(): SourceSync {
   };
 }
 
+/** The Creative Commons song's recording id (a folder song MusicBrainz doesn't know). */
+export const CC_REC = 'local:00000000000000cc';
+
+/** A folder with one Creative Commons album: one artist, one song, one MP3 copy. */
+export function creativeCommons(): SourceSync {
+  return {
+    artists: [{ key: 'name:kevin macleod', preferredId: 8, name: 'Kevin MacLeod', sortName: 'MacLeod, Kevin', genres: [] }],
+    albums: [
+      { key: 'name:kevin macleod|royalty free', preferredId: 80, artistKey: 'name:kevin macleod', title: 'Royalty Free', albumType: 'Album', secondaryTypes: [], genres: [] },
+    ],
+    tracks: [
+      { key: 'name:kevin macleod|royalty free#1', preferredId: 800, albumKey: 'name:kevin macleod|royalty free', recordingId: CC_REC, title: 'Sneaky Snitch', trackNumber: 1, discNumber: 1, duration: 136, explicit: false },
+    ],
+    copies: [
+      { ref: 'Kevin MacLeod/Royalty Free/01.mp3', preferredId: 9100, trackKey: 'name:kevin macleod|royalty free#1', path: '/cc/Kevin MacLeod/Royalty Free/01.mp3', size: 5_000_000, format: MP3, addedAt: '2026-10-05T10:00:00Z' },
+    ],
+  };
+}
+
 /** A tiny FLAC file (no audio frames) with Vorbis comments; music-metadata reads its tags and duration. */
 export function flacBytes(tags: Record<string, string> = {}, seconds = 200): Buffer {
   const block = (type: number, body: Buffer, last: boolean) => {
