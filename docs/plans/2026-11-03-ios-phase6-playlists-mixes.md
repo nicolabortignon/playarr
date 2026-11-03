@@ -3770,9 +3770,9 @@ import Testing
     await mix.regenerate()
     #expect(await mix.save()?.id == 9)
     // The list asked again after New mix comes from the session's store, in this device's own zone.
-    #expect(api.queries(.get, "/api/mixes") == ["tz=Europe/Rome", "tz=\(TimeZone.current.identifier)"])
+    #expect(api.queries(.get, "/api/mixes", "tz") == ["Europe/Rome", TimeZone.current.identifier])
     for (method, path) in [(HTTPMethod.get, "/api/mixes/vibes"), (.post, "/api/mixes/vibes/regenerate"), (.post, "/api/mixes/vibes/save")] {
-      #expect(api.queries(method, path) == ["tz=Europe/Rome"], "\(path)")
+      #expect(api.queries(method, path, "tz") == ["Europe/Rome"], "\(path)")
     }
     #expect(session.toasts.toasts.map(\.message) == ["Saved as “Your vibes · 3 Nov”"])
   }
