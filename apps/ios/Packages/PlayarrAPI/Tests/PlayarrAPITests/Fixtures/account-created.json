@@ -1,0 +1,18 @@
+{
+  "account": {
+    "id": 2,
+    "username": "sam",
+    "name": "Sam",
+    "role": "member",
+    "canRequest": false,
+    "sources": [
+      1
+    ],
+    "hasPassword": false
+  },
+  "setup": {
+    "code": "K7PQ2MXA",
+    "link": "http://localhost/redeem?code=K7PQ2MXA",
+    "expiresAt": "2026-11-03T12:00:00.000Z"
+  }
+}

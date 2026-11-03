@@ -2487,7 +2487,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
     let fixture: String
     let decode: @Sendable (Data) throws -> Void
 
-    init<T: Decodable>(_ fixture: String, _ type: T.Type) {
+    init<T: Decodable & Sendable>(_ fixture: String, _ type: T.Type) {
         self.fixture = fixture
         self.decode = { _ = try APIClient.decode(T.self, from: $0) }
     }
@@ -2589,15 +2589,17 @@ Expected: build fails with `type 'Bundle' has no member 'module'`: the test targ
 
 **Step 3: Bundle the fixtures**
 
-In `apps/ios/Packages/PlayarrAPI/Package.swift`, the test target becomes:
+In `apps/ios/Packages/PlayarrAPI/Package.swift` (phase 0's manifest, indented by two spaces), the test target becomes:
 
 ```swift
-        .testTarget(
-            name: "PlayarrAPITests",
-            dependencies: ["PlayarrAPI"],
-            resources: [.copy("Fixtures")]
-        ),
+    .testTarget(
+      name: "PlayarrAPITests",
+      dependencies: ["PlayarrAPI"],
+      resources: [.copy("Fixtures")]
+    ),
 ```
+
+If Task 5 hasn't recorded its 7 fixtures yet (phase 1's auth and account tests not written), write stand-ins for them by hand in the recorder's format (two-space JSON and a final newline, timestamps `2026-11-03T12:00:00.000Z`, token `"token"`, code `K7PQ2MXA`, the `server-info` id from Task 5's table): `server-info`, `auth-sign-in`, `auth-me`, `accounts`, `account-created`, `setup-code`, `sessions`, each a complete value of its shared type. Task 5's recording replaces them with real answers.
 
 **Step 4: Run it to see it pass**
 
@@ -2611,6 +2613,7 @@ Expected: all 52 contracts decode, and `everyFixtureHasAContract` passes. If a f
 
 ```bash
 git add apps/ios/Packages/PlayarrAPI/Package.swift apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/ContractTests.swift
+git add apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/Fixtures   # the stand-ins, if any
 git commit -F - <<'MSG'
 iOS: contract tests decode every recorded server answer into the generated models
 

@@ -1,0 +1,9 @@
+{
+  "id": 1,
+  "username": "owner",
+  "name": "Owner",
+  "role": "admin",
+  "canRequest": true,
+  "sources": null,
+  "hasPassword": true
+}

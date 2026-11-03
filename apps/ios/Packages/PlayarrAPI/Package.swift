@@ -8,6 +8,10 @@ let package = Package(
   products: [.library(name: "PlayarrAPI", targets: ["PlayarrAPI"])],
   targets: [
     .target(name: "PlayarrAPI"),
-    .testTarget(name: "PlayarrAPITests", dependencies: ["PlayarrAPI"]),
+    .testTarget(
+      name: "PlayarrAPITests",
+      dependencies: ["PlayarrAPI"],
+      resources: [.copy("Fixtures")]
+    ),
   ]
 )
