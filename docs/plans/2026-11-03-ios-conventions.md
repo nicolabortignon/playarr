@@ -127,6 +127,8 @@ Endpoints (JSON; errors are `{ error: string }` with a status code, as today):
 - In Claude's shell, `swift build`/`swift test` need `--disable-sandbox` (SwiftPM's sandbox can't start inside it), and xcodebuild needs `OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sandbox` once the app uses macros (`@Observable`: the compiler can't sandbox its macro plugins either); the Makefile and `release.mjs` already pass them.
 - Tests: XCTest-free Swift Testing (`import Testing`, `@Test`, `#expect`) in packages; XCUITest for UI tests.
 - Files: one primary type per file, named after it. No force unwraps outside tests.
+- Indentation: hand-written Swift uses 2 spaces (phase 0's style); the generated models keep the generator's 4.
+- View models never take `APIClient` directly: they take `api: any APISending` (`protocol APISending: Sendable { func send<T: Decodable & Sendable>(_: Endpoint<T>) async throws -> T }`, with `extension APIClient: APISending {}`), and polling ones take `clock: any Clock<Duration> = ContinuousClock()`. Shared test doubles live in `PlayarrUITests`: `FakeAPI` (answers by method and path, records bodies) and `TestClock` (`nextSleep()`, `advance(by:)`). Whichever phase is implemented first adds them (the phase 9 plan has the code); later phases reuse them, never duplicate.
 - User-facing text follows the web's wording (copy it from the web component cited in the parity checklist). Where the web names the browser, say "this device" (e.g. "This file format is not supported on this device").
 
 ## Commits
