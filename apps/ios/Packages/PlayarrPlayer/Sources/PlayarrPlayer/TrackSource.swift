@@ -19,9 +19,12 @@ public actor TrackSource: PCMSource {
     public var stream: URLRequest
     /// Its levelled stream at gain 0, when the server has measured the song; nil otherwise.
     public var levelled: URLRequest?
-    public init(stream: URLRequest, levelled: URLRequest?) {
+    /// The whole file kept on this device elsewhere (a download's transition continuation): decoded from there.
+    public var kept: URL?
+    public init(stream: URLRequest, levelled: URLRequest?, kept: URL? = nil) {
       self.stream = stream
       self.levelled = levelled
+      self.kept = kept
     }
   }
 
@@ -84,6 +87,9 @@ public actor TrackSource: PCMSource {
   }
 
   private func open() async throws -> Mode {
+    if let url = origin.kept, FileManager.default.fileExists(atPath: url.path()) {
+      return .file(try FileDecoder(url: url, firstFrame: firstFrame))
+    }
     if let url = await cache.completedFile(for: track) {
       return .file(try FileDecoder(url: url, firstFrame: firstFrame))
     }

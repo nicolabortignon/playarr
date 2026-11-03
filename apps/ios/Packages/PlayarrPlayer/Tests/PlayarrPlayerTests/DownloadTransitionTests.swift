@@ -52,6 +52,9 @@ struct DownloadTransitionTests {
     // Offline a Party queue takes the Auto one; online it asks the server.
     #expect(rig.store.keptTransition(from: song(4), to: song(5), mode: .party, online: false, levelled: false) != nil)
     #expect(rig.store.keptTransition(from: song(4), to: song(5), mode: .party, online: true, levelled: false) == nil)
+    // The player asking online gets the same answer: its files play from here.
+    #expect(rig.store.keptTransitionFile("/transitions/4-5.rest.flac") == rig.folder.transitions.appending(path: "4-5.rest.flac"))
+    #expect(rig.store.keptTransitionFile("/transitions/9-9.flac") == nil)
     // Its files gone: none.
     rig.folder.remove("offline/transitions/4-5.rest.flac")
     rig.store.removeAll()

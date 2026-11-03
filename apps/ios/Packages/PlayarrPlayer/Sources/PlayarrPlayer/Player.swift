@@ -105,7 +105,9 @@ public final class Player {
       if let rest = item.continuation {
         return TrackSource(
           track: Track.continuation(of: item.track, url: rest.url, from: rest.from), firstFrame: frame - EngineFormat.frames(rest.from),
-          origin: TrackSource.Origin(stream: backend.transitionRequest(rest.url), levelled: nil), cache: cache)
+          origin: TrackSource.Origin(
+            stream: backend.transitionRequest(rest.url), levelled: nil, kept: downloads.keptTransitionFile(rest.url)),
+          cache: cache)
       }
       return TrackSource(
         track: item.track, firstFrame: frame,
@@ -120,6 +122,8 @@ public final class Player {
       planner: TransitionPlanner(scheduler: scheduler) { try await backend.transition($0) },
       mixMaps: MixMapStore(scheduler: scheduler) { try await backend.mixMaps($0) },
       download: { path in
+        // Kept with a download: played from here, online too (the names are content keys).
+        if let local = await downloads.keptTransitionFile(path) { return local }
         let name = URL(string: path)?.lastPathComponent ?? path
         if let kept = await cache.completedTransition(named: name) { return kept }
         let download = await cache.transition(named: name, request: backend.transitionRequest(path))
@@ -143,6 +147,17 @@ public final class Player {
     transitions.planner.isPlaying = { [weak self] in self?.queue.playing ?? false }
     transitions.planner.isOnline = { [weak self] in self?.network() != .offline }
     transitions.onChange = { [weak self] in self?.updateUpcoming() }
+    // A transition kept with a download plays instead of asking: always offline, online while its mix point is well
+    // ahead (the planner's rule, `OfflinePlayback.useKept`'s). Levelled when the player sends the pair's gains.
+    transitions.planner.kept = { [weak downloads] pair, online in
+      downloads?.keptTransition(from: pair.from, to: pair.to, mode: pair.mode, online: online, levelled: pair.levels != nil)
+        .map { .ready($0.transition.answer) }
+    }
+    downloads.playerPair = { [weak transitions] in
+      guard let upcoming = transitions?.planner.upcoming, let from = upcoming.fromFileId, let to = upcoming.toFileId else { return nil }
+      return (fromFileId: from, toFileId: to)
+    }
+    transitions.planner.onPairChange = { [weak downloads] in downloads?.playerMoved() }
     sync()
     Task { await reports.retry() }
   }
