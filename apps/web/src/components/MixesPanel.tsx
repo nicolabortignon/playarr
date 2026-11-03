@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { ApiError } from '../lib/api';
 import { plural } from '../lib/format';
-import { useClearHistory, useMixSettings, useSaveMixSettings } from '../lib/queries';
+import { useClearHistory, useIsMember, useMixSettings, useSaveMixSettings } from '../lib/queries';
 import { Dialog } from './Dialog';
 import { ListenBrainzSection } from './ListenBrainzSection';
 import { AwayNotice, PillGroup, SettingsSection, Switch } from './SettingsControls';
@@ -39,15 +39,15 @@ const BLAST = [
 ];
 const COUNTS = [0, 1, 2, 3, 4].map((n) => ({ value: n, label: String(n) }));
 
-/** The household's clock for hourly, daily and Monday mixes, with a way to switch to this device's. */
-function TimeZone({ current, onChange }: { current?: string; onChange: (tz: string) => void }) {
+/** The household's clock for hourly, daily and Monday mixes, with a way to switch to this device's (for admins). */
+function TimeZone({ current, onChange }: { current?: string; onChange?: (tz: string) => void }) {
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
     <div>
       <div className="mb-1.5 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Time zone</div>
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[15px] text-paper">{current ?? 'The server’s'}</span>
-        {here && here !== current && (
+        {onChange && here && here !== current && (
           <button
             type="button"
             onClick={() => onChange(here)}
@@ -68,6 +68,8 @@ export function MixesPanel() {
   const save = useSaveMixSettings();
   const clear = useClearHistory();
   const [confirmClear, setConfirmClear] = useState(false);
+  // How mixes are made is the server's: a member sees it but can't change it (their history and ListenBrainz are theirs).
+  const readOnly = useIsMember();
   const change = (patch: Partial<MixSettings>) => save.mutate(patch);
 
   if (error instanceof ApiError && error.status === 403) {
@@ -89,6 +91,7 @@ export function MixesPanel() {
 
   return (
     <div>
+      {readOnly && <AwayNotice>Only an admin can change how mixes are made.</AwayNotice>}
       <SettingsSection title="Your mixes" description="Made for you from your library and what you play, at the top of Home.">
         <div className="divide-y divide-line">
           {KINDS.map(({ kind, label, description }) => (
@@ -98,6 +101,7 @@ export function MixesPanel() {
               description={description}
               checked={data.enabled[kind] !== false}
               onChange={(on) => change({ enabled: { [kind]: on } })}
+              disabled={readOnly}
             />
           ))}
         </div>
@@ -105,17 +109,24 @@ export function MixesPanel() {
 
       <SettingsSection title="How they’re made">
         <div className="space-y-6">
-          <TimeZone current={data.timeZone} onChange={(timeZone) => change({ timeZone })} />
-          <PillGroup label="Songs per mix" options={LENGTHS} value={data.length} onChange={(length) => change({ length: length as MixSettings['length'] })} />
-          <PillGroup label="Discovery Weekly" options={ADVENTURE} value={adventure.value} onChange={(adventurous) => change({ adventurous })} />
+          <TimeZone current={data.timeZone} onChange={readOnly ? undefined : (timeZone) => change({ timeZone })} />
+          <PillGroup
+            label="Songs per mix"
+            options={LENGTHS}
+            value={data.length}
+            onChange={(length) => change({ length: length as MixSettings['length'] })}
+            disabled={readOnly}
+          />
+          <PillGroup label="Discovery Weekly" options={ADVENTURE} value={adventure.value} onChange={(adventurous) => change({ adventurous })} disabled={readOnly} />
           <PillGroup
             label="Blast from the past: not heard for"
             options={BLAST}
             value={data.blastDays}
             onChange={(blastDays) => change({ blastDays: blastDays as MixSettings['blastDays'] })}
+            disabled={readOnly}
           />
-          <PillGroup label="Genre mixes" options={COUNTS} value={data.genreMixes} onChange={(genreMixes) => change({ genreMixes })} />
-          <PillGroup label="Decade mixes" options={COUNTS} value={data.decadeMixes} onChange={(decadeMixes) => change({ decadeMixes })} />
+          <PillGroup label="Genre mixes" options={COUNTS} value={data.genreMixes} onChange={(genreMixes) => change({ genreMixes })} disabled={readOnly} />
+          <PillGroup label="Decade mixes" options={COUNTS} value={data.decadeMixes} onChange={(decadeMixes) => change({ decadeMixes })} disabled={readOnly} />
         </div>
       </SettingsSection>
 
@@ -129,6 +140,7 @@ export function MixesPanel() {
             description="Off stops recording; the mixes keep using what’s already there."
             checked={data.recordHistory}
             onChange={(recordHistory) => change({ recordHistory })}
+            disabled={readOnly}
           />
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line px-4 py-3">

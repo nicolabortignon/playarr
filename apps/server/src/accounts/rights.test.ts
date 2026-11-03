@@ -10,6 +10,7 @@ const AWAY = '203.0.113.5';
 
 function routes(app: FastifyInstance) {
   app.get('/admin', { onRequest: requireAdmin }, () => 'ok');
+  app.put('/admin', { onRequest: requireAdmin }, () => 'ok');
   app.get('/own', { onRequest: requireOwn }, () => 'ok');
   app.get('/request', { onRequest: requireCanRequest }, () => 'ok');
   app.get('/who', (req) => ({ id: accountId(req) }));
@@ -24,7 +25,11 @@ describe('rights', () => {
     expect((await app.inject({ url: '/admin', headers: asAccount(1), remoteAddress: AWAY })).statusCode).toBe(200);
     const member = await app.inject({ url: '/admin', headers: asAccount(2), remoteAddress: HOME });
     expect(member.statusCode).toBe(403);
-    expect(member.json()).toEqual({ error: 'Only an admin can change this' });
+    // A read is "seen", a change "changed".
+    expect(member.json()).toEqual({ error: 'Only an admin can see this' });
+    const change = await app.inject({ method: 'PUT', url: '/admin', headers: asAccount(2), remoteAddress: HOME });
+    expect(change.statusCode).toBe(403);
+    expect(change.json()).toEqual({ error: 'Only an admin can change this' });
     expect((await app.inject({ url: '/own', headers: asAccount(2), remoteAddress: AWAY })).statusCode).toBe(200);
     expect((await app.inject({ url: '/own', remoteAddress: HOME })).statusCode).toBe(403);
     expect((await app.inject({ url: '/who', headers: asAccount(2) })).json()).toEqual({ id: 2 });

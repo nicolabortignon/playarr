@@ -10,6 +10,8 @@ describe('config', () => {
     expect(() => loadConfig({ TRUST_PROXY: '2' })).toThrow(/hop count/);
     expect(loadConfig({ TRUST_PROXY: '172.17.0.1, 10.0.0.0/8,loopback' }).trustProxy).toEqual(['172.17.0.1', '10.0.0.0/8', 'loopback']);
     expect(() => loadConfig({ TRUST_PROXY: 'my-proxy' })).toThrow(/TRUST_PROXY/);
+    // Hop counts are refused, so the message doesn't offer them.
+    expect(() => loadConfig({ TRUST_PROXY: 'my-proxy' })).toThrow('"my-proxy" is not true, an address, a CIDR, loopback, linklocal or uniquelocal');
   });
 
   it('takes PUBLIC_URL as an http(s) origin without the trailing slash', () => {

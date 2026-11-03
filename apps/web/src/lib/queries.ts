@@ -782,6 +782,9 @@ export const useServerInfo = () => useQuery({ queryKey: ['server'], queryFn: api
 /** Who listens on this device; an error (401) before setup or when signed out. */
 export const useMe = () => useQuery({ queryKey: ['me'], queryFn: api.me, retry: false, staleTime: 5 * 60_000 });
 
+/** Signed in as a member: the server's settings are shown, but only an admin may change them. */
+export const useIsMember = () => useMe().data?.role === 'member';
+
 /** Settings → Accounts, for admins. */
 export const useAccountList = (enabled = true) => useQuery({ queryKey: ['accounts'], queryFn: api.accounts, enabled });
 

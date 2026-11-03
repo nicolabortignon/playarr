@@ -1,4 +1,4 @@
-import type { MixDetail, MixSettingsInfo, MixSummary, Track } from '@playarr/shared';
+import type { Account, MixDetail, MixSettingsInfo, MixSummary, Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -101,6 +101,23 @@ describe('MixesPanel', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Adventurous' }));
     await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ adventurous: 1 }));
     expect(screen.getByText(/42 songs played since/)).toBeTruthy();
+  });
+
+  it('shows a member how mixes are made without letting them change it; their history stays theirs', async () => {
+    const sam: Account = { id: 2, username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null, hasPassword: true };
+    vi.spyOn(api, 'me').mockResolvedValue(sam);
+    vi.spyOn(api, 'mixSettings').mockResolvedValue(settings);
+    const saveSettings = vi.spyOn(api, 'saveMixSettings');
+    renderAt('/', [{ path: '/', element: <MixesPanel /> }]);
+    expect(await screen.findByText('Only an admin can change how mixes are made.')).toBeTruthy();
+    const focus = screen.getByRole('switch', { name: 'Deep focus' });
+    expect((focus as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(focus);
+    expect((screen.getByRole('radio', { name: 'Adventurous' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('switch', { name: 'Remember what’s played' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /Use this device’s/ })).toBeNull();
+    expect((screen.getByRole('button', { name: /clear history/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect(saveSettings).not.toHaveBeenCalled();
   });
 
   it('asks before clearing the listening history', async () => {

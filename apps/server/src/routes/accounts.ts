@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AccountError, type Accounts } from '../accounts/accounts.ts';
 import { originOf } from '../accounts/auth.ts';
-import { isAdmin, requireAdmin } from '../accounts/rights.ts';
+import { adminOnlyMessage, isAdmin, requireAdmin } from '../accounts/rights.ts';
 import type { Sessions } from '../accounts/sessions.ts';
 import type { SetupCodes } from '../accounts/setupCodes.ts';
 import { handleAccountErrors, parseInput } from './auth.ts';
@@ -50,7 +50,7 @@ export function accountRoutes(
       const id = Number(req.params.id);
       const patch = parseInput(accountPatch, req.body);
       const onlyName = Object.keys(patch).every((key) => key === 'name');
-      if (!isAdmin(req) && !(self(req, id) && onlyName)) return reply.code(403).send({ error: 'Only an admin can change this' });
+      if (!isAdmin(req) && !(self(req, id) && onlyName)) return reply.code(403).send({ error: adminOnlyMessage(req) });
       return accounts.update(id, patch);
     }),
   );
@@ -75,7 +75,7 @@ export function accountRoutes(
   app.get<Id>('/api/accounts/:id/sessions', (req, reply) =>
     handleAccountErrors(reply, () => {
       const id = Number(req.params.id);
-      if (!isAdmin(req) && !self(req, id)) return reply.code(403).send({ error: 'Only an admin can see this' });
+      if (!isAdmin(req) && !self(req, id)) return reply.code(403).send({ error: adminOnlyMessage(req) });
       return sessions.list(known(id), req.auth?.session?.id);
     }),
   );
@@ -83,7 +83,7 @@ export function accountRoutes(
   app.delete<{ Params: { id: string; sessionId: string } }>('/api/accounts/:id/sessions/:sessionId', (req, reply) =>
     handleAccountErrors(reply, () => {
       const id = Number(req.params.id);
-      if (!isAdmin(req) && !self(req, id)) return reply.code(403).send({ error: 'Only an admin can change this' });
+      if (!isAdmin(req) && !self(req, id)) return reply.code(403).send({ error: adminOnlyMessage(req) });
       if (!sessions.remove(known(id), Number(req.params.sessionId))) throw new AccountError('No such session', 404);
       return sessions.list(id, req.auth?.session?.id);
     }),

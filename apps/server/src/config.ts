@@ -87,7 +87,7 @@ export function trustProxyOf(value: string | undefined): TrustProxy {
   for (const entry of list) {
     const [address, bits, extra] = entry.split('/');
     const ok = RANGES.has(entry) || (isIP(address!) !== 0 && extra === undefined && (bits === undefined || /^\d{1,3}$/.test(bits)));
-    if (!ok) throw new Error(`Invalid configuration:\n  TRUST_PROXY: "${entry}" is not true, a hop count, an address or a CIDR`);
+    if (!ok) throw new Error(`Invalid configuration:\n  TRUST_PROXY: "${entry}" is not true, an address, a CIDR, loopback, linklocal or uniquelocal`);
   }
   return list;
 }

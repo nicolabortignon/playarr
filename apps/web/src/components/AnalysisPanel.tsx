@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { ApiError, type AnalysisKind, type AnalysisProgress } from '../lib/api';
-import { useAnalysisProgress, useMixSettings, useRunAnalysis, useSaveMixSettings } from '../lib/queries';
+import { useAnalysisProgress, useIsMember, useMixSettings, useRunAnalysis, useSaveMixSettings } from '../lib/queries';
 import { Dialog } from './Dialog';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
 
@@ -204,13 +204,15 @@ export function AnalysisPanel() {
   const { data: p, error } = useAnalysisProgress();
   const settings = useMixSettings();
   const save = useSaveMixSettings();
+  const member = useIsMember();
   if (error && !p) return <p className="text-sm text-red-300/80">{error.message}</p>;
   if (!p) return <Loading />;
 
-  const away = settings.error instanceof ApiError && settings.error.status === 403;
+  // Away from home before setup the settings answer 403; a member gets them but may not change them.
+  const away = member || (settings.error instanceof ApiError && settings.error.status === 403);
   const queue = queueText(p);
   let switchRow: ReactNode = null;
-  if (settings.data) {
+  if (settings.data && !away) {
     switchRow = (
       <Switch
         label="Analyse every song in the library"

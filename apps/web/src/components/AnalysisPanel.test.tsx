@@ -37,6 +37,8 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
  */
 /** Settings answer 403, as they do away from the home network. */
 let away = false;
+/** Signed in as a member: settings answer, but only an admin may change them. */
+let member = false;
 
 function view(...answers: Partial<AnalysisProgress>[]) {
   const asked: string[] = [];
@@ -55,6 +57,11 @@ function view(...answers: Partial<AnalysisProgress>[]) {
       if (url.startsWith('/api/analysis/') && init?.method === 'POST') {
         ran.calls.push({ url, body: JSON.parse(String(init.body)) });
         return ran.answer();
+      }
+      if (url === '/api/auth/me') {
+        return member
+          ? json({ id: 2, username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null, hasPassword: true })
+          : json({ id: 1, username: 'nicola', name: 'Nicola', role: 'admin', canRequest: true, sources: null, hasPassword: true });
       }
       if (url === '/api/settings/mixes') {
         if (init?.method === 'PUT') settings.saved.push(JSON.parse(String(init.body)));
@@ -80,6 +87,7 @@ const findSection = async (title: string) => within(await screen.findByRole('reg
 
 afterEach(() => {
   away = false;
+  member = false;
   cleanup();
   useToasts.setState({ toasts: [] });
   vi.unstubAllGlobals();
@@ -239,6 +247,15 @@ describe('AnalysisPanel', () => {
 
   it('shows progress but no switch or buttons away from home', async () => {
     away = true;
+    view(IDLE);
+    expect(await screen.findByText('Analyses can be started by an admin.')).toBeTruthy();
+    expect(screen.getByText(/^Ready for DJ mix/)).toBeTruthy();
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('shows a member progress but no switch or buttons', async () => {
+    member = true;
     view(IDLE);
     expect(await screen.findByText('Analyses can be started by an admin.')).toBeTruthy();
     expect(screen.getByText(/^Ready for DJ mix/)).toBeTruthy();

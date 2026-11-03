@@ -41,7 +41,9 @@ describe('account routes', () => {
     expect(code.code).toMatch(/^[A-HJKMNP-Z2-9]{8}$/);
     expect(code.link).toBe(`http://nas:4000/redeem?code=${code.code}`);
     expect((await app.inject({ url: '/api/accounts', headers: as(admin) })).json()).toHaveLength(3);
-    expect((await app.inject({ url: '/api/accounts', headers: as(member) })).statusCode).toBe(403);
+    const list = await app.inject({ url: '/api/accounts', headers: as(member) });
+    expect(list.statusCode).toBe(403);
+    expect(list.json()).toEqual({ error: 'Only an admin can see this' });
     expect((await app.inject({ method: 'POST', url: '/api/accounts', headers: as(member), payload: { username: 'x', name: 'X', role: 'admin', canRequest: true, sources: null } })).statusCode).toBe(403);
     const bad = await app.inject({ method: 'POST', url: '/api/accounts', headers: as(admin), payload: { username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null } });
     expect(bad.json()).toEqual({ error: 'That username is taken' });

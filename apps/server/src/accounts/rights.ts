@@ -12,9 +12,12 @@ export function isAdmin(req: FastifyRequest): boolean {
   return req.auth?.account.role === 'admin';
 }
 
+/** Why a member is turned away: reads are something only an admin can see, the rest something only an admin can change. */
+export const adminOnlyMessage = (req: Pick<FastifyRequest, 'method'>) => (req.method === 'GET' || req.method === 'HEAD' ? 'Only an admin can see this' : 'Only an admin can change this');
+
 export async function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
   if (isAdmin(req)) return;
-  return reply.code(403).send({ error: byHomeNetwork(req) ? 'Settings can only be changed from your home network' : 'Only an admin can change this' });
+  return reply.code(403).send({ error: byHomeNetwork(req) ? 'Settings can only be changed from your home network' : adminOnlyMessage(req) });
 }
 
 /** Your own settings (ListenBrainz, your history): yours once signed in; before setup, from the home network. */
