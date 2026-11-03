@@ -4181,8 +4181,11 @@ These are minimal screens for this phase, in the web's words. If phase 1's web s
 - **Accounts sheet**: servers with their accounts. Tap to switch, "Add account", swipe or long-press to sign out, "Add a server". An account whose session ended shows "Signed out", and tapping it leads to its sign-in.
 
 **Files:**
-- Create in `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/`: `RootView.swift`, `SignedInHomeView.swift`, `AccountSwitcherView.swift`, `SignIn/AddServerFlow.swift`, `SignIn/WelcomeView.swift`, `SignIn/SignInView.swift`, `SignIn/RedeemView.swift`, `SignIn/SetupView.swift`, `SignIn/UpdateRequiredView.swift`, `SignIn/TextFields.swift`
-- Modify: `apps/ios/Playarr/PlayarrApp.swift`
+- Create in `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/`: `SignedInHomeView.swift`, `AccountSwitcherView.swift`, `SignIn/AddServerFlow.swift`, `SignIn/WelcomeView.swift`, `SignIn/SignInView.swift`, `SignIn/RedeemView.swift`, `SignIn/SetupView.swift`, `SignIn/UpdateRequiredView.swift`, `SignIn/TextFields.swift`
+- Replace: phase 0's `RootView.swift` (its version screen); delete its test `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/RootViewTests.swift`
+- Modify: `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift` (`empty()` for UI tests), `apps/ios/Playarr/PlayarrApp.swift`, phase 0's UI test `apps/ios/PlayarrUITests/LaunchTests.swift`
+
+Phase 0's version line moves to the foot of "Add a server" (`WelcomeView`, accessibility id `version`), so its UI test still checks that the build number reaches the app. UI tests launch with `-UITests`, which starts the app with no servers and nothing kept (`AppModel.empty()`), so a simulator signed in by hand (Task 18) doesn't change what they see.
 
 SwiftUI screens get no unit tests here: the flows behind them are `AddServerModel` (Task 15) and `ServerStore` (Task 11). The check is that the package builds for the Mac and the iPhone simulator, plus the walk-through in Task 18.
 
@@ -4351,6 +4354,11 @@ struct WelcomeView: View {
                 Text("Or type its address")
             } footer: {
                 if let error = model.error { Text(error).foregroundStyle(.red) }
+            }
+
+            Section {
+            } footer: {
+                Text("Version \(model.appVersion.label)").accessibilityIdentifier("version")
             }
         }
         .navigationTitle("Add a server")
@@ -4675,49 +4683,85 @@ extension AddServerFlow.Start: Identifiable {
 }
 ```
 
-**Step 2: The app opens on the root view and handles playarr:// links**
+**Step 2: An empty app model for UI tests**
 
-Replace the body of `apps/ios/Playarr/PlayarrApp.swift` with the following. Keep phase 0's `@UIApplicationDelegateAdaptor` line if there is one.
+In `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift`, after `live()`:
 
 ```swift
+    /// No servers, and nothing kept: for UI tests (`-UITests`) and previews.
+    public static func empty() -> AppModel {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
+        return AppModel(store: ServerStore(directory: directory, secrets: InMemorySecretStore()), browser: ServerBrowser(), appVersion: .current, device: .current())
+    }
+```
+
+**Step 3: The app opens on the root view and handles playarr:// links**
+
+Replace `apps/ios/Playarr/PlayarrApp.swift` with (phase 0's two-space style):
+
+```swift
+import Foundation
 import PlayarrUI
 import SwiftUI
 
 @main
 struct PlayarrApp: App {
-    @State private var model = AppModel.live()
+  /// UI tests launch with `-UITests`: no servers, and nothing kept between runs.
+  @State private var model = ProcessInfo.processInfo.arguments.contains("-UITests") ? AppModel.empty() : AppModel.live()
 
-    var body: some Scene {
-        WindowGroup {
-            RootView(model: model)
-                .onOpenURL { model.open($0) }
-        }
+  var body: some Scene {
+    WindowGroup {
+      RootView(model: model)
+        .onOpenURL { model.open($0) }
     }
+  }
 }
 ```
 
-**Step 3: Build for the Mac, the simulator, and the app**
+**Step 4: Phase 0's tests follow the new first screen**
+
+Delete `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/RootViewTests.swift` (it tested the version screen; the flows behind the new screens are tested in Tasks 11 and 15). Replace `apps/ios/PlayarrUITests/LaunchTests.swift` with:
+
+```swift
+import XCTest
+
+final class LaunchTests: XCTestCase {
+  @MainActor
+  func testLaunchAsksForAServerAndShowsTheVersion() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-UITests"]
+    app.launch()
+    XCTAssertTrue(app.navigationBars["Add a server"].waitForExistence(timeout: 10))
+    let version = app.staticTexts["version"]
+    XCTAssertTrue(version.exists)
+    XCTAssertTrue(version.label.hasPrefix("Version 1.0.0 ("), version.label)
+  }
+}
+```
+
+**Step 5: Build for the Mac, the simulator, and the app**
 
 ```bash
-swift build --package-path apps/ios/Packages/PlayarrUI
-swift build --package-path apps/ios/Packages/PlayarrUI --triple arm64-apple-ios26.0-simulator --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" --scratch-path /tmp/playarr-ui-ios
+swift build --disable-sandbox --package-path apps/ios/Packages/PlayarrUI
+swift build --disable-sandbox --package-path apps/ios/Packages/PlayarrUI --triple arm64-apple-ios26.0-simulator --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" --scratch-path /tmp/playarr-ui-ios
 make -C apps/ios build
 ```
 
 Expected: all three build with no errors and no warnings from these files. The iOS-only text-field modifiers are behind `#if os(iOS)` in `TextFields.swift`, and `DeviceInfo`'s UIKit use in PlayarrAPI is too.
 
-**Step 4: Run every iOS test**
+**Step 6: Run every iOS test**
 
 ```bash
 make -C apps/ios test
 ```
 
-Expected: all package suites and the app's tests pass.
+Expected: the scripts' tests, all package suites and the UI test pass (`** TEST SUCCEEDED **`).
 
-**Step 5: Commit**
+**Step 7: Commit**
 
 ```bash
-git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI apps/ios/Playarr/PlayarrApp.swift
+git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI apps/ios/Playarr/PlayarrApp.swift apps/ios/PlayarrUITests/LaunchTests.swift docs/plans/2026-11-03-ios-phase2-api-sign-in.md
+git rm apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/RootViewTests.swift
 git commit -F - <<'MSG'
 iOS: add a server, sign in, redeem a setup code or claim the server, and switch accounts
 

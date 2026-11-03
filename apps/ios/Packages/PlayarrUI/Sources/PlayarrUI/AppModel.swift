@@ -26,6 +26,12 @@ public final class AppModel {
         AppModel(store: .live(), browser: ServerBrowser(), appVersion: .current, device: .current())
     }
 
+    /// No servers, and nothing kept: for UI tests (`-UITests`) and previews.
+    public static func empty() -> AppModel {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
+        return AppModel(store: ServerStore(directory: directory, secrets: InMemorySecretStore()), browser: ServerBrowser(), appVersion: .current, device: .current())
+    }
+
     /// playarr:// links: redeem a setup code.
     public func open(_ url: URL) {
         if let link = RedeemLink(url) { redeemLink = link }
