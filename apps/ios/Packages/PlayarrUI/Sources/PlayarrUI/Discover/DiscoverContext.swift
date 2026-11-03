@@ -11,6 +11,8 @@ public final class DiscoverContext {
   public private(set) var health: HealthStatus?
   public let requests: RequestsModel
   public let musicBrainz: MusicBrainzStatusModel
+  /// Show metadata and Edit mix points.
+  public let sheets = TrackSheets()
   /// Bumped when a family of answers goes stale: views reload with `.task(id: context.generation(.discover))`.
   public private(set) var generations: [CacheFamily: Int] = [:]
 

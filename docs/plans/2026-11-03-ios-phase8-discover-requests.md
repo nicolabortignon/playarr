@@ -5663,6 +5663,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `trackSheets(player:active:)` (internal) is put on the signed-in app and again inside Now Playing (Task 21), since a sheet can't be presented under the full-screen cover: `active` says which one presents. The models get `context.api`. The settings and phase 5's `mixPointsChanged` are handed to `TrackSheets` by `AccountSession` (Task 21), not by the modifier's task.
+
 ---
 ### Task 21: Put it in the app: the account's context, and phase 4 and 6's slots
 
