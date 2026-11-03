@@ -5774,6 +5774,9 @@ public struct StatsForNerdsOverlay: View {
   let toasts: ToastCenter
   let metadata: @Sendable (Int) async -> TrackMetadata?
 
+  /// Labels and the summary: a plain colour, as `.secondary` is vibrant over the panel's material and all but vanishes.
+  static let dim = Color.primary.opacity(0.6)
+
   @State private var open = true
   @State private var offset: CGSize = .zero
   @State private var dragStart: CGSize?
@@ -5842,7 +5845,7 @@ public struct StatsForNerdsOverlay: View {
                 Grid(alignment: .topLeading, horizontalSpacing: 8, verticalSpacing: 1) {
                   ForEach(group.rows) { row in
                     GridRow {
-                      Text(row.label).foregroundStyle(.secondary).frame(width: 92, alignment: .leading)
+                      Text(row.label).foregroundStyle(Self.dim).frame(width: 92, alignment: .leading)
                       value(row.value)
                     }
                   }
@@ -5868,6 +5871,8 @@ public struct StatsForNerdsOverlay: View {
       Text("Stats for nerds".uppercased())
         .font(.system(size: 10, design: .monospaced))
         .tracking(2)
+        .lineLimit(1)
+        .fixedSize()
       if let beat {
         HStack(spacing: 4) {
           ForEach(1...4, id: \.self) { b in
@@ -5880,7 +5885,7 @@ public struct StatsForNerdsOverlay: View {
       }
       Text(open ? "" : summary)
         .lineLimit(1)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Self.dim)
         .frame(maxWidth: .infinity, alignment: .trailing)
       Button(open ? "Collapse" : "Expand", systemImage: open ? "minus" : "plus") { open.toggle() }
         .labelStyle(.iconOnly)
@@ -6010,10 +6015,10 @@ and add to `AppShell`, after `body`:
 
 ```bash
 swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrUI 2>&1 | tail -1
-make -C apps/ios test
+make -C apps/ios test SIMULATOR="Playarr P5"
 ```
 
-Expected: everything passes: scripts, the three packages and the app's UI tests.
+Expected: everything passes: scripts, the three packages and the app's UI tests. (A simulator of your own, so parallel work doesn't share one: `xcrun simctl create "Playarr P5" "iPhone 17 Pro"`.)
 
 **Step 4: Look at it**
 
@@ -6023,6 +6028,8 @@ In the simulator, turn on Settings → Appearance → Stats for nerds and play s
 - It drags anywhere on screen but not off it, and collapses to its summary line.
 - After a mix, Playback shows "Mix in" and "Mix out", each with its sample, song time and headroom.
 - × turns it off with the toast "Stats for nerds is off: it’s in Settings → Appearance." and Undo brings it back.
+
+Without a server, the demo library (`-UITests -UITestsDemo`, Settings → Playback → DJ mix and Settings → Appearance → Stats for nerds) shows all of this but the mixes. Its labels and the collapsed summary are a plain colour (`dim`): `.secondary` is vibrant over the panel's `.ultraThinMaterial` and all but vanished there, and the title keeps to one line.
 
 **Step 5: Commit**
 

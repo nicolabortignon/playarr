@@ -24,8 +24,10 @@ struct AppShell: View {
     .nowPlayingCover(isPresented: $router.nowPlaying) {
       NowPlayingView(session: session).environment(session).environment(model.theme).environment(model.appearance)
         .overlay(alignment: .top) { ToastsView().environment(model.toasts).environment(model.theme) }
+        .overlay { stats }
     }
     .overlay(alignment: .top) { ToastsView() }
+    .overlay { stats }
     .sheet(isPresented: Binding(get: { model.showingAccounts }, set: { model.showingAccounts = $0 })) { AccountSwitcherView(model: model) }
     // Settings → Appearance → Motion: Reduced keeps animations to a minimum, whatever the device says.
     .transaction { if model.appearance.reduceMotion(system: systemReduceMotion) { $0.animation = nil } }
@@ -42,6 +44,13 @@ struct AppShell: View {
     .onChange(of: session.player.notice) { _, notice in
       if let notice { model.toasts.push(notice.text, tone: notice.isError ? .error : .info) }
     }
+  }
+
+  /// Settings → Appearance → Stats for nerds.
+  private var stats: some View {
+    StatsForNerdsOverlay(
+      player: session.player, appearance: model.appearance, toasts: model.toasts,
+      metadata: { [api = session.api] id in try? await api.send(API.Library.trackMetadata(id: id)) })
   }
 
   @ViewBuilder private func root(_ tab: AppTab) -> some View {
