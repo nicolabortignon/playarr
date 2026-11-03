@@ -231,100 +231,16 @@ MSG
 
 ---
 
-### Task 2: Test helpers: queries and held answers in `FakeAPI`, a gate, phase 6's songs, and the polling loop
+### Task 2: Test helpers: phase 6's songs, and the polling loop
 
-The mix tests need to see the `?tz=` each call sent, and the favorites tests need an answer held back to look at the heart before the server answers. `FakeAPI` gains `queries(_:_:)` and `before(_:)`; `Gate` holds a call until the test opens it. `Polling.run` is phase 9's loop (its Task 2 has the same code): phase 6 is built first, so it adds it under `UI/Support/`, where phase 9 should find it instead of making another (see the convention note at the end).
+The mix tests need to see the `?tz=` each call sent, and the favorites tests need an answer held back to look at the heart before the server answers. Phase 8 already gave the shared `FakeAPI` both: `queries(_:_:_:)` (the values one query parameter took, in order: `api.queries(.get, "/api/mixes", "tz") == ["Europe/Rome"]`) and `hold(_:_:until:)` with its `Gate` (each held call waits for one `gate.open()`). Phase 6 reuses them; it adds no `FakeAPI.queries(_:_:)`, `before(_:)` or second `Gate` (an earlier draft of this plan did, before phase 8 landed). `Polling.run` is phase 9's loop (its Task 2 has the same code): phase 6 is built first, so it adds it under `UI/Support/`, where phase 9 should find it instead of making another (see the convention note at the end).
 
 **Files:**
-- Modify: `UITests/Support/FakeAPI.swift`
-- Create: `UITests/Support/Gate.swift`, `UITests/Support/Listening.swift`
+- Create: `UITests/Support/Listening.swift`
 - Create: `UI/Support/Polling.swift`
 - Test: `UITests/PollingTests.swift`
 
-**Step 1: Write the test doubles and the failing test**
-
-In `UITests/Support/FakeAPI.swift`, the state remembers queries and a hook:
-
-Replace:
-
-```swift
-  private struct State {
-    var answers: [String: [Answer]] = [:]
-    var calls: [Call] = []
-  }
-```
-
-with:
-
-```swift
-  private struct State {
-    var answers: [String: [Answer]] = [:]
-    var calls: [Call] = []
-    /// Each call's query string, by "METHOD path" ("tz=Europe/Rome").
-    var queries: [String: [String]] = [:]
-    var before: (@Sendable (Call) async -> Void)?
-  }
-```
-
-and `send` records the query, then runs the hook before answering (the rest of `send` stays):
-
-Replace:
-
-```swift
-  func send<T: Decodable & Sendable>(_ endpoint: Endpoint<T>) async throws -> T {
-    let body = try endpoint.bodyData().map(Self.sorted)
-    let answer: Answer? = state.withLock { state in
-      state.calls.append(Call(method: endpoint.method, path: endpoint.path, body: body))
-      let key = key(endpoint.method, endpoint.path)
-```
-
-with:
-
-```swift
-  /// The query strings sent to `method path`, in order ("tz=Europe/Rome").
-  func queries(_ method: HTTPMethod, _ path: String) -> [String] {
-    state.withLock { $0.queries[key(method, path)] ?? [] }
-  }
-
-  /// Runs before each answer, after the call is recorded: a test holds an answer back with a `Gate`.
-  func before(_ hook: @escaping @Sendable (Call) async -> Void) {
-    state.withLock { $0.before = hook }
-  }
-
-  func send<T: Decodable & Sendable>(_ endpoint: Endpoint<T>) async throws -> T {
-    let body = try endpoint.bodyData().map(Self.sorted)
-    let call = Call(method: endpoint.method, path: endpoint.path, body: body)
-    let before = state.withLock { state in
-      state.calls.append(call)
-      state.queries[key(endpoint.method, endpoint.path), default: []]
-        .append(endpoint.query.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&"))
-      return state.before
-    }
-    await before?(call)
-    let answer: Answer? = state.withLock { state in
-      let key = key(endpoint.method, endpoint.path)
-```
-
-`apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/Support/Gate.swift`:
-
-```swift
-/// Holds callers back until a test opens it: an answer from `FakeAPI` that hasn't arrived yet.
-actor Gate {
-  private var open = false
-  private var waiting: [CheckedContinuation<Void, Never>] = []
-
-  func wait() async {
-    if open { return }
-    await withCheckedContinuation { waiting.append($0) }
-  }
-
-  func release() {
-    open = true
-    for continuation in waiting { continuation.resume() }
-    waiting = []
-  }
-}
-```
+**Step 1: Write the fixtures and the failing test**
 
 `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/Support/Listening.swift`:
 
@@ -466,9 +382,9 @@ Expected: `Test run with 2 tests in 1 suite passed`.
 **Commit**
 
 ```bash
-git add apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/Support/FakeAPI.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/Support/Gate.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/Support/Listening.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/PollingTests.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Support/Polling.swift
+git add apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/Support/Listening.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/PollingTests.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Support/Polling.swift
 git commit -F - <<'MSG'
-iOS: a polling loop for screens that follow the server, and test helpers to see queries and hold answers back
+iOS: a polling loop for screens that follow the server, and phase 6's test songs, playlists and mixes
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 MSG
