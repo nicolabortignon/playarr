@@ -101,6 +101,7 @@ const matcher = new Matcher({
     release: async (id) => toReleaseInfo(await musicbrainz.release(id, undefined, { background: true })),
     searchArtists: (name) => musicbrainz.searchArtists(name, undefined, { background: true }),
     searchReleasesOfArtist: (artistMbid, album) => musicbrainz.searchReleasesOfArtist(artistMbid, album, undefined, { background: true }),
+    searchRecordings: (artist, title, seconds) => musicbrainz.searchRecordingsNear(artist, title, seconds, undefined, { background: true }),
   },
   acoustid: new AcoustId(() => store.appSetting(ACOUSTID_KEY) || undefined),
   fingerprint: (sourceId, path) => folders.get(sourceId)?.fingerprint?.(path) ?? Promise.resolve(null),

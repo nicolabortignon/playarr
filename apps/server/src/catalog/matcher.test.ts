@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { MbReleaseHit } from '../discover/musicbrainz.ts';
+import type { MbRecordingHit, MbReleaseHit } from '../discover/musicbrainz.ts';
 import type { AcoustIdMatch } from './acoustid.ts';
 import { groupFiles, Matcher } from './matcher.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
@@ -44,6 +44,33 @@ const mezzanineFiles = {
   'Massive Attack/Mezzanine/01 Angel.flac': { duration: 380 },
   'Massive Attack/Mezzanine/02 Risingson.flac': { duration: 298 },
 };
+
+/** A compilation's song as MusicBrainz finds it: on its studio album by that artist. */
+const recordingOf = (artist: string, title: string, album: string, seconds = 240): MbRecordingHit => ({
+  id: `rec-${title}`,
+  score: 100,
+  title,
+  length: seconds * 1000,
+  'artist-credit': [{ name: artist, artist: { id: `art-${artist}`, name: artist } }],
+  releases: [
+    {
+      id: `rel-${album}`,
+      title: album,
+      status: 'Official',
+      date: '2002-07-09',
+      'release-group': { id: `rg-${album}`, title: album, 'primary-type': 'Album', 'secondary-types': [] },
+      media: [{ position: 1, 'track-offset': 0, track: [{ id: 't', number: '1' }] }],
+    },
+  ],
+});
+
+const hitsFolder = {
+  '01. Red Hot Chili Peppers - Can’t Stop.mp3': { artist: 'Red Hot Chili Peppers', title: 'Can’t Stop', duration: 240 },
+  '03. Coldplay - Yellow.mp3': { artist: 'Coldplay', title: 'Yellow', duration: 240 },
+  '99. Nobody - Unknown.mp3': { artist: 'Nobody', title: 'Unknown', duration: 240 },
+};
+const hitsTags = (t: Partial<TagInfo>) => ({ ...t, albumArtist: 'Various Artists', album: '00s Hits - 100 Top Songs' });
+const albums: Record<string, string> = { 'Can’t Stop': 'By the Way', Yellow: 'Parachutes' };
 
 describe('groupFiles', () => {
   it('groups files by album, and loose files by folder; skips files already identified', () => {
@@ -113,6 +140,68 @@ describe('Matcher', () => {
       state: 'auto',
       overlay: { recordingMbid: 'rec-1', releaseGroupMbid: 'rg-1', album: 'Mezzanine', title: 'Angel' },
     });
+  });
+
+  it('matches a compilation no release fits song by song, each under its own album', async () => {
+    const files = Object.fromEntries(Object.entries(hitsFolder).map(([rel, t]) => [rel, hitsTags(t)]));
+    const { matcher, store, sourceId, mb } = setup(files, { hits: [] });
+    const searchRecordings = vi.fn(async (artist: string, title: string) => (albums[title] ? [recordingOf(artist, title, albums[title])] : []));
+    Object.assign(mb, { searchRecordings });
+    await matcher.matchSource(sourceId);
+    expect(searchRecordings).toHaveBeenCalledWith('Coldplay', 'Yellow', 240);
+    expect(store.matches(sourceId).get('03. Coldplay - Yellow.mp3')).toMatchObject({
+      state: 'auto',
+      overlay: { recordingMbid: 'rec-Yellow', album: 'Parachutes', albumArtist: 'Coldplay', releaseGroupMbid: 'rg-Parachutes', trackNumber: 1 },
+    });
+    // Just the song: no release, so the album's other songs aren't listed as missing.
+    expect(store.matches(sourceId).get('03. Coldplay - Yellow.mp3')!.overlay!.releaseId).toBeUndefined();
+    expect(store.matches(sourceId).get('99. Nobody - Unknown.mp3')!.state).toBe('unmatched');
+
+    // The song left over goes up for review alone; ignoring it leaves the others matched.
+    const [group] = matcher.reviewGroups(sourceId);
+    expect(group!.files.map((f) => f.rel)).toEqual(['99. Nobody - Unknown.mp3']);
+    matcher.ignore(sourceId, group!.groupKey);
+    expect(store.matches(sourceId).get('99. Nobody - Unknown.mp3')!.state).toBe('ignored');
+    expect(store.matches(sourceId).get('01. Red Hot Chili Peppers - Can’t Stop.mp3')).toMatchObject({ state: 'auto', overlay: { album: 'By the Way' } });
+  });
+
+  it('keeps the songs found when MusicBrainz fails for one, and tries that one again after the next scan', async () => {
+    const files = Object.fromEntries(Object.entries(hitsFolder).map(([rel, t]) => [rel, hitsTags(t)]));
+    const { matcher, store, sourceId, mb } = setup(files, { hits: [] });
+    const searchRecordings = vi.fn(async (artist: string, title: string) => {
+      if (title === 'Yellow') throw new Error('MusicBrainz 503 for /recording');
+      return albums[title] ? [recordingOf(artist, title, albums[title])] : [];
+    });
+    Object.assign(mb, { searchRecordings });
+    await matcher.matchSource(sourceId);
+    expect(store.matches(sourceId).get('01. Red Hot Chili Peppers - Can’t Stop.mp3')!.state).toBe('auto');
+    expect(store.matches(sourceId).has('03. Coldplay - Yellow.mp3')).toBe(false);
+    searchRecordings.mockClear();
+    await matcher.matchSource(sourceId);
+    expect(searchRecordings.mock.calls).toEqual([['Coldplay', 'Yellow', 240]]);
+  });
+
+  it('tells a compilation by its songs’ artists, whoever the album artist is', async () => {
+    const files = {
+      'Mix/01 Yellow.mp3': { artist: 'Coldplay', title: 'Yellow', album: 'Summer mix', albumArtist: 'Me', duration: 240 },
+      'Mix/02 Can’t Stop.mp3': { artist: 'Red Hot Chili Peppers', title: 'Can’t Stop', album: 'Summer mix', albumArtist: 'Me', duration: 240 },
+    };
+    const { matcher, store, sourceId, mb } = setup(files);
+    Object.assign(mb, { searchRecordings: vi.fn(async (artist: string, title: string) => [recordingOf(artist, title, albums[title]!)]) });
+    await matcher.matchSource(sourceId);
+    expect(store.matches(sourceId).get('Mix/02 Can’t Stop.mp3')).toMatchObject({ state: 'auto', overlay: { album: 'By the Way' } });
+  });
+
+  it('keeps one artist’s album MusicBrainz half knows together, for review', async () => {
+    const files = {
+      'Coldplay/Demos/01 Yellow.mp3': { artist: 'Coldplay', title: 'Yellow', album: 'Demos', duration: 240 },
+      'Coldplay/Demos/02 Shiver demo.mp3': { artist: 'Coldplay', title: 'Shiver demo', album: 'Demos' },
+      'Coldplay/Demos/03 Untitled.mp3': { artist: 'Coldplay', title: 'Untitled', album: 'Demos' },
+    };
+    const { matcher, store, sourceId, mb } = setup(files, { hits: [] });
+    Object.assign(mb, { searchRecordings: vi.fn(async (artist: string, title: string) => (albums[title] ? [recordingOf(artist, title, albums[title])] : [])) });
+    await matcher.matchSource(sourceId);
+    expect([...store.matches(sourceId).values()].map((m) => m.state)).toEqual(['unmatched', 'unmatched', 'unmatched']);
   });
 
   it('leaves files unmatched when nothing fits', async () => {

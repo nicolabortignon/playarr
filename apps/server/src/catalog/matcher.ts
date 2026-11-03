@@ -1,16 +1,19 @@
 import type { ReviewCandidate, ReviewGroup } from '@playarr/shared';
 import { posix } from 'node:path';
-import type { MbReleaseHit } from '../discover/musicbrainz.ts';
+import type { MbRecordingHit, MbReleaseHit } from '../discover/musicbrainz.ts';
 import { coverArtArchive, remoteArtUrl } from '../discover/art.ts';
 import { normalize } from '../library/search.ts';
 import type { AcoustIdMatch, Fingerprint } from './acoustid.ts';
 import { describeFile } from './folder.ts';
 import { scoreRelease, verdict, type FileFacts, type ReleaseScore } from './match.ts';
 import { formatSummary, type MbReleaseInfo } from './mbRelease.ts';
+import { bareTitle, isVariousArtists, leadArtist, songMatch } from './songMatch.ts';
 import type { CatalogStore } from './store.ts';
 import type { MatchOverlay, MatchRecord, TagInfo } from './tags.ts';
 
 export interface GroupFile extends FileFacts {
+  /** The song's own artist ("Coldplay" on a "Various Artists" compilation). */
+  artist: string;
   path: string;
   size: number;
   mtimeMs: number;
@@ -31,6 +34,8 @@ export interface MatcherDeps {
     /** For files that call the artist by another name MusicBrainz knows them by ("N Sync" for *NSYNC). */
     searchArtists?(name: string): Promise<{ id: string; score: number }[]>;
     searchReleasesOfArtist?(artistMbid: string, album: string): Promise<MbReleaseHit[]>;
+    /** Recordings of one song near that length, for folders no album fits (see bySong). */
+    searchRecordings?(artist: string, title: string, seconds: number): Promise<MbRecordingHit[]>;
   };
   acoustid?: { enabled: boolean; lookup(fp: Fingerprint): Promise<AcoustIdMatch | null> };
   /** A file's fingerprint, computed where the source's files are; null where it can't be. */
@@ -62,7 +67,7 @@ export function groupFiles(
       : `dir:${f.rel.split('/').slice(0, -1).join('/')}`;
     let group = groups.get(key);
     if (!group) groups.set(key, (group = { key, artistName: d.artistName, albumTitle: d.albumTitle, files: [] }));
-    group.files.push({ rel: f.rel, path: posix.join(root, f.rel), size: f.size, mtimeMs: f.mtimeMs, ...pick(d) });
+    group.files.push({ rel: f.rel, artist: f.tags.artist || d.artistName, path: posix.join(root, f.rel), size: f.size, mtimeMs: f.mtimeMs, ...pick(d) });
   }
   return [...groups.values()];
 }
@@ -167,7 +172,7 @@ export class Matcher {
     if (!group) throw new Error('That album isn’t waiting for review any more');
     this.deps.store.saveMatches(
       sourceId,
-      group.files.map((f) => ({
+      this.waiting(sourceId, group).map((f) => ({
         ...this.record(group, f, 'manual'),
         overlay: { albumArtist: names.artist, album: names.album, title: names.titles[f.rel]?.trim() || f.title },
       })),
@@ -179,7 +184,7 @@ export class Matcher {
   ignore(sourceId: number, groupKey: string) {
     const group = this.groupByKey(sourceId, groupKey);
     if (!group) return;
-    this.deps.store.saveMatches(sourceId, group.files.map((f) => this.record(group, f, 'ignored')));
+    this.deps.store.saveMatches(sourceId, this.waiting(sourceId, group).map((f) => this.record(group, f, 'ignored')));
     this.deps.onMatched();
   }
 
@@ -248,7 +253,7 @@ export class Matcher {
           groupKey: key,
           artistName: group.artistName,
           albumTitle: group.albumTitle,
-          files: group.files.map(({ rel, title, trackNumber, discNumber, duration }) => ({ rel, title, trackNumber, discNumber, duration })),
+          files: this.waiting(sourceId, group).map(({ rel, title, trackNumber, discNumber, duration }) => ({ rel, title, trackNumber, discNumber, duration })),
           candidates,
           ...(!candidates.length && notFound.has(key) ? { notFound: true } : {}),
         },
@@ -269,6 +274,19 @@ export class Matcher {
     return groupFiles(root, this.files(sourceId), this.deps.store.matches(sourceId), () => true).find((g) => g.key === groupKey);
   }
 
+  /**
+   * The files a review decision is about: those still waiting for one, so a compilation's songs already
+   * matched one by one keep their match; the whole group when none is waiting.
+   */
+  private waiting(sourceId: number, group: FileGroup): GroupFile[] {
+    const matches = this.deps.store.matches(sourceId);
+    const waiting = group.files.filter((f) => {
+      const state = matches.get(f.rel)?.state;
+      return !state || state === 'review' || state === 'unmatched';
+    });
+    return waiting.length ? waiting : group.files;
+  }
+
   private files(sourceId: number) {
     return [...this.deps.store.folderFiles(sourceId)].map(([rel, f]) => ({ rel, ...f }));
   }
@@ -280,6 +298,12 @@ export class Matcher {
     if (outcome === 'auto') return this.fromAlignment(group, best!, 'auto');
     const byFingerprint = await this.byFingerprint(sourceId, group);
     if (byFingerprint) return byFingerprint;
+    // No album fits the folder as a whole: songs by many artists, or an album MusicBrainz doesn't know.
+    const compilation = isCompilation(group);
+    if (compilation || outcome === 'unmatched') {
+      const bySong = await this.bySong(group, compilation);
+      if (bySong) return bySong;
+    }
     if (outcome === 'review') {
       const ids = scored.slice(0, CANDIDATES).map((s) => s.release.id);
       return group.files.map((f) => ({ ...this.record(group, f, 'review'), candidates: ids, score: best!.score }));
@@ -338,6 +362,39 @@ export class Matcher {
     return found * 2 >= group.files.length ? records : null;
   }
 
+  /**
+   * Each song on its own: its recording found by artist, title and length, filed under the most original
+   * album it's on (songMatch), as just that song rather than the album's whole track list. A compilation
+   * keeps every song found; other folders only when most were, since the rest is likely an album
+   * MusicBrainz lacks, better reviewed whole than scattered.
+   */
+  private async bySong(group: FileGroup, compilation: boolean): Promise<MatchRecord[] | null> {
+    const { searchRecordings } = this.deps.mb;
+    if (!searchRecordings) return null;
+    const records: MatchRecord[] = [];
+    let found = 0;
+    let failed: unknown;
+    for (const f of group.files) {
+      let hits: MbRecordingHit[];
+      try {
+        hits = await searchRecordings(f.artist, bareTitle(f.title), f.duration);
+      } catch (err) {
+        // Left without a row, so tried again after the next scan, while the songs found keep their match.
+        failed = err;
+        continue;
+      }
+      const m = songMatch(f, hits);
+      if (!m) {
+        records.push(this.record(group, f, 'unmatched'));
+        continue;
+      }
+      found++;
+      records.push({ ...this.record(group, f, 'auto'), overlay: m.overlay, score: m.score });
+    }
+    if (!found && failed) throw failed;
+    return found && (compilation || found * 2 >= records.length) ? records : null;
+  }
+
   private fromAlignment(group: FileGroup, scored: ReleaseScore, state: 'auto' | 'manual'): MatchRecord[] {
     const { release } = scored;
     const year = Number(release.releaseGroup.firstReleaseDate?.slice(0, 4)) || undefined;
@@ -364,6 +421,12 @@ export class Matcher {
   private record(group: FileGroup, f: GroupFile, state: MatchRecord['state']): MatchRecord {
     return { rel: f.rel, groupKey: group.key, state, size: f.size, mtimeMs: f.mtimeMs };
   }
+}
+
+/** Songs by many artists under one album name: a compilation, a mixtape, a playlist's folder. */
+function isCompilation(group: FileGroup): boolean {
+  if (isVariousArtists(group.artistName)) return true;
+  return new Set(group.files.map((f) => normalize(leadArtist(f.artist)))).size > 1;
 }
 
 /** Studio album first, then EP, single, soundtrack/compilation, live. */

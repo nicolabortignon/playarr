@@ -31,6 +31,26 @@ export interface MbReleaseHit {
   'artist-credit'?: MbArtistCredit[];
 }
 
+/** A recording search hit with the releases it's on (only the fields used). */
+export interface MbRecordingHit {
+  id: string;
+  score: number;
+  title: string;
+  /** Milliseconds. */
+  length?: number | null;
+  'artist-credit'?: MbArtistCredit[];
+  releases?: {
+    id: string;
+    title: string;
+    status?: string | null;
+    date?: string | null;
+    /** Only where it differs from the recording's. */
+    'artist-credit'?: MbArtistCredit[];
+    'release-group'?: MbReleaseGroup;
+    media?: { position?: number; 'track-offset'?: number; track?: { id: string; number?: string; title?: string }[] }[];
+  }[];
+}
+
 const BASE = 'https://musicbrainz.org/ws/2';
 const MIN_INTERVAL_MS = 1100;
 const CACHE_TTL_MS = 30 * 60_000;
@@ -140,6 +160,18 @@ export class MusicBrainz {
       `/recording?query=${encodeURIComponent(query)}&limit=5`,
       signal,
     ).then((r) => r.recordings);
+  }
+
+  /**
+   * Recordings of a song with the releases they're on, within 5 s of `seconds` when it's known: the
+   * live takes and remixes of a hit mostly run longer or shorter than the file.
+   */
+  searchRecordingsNear(artistName: string, title: string, seconds: number, signal?: AbortSignal, opts?: { background?: boolean }) {
+    const near = seconds > 0 ? ` AND dur:[${Math.max(0, Math.round(seconds) - 5) * 1000} TO ${(Math.round(seconds) + 5) * 1000}]` : '';
+    const query = `recording:"${luceneEscape(title)}" AND artist:"${luceneEscape(artistName)}"${near}`;
+    return this.get<{ recordings: MbRecordingHit[] }>(`/recording?query=${encodeURIComponent(query)}&limit=25`, signal, opts).then(
+      (r) => r.recordings,
+    );
   }
 
   /** Releases (editions) by album title and artist, best match first. */
