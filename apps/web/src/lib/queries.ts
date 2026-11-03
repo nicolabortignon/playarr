@@ -21,7 +21,7 @@ import type {
   UpdateInfo,
   UpdateSettings,
 } from '@playarr/shared';
-import type { MixMap } from '@playarr/mix';
+import { MIX_MAP_VERSION, type MixMap } from '@playarr/mix';
 import { keepPreviousData, queryOptions, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import { api, ApiError, type AnalysisKind } from './api';
@@ -496,15 +496,23 @@ export const useLyrics = (trackId: number, enabled = true) =>
  */
 export const useMixMaps = (recordingIds: string[], enabled = true) => useQuery(mixMapsQuery(recordingIds, enabled));
 
-const mixMapsQuery = (recordingIds: string[], enabled = true) =>
+export const mixMapsQuery = (recordingIds: string[], enabled = true) =>
   queryOptions({
     queryKey: ['mix-maps', ...recordingIds],
     queryFn: () => api.mixMaps(recordingIds),
     enabled: enabled && recordingIds.length > 0,
     staleTime: 60_000,
+    // Songs not measured yet, or measured by an older version (the server measures those again, ahead of
+    // the rest): asked again until they're current, a few times.
     refetchInterval: (q) =>
-      q.state.data && q.state.dataUpdateCount < 5 && recordingIds.some((id) => !q.state.data![id]) ? 60_000 : false,
+      q.state.data && q.state.dataUpdateCount < MIX_MAP_POLLS && recordingIds.some((id) => (q.state.data![id]?.version ?? 0) < MIX_MAP_VERSION)
+        ? MIX_MAP_POLL_MS
+        : false,
   });
+
+/** How often, and how many times, songs whose mix map isn't current are asked for again. */
+const MIX_MAP_POLL_MS = 30_000;
+const MIX_MAP_POLLS = 10;
 
 /** The server answers mix maps for at most this many songs at a time. */
 const MIX_MAPS_PER_REQUEST = 50;
