@@ -105,6 +105,16 @@ public final class NowPlayingBridge {
     publish()
   }
 
+  /// Lets go of the remote commands (the next player registers its own).
+  public func unregister() {
+    let center = MPRemoteCommandCenter.shared()
+    let commands: [MPRemoteCommand] = [
+      center.playCommand, center.pauseCommand, center.togglePlayPauseCommand, center.nextTrackCommand,
+      center.previousTrackCommand, center.changePlaybackPositionCommand, center.likeCommand, center.stopCommand,
+    ]
+    for command in commands { command.removeTarget(nil) }
+  }
+
   private func show(_ data: Data, for trackId: Int) {
     guard artworkTrack == trackId else { return }
     let size = CGSize(width: Self.artworkSize, height: Self.artworkSize)

@@ -191,6 +191,19 @@ public final class Player {
     saved.write(queue)
   }
 
+  /// The account is switched away from: the song so far is reported, the queue saved, the engine stopped, and the lock
+  /// screen and remote commands let go, so the next account's player owns them.
+  public func shutDown() {
+    ticker?.cancel()
+    ticker = nil
+    appWillTerminate()
+    queue.playing = false
+    engine.stop()
+    nowPlaying?.update(track: nil, elapsed: 0, playing: false)
+    nowPlaying?.unregister()
+    nowPlaying = nil
+  }
+
   /// The 10 Hz clock: moves the engine on, the time, the history, the sleep timer's fade; saves where it is every 5 s.
   public func tick(now: Date = Date()) {
     engine.pump()

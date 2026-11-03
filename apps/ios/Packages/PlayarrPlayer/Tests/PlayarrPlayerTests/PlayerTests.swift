@@ -149,4 +149,16 @@ struct PlayerTests {
     player.handle(.oldDeviceUnavailable)
     #expect(!player.queue.playing)
   }
+
+  @Test func shutsDownWhenItsAccountIsSwitchedAway() throws {
+    let directory = temporaryDirectory()
+    let player = try Player.testing(directory: directory)
+    player.play([song(1), song(2)])
+    player.shutDown()
+    #expect(!player.queue.playing)
+    #expect(player.engine.state == .idle)
+    let saved = try #require(JSONFile<QueueState>(directory.appending(path: "queue.json")).read())
+    #expect(saved.queue.count == 2)
+    #expect(saved.pos == 0)
+  }
 }
