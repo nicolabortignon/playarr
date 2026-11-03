@@ -1966,6 +1966,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `DiscoverSearchModel(context:clock:)`. The tab stacks are typed `[Route]`, so `Route` gained `.discoverArtist(mbid:album:)`, `.findArtist(name:album:)` and `.requests` (also `Route(href: "/requests")`), `DiscoverDestination.route` maps each destination to one, and `RouteDestination` shows placeholders for the three until Task 12. Tests read the asked queries from `FakeAPI.queries` and the debounce from `TestClock`; one more says why Discover failed, one more checks `route`.
+
 ---
 
 ### Task 8: Discographies, similar artists and finding an artist by name

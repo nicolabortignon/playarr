@@ -16,6 +16,12 @@ public enum Route: Hashable, Sendable {
   case listening
   case settings
   case settingsPanel(SettingsPanel)
+  /// An artist's MusicBrainz discography (phase 8); `album` brings one of its albums into view.
+  case discoverArtist(mbid: String, album: String?)
+  /// Only a name is known: look it up on MusicBrainz, then show what it leads to (phase 8).
+  case findArtist(name: String, album: String?)
+  /// The albums asked of Lidarr (phase 8).
+  case requests
 
   /// The page at a web path ("/albums/70", "/albums?sort=added"), as "Playing from" links carry; nil if none.
   public init?(href: String) {
@@ -33,6 +39,7 @@ public enum Route: Hashable, Sendable {
     case ("mixes", 1): self = .mixes
     case ("mixes", 2): self = .mix(parts[1])
     case ("stats", 1): self = .listening
+    case ("requests", 1): self = .requests
     case ("settings", 1): self = .settings
     case ("settings", 2):
       if parts[1] == "listening" { self = .listening } else { self = SettingsPanel(rawValue: parts[1]).map(Route.settingsPanel) ?? .settings }

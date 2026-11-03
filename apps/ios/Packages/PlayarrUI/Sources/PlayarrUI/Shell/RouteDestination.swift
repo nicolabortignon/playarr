@@ -20,6 +20,9 @@ struct RouteDestination: View {
     case .mixes: PlaceholderPage(title: "Made for you")  // phase 6
     case .mix: PlaceholderPage(title: "Mix")  // phase 6
     case .listening: PlaceholderPage(title: "Your listening")  // phase 6
+    case .discoverArtist: PlaceholderPage(title: "Artist")  // phase 8, Task 12
+    case .findArtist: PlaceholderPage(title: "Artist")  // phase 8, Task 12
+    case .requests: PlaceholderPage(title: "Requests")  // phase 8, Task 12
     }
   }
 }

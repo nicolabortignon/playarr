@@ -10,6 +10,7 @@ import Testing
     #expect(Route(href: "/albums") == .albums(.artist))
     #expect(Route(href: "/albums?sort=added") == .albums(.added))
     #expect(Route(href: "/playlists/3") == .playlist(3))
+    #expect(Route(href: "/requests") == .requests)
     #expect(Route(href: "/mixes/genre-electronic") == .mix("genre-electronic"))
     #expect(Route(href: "/settings/listening?range=2026") == .listening)
     #expect(Route(href: "/settings/playback") == .settingsPanel(.playback))
