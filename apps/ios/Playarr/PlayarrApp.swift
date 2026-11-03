@@ -14,9 +14,10 @@ struct PlayarrApp: App {
   }
 
   /// UI tests launch with `-UITests` (no servers, nothing kept between runs), plus `-UITestsDemo` to start signed in
-  /// to the demo library, playing silence.
+  /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request.
   static func makeModel() -> AppModel {
     let arguments = ProcessInfo.processInfo.arguments
+    if arguments.contains("-UITestsRequests") { return .demo(requests: true) }
     if arguments.contains("-UITestsDemo") { return .demo() }
     if arguments.contains("-UITests") { return .empty() }
     return .live()

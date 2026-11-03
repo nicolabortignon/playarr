@@ -57,16 +57,19 @@ public final class AppModel {
         return AppModel(store: ServerStore(directory: directory, secrets: InMemorySecretStore()), browser: ServerBrowser(), appVersion: .current, device: .current())
     }
 
-    /// Signed in to the demo library, playing silence: for UI tests (`-UITestsDemo`). Nothing is kept.
-    public static func demo() -> AppModel {
+    /// Signed in to the demo library, playing silence: for UI tests (`-UITestsDemo`). Nothing is kept. `requests`: the
+    /// demo with Lidarr and an album to request, as an account that may request (`-UITestsRequests`, `DemoRequestsAPI`).
+    public static func demo(requests: Bool = false) -> AppModel {
         let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
         let store = ServerStore(directory: directory, secrets: InMemorySecretStore())
-        try? store.signedIn(SignInResponse(token: "demo", account: Demo.account), server: Demo.server, at: Demo.baseURL)
+        let account = requests ? DemoRequestsAPI.account : Demo.account
+        let api: any APISending = requests ? DemoRequestsAPI() : DemoAPI()
+        try? store.signedIn(SignInResponse(token: "demo", account: account), server: Demo.server, at: Demo.baseURL)
         let defaults = UserDefaults(suiteName: "playarr-demo-\(UUID().uuidString)") ?? .standard
         let model = AppModel(
             store: store, browser: ServerBrowser(), appVersion: .current, device: .current(),
             playback: PlaybackSettings(defaults: defaults), appearance: AppearanceSettings(defaults: defaults),
-            makeSession: { record, model in try AccountSession.demo(record, model: model) })
+            makeSession: { record, model in try AccountSession.demo(record, model: model, api: api) })
         model.syncSession()
         return model
     }

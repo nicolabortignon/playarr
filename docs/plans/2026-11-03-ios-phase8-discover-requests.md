@@ -6112,6 +6112,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** no `UITestServer` (URLProtocol, `PLAYARR_UI_STUB`): phase 4's UI tests already run against the in-app demo (`-UITestsDemo`, `DemoAPI`), so `DemoRequestsAPI` (`Demo/DemoRequestsAPI.swift`) answers the flow over the demo library (Lidarr present, "Heligoland" by Massive Attack to find, searching once requested, in the library from the second look at the requests) for an account that may request, behind `-UITestsRequests` (`AppModel.demo(requests:)`, `PlayarrApp.makeModel`). The album isn't the demo's own Mezzanine, which is already in its library. `DemoRequestsAPITests` unit-tests the flow; `RequestingTests` submits the search with the keyboard's Search (the floating field would cover the results), matches the upper-case request controls by label case-insensitively, and unfolds the tab bar (Search folds the other tabs into one button) before Library. It needed the polling fix of the commit before (a request polls every 10 s at once).
+
 ---
 
 ### Task 23: Record this phase's names in the conventions
