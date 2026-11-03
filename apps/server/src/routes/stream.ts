@@ -5,6 +5,7 @@ import { LOUDNESS_RATE } from '../analysis/loudness.ts';
 import { FileAccessError, type FileResolver } from '../catalog/files.ts';
 import type { FileRecord } from '../catalog/build.ts';
 import type { Library } from '../library/library.ts';
+import { libraryOf } from '../accounts/rights.ts';
 import { mimeForPath } from '../library/format.ts';
 import { MediaUnavailableError, type MediaSource } from '../media/index.ts';
 import { seeksInexactly } from '../media/source.ts';
@@ -15,15 +16,15 @@ const MAX_GAIN_DB = 20;
 
 export function streamRoutes(
   app: FastifyInstance,
-  deps: { library: Library; files: FileResolver; loudness?: Pick<Analyzer, 'loudnessOfFile' | 'remeasureLoudness'> },
+  deps: { library: Pick<Library, 'file'> & Partial<Pick<Library, 'view'>>; files: FileResolver; loudness?: Pick<Analyzer, 'loudnessOfFile' | 'remeasureLoudness'> },
 ) {
   const { library } = deps;
 
   /** The library file asked for, where it lives, and its size and time; or the error already sent. */
   async function open(req: FastifyRequest<{ Params: { fileId: string } }>, reply: FastifyReply) {
     const fileId = Number(req.params.fileId);
-    // Only serve files Lidarr knows about: the client never supplies a path.
-    const file = Number.isInteger(fileId) ? await library.file(fileId) : undefined;
+    // Only files of songs the account may hear, as the catalog knows them: the client never supplies a path.
+    const file = Number.isInteger(fileId) ? await libraryOf(library, req).file(fileId) : undefined;
     if (!file) return void reply.code(404).send({ error: 'Unknown track file' });
 
     // Defense in depth: never read outside the source's folder or the configured roots.

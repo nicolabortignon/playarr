@@ -19,7 +19,7 @@ import {
 import type { Track } from '@playarr/shared';
 import { trimCacheDir } from '../cacheDir.ts';
 import type { FileResolver } from '../catalog/files.ts';
-import type { Library } from '../library/library.ts';
+import type { Library, LibraryView } from '../library/library.ts';
 import { lowPriority } from '../lowPriority.ts';
 import { seeksInexactly, type MediaSource } from '../media/source.ts';
 
@@ -163,6 +163,8 @@ export interface TransitionRequest {
    * transition between them is at the same levels. Left out (or 0): each at its own volume.
    */
   levels?: { a: number; b: number };
+  /** Where to look the two songs up: the asking account's view of the library; the whole library otherwise. */
+  library?: Pick<LibraryView, 'track'>;
 }
 
 export type TransitionAnswer =
@@ -302,8 +304,9 @@ export class Transitions {
     }
   }
 
-  async request({ fromTrackId, toTrackId, mode, aPosition, fromFileId, toFileId, fadeSeconds, albumQueue, levels: asked }: TransitionRequest): Promise<TransitionAnswer> {
-    const [a, b] = await Promise.all([this.opts.library.track(fromTrackId), this.opts.library.track(toTrackId)]);
+  async request({ fromTrackId, toTrackId, mode, aPosition, fromFileId, toFileId, fadeSeconds, albumQueue, levels: asked, library }: TransitionRequest): Promise<TransitionAnswer> {
+    const songs = library ?? this.opts.library;
+    const [a, b] = await Promise.all([songs.track(fromTrackId), songs.track(toTrackId)]);
     if (!a || !b) return { status: 'unavailable', reason: 'Unknown song' };
     if ((fromFileId !== undefined && fromFileId !== a.fileId) || (toFileId !== undefined && toFileId !== b.fileId)) {
       return { status: 'unavailable', reason: 'The song’s file changed since it was queued' };
@@ -378,6 +381,12 @@ export class Transitions {
   /** The file behind a transition URL's name, or undefined for any name this service doesn't make. */
   filePath(name: string): string | undefined {
     return CACHE_FILE.test(name) ? join(this.dir, name) : undefined;
+  }
+
+  /** The two songs (recordings) a transition file joins, for checking who may hear it. */
+  recordingsOf(name: string): [string, string] | undefined {
+    const sidecar = CACHE_FILE.test(name) ? this.index.get(name.slice(0, 40)) : undefined;
+    return sidecar && [sidecar.aRecording, sidecar.bRecording];
   }
 
   /**

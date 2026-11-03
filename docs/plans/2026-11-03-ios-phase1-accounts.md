@@ -3924,7 +3924,7 @@ The deps become:
   deps: {
     transitions?: Pick<Transitions, 'request' | 'filePath'> & Partial<Pick<Transitions, 'recordingsOf'>>;
     /** The library, narrowed to each account's sources for planning and serving. */
-    library?: Pick<Library, 'trackByRecording'> & Partial<Pick<Library, 'view'>>;
+    library?: Pick<Library, 'track' | 'trackByRecording'> & Partial<Pick<Library, 'view'>>;
     unavailableReason?: string;
   },
 ```
@@ -3963,6 +3963,8 @@ corepack pnpm -C apps/server typecheck
 ```
 
 Expected: PASS (the existing stream and transition route tests run without accounts and are unchanged).
+
+*As executed:* the transition routes' `library` needs `track` as well as `trackByRecording` (the view handed to `transitions.request` is typed from it); the plan's snippet above is corrected. Everything else fitted as written once found by content.
 
 **Step 5: Commit**
 

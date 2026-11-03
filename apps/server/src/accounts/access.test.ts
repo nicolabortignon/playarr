@@ -1,18 +1,26 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import type { Album, Artist, Track } from '@playarr/shared';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import type { Analyzer } from '../analysis/analyzer.ts';
+import type { FileResolver } from '../catalog/files.ts';
 import { CatalogStore } from '../catalog/store.ts';
-import { CC_REC, freshDb, mezzanine, MP3 } from '../catalog/testFixtures.ts';
+import { CC_REC, freshDb, mezzanine, MP3, tempDir } from '../catalog/testFixtures.ts';
 import type { Config } from '../config.ts';
-import type { LidarrClient } from '../lidarr/client.ts';
 import { Library } from '../library/library.ts';
+import type { LidarrClient } from '../lidarr/client.ts';
 import type { MediaSource } from '../media/index.ts';
 import { apiRoutes } from '../routes/api.ts';
+import { artRoutes, type LocalArt } from '../routes/art.ts';
 import { levelRoutes } from '../routes/levels.ts';
 import { lyricsRoutes } from '../routes/lyrics.ts';
 import { metadataRoutes } from '../routes/metadata.ts';
 import { mixMapRoutes } from '../routes/mixMaps.ts';
+import { streamRoutes } from '../routes/stream.ts';
+import { transitionRoutes } from '../routes/transitions.ts';
+import type { TransitionAnswer } from '../transitions/transitions.ts';
 import { account, actAs, asAccount, twoSources } from './testAccess.ts';
 
 /** Account 1 is an admin hearing everything; 2 hears only the Creative Commons folder; 3 only Lidarr. */
@@ -133,5 +141,70 @@ describe('library access: the catalog', () => {
     expect((await s.get(cues, 3)).json()).toEqual({});
     expect((await s.get(cues, 2)).json()).toEqual({ mixIn: 1 });
     expect((await s.app.inject({ method: 'PUT', url: cues, headers: asAccount(3), payload: { mixIn: 2 } })).statusCode).toBe(404);
+  });
+});
+
+describe('library access: files', () => {
+  const media = {
+    kind: 'local',
+    stat: async () => ({ size: 4, mtimeMs: 1 }),
+    open: async () => Readable.from([Buffer.from('flac')]),
+    pcmStream: () => Readable.from([Buffer.alloc(8)]),
+  } as unknown as MediaSource;
+  const files = { resolve: () => ({ media, path: '/music/song.flac' }) } as unknown as FileResolver;
+
+  it('streams only files of songs the account may hear, levelled or not', async () => {
+    const s = await setup();
+    const measured = { recordingId: 'rec-1', fileId: 9000, lufs: -9, peak: -1, samples: 2, size: 4, mtimeMs: 1 };
+    streamRoutes(s.app, { library: s.library, files, loudness: { loudnessOfFile: () => measured, remeasureLoudness: vi.fn() } });
+    expect((await s.get('/stream/9000', 2)).json()).toEqual({ error: 'Unknown track file' });
+    expect((await s.get('/stream/9000', 3)).statusCode).toBe(200);
+    expect((await s.get('/stream/9000/levelled.wav?gain=0', 2)).json()).toEqual({ error: 'Unknown track file' });
+    expect((await s.get('/stream/9000/levelled.wav?gain=0', 3)).statusCode).toBe(200);
+  });
+
+  it('serves artwork only of albums, artists and files the account may see', async () => {
+    const s = await setup();
+    const { dir, cleanup } = tempDir();
+    try {
+      const original = vi.fn(async () => ({ body: Buffer.from('jpeg'), mime: 'image/jpeg' }));
+      artRoutes(s.app, { art: { original } as unknown as LocalArt, cacheDir: dir, library: s.library, files, folders: { get: () => undefined } });
+      expect((await s.get('/art/album/70/cover', 2)).statusCode).toBe(404);
+      expect(original).not.toHaveBeenCalled();
+      expect((await s.get('/art/album/70/cover', 3)).body).toBe('jpeg');
+      expect((await s.get('/art/copy/9000', 2)).json()).toEqual({ error: 'Unknown file' });
+      // Account 3 may: the file is found, and only then turns out to have no folder to draw from.
+      expect((await s.get('/art/copy/9000', 3)).json()).toEqual({ error: 'No artwork' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('plans transitions from the account’s songs, and serves a transition file only when it may hear both', async () => {
+    const s = await setup();
+    const { dir, cleanup } = tempDir();
+    try {
+      const both = 'a'.repeat(40);
+      const ccOnly = 'c'.repeat(40);
+      for (const key of [both, ccOnly]) writeFileSync(join(dir, `${key}.flac`), 'audio');
+      const request = vi.fn(async (): Promise<TransitionAnswer> => ({ status: 'unavailable', reason: 'Unknown song' }));
+      transitionRoutes(s.app, {
+        transitions: {
+          request,
+          filePath: (name) => join(dir, name),
+          recordingsOf: (name) => (name.startsWith('a') ? ['rec-1', CC_REC] : [CC_REC, CC_REC]),
+        },
+        library: s.library,
+      });
+      expect((await s.get(`/transitions/${both}.flac`, 2)).statusCode).toBe(404);
+      expect((await s.get(`/transitions/${ccOnly}.flac`, 2)).statusCode).toBe(200);
+      expect((await s.get(`/transitions/${both}.flac`, 1)).statusCode).toBe(200);
+      await s.post('/api/transitions', 2, { from: 700, to: 701, mode: 'auto' });
+      expect((request.mock.calls[0] as unknown as [{ library?: { sources: number[] } }])[0].library?.sources).toEqual([s.cc]);
+      await s.post('/api/transitions', 1, { from: 700, to: 701, mode: 'auto' });
+      expect(request.mock.calls[1]).toEqual([{ fromTrackId: 700, toTrackId: 701, mode: 'auto' }]);
+    } finally {
+      cleanup();
+    }
   });
 });

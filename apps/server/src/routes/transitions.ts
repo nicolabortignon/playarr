@@ -3,6 +3,8 @@ import { stat } from 'node:fs/promises';
 import { parseRange } from '@playarr/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { libraryOf, sourcesOf } from '../accounts/rights.ts';
+import type { Library } from '../library/library.ts';
 import type { TransitionAnswer, Transitions } from '../transitions/transitions.ts';
 
 const input = z.object({
@@ -28,7 +30,12 @@ const input = z.object({
  */
 export function transitionRoutes(
   app: FastifyInstance,
-  deps: { transitions?: Pick<Transitions, 'request' | 'filePath'>; unavailableReason?: string },
+  deps: {
+    transitions?: Pick<Transitions, 'request' | 'filePath'> & Partial<Pick<Transitions, 'recordingsOf'>>;
+    /** The library, narrowed to each account's sources for planning and serving. */
+    library?: Pick<Library, 'track' | 'trackByRecording'> & Partial<Pick<Library, 'view'>>;
+    unavailableReason?: string;
+  },
 ) {
   const { transitions } = deps;
   const unavailableReason = deps.unavailableReason ?? 'Mixed transitions need audio analysis';
@@ -38,6 +45,8 @@ export function transitionRoutes(
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
     if (!transitions) return { status: 'unavailable', reason: unavailableReason };
     const { from, to, mode, position, fromFileId, toFileId, fade, albumQueue, levels } = parsed.data;
+    // An account that hears only some sources plans from its own songs and files.
+    const view = deps.library && sourcesOf(req) !== null ? libraryOf(deps.library, req) : undefined;
     try {
       return await transitions.request({
         fromTrackId: from,
@@ -49,6 +58,7 @@ export function transitionRoutes(
         ...(fade !== undefined ? { fadeSeconds: fade } : {}),
         ...(albumQueue !== undefined ? { albumQueue } : {}),
         ...(levels ? { levels } : {}),
+        ...(view ? { library: view } : {}),
       });
     } catch (err) {
       // The player has a fallback for every answer but an error page: never make it guess.
@@ -68,6 +78,13 @@ export function transitionRoutes(
       const path = transitions?.filePath(req.params.file);
       const size = path ? await stat(path).then((info) => (info.isFile() ? info.size : undefined), () => undefined) : undefined;
       if (!path || size === undefined) return reply.code(404).send({ error: 'Unknown transition' });
+      // Only when the account may hear both songs.
+      if (sourcesOf(req) !== null) {
+        const pair = transitions?.recordingsOf?.(req.params.file);
+        const view = pair && deps.library ? libraryOf(deps.library, req) : undefined;
+        const hearable = !!view && !!pair && !!(await view.trackByRecording(pair[0])) && !!(await view.trackByRecording(pair[1]));
+        if (!hearable) return reply.code(404).send({ error: 'Unknown transition' });
+      }
 
       reply.header('Accept-Ranges', 'bytes');
       const range = parseRange(req.headers.range, size);

@@ -8,6 +8,7 @@ import type { FileResolver } from '../catalog/files.ts';
 import { copyCover } from '../catalog/folderArt.ts';
 import type { FolderFs } from '../catalog/folderFs.ts';
 import { fetchRemoteImage, isAllowedRemote } from '../discover/art.ts';
+import { libraryOf, sourcesOf } from '../accounts/rights.ts';
 import type { Library } from '../library/library.ts';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
 
@@ -131,7 +132,7 @@ export function artRoutes(
   deps: {
     art: LocalArt;
     cacheDir: string;
-    library: Pick<Library, 'file'>;
+    library: Pick<Library, 'file' | 'hasArtwork'> & Partial<Pick<Library, 'view'>>;
     files: FileResolver;
     folders: { get(sourceId: number): FolderFs | undefined };
   },
@@ -195,7 +196,7 @@ export function artRoutes(
   // Artwork drawn from a folder file (embedded picture or an image beside it), wherever the folder is.
   app.get<{ Params: { id: string }; Querystring: { size?: string } }>('/art/copy/:id', async (req, reply) => {
     const id = Number(req.params.id);
-    const file = Number.isInteger(id) ? await deps.library.file(id) : undefined;
+    const file = Number.isInteger(id) ? await libraryOf(deps.library, req).file(id) : undefined;
     if (!file) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'Unknown file' });
     let path: string;
     try {
@@ -234,6 +235,10 @@ export function artRoutes(
       const { kind, type } = req.params;
       const id = Number(req.params.id);
       if ((kind !== 'artist' && kind !== 'album') || !TYPES[`${kind}/${type}`] || !Number.isInteger(id)) {
+        return reply.code(404).send({ error: 'Unknown artwork' });
+      }
+      // Artwork of albums and artists outside the account's sources isn't there for it.
+      if (sourcesOf(req) !== null && !(await libraryOf(deps.library, req).hasArtwork(kind, id))) {
         return reply.code(404).send({ error: 'Unknown artwork' });
       }
       const requested = Number(req.query.size);
