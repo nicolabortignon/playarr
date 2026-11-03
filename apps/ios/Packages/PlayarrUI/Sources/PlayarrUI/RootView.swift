@@ -15,6 +15,7 @@ public struct RootView: View {
                 AddServerFlow(app: model, start: .redeem(link)) { model.redeemLink = nil }
             }
             .task(id: model.store.active) { await model.checkActiveServer() }
+            .task(id: model.store.activeAccount) { model.syncSession() }
     }
 
     @ViewBuilder private var content: some View {
@@ -22,7 +23,11 @@ public struct RootView: View {
             UpdateRequiredView(serverName: info.name, minAppVersion: info.minAppVersion, appVersion: model.appVersion.description)
         } else if let server = model.store.activeServer, let account = model.store.activeAccount {
             if account.signedIn {
-                SignedInHomeView(model: model)
+                if let session = model.session, session.key == account.key {
+                    AppShell(model: model, session: session)
+                } else {
+                    ProgressView()
+                }
             } else {
                 AddServerFlow(app: model, start: .server(server.baseURL, username: account.account.username))
                     .id(account.key)
