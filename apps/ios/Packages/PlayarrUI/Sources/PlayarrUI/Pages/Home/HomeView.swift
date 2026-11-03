@@ -81,7 +81,7 @@ struct HomeView: View {
   }
 
   private func yearInReview(_ review: (year: Int, minutes: Int, top: Artist?)) -> some View {
-    NavigationLink(value: Route.listening) {
+    NavigationLink(value: Route.listeningRange(String(review.year))) {
       HStack(spacing: 16) {
         if let top = review.top {
           Cover(path: top.imageUrl, points: 96, label: top.name).frame(width: 96, height: 96)

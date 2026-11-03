@@ -19,7 +19,8 @@ struct RouteDestination: View {
     case .playlist(let id): PlaylistView(id: id, session: session)
     case .mixes: MixesView(session: session)
     case .mix(let key): MixView(key: key, session: session)
-    case .listening, .listeningRange: PlaceholderPage(title: "Your listening")  // Task 21
+    case .listening: StatsView(range: nil, session: session)
+    case .listeningRange(let range): StatsView(range: range, session: session)
     case .discoverArtist(let mbid, let album): DiscoverArtistPage(mbid: mbid, album: album)
     case .findArtist(let name, let album): FindArtistPage(name: name, album: album)
     case .requests: RequestsPage()
