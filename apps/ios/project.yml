@@ -1,0 +1,69 @@
+# XcodeGen spec for the Playarr app: `make bootstrap` (or any make target) generates Playarr.xcodeproj
+# from this file. The .xcodeproj is not committed. Versions, team and bundle id: Config/Base.xcconfig.
+name: Playarr
+options:
+  deploymentTarget:
+    iOS: "26.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+  groupSortPosition: top
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+packages:
+  PlayarrAPI:
+    path: Packages/PlayarrAPI
+    group: Packages
+  PlayarrPlayer:
+    path: Packages/PlayarrPlayer
+    group: Packages
+  PlayarrUI:
+    path: Packages/PlayarrUI
+    group: Packages
+targets:
+  Playarr:
+    type: application
+    platform: iOS
+    sources:
+      - Playarr
+      - path: Config
+        buildPhase: none
+    dependencies:
+      - package: PlayarrUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(PLAYARR_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: Config/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/Playarr.entitlements
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  PlayarrUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - PlayarrUITests
+    dependencies:
+      - target: Playarr
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(PLAYARR_BUNDLE_ID).uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Playarr:
+    build:
+      targets:
+        Playarr: all
+        PlayarrUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - PlayarrUITests
+    run:
+      config: Debug
+    archive:
+      config: Release

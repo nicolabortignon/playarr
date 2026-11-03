@@ -1,0 +1,8 @@
+// Settings every target and configuration shares (project.yml points both configurations here).
+// MARKETING_VERSION changes only for App Store releases. CURRENT_PROJECT_VERSION is the build number:
+// the Makefile and scripts/release.mjs pass `git rev-list --count HEAD`; 1 is for builds from Xcode.
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1
+PLAYARR_BUNDLE_ID = me.tracklistme.playarr
+DEVELOPMENT_TEAM = M7ME2TS45S
+CODE_SIGN_STYLE = Automatic
