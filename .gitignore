@@ -17,3 +17,13 @@ apps/server/data/
 .claude/
 .DS_Store
 *.log
+
+# iOS app: the generated Xcode project, the downloaded XcodeGen, build output
+apps/ios/.tools/
+apps/ios/Playarr.xcodeproj/
+apps/ios/build/
+apps/ios/Packages/*/.build/
+apps/ios/Packages/*/.swiftpm/
+*.xcarchive
+.DerivedData/
+xcuserdata/

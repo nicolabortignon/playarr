@@ -1,7 +1,7 @@
 {
   "name": "playarr",
   "private": true,
-  "version": "0.6.177",
+  "version": "0.6.178",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
@@ -13,7 +13,13 @@
     "start": "pnpm --filter @playarr/server start",
     "typecheck": "pnpm -r typecheck",
     "deploy:nas": "node --env-file=.env --disable-warning=ExperimentalWarning docker/deploy.mjs",
-    "sim": "node scripts/ios-sim/sim.mjs"
+    "sim": "node scripts/ios-sim/sim.mjs",
+    "ios:bootstrap": "make -C apps/ios bootstrap",
+    "ios:build": "make -C apps/ios build",
+    "ios:test": "make -C apps/ios test",
+    "ios:setup": "make -C apps/ios setup",
+    "ios:beta": "make -C apps/ios beta",
+    "ios:device": "make -C apps/ios device"
   },
   "devDependencies": {
     "bplist-creator": "^0.3.0",
