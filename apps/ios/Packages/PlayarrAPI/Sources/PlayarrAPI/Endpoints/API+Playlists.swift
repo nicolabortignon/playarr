@@ -3,12 +3,14 @@ extension API {
         public static func list() -> Endpoint<[PlaylistSummary]> { Endpoint(.get, "/api/playlists") }
         public static func get(id: Int) -> Endpoint<PlaylistDetail> { Endpoint(.get, "/api/playlists/\(id)") }
 
-        public static func create(name: String, description: String? = nil, recordingIds: [String]? = nil) -> Endpoint<PlaylistDetail> {
-            Endpoint(.post, "/api/playlists", body: CreateBody(name: name, description: description, recordingIds: recordingIds))
+        /// `shared`: visible to every account on the server (nil leaves the server's default, private).
+        public static func create(name: String, description: String? = nil, recordingIds: [String]? = nil, shared: Bool? = nil) -> Endpoint<PlaylistDetail> {
+            Endpoint(.post, "/api/playlists", body: CreateBody(name: name, description: description, recordingIds: recordingIds, shared: shared))
         }
 
-        public static func update(id: Int, name: String? = nil, description: String? = nil) -> Endpoint<PlaylistDetail> {
-            Endpoint(.patch, "/api/playlists/\(id)", body: UpdateBody(name: name, description: description))
+        /// Only the fields given change. Only the playlist's owner may call it (403 otherwise).
+        public static func update(id: Int, name: String? = nil, description: String? = nil, shared: Bool? = nil) -> Endpoint<PlaylistDetail> {
+            Endpoint(.patch, "/api/playlists/\(id)", body: UpdateBody(name: name, description: description, shared: shared))
         }
 
         public static func delete(id: Int) -> Endpoint<NoContent> { Endpoint(.delete, "/api/playlists/\(id)") }
@@ -37,11 +39,13 @@ extension API {
             let name: String
             let description: String?
             let recordingIds: [String]?
+            let shared: Bool?
         }
 
         private struct UpdateBody: Encodable, Sendable {
             let name: String?
             let description: String?
+            let shared: Bool?
         }
 
         private struct CoverBody: Encodable, Sendable {
