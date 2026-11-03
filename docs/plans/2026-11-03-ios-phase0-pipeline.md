@@ -17,7 +17,7 @@
 - The key authenticates and the API answers 200, so the "requires an in-effect agreement" 403 has cleared. Task 1's `check` still explains that 403 clearly in case it comes back (the agreement is renewed every year).
 - Already in App Store Connect: the bundle id `me.tracklistme.playarr` (platform UNIVERSAL); the app record "Playarr" (Apple id 6830169335, SKU `playarr-ios`, primary language English (U.S.)); and the internal TestFlight group "Household" (automatic distribution, one tester, not yet invited). They were created in parallel with the writing of this plan. Tasks 5 to 7 should therefore just confirm them, but they stay in the plan so that a new Apple account can be set up from it.
 - The team has **no registered devices** and no builds. So Task 8 (install on the phone, which registers it) comes before Task 9 (first TestFlight upload). See "Key decisions".
-- Apple's API returned 500s for a few minutes while this plan was written. `asc.mjs` retries GET requests for that reason.
+- Apple's API returned 500s for a few minutes while this plan was written. `asc.mjs` retries GET requests for that reason. While Task 5 ran, it also answered from a lagging replica now and then: an empty group list, and a 404 for the "Household" group it had just listed. So GETs answered 404 are retried too, and `setup` asks three times before it creates the group.
 
 ## Key decisions in this plan
 
@@ -156,7 +156,8 @@ let signingKey;
 /**
  * Call the API: `asc('GET', '/v1/apps')`. Resolves to the parsed JSON (null for 204); throws with `explain`.
  * Apple's API has bad minutes, so a GET that fails with a 5xx, a 429 or no answer is tried four more times,
- * 2, 4, 8 and 16 s apart. Changes aren't retried: a failed one may have happened anyway.
+ * 2, 4, 8 and 16 s apart. So is a GET answered 404: a replica that lags behind sometimes says a group it
+ * just listed doesn't exist. Changes aren't retried: a failed one may have happened anyway.
  */
 export async function asc(method, path, body) {
   const cfg = config();
@@ -167,7 +168,7 @@ export async function asc(method, path, body) {
       headers: { Authorization: `Bearer ${token({ ...cfg, key: signingKey })}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     }).catch((err) => err);
-    const failed = res instanceof Error || res.status === 429 || res.status >= 500;
+    const failed = res instanceof Error || res.status === 404 || res.status === 429 || res.status >= 500;
     if (failed && method === 'GET' && attempt < 4) {
       await new Promise((resolve) => setTimeout(resolve, 2000 * 2 ** attempt));
       continue;
@@ -1073,6 +1074,12 @@ async function setup(testers) {
     return;
   }
   let group = await findGroup(app.id);
+  // A lagging replica sometimes lists no groups for a while. Ask twice more before creating one, so a stale
+  // answer doesn't make a second "Household".
+  for (let tries = 0; !group && tries < 2; tries++) {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    group = await findGroup(app.id);
+  }
   if (group) console.log(`✓ TestFlight group "${GROUP}" already exists`);
   else {
     ({ data: group } = await asc('POST', '/v1/betaGroups', {
