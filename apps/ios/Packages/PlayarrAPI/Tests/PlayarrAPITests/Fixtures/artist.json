@@ -1,0 +1,38 @@
+{
+  "id": 7,
+  "name": "Massive Attack",
+  "sortName": "Massive Attack",
+  "genres": [
+    "trip hop"
+  ],
+  "albumCount": 1,
+  "trackCount": 2,
+  "mbid": "art-1",
+  "albums": [
+    {
+      "id": 70,
+      "title": "Mezzanine",
+      "artistId": 7,
+      "artistName": "Massive Attack",
+      "year": 1998,
+      "releaseDate": "2026-11-03T12:00:00.000Z",
+      "albumType": "Album",
+      "secondaryTypes": [],
+      "genres": [
+        "trip hop"
+      ],
+      "duration": 677,
+      "trackCount": 2,
+      "totalTrackCount": 11,
+      "addedAt": "2026-11-03T12:00:00.000Z",
+      "mbid": "rg-1",
+      "format": {
+        "codec": "FLAC",
+        "container": "flac",
+        "bits": 16,
+        "sampleRate": 44100,
+        "lossless": true
+      }
+    }
+  ]
+}

@@ -247,41 +247,18 @@ MSG
 - Modify: `package.json` (root: devDependency and script), `pnpm-lock.yaml`
 - Modify: `apps/ios/Makefile` (targets `models`, `models-check`)
 - Create: `apps/ios/scripts/gen-models.mjs`
-- Modify: `apps/ios/Packages/PlayarrAPI/Package.swift`
-- Delete: phase 0's placeholder source and test in `apps/ios/Packages/PlayarrAPI`
 - Create: `apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/GeneratedModelsTests.swift`
 - Create (generated): `apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift`
 
-**Step 1: The package manifest, without placeholders**
+**Step 1: The package as phase 0 left it**
 
-List phase 0's placeholders and remove them (their names may differ; remove the placeholder source and the placeholder test of `PlayarrAPI` only):
+Phase 0's `PlayarrAPI` has no placeholder to remove: its one source, `AppVersion.swift` (with `AppVersionTests.swift`), is real and stays (Task 12 adds comparison to it). Its `Package.swift` already declares the library and test target with no dependencies (iOS 26 and macOS 26), so it stays as it is:
 
 ```bash
 ls apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests
-git rm apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/PlayarrAPI.swift apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/PlayarrAPITests.swift
-grep -rn "PlayarrAPI\." apps/ios/Packages/PlayarrPlayer apps/ios/Packages/PlayarrUI apps/ios/Playarr || true
 ```
 
-If the last command finds a use of a placeholder symbol, delete that use too.
-
-Replace `apps/ios/Packages/PlayarrAPI/Package.swift` with:
-
-```swift
-// swift-tools-version: 6.2
-import PackageDescription
-
-let package = Package(
-    name: "PlayarrAPI",
-    platforms: [.iOS(.v26), .macOS(.v26)],
-    products: [
-        .library(name: "PlayarrAPI", targets: ["PlayarrAPI"]),
-    ],
-    targets: [
-        .target(name: "PlayarrAPI"),
-        .testTarget(name: "PlayarrAPITests", dependencies: ["PlayarrAPI"]),
-    ]
-)
-```
+Expected: `AppVersion.swift` and `AppVersionTests.swift`.
 
 **Step 2: Write the failing test**
 
@@ -379,10 +356,10 @@ import Testing
 **Step 3: Run it to see it fail**
 
 ```bash
-swift test --package-path apps/ios/Packages/PlayarrAPI --filter GeneratedModelsTests
+swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrAPI --filter GeneratedModelsTests
 ```
 
-Expected: build fails with `cannot find type 'Availability' in scope` (and the other model types).
+Expected: build fails with `cannot find 'Availability' in scope` (and the other model types).
 
 **Step 4: Install the schema generator**
 
@@ -740,11 +717,9 @@ if (process.argv.includes('--check')) {
 
 **Step 6: Make and pnpm entry points**
 
-Add to `apps/ios/Makefile` (recipe lines start with a tab):
+Add `models models-check` to the Makefile's `.PHONY` line and a line for `make models` to its header comment, then add these targets before `setup:` (recipe lines start with a tab):
 
 ```make
-.PHONY: models models-check
-
 # Swift models from the shared TypeScript types (committed).
 models:
 	node scripts/gen-models.mjs
@@ -754,7 +729,7 @@ models-check:
 	node scripts/gen-models.mjs --check
 ```
 
-In the root `package.json` `scripts`, make sure this entry exists (phase 0 may already have it; leave it if it reads the same):
+In the root `package.json` `scripts`, add this entry after `ios:test` (phase 0 didn't add it):
 
 ```json
 "ios:models": "make -C apps/ios models"
@@ -767,18 +742,17 @@ corepack pnpm ios:models
 corepack pnpm ios:models   # twice: the second run must not change the file
 git diff --stat apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift
 make -C apps/ios models-check
-swift test --package-path apps/ios/Packages/PlayarrAPI --filter GeneratedModelsTests
+swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrAPI --filter GeneratedModelsTests
 ```
 
-Expected: `Wrote …/Models.generated.swift` (about 3,100 lines). `Models.generated.swift is up to date.` All `GeneratedModelsTests` pass.
+Expected: `Wrote …/Models.generated.swift` (about 3,250 lines with the phase 1 account types). `Models.generated.swift is up to date.` All `GeneratedModelsTests` pass.
 
-Check the output for one of each kind: `grep -n "public enum TransitionAnswer\|case noneValue\|public var sources: \[Int\]?\|rootFolderPath: String??\|public typealias StatsRange = String\|public let mixMapVersion" apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift`. Expected: one line for each.
+Check the output for one of each kind: `grep -n "public enum TransitionAnswer\|case noneValue\|public var sources: \[Int\]?\|rootFolderPath: String??\|public typealias StatsRange = String\|public let mixMapVersion" apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift`. Expected: at least one line for each (`noneValue` is in two enums, and `rootFolderPath` shows in its property and its `init`).
 
 **Step 8: Commit**
 
 ```bash
-git add package.json pnpm-lock.yaml apps/ios/Makefile apps/ios/scripts/gen-models.mjs apps/ios/Packages/PlayarrAPI/Package.swift apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/GeneratedModelsTests.swift
-git add -u apps/ios/Packages/PlayarrAPI
+git add package.json pnpm-lock.yaml apps/ios/Makefile apps/ios/scripts/gen-models.mjs apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/GeneratedModelsTests.swift docs/plans/2026-11-03-ios-phase2-api-sign-in.md
 git commit -F - <<'MSG'
 Generate the iOS app's Swift models from the shared TypeScript types (pnpm ios:models)
 
@@ -1453,7 +1427,7 @@ import Testing
 swift test --package-path apps/ios/Packages/PlayarrAPI --filter EndpointTests
 ```
 
-Expected: build fails with `cannot find 'API' in scope`.
+Expected: build fails with `cannot find type 'Endpoint' in scope` (and `API`). Until Task 8 bundles them, SwiftPM also warns that the fixtures recorded in Task 4 are unhandled files.
 
 **Step 3: Write `Endpoint`, the extra answers and the device's name**
 
@@ -2513,7 +2487,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
     let fixture: String
     let decode: @Sendable (Data) throws -> Void
 
-    init<T: Decodable>(_ fixture: String, _ type: T.Type) {
+    init<T: Decodable & Sendable>(_ fixture: String, _ type: T.Type) {
         self.fixture = fixture
         self.decode = { _ = try APIClient.decode(T.self, from: $0) }
     }
@@ -2615,15 +2589,17 @@ Expected: build fails with `type 'Bundle' has no member 'module'`: the test targ
 
 **Step 3: Bundle the fixtures**
 
-In `apps/ios/Packages/PlayarrAPI/Package.swift`, the test target becomes:
+In `apps/ios/Packages/PlayarrAPI/Package.swift` (phase 0's manifest, indented by two spaces), the test target becomes:
 
 ```swift
-        .testTarget(
-            name: "PlayarrAPITests",
-            dependencies: ["PlayarrAPI"],
-            resources: [.copy("Fixtures")]
-        ),
+    .testTarget(
+      name: "PlayarrAPITests",
+      dependencies: ["PlayarrAPI"],
+      resources: [.copy("Fixtures")]
+    ),
 ```
+
+If Task 5 hasn't recorded its 7 fixtures yet (phase 1's auth and account tests not written), write stand-ins for them by hand in the recorder's format (two-space JSON and a final newline, timestamps `2026-11-03T12:00:00.000Z`, token `"token"`, code `K7PQ2MXA`, the `server-info` id from Task 5's table): `server-info`, `auth-sign-in`, `auth-me`, `accounts`, `account-created`, `setup-code`, `sessions`, each a complete value of its shared type. Task 5's recording replaces them with real answers.
 
 **Step 4: Run it to see it pass**
 
@@ -2637,6 +2613,7 @@ Expected: all 52 contracts decode, and `everyFixtureHasAContract` passes. If a f
 
 ```bash
 git add apps/ios/Packages/PlayarrAPI/Package.swift apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/ContractTests.swift
+git add apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/Fixtures   # the stand-ins, if any
 git commit -F - <<'MSG'
 iOS: contract tests decode every recorded server answer into the generated models
 
@@ -3332,8 +3309,9 @@ MSG
 ### Task 12: Typed addresses, app versions and setup-code links
 
 **Files:**
-- Create: `apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/ServerAddress.swift`, `AppVersion.swift`, `RedeemLink.swift`
-- Test: `apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/ServerAddressTests.swift`, `AppVersionTests.swift`, `RedeemLinkTests.swift`
+- Create: `apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/ServerAddress.swift`, `RedeemLink.swift`
+- Modify: `apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/AppVersion.swift` (phase 0's: marketing version, build and `label`; this task adds comparison)
+- Test: `apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/ServerAddressTests.swift`, `RedeemLinkTests.swift`; add to phase 0's `AppVersionTests.swift`
 
 `ServerAddress` lets plain HTTP through only for home-network hosts (localhost, single-label and `.local` names, private and link-local addresses), and adds `https://` to anything else typed without a scheme. That matches App Transport Security's `NSAllowsLocalNetworking` (Task 14). An `http://` address outside the home network is refused with a message, not left to fail in ATS.
 
@@ -3372,25 +3350,25 @@ import Testing
 }
 ```
 
-`apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/AppVersionTests.swift`:
+`apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/AppVersionTests.swift`: keep phase 0's two tests (`labelShowsTheMarketingVersionAndTheBuild`, `missingKeysReadAsZero`) and add, in the file's two-space style:
 
 ```swift
-import Foundation
-import Testing
-@testable import PlayarrAPI
-
 @Suite struct AppVersionTests {
-    @Test func comparesPartByPart() {
-        #expect(AppVersion("1.10.0") > AppVersion("1.9.3"))
-        #expect(AppVersion("1.0") == AppVersion("1.0.0"))
-        #expect(AppVersion("2") > AppVersion("1.99"))
-    }
+  @Test func comparesPartByPart() {
+    #expect(AppVersion("1.10.0") > AppVersion("1.9.3"))
+    #expect(AppVersion("1.0") == AppVersion("1.0.0"))
+    #expect(AppVersion("2") > AppVersion("1.99"))
+  }
 
-    @Test func knowsWhenTheAppIsTooOld() {
-        let server = ServerInfo(id: "s", name: "Home", version: "0.9.0", minAppVersion: "1.2.0", setup: false)
-        #expect(!server.supports(AppVersion("1.1.9")))
-        #expect(server.supports(AppVersion("1.2.0")))
-    }
+  @Test func comparesTheMarketingVersionOnly() {
+    #expect(AppVersion(marketing: "1.2.0", build: "812") == AppVersion("1.2.0"))
+  }
+
+  @Test func knowsWhenTheAppIsTooOld() {
+    let server = ServerInfo(id: "s", name: "Home", version: "0.9.0", minAppVersion: "1.2.0", setup: false)
+    #expect(!server.supports(AppVersion("1.1.9")))
+    #expect(server.supports(AppVersion("1.2.0")))
+  }
 }
 ```
 
@@ -3422,7 +3400,7 @@ import Testing
 swift test --package-path apps/ios/Packages/PlayarrAPI --filter "ServerAddressTests|AppVersionTests|RedeemLinkTests"
 ```
 
-Expected: build fails with `cannot find 'ServerAddress' in scope` (and `AppVersion`, `RedeemLink`).
+Expected: build fails with `cannot find 'ServerAddress' in scope` (and `RedeemLink`), and `missing argument label 'infoDictionary:' in call` for `AppVersion("1.10.0")`.
 
 **Step 3: Write them**
 
@@ -3491,39 +3469,63 @@ public enum ServerAddress {
 }
 ```
 
-`apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/AppVersion.swift`:
+`apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/AppVersion.swift` (phase 0's type, which the phase 0 screen and its test use, with comparison added; equality now follows the marketing version too):
 
 ```swift
 import Foundation
 
-/// A dotted version ("1.2.3"), compared part by part; missing parts count as 0.
-public struct AppVersion: Comparable, Sendable, CustomStringConvertible {
-    public let parts: [Int]
+/// The app's version as people see it, "1.0.0 (812)": the marketing version and the build number.
+/// Versions compare by the marketing version, part by part ("1.10.0" > "1.9.3"; missing parts count
+/// as 0), which is what a server's `minAppVersion` names; the build doesn't take part.
+public struct AppVersion: Sendable, Comparable, CustomStringConvertible {
+  public let marketing: String
+  public let build: String
 
-    public init(_ string: String) {
-        parts = string.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
-    }
+  public init(marketing: String, build: String) {
+    self.marketing = marketing
+    self.build = build
+  }
 
-    /// This app's marketing version.
-    public static var current: AppVersion {
-        AppVersion(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0")
-    }
+  /// A marketing version alone, as a server writes it ("1.2.0").
+  public init(_ marketing: String) {
+    self.init(marketing: marketing, build: "0")
+  }
 
-    public var description: String { parts.map(String.init).joined(separator: ".") }
+  /// Reads `CFBundleShortVersionString` and `CFBundleVersion`, as found in `Bundle.main.infoDictionary`.
+  public init(infoDictionary: [String: Any]) {
+    self.init(
+      marketing: infoDictionary["CFBundleShortVersionString"] as? String ?? "0.0.0",
+      build: infoDictionary["CFBundleVersion"] as? String ?? "0"
+    )
+  }
 
-    public static func < (lhs: AppVersion, rhs: AppVersion) -> Bool {
-        let count = max(lhs.parts.count, rhs.parts.count)
-        let left = lhs.parts + Array(repeating: 0, count: count - lhs.parts.count)
-        let right = rhs.parts + Array(repeating: 0, count: count - rhs.parts.count)
-        return left.lexicographicallyPrecedes(right)
-    }
+  /// This app's version.
+  public static var current: AppVersion {
+    AppVersion(infoDictionary: Bundle.main.infoDictionary ?? [:])
+  }
 
-    public static func == (lhs: AppVersion, rhs: AppVersion) -> Bool { !(lhs < rhs) && !(rhs < lhs) }
+  public var label: String { "\(marketing) (\(build))" }
+
+  public var description: String { marketing }
+
+  /// The marketing version's numbers: "1.2.3" → [1, 2, 3].
+  public var parts: [Int] {
+    marketing.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
+  }
+
+  public static func < (lhs: AppVersion, rhs: AppVersion) -> Bool {
+    let count = max(lhs.parts.count, rhs.parts.count)
+    let left = lhs.parts + Array(repeating: 0, count: count - lhs.parts.count)
+    let right = rhs.parts + Array(repeating: 0, count: count - rhs.parts.count)
+    return left.lexicographicallyPrecedes(right)
+  }
+
+  public static func == (lhs: AppVersion, rhs: AppVersion) -> Bool { !(lhs < rhs) && !(rhs < lhs) }
 }
 
 extension ServerInfo {
-    /// The server works with this version of the app (its minAppVersion is not newer).
-    public func supports(_ app: AppVersion) -> Bool { app >= AppVersion(minAppVersion) }
+  /// The server works with this version of the app (its minAppVersion is not newer).
+  public func supports(_ app: AppVersion) -> Bool { app >= AppVersion(minAppVersion) }
 }
 ```
 
@@ -3793,57 +3795,85 @@ MSG
 ### Task 14: App settings: local network, Bonjour, plain HTTP at home, the playarr:// scheme
 
 **Files:**
-- Modify: `apps/ios/project.yml`
-- Regenerated (by XcodeGen, committed if phase 0 commits it): `apps/ios/Config/Info.plist`
+- Modify: `apps/ios/Config/Info.plist` (phase 0's hand-written plist: `project.yml` points `INFOPLIST_FILE` at it)
+- Modify: `apps/ios/Makefile` and `apps/ios/scripts/release.mjs` (the compiler's macro sandbox, see Step 3)
 
 **Step 1: Check what's missing**
 
 ```bash
-make -C apps/ios bootstrap
 plutil -extract NSBonjourServices json -o - apps/ios/Config/Info.plist
 ```
 
-Expected: `error: No value at that key path or invalid key path: NSBonjourServices`.
+Expected: `Could not extract value, error: No value at that key path or invalid key path: NSBonjourServices`.
 
 **Step 2: Add the keys**
 
-In `apps/ios/project.yml`, under `targets: Playarr: info: properties:`, add these (keep phase 0's keys):
+In `apps/ios/Config/Info.plist`, add these keys to the top-level `<dict>` (keep phase 0's keys; the file keeps its keys in alphabetical order, so `CFBundleURLTypes` goes after `CFBundleShortVersionString` and the `NS…` keys after `LSRequiresIPhoneOS`):
 
-```yaml
-        NSLocalNetworkUsageDescription: Playarr looks for your music servers on this network.
-        NSBonjourServices:
-          - _playarr._tcp
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
-        CFBundleURLTypes:
-          - CFBundleURLName: me.tracklistme.playarr
-            CFBundleURLSchemes:
-              - playarr
+```xml
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>me.tracklistme.playarr</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>playarr</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_playarr._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Playarr looks for your music servers on this network.</string>
 ```
 
 - `NSBonjourServices` lets NWBrowser browse `_playarr._tcp`. Without it, browsing fails silently on iOS. `NSLocalNetworkUsageDescription` is the text of the Local Network prompt.
 - `NSAllowsLocalNetworking` allows plain HTTP to local addresses only. Everything else stays HTTPS (no `NSAllowsArbitraryLoads`).
 - The URL scheme opens `playarr://redeem?server=…&code=…` links in the app.
 
-If phase 0 keeps a hand-written `Config/Info.plist` instead of `info.properties`, add the same keys there as plist XML.
+**Step 3: The compiler's macro sandbox**
 
-**Step 3: Regenerate and check**
+This is the first app build with `PlayarrAPI`'s `@Observable` types in it. Xcode's compiler runs the Observation macros in `swift-plugin-server` inside its own sandbox, which can't start inside Claude's (`error: external macro implementation type 'ObservationMacros.ObservableMacro' could not be found … produced malformed response`). SwiftPM's `--disable-sandbox` already covers `swift build`; xcodebuild needs the compiler's flag. In `apps/ios/Makefile`, add to the comment above `XCODEBUILD`:
+
+```make
+# -Xfrontend -disable-sandbox: nor can the compiler sandbox the macro plugins it runs (@Observable).
+```
+
+and end the `XCODEBUILD` definition's last line with ` 'OTHER_SWIFT_FLAGS=$$(inherited) -Xfrontend -disable-sandbox'`.
+
+In `apps/ios/scripts/release.mjs`, after the `xcodebuild` helper, add:
+
+```js
+/** For builds: the compiler can't sandbox the macro plugins it runs (@Observable) inside Claude's sandbox. */
+const NO_MACRO_SANDBOX = 'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sandbox';
+```
+
+and pass `NO_MACRO_SANDBOX` after `` `CURRENT_PROJECT_VERSION=${build}` `` in the `archive` call of `beta` and the `build` call of `device` (not in `-exportArchive`, which compiles nothing).
+
+**Step 4: Check**
 
 ```bash
-make -C apps/ios bootstrap
+plutil -lint apps/ios/Config/Info.plist
 plutil -extract NSBonjourServices json -o - apps/ios/Config/Info.plist
 plutil -extract NSAppTransportSecurity json -o - apps/ios/Config/Info.plist
 plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes json -o - apps/ios/Config/Info.plist
-make -C apps/ios build
+make -C apps/ios build test-scripts
 ```
 
-Expected: `["_playarr._tcp"]`, `{"NSAllowsLocalNetworking":true}`, `["playarr"]`, and the build succeeds.
+Expected: `OK`, `["_playarr._tcp"]`, `{"NSAllowsLocalNetworking":true}`, `["playarr"]`, the build succeeds and the scripts' 8 tests pass. (An unsigned Release archive with `NO_MACRO_SANDBOX`, as `ios:beta` makes it, was checked too.)
 
-**Step 4: Commit**
+**Step 5: Commit**
 
 ```bash
-git add apps/ios/project.yml
-git ls-files --error-unmatch apps/ios/Config/Info.plist >/dev/null 2>&1 && git add apps/ios/Config/Info.plist
+git add apps/ios/Config/Info.plist apps/ios/Makefile apps/ios/scripts/release.mjs
 git commit -F - <<'MSG'
 iOS: ask for the local network, browse for Playarr servers, plain HTTP only at home, open playarr:// links
 
@@ -3858,41 +3888,12 @@ MSG
 `AppModel` is the root state the conventions place in `PlayarrUI`. This phase starts it with what sign-in needs: the store, the Bonjour browser, the app version, a setup-code link to open, and "too old for this server". Later phases add to it. `AddServerModel` drives one add-a-server or add-an-account flow: connect (probe `GET /api/server`), then sign in, redeem a code, or claim a server in setup mode.
 
 **Files:**
-- Modify: `apps/ios/Packages/PlayarrUI/Package.swift` (depend on `PlayarrAPI` directly)
 - Create: `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift`, `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/SignIn/AddServerModel.swift`
 - Test: `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/AddServerModelTests.swift`
-- Delete: phase 0's placeholder source and test in `PlayarrUI`, if any (as in Task 2)
 
-**Step 1: The package depends on PlayarrAPI**
+**Step 1: The package as phase 0 left it**
 
-Replace `apps/ios/Packages/PlayarrUI/Package.swift` with (keep any other dependency phase 0 added):
-
-```swift
-// swift-tools-version: 6.2
-import PackageDescription
-
-let package = Package(
-    name: "PlayarrUI",
-    platforms: [.iOS(.v26), .macOS(.v26)],
-    products: [
-        .library(name: "PlayarrUI", targets: ["PlayarrUI"]),
-    ],
-    dependencies: [
-        .package(path: "../PlayarrPlayer"),
-        .package(path: "../PlayarrAPI"),
-    ],
-    targets: [
-        .target(
-            name: "PlayarrUI",
-            dependencies: [
-                .product(name: "PlayarrPlayer", package: "PlayarrPlayer"),
-                .product(name: "PlayarrAPI", package: "PlayarrAPI"),
-            ]
-        ),
-        .testTarget(name: "PlayarrUITests", dependencies: ["PlayarrUI"]),
-    ]
-)
-```
+Phase 0's `apps/ios/Packages/PlayarrUI/Package.swift` already depends on `PlayarrAPI` directly (and on `PlayarrPlayer`), so it stays as it is. Its placeholder `RootView` (phase 0's version screen, with `RootViewTests.swift`) stays too until Task 16 replaces it, because the app target shows it.
 
 **Step 2: Write the failing test**
 
@@ -4152,13 +4153,12 @@ public final class AddServerModel {
 swift test --package-path apps/ios/Packages/PlayarrUI --filter AddServerModelTests
 ```
 
-Expected: 5 tests pass.
+Expected: 5 tests pass (and phase 0's `RootViewTests` still passes in a full `swift test` of the package).
 
 **Step 6: Commit**
 
 ```bash
-git add apps/ios/Packages/PlayarrUI/Package.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/SignIn/AddServerModel.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/AddServerModelTests.swift
-git add -u apps/ios/Packages/PlayarrUI
+git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/SignIn/AddServerModel.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/AddServerModelTests.swift
 git commit -F - <<'MSG'
 iOS: the app's root state and the add-a-server flow: connect, sign in, redeem a code or claim the server
 
@@ -4181,8 +4181,11 @@ These are minimal screens for this phase, in the web's words. If phase 1's web s
 - **Accounts sheet**: servers with their accounts. Tap to switch, "Add account", swipe or long-press to sign out, "Add a server". An account whose session ended shows "Signed out", and tapping it leads to its sign-in.
 
 **Files:**
-- Create in `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/`: `RootView.swift`, `SignedInHomeView.swift`, `AccountSwitcherView.swift`, `SignIn/AddServerFlow.swift`, `SignIn/WelcomeView.swift`, `SignIn/SignInView.swift`, `SignIn/RedeemView.swift`, `SignIn/SetupView.swift`, `SignIn/UpdateRequiredView.swift`, `SignIn/TextFields.swift`
-- Modify: `apps/ios/Playarr/PlayarrApp.swift`
+- Create in `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/`: `SignedInHomeView.swift`, `AccountSwitcherView.swift`, `SignIn/AddServerFlow.swift`, `SignIn/WelcomeView.swift`, `SignIn/SignInView.swift`, `SignIn/RedeemView.swift`, `SignIn/SetupView.swift`, `SignIn/UpdateRequiredView.swift`, `SignIn/TextFields.swift`
+- Replace: phase 0's `RootView.swift` (its version screen); delete its test `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/RootViewTests.swift`
+- Modify: `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift` (`empty()` for UI tests), `apps/ios/Playarr/PlayarrApp.swift`, phase 0's UI test `apps/ios/PlayarrUITests/LaunchTests.swift`
+
+Phase 0's version line moves to the foot of "Add a server" (`WelcomeView`, accessibility id `version`), so its UI test still checks that the build number reaches the app. UI tests launch with `-UITests`, which starts the app with no servers and nothing kept (`AppModel.empty()`), so a simulator signed in by hand (Task 18) doesn't change what they see.
 
 SwiftUI screens get no unit tests here: the flows behind them are `AddServerModel` (Task 15) and `ServerStore` (Task 11). The check is that the package builds for the Mac and the iPhone simulator, plus the walk-through in Task 18.
 
@@ -4351,6 +4354,11 @@ struct WelcomeView: View {
                 Text("Or type its address")
             } footer: {
                 if let error = model.error { Text(error).foregroundStyle(.red) }
+            }
+
+            Section {
+            } footer: {
+                Text("Version \(model.appVersion.label)").accessibilityIdentifier("version")
             }
         }
         .navigationTitle("Add a server")
@@ -4675,49 +4683,85 @@ extension AddServerFlow.Start: Identifiable {
 }
 ```
 
-**Step 2: The app opens on the root view and handles playarr:// links**
+**Step 2: An empty app model for UI tests**
 
-Replace the body of `apps/ios/Playarr/PlayarrApp.swift` with the following. Keep phase 0's `@UIApplicationDelegateAdaptor` line if there is one.
+In `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift`, after `live()`:
 
 ```swift
+    /// No servers, and nothing kept: for UI tests (`-UITests`) and previews.
+    public static func empty() -> AppModel {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
+        return AppModel(store: ServerStore(directory: directory, secrets: InMemorySecretStore()), browser: ServerBrowser(), appVersion: .current, device: .current())
+    }
+```
+
+**Step 3: The app opens on the root view and handles playarr:// links**
+
+Replace `apps/ios/Playarr/PlayarrApp.swift` with (phase 0's two-space style):
+
+```swift
+import Foundation
 import PlayarrUI
 import SwiftUI
 
 @main
 struct PlayarrApp: App {
-    @State private var model = AppModel.live()
+  /// UI tests launch with `-UITests`: no servers, and nothing kept between runs.
+  @State private var model = ProcessInfo.processInfo.arguments.contains("-UITests") ? AppModel.empty() : AppModel.live()
 
-    var body: some Scene {
-        WindowGroup {
-            RootView(model: model)
-                .onOpenURL { model.open($0) }
-        }
+  var body: some Scene {
+    WindowGroup {
+      RootView(model: model)
+        .onOpenURL { model.open($0) }
     }
+  }
 }
 ```
 
-**Step 3: Build for the Mac, the simulator, and the app**
+**Step 4: Phase 0's tests follow the new first screen**
+
+Delete `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/RootViewTests.swift` (it tested the version screen; the flows behind the new screens are tested in Tasks 11 and 15). Replace `apps/ios/PlayarrUITests/LaunchTests.swift` with:
+
+```swift
+import XCTest
+
+final class LaunchTests: XCTestCase {
+  @MainActor
+  func testLaunchAsksForAServerAndShowsTheVersion() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-UITests"]
+    app.launch()
+    XCTAssertTrue(app.navigationBars["Add a server"].waitForExistence(timeout: 10))
+    let version = app.staticTexts["version"]
+    XCTAssertTrue(version.exists)
+    XCTAssertTrue(version.label.hasPrefix("Version 1.0.0 ("), version.label)
+  }
+}
+```
+
+**Step 5: Build for the Mac, the simulator, and the app**
 
 ```bash
-swift build --package-path apps/ios/Packages/PlayarrUI
-swift build --package-path apps/ios/Packages/PlayarrUI --triple arm64-apple-ios26.0-simulator --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" --scratch-path /tmp/playarr-ui-ios
+swift build --disable-sandbox --package-path apps/ios/Packages/PlayarrUI
+swift build --disable-sandbox --package-path apps/ios/Packages/PlayarrUI --triple arm64-apple-ios26.0-simulator --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" --scratch-path /tmp/playarr-ui-ios
 make -C apps/ios build
 ```
 
 Expected: all three build with no errors and no warnings from these files. The iOS-only text-field modifiers are behind `#if os(iOS)` in `TextFields.swift`, and `DeviceInfo`'s UIKit use in PlayarrAPI is too.
 
-**Step 4: Run every iOS test**
+**Step 6: Run every iOS test**
 
 ```bash
 make -C apps/ios test
 ```
 
-Expected: all package suites and the app's tests pass.
+Expected: the scripts' tests, all package suites and the UI test pass (`** TEST SUCCEEDED **`).
 
-**Step 5: Commit**
+**Step 7: Commit**
 
 ```bash
-git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI apps/ios/Playarr/PlayarrApp.swift
+git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI apps/ios/Playarr/PlayarrApp.swift apps/ios/PlayarrUITests/LaunchTests.swift docs/plans/2026-11-03-ios-phase2-api-sign-in.md
+git rm apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/RootViewTests.swift
 git commit -F - <<'MSG'
 iOS: add a server, sign in, redeem a setup code or claim the server, and switch accounts
 

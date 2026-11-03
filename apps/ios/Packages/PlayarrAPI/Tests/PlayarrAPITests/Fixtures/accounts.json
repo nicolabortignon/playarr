@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "username": "owner",
+    "name": "Owner",
+    "role": "admin",
+    "canRequest": true,
+    "sources": null,
+    "hasPassword": true
+  },
+  {
+    "id": 2,
+    "username": "sam",
+    "name": "Sam",
+    "role": "member",
+    "canRequest": false,
+    "sources": [
+      1
+    ],
+    "hasPassword": false
+  }
+]

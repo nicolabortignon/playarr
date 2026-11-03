@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "name": "Late night",
+    "description": "For the drive home",
+    "trackCount": 2,
+    "duration": 677,
+    "cover": {
+      "url": "/art/playlist/1?v=17xcw2s",
+      "layout": "currents",
+      "variant": 0,
+      "frozen": true,
+      "stale": false,
+      "tempo": 126,
+      "energy": 0.43,
+      "styles": [
+        "ambient"
+      ],
+      "era": [
+        1998,
+        1998
+      ],
+      "analyzed": 0,
+      "total": 2,
+      "pending": false
+    },
+    "updatedAt": "2026-11-03T12:00:00.000Z",
+    "owner": "Home",
+    "shared": false,
+    "mine": true
+  }
+]

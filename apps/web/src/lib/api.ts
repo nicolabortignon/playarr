@@ -1,4 +1,4 @@
-import type { CuePoints, MixMap, MixMode, TransitionPlan } from '@playarr/mix';
+import type { CuePoints, MixMapEntry, MixMode, TransitionAnswer } from '@playarr/mix';
 import type {
   Account,
   AccountRole,
@@ -7,6 +7,8 @@ import type {
   AlbumRef,
   AlbumRequest,
   AlbumSort,
+  AnalysisKind,
+  AnalysisProgress,
   Artist,
   ArtistDetail,
   ArtistMatch,
@@ -25,8 +27,8 @@ import type {
   Lyrics,
   MatchingSettings,
   MixDetail,
-  MixSettings,
   MixSettingsInfo,
+  MixSettingsPatch,
   MixSummary,
   MusicBrainzStatus,
   OrganizePlan,
@@ -54,62 +56,12 @@ import type {
   TrackLevel,
   TrackMetadata,
   UpdateInfo,
-  UpdateSettings,
+  UpdateSettingsPatch,
 } from '@playarr/shared';
 
-/**
- * The server's answer for one song into the next: the file to play (ready), still rendering (pending,
- * ask again), better played straight on, or not possible (no mix map yet, say).
- */
-export type TransitionAnswer =
-  | {
-      status: 'ready';
-      plan: TransitionPlan;
-      url: string;
-      continuationUrl?: string;
-      tail?: number;
-      /** Seconds of A before the transition in its file: the file starts at plan.aStart − lead. */
-      lead?: number;
-      /** The songs' gains (dB) made into the audio, when the player asked for them (even volume). */
-      levels?: { a: number; b: number };
-    }
-  | {
-      status: 'pending';
-      plan: TransitionPlan;
-      /** How far making it has got: its step, the whole job's share done (0–1), and renders ahead of it while it waits. */
-      render?: { step: string; done: number; ahead?: number };
-    }
-  | { status: 'straight'; plan: TransitionPlan }
-  | { status: 'unavailable'; reason: string };
-
-/** The analyses Settings → Analysis runs over the library. */
-export type AnalysisKind = 'beats' | 'sound' | 'loudness' | 'tags';
-
-/** How far each analysis has got over the library (GET /api/analysis/progress). */
-export interface AnalysisProgress {
-  /** Audio analysis is on (beat and sound analysis need it; tags are looked up without). */
-  enabled: boolean;
-  /** Songs in the library. */
-  songs: number;
-  /** Songs with a mix map; of those, the ones whose beats the beat model found; failed lately (tried again a day later). */
-  beats: { ready: number; beatModel: number; failed: number };
-  /** Songs with their tempo, energy and texture measured; failed lately. */
-  sound: { ready: number; failed: number };
-  /** Songs with their loudness measured (for even volume); failed lately. */
-  loudness: { ready: number; failed: number };
-  /** Of the songs with a MusicBrainz id (the only ones ListenBrainz knows), those looked up. */
-  tags: { ready: number; songs: number };
-  /** Songs queued for beat or sound analysis, and being analysed now. */
-  waiting: number;
-  working: number;
-  /** The same for loudness analysis (its own queue). */
-  loudnessWaiting: number;
-  loudnessWorking: number;
-  /** Songs queued for a tag lookup. */
-  tagsWaiting: number;
-  /** The whole library is analysed in the background; otherwise songs as they come up to play. */
-  libraryScan: boolean;
-}
+// Answer types the iOS app shares, generated from these packages: re-exported for the web's imports.
+export type { TransitionAnswer } from '@playarr/mix';
+export type { AnalysisKind, AnalysisProgress } from '@playarr/shared';
 
 export class ApiError extends Error {
   constructor(
@@ -240,7 +192,7 @@ export const api = {
   saveRequestSettings: (patch: RequestSettingsPatch) =>
     request<RequestSettingsInfo>('/api/settings/requests', { method: 'PUT', body: JSON.stringify(patch) }),
   updates: () => get<UpdateInfo>('/api/settings/updates'),
-  saveUpdates: (patch: Partial<UpdateSettings>) =>
+  saveUpdates: (patch: UpdateSettingsPatch) =>
     request<UpdateInfo>('/api/settings/updates', { method: 'PUT', body: JSON.stringify(patch) }),
   checkForUpdates: () => request<UpdateInfo>('/api/settings/updates/check', { method: 'POST' }),
   /** keepalive: a report sent as the page closes still arrives. */
@@ -292,7 +244,7 @@ export const api = {
     request<{ queued: number }>(`/api/analysis/${kind}`, { method: 'POST', body: JSON.stringify({ again }) }),
   /** The mix maps of these recordings (at most 50), with any cue points set by hand. */
   mixMaps: (ids: string[]) =>
-    request<Record<string, MixMap & { cues?: CuePoints }>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),
+    request<Record<string, MixMapEntry>>('/api/mix-maps', { method: 'POST', body: JSON.stringify({ ids }) }),
   /** Replaces both mix points: null (or left out) clears one, so the song uses the detected point again. */
   setCues: (recordingId: string, cues: { mixIn: number | null; mixOut: number | null }) =>
     request<CuePoints>(`/api/recordings/${encodeURIComponent(recordingId)}/cues`, { method: 'PUT', body: JSON.stringify(cues) }),
@@ -305,7 +257,7 @@ export const api = {
   saveMix: (key: string) =>
     request<PlaylistDetail>(`/api/mixes/${key}/save?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }),
   mixSettings: () => get<MixSettingsInfo>('/api/settings/mixes'),
-  saveMixSettings: (patch: Partial<MixSettings>) =>
+  saveMixSettings: (patch: MixSettingsPatch) =>
     request<MixSettingsInfo>('/api/settings/mixes', { method: 'PUT', body: JSON.stringify(patch) }),
   listenBrainz: () => get<ListenBrainzInfo>('/api/settings/listenbrainz'),
   saveListenBrainz: (patch: { token?: string; enabled?: boolean }) =>

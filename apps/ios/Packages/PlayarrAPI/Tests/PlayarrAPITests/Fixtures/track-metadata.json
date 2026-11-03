@@ -1,0 +1,42 @@
+{
+  "trackId": 700,
+  "title": "Angel",
+  "artistName": "Massive Attack",
+  "albumTitle": "Mezzanine",
+  "trackNumber": 1,
+  "discNumber": 1,
+  "duration": 379,
+  "explicit": false,
+  "recordingId": "0b6a2c1e-1111-4222-8333-944455556666",
+  "albumId": 70,
+  "albumMbid": "rg-1",
+  "releaseDate": "2026-11-03T12:00:00.000Z",
+  "albumType": "Album",
+  "secondaryTypes": [],
+  "genres": [],
+  "artistId": 7,
+  "artistMbid": "art-1",
+  "copies": [
+    {
+      "fileId": 9000,
+      "playing": true,
+      "source": {
+        "id": 1,
+        "name": "Lidarr",
+        "kind": "lidarr",
+        "location": "Lidarr"
+      },
+      "path": "/music/Massive Attack/Mezzanine/01.flac",
+      "size": 40000000,
+      "format": {
+        "codec": "FLAC",
+        "container": "flac",
+        "bits": 16,
+        "sampleRate": 44100,
+        "lossless": true
+      },
+      "addedAt": "2026-11-03T12:00:00.000Z"
+    }
+  ],
+  "pathsHidden": false
+}

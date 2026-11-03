@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
+import { recordFixture } from '../testing/recordFixture.ts';
 import { statusRoutes } from './status.ts';
 
 describe('status routes', () => {
@@ -8,5 +9,6 @@ describe('status routes', () => {
     statusRoutes(app, { musicbrainz: { status: () => ({ queued: 4, background: 3, etaSeconds: 5 }) }, matching: () => 12 });
     const res = await app.inject({ method: 'GET', url: '/api/musicbrainz/status' });
     expect(res.json()).toEqual({ queued: 4, background: 3, etaSeconds: 5, matching: 12 });
+    recordFixture('musicbrainz-status', res);
   });
 });

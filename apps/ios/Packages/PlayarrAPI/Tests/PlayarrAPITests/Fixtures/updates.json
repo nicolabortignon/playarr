@@ -1,0 +1,11 @@
+{
+  "available": true,
+  "enabled": true,
+  "intervalMinutes": 360,
+  "status": {
+    "state": "idle",
+    "lastCheck": 0,
+    "lastUpdate": 0
+  },
+  "requested": true
+}

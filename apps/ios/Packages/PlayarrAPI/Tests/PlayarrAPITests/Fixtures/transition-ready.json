@@ -1,0 +1,77 @@
+{
+  "status": "ready",
+  "plan": {
+    "style": "long",
+    "aStart": 312.4,
+    "bStart": 0.42,
+    "length": 24,
+    "bResume": 24.42,
+    "switchAt": 12,
+    "bRate": [
+      {
+        "at": 0,
+        "value": 1.02
+      },
+      {
+        "at": 24,
+        "value": 1
+      }
+    ],
+    "aGain": [
+      {
+        "at": 0,
+        "value": 1
+      },
+      {
+        "at": 16,
+        "value": 0
+      }
+    ],
+    "bGain": [
+      {
+        "at": 0,
+        "value": 0
+      },
+      {
+        "at": 8,
+        "value": 1
+      }
+    ],
+    "aLowDb": [
+      {
+        "at": 0,
+        "value": 0
+      },
+      {
+        "at": 12,
+        "value": -24
+      }
+    ],
+    "bLowDb": [
+      {
+        "at": 0,
+        "value": -24
+      },
+      {
+        "at": 12,
+        "value": 0
+      }
+    ],
+    "aHighPassHz": [
+      {
+        "at": 0,
+        "value": 20
+      }
+    ],
+    "reason": "Both songs hold their beat over a 32-beat phrase",
+    "beats": 32
+  },
+  "url": "/transitions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.flac",
+  "continuationUrl": "/transitions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.rest.flac",
+  "tail": 8,
+  "lead": 4,
+  "levels": {
+    "a": -3.5,
+    "b": 1.2
+  }
+}

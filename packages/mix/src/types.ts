@@ -120,3 +120,40 @@ export interface TransitionPlan {
    */
   beats: number;
 }
+
+/** POST /api/mix-maps: a song's mix map with the cue points set by hand, if any. */
+export interface MixMapEntry extends MixMap {
+  cues?: CuePoints;
+}
+
+/**
+ * How far a transition being made has got: waiting its turn (behind `ahead` others), decoding the two
+ * songs around the mix, mixing them, saving the file, then (for an MP3 next song) saving the rest of it.
+ * `done` is the whole job's share done, 0–1, the steps weighted by about how long each takes.
+ */
+export interface RenderProgress {
+  step: 'waiting' | 'decoding' | 'mixing' | 'saving' | 'saving the rest of the next song';
+  done: number;
+  ahead?: number;
+}
+
+/**
+ * POST /api/transitions: the file to play (ready), still rendering (pending, ask again), better played
+ * straight on, or not possible (no mix map yet, say).
+ */
+export type TransitionAnswer =
+  | {
+      status: 'ready';
+      plan: TransitionPlan;
+      url: string;
+      continuationUrl?: string;
+      /** Seconds of B after the transition in its file (see TRANSITION_TAIL_SECONDS); none in older files. */
+      tail?: number;
+      /** Seconds of A before the transition in its file: the file starts at plan.aStart − lead. None in older files. */
+      lead?: number;
+      /** The songs' gains (dB) made into the audio (and B's remainder), when they were asked for. */
+      levels?: { a: number; b: number };
+    }
+  | { status: 'pending'; plan: TransitionPlan; render?: RenderProgress }
+  | { status: 'straight'; plan: TransitionPlan }
+  | { status: 'unavailable'; reason: string };

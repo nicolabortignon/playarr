@@ -13,7 +13,9 @@ import {
   type Excerpt,
   type MixMap,
   type MixMode,
+  type RenderProgress,
   type StereoAudio,
+  type TransitionAnswer,
   type TransitionPlan,
 } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
@@ -167,33 +169,8 @@ export interface TransitionRequest {
   library?: Pick<LibraryView, 'track'>;
 }
 
-export type TransitionAnswer =
-  | {
-      status: 'ready';
-      plan: TransitionPlan;
-      url: string;
-      continuationUrl?: string;
-      /** Seconds of B after the transition in its file (see TRANSITION_TAIL_SECONDS); none in older files. */
-      tail?: number;
-      /** Seconds of A before the transition in its file (see TRANSITION_LEAD_SECONDS): the file starts at aStart − lead. None in older files. */
-      lead?: number;
-      /** The songs' gains (dB) made into the audio (and B's remainder), when they were asked for. */
-      levels?: { a: number; b: number };
-    }
-  | { status: 'pending'; plan: TransitionPlan; render?: RenderProgress }
-  | { status: 'straight'; plan: TransitionPlan }
-  | { status: 'unavailable'; reason: string };
-
-/**
- * How far a transition being made has got: waiting its turn (behind `ahead` others), decoding the two
- * songs around the mix, mixing them, saving the file, then (for an MP3 next song) saving the rest of it.
- * `done` is the whole job's share done, 0–1, the steps weighted by about how long each takes.
- */
-export interface RenderProgress {
-  step: 'waiting' | 'decoding' | 'mixing' | 'saving' | 'saving the rest of the next song';
-  done: number;
-  ahead?: number;
-}
+// The player's answer types live in @playarr/mix, where the iOS models are generated from.
+export type { RenderProgress, TransitionAnswer } from '@playarr/mix';
 
 /** Each step's share of a render, roughly as long as each takes on a NAS: the mix is most of it. */
 const DECODING_SHARE = 0.1;

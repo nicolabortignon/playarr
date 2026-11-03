@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "media": {
+    "source": "local",
+    "ok": true
+  },
+  "library": {
+    "artists": 1,
+    "albums": 1,
+    "tracks": 2,
+    "durationSeconds": 677,
+    "sizeBytes": 70000000,
+    "refreshedAt": "2026-11-03T12:00:00.000Z"
+  },
+  "requests": false
+}

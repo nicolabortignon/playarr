@@ -1,0 +1,17 @@
+[
+  {
+    "key": "vibes",
+    "kind": "vibes",
+    "title": "Your vibes",
+    "subtitle": "Massive Attack and more",
+    "description": "Songs you play the most at this hour",
+    "trackCount": 2,
+    "duration": 677,
+    "covers": [
+      "/art/album/70/cover"
+    ],
+    "hue": 210,
+    "generatedAt": "2026-11-03T12:00:00.000Z",
+    "refreshesAt": "2026-11-03T12:00:00.000Z"
+  }
+]

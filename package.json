@@ -17,12 +17,14 @@
     "ios:bootstrap": "make -C apps/ios bootstrap",
     "ios:build": "make -C apps/ios build",
     "ios:test": "make -C apps/ios test",
+    "ios:models": "make -C apps/ios models",
     "ios:setup": "make -C apps/ios setup",
     "ios:beta": "make -C apps/ios beta",
     "ios:device": "make -C apps/ios device"
   },
   "devDependencies": {
     "bplist-creator": "^0.3.0",
-    "bplist-parser": "^0.5.0"
+    "bplist-parser": "^0.5.0",
+    "ts-json-schema-generator": "2.9.0"
   }
 }

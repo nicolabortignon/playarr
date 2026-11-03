@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "searchOnAdd": true,
+  "lidarr": true,
+  "options": {
+    "rootFolders": [
+      {
+        "path": "/music",
+        "freeSpace": 1000
+      }
+    ],
+    "qualityProfiles": [
+      {
+        "id": 1,
+        "name": "Lossless"
+      }
+    ],
+    "metadataProfiles": [
+      {
+        "id": 1,
+        "name": "Standard"
+      }
+    ]
+  }
+}

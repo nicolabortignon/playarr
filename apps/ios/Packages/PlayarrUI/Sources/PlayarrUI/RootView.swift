@@ -1,25 +1,36 @@
-import Foundation
 import PlayarrAPI
 import SwiftUI
 
-/// The app's only screen in phase 0: its name and the version installed.
+/// What the app shows: adding a server, signing in again, an update, or the signed-in app.
 public struct RootView: View {
-  let version: AppVersion
+    @Bindable var model: AppModel
 
-  public init(version: AppVersion = AppVersion(infoDictionary: Bundle.main.infoDictionary ?? [:])) {
-    self.version = version
-  }
-
-  var versionText: String { "Version \(version.label)" }
-
-  public var body: some View {
-    VStack(spacing: 8) {
-      Text("Playarr")
-        .font(.largeTitle.bold())
-      Text(versionText)
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .accessibilityIdentifier("version")
+    public init(model: AppModel) {
+        self.model = model
     }
-  }
+
+    public var body: some View {
+        content
+            .sheet(item: $model.redeemLink) { link in
+                AddServerFlow(app: model, start: .redeem(link)) { model.redeemLink = nil }
+            }
+            .task(id: model.store.active) { await model.checkActiveServer() }
+    }
+
+    @ViewBuilder private var content: some View {
+        if let info = model.tooOld {
+            UpdateRequiredView(serverName: info.name, minAppVersion: info.minAppVersion, appVersion: model.appVersion.description)
+        } else if let server = model.store.activeServer, let account = model.store.activeAccount {
+            if account.signedIn {
+                SignedInHomeView(model: model)
+            } else {
+                AddServerFlow(app: model, start: .server(server.baseURL, username: account.account.username))
+                    .id(account.key)
+            }
+        } else {
+            AddServerFlow(app: model)
+                .onAppear { model.browser.start() }
+                .onDisappear { model.browser.stop() }
+        }
+    }
 }

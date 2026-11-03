@@ -1,0 +1,69 @@
+{
+  "status": "straight",
+  "plan": {
+    "style": "straight",
+    "aStart": 312.4,
+    "bStart": 0.42,
+    "length": 24,
+    "bResume": 24.42,
+    "switchAt": 12,
+    "bRate": [
+      {
+        "at": 0,
+        "value": 1.02
+      },
+      {
+        "at": 24,
+        "value": 1
+      }
+    ],
+    "aGain": [
+      {
+        "at": 0,
+        "value": 1
+      },
+      {
+        "at": 16,
+        "value": 0
+      }
+    ],
+    "bGain": [
+      {
+        "at": 0,
+        "value": 0
+      },
+      {
+        "at": 8,
+        "value": 1
+      }
+    ],
+    "aLowDb": [
+      {
+        "at": 0,
+        "value": 0
+      },
+      {
+        "at": 12,
+        "value": -24
+      }
+    ],
+    "bLowDb": [
+      {
+        "at": 0,
+        "value": -24
+      },
+      {
+        "at": 12,
+        "value": 0
+      }
+    ],
+    "aHighPassHz": [
+      {
+        "at": 0,
+        "value": 20
+      }
+    ],
+    "reason": "Same album, in order",
+    "beats": 0
+  }
+}

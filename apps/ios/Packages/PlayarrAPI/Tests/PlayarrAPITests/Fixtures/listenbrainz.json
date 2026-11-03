@@ -1,0 +1,9 @@
+{
+  "connected": true,
+  "user": "listener",
+  "enabled": true,
+  "pending": 0,
+  "sent": 42,
+  "earlier": 3,
+  "lastSentAt": "2026-11-03T12:00:00.000Z"
+}

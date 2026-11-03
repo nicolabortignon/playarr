@@ -1,0 +1,23 @@
+{
+  "sources": [
+    {
+      "id": 1,
+      "kind": "lidarr",
+      "name": "Lidarr",
+      "position": 0,
+      "enabled": true,
+      "settings": {
+        "url": "http://lidarr:8686"
+      },
+      "secrets": [
+        "apiKey"
+      ],
+      "syncing": false,
+      "songs": 0,
+      "albums": 0,
+      "review": 0,
+      "matching": 0
+    }
+  ],
+  "canEdit": true
+}
