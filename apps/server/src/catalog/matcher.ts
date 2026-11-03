@@ -60,19 +60,24 @@ const ALBUM_RANK = 2;
 /**
  * Files by album (album tag, else folder). Skips files already identified by their tags. A compilation
  * (songs by many artists under one album name) is split into its songs, each a group of its own under its
- * artist: each is matched, and reviewed, apart from the others.
+ * artist: each is matched, and reviewed, apart from the others. By default only files to match are kept:
+ * new or changed ones, and those still waiting under a group that no longer exists (a compilation an
+ * earlier version matched as one album).
  */
 export function groupFiles(
   root: string,
   files: { rel: string; size: number; mtimeMs: number; tags: TagInfo | null }[],
   matches: Map<string, MatchRecord>,
-  include: (rel: string, size: number, mtimeMs: number, match?: MatchRecord) => boolean = (rel, size, mtimeMs, match) =>
-    !match || (match.state !== 'manual' && match.state !== 'ignored' && (match.size !== size || match.mtimeMs !== mtimeMs)),
+  include: (rel: string, size: number, mtimeMs: number, match: MatchRecord | undefined, groupKey: string) => boolean = (rel, size, mtimeMs, match, groupKey) =>
+    !match ||
+    (match.state !== 'manual' &&
+      match.state !== 'ignored' &&
+      (match.size !== size || match.mtimeMs !== mtimeMs || ((match.state === 'review' || match.state === 'unmatched') && match.groupKey !== groupKey))),
 ): FileGroup[] {
+  // Grouped whole first: whether a group is a compilation depends on all its songs, not just the new ones.
   const groups = new Map<string, FileGroup>();
   for (const f of files) {
     if (!f.tags || (f.tags.recordingMbid && f.tags.releaseGroupMbid)) continue;
-    if (!include(f.rel, f.size, f.mtimeMs, matches.get(f.rel))) continue;
     const d = describeFile(f.rel, f.tags);
     const key = d.albumTitle
       ? `${normalize(d.artistName)}|${normalize(d.albumTitle)}`
@@ -81,11 +86,14 @@ export function groupFiles(
     if (!group) groups.set(key, (group = { key, artistName: d.artistName, albumTitle: d.albumTitle, files: [] }));
     group.files.push({ rel: f.rel, artist: f.tags.artist || d.artistName, path: posix.join(root, f.rel), size: f.size, mtimeMs: f.mtimeMs, ...pick(d) });
   }
-  return [...groups.values()].flatMap((g) =>
-    isCompilation(g)
-      ? g.files.map((f) => ({ key: `${g.key}|${f.rel}`, artistName: f.artist, albumTitle: g.albumTitle, files: [f], compilation: true as const }))
-      : [g],
-  );
+  return [...groups.values()]
+    .flatMap((g) =>
+      isCompilation(g)
+        ? g.files.map((f) => ({ key: `${g.key}|${f.rel}`, artistName: f.artist, albumTitle: g.albumTitle, files: [f], compilation: true as const }))
+        : [g],
+    )
+    .map((g) => ({ ...g, files: g.files.filter((f) => include(f.rel, f.size, f.mtimeMs, matches.get(f.rel), g.key)) }))
+    .filter((g) => g.files.length > 0);
 }
 
 const pick = (d: ReturnType<typeof describeFile>): Omit<FileFacts, 'rel'> => ({

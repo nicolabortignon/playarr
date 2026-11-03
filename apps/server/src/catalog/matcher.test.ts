@@ -252,6 +252,25 @@ describe('Matcher', () => {
     ]);
   });
 
+  it('matches again, song by song, a compilation an earlier version left waiting as one group', async () => {
+    const files = Object.fromEntries(Object.entries(hitsFolder).map(([rel, t]) => [rel, hitsTags(t)]));
+    const { matcher, store, sourceId, mb } = setup(files, { hits: [] });
+    const searchRecordings = vi.fn(async (artist: string, title: string) => (albums[title] ? [recordingOf(artist, title, albums[title])] : []));
+    Object.assign(mb, { searchRecordings });
+    store.saveMatches(
+      sourceId,
+      Object.keys(files).map((rel) => ({ rel, groupKey: 'various artists|00s hits 100 top songs', state: 'unmatched' as const, size: 100, mtimeMs: 1 })),
+    );
+    expect(store.matchCounts().get(sourceId)).toEqual({ matched: 0, review: 1, ignored: 0 });
+    await matcher.matchSource(sourceId);
+    expect(store.matches(sourceId).get('03. Coldplay - Yellow.mp3')).toMatchObject({ state: 'auto', overlay: { album: 'Parachutes' } });
+    expect(store.matchCounts().get(sourceId)).toEqual({ matched: 2, review: 1, ignored: 0 });
+    // Once grouped as it groups now, the song left over isn't looked up again.
+    searchRecordings.mockClear();
+    await matcher.matchSource(sourceId);
+    expect(searchRecordings).not.toHaveBeenCalled();
+  });
+
   it('tries songs MusicBrainz failed for again a while later, without a rescan', async () => {
     const files = Object.fromEntries(Object.entries(hitsFolder).map(([rel, t]) => [rel, hitsTags(t)]));
     const { matcher, store, sourceId, mb } = setup(files, { hits: [], retry: { times: 2, afterMs: 5 } });
