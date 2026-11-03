@@ -14,7 +14,7 @@ Date: 2026-11-03. Companion to [the design](2026-11-03-ios-app-design.md) and [t
 | GitHub secrets | `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID`, `ASC_KEY_P8_BASE64` |
 | Deployment target | iOS 26.0; Swift packages also declare macOS 26 so `swift test` runs on the Mac |
 | Devices | iPhone and iPad (`TARGETED_DEVICE_FAMILY = 1,2`) |
-| Capabilities | Background modes: audio, fetch (background downloads). Keychain sharing not needed (one app). |
+| Capabilities | Background mode: audio (background `URLSession` downloads need none). Keychain sharing not needed (one app). |
 | Encryption | `ITSAppUsesNonExemptEncryption = NO` |
 
 ## Repository layout
@@ -38,20 +38,22 @@ apps/ios/
     └── gen-models.mjs        # TypeScript types → Swift Codable
 ```
 
-Package dependencies: `PlayarrUI → PlayarrPlayer → PlayarrAPI`. The app target depends on `PlayarrUI`. No third-party packages.
+Package dependencies: `PlayarrUI → PlayarrPlayer → PlayarrAPI`, and `PlayarrUI → PlayarrAPI` directly. The app target depends on `PlayarrUI`. No third-party packages.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `pnpm ios:bootstrap` (`make -C apps/ios bootstrap`) | Download pinned XcodeGen to `.tools/`, generate `Playarr.xcodeproj` |
-| `pnpm ios:test` | `swift test` in each package, then `xcodebuild test` (app + UI tests) on the simulator |
+| `pnpm ios:test` | `node --test` on the scripts, `swift test` in each package, then `xcodebuild test` (app + UI tests) on the simulator |
 | `pnpm ios:build` | Simulator build |
 | `pnpm ios:models` | Regenerate `PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift` |
 | `pnpm ios:setup` | One-time and idempotent: register the bundle id and capabilities via the API |
 | `pnpm ios:beta` | Test, archive, upload, wait for processing, distribute to the internal TestFlight group |
 | `pnpm ios:release` | App Store version, text, screenshots, submit for review |
 | `pnpm ios:device` | Build and install on a paired iPhone with `xcrun devicectl` |
+
+Make variables (after the target, also through pnpm): `TESTERS=a@b,c@d` for `ios:setup`, `SIMULATOR="iPad Pro 13-inch (M5)"` for build and test; environment `DEVICE="Name"` picks the phone for `ios:device`. Lower-level targets: `tools`, `project`, `test-scripts`, `test-packages`, `test-app`, `beta-upload` (upload without tests, used by CI), `clean`.
 
 Simulator destination: `platform=iOS Simulator,name=iPhone 17 Pro` (iPad: `iPad Pro 13-inch (M5)`); scripts pick the first available matching device when the exact one is missing. `pnpm` is `corepack pnpm` in Claude's shell.
 
