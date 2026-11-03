@@ -29,6 +29,8 @@ struct MixCover: View {
 
   var body: some View {
     let covers = mix.covers.count >= 4 ? Array(mix.covers.prefix(4)) : Array(mix.covers.prefix(1))
+    // The web's `linear-gradient(165deg, …)`: mostly down, a little to the right.
+    let wash = CSSGradient.points(angle: 165)
     ZStack(alignment: .bottomLeading) {
       OKLCH.rgb(l: 0.32, c: 0.09, h: mix.hue).color
       if covers.count == 4 {
@@ -45,7 +47,7 @@ struct MixCover: View {
           .init(color: OKLCH.rgb(l: 0.62, c: 0.17, h: mix.hue).color.opacity(0.35), location: 0),
           .init(color: OKLCH.rgb(l: 0.42, c: 0.14, h: mix.hue).color.opacity(0.72), location: 0.45),
           .init(color: OKLCH.rgb(l: 0.2, c: 0.07, h: mix.hue).color.opacity(0.95), location: 1),
-        ], startPoint: .topLeading, endPoint: .bottomTrailing)
+        ], startPoint: wash.start, endPoint: wash.end)
       VStack(alignment: .leading, spacing: 2) {
         Text("MADE FOR YOU").font(.system(size: width * 0.046, design: .monospaced)).tracking(2).foregroundStyle(.white.opacity(0.75))
         Text(mix.title).font(.system(size: width * 0.125, weight: .semibold, design: .serif)).foregroundStyle(.white).lineLimit(2)
