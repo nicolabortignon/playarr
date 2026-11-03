@@ -12,7 +12,7 @@ import { ANALYSIS_VERSION, SAMPLE_RATE } from './dsp.ts';
 
 /** Songs are decoded at the beat model's rate, twice the analysis rate. */
 const DECODE_RATE = 2 * SAMPLE_RATE;
-import { DspWorkerLost, type SongBeats } from './dspThread.ts';
+import { DspWorkerLost, type MiddleLoudness, type SongBeats } from './dspThread.ts';
 
 const MBID = '11111111-1111-1111-1111-111111111111';
 
@@ -75,7 +75,7 @@ type Beats = NonNullable<ConstructorParameters<typeof Analyzer>[3]['beats']>;
 function fakeDsp() {
   return {
     analyze: vi.fn(async (_pcm: Buffer, _rate?: number) => ({ fake: true }) as never),
-    mixMap: vi.fn(async (_head: Buffer, _tail: Buffer | null, duration: number, _rate?: number, _beats?: SongBeats) => ({ duration }) as never),
+    mixMap: vi.fn(async (_head: Buffer, _tail: Buffer | null, duration: number, _rate?: number, _beats?: SongBeats, _middle?: MiddleLoudness) => ({ duration }) as never),
   } satisfies Dsp;
 }
 
@@ -219,12 +219,27 @@ describe('Analyzer mix maps', () => {
     expect(duration).toBeCloseTo(1000, 3);
     expect(timeAt(tail!, 0)).toBeCloseTo(820, 1);
     // Each window that doesn't reach the end is followed by a longer one, overlapping its last 3 minutes.
-    expect(decodes().map((d) => [d.startSeconds, d.maxSeconds])).toEqual([
+    expect(decodes().filter((d) => d.sampleRate === DECODE_RATE).map((d) => [d.startSeconds, d.maxSeconds])).toEqual([
       [undefined, 420],
       [420, 240],
       [480, 480],
       [780, 960],
     ]);
+  });
+
+  it('measures a long song’s middle for its loudness alone, at the analysis rate, a piece at a time', async () => {
+    const { decodes, dsp } = await measured({ seconds: 1000, listed: 1000 });
+    // Between the head (420 s) and the tail (the last 180 s): 400 s in pieces of at most 2 minutes.
+    expect(decodes().filter((d) => d.sampleRate === DECODE_RATE / 2).map((d) => [d.startSeconds, d.maxSeconds])).toEqual([
+      [420, 120],
+      [540, 120],
+      [660, 120],
+      [780, 40],
+    ]);
+    const middle = dsp.mixMap.mock.calls[0]![5]!;
+    expect(middle.start).toBeCloseTo(420, 3);
+    // A loudness frame every 256 samples at 11025 Hz, over the 400 s.
+    expect(middle.rms.length).toBeCloseTo((400 * 11025) / 256, -1);
   });
 
   it('finds the end of a song shorter than the library says', async () => {

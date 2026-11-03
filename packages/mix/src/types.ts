@@ -1,5 +1,5 @@
 /** Bump when the mix map changes, so stored maps are measured again. */
-export const MIX_MAP_VERSION = 7;
+export const MIX_MAP_VERSION = 8;
 
 /** Camelot wheel position: 1–12 and A (minor) or B (major), e.g. "8A". */
 export type Camelot = `${number}${'A' | 'B'}`;
@@ -56,9 +56,10 @@ export interface MixMap {
   /**
    * Energy 0–1 per 16-beat phrase, relative to the loudest: phraseEnergy[k] is the phrase from
    * phrase line k (firstBeat + (downbeatOffset + 16k) beats), the first line being the music's first
-   * phrase start. Long songs: the first 7 minutes only.
+   * phrase start. Over the whole song (a long song's middle measured for its loudness alone); null for
+   * a phrase that wasn't measured (maps from before version 8 end after a long song's first 7 minutes).
    */
-  phraseEnergy: number[];
+  phraseEnergy: (number | null)[];
   /**
    * How far the beat strays in each 16-beat phrase (same phrase lines as phraseEnergy, but over the
    * whole song), in ms: the median offset of the beat model's beats in the phrase from the grid, less

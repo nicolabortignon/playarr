@@ -25,7 +25,7 @@ parentPort?.on('message', (job: WorkerJob) => {
       const answer: WorkerAnswer = { id: job.id, audio };
       parentPort!.postMessage(answer, [audio.left.buffer as ArrayBuffer, audio.right.buffer as ArrayBuffer]);
     } else if (job.kind === 'mixmap') {
-      const mixMap = mixMapOf(Buffer.from(job.pcm), job.tail ? Buffer.from(job.tail) : null, job.duration, job.rate, job.beats);
+      const mixMap = mixMapOf(Buffer.from(job.pcm), job.tail ? Buffer.from(job.tail) : null, job.duration, job.rate, job.beats, job.middle);
       parentPort!.postMessage({ id: job.id, mixMap } satisfies WorkerAnswer);
     } else {
       const answer: WorkerAnswer = { id: job.id, features: analyzePcm(atSampleRate(pcmToFloat(Buffer.from(job.pcm)), job.rate)) };

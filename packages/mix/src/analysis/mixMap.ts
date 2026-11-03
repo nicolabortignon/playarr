@@ -12,6 +12,7 @@ import { downbeats, phraseEnergyFrom } from './downbeats.ts';
 import { detectKey } from './key.ts';
 import { ANALYSIS_RATE, BEAT_ONSET_LATENCY_FRAMES, analyzeOnsets, type Onsets } from './onset.ts';
 import { modelBeatTimes, neuralGrid, type NeuralGrid } from './neuralGrid.ts';
+import { songPhraseEnergy, type LoudnessStretch } from './loudness.ts';
 import { sections } from './sections.ts';
 import { BEATS_PER_BAR, BEATS_PER_PHRASE, FRAME_CENTRE, mod, peak, percentile, soundStartOf } from './shared.ts';
 
@@ -64,6 +65,10 @@ const WEAK_KICK_SHARE = 10 ** (-12 / 10);
  * tail's own beats re-fit that grid's phase (correcting the tempo's last digits), and if they still
  * stray from it by more than 25 ms the tempo drifts over the song and the grid isn't stable.
  *
+ * `middle`: for such a song, its frame loudness (see LoudnessFrames, at `rate`) from `middle.start` (where
+ * the head ends) to where the tail begins, so phrase energy covers the whole song. Without it, the phrases
+ * between are null.
+ *
  * `beats`, the beat model's answer for the head (and the tail, when there is one), puts the grid
  * and the bars in its hands (see neuralGrid): the onset analysis then only puts the beats on the
  * transients. Without it (the model couldn't run), the onset analysis finds them all as before.
@@ -76,6 +81,7 @@ export function analyzeMix(
   duration: number,
   rate = ANALYSIS_RATE,
   beats?: { head: BeatActivations; tail?: BeatActivations | null },
+  middle?: { start: number; rms: ArrayLike<number> },
 ): MixMap {
   const songSeconds = Math.max(0, Number.isFinite(duration) ? duration : 0);
   const headSeconds = Math.min(head.length / rate, songSeconds);
@@ -178,8 +184,19 @@ export function analyzeMix(
     coldEnd,
     soundStart,
     soundEnd,
-    // Counted from `firstPhrase`, so phraseEnergy[k] is the phrase from the planner's phrase line k.
-    phraseEnergy: start.phraseEnergy,
+    // Counted from the music's first phrase start, so phraseEnergy[k] is the phrase from the planner's
+    // phrase line k; over the whole song, from the head, the middle and the tail, each where it's measured.
+    phraseEnergy: songPhraseEnergy(
+      [
+        { start: 0, rms: frames.rms, from: 0, to: headSeconds },
+        ...(middle && tailPart ? [{ start: middle.start, rms: middle.rms, from: headSeconds, to: tailPart.start }] : []),
+        ...(tailPart ? [{ start: tailPart.start, rms: tailPart.frames.rms, from: Math.max(headSeconds, tailPart.start), to: Infinity }] : []),
+      ] satisfies LoudnessStretch[],
+      frames.fps,
+      firstBeat + beatsBefore * (60 / bpm),
+      60 / bpm,
+      soundEnd,
+    ),
   });
   if (!beats) return map;
   // The kick at a song time: from the head's frames, or the tail's past the head.

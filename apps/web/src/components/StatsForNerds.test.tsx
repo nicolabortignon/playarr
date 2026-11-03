@@ -179,15 +179,18 @@ describe('Stats for nerds', () => {
   });
 
   it('shows how close the last changeovers into and out of a mix came, and why one wasn’t measured on the sound', async () => {
+    view();
+    await expectRow('Mix in', 'none yet');
+    cleanup();
     useJoins.setState({
       byJoin: {
-        'into the transition': { join: 'into the transition', gapMs: 0.004, tookMs: 640.2, heard: true },
-        'into the next song': { join: 'into the next song', gapMs: 1.24, tookMs: 903, fellBack: 'no match in the sound' },
+        'mix in': { join: 'mix in', songs: 'Song 1 → Song 2', foundMs: 23.42, gapMs: 0.004, tookMs: 640.2, heard: true },
+        'mix out': { join: 'mix out', songs: 'Song 1 → Song 2', foundMs: -7.1, gapMs: 1.24, tookMs: 903, fellBack: 'no match in the sound' },
       },
     });
     view();
-    await expectRow('Mix in', 'in step to 0.00 ms on the sound, after 640 ms');
-    await expectRow('Mix out', 'in step to 1.2 ms by the players’ times (no match in the sound), after 903 ms');
+    await expectRow('Mix in', 'Song 1 → Song 2 · 23 ms apart, the new file ahead · in step to 0.00 ms on the sound, after 640 ms');
+    await expectRow('Mix out', 'Song 1 → Song 2 · 7.1 ms apart, the new file behind · in step to 1.2 ms by the players’ times (no match in the sound), after 903 ms');
     useJoins.setState({ last: null, byJoin: {} });
   });
 
