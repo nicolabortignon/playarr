@@ -13,9 +13,6 @@ final class HomeModel {
   let health: Query<HealthStatus>
   let recent: Query<[Album]>
   let artists: Query<[Artist]>
-  let favorites: Query<[FavoriteTrack]>
-  let playlists: Query<[PlaylistSummary]>
-  let mixes: Query<[MixSummary]>
   let heardLately: Query<[Album]>
   let review: Query<ListeningStats>?
   let reviewYear: Int?
@@ -31,9 +28,6 @@ final class HomeModel {
     health = Query(.health, cache: cache, staleAfter: 30) { try await api.send(API.Server.health()) }
     recent = Query(.albums(.added, limit: 14), cache: cache) { try await api.send(API.Library.albums(sort: .added, limit: 14)) }
     artists = Query(.artists, cache: cache) { try await api.send(API.Library.artists()) }
-    favorites = Query(.favorites, cache: cache, staleAfter: 60) { try await api.send(API.Favorites.list()) }
-    playlists = Query(.playlists, cache: cache, staleAfter: 60) { try await api.send(API.Playlists.list()) }
-    mixes = Query(.mixes, cache: cache, staleAfter: 30) { try await api.send(API.Mixes.list()) }
     heardLately = Query(.recentAlbums, cache: cache, staleAfter: 60) { try await api.send(API.Library.recentAlbums()) }
     reviewYear = Self.reviewYear(now: now)
     review = reviewYear.map { year in
@@ -47,9 +41,9 @@ final class HomeModel {
     async let a: Void = health.load()
     async let b: Void = recent.load()
     async let c: Void = artists.load()
-    async let d: Void = favorites.load()
-    async let e: Void = playlists.load()
-    async let f: Void = mixes.load()
+    async let d: Void = session.favorites.load()
+    async let e: Void = session.playlists.load()
+    async let f: Void = session.mixes.load()
     async let g: Void = heardLately.load()
     async let h: Void = rediscover.load()
     async let i: Void = review?.load() ?? ()
@@ -58,9 +52,10 @@ final class HomeModel {
 
   /// Pull to refresh.
   func refresh() async {
-    for query in [health.refresh, recent.refresh, artists.refresh, favorites.refresh, playlists.refresh, mixes.refresh, heardLately.refresh] {
+    for query in [health.refresh, recent.refresh, artists.refresh, heardLately.refresh] {
       await query()
     }
+    await session.refreshListening()
   }
 
   /// "8 tracks across 3 albums, 44 min of music waiting in your library."
@@ -76,13 +71,13 @@ final class HomeModel {
   }
 
   /// Your mixes: hidden once the server says there are none.
-  var showsMixes: Bool { mixes.value.map { !$0.isEmpty } ?? mixes.isPending }
+  var showsMixes: Bool { session.mixes.mixes.map { !$0.isEmpty } ?? (session.mixes.error == nil) }
 
   /// Jump back in: shown from three albums.
   var jumpBackIn: [Album] { (heardLately.value?.count ?? 0) >= 3 ? heardLately.value ?? [] : [] }
 
   /// The first five favorites, as songs to play.
-  var favoriteTracks: [Track] { (favorites.value ?? []).prefix(5).map(\.track) }
+  var favoriteTracks: [Track] { (session.favorites.tracks ?? []).prefix(5).map(\.track) }
 
   var shelf: [Artist] { Self.shelfArtists(artists.value, recent: recent.value) }
 

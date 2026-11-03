@@ -20,7 +20,7 @@ struct HomeView: View {
         if let review = model.yearInReview { yearInReview(review) }
         if !model.jumpBackIn.isEmpty { albumShelf(model.jumpBackIn, title: "Jump back in", kicker: "Heard lately") }
         if !model.favoriteTracks.isEmpty { favorites }
-        if let playlists = model.playlists.value, !playlists.isEmpty { playlistShelf(playlists) }
+        if let playlists = session.playlists.playlists, !playlists.isEmpty { playlistShelf(playlists) }
         albumShelf(model.recent.value, title: "Recently added", kicker: "Just added", seeAll: .albums(.added))
         artists
         rediscover
@@ -71,7 +71,7 @@ struct HomeView: View {
     VStack(alignment: .leading, spacing: 0) {
       SectionHeader(title: "Your mixes", kicker: "Made for you", seeAll: .mixes)
       Shelf {
-        if let mixes = model.mixes.value {
+        if let mixes = session.mixes.mixes {
           ForEach(mixes, id: \.key) { MixCard(mix: $0) }
         } else {
           ForEach(0..<5, id: \.self) { _ in Skeleton().frame(width: ShelfCard.width) }

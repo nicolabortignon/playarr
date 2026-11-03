@@ -6,17 +6,15 @@ import SwiftUI
 /// while lookups wait (the desktop sidebar's footer).
 struct LibraryView: View {
   @State private var health: Query<HealthStatus>
-  @State private var favorites: Query<[FavoriteTrack]>
-  @State private var playlists: Query<[PlaylistSummary]>
+  let session: AccountSession
   @Environment(AppModel.self) private var app
   @Environment(DiscoverContext.self) private var discover: DiscoverContext?
   @Environment(Theme.self) private var theme
 
   init(session: AccountSession) {
     let api = session.api
+    self.session = session
     _health = State(initialValue: Query(.health, cache: session.queries, staleAfter: 30) { try await api.send(API.Server.health()) })
-    _favorites = State(initialValue: Query(.favorites, cache: session.queries, staleAfter: 60) { try await api.send(API.Favorites.list()) })
-    _playlists = State(initialValue: Query(.playlists, cache: session.queries, staleAfter: 60) { try await api.send(API.Playlists.list()) })
   }
 
   var body: some View {
@@ -25,7 +23,7 @@ struct LibraryView: View {
       Section {
         row("Made for you", "sparkles", .mixes)
         row("Your listening", "chart.bar", .listening)
-        row("Favorites", "heart", .favorites, detail: favorites.value.map { Format.plural($0.count, "song") })
+        row("Favorites", "heart", .favorites, detail: session.favorites.tracks.map { Format.plural($0.count, "song") })
         row("Artists", "music.mic", .artists, detail: library.map { String($0.artists) })
         row("Albums", "square.stack", .albums(.artist), detail: library.map { String($0.albums) })
         if let count = discover?.requests.requests?.count, count > 0 {
@@ -34,7 +32,7 @@ struct LibraryView: View {
         // Phase 9 finds Settings by this identifier.
         row("Settings", "gearshape", .settings).accessibilityIdentifier("settings")
       }
-      if let playlists = playlists.value, !playlists.isEmpty {
+      if let playlists = session.playlists.playlists, !playlists.isEmpty {
         Section("Playlists") {
           ForEach(playlists) { playlist in
             NavigationLink(value: Route.playlist(playlist.id)) {
@@ -62,13 +60,12 @@ struct LibraryView: View {
     }
     .task {
       await health.load()
-      await favorites.load()
-      await playlists.load()
+      await session.favorites.load()
+      await session.playlists.load()
     }
     .refreshable {
       await health.refresh()
-      await favorites.refresh()
-      await playlists.refresh()
+      await session.refreshListening()
     }
   }
 
