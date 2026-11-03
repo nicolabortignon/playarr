@@ -27,3 +27,6 @@ apps/ios/Packages/*/.swiftpm/
 *.xcarchive
 .DerivedData/
 xcuserdata/
+
+# App Store Connect API keys: never commit one, even copied into the repo by hand
+*.p8
