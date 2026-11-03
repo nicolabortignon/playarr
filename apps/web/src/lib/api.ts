@@ -191,7 +191,7 @@ export const api = {
   playlist: (id: number) => get<PlaylistDetail>(`/api/playlists/${id}`),
   createPlaylist: (body: { name: string; description?: string; recordingIds?: string[] }) =>
     request<PlaylistDetail>('/api/playlists', { method: 'POST', body: JSON.stringify(body) }),
-  updatePlaylist: (id: number, patch: { name?: string; description?: string }) =>
+  updatePlaylist: (id: number, patch: { name?: string; description?: string; shared?: boolean }) =>
     request<PlaylistDetail>(`/api/playlists/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deletePlaylist: (id: number) => request<void>(`/api/playlists/${id}`, { method: 'DELETE' }),
   addToPlaylist: (id: number, recordingIds: string[]) =>

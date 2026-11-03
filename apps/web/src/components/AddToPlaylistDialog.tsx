@@ -79,7 +79,7 @@ function Picker() {
       )}
 
       {tracks.length > 0 &&
-        playlists?.map((p) => (
+        playlists?.filter((p) => p.mine).map((p) => (
           <button
             key={p.id}
             type="button"

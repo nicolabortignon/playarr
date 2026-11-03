@@ -292,7 +292,7 @@ export function usePlaylistMutations() {
       onError,
     }),
     update: useMutation({
-      mutationFn: ({ id, ...patch }: { id: number; name?: string; description?: string }) => api.updatePlaylist(id, patch),
+      mutationFn: ({ id, ...patch }: { id: number; name?: string; description?: string; shared?: boolean }) => api.updatePlaylist(id, patch),
       onSuccess: settle,
       onError,
     }),

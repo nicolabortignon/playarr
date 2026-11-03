@@ -6835,9 +6835,6 @@ import { api } from '../lib/api';
 import { queryClient } from '../lib/queryClient';
 import { PlaylistPage } from './Playlist';
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 const COVER: PlaylistCoverInfo = { url: '/art/playlist/5?v=1', layout: 'ridges', variant: 0, frozen: true, stale: false, energy: 0.5, styles: [], analyzed: 1, total: 1, pending: false };
 const SHARED: PlaylistDetail = {
   id: 5,
@@ -6862,6 +6859,7 @@ afterEach(() => {
 
 function view(playlist: PlaylistDetail) {
   vi.spyOn(api, 'playlist').mockResolvedValue(playlist);
+  vi.spyOn(api, 'playlistRecommendations').mockResolvedValue({ owned: [], missing: [], seedCount: 0 });
   vi.stubGlobal('fetch', vi.fn(async () => Response.json([])));
   const router = createMemoryRouter([{ path: '/playlists/:id', element: <PlaylistPage /> }], { initialEntries: ['/playlists/5'] });
   render(
@@ -6995,6 +6993,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
+
+*As executed:* the test as first written answered every fetch with `[]`, which crashed `PlaylistRecommendations` (it reads `data.owned`) for the owner's view; it now mocks `api.playlistRecommendations` with an empty answer, and drops the per-file `Element.prototype.animate` deletion (Task 17b does it for every file). The code fitted as written once found by content. 470 web tests, exit 0.
 
 ---
 

@@ -1,5 +1,5 @@
 import type { CoverLayout, PlaylistCoverInfo, PlaylistItem } from '@playarr/shared';
-import { Disc3, GripVertical, Info, ListEnd, ListPlus, Mic2, Palette, Pencil, Play, Shuffle, Trash2, X } from 'lucide-react';
+import { Disc3, GripVertical, Info, ListEnd, ListPlus, Lock, Mic2, Palette, Pencil, Play, Shuffle, Trash2, Users, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -60,6 +60,8 @@ export function PlaylistPage() {
     if (ids.join() !== playlist.items.map((i) => i.itemId).join()) mutations.reorder.mutate({ id, itemIds: ids });
   };
   const unavailable = items.length - playable.length;
+  // Another account's shared playlist plays here; only its owner changes it.
+  const mine = playlist.mine;
 
   return (
     <div className="relative px-5 pt-6 md:px-10 md:pt-14">
@@ -67,9 +69,9 @@ export function PlaylistPage() {
       <header className="flex flex-col gap-6 md:flex-row md:items-end md:gap-10">
         <button
           type="button"
-          onClick={() => items.length > 0 && setPickingCover(true)}
+          onClick={() => mine && items.length > 0 && setPickingCover(true)}
           aria-label="New cover"
-          disabled={!items.length}
+          disabled={!mine || !items.length}
           className="group relative mx-auto w-[min(64vw,256px)] shrink-0 animate-rise md:mx-0 md:w-56 lg:w-64"
         >
           <PlaylistCover
@@ -78,7 +80,7 @@ export function PlaylistPage() {
             name={playlist.name}
             className="w-full rounded-[4px] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.9)] ring-1 ring-paper/10"
           />
-          {items.length > 0 && (
+          {mine && items.length > 0 && (
             <span className="absolute right-2.5 bottom-2.5 inline-flex items-center gap-1.5 rounded-full bg-ink-950/80 px-3 py-1.5 font-mono text-[10px] tracking-[0.15em] text-paper uppercase opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
               <Palette className="size-3.5" /> New cover
             </span>
@@ -96,14 +98,14 @@ export function PlaylistPage() {
           ) : (
             <>
               <h1
-                className="mt-2 cursor-text font-display text-[2.5rem] leading-[1.02] tracking-tight text-balance text-paper md:text-6xl lg:text-7xl"
-                onClick={() => setEditing(true)}
-                title="Click to rename"
+                className={cn('mt-2 font-display text-[2.5rem] leading-[1.02] tracking-tight text-balance text-paper md:text-6xl lg:text-7xl', mine && 'cursor-text')}
+                onClick={() => mine && setEditing(true)}
+                title={mine ? 'Click to rename' : undefined}
               >
                 {playlist.name}
               </h1>
               {playlist.description ? (
-                <p className="mt-3 max-w-2xl text-[15px] text-paper-dim/90" onClick={() => setEditing(true)}>
+                <p className="mt-3 max-w-2xl text-[15px] text-paper-dim/90" onClick={() => mine && setEditing(true)}>
                   {playlist.description}
                 </p>
               ) : null}
@@ -113,7 +115,10 @@ export function PlaylistPage() {
             {plural(items.length, 'song')} · {formatDuration(playlist.duration)}
             {unavailable > 0 && ` · ${unavailable} not in library`}
           </div>
-          {items.length > 0 && <CoverNote cover={playlist.cover} onNewCover={() => setPickingCover(true)} />}
+          {(!mine || playlist.shared) && (
+            <div className="mt-1 font-mono text-[12px] text-muted">{mine ? 'Shared with everyone on this server' : `Shared by ${playlist.owner}`}</div>
+          )}
+          {mine && items.length > 0 && <CoverNote cover={playlist.cover} onNewCover={() => setPickingCover(true)} />}
         </div>
       </header>
 
@@ -144,15 +149,22 @@ export function PlaylistPage() {
           className="size-12 border border-paper/15 text-paper"
           label="Playlist actions"
           items={[
-            { label: 'Rename', icon: Pencil, onSelect: () => setEditing(true) },
+            ...(mine ? [{ label: 'Rename', icon: Pencil, onSelect: () => setEditing(true) }] : []),
             ...(playable.length
               ? [
                   { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(playable, 'next') },
                   { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(playable, 'end') },
                 ]
               : []),
-            ...(items.length ? [{ label: 'New cover…', icon: Palette, onSelect: () => setPickingCover(true) }] : []),
-            { label: 'Delete playlist', icon: Trash2, onSelect: () => setConfirmDelete(true) },
+            ...(mine && items.length ? [{ label: 'New cover…', icon: Palette, onSelect: () => setPickingCover(true) }] : []),
+            ...(mine
+              ? [
+                  playlist.shared
+                    ? { label: 'Stop sharing', icon: Lock, onSelect: () => mutations.update.mutate({ id, shared: false }) }
+                    : { label: 'Share with everyone', icon: Users, onSelect: () => mutations.update.mutate({ id, shared: true }) },
+                  { label: 'Delete playlist', icon: Trash2, onSelect: () => setConfirmDelete(true) },
+                ]
+              : []),
           ]}
         />
       </div>
@@ -168,6 +180,7 @@ export function PlaylistPage() {
             <PlaylistRow
               key={item.itemId}
               item={item}
+              editable={mine}
               bpm={item.track && tempos[item.track.recordingId]}
               onPlay={() => playFrom(item)}
               onDragEnd={commitOrder}
@@ -177,7 +190,7 @@ export function PlaylistPage() {
         </Reorder.Group>
       )}
 
-      <PlaylistRecommendations playlistId={id} enabled={items.length > 0} />
+      {mine && <PlaylistRecommendations playlistId={id} enabled={items.length > 0} />}
 
       <CoverPicker playlist={playlist} open={pickingCover} onClose={() => setPickingCover(false)} />
 
@@ -214,12 +227,15 @@ export function PlaylistPage() {
 
 function PlaylistRow({
   item,
+  editable,
   bpm,
   onPlay,
   onDragEnd,
   onRemove,
 }: {
   item: PlaylistItem;
+  /** The viewer owns the playlist: drag to reorder, remove songs. */
+  editable: boolean;
   /** Its measured tempo, if any. */
   bpm: number | undefined;
   onPlay: () => void;
@@ -247,15 +263,19 @@ function PlaylistRow({
       )}
       onClick={() => track && onPlay()}
     >
-      <span
-        role="button"
-        aria-label={`Drag to reorder ${item.title}`}
-        onPointerDown={(e) => controls.start(e)}
-        onClick={(e) => e.stopPropagation()}
-        className="grid h-9 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100"
-      >
-        <GripVertical className="size-4" />
-      </span>
+      {editable ? (
+        <span
+          role="button"
+          aria-label={`Drag to reorder ${item.title}`}
+          onPointerDown={(e) => controls.start(e)}
+          onClick={(e) => e.stopPropagation()}
+          className="grid h-9 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100"
+        >
+          <GripVertical className="size-4" />
+        </span>
+      ) : (
+        <span />
+      )}
       <div className="relative">
         <Cover src={track?.coverUrl} size={44} alt="" label={item.albumTitle} className="size-11 rounded-[3px]" />
         {isCurrent && (
@@ -288,7 +308,7 @@ function PlaylistRow({
                   { label: 'Show metadata', icon: Info, onSelect: () => useUI.getState().showMetadata(track.id) },
                 ]
               : []),
-            { label: 'Remove from playlist', icon: X, onSelect: onRemove },
+            ...(editable ? [{ label: 'Remove from playlist', icon: X, onSelect: onRemove }] : []),
           ]}
         />
       </div>
