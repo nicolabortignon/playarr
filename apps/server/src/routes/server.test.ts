@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { CatalogStore } from '../catalog/store.ts';
 import { freshDb } from '../catalog/testFixtures.ts';
 import { loadConfig } from '../config.ts';
+import { recordFixture } from '../testing/recordFixture.ts';
 import { VERSION } from '../version.ts';
 import { MIN_APP_VERSION, serverId, serverInfo, serverRoutes } from './server.ts';
 
@@ -29,6 +30,23 @@ describe('server identity', () => {
     setup = false;
     expect((await app.inject({ url: '/api/server' })).json()).toEqual({ ...body, setup: false, ownerUsername: undefined });
     expect(serverInfo({ store, name: ' Living room ', setupMode: () => false, ownerUsername: () => 'home' }).name).toBe('Living room');
+  });
+
+  it('tells clients its public address (PUBLIC_URL) in and out of setup mode', async () => {
+    const store = new CatalogStore(freshDb());
+    let setup = true;
+    const app = Fastify();
+    const info = () => serverInfo({ store, name: 'Playarr', setupMode: () => setup, ownerUsername: () => 'home', publicUrl: 'https://playarr.example' });
+    serverRoutes(app, { info });
+    expect((await app.inject({ url: '/api/server' })).json()).toMatchObject({ setup: true, publicUrl: 'https://playarr.example' });
+    setup = false;
+    const res = await app.inject({ url: '/api/server' });
+    expect(res.json()).toMatchObject({ setup: false, publicUrl: 'https://playarr.example' });
+    expect(res.json()).not.toHaveProperty('ownerUsername');
+    // Without PUBLIC_URL there's no publicUrl at all (not null).
+    expect(serverInfo({ store, name: undefined, setupMode: () => false, ownerUsername: () => 'home' })).not.toHaveProperty('publicUrl');
+    // Pinned so the fixture is the same on every machine and at every version.
+    recordFixture('server-info', res, (body) => ({ ...body, id: '8d1e6f0a-0000-4000-8000-000000000001', name: 'Playarr', version: '0.7.0' }));
   });
 
   it('knows its version from the repository’s package.json', () => {

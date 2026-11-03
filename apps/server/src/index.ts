@@ -179,7 +179,7 @@ app.decorateRequest('auth', null);
 app.addHook('onRequest', authHook({ accounts, sessions }));
 authRoutes(app, { accounts, sessions, setupCodes });
 accountRoutes(app, { accounts, sessions, setupCodes, publicUrl: config.PUBLIC_URL });
-const info = () => serverInfo({ store, name: config.SERVER_NAME, setupMode: () => accounts.setupMode(), ownerUsername: () => accounts.owner().username });
+const info = () => serverInfo({ store, name: config.SERVER_NAME, setupMode: () => accounts.setupMode(), ownerUsername: () => accounts.owner().username, publicUrl: config.PUBLIC_URL });
 serverRoutes(app, { info });
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });

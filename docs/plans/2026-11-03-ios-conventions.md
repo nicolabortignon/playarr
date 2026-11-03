@@ -75,7 +75,7 @@ export interface Account {
   hasPassword: boolean;       // false until set up
 }
 export interface SessionInfo { id: number; device: string; platform: string; createdAt: string; lastSeenAt: string; current: boolean }
-export interface ServerInfo { id: string; name: string; version: string; minAppVersion: string; setup: boolean; ownerUsername?: string } // ownerUsername only while setup
+export interface ServerInfo { id: string; name: string; version: string; minAppVersion: string; setup: boolean; ownerUsername?: string; publicUrl?: string } // ownerUsername only while setup; publicUrl whenever PUBLIC_URL is set (the address every client uses)
 export interface SignInResponse { token: string; account: Account }
 export interface SetupCode { code: string; link: string; expiresAt: string }
 export interface CreatedAccount { account: Account; setup: SetupCode }

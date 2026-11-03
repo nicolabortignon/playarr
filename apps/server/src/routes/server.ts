@@ -26,6 +26,8 @@ export function serverInfo(deps: {
   setupMode: () => boolean;
   /** The owner's current username (account 1's, from its profile), for the setup page to pre-fill. */
   ownerUsername: () => string;
+  /** PUBLIC_URL: the address clients should use, whoever reached the server how. */
+  publicUrl?: string;
 }): ServerInfo {
   const setup = deps.setupMode();
   return {
@@ -36,6 +38,7 @@ export function serverInfo(deps: {
     setup,
     // Only while nobody has a password: afterwards usernames aren't anyone's business before signing in.
     ...(setup ? { ownerUsername: deps.ownerUsername() } : {}),
+    ...(deps.publicUrl ? { publicUrl: deps.publicUrl } : {}),
   };
 }
 

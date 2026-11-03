@@ -889,6 +889,8 @@ export interface ServerInfo {
   setup: boolean;
   /** Only while `setup`: the owner's current username, for the setup page to pre-fill. */
   ownerUsername?: string;
+  /** PUBLIC_URL when set (e.g. https://tracklist.me): the address every client should use. */
+  publicUrl?: string;
 }
 
 export interface SignInResponse {

@@ -2555,14 +2555,17 @@ public struct ServerInfo: Codable, Hashable, Sendable, Identifiable {
     public var setup: Bool
     /// Only while `setup`: the owner's current username, for the setup page to pre-fill.
     public var ownerUsername: String?
+    /// PUBLIC_URL when set (e.g. https://tracklist.me): the address every client should use.
+    public var publicUrl: String?
 
-    public init(id: String, name: String, version: String, minAppVersion: String, setup: Bool, ownerUsername: String? = nil) {
+    public init(id: String, name: String, version: String, minAppVersion: String, setup: Bool, ownerUsername: String? = nil, publicUrl: String? = nil) {
         self.id = id
         self.name = name
         self.version = version
         self.minAppVersion = minAppVersion
         self.setup = setup
         self.ownerUsername = ownerUsername
+        self.publicUrl = publicUrl
     }
 }
 
