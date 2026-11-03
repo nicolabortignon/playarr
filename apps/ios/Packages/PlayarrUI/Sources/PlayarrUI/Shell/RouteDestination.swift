@@ -14,7 +14,7 @@ struct RouteDestination: View {
     case .artists: ArtistsView(session: session)
     case .settings: SettingsView(session: session)
     case .settingsPanel(let panel): SettingsPanelView(panel: panel, session: session)
-    case .favorites: PlaceholderPage(title: "Favorites")  // phase 6
+    case .favorites: FavoritesView(session: session)
     case .playlists: PlaceholderPage(title: "Playlists")  // phase 6
     // Phase 6: the playlist's "Songs like these" row (PlaylistRecommendations.tsx) puts phase 8's request button in its
     // trailing slot for songs not in the library: `if let album = rec.album, let availability = rec.availability {
