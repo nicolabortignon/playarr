@@ -20,6 +20,8 @@ public final class QueryCache {
   private var writes: [Task<Void, Never>] = []
   private let disk: QueryDisk?
   private let now: () -> Date
+  /// Pages of downloads: kept on disk however old, whatever their family, as long as the download.
+  private var pinned: Set<QueryKey> = []
 
   /// `directory` nil keeps nothing on disk.
   public init(directory: URL?, now: @escaping () -> Date = Date.init) {
@@ -27,11 +29,17 @@ public final class QueryCache {
     self.now = now
   }
 
+  public func setPinned(_ paths: Set<[String]>) {
+    pinned = Set(paths.map(QueryKey.init(path:)))
+  }
+
+  private func keepsOnDisk(_ key: QueryKey) -> Bool { key.isKept || pinned.contains(key) }
+
   /// The answer kept for `key` and when it came, from memory or else from disk; nil if none (or older than 7 days).
   public func cached<T: Codable & Sendable>(_ key: QueryKey, as type: T.Type = T.self) -> (value: T, updatedAt: Date)? {
     if let entry = memory[key], let value = entry.value as? T { return (value, entry.updatedAt) }
-    guard key.isKept, let disk, let stored = disk.read(T.self, file: key.fileName) else { return nil }
-    guard now().timeIntervalSince(stored.updatedAt) < Self.keepFor else {
+    guard keepsOnDisk(key), let disk, let stored = disk.read(T.self, file: key.fileName) else { return nil }
+    guard pinned.contains(key) || now().timeIntervalSince(stored.updatedAt) < Self.keepFor else {
       disk.remove(file: key.fileName)
       return nil
     }
@@ -69,7 +77,7 @@ public final class QueryCache {
   public func set<T: Codable & Sendable>(_ value: T, for key: QueryKey) {
     let updatedAt = now()
     memory[key] = Entry(value: value, updatedAt: updatedAt)
-    guard key.isKept, let disk else { return }
+    guard keepsOnDisk(key), let disk else { return }
     let file = key.fileName
     writes.append(Task.detached { await disk.write(value, updatedAt: updatedAt, file: file) })
   }
@@ -86,9 +94,9 @@ public final class QueryCache {
     for write in pending { await write.value }
   }
 
-  /// Deletes answers kept on disk for more than 7 days.
+  /// Deletes answers kept on disk for more than 7 days, except downloads' pages.
   public func removeExpired() async {
-    await disk?.removeOlder(than: now().addingTimeInterval(-Self.keepFor))
+    await disk?.removeOlder(than: now().addingTimeInterval(-Self.keepFor), keeping: Set(pinned.map(\.fileName)))
   }
 }
 
@@ -125,9 +133,9 @@ actor QueryDisk {
     }
   }
 
-  func removeOlder(than date: Date) {
+  func removeOlder(than date: Date, keeping: Set<String> = []) {
     let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-    for file in files {
+    for file in files where !keeping.contains(file.lastPathComponent) {
       let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
       if modified < date { try? FileManager.default.removeItem(at: file) }
     }

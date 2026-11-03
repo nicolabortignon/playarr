@@ -23,6 +23,8 @@ final class MixModel {
     self.session = session
     self.clock = clock
     self.timeZone = timeZone
+    // A downloaded mix's page is kept on disk (`QueryCache.setPinned`), so it opens offline.
+    mix = session.queries.cached(.mix(key), as: MixDetail.self)?.value
   }
 
   var source: PlaySource { PlaySource(label: mix?.title ?? "", href: "/mixes/\(key)") }
@@ -37,7 +39,9 @@ final class MixModel {
 
   func load() async {
     do {
-      mix = try await session.api.send(API.Mixes.get(key: key, timeZone: timeZone))
+      let fresh = try await session.api.send(API.Mixes.get(key: key, timeZone: timeZone))
+      mix = fresh
+      session.queries.set(fresh, for: .mix(key))
       error = nil
     } catch {
       if mix == nil { self.error = error.localizedDescription }
@@ -58,7 +62,9 @@ final class MixModel {
     regenerating = true
     defer { regenerating = false }
     do {
-      mix = try await session.api.send(API.Mixes.regenerate(key: key, timeZone: timeZone))
+      let fresh = try await session.api.send(API.Mixes.regenerate(key: key, timeZone: timeZone))
+      mix = fresh
+      session.queries.set(fresh, for: .mix(key))
       await session.mixes.load()
     } catch {
       session.toasts.push("Couldn’t make a new mix: \(error.localizedDescription)", tone: .error)
