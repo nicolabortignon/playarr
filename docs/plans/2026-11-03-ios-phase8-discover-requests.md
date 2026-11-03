@@ -4621,6 +4621,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** no `EnergyLayout.swift` and no `EnergyLayoutTests`: phase 5's `EnergyPicture.phrasesAndBars(_:clock:from:to:)` (over the whole song, the clock being the song's own) and `EnergyPicture.heardHeight(_:)` already port `phrasesAndBars` and `heardHeight` for the same `MixMapEntry`, with their own tests; Task 18 checks the whole-song layout it gives. `Format.jsRound` for `TextFormat`'s.
+
 ---
 
 ### Task 17: Previews in the player, leaving the queue alone
