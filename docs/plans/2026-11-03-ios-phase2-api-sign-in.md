@@ -3888,41 +3888,12 @@ MSG
 `AppModel` is the root state the conventions place in `PlayarrUI`. This phase starts it with what sign-in needs: the store, the Bonjour browser, the app version, a setup-code link to open, and "too old for this server". Later phases add to it. `AddServerModel` drives one add-a-server or add-an-account flow: connect (probe `GET /api/server`), then sign in, redeem a code, or claim a server in setup mode.
 
 **Files:**
-- Modify: `apps/ios/Packages/PlayarrUI/Package.swift` (depend on `PlayarrAPI` directly)
 - Create: `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift`, `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/SignIn/AddServerModel.swift`
 - Test: `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/AddServerModelTests.swift`
-- Delete: phase 0's placeholder source and test in `PlayarrUI`, if any (as in Task 2)
 
-**Step 1: The package depends on PlayarrAPI**
+**Step 1: The package as phase 0 left it**
 
-Replace `apps/ios/Packages/PlayarrUI/Package.swift` with (keep any other dependency phase 0 added):
-
-```swift
-// swift-tools-version: 6.2
-import PackageDescription
-
-let package = Package(
-    name: "PlayarrUI",
-    platforms: [.iOS(.v26), .macOS(.v26)],
-    products: [
-        .library(name: "PlayarrUI", targets: ["PlayarrUI"]),
-    ],
-    dependencies: [
-        .package(path: "../PlayarrPlayer"),
-        .package(path: "../PlayarrAPI"),
-    ],
-    targets: [
-        .target(
-            name: "PlayarrUI",
-            dependencies: [
-                .product(name: "PlayarrPlayer", package: "PlayarrPlayer"),
-                .product(name: "PlayarrAPI", package: "PlayarrAPI"),
-            ]
-        ),
-        .testTarget(name: "PlayarrUITests", dependencies: ["PlayarrUI"]),
-    ]
-)
-```
+Phase 0's `apps/ios/Packages/PlayarrUI/Package.swift` already depends on `PlayarrAPI` directly (and on `PlayarrPlayer`), so it stays as it is. Its placeholder `RootView` (phase 0's version screen, with `RootViewTests.swift`) stays too until Task 16 replaces it, because the app target shows it.
 
 **Step 2: Write the failing test**
 
@@ -4182,13 +4153,12 @@ public final class AddServerModel {
 swift test --package-path apps/ios/Packages/PlayarrUI --filter AddServerModelTests
 ```
 
-Expected: 5 tests pass.
+Expected: 5 tests pass (and phase 0's `RootViewTests` still passes in a full `swift test` of the package).
 
 **Step 6: Commit**
 
 ```bash
-git add apps/ios/Packages/PlayarrUI/Package.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/SignIn/AddServerModel.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/AddServerModelTests.swift
-git add -u apps/ios/Packages/PlayarrUI
+git add apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/AppModel.swift apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/SignIn/AddServerModel.swift apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/AddServerModelTests.swift
 git commit -F - <<'MSG'
 iOS: the app's root state and the add-a-server flow: connect, sign in, redeem a code or claim the server
 
