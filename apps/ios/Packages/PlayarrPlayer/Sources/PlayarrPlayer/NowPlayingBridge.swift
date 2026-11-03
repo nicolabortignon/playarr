@@ -105,6 +105,13 @@ public final class NowPlayingBridge {
     publish()
   }
 
+  /// Whether the song playing is a favorite: the like command shows it (filled) and says what a press does.
+  public func setLiked(_ liked: Bool) {
+    let like = MPRemoteCommandCenter.shared().likeCommand
+    like.isActive = liked
+    like.localizedTitle = liked ? "Remove from favorites" : "Add to favorites"
+  }
+
   /// Lets go of the remote commands (the next player registers its own).
   public func unregister() {
     let center = MPRemoteCommandCenter.shared()

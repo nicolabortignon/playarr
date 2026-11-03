@@ -47,6 +47,10 @@ struct AppShell: View {
     .task(id: session.player.queue.currentTrack?.coverUrl) {
       await model.theme.follow(cover: session.player.queue.currentTrack?.coverUrl, images: session.images)
     }
+    // The lock screen's like button shows whether the song playing is a favorite.
+    .onChange(of: session.player.queue.currentTrack.map { session.favorites.isFavorite($0.recordingId) } ?? false, initial: true) { _, liked in
+      session.player.nowPlaying?.setLiked(liked)
+    }
     .onChange(of: session.player.notice) { _, notice in
       if let notice { model.toasts.push(notice.text, tone: notice.isError ? .error : .info) }
     }

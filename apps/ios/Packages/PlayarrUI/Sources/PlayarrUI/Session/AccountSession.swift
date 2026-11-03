@@ -69,17 +69,24 @@ public final class AccountSession {
       let media = model.store.mediaURLs(for: record)
     else { return nil }
     let folder = folder(for: record.key)
-    let player = try Player.live(backend: APIBackend(client: client, media: media), directory: folder, settings: model.playback)
+    // The lock screen's like button toggles the song playing in this account's favorites (the session is made below).
+    let owner = SessionReference()
+    let player = try Player.live(backend: APIBackend(client: client, media: media), directory: folder, settings: model.playback) { track in
+      guard let session = owner.session else { return }
+      Task { await session.favorites.toggle(track) }
+    }
     let queries = QueryCache(directory: folder.appending(path: "queries", directoryHint: .isDirectory))
     let images = ImageCache(directory: imageFolder(for: record.key), media: media)
     Task {
       await queries.removeExpired()
       await images.prune()
     }
-    return AccountSession(
+    let session = AccountSession(
       key: record.key, account: record.account, serverName: server.name, api: client, client: client, player: player,
       queries: queries, images: images, toasts: model.toasts,
       notifier: LocalRequestNotifier { [weak model] in model?.isActive ?? true })
+    owner.session = session
+    return session
   }
 
   /// The demo library (`Demo`), playing silence: for the UI tests, and view-model tests (`offline`: an engine that

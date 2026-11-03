@@ -1,4 +1,5 @@
 import Foundation
+import PlayarrAPI
 
 #if canImport(UIKit)
   import UIKit
@@ -6,8 +7,12 @@ import Foundation
 
 extension Player {
   /// The player as the app runs it: lock-screen controls and Now Playing, the audio session (iOS), the network for
-  /// prefetching, its 10 Hz clock, and a last report when the app is closed.
-  public static func live(backend: any PlayerBackend, directory: URL, settings: PlaybackSettings = PlaybackSettings()) throws -> Player {
+  /// prefetching, its 10 Hz clock, and a last report when the app is closed. `like` is what the lock screen's like
+  /// command does with the song playing (the app toggles it in favorites); nil leaves the command off.
+  public static func live(
+    backend: any PlayerBackend, directory: URL, settings: PlaybackSettings = PlaybackSettings(),
+    like: (@MainActor (Track) -> Void)? = nil
+  ) throws -> Player {
     let player = try Player(backend: backend, directory: directory, settings: settings)
     player.nowPlaying = NowPlayingBridge(
       commands: NowPlayingBridge.Commands(
@@ -16,7 +21,13 @@ extension Player {
         toggle: { [weak player] in player?.togglePlay() },
         next: { [weak player] in player?.next() },
         previous: { [weak player] in player?.previous() },
-        seek: { [weak player] in player?.seek(to: $0) }),
+        seek: { [weak player] in player?.seek(to: $0) },
+        like: like.map { like in
+          { [weak player] in
+            guard let track = player?.queue.currentTrack else { return }
+            like(track)
+          }
+        }),
       artwork: { await backend.artwork($0, size: NowPlayingBridge.artworkSize) })
     let network = NetworkMonitor()
     player.network = { network.kind }

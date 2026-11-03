@@ -1772,7 +1772,8 @@ Replace:
 ```swift
     return AccountSession(
       key: record.key, account: record.account, serverName: server.name, api: client, client: client, player: player,
-      queries: queries, images: images, toasts: model.toasts)
+      queries: queries, images: images, toasts: model.toasts,
+      notifier: LocalRequestNotifier { [weak model] in model?.isActive ?? true })
 ```
 
 with:
@@ -1780,7 +1781,8 @@ with:
 ```swift
     let session = AccountSession(
       key: record.key, account: record.account, serverName: server.name, api: client, client: client, player: player,
-      queries: queries, images: images, toasts: model.toasts)
+      queries: queries, images: images, toasts: model.toasts,
+      notifier: LocalRequestNotifier { [weak model] in model?.isActive ?? true })
     owner.session = session
     return session
 ```
