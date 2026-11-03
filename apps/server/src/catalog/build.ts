@@ -262,8 +262,8 @@ function toAlbumDetail(
       ? { mayBeIncomplete: true as const }
       : {}),
     coverUrl: m.coverUrl ?? fallbackCover,
-    // When the album first entered the library (kept by the store across file changes), else its earliest copy.
-    addedAt: row.addedAt ?? added.sort()[0],
+    // When the album last got a song (kept by the store across file changes), else its newest copy.
+    addedAt: row.addedAt ?? added.sort().at(-1),
     ...(m.mbid ? { mbid: m.mbid } : {}),
     format: mostCommonFormat(tracks),
     overview: m.overview,

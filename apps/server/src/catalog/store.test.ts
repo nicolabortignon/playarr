@@ -56,24 +56,29 @@ describe('CatalogStore', () => {
     expect(store.load().albums.find((a) => a.key === 'mb:rg-9')!.id).toBe(71);
   });
 
-  it('dates an album by when it first entered the library, across sources and file changes', () => {
+  it('dates an album by when it last got a song, never by a file replaced', () => {
     const { store, sourceId } = setup();
     store.applySync(sourceId, mezzanine());
     const added = () => store.load().albums[0]!.addedAt;
-    // Lidarr imported the files on Oct 1 and 2: the album arrived on Oct 1.
-    expect(added()).toBe('2026-10-01T10:00:00.000Z');
-    // A quality upgrade replaces both files with newer ones: still Oct 1.
+    // Lidarr imported Angel on Oct 1 and Risingson on Oct 2: the album's newest song came on Oct 2.
+    expect(added()).toBe('2026-10-02T10:00:00.000Z');
+    // A quality upgrade replaces both files with newer ones: the same songs, still Oct 2.
     const upgraded = mezzanine();
     upgraded.copies = upgraded.copies.map((c, i) => ({ ...c, ref: `90${10 + i}`, preferredId: undefined, addedAt: '2026-10-20T10:00:00Z' }));
     store.applySync(sourceId, upgraded);
-    expect(added()).toBe('2026-10-01T10:00:00.000Z');
-    // A copy of the same album in a folder doesn't make it new either.
-    const folder = store.addSource('folder', 'Music');
+    expect(added()).toBe('2026-10-02T10:00:00.000Z');
+    // A folder added later with a song of the album: it's back at the front of Recently added.
+    const folder = store.addSource('folder', '00s Hits');
     const copy = mezzanine();
     copy.addedAt = 'firstSeen';
-    copy.copies = copy.copies.map((c) => ({ ...c, ref: `x/${c.ref}`, preferredId: undefined, addedAt: '2026-10-25T10:00:00Z' }));
+    copy.copies = [{ ...copy.copies[0]!, ref: 'x/01.flac', preferredId: undefined, addedAt: '2026-10-25T10:00:00Z' }];
+    const before = new Date().toISOString();
     store.applySync(folder, copy);
-    expect(added()).toBe('2026-10-01T10:00:00.000Z');
+    expect(added()! >= before).toBe(true);
+    // Scanning that folder again changes nothing.
+    const bumped = added();
+    store.applySync(folder, copy);
+    expect(added()).toBe(bumped);
   });
 
   it('dates folder files by when Playarr found them, using file times only for the library’s first music', () => {

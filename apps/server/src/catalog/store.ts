@@ -329,6 +329,10 @@ export class CatalogStore {
             .all(sourceId) as { ref: string; rec: string }[]
         ).map((r) => [r.ref, r.rec]),
       );
+      // The songs this source had a file of, so a song new to it moves its album to the front.
+      const had = new Set(
+        (this.db.prepare('SELECT DISTINCT track_id AS id FROM copies WHERE source_id = ?').all(sourceId) as { id: number }[]).map((r) => r.id),
+      );
       const recordingOf = new Map(sync.tracks.map((t) => [t.key, t.recordingId]));
       const moves = new Map<string, string>();
       const seen = new Set<number>();
@@ -357,20 +361,27 @@ export class CatalogStore {
       }[]) {
         if (!seen.has(id)) remove.run(id);
       }
-      // Albums remember the earliest date any of their copies ever had, so replaced files (upgrades,
-      // other sources, organizing) never make an old album look new.
+      // An album is dated by when it last got a song: its earliest copy at first, then the date of each
+      // song new to a source (a folder added later with one of its songs). A file replaced for a song
+      // the source already had (upgrades, organizing) never makes an old album look new.
       this.db
         .prepare(
           `UPDATE catalog_albums SET added_at = (
-             SELECT MIN(v) FROM (
-               SELECT catalog_albums.added_at AS v
-               UNION ALL
-               SELECT MIN(c.added_at) FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE t.album_id = catalog_albums.id
-             )
+             SELECT MIN(c.added_at) FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE t.album_id = catalog_albums.id
            )
-           WHERE id IN (SELECT t.album_id FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE c.source_id = ?)`,
+           WHERE added_at IS NULL
+             AND id IN (SELECT t.album_id FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE c.source_id = ?)`,
         )
         .run(sourceId);
+      const bump = this.db.prepare(
+        `UPDATE catalog_albums SET added_at = MAX(IFNULL(added_at, ''), (
+           SELECT MAX(c.added_at) FROM copies c WHERE c.source_id = ? AND c.track_id = ?
+         ))
+         WHERE id = (SELECT album_id FROM catalog_tracks WHERE id = ?)
+           AND EXISTS (SELECT 1 FROM copies c WHERE c.source_id = ? AND c.track_id = ? AND c.added_at IS NOT NULL)`,
+      );
+      const fresh = this.db.prepare('SELECT DISTINCT track_id AS id FROM copies WHERE source_id = ?').all(sourceId) as { id: number }[];
+      for (const { id } of fresh) if (!had.has(id)) bump.run(sourceId, id, id, sourceId, id);
       const state: SourceState = { lidarrAlbums: sync.lidarrAlbums };
       this.db
         .prepare('UPDATE sources SET state = ?, last_sync_at = ? WHERE id = ?')

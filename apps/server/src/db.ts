@@ -254,6 +254,20 @@ const MIGRATIONS: Migration[] = [
   // A folder added to a library that already had music was dated by its files' times; date it by when it
   // was added, as new folders now are. See lateFoldersMigration.
   lateFoldersMigration,
+  // Albums are dated by when they last got a song: those a folder added later has songs on (a
+  // compilation's, filed on albums Lidarr already had) move to the front, to when it found them.
+  `CREATE TEMP TABLE late_songs AS
+     SELECT t.album_id, MAX(c.added_at) AS added_at FROM copies c
+     JOIN catalog_tracks t ON t.id = c.track_id
+     JOIN sources s ON s.id = c.source_id
+     WHERE s.kind = 'folder' AND c.added_at IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM sources o JOIN copies oc ON oc.source_id = o.id WHERE o.id <> s.id AND o.created_at < s.created_at
+       )
+     GROUP BY t.album_id;
+   UPDATE catalog_albums SET added_at = MAX(IFNULL(added_at, ''), (SELECT added_at FROM late_songs WHERE album_id = catalog_albums.id))
+   WHERE id IN (SELECT album_id FROM late_songs);
+   DROP TABLE late_songs;`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
