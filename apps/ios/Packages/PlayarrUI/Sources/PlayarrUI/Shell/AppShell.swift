@@ -26,6 +26,7 @@ struct AppShell: View {
       NowPlayingView(session: session)
         // Show metadata and Edit mix points from Now Playing's menu open over it.
         .trackSheets(player: session.player, active: router.nowPlaying)
+        .addToPlaylistSheet(session, active: router.nowPlaying)
         .environment(session).environment(session.discover).environment(model.theme).environment(model.appearance)
         .overlay(alignment: .top) { ToastsView().environment(model.toasts).environment(model.theme) }
         .overlay { stats }
@@ -33,6 +34,7 @@ struct AppShell: View {
     .overlay(alignment: .top) { ToastsView() }
     .overlay { stats }
     .sheet(isPresented: Binding(get: { model.showingAccounts }, set: { model.showingAccounts = $0 })) { AccountSwitcherView(model: model) }
+    .addToPlaylistSheet(session, active: !router.nowPlaying)
     .trackSheets(player: session.player, active: !router.nowPlaying)
     // Settings → Appearance → Motion: Reduced keeps animations to a minimum, whatever the device says.
     .transaction { if model.appearance.reduceMotion(system: systemReduceMotion) { $0.animation = nil } }

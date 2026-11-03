@@ -87,7 +87,7 @@ struct NowPlayingView: View {
         .accessibilityLabel("Lyrics")
         .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
       Menu {
-        // Phase 6: Add to playlist…
+        Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
         Button("Start radio", systemImage: "dot.radiowaves.left.and.right") { Task { await session.actions.startRadio(track) } }
         Button("Go to album", systemImage: "square.stack") { session.actions.goToAlbum(track) }
         Button("Go to artist", systemImage: "music.mic") { session.actions.goToArtist(track) }

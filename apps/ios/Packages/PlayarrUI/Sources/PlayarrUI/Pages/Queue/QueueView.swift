@@ -36,9 +36,16 @@ struct QueueView: View {
           }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: reordered)
-        #if os(iOS)
-          .toolbar { EditButton() }
-        #endif
+        .toolbar {
+          ToolbarItem(placement: .secondaryAction) {
+            Button("Save as playlist", systemImage: "text.badge.plus") {
+              session.addToPlaylist(AccountSession.queueToSave(session.player.queue))
+            }
+          }
+          #if os(iOS)
+            ToolbarItem(placement: .primaryAction) { EditButton() }
+          #endif
+        }
       } else {
         ContentUnavailableView {
           Label("Nothing queued", systemImage: "list.bullet")

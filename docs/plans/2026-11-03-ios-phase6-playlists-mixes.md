@@ -3566,16 +3566,31 @@ struct AddToPlaylistSheet: View {
 }
 
 extension View {
-  /// The "Add to playlist" sheet any screen opens with `AccountSession.addToPlaylist(_:)`.
-  func addToPlaylistSheet(_ session: AccountSession) -> some View {
-    sheet(item: Binding(get: { session.picking }, set: { session.picking = $0 })) { pick in
+  /// The "Add to playlist" sheet any screen opens with `AccountSession.addToPlaylist(_:)`. Put on the signed-in app,
+  /// and once more inside Now Playing (a sheet can't be presented under a full-screen cover): `active` says which of
+  /// the two presents it now, as phase 8's `trackSheets(player:active:)`.
+  func addToPlaylistSheet(_ session: AccountSession, active: Bool = true) -> some View {
+    sheet(item: Binding(get: { active ? session.picking : nil }, set: { session.picking = $0 })) { pick in
       AddToPlaylistSheet(tracks: pick.tracks, session: session)
     }
   }
 }
 ```
 
-In `AppShell.swift`:
+In `AppShell.swift`, on the app and inside Now Playing (as phase 8's song sheets: a sheet can't be presented under the full-screen cover, so the one inside it presents while it's open):
+
+Replace:
+
+```swift
+        .trackSheets(player: session.player, active: router.nowPlaying)
+```
+
+with:
+
+```swift
+        .trackSheets(player: session.player, active: router.nowPlaying)
+        .addToPlaylistSheet(session, active: router.nowPlaying)
+```
 
 Replace:
 
@@ -3587,12 +3602,12 @@ with:
 
 ```swift
     .sheet(isPresented: Binding(get: { model.showingAccounts }, set: { model.showingAccounts = $0 })) { AccountSwitcherView(model: model) }
-    .addToPlaylistSheet(session)
+    .addToPlaylistSheet(session, active: !router.nowPlaying)
 ```
 
 **Step 2: Where it opens from**
 
-In `TrackMenu.swift` (`TrackMenuItems`):
+In `TrackMenu.swift` (`TrackMenuItems`; its doc comment drops "Add to playlist (phase 6) joins them later" and lists it after Add to queue):
 
 Replace:
 
@@ -3612,13 +3627,12 @@ In `NowPlayingView.swift`, the ⋯ menu:
 Replace:
 
 ```swift
-        // Phase 6: Add to playlist…  Phase 8: Show metadata, Edit mix points.
+        // Phase 6: Add to playlist…
 ```
 
 with:
 
 ```swift
-        // Phase 8: Show metadata, Edit mix points.
         Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
 ```
 
@@ -3675,7 +3689,7 @@ with:
           ForEach(playlists) { playlist in
 ```
 
-and its end gets a header that opens the Playlists grid:
+and its end gets a header that opens the Playlists grid (before phase 8's MusicBrainz footer section):
 
 Replace:
 
@@ -3683,8 +3697,8 @@ Replace:
           }
         }
       }
-    }
-    .navigationTitle("Library")
+      Section {
+      } footer: {
 ```
 
 with:
@@ -3695,8 +3709,8 @@ with:
       } header: {
         NavigationLink(value: Route.playlists) { Text("Playlists") }
       }
-    }
-    .navigationTitle("Library")
+      Section {
+      } footer: {
 ```
 
 **Step 3: Build and test**

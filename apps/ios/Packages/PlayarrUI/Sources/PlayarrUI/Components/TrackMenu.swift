@@ -21,8 +21,7 @@ struct TrackMenu: View {
 }
 
 /// What can be done with a song (apps/web/src/components/TrackList.tsx): Play next, Add to queue, Start radio,
-/// Go to album (in mixed lists), Go to artist, Show metadata and (with DJ mix on) Edit mix points. Add to playlist
-/// (phase 6) joins them later.
+/// Add to playlist…, Go to album (in mixed lists), Go to artist, Show metadata and (with DJ mix on) Edit mix points.
 struct TrackMenuItems: View {
   let track: Track
   var showsAlbum = true
@@ -31,6 +30,7 @@ struct TrackMenuItems: View {
   var body: some View {
     Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { session.actions.playNext([track]) }
     Button("Add to queue", systemImage: "text.append") { session.actions.addToQueue([track]) }
+    Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
     Button("Start radio", systemImage: "dot.radiowaves.left.and.right") { Task { await session.actions.startRadio(track) } }
     if showsAlbum {
       Button("Go to album", systemImage: "square.stack") { session.actions.goToAlbum(track) }

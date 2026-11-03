@@ -32,8 +32,18 @@ struct LibraryView: View {
         // Phase 9 finds Settings by this identifier.
         row("Settings", "gearshape", .settings).accessibilityIdentifier("settings")
       }
-      if let playlists = session.playlists.playlists, !playlists.isEmpty {
-        Section("Playlists") {
+      Section {
+        Button { session.addToPlaylist([]) } label: {
+          HStack(spacing: 14) {
+            Image(systemName: "plus")
+              .foregroundStyle(theme.accent.color)
+              .frame(width: 56, height: 56)
+              .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4])))
+            Text("New playlist")
+          }
+        }
+        .accessibilityIdentifier("library.newPlaylist")
+        if let playlists = session.playlists.playlists {
           ForEach(playlists) { playlist in
             NavigationLink(value: Route.playlist(playlist.id)) {
               HStack(spacing: 14) {
@@ -46,6 +56,8 @@ struct LibraryView: View {
             }
           }
         }
+      } header: {
+        NavigationLink(value: Route.playlists) { Text("Playlists") }
       }
       Section {
       } footer: {
