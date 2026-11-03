@@ -4233,6 +4233,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** as written.
+
 ---
 
 ### Task 16: Mix points: the grid, the energy strip's layout, and the editor
