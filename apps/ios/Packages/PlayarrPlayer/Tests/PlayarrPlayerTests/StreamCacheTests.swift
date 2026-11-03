@@ -46,4 +46,18 @@ struct StreamCacheTests {
     await cache.keepOnly([])
     await #expect(throws: CancellationError.self) { try await d.waitUntilFinished() }
   }
+
+  @Test func keepsTransitionFilesBesideTheSongsAndDownloadsEachOnce() async throws {
+    StubServer.serve("/transitions/abc.flac", .init(body: body))
+    let cache = cache()
+    #expect(await cache.completedTransition(named: "abc.flac") == nil)
+    let first = await cache.transition(named: "abc.flac", request: StubServer.request("/transitions/abc.flac"))
+    let again = await cache.transition(named: "abc.flac", request: StubServer.request("/transitions/abc.flac"))
+    #expect(first === again)
+    try await first.waitUntilFinished()
+    let file = try #require(await cache.completedTransition(named: "abc.flac"))
+    #expect(file.lastPathComponent == "transition-abc.flac")
+    #expect(try Data(contentsOf: file) == body)
+    #expect(StubServer.requests("/transitions/abc.flac").count == 1)
+  }
 }

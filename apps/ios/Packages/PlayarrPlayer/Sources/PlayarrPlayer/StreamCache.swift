@@ -11,6 +11,7 @@ public actor StreamCache {
   private let configuration: @Sendable () -> URLSessionConfiguration
   private let retryDelay: Duration
   private var downloads: [Int: Download] = [:]
+  private var transitions: [String: Download] = [:]
   private var waiting: [(Track, URLRequest)] = []
 
   public init(
@@ -43,6 +44,31 @@ public actor StreamCache {
       configuration: configuration)
     d.onFinish { [weak self] in Task { await self?.finished() } }
     downloads[track.fileId] = d
+    d.start()
+    return d
+  }
+
+  /// A DJ transition's file on disk, beside the songs (and dropped with them, least recently played first). `name` is
+  /// the last part of its URL: the server names transitions by a hash of what they're made from.
+  public func transitionFile(named name: String) -> URL { directory.appending(path: "transition-\(name)") }
+
+  /// The whole transition file, if it's here. Marks it as just played.
+  public func completedTransition(named name: String) -> URL? {
+    let url = transitionFile(named: name)
+    guard FileManager.default.fileExists(atPath: url.path()) else { return nil }
+    try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path())
+    return url
+  }
+
+  /// The download of a transition file, started (or continued) if it isn't running. It isn't queued behind the songs
+  /// fetched ahead: it's needed by the mix point.
+  public func transition(named name: String, request: URLRequest) -> Download {
+    if let running = transitions[name], running.isActive || running.isFinished { return running }
+    let final = transitionFile(named: name)
+    let d = Download(
+      request: request, file: final.appendingPathExtension("part"), finalFile: final, retryDelay: retryDelay, configuration: configuration)
+    d.onFinish { [weak self] in Task { await self?.finished() } }
+    transitions[name] = d
     d.start()
     return d
   }
@@ -91,7 +117,7 @@ public actor StreamCache {
   private func evict() {
     let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
     guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys) else { return }
-    let busy = Set(downloads.values.filter(\.isActive).map(\.file))
+    let busy = Set((Array(downloads.values) + Array(transitions.values)).filter(\.isActive).map(\.file))
     var entries = files.compactMap { url -> (URL, Date, Int64)? in
       guard !busy.contains(url), let v = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
       return (url, v.contentModificationDate ?? .distantPast, Int64(v.fileSize ?? 0))
