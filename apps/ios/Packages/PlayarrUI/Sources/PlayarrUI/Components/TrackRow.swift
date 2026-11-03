@@ -35,6 +35,7 @@ struct TrackRow: View {
       .accessibilityLabel(accessibilityLabel)
       .accessibilityValue(playing ? "Playing" : current ? "Paused" : "")
       .accessibilityHint(current ? "Plays or pauses the song" : "Plays the song")
+      FavoriteButton(track: track, size: .row)
       TrackMenu(track: track, showsAlbum: style == .mixed)
     }
     .padding(.vertical, 6)
