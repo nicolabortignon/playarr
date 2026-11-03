@@ -5405,7 +5405,7 @@ Rejected: `MotionGlobalConfig.skipAnimations` (changes what every animated compo
 - Modify: `apps/web/src/lib/api.ts` (type imports lines 2-52, `request` lines 118-135, the `api` object after `deleteProfile`)
 - Create: `apps/web/src/lib/accounts.ts`
 - Modify: `apps/web/src/lib/queries.ts` (append after `useProfileAction`, line 799)
-- Test: `apps/web/src/lib/accounts.test.ts`, `apps/web/src/lib/api.test.ts` (create)
+- Test: `apps/web/src/lib/accounts.test.ts` (create), `apps/web/src/lib/api.test.ts` (exists: add the `request` case below and `vi.restoreAllMocks()` to its `afterEach`)
 
 The web keeps each signed-in account as `{ accountId, name, username, token }` in `localStorage['playarr.accounts']`; listening as one calls `POST /api/auth/switch`, which sets the HttpOnly cookie that `<audio>`, images and the service worker carry. Switching resets every query (the library itself differs between accounts) and drops the service worker's API fallback cache. Any 401 outside `/api/auth/` sends the page to `/sign-in?next=…`.
 
@@ -5495,7 +5495,7 @@ Expected: FAIL: `./accounts` not found; `signInRedirect` and `api.me` don't exis
 
 **Step 3: Implement**
 
-In `apps/web/src/lib/api.ts`, add to the type import from `'@playarr/shared'`: `Account`, `AccountRole`, `ServerInfo`, `SessionInfo`, `SetupCode`, `SignInResponse`. Below the `ApiError` class add:
+In `apps/web/src/lib/api.ts`, add to the type import from `'@playarr/shared'`: `Account`, `AccountRole`, `CreatedAccount`, `ServerInfo`, `SessionInfo`, `SetupCode`, `SignInResponse`. Below the `ApiError` class add:
 
 ```ts
 /** What an admin sets for an account (Settings → Accounts). */
@@ -5547,7 +5547,7 @@ Add to the `api` object, after `deleteProfile`:
   signOut: () => request<void>('/api/auth/sign-out', { method: 'POST' }),
   switchAccount: (token: string) => request<Account>('/api/auth/switch', { method: 'POST', body: JSON.stringify({ token }) }),
   accounts: () => get<Account[]>('/api/accounts'),
-  createAccount: (body: AccountInput) => request<{ account: Account; setup: SetupCode }>('/api/accounts', { method: 'POST', body: JSON.stringify(body) }),
+  createAccount: (body: AccountInput) => request<CreatedAccount>('/api/accounts', { method: 'POST', body: JSON.stringify(body) }),
   updateAccount: (id: number, patch: Partial<AccountInput>) => request<Account>(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteAccount: (id: number) => request<Account[]>(`/api/accounts/${id}`, { method: 'DELETE' }),
   resetAccount: (id: number) => request<SetupCode>(`/api/accounts/${id}/reset`, { method: 'POST' }),
@@ -5714,6 +5714,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
+
+*As executed:* `api.test.ts` already existed (it tests `api.transition`), so the `request` case was added to it; `createAccount` answers the shared `CreatedAccount` (Task 2) rather than an inline type. Otherwise as written; 457 web tests, exit 0.
 
 ---
 

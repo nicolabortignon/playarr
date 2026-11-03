@@ -1,5 +1,7 @@
 import type { CuePoints, MixMap, MixMode, TransitionPlan } from '@playarr/mix';
 import type {
+  Account,
+  AccountRole,
   Album,
   AlbumDetail,
   AlbumRef,
@@ -9,6 +11,7 @@ import type {
   ArtistDetail,
   ArtistMatch,
   CoverLayout,
+  CreatedAccount,
   DiscoverArtist,
   DiscoverArtistDetail,
   DiscoverResults,
@@ -39,6 +42,10 @@ import type {
   ReviewAction,
   ReviewGroup,
   SearchResults,
+  ServerInfo,
+  SessionInfo,
+  SetupCode,
+  SignInResponse,
   SourceInfo,
   SourceInput,
   SourceTestResult,
@@ -115,6 +122,23 @@ export class ApiError extends Error {
   }
 }
 
+/** What an admin sets for an account (Settings → Accounts). */
+export interface AccountInput {
+  username: string;
+  name: string;
+  role: AccountRole;
+  canRequest: boolean;
+  sources: number[] | null;
+}
+
+/** Where a 401 sends the page: to sign in, then back. Replaceable in tests. */
+export const signInRedirect = {
+  go() {
+    if (/^\/(sign-in|redeem|setup)(\/|$)/.test(location.pathname)) return;
+    location.assign(`/sign-in?next=${encodeURIComponent(location.pathname + location.search)}`);
+  },
+};
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -128,6 +152,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!res.ok) {
+    // Signed out (or never signed in) on a server with accounts. The sign-in calls answer 401 themselves.
+    if (res.status === 401 && !path.startsWith('/api/auth/')) signInRedirect.go();
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new ApiError(body?.error ?? `Request failed (${res.status})`, res.status);
   }
@@ -228,6 +254,24 @@ export const api = {
   createProfile: (name: string) => request<Profile>('/api/profiles', { method: 'POST', body: JSON.stringify({ name }) }),
   renameProfile: (id: number, name: string) => request<Profile>(`/api/profiles/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
   deleteProfile: (id: number) => request<Profile[]>(`/api/profiles/${id}`, { method: 'DELETE' }),
+  // Accounts (Settings → Accounts) and signing in.
+  server: () => get<ServerInfo>('/api/server'),
+  me: () => get<Account>('/api/auth/me'),
+  setup: (body: { username: string; name: string; password: string; device: string; platform: string }) =>
+    request<SignInResponse>('/api/auth/setup', { method: 'POST', body: JSON.stringify(body) }),
+  signIn: (body: { username: string; password: string; device: string; platform: string }) =>
+    request<SignInResponse>('/api/auth/sign-in', { method: 'POST', body: JSON.stringify(body) }),
+  redeem: (body: { code: string; password: string; device: string; platform: string }) =>
+    request<SignInResponse>('/api/auth/redeem', { method: 'POST', body: JSON.stringify(body) }),
+  signOut: () => request<void>('/api/auth/sign-out', { method: 'POST' }),
+  switchAccount: (token: string) => request<Account>('/api/auth/switch', { method: 'POST', body: JSON.stringify({ token }) }),
+  accounts: () => get<Account[]>('/api/accounts'),
+  createAccount: (body: AccountInput) => request<CreatedAccount>('/api/accounts', { method: 'POST', body: JSON.stringify(body) }),
+  updateAccount: (id: number, patch: Partial<AccountInput>) => request<Account>(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteAccount: (id: number) => request<Account[]>(`/api/accounts/${id}`, { method: 'DELETE' }),
+  resetAccount: (id: number) => request<SetupCode>(`/api/accounts/${id}/reset`, { method: 'POST' }),
+  sessions: (id: number) => get<SessionInfo[]>(`/api/accounts/${id}/sessions`),
+  endSession: (id: number, sessionId: number) => request<SessionInfo[]>(`/api/accounts/${id}/sessions/${sessionId}`, { method: 'DELETE' }),
   stats: (range: StatsRange) => get<ListeningStats>(`/api/stats?range=${range}`),
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
   lyrics: (trackId: number) => get<{ lyrics: Lyrics | null }>(`/api/tracks/${trackId}/lyrics`).then((r) => r.lyrics),

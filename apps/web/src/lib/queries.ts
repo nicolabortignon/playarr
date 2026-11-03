@@ -798,3 +798,27 @@ export function useProfileAction<T>(fn: (arg: T) => Promise<unknown>) {
     onError: (err: Error) => toast(err.message, 'error'),
   });
 }
+
+/** Which server this is, and whether it's set up (sign-in is on). */
+export const useServerInfo = () => useQuery({ queryKey: ['server'], queryFn: api.server, staleTime: 60_000 });
+
+/** Who listens on this device; an error (401) before setup or when signed out. */
+export const useMe = () => useQuery({ queryKey: ['me'], queryFn: api.me, retry: false, staleTime: 5 * 60_000 });
+
+/** Settings → Accounts, for admins. */
+export const useAccountList = (enabled = true) => useQuery({ queryKey: ['accounts'], queryFn: api.accounts, enabled });
+
+export const useAccountSessions = (id: number) => useQuery({ queryKey: ['sessions', id], queryFn: () => api.sessions(id) });
+
+/** A change in Settings → Accounts: the lists show what the server answers. */
+export function useAccountAction<T, R>(fn: (arg: T) => Promise<R>, onDone?: (result: R) => void) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (arg: T) => fn(arg),
+    onSuccess: (result) => {
+      for (const key of ['accounts', 'me', 'sessions']) void client.invalidateQueries({ queryKey: [key] });
+      onDone?.(result);
+    },
+    onError: (err: Error) => toast(err.message, 'error'),
+  });
+}

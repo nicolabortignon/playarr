@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from './api';
+import { api, signInRedirect } from './api';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('api.transition', () => {
   it('sends the songs, the mode, the position and the files the player has for the songs', async () => {
@@ -19,5 +22,16 @@ describe('api.transition', () => {
       { from: 1, to: 2, mode: 'party' },
       { from: 1, to: 2, mode: 'auto', fade: 9, albumQueue: false },
     ]);
+  });
+});
+
+describe('request', () => {
+  it('sends the page to sign in when the server wants a session, but not for the sign-in calls themselves', async () => {
+    const go = vi.spyOn(signInRedirect, 'go').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Sign in to Playarr', setup: false }), { status: 401 })));
+    await expect(api.favorites()).rejects.toMatchObject({ status: 401, message: 'Sign in to Playarr' });
+    expect(go).toHaveBeenCalledTimes(1);
+    await expect(api.me()).rejects.toMatchObject({ status: 401 });
+    expect(go).toHaveBeenCalledTimes(1);
   });
 });
