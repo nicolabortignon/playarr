@@ -4386,6 +4386,8 @@ corepack pnpm -C apps/server typecheck
 
 Expected: PASS.
 
+*As executed:* fitted as written (the old `add` already wrote `account_id` 1, and `CatalogStore`'s merge already moved favorites per account).
+
 **Step 5: Commit**
 
 ```bash

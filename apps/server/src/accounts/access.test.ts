@@ -9,6 +9,7 @@ import type { FileResolver } from '../catalog/files.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { CC_REC, freshDb, mezzanine, MP3, tempDir } from '../catalog/testFixtures.ts';
 import type { Config } from '../config.ts';
+import { Favorites } from '../favorites.ts';
 import { Library } from '../library/library.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { MediaSource } from '../media/index.ts';
@@ -17,6 +18,7 @@ import { Mixes } from '../mixes/mixes.ts';
 import type { Playlists } from '../playlists.ts';
 import { apiRoutes } from '../routes/api.ts';
 import { artRoutes, type LocalArt } from '../routes/art.ts';
+import { favoriteRoutes } from '../routes/favorites.ts';
 import { levelRoutes } from '../routes/levels.ts';
 import { lyricsRoutes } from '../routes/lyrics.ts';
 import { metadataRoutes } from '../routes/metadata.ts';
@@ -247,5 +249,24 @@ describe('library access: listening', () => {
     expect((stats.topTracks as { track: Track }[]).map((t) => t.track.recordingId)).toEqual([CC_REC]);
     expect(stats.firstSong).toBeUndefined(); // Angel came first, and is out of reach now
     expect(((await get('/api/plays/recent-albums', 2)).json() as Album[]).map((a) => a.id)).toEqual([cc.albumId]);
+  });
+});
+
+describe('favorites per account', () => {
+  it('keeps each account’s favorites, of songs it may hear', async () => {
+    const s = await setup();
+    const favorites = new Favorites(s.db);
+    favoriteRoutes(s.app, { favorites, library: s.library });
+    const put = (id: number) => s.app.inject({ method: 'PUT', url: `/api/favorites/${encodeURIComponent(CC_REC)}`, headers: asAccount(id) });
+    expect((await put(3)).statusCode).toBe(404); // Lidarr only: not a song it has
+    expect((await put(2)).statusCode).toBe(204);
+    expect(((await s.get('/api/favorites', 2)).json() as Track[]).map((t) => t.recordingId)).toEqual([CC_REC]);
+    expect((await s.get('/api/favorites', 1)).json()).toEqual([]);
+    // A favorite of a song the account can no longer hear is kept, but not listed.
+    favorites.add(3, (await s.library.trackByRecording(CC_REC))!);
+    expect((await s.get('/api/favorites', 3)).json()).toEqual([]);
+    await s.app.inject({ method: 'DELETE', url: `/api/favorites/${encodeURIComponent(CC_REC)}`, headers: asAccount(2) });
+    expect((await s.get('/api/favorites', 2)).json()).toEqual([]);
+    expect(favorites.recordingIds(3)).toEqual([CC_REC]);
   });
 });

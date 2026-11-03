@@ -310,7 +310,7 @@ export class Mixes {
     const songs = await this.songs(settings, library);
     const plays = history.since(365, now.getTime(), account);
     const favorites = new Set(
-      (db.prepare('SELECT recording_id FROM favorites').all() as { recording_id: string }[]).map((r) => r.recording_id),
+      (db.prepare('SELECT recording_id FROM favorites WHERE account_id = ?').all(account) as { recording_id: string }[]).map((r) => r.recording_id),
     );
     const inPlaylists = new Map(
       (db.prepare('SELECT recording_id, COUNT(*) AS n FROM playlist_items GROUP BY recording_id').all() as { recording_id: string; n: number }[]).map(

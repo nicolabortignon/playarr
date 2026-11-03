@@ -115,7 +115,7 @@ library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
 const media = createMediaSource(config);
 // Lidarr's files through MEDIA_SOURCE + PATH_MAP; folder sources through their own filesystem.
 const files = new FileResolver(store, { media, pathMap: config.pathMap }, folders);
-const favorites = new Favorites(db, library);
+const favorites = new Favorites(db);
 // One DSP worker for the whole server: analysis and transition rendering take turns on it.
 const dsp = new DspThread();
 // The beat model (beats and bars for DJ mix) in a thread of its own, started only while songs are analysed.
