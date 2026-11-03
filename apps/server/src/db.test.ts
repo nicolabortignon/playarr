@@ -6,6 +6,8 @@ import { migrate } from './db.ts';
 const PROFILES_MIGRATION = 15;
 /** How many migrations ran before the one turning profiles into accounts. */
 const ACCOUNTS_MIGRATION = 18;
+/** How many migrations ran before the one re-dating folders added to a library that already had music. */
+const LATE_FOLDERS_MIGRATION = 19;
 
 describe('migrate', () => {
   it('creates the catalog tables', () => {
@@ -130,5 +132,46 @@ describe('migrate', () => {
     expect(cols('sessions')).toEqual(['id', 'account_id', 'token_hash', 'device', 'platform', 'created_at', 'last_seen_at']);
     expect(cols('setup_codes')).toEqual(['code_hash', 'account_id', 'expires_at', 'created_at']);
     expect(cols('account_sources')).toEqual(['account_id', 'source_id']);
+  });
+
+  it('re-dates a folder added to a library that already had music by when it was added, and its new albums', () => {
+    const db = new DatabaseSync(':memory:');
+    migrate(db, LATE_FOLDERS_MIGRATION);
+    db.exec(`
+      INSERT INTO sources (id, kind, name, position, created_at) VALUES
+        (1, 'folder', 'Music', 0, '2026-10-01T09:00:00.000Z'),
+        (2, 'lidarr', 'Lidarr', 1, '2026-10-01T09:05:00.000Z'),
+        (3, 'folder', '00s Hits', 2, '2026-11-03T18:00:00.000Z');
+      INSERT INTO catalog_artists (id, key, meta, updated_at) VALUES (1, 'a', '{}', 'now');
+      INSERT INTO catalog_albums (id, key, artist_id, meta, updated_at, added_at) VALUES
+        (1, 'old', 1, '{}', 'now', '2020-01-01T00:00:00.000Z'),
+        (2, 'lidarr', 1, '{}', 'now', '2026-10-02T00:00:00.000Z'),
+        (3, 'hits', 1, '{}', 'now', '2026-10-29T17:25:00.000Z');
+      INSERT INTO catalog_tracks (id, key, album_id, recording_id, meta, updated_at) VALUES
+        (1, 't1', 1, 'r1', '{}', 'now'), (2, 't2', 2, 'r2', '{}', 'now'), (3, 't3', 2, 'r3', '{}', 'now'), (4, 't4', 3, 'r4', '{}', 'now');
+      INSERT INTO copies (source_id, source_ref, track_id, path, size, format, added_at, updated_at) VALUES
+        (1, 'old.flac', 1, '/m/old.flac', 1, '{}', '2020-01-01T00:00:00.000Z', 'now'),
+        (2, '9000', 2, '/l/a.flac', 1, '{}', '2026-10-02T00:00:00.000Z', 'now'),
+        (3, 'hits/a.flac', 3, '/h/a.flac', 1, '{}', '2026-10-29T17:25:00.000Z', 'now'),
+        (3, 'hits/b.flac', 4, '/h/b.flac', 1, '{}', '2026-10-29T17:25:00.000Z', 'now'),
+        (3, 'hits/c.flac', 4, '/h/c.flac', 1, '{}', '2026-11-03T19:00:00.000Z', 'now');
+    `);
+    migrate(db);
+    const copies = db.prepare('SELECT source_ref, added_at FROM copies ORDER BY id').all();
+    expect(copies).toEqual([
+      // The library's first music keeps its files' own times; Lidarr's dates are Lidarr's.
+      { source_ref: 'old.flac', added_at: '2020-01-01T00:00:00.000Z' },
+      { source_ref: '9000', added_at: '2026-10-02T00:00:00.000Z' },
+      // The folder added later: new to the library when it was added; files found later keep their date.
+      { source_ref: 'hits/a.flac', added_at: '2026-11-03T18:00:00.000Z' },
+      { source_ref: 'hits/b.flac', added_at: '2026-11-03T18:00:00.000Z' },
+      { source_ref: 'hits/c.flac', added_at: '2026-11-03T19:00:00.000Z' },
+    ]);
+    // An album only the late folder has is new; one Lidarr already had keeps its date.
+    expect(db.prepare('SELECT id, added_at FROM catalog_albums ORDER BY id').all()).toEqual([
+      { id: 1, added_at: '2020-01-01T00:00:00.000Z' },
+      { id: 2, added_at: '2026-10-02T00:00:00.000Z' },
+      { id: 3, added_at: '2026-11-03T18:00:00.000Z' },
+    ]);
   });
 });

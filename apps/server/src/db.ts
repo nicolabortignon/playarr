@@ -251,6 +251,9 @@ const MIGRATIONS: Migration[] = [
   // Accounts replace listener profiles, keeping their ids (plays, mixes and ListenBrainz links stay
   // theirs). See accountsMigration.
   accountsMigration,
+  // A folder added to a library that already had music was dated by its files' times; date it by when it
+  // was added, as new folders now are. See lateFoldersMigration.
+  lateFoldersMigration,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
@@ -359,4 +362,33 @@ function accountsMigration(db: DatabaseSync) {
     );
   `);
   db.prepare('UPDATE playlists SET account_id = ?, shared = 1').run(owner);
+}
+
+/**
+ * Files of a folder added after another source already had music are dated by when the folder was added,
+ * not by when they arrived on disk (only the library's first music keeps its files' own times). Albums
+ * holding those files are re-dated from their copies, so one only that folder has shows as new, while one
+ * another source already had keeps its date.
+ */
+function lateFoldersMigration(db: DatabaseSync) {
+  const late = db
+    .prepare(
+      `SELECT c.id, c.track_id AS trackId, s.created_at AS createdAt
+       FROM copies c JOIN sources s ON s.id = c.source_id
+       WHERE s.kind = 'folder' AND c.added_at < s.created_at
+         AND EXISTS (
+           SELECT 1 FROM sources o JOIN copies oc ON oc.source_id = o.id WHERE o.id <> s.id AND o.created_at < s.created_at
+         )`,
+    )
+    .all() as { id: number; trackId: number; createdAt: string }[];
+  const redate = db.prepare('UPDATE copies SET added_at = ? WHERE id = ?');
+  for (const c of late) redate.run(c.createdAt, c.id);
+  const albumOf = db.prepare('SELECT album_id AS id FROM catalog_tracks WHERE id = ?');
+  const albumIds = new Set(late.map((c) => (albumOf.get(c.trackId) as { id: number }).id));
+  const recompute = db.prepare(
+    `UPDATE catalog_albums SET added_at = (
+       SELECT MIN(c.added_at) FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE t.album_id = catalog_albums.id
+     ) WHERE id = ?`,
+  );
+  for (const id of albumIds) recompute.run(id);
 }
