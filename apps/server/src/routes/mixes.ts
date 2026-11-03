@@ -11,7 +11,7 @@ import { isStatsRange, listeningStats } from '../mixes/stats.ts';
 import { validTimeZone } from '../mixes/time.ts';
 import { stripAlbum, type Library } from '../library/library.ts';
 import { PlaylistError } from '../playlists.ts';
-import type { Profiles } from '../profiles/profiles.ts';
+import { accountId } from '../accounts/rights.ts';
 import { requireLocal } from './settings.ts';
 
 const playsInput = z.object({
@@ -25,7 +25,6 @@ const playsInput = z.object({
         weekday: z.number().int().min(0).max(6),
         seconds: z.number().min(0).max(24 * 3600),
         skipped: z.boolean(),
-        profile: z.number().int().positive().optional(),
       }),
     )
     .max(500),
@@ -78,26 +77,22 @@ export function mixRoutes(
     /** The database the history is in, for stats. */
     db?: DatabaseSync;
     scrobbler?: Pick<Scrobbler, 'info' | 'connect' | 'disconnect' | 'setEnabled' | 'sendEarlier' | 'kick'>;
-    profiles?: Pick<Profiles, 'of' | 'ids'>;
   },
 ) {
   const { mixes, history, store } = deps;
   type Tz = { Querystring: { tz?: string } };
   type KeyTz = Tz & { Params: { key: string } };
   const tz = (q: { tz?: string }) => validTimeZone(q.tz);
-  /** The listener a request is for (Settings → Profiles); 1 when there are no profiles. */
-  const who = (req: FastifyRequest) => deps.profiles?.of(req) ?? 1;
+  /** The account a request is for (the session's; the owner's before setup). */
+  const who = accountId;
 
   /** Songs heard on a device. Ignored (but accepted) when history is turned off. */
   app.post('/api/plays', async (req, reply) => {
     const parsed = playsInput.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid plays' });
     if (!readMixSettings(store).recordHistory) return reply.code(202).send({ recorded: 0 });
-    // Each report says who was listening when it was played; a profile removed since counts as the device's now.
-    const ids = new Set(deps.profiles?.ids() ?? [1]);
-    const now = who(req);
-    const plays = parsed.data.plays.map((p) => ({ ...p, profile: p.profile && ids.has(p.profile) ? p.profile : now }));
-    const recorded = await history.record(plays, now);
+    // Whoever is signed in listened: the session decides.
+    const recorded = await history.record(parsed.data.plays, who(req));
     if (recorded) void deps.scrobbler?.kick();
     return { recorded };
   });

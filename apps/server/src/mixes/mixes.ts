@@ -71,7 +71,7 @@ export class MixError extends Error {
  * answering meanwhile.
  */
 export class Mixes {
-  /** Mixes being made, by profile. */
+  /** Mixes being made, by account. */
   private inflight = new Map<number, Promise<void>>();
   private timer: NodeJS.Timeout | null = null;
   /** Songs as the mixes see them, until the library or what's known about its songs changes. */
@@ -88,8 +88,8 @@ export class Mixes {
       /** ListenBrainz neighbours of a recording (swappable in tests). */
       similar?: (recordingMbid: string) => Promise<{ recording_mbid: string; recording_name: string; artist_credit_name: string; score: number }[]>;
       log?: { warn: (msg: string) => void };
-      /** Everyone listening (profile ids): each has their own mixes. */
-      profiles?: () => number[];
+      /** Everyone listening (account ids): each has their own mixes. */
+      accounts?: () => number[];
     },
   ) {}
 
@@ -97,10 +97,10 @@ export class Mixes {
   start(everyMs = CHECK_EVERY_MS) {
     const check = async () => {
       const tz = readMixSettings(this.deps.store).timeZone;
-      // One profile at a time: making mixes is background work.
-      for (const profile of this.deps.profiles?.() ?? [1]) {
-        if (!this.storedPlan(profile) || !this.isStale(profile, tz, new Date())) continue;
-        await this.ensure(profile, tz, new Date()).catch((err: Error) => this.deps.log?.warn(`Making mixes failed: ${err.message}`));
+      // One account at a time: making mixes is background work.
+      for (const account of this.deps.accounts?.() ?? [1]) {
+        if (!this.storedPlan(account) || !this.isStale(account, tz, new Date())) continue;
+        await this.ensure(account, tz, new Date()).catch((err: Error) => this.deps.log?.warn(`Making mixes failed: ${err.message}`));
       }
     };
     this.timer = setInterval(check, everyMs);
@@ -111,12 +111,12 @@ export class Mixes {
     if (this.timer) clearInterval(this.timer);
   }
 
-  async list(clientTimeZone?: string, now = new Date(), profile = 1): Promise<MixSummary[]> {
+  async list(clientTimeZone?: string, now = new Date(), account = 1): Promise<MixSummary[]> {
     const tz = this.timeZone(clientTimeZone);
-    await this.ready(profile, tz, now);
+    await this.ready(account, tz, now);
     const local = localTime(now, tz);
-    const plan = this.storedPlan(profile)?.plan ?? [];
-    const rows = this.rows(profile);
+    const plan = this.storedPlan(account)?.plan ?? [];
+    const rows = this.rows(account);
     const out: MixSummary[] = [];
     for (const p of plan) {
       const row = rows.get(p.key);
@@ -128,10 +128,10 @@ export class Mixes {
     return out;
   }
 
-  async get(key: string, clientTimeZone?: string, now = new Date(), profile = 1): Promise<MixDetail> {
+  async get(key: string, clientTimeZone?: string, now = new Date(), account = 1): Promise<MixDetail> {
     const tz = this.timeZone(clientTimeZone);
-    await this.ready(profile, tz, now);
-    const row = this.rows(profile).get(key);
+    await this.ready(account, tz, now);
+    const row = this.rows(account).get(key);
     const mix = row && (JSON.parse(row.data) as Stored).mix;
     if (!row || !mix) throw new MixError('This mix isn’t available right now', 404);
     const tracks = await this.tracksOf(mix);
@@ -139,19 +139,19 @@ export class Mixes {
   }
 
   /** Draw the mix again for the same hour, day or week ("New mix"). */
-  async regenerate(key: string, clientTimeZone?: string, now = new Date(), profile = 1): Promise<MixDetail> {
+  async regenerate(key: string, clientTimeZone?: string, now = new Date(), account = 1): Promise<MixDetail> {
     const tz = this.timeZone(clientTimeZone);
-    await this.ready(profile, tz, now);
-    await this.inflight.get(profile)?.catch(() => {});
-    const plan = this.storedPlan(profile)?.plan.find((p) => p.key === key);
-    const row = this.rows(profile).get(key);
+    await this.ready(account, tz, now);
+    await this.inflight.get(account)?.catch(() => {});
+    const plan = this.storedPlan(account)?.plan.find((p) => p.key === key);
+    const row = this.rows(account).get(key);
     if (!plan || !row) throw new MixError('This mix isn’t available right now', 404);
     const settings = readMixSettings(this.deps.store);
-    const ctx = await this.context(profile, localTime(now, tz), now, settings, plan.kind === 'discovery');
+    const ctx = await this.context(account, localTime(now, tz), now, settings, plan.kind === 'discovery');
     const variant = row.variant + 1;
     const mix = generateMix(plan, ctx, row.period, variant);
-    if (mix) this.write(profile, key, row.period, variant, { settings: settingsHash(settings), mix }, now);
-    return this.get(key, tz, now, profile);
+    if (mix) this.write(account, key, row.period, variant, { settings: settingsHash(settings), mix }, now);
+    return this.get(key, tz, now, account);
   }
 
   /**
@@ -203,19 +203,19 @@ export class Mixes {
   }
 
   /** Keep the mix as an ordinary playlist. */
-  async saveAsPlaylist(key: string, clientTimeZone?: string, now = new Date(), profile = 1): Promise<PlaylistDetail> {
+  async saveAsPlaylist(key: string, clientTimeZone?: string, now = new Date(), account = 1): Promise<PlaylistDetail> {
     const tz = this.timeZone(clientTimeZone);
-    const mix = await this.get(key, tz, now, profile);
+    const mix = await this.get(key, tz, now, account);
     const day = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: tz });
     return this.deps.playlists.create(`${mix.title} · ${day}`, mix.description.slice(0, 300), mix.tracks.map((t) => t.recordingId));
   }
 
-  /** Forget someone's mixes (everyone's, without a profile), so they're made again: after the history was cleared, say. */
-  async reset(profile?: number) {
+  /** Forget someone's mixes (everyone's, without an account), so they're made again: after the history was cleared, say. */
+  async reset(account?: number) {
     // A mix being made now would otherwise be written back from the old history.
     await Promise.all([...this.inflight.values()].map((job) => job.catch(() => {})));
-    if (profile === undefined) this.deps.db.exec('DELETE FROM mixes');
-    else this.deps.db.prepare('DELETE FROM mixes WHERE account_id = ?').run(profile);
+    if (account === undefined) this.deps.db.exec('DELETE FROM mixes');
+    else this.deps.db.prepare('DELETE FROM mixes WHERE account_id = ?').run(account);
   }
 
   /**
@@ -232,17 +232,17 @@ export class Mixes {
   }
 
   /** Wait for mixes only when there are none yet; otherwise serve what's stored and remake in the background. */
-  private async ready(profile: number, tz: string | undefined, now: Date) {
-    if (!this.storedPlan(profile)) await this.ensure(profile, tz, now);
-    else if (this.isStale(profile, tz, now)) void this.ensure(profile, tz, now).catch((err: Error) => this.deps.log?.warn(`Making mixes failed: ${err.message}`));
+  private async ready(account: number, tz: string | undefined, now: Date) {
+    if (!this.storedPlan(account)) await this.ensure(account, tz, now);
+    else if (this.isStale(account, tz, now)) void this.ensure(account, tz, now).catch((err: Error) => this.deps.log?.warn(`Making mixes failed: ${err.message}`));
   }
 
   /** Whether any mix (or the day's plan) is due: cheap, from the stored rows alone. */
-  private isStale(profile: number, tz: string | undefined, now: Date): boolean {
+  private isStale(account: number, tz: string | undefined, now: Date): boolean {
     const local = localTime(now, tz);
     const hash = settingsHash(readMixSettings(this.deps.store));
-    const rows = this.rows(profile);
-    const plan = this.storedPlan(profile);
+    const rows = this.rows(account);
+    const plan = this.storedPlan(account);
     if (!plan || plan.settings !== hash || rows.get(PLAN_KEY)?.period !== local.date) return true;
     return plan.plan.some((p) => {
       const row = rows.get(p.key);
@@ -250,56 +250,56 @@ export class Mixes {
     });
   }
 
-  private ensure(profile: number, tz: string | undefined, now: Date): Promise<void> {
-    let job = this.inflight.get(profile);
+  private ensure(account: number, tz: string | undefined, now: Date): Promise<void> {
+    let job = this.inflight.get(account);
     if (!job) {
-      job = this.refresh(profile, localTime(now, tz), now).finally(() => this.inflight.delete(profile));
-      this.inflight.set(profile, job);
+      job = this.refresh(account, localTime(now, tz), now).finally(() => this.inflight.delete(account));
+      this.inflight.set(account, job);
     }
     return job;
   }
 
   /** Make whatever is due: the plan once a day (or when settings change), each mix on its schedule. */
-  private async refresh(profile: number, local: LocalTime, now: Date) {
+  private async refresh(account: number, local: LocalTime, now: Date) {
     const settings = readMixSettings(this.deps.store);
     const hash = settingsHash(settings);
-    const rows = this.rows(profile);
+    const rows = this.rows(account);
     const due = (p: MixPlan) => {
       const row = rows.get(p.key);
       return !row || row.period !== periodOf(p.kind, local) || (JSON.parse(row.data) as Stored).settings !== hash;
     };
 
-    let plan = this.storedPlan(profile);
+    let plan = this.storedPlan(account);
     const newPlan = !plan || plan.settings !== hash || rows.get(PLAN_KEY)?.period !== local.date;
     // Discovery Weekly's ListenBrainz neighbours are only fetched when it's being made.
-    let ctx = await this.context(profile, local, now, settings, newPlan || plan!.plan.some((p) => p.kind === 'discovery' && due(p)));
+    let ctx = await this.context(account, local, now, settings, newPlan || plan!.plan.some((p) => p.kind === 'discovery' && due(p)));
     if (newPlan) {
       plan = { settings: hash, plan: planMixes(ctx) };
-      this.write(profile, PLAN_KEY, local.date, 0, plan, now);
+      this.write(account, PLAN_KEY, local.date, 0, plan, now);
       if (plan.plan.some((p) => p.kind === 'discovery' && due(p)) && !ctx.neighbours.size) ctx = { ...ctx, neighbours: await this.neighbours(ctx.taste) };
     }
     for (const p of plan!.plan) {
       if (!due(p)) continue;
       const period = periodOf(p.kind, local);
-      this.write(profile, p.key, period, 0, { settings: hash, mix: generateMix(p, ctx, period, 0) }, now);
+      this.write(account, p.key, period, 0, { settings: hash, mix: generateMix(p, ctx, period, 0) }, now);
       // Let requests waiting meanwhile through between mixes.
       await new Promise((resolve) => setImmediate(resolve));
     }
   }
 
-  private write(profile: number, key: string, period: string, variant: number, stored: Stored | StoredPlan, now: Date) {
+  private write(account: number, key: string, period: string, variant: number, stored: Stored | StoredPlan, now: Date) {
     this.deps.db
       .prepare(
         `INSERT INTO mixes (account_id, key, period, variant, data, generated_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (account_id, key) DO UPDATE SET period = excluded.period, variant = excluded.variant, data = excluded.data, generated_at = excluded.generated_at`,
       )
-      .run(profile, key, period, variant, JSON.stringify(stored), now.toISOString());
+      .run(account, key, period, variant, JSON.stringify(stored), now.toISOString());
   }
 
-  private async context(profile: number, local: LocalTime, now: Date, settings: MixSettings, neighbours: boolean): Promise<MixContext> {
+  private async context(account: number, local: LocalTime, now: Date, settings: MixSettings, neighbours: boolean): Promise<MixContext> {
     const { history, db } = this.deps;
     const songs = await this.songs(settings);
-    const plays = history.since(365, now.getTime(), profile);
+    const plays = history.since(365, now.getTime(), account);
     const favorites = new Set(
       (db.prepare('SELECT recording_id FROM favorites').all() as { recording_id: string }[]).map((r) => r.recording_id),
     );
@@ -396,13 +396,13 @@ export class Mixes {
     return mix.recordingIds ? this.deps.library.tracksByRecordings(mix.recordingIds) : this.deps.library.tracksByIds(mix.trackIds);
   }
 
-  private rows(profile: number): Map<string, Row> {
-    const rows = this.deps.db.prepare('SELECT key, period, variant, data, generated_at FROM mixes WHERE account_id = ?').all(profile) as unknown as Row[];
+  private rows(account: number): Map<string, Row> {
+    const rows = this.deps.db.prepare('SELECT key, period, variant, data, generated_at FROM mixes WHERE account_id = ?').all(account) as unknown as Row[];
     return new Map(rows.map((r) => [r.key, r]));
   }
 
-  private storedPlan(profile: number): StoredPlan | undefined {
-    const row = this.deps.db.prepare('SELECT data FROM mixes WHERE account_id = ? AND key = ?').get(profile, PLAN_KEY) as { data: string } | undefined;
+  private storedPlan(account: number): StoredPlan | undefined {
+    const row = this.deps.db.prepare('SELECT data FROM mixes WHERE account_id = ? AND key = ?').get(account, PLAN_KEY) as { data: string } | undefined;
     return row ? (JSON.parse(row.data) as StoredPlan) : undefined;
   }
 }

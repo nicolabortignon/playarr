@@ -37,8 +37,12 @@ import { Transitions } from './transitions/transitions.ts';
 import { lyricsRoutes } from './routes/lyrics.ts';
 import { LyricsService } from './lyrics/lyrics.ts';
 import { Scrobbler } from './listenbrainz/scrobbler.ts';
-import { Profiles } from './profiles/profiles.ts';
-import { profileRoutes } from './routes/profiles.ts';
+import { Accounts } from './accounts/accounts.ts';
+import { authHook } from './accounts/auth.ts';
+import { Sessions } from './accounts/sessions.ts';
+import { SetupCodes } from './accounts/setupCodes.ts';
+import { accountRoutes } from './routes/accounts.ts';
+import { authRoutes } from './routes/auth.ts';
 import { discoverRoutes } from './routes/discover.ts';
 import { favoriteRoutes } from './routes/favorites.ts';
 import { playlistRoutes } from './routes/playlists.ts';
@@ -51,7 +55,6 @@ import { History } from './mixes/history.ts';
 import { Mixes } from './mixes/mixes.ts';
 import { mixRoutes } from './routes/mixes.ts';
 import { readMixSettings } from './mixes/settings.ts';
-import { isFromApp } from './net.ts';
 
 const config = loadConfig();
 const app = Fastify({
@@ -138,10 +141,13 @@ const covers = new PlaylistCovers(analyzer, library, resolve(config.CACHE_DIR, '
 const playlists = new Playlists(db, library, covers);
 // Made for you: mixes generated from the library and what's been played.
 const history = new History(db, library);
-const profiles = new Profiles(db);
-const mixes = new Mixes({ db, store, library, analyzer, history, playlists, log: app.log, profiles: () => profiles.ids() });
+// Who signs in: accounts with device sessions, and setup codes for first passwords.
+const accounts = new Accounts(db);
+const sessions = new Sessions(db);
+const setupCodes = new SetupCodes(db);
+const mixes = new Mixes({ db, store, library, analyzer, history, playlists, log: app.log, accounts: () => accounts.ids() });
 mixes.start();
-const scrobbler = new Scrobbler(db, store, library, { log: app.log, profiles: () => profiles.ids() });
+const scrobbler = new Scrobbler(db, store, library, { log: app.log, accounts: () => accounts.ids() });
 scrobbler.start();
 // Settings → Requests, read fresh each time so a change applies at once; .env values are the fallback.
 const requestSettings = () => readRequestSettings(store);
@@ -153,6 +159,11 @@ const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE
 const discover = new Discover(lidarr, musicbrainz, library, requests);
 const recommendations = new Recommendations(playlists, library, requests, musicbrainz);
 
+// Every request's account (req.auth), from a Bearer token or the session cookie; 401 once set up.
+app.decorateRequest('auth', null);
+app.addHook('onRequest', authHook({ accounts, sessions }));
+authRoutes(app, { accounts, sessions, setupCodes });
+accountRoutes(app, { accounts, sessions, setupCodes });
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
@@ -170,10 +181,6 @@ lyricsRoutes(app, { lyrics: new LyricsService(db, library, files, { log: app.log
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });
-// Changes only from Playarr's own pages (see isFromApp).
-app.addHook('onRequest', async (req, reply) => {
-  if (req.url.startsWith('/api/') && !isFromApp(req)) return reply.code(403).send({ error: 'Changes must come from Playarr itself' });
-});
 mixRoutes(app, {
   mixes,
   history,
@@ -183,9 +190,7 @@ mixRoutes(app, {
   library,
   scrobbler,
   db,
-  profiles,
 });
-profileRoutes(app, { profiles });
 // Settings → Updates: files shared with the updater container (UPDATE_DIR, set by docker/compose.yaml).
 const updates = new UpdateBridge(config.UPDATE_DIR);
 settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares, lidarr, updates });
@@ -226,6 +231,7 @@ process.on('SIGINT', shutdown).on('SIGTERM', shutdown);
 
 await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(`Sources: ${store.listSources().map((s) => s.name).join(', ') || 'none'} · media source: ${media.kind}`);
+if (accounts.setupMode()) app.log.info('Nobody has set up Playarr yet: open Settings → Accounts from your home network to set the owner’s password');
 
 // Serve the catalog saved by the last run immediately, then sync the sources in the background.
 library.loadStored();

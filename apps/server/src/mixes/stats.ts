@@ -35,11 +35,11 @@ export async function listeningStats(
   library: Pick<Library, 'artists' | 'album' | 'tracksByRecordings'>,
   range: StatsRange,
   now = Date.now(),
-  profile = 1,
+  account = 1,
 ): Promise<ListeningStats> {
   const { from, to } = rangeBounds(range, now);
   const where = 'skipped = 0 AND played_at >= ? AND played_at < ? AND account_id = ?';
-  const args = [from ?? '', to, profile];
+  const args = [from ?? '', to, account];
   const all = <T>(sql: string, ...extra: (string | number)[]) => db.prepare(sql).all(...args, ...extra) as T[];
   const minutes = (seconds: number | null) => Math.round((seconds ?? 0) / 60);
 
@@ -56,7 +56,7 @@ export async function listeningStats(
         `SELECT COUNT(*) AS n FROM (SELECT MIN(played_at) AS first FROM plays WHERE skipped = 0 AND account_id = ? AND artist_id IS NOT NULL GROUP BY artist_id)
          WHERE first >= ? AND first < ?`,
       )
-      .get(profile, from ?? '', to) as { n: number }
+      .get(account, from ?? '', to) as { n: number }
   ).n;
 
   const artistRows = all<{ id: number; plays: number; seconds: number }>(
@@ -111,7 +111,7 @@ export async function listeningStats(
     | undefined;
   const firstTrack = first && (await library.tracksByRecordings([first.recording_id]))[0];
   const years = (
-    db.prepare(`SELECT DISTINCT substr(played_at, 1, 4) AS y FROM plays WHERE skipped = 0 AND account_id = ? ORDER BY y DESC`).all(profile) as { y: string }[]
+    db.prepare(`SELECT DISTINCT substr(played_at, 1, 4) AS y FROM plays WHERE skipped = 0 AND account_id = ? ORDER BY y DESC`).all(account) as { y: string }[]
   ).map((r) => Number(r.y));
 
   return {

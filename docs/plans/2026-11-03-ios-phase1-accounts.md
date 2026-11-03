@@ -2394,10 +2394,12 @@ git rm apps/server/src/profiles/profiles.ts apps/server/src/profiles/profiles.te
 corepack pnpm -C apps/server exec vitest run src/accounts/listening.test.ts
 corepack pnpm -C apps/server test
 corepack pnpm -C apps/server typecheck
-grep -rn "PROFILE_HEADER\|profileRoutes\|Profiles\b\|profile_id\|x-playarr-profile\|profiles/" apps/server/src --include='*.ts'
+grep -rn "PROFILE_HEADER\|profileRoutes\|\bProfiles\b\|profile_id\|x-playarr-profile\|profiles/" apps/server/src --include='*.ts' | grep -v "^apps/server/src/db\(\.test\)\?\.ts:"
 ```
 
 Expected: tests and typecheck PASS; the grep prints nothing (no listener profile is left on the server).
+
+*As executed:* the grep needed `\bProfiles\b` (plain `Profiles\b` matches Lidarr's `qualityProfiles`/`metadataProfiles`) and to leave out `db.ts`/`db.test.ts`, whose old migrations and their tests name `profile_id` for good. The rename turned a comment in `mixes.ts` into "without a account"; fixed by hand. Between this task and task 21 the web's Settings → Profiles (and its `X-Playarr-Profile` header) talk to routes that no longer exist: `/api/profiles` answers 404 and plays count for the session's account. Checked live: the server started on a copy of a pre-accounts database, logged the setup-mode hint, kept Home's history for the owner, claimed from the home network only, then answered 401 `{ setup: false }` unsigned and took Bearer and cookie sessions.
 
 **Step 5: Commit**
 
