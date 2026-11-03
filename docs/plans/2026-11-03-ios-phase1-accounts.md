@@ -543,7 +543,15 @@ export interface SetupCode {
   link: string;
   expiresAt: string;
 }
+
+/** POST /api/accounts: the new account, with the code its person chooses a password with. */
+export interface CreatedAccount {
+  account: Account;
+  setup: SetupCode;
+}
 ```
+
+*As executed:* `CreatedAccount` added here (the conventions name it; task 7's route answers with it).
 
 ```ts
 // apps/server/src/accounts/password.ts

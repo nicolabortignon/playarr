@@ -856,3 +856,55 @@ export interface Profile {
   id: number;
   name: string;
 }
+
+// ── Accounts ────────────────────────────────────────────────────────────────
+
+export type AccountRole = 'admin' | 'member';
+
+/** Someone who signs in to this server: their history, mixes, favorites and playlists are their own. */
+export interface Account {
+  id: number;
+  username: string;
+  name: string; // display name
+  role: AccountRole;
+  canRequest: boolean;
+  sources: number[] | null; // null = every source
+  hasPassword: boolean; // false until set up
+}
+
+/** A device signed in to an account. */
+export interface SessionInfo {
+  id: number;
+  device: string;
+  platform: string;
+  createdAt: string;
+  lastSeenAt: string;
+  current: boolean;
+}
+
+/** GET /api/server: which server this is, for apps finding and remembering it. */
+export interface ServerInfo {
+  id: string;
+  name: string;
+  version: string;
+  minAppVersion: string;
+  setup: boolean;
+}
+
+export interface SignInResponse {
+  token: string;
+  account: Account;
+}
+
+/** A one-time code (and link) for choosing a first password. */
+export interface SetupCode {
+  code: string;
+  link: string;
+  expiresAt: string;
+}
+
+/** POST /api/accounts: the new account, with the code its person chooses a password with. */
+export interface CreatedAccount {
+  account: Account;
+  setup: SetupCode;
+}
