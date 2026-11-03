@@ -78,7 +78,11 @@ export interface SessionInfo { id: number; device: string; platform: string; cre
 export interface ServerInfo { id: string; name: string; version: string; minAppVersion: string; setup: boolean }
 export interface SignInResponse { token: string; account: Account }
 export interface SetupCode { code: string; link: string; expiresAt: string }
+export interface CreatedAccount { account: Account; setup: SetupCode }
+// PlaylistSummary gains: owner: string (display name), shared: boolean, mine: boolean
 ```
+
+Types that lived only in the web move so the Swift generator sees them (phase 2, task 1): `TransitionAnswer`, `RenderProgress`, `MixMapEntry` → `@playarr/mix` (shared doesn't depend on mix); `AnalysisKind`, `AnalysisProgress`, `MixSettingsPatch`, `UpdateSettingsPatch` → `@playarr/shared`. Server and web re-export them.
 
 Endpoints (JSON; errors are `{ error: string }` with a status code, as today):
 
@@ -90,30 +94,36 @@ Endpoints (JSON; errors are `{ error: string }` with a status code, as today):
 | `POST /api/auth/redeem` | anyone (rate-limited) | `{ code, password, device, platform }` → `SignInResponse` (first password from a setup code) |
 | `POST /api/auth/sign-out` | signed in | → 204 (ends this session) |
 | `GET /api/auth/me` | signed in | → `Account` |
-| `POST /api/auth/switch` | web only | `{ token }` → `Account`, sets the cookie to that session |
+| `POST /api/auth/switch` | anyone (authenticates by the token in the body; web only) | `{ token }` → `Account`, sets the cookie to that session |
 | `GET /api/accounts` | admin | → `Account[]` |
-| `POST /api/accounts` | admin | `{ username, name, role, canRequest, sources }` → `{ account: Account, setup: SetupCode }` |
+| `POST /api/accounts` | admin | `{ username, name, role, canRequest, sources }` → `CreatedAccount` |
 | `PATCH /api/accounts/:id` | admin (or self for `name`) | partial `Account` fields → `Account` |
 | `DELETE /api/accounts/:id` | admin | → `Account[]` (never the last admin) |
 | `POST /api/accounts/:id/reset` | admin | → `SetupCode` (signs out every session) |
+| `POST /api/playlists`, `PATCH /api/playlists/:id` | signed in (PATCH: owner) | gain an optional `shared: boolean` |
 | `GET /api/accounts/:id/sessions` | admin or self | → `SessionInfo[]` |
 | `DELETE /api/accounts/:id/sessions/:sessionId` | admin or self | → `SessionInfo[]` |
 
 - **Credentials**: `Authorization: Bearer <token>` (the app) or cookie `playarr_session` (the web, HttpOnly, SameSite=Lax, Secure when served over HTTPS). Both accepted on every route, including `/stream`, `/art`, `/transitions`.
-- **Unauthenticated**: once any account has a password, every `/api`, `/stream`, `/art`, `/transitions` request without a valid session is answered 401 `{ error, setup: false }`, except `GET /api/server`, `/api/auth/sign-in|redeem|setup`, and `GET /api/health`. In setup mode, requests keep working as today (no sign-in yet) so an existing install isn't locked out before the owner claims it.
+- **Unauthenticated**: once any account has a password, every `/api`, `/stream`, `/art`, `/transitions` request without a valid session is answered 401 `{ error, setup: false }`, except `GET /api/server`, `/api/auth/sign-in|redeem|setup|switch`, and `GET /api/health`. Every 401 body carries `setup` (in setup mode `GET /api/auth/me` and failed sign-ins answer 401 with `setup: true`). In setup mode, requests keep working as today (no sign-in yet) so an existing install isn't locked out before the owner claims it.
 - **`X-Playarr: 1`** stays required on changes for cookie sessions; Bearer requests are exempt (no cookie, no cross-site risk). The app sends it anyway.
 - **`X-Playarr-Profile`** is ignored once accounts exist; the session decides.
 - **Tokens**: 32 random bytes, base64url; stored as SHA-256. Setup codes: 8 characters from an unambiguous alphabet, valid 7 days, single use; `link` is `<origin>/redeem?code=...` (the app also opens `playarr://redeem?server=<origin>&code=...`).
-- **Bonjour**: `_playarr._tcp`, TXT `id=<server uuid>`, `v=<version>`, `name=<server name>`, `path=/`. Turned off with `BONJOUR=off`.
+- **Statuses**: rate-limited sign-in or redeem → 429; `POST /api/accounts` and `/reset` in setup mode → 409. `device` and `platform` are optional (defaults "Unknown device", "web").
+- **Usernames** match `^[a-z0-9][a-z0-9._-]{0,31}$` (lowercased on input); passwords need at least 8 characters.
+- **Owner recovery**: no endpoint. On the server host, `node dist/cli.js reset-password <username>` (in Docker: `docker exec playarr node dist/cli.js reset-password <username>`; in dev: `corepack pnpm -C apps/server reset-password <username>`) signs the account out everywhere and prints a setup code and link. Phase 1 adds it as its last code task.
+- **Bonjour**: instance name = server name; `_playarr._tcp`, TXT `id=<server uuid>`, `v=<version>`, `name=<server name>`, `path=/`. Turned off with `BONJOUR=off`.
 
 ## Swift conventions
 
 - Swift 6 language mode, strict concurrency. UI state is `@MainActor @Observable` classes; networking and audio I/O are actors or `Sendable` types.
 - Naming mirrors the web where a thing exists there: `Track`, `Album`, `PlaylistDetail`, `TransitionPlan`, `MixMap`. Swift types generated from TypeScript keep the TypeScript names.
 - Key types the phases build on (defined in the phase named):
-  - `PlayarrAPI` (phase 2): `ServerRecord` (id, name, baseURL, accounts), `AccountRecord` (server id, account, token in Keychain), `ServerStore` (`@Observable`, the list and the active server and account), `APIClient` (actor; one per server and account; `func send<T: Decodable>(_ endpoint: Endpoint<T>) async throws -> T`), `Endpoint<T>` (method, path, query, body), `APIError` (`.unauthorized`, `.server(status, message)`, `.offline`, `.decoding`), `ServerBrowser` (Bonjour), `MediaURLs` (stream, art, transition URLs with sizes).
+  - `PlayarrAPI` (phase 2): `ServerRecord` (id, name, baseURL, accounts), `AccountRecord` (server id, account, token in Keychain), `ServerStore` (`@Observable`, the list and the active server and account), `APIClient` (actor; one per server and account; `func send<T: Decodable>(_ endpoint: Endpoint<T>) async throws -> T`), `Endpoint<T>` (method, path, query, body), `APIError` (`.unauthorized`, `.server(status:message:)`, `.offline`, `.decoding(String)`; a 401 to a request with no token is `.server(401, message)` so a wrong password keeps the server's message), `ServerBrowser` (Bonjour), `MediaURLs` (stream, art, transition URLs with sizes; the token always goes in a header, never the URL). Also: `AccountKey`, `AccountRecord.signedIn`, `SecretStore` (Keychain or in-memory), `ServerAddress`, `AppVersion`, `RedeemLink`, `DeviceInfo`, `DiscoveredServer`, and every endpoint as `API.<Feature>.<call>()` returning an `Endpoint`. The phase 2 plan lists the exact signatures.
   - `PlayarrPlayer` (phase 3): `Player` (`@MainActor @Observable`: queue state, `play(_:startAt:source:)`, `next()`, `previous()`, `seek(to:)`, shuffle, repeat), `QueueState` (queue, order, pos, as in `apps/web/src/player/store.ts`), `AudioEngine` (owns AVAudioEngine and nodes), `Deck`, `TrackSource` (progressive download + decode), `LevelStore`, `PlayTracker`, `NowPlayingBridge`, `SleepTimer`.
-  - `PlayarrUI` (phase 4 on): `AppModel` (root state), `QueryCache` (stale-while-revalidate on disk), `ImageCache`, `Theme` (accent colour).
+  - `PlayarrUI`: `AppModel` (root state; starts in phase 2 with the server store, browser, app version and redeem link; later phases add to it), `QueryCache` (stale-while-revalidate on disk), `ImageCache`, `Theme` (accent colour).
+- **Contract fixtures**: `RECORD_FIXTURES=1 corepack pnpm -C apps/server exec vitest run src/routes` writes real responses to `apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/Fixtures/`. A new endpoint adds a recording in `apps/server/src/routes/contract.test.ts` and a line in `ContractTests.swift`; `.github/workflows/ios-contracts.yml` fails when models or fixtures are stale.
+- In Claude's shell, `swift build`/`swift test` need `--disable-sandbox` (SwiftPM's sandbox can't start inside it); the Makefile already passes it.
 - Tests: XCTest-free Swift Testing (`import Testing`, `@Test`, `#expect`) in packages; XCUITest for UI tests.
 - Files: one primary type per file, named after it. No force unwraps outside tests.
 - User-facing text follows the web's wording (copy it from the web component cited in the parity checklist).
