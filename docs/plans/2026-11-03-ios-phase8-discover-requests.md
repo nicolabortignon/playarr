@@ -5231,6 +5231,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `MixPointsModel(track:api:player:toast:invalidate:cuesChanged:)` keeps the strip as `phrases` and `bars` from `EnergyPicture.phrasesAndBars` over the whole song (no `layout`). Tests answer from `FakeAPI`, check the bodies sent (`{"ids":["rec-7"]}`, `{"mixIn":32.5,"mixOut":null}`, both null on Reset) and the strip's phrases (the unmeasured one left blank) and 100 bars.
+
 ---
 
 ### Task 19: The Edit mix points sheet
