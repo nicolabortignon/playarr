@@ -179,7 +179,7 @@ mixMapRoutes(app, {
   libraryScan: () => readMixSettings(store).analyzeLibrary,
 });
 transitionRoutes(app, { transitions, unavailableReason: 'DJ mixing needs audio analysis, which is off on this server' });
-lyricsRoutes(app, { lyrics: new LyricsService(db, library, files, { log: app.log }) });
+lyricsRoutes(app, { lyrics: new LyricsService(db, library, files, { log: app.log }), library });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers });

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import type { Library } from '../library/library.ts';
 import { RECORDING_ID } from './recordingId.ts';
-import { requireAdmin } from '../accounts/rights.ts';
+import { requireAdmin, visibleRecordings } from '../accounts/rights.ts';
 
 const input = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(50) });
 const analyzeInput = z.object({ again: z.boolean().optional() });
@@ -22,7 +22,7 @@ export function mixMapRoutes(
   app: FastifyInstance,
   deps: {
     analyzer: Pick<Analyzer, 'canAnalyzeAudio' | 'mixMaps' | 'cues' | 'setCues' | 'ensure' | 'analysisProgress' | 'analyzeLibrary' | 'reanalyzeLibrary'>;
-    library: Pick<Library, 'trackByRecording'>;
+    library: Pick<Library, 'trackByRecording'> & Partial<Pick<Library, 'view'>>;
     /** A song's cue points changed: its cached transitions are out of date (the transition service's forget). */
     onCuesChanged?: (recordingId: string) => Promise<void>;
     /**
@@ -39,7 +39,8 @@ export function mixMapRoutes(
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
     // Without audio analysis there are no maps to make, and no mixed transitions to use them.
     if (!analyzer.canAnalyzeAudio) return {};
-    const ids = [...new Set(parsed.data.ids)];
+    // Only songs the account may hear: their maps, and their analysis.
+    const ids = await visibleRecordings(library, req, [...new Set(parsed.data.ids)]);
     const maps = analyzer.mixMaps(ids);
     const cues = analyzer.cues(ids);
     const out: Record<string, MixMap & { cues?: CuePoints }> = {};
@@ -78,12 +79,14 @@ export function mixMapRoutes(
 
   app.get<{ Params: { id: string } }>('/api/recordings/:id/cues', async (req, reply) => {
     if (!RECORDING_ID.test(req.params.id)) return reply.code(400).send({ error: 'Invalid recording id' });
+    if (!(await visibleRecordings(library, req, [req.params.id])).length) return {};
     return analyzer.cues([req.params.id]).get(req.params.id) ?? {};
   });
 
   app.put<{ Params: { id: string } }>('/api/recordings/:id/cues', async (req, reply) => {
     const { id } = req.params;
     if (!RECORDING_ID.test(id)) return reply.code(400).send({ error: 'Invalid recording id' });
+    if (!(await visibleRecordings(library, req, [id])).length) return reply.code(404).send({ error: 'Song not found in the library' });
     const parsed = cueInput.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid cue points' });
     const body = parsed.data;

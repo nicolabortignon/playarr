@@ -4,7 +4,7 @@ import type { Config } from '../config.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { mapPath, type MediaSource } from '../media/index.ts';
-import { canRequest, requireAdmin } from '../accounts/rights.ts';
+import { canRequest, libraryOf, requireAdmin } from '../accounts/rights.ts';
 
 const ALBUM_SORTS: AlbumSort[] = ['title', 'artist', 'year', 'added'];
 
@@ -59,7 +59,8 @@ export function apiRoutes(
       media: mediaOk
         ? { source: media.kind, ok: true }
         : { source: media.kind, ok: false, error: (mediaResult.reason as Error).message },
-      library: await library.stats(),
+      // What the asker may hear; nothing before signing in.
+      library: req.auth === null ? undefined : await libraryOf(library, req).stats(),
       // Request buttons show only to accounts that may use them.
       requests: lidarr.configured && deps.requestSettings().enabled && canRequest(req),
     };
@@ -71,35 +72,35 @@ export function apiRoutes(
     return library.stats();
   });
 
-  app.get('/api/artists', () => library.artists());
+  app.get('/api/artists', (req) => libraryOf(library, req).artists());
 
   app.get<{ Params: { id: string } }>('/api/artists/:id', async (req, reply) => {
-    return (await library.artist(Number(req.params.id))) ?? notFound(reply, 'Artist');
+    return (await libraryOf(library, req).artist(Number(req.params.id))) ?? notFound(reply, 'Artist');
   });
 
   app.get<{ Params: { id: string } }>('/api/artists/:id/tracks', (req) =>
-    library.artistTracks(Number(req.params.id)),
+    libraryOf(library, req).artistTracks(Number(req.params.id)),
   );
 
   app.get<{ Querystring: { sort?: string; limit?: string } }>('/api/albums', (req) => {
     const sort = ALBUM_SORTS.includes(req.query.sort as AlbumSort) ? (req.query.sort as AlbumSort) : 'artist';
     const limit = req.query.limit ? clampInt(req.query.limit, 50, 10_000) : undefined;
-    return library.albums(sort, limit);
+    return libraryOf(library, req).albums(sort, limit);
   });
 
   app.get<{ Querystring: { limit?: string } }>('/api/albums/random', (req) =>
-    library.randomAlbums(clampInt(req.query.limit, 12, 100)),
+    libraryOf(library, req).randomAlbums(clampInt(req.query.limit, 12, 100)),
   );
 
   app.get<{ Params: { id: string } }>('/api/albums/:id', async (req, reply) => {
-    return (await library.album(Number(req.params.id))) ?? notFound(reply, 'Album');
+    return (await libraryOf(library, req).album(Number(req.params.id))) ?? notFound(reply, 'Album');
   });
 
   app.get<{ Querystring: { limit?: string } }>('/api/tracks/random', (req) =>
-    library.randomTracks(clampInt(req.query.limit, 50, 500)),
+    libraryOf(library, req).randomTracks(clampInt(req.query.limit, 50, 500)),
   );
 
   app.get<{ Querystring: { q?: string; limit?: string } }>('/api/search', (req) =>
-    library.search(req.query.q ?? '', clampInt(req.query.limit, 20, 100)),
+    libraryOf(library, req).search(req.query.q ?? '', clampInt(req.query.limit, 20, 100)),
   );
 }

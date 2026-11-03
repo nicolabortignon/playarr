@@ -3676,6 +3676,8 @@ corepack pnpm -C apps/server typecheck
 
 Expected: PASS.
 
+*As executed:* the code fitted as written once found by content (the cited line numbers were stale after Tasks 8-9).
+
 **Step 5: Commit**
 
 ```bash

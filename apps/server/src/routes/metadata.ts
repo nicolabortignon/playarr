@@ -6,7 +6,7 @@ import type { CatalogStore } from '../catalog/store.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { trackMetadata } from '../library/trackMetadata.ts';
-import { isAdmin, requireAdmin } from '../accounts/rights.ts';
+import { isAdmin, libraryOf, requireAdmin, sourcesOf } from '../accounts/rights.ts';
 
 /** Track menu → Show metadata. File paths and source locations only for admins. */
 export function metadataRoutes(
@@ -49,10 +49,13 @@ export function metadataRoutes(
   app.get<{ Params: { id: string } }>('/api/tracks/:id/metadata', async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: 'Bad track id' });
+    const library = libraryOf(deps.library, req);
+    const sources = sourcesOf(req);
+    if (sources !== null && !(await library.track(id))) return reply.code(404).send({ error: 'Track not found' });
     const meta = await trackMetadata(
       {
         store: deps.store,
-        library: deps.library,
+        library,
         pathMap: deps.pathMap,
         features: (recordingId) => {
           const f = deps.features([recordingId]).get(recordingId);
@@ -72,6 +75,8 @@ export function metadataRoutes(
       id,
       isAdmin(req),
     );
-    return meta ?? reply.code(404).send({ error: 'Track not found' });
+    if (!meta) return reply.code(404).send({ error: 'Track not found' });
+    // Only the copies in the sources this account may hear.
+    return sources === null ? meta : { ...meta, copies: meta.copies.filter((c) => sources.includes(c.source.id)) };
   });
 }

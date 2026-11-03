@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import type { SongLoudness } from '../analysis/loudnessJobs.ts';
 import type { Library } from '../library/library.ts';
+import { libraryOf, visibleRecordings } from '../accounts/rights.ts';
 
 /** Songs are levelled to this loudness (EBU R128 integrated), as Spotify, YouTube and Tidal level them. */
 export const TARGET_LUFS = -14;
@@ -45,18 +46,21 @@ type Measured = SongLoudness & { lufs: number };
  */
 export function levelRoutes(
   app: FastifyInstance,
-  deps: { analyzer: Pick<Analyzer, 'loudness' | 'ensure' | 'remeasureLoudness'>; library: Pick<Library, 'trackByRecording' | 'album'> },
+  deps: { analyzer: Pick<Analyzer, 'loudness' | 'ensure' | 'remeasureLoudness'>; library: Pick<Library, 'trackByRecording' | 'album'> & Partial<Pick<Library, 'view'>> },
 ) {
   app.post('/api/levels', async (req, reply) => {
     const parsed = input.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
     const out: Record<string, TrackLevel> = {};
-    const asked = [...new Set(parsed.data.ids)];
+    // Songs outside the account's sources aren't there for it: neither levelled nor measured.
+    const asked = await visibleRecordings(deps.library, req, [...new Set(parsed.data.ids)]);
+    const albums = libraryOf(deps.library, req);
     const albumMates = new Set<string>();
     for (const id of asked) {
+      // The whole library's copy: the one loudness analysis measures (see the remeasure check below).
       const track = await deps.library.trackByRecording(id);
       if (!track) continue;
-      const album = await deps.library.album(track.albumId);
+      const album = await albums.album(track.albumId);
       const albumIds = album?.tracks.map((t) => t.recordingId) ?? [id];
       for (const r of albumIds) albumMates.add(r);
       const measured = deps.analyzer.loudness([...new Set([id, ...albumIds])]);
