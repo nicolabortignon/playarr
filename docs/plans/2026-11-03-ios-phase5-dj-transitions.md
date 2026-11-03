@@ -5711,7 +5711,7 @@ with:
           } header: {
 ```
 
-(If phase 4 laid these out differently, put the line right under the transport, and as the second row of the queue's "Now playing" section.)
+(Checked against phase 4 as it landed, at `2232f2a`: both anchors are there word for word. If they move, put the line right under the transport, and as the second row of the queue's "Now playing" section.)
 
 **Step 3: Build and test**
 
@@ -5724,7 +5724,7 @@ Expected: the UI package's tests pass, and the app builds for the simulator.
 
 **Step 4: Look at it**
 
-Run the app on the simulator against the dev server (`make -C apps/ios build`, then install and launch as phase 3's Task 21 does). Turn on Settings → Playback → DJ mix and play an album shuffled. Now Playing shows "Next: …" with the style (and BPM and keys once the maps are in). Tapping it opens "Next transition"; switching to No mixing hides the line, and Auto brings it back. With VoiceOver on, the line reads "Next: … beats per minute …" and its hint.
+Run the app on the simulator against the dev server (`make -C apps/ios build`, then install and launch as phase 3's Task 21 does). Turn on Settings → Playback → DJ mix and play an album shuffled. Now Playing shows "Next: …" with the style (and BPM and keys once the maps are in). Tapping it opens "Next transition"; switching to No mixing hides the line, and Auto brings it back. With VoiceOver on, the line reads "Next: … beats per minute …" and its hint. Without a server, the demo library (`-UITests -UITestsDemo`) shows the line too: its backend answers as a server without analysis, so it reads "Next: straight on" and the sheet says why.
 
 **Step 5: Commit**
 

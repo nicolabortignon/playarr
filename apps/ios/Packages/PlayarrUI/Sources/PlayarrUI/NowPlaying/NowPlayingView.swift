@@ -31,6 +31,7 @@ struct NowPlayingView: View {
           song(track)
           SeekBar(player: player)
           Transport(player: player)
+          TransitionLine(player: player)
           Spacer(minLength: 0)
         }
         .padding(.horizontal, 24)

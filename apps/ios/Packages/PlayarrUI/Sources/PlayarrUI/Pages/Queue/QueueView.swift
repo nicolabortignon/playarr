@@ -14,6 +14,7 @@ struct QueueView: View {
         List {
           Section {
             nowPlaying(track)
+            TransitionLine(player: session.player)
           } header: {
             nowPlayingHeader(model)
           }
