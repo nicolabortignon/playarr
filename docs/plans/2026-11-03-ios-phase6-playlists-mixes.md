@@ -3033,6 +3033,8 @@ MSG
 
 The Playlists grid ("New playlist" first), the playlist page (pages/Playlist.tsx: cover tap → New cover, tap the name or description to edit them, the facts and whose it is, the cover note, Play, Shuffle, ⋯, the songs with their hearts and menus, greyed out when not in your library, hold-and-drag or Edit to reorder, "Songs like these" under your own, Delete with the web's confirmation), and the cover picker sheet. A playlist card says whose it is when it isn't yours ("12 songs · Sam").
 
+A song's ⋯ menu on the page also has phase 8's `TrackLibraryMenuItems` (Show metadata, and Edit mix points with DJ mix on) before "Remove from playlist", in the web's order: phase 8 landed before this phase.
+
 Notes from building it: buttons in one `List` row need a bordered or plain style each (or a tap on the row fires them all); a plain-styled button in a list row takes taps only on its words unless it has a `contentShape`; `FlowLayout` squeezes bordered buttons in a list row, so the action rows are `HStack`s.
 
 **Files:**
@@ -3130,8 +3132,13 @@ struct PlaylistItemRow: View {
       if let track = item.track { FavoriteButton(track: track, size: .row) }
       if !actions.isEmpty {
         Menu {
-          ForEach(actions, id: \.self) { action in
-            Button(action.label, systemImage: action.systemImage, role: action == .remove ? .destructive : nil) { perform(action) }
+          ForEach(actions.filter { $0 != .remove }, id: \.self) { action in
+            Button(action.label, systemImage: action.systemImage) { perform(action) }
+          }
+          // Phase 8's Show metadata and (with DJ mix on) Edit mix points, before Remove as on the web.
+          if let track = item.track { TrackLibraryMenuItems(track: track) }
+          if actions.contains(.remove) {
+            Button(PlaylistRowAction.remove.label, systemImage: PlaylistRowAction.remove.systemImage, role: .destructive) { perform(.remove) }
           }
         } label: {
           Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle())

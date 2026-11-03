@@ -11,14 +11,17 @@ struct PlaylistCard: View {
       VStack(alignment: .leading, spacing: 6) {
         PlaylistCover(cover: playlist.cover, points: width, name: playlist.name)
         Text(playlist.name).font(.subheadline).lineLimit(1)
-        Text(Format.plural(playlist.trackCount, "song")).font(.caption.monospaced()).foregroundStyle(.secondary)
+        Text(subtitle).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
       }
       .frame(width: width)
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("\(playlist.name), \(Format.plural(playlist.trackCount, "song"))")
+    .accessibilityLabel("\(playlist.name), \(subtitle)")
     .accessibilityAddTraits(.isButton)
   }
+
+  /// "12 songs", and whose it is when it isn't yours: "12 songs · Sam".
+  var subtitle: String { Format.plural(playlist.trackCount, "song") + (playlist.mine ? "" : " · \(playlist.owner)") }
 }
 
 /// The playlist's artwork (apps/web/src/components/PlaylistCover.tsx).

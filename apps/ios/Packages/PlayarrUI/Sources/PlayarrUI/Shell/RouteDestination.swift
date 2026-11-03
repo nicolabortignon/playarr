@@ -15,8 +15,8 @@ struct RouteDestination: View {
     case .settings: SettingsView(session: session)
     case .settingsPanel(let panel): SettingsPanelView(panel: panel, session: session)
     case .favorites: FavoritesView(session: session)
-    case .playlists: PlaceholderPage(title: "Playlists")  // phase 6
-    case .playlist: PlaceholderPage(title: "Playlist")  // phase 6
+    case .playlists: PlaylistsView(session: session)
+    case .playlist(let id): PlaylistView(id: id, session: session)
     case .mixes: PlaceholderPage(title: "Made for you")  // phase 6
     case .mix: PlaceholderPage(title: "Mix")  // phase 6
     case .listening: PlaceholderPage(title: "Your listening")  // phase 6
