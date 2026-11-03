@@ -20,6 +20,8 @@ public final class AppModel {
         self.browser = browser
         self.appVersion = appVersion
         self.device = device
+        // A known server found at home keeps that address as its local one.
+        browser.onUpdate = { [weak store] servers in store?.discovered(servers) }
     }
 
     public static func live() -> AppModel {
@@ -40,7 +42,7 @@ public final class AppModel {
     /// Asks the active server who it is: its name may have changed, or it may need a newer app.
     public func checkActiveServer() async {
         guard let server = store.activeServer else { return }
-        guard let info = try? await store.anonymousClient(for: server.baseURL).send(API.Server.info()), info.id == server.id else { return }
+        guard let info = try? await store.anonymousClient(for: server).send(API.Server.info()), info.id == server.id else { return }
         store.remember(info, at: server.baseURL)
         tooOld = info.supports(appVersion) ? nil : info
     }

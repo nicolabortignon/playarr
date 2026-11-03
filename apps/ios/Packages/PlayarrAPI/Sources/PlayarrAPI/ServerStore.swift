@@ -44,7 +44,7 @@ public final class ServerStore {
         let key = record.key
         if let client = clients[key] { return client }
         guard record.signedIn, let server = server(key.serverId), let token = try? secrets.token(for: key.keychainAccount) else { return nil }
-        let client = APIClient(baseURL: server.baseURL, token: token, session: session) { [weak self] in
+        let client = APIClient(baseURL: server.baseURL, localURL: server.localURL, token: token, session: session) { [weak self] in
             await self?.markSignedOut(key)
         }
         clients[key] = client
@@ -56,26 +56,61 @@ public final class ServerStore {
         APIClient(baseURL: baseURL, session: session, timeout: 15)
     }
 
+    /// The same for a known server, trying its local address too.
+    public func anonymousClient(for server: ServerRecord) -> APIClient {
+        APIClient(baseURL: server.baseURL, localURL: server.localURL, session: session, timeout: 15)
+    }
+
     /// Media addresses for a signed-in account, with its token for the Authorization header.
     public func mediaURLs(for record: AccountRecord) -> MediaURLs? {
         guard record.signedIn, let server = server(record.serverId), let token = try? secrets.token(for: record.key.keychainAccount) else { return nil }
-        return MediaURLs(baseURL: server.baseURL, token: token)
+        return MediaURLs(baseURL: server.baseURL, localURL: server.localURL, token: token)
     }
 
-    /// Remembers a server, or its new name and address.
+    /// Remembers a server reached at `url`, or its new name and address. A server with a public address
+    /// (`publicUrl`, HTTPS or at home) is kept by it, and `url`, when it's another address, becomes its local
+    /// one; reached at its public (or only) address, the local address known before is kept.
     @discardableResult
-    public func remember(_ info: ServerInfo, at baseURL: URL) -> ServerRecord {
-        if let index = servers.firstIndex(where: { $0.id == info.id }) {
-            if servers[index].baseURL != baseURL { dropClients(serverId: info.id) }
-            servers[index].name = info.name
-            servers[index].baseURL = baseURL
+    public func remember(_ info: ServerInfo, at url: URL) -> ServerRecord {
+        let baseURL = info.publicUrl.flatMap { try? ServerAddress.url(from: $0) } ?? url
+        let index = servers.firstIndex { $0.id == info.id }
+        let localURL = Self.sameAddress(url, baseURL) ? index.flatMap { servers[$0].localURL } : url
+        guard let index else {
+            let record = ServerRecord(id: info.id, name: info.name, baseURL: baseURL, localURL: localURL)
+            servers.append(record)
             save()
-            return servers[index]
+            return record
         }
-        let record = ServerRecord(id: info.id, name: info.name, baseURL: baseURL)
-        servers.append(record)
+        if servers[index].baseURL != baseURL || servers[index].localURL != localURL { dropClients(serverId: info.id) }
+        servers[index].name = info.name
+        servers[index].baseURL = baseURL
+        servers[index].localURL = localURL
         save()
-        return record
+        return servers[index]
+    }
+
+    /// Servers Bonjour found: a known one at another address than its own keeps that as its local address.
+    public func discovered(_ found: [DiscoveredServer]) {
+        var changed = false
+        for server in found {
+            guard let index = servers.firstIndex(where: { $0.id == server.id }),
+                  !Self.sameAddress(server.baseURL, servers[index].baseURL),
+                  servers[index].localURL != server.baseURL
+            else { continue }
+            servers[index].localURL = server.baseURL
+            dropClients(serverId: server.id)
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    private static func sameAddress(_ a: URL, _ b: URL) -> Bool {
+        func key(_ url: URL) -> String {
+            var text = url.absoluteString.lowercased()
+            while text.hasSuffix("/") { text.removeLast() }
+            return text
+        }
+        return key(a) == key(b)
     }
 
     /// Keeps a new session (sign-in, setup code or claiming the server) and makes its account active.

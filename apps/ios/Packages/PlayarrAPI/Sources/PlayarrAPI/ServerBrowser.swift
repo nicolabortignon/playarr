@@ -8,6 +8,8 @@ import Synchronization
 @MainActor @Observable
 public final class ServerBrowser {
     public private(set) var servers: [DiscoveredServer] = []
+    /// Called with every new list (AppModel passes it to `ServerStore.discovered`).
+    @ObservationIgnored public var onUpdate: (@MainActor ([DiscoveredServer]) -> Void)?
 
     @ObservationIgnored private var browser: NWBrowser?
 
@@ -42,6 +44,7 @@ public final class ServerBrowser {
             found = DiscoveredServer.merge(found, server)
         }
         servers = found
+        onUpdate?(found)
     }
 
     /// The service's IPv4 address and port, by connecting to it; nil after 5 s.

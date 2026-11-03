@@ -109,4 +109,72 @@ import Testing
         try Data("not json".utf8).write(to: directory.appending(path: "servers.json"))
         #expect(ServerStore(directory: directory, secrets: secrets).servers.isEmpty)
     }
+
+    // A server with a public address (PUBLIC_URL), e.g. https://tracklist.me behind a reverse proxy.
+
+    var tracklist: ServerInfo { ServerInfo(id: "srv-1", name: "Home", version: "0.7.0", minAppVersion: "1.0.0", setup: false, publicUrl: "https://tracklist.me") }
+    let publicURL = URL(string: "https://tracklist.me")!
+
+    @Test func keepsAServerByItsPublicAddressAndTheLocalOneItWasReachedAt() throws {
+        let store = ServerStore(directory: directory, secrets: secrets)
+        try store.signedIn(SignInResponse(token: "tok-1", account: account(1, "Nicola")), server: tracklist, at: homeURL)
+
+        #expect(store.servers[0].baseURL == publicURL)
+        #expect(store.servers[0].localURL == homeURL)
+        #expect(store.activeClient?.baseURL == publicURL)
+        #expect(store.activeClient?.localURL == homeURL)
+        let record = try #require(store.activeAccount)
+        #expect(store.mediaURLs(for: record)?.baseURL == publicURL)
+        #expect(store.anonymousClient(for: store.servers[0]).localURL == homeURL)
+
+        let reopened = ServerStore(directory: directory, secrets: secrets)
+        #expect(reopened.servers[0].baseURL == publicURL)
+        #expect(reopened.servers[0].localURL == homeURL)
+    }
+
+    @Test func keepsTheLocalAddressWhenReachedAtThePublicOne() throws {
+        let store = ServerStore(directory: directory, secrets: secrets)
+        store.remember(tracklist, at: homeURL)
+        store.remember(tracklist, at: publicURL)
+        #expect(store.servers[0].baseURL == publicURL)
+        #expect(store.servers[0].localURL == homeURL)
+
+        let elsewhere = ServerStore(directory: directory.appending(path: "other"), secrets: secrets)
+        elsewhere.remember(tracklist, at: URL(string: "https://tracklist.me/")!)
+        #expect(elsewhere.servers[0].localURL == nil)
+    }
+
+    @Test func usesAPublicAddressOnlyOverHTTPSOrAtHome() {
+        let store = ServerStore(directory: directory, secrets: secrets)
+        var info = tracklist
+        info.publicUrl = "http://tracklist.me"
+        store.remember(info, at: homeURL)
+        #expect(store.servers[0].baseURL == homeURL)
+        #expect(store.servers[0].localURL == nil)
+    }
+
+    @Test func followsBonjourToTheServersLocalAddress() throws {
+        let store = ServerStore(directory: directory, secrets: secrets)
+        try store.signedIn(SignInResponse(token: "tok-1", account: account(1, "Nicola")), server: tracklist, at: homeURL)
+        let moved = URL(string: "http://192.168.1.50:4000")!
+
+        store.discovered([
+            DiscoveredServer(id: "srv-1", name: "Home", version: "0.7.0", baseURL: moved),
+            DiscoveredServer(id: "srv-other", name: "Elsewhere", version: "0.7.0", baseURL: URL(string: "http://192.168.1.60:4000")!),
+        ])
+
+        #expect(store.servers.map(\.id) == ["srv-1"])
+        #expect(store.servers[0].baseURL == publicURL)
+        #expect(store.servers[0].localURL == moved)
+        #expect(store.activeClient?.localURL == moved)
+        #expect(ServerStore(directory: directory, secrets: secrets).servers[0].localURL == moved)
+    }
+
+    @Test func readsServerListsSavedBeforeLocalAddresses() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try json(#"{"servers":[{"id":"srv-1","name":"Home","baseURL":"http:\/\/192.168.1.103:4000","accounts":[]}]}"#).write(to: directory.appending(path: "servers.json"))
+        let store = ServerStore(directory: directory, secrets: secrets)
+        #expect(store.servers.first?.baseURL == homeURL)
+        #expect(store.servers.first?.localURL == nil)
+    }
 }

@@ -28,4 +28,15 @@ import Testing
         let elsewhere = try #require(media.url("https://coverartarchive.org/release/x/front"))
         #expect(media.request(for: elsewhere).value(forHTTPHeaderField: "Authorization") == nil)
     }
+
+    @Test func sendsTheTokenToTheLocalAddressTooAndMovesAddressesThere() throws {
+        let media = MediaURLs(baseURL: URL(string: "https://tracklist.me")!, localURL: URL(string: "http://192.168.1.103:4000")!, token: "tok")
+        let stream = try #require(media.stream(fileId: 9000))
+        let local = try #require(media.onLocalAddress(stream))
+        #expect(local.absoluteString == "http://192.168.1.103:4000/stream/9000")
+        #expect(media.request(for: local).value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+        #expect(media.onLocalAddress(try #require(media.art("/art/album/70/cover?v=2", size: 600)))?.absoluteString == "http://192.168.1.103:4000/art/album/70/cover?v=2&size=600")
+        #expect(media.onLocalAddress(URL(string: "https://coverartarchive.org/x")!) == nil)
+        #expect(self.media.onLocalAddress(stream) == nil)
+    }
 }

@@ -141,4 +141,73 @@ import Testing
         #expect(try client.urlRequest(for: API.Server.info()).timeoutInterval == 10)
         #expect(try client.urlRequest(for: API.Server.health()).timeoutInterval == 30)
     }
+
+    // A server behind a public address, reached from home through a router without NAT loopback.
+
+    @Test func triesTheLocalAddressWhenThePublicOneCantBeReached() async throws {
+        let away = uniqueHost(), home = uniqueHost()
+        let publicTries = Mutex(0)
+        let seen = Mutex<URLRequest?>(nil)
+        let session = StubProtocol.session(host: away) { _ in
+            publicTries.withLock { $0 += 1 }
+            throw URLError(.cannotConnectToHost)
+        }
+        _ = StubProtocol.session(host: home) { request in
+            seen.withLock { $0 = request }
+            return (200, json(#"{"id":"u-1","name":"Home","version":"0.7.0","minAppVersion":"1.0.0","setup":false}"#))
+        }
+        let client = APIClient(baseURL: URL(string: "https://\(away)")!, localURL: URL(string: "http://\(home):4000")!, token: "tok", session: session)
+
+        #expect(try await client.send(API.Server.info()).name == "Home")
+        let request = try #require(seen.withLock { $0 })
+        #expect(request.url?.absoluteString == "http://\(home):4000/api/server")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+
+        // The local address answered: the next request starts there.
+        _ = try await client.send(API.Server.info())
+        #expect(publicTries.withLock { $0 } == 1)
+    }
+
+    @Test func goesBackToThePublicAddressWhenTheLocalOneStopsAnswering() async throws {
+        let away = uniqueHost(), home = uniqueHost()
+        let atHome = Mutex(true)
+        let info = json(#"{"id":"u-1","name":"Home","version":"0.7.0","minAppVersion":"1.0.0","setup":false}"#)
+        let session = StubProtocol.session(host: away) { _ in
+            if atHome.withLock({ $0 }) { throw URLError(.timedOut) }
+            return (200, info)
+        }
+        _ = StubProtocol.session(host: home) { _ in
+            if atHome.withLock({ $0 }) { return (200, info) }
+            throw URLError(.cannotConnectToHost)
+        }
+        let client = APIClient(baseURL: URL(string: "https://\(away)")!, localURL: URL(string: "http://\(home)")!, session: session)
+        _ = try await client.send(API.Server.info())
+
+        atHome.withLock { $0 = false }
+
+        #expect(try await client.send(API.Server.info()).name == "Home")
+    }
+
+    @Test func triesTheLocalAddressOnlyForConnectionFailures() async throws {
+        let away = uniqueHost(), home = uniqueHost()
+        let localTries = Mutex(0)
+        let session = StubProtocol.session(host: away) { _ in (500, json(#"{"error":"Library not loaded"}"#)) }
+        _ = StubProtocol.session(host: home) { _ in
+            localTries.withLock { $0 += 1 }
+            return (200, Data())
+        }
+        let client = APIClient(baseURL: URL(string: "https://\(away)")!, localURL: URL(string: "http://\(home)")!, session: session)
+
+        await #expect(throws: APIError.server(status: 500, message: "Library not loaded")) { try await client.send(API.Server.info()) }
+        #expect(localTries.withLock { $0 } == 0)
+    }
+
+    @Test func isOfflineWhenNeitherAddressAnswers() async throws {
+        let away = uniqueHost(), home = uniqueHost()
+        let session = StubProtocol.session(host: away) { _ in throw URLError(.cannotFindHost) }
+        _ = StubProtocol.session(host: home) { _ in throw URLError(.timedOut) }
+        let client = APIClient(baseURL: URL(string: "https://\(away)")!, localURL: URL(string: "http://\(home)")!, session: session)
+
+        await #expect(throws: APIError.offline) { try await client.send(API.Server.info()) }
+    }
 }

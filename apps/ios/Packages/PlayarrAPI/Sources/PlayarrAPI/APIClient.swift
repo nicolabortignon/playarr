@@ -4,6 +4,10 @@ import Foundation
 /// `X-Playarr: 1` and, with a token, `Authorization: Bearer <token>`; error answers become `APIError`.
 public actor APIClient {
     public nonisolated let baseURL: URL
+    /// The server's home-network address when `baseURL` is its public one. A request that can't connect
+    /// to one address is tried once at the other, and the one that answered is tried first afterwards.
+    public nonisolated let localURL: URL?
+    private var preferLocal = false
     private nonisolated let token: String?
     private let session: URLSession
     private nonisolated let timeout: TimeInterval
@@ -13,12 +17,14 @@ public actor APIClient {
     /// session has ended (ServerStore marks the account signed out).
     public init(
         baseURL: URL,
+        localURL: URL? = nil,
         token: String? = nil,
         session: URLSession = .shared,
         timeout: TimeInterval = 30,
         onUnauthorized: @escaping @Sendable () async -> Void = {}
     ) {
         self.baseURL = baseURL
+        self.localURL = localURL
         self.token = token
         self.session = session
         self.timeout = timeout
@@ -26,15 +32,13 @@ public actor APIClient {
     }
 
     public func send<T: Decodable & Sendable>(_ endpoint: Endpoint<T>) async throws -> T {
-        let request = try urlRequest(for: endpoint)
         let data: Data
-        let response: URLResponse
+        let http: HTTPURLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, http) = try await load(endpoint)
         } catch {
             throw Self.transportError(error)
         }
-        guard let http = response as? HTTPURLResponse else { throw APIError.offline }
         if http.statusCode == 401, token != nil {
             await onUnauthorized()
             throw APIError.unauthorized
@@ -49,9 +53,46 @@ public actor APIClient {
         }
     }
 
-    /// The request `send` makes for `endpoint`.
+    /// The answer from the address that answered last; when it can't be reached, from the other one.
+    private func load<T>(_ endpoint: Endpoint<T>) async throws -> (Data, HTTPURLResponse) {
+        guard let localURL else { return try await load(endpoint, from: baseURL) }
+        let (first, second) = preferLocal ? (localURL, baseURL) : (baseURL, localURL)
+        do {
+            return try await load(endpoint, from: first)
+        } catch let error as URLError where Self.couldntConnect(error) {
+            try Task.checkCancellation()
+            let answer = try await load(endpoint, from: second)
+            preferLocal = second == localURL
+            return answer
+        }
+    }
+
+    private func load<T>(_ endpoint: Endpoint<T>, from base: URL) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await session.data(for: urlRequest(for: endpoint, base: base))
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        return (data, http)
+    }
+
+    /// Failures that say nothing answered at that address (or something else did, with the wrong
+    /// certificate: a router's own page), as opposed to the server answering with an error.
+    static func couldntConnect(_ error: URLError) -> Bool {
+        switch error.code {
+        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut, .networkConnectionLost, .notConnectedToInternet,
+             .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot,
+             .serverCertificateNotYetValid:
+            true
+        default:
+            false
+        }
+    }
+
+    /// The request `send` makes for `endpoint` (at `baseURL`).
     public nonisolated func urlRequest<T>(for endpoint: Endpoint<T>) throws -> URLRequest {
-        var request = URLRequest(url: try Self.url(base: baseURL, path: endpoint.path, query: endpoint.query))
+        try urlRequest(for: endpoint, base: baseURL)
+    }
+
+    private nonisolated func urlRequest<T>(for endpoint: Endpoint<T>, base: URL) throws -> URLRequest {
+        var request = URLRequest(url: try Self.url(base: base, path: endpoint.path, query: endpoint.query))
         request.httpMethod = endpoint.method.rawValue
         request.timeoutInterval = endpoint.timeout ?? timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")

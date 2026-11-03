@@ -4927,7 +4927,8 @@ public enum API { Server, Auth, Accounts, Library, Search, Discover, Requests, F
 
 public actor APIClient {
     public nonisolated let baseURL: URL
-    public init(baseURL: URL, token: String? = nil, session: URLSession = .shared, timeout: TimeInterval = 30, onUnauthorized: @escaping @Sendable () async -> Void = {})
+    public nonisolated let localURL: URL?   // tried once when baseURL can't be connected to; the address that answered goes first afterwards
+    public init(baseURL: URL, localURL: URL? = nil, token: String? = nil, session: URLSession = .shared, timeout: TimeInterval = 30, onUnauthorized: @escaping @Sendable () async -> Void = {})
     public func send<T: Decodable & Sendable>(_ endpoint: Endpoint<T>) async throws -> T
     public nonisolated func urlRequest<T>(for endpoint: Endpoint<T>) throws -> URLRequest
     public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T
@@ -4935,7 +4936,8 @@ public actor APIClient {
 public enum APIError: Error, Equatable, Sendable, LocalizedError { case unauthorized, server(status: Int, message: String), offline, decoding(String) }
 
 public struct MediaURLs: Sendable {
-    public init(baseURL: URL, token: String?)
+    public init(baseURL: URL, localURL: URL? = nil, token: String?)
+    public func onLocalAddress(_ url: URL) -> URL?
     public func url(_ path: String) -> URL?
     public func stream(fileId: Int) -> URL?
     public func levelled(_ track: Track, gain: Double) -> URL?
@@ -4954,20 +4956,22 @@ public struct MediaURLs: Sendable {
     public func account(_ key: AccountKey) -> AccountRecord?
     public func client(for record: AccountRecord) -> APIClient?
     public func anonymousClient(for baseURL: URL) -> APIClient
+    public func anonymousClient(for server: ServerRecord) -> APIClient
     public func mediaURLs(for record: AccountRecord) -> MediaURLs?
-    @discardableResult public func remember(_ info: ServerInfo, at baseURL: URL) -> ServerRecord
+    @discardableResult public func remember(_ info: ServerInfo, at url: URL) -> ServerRecord   // kept by info.publicUrl when set; url becomes localURL
+    public func discovered(_ found: [DiscoveredServer])   // Bonjour: updates known servers' localURL
     public func signedIn(_ response: SignInResponse, server info: ServerInfo, at baseURL: URL) throws
     public func activate(_ key: AccountKey)
     public func update(_ account: Account, on serverId: String)
     public func markSignedOut(_ key: AccountKey)
     public func signOut(_ key: AccountKey) async
 }
-public struct ServerRecord: Codable, Hashable, Sendable, Identifiable { id: String; name: String; baseURL: URL; accounts: [AccountRecord] }
+public struct ServerRecord: Codable, Hashable, Sendable, Identifiable { id: String; name: String; baseURL: URL; localURL: URL?; accounts: [AccountRecord] }
 public struct AccountRecord: Codable, Hashable, Sendable, Identifiable { serverId: String; account: Account; signedIn: Bool; key: AccountKey }
 public struct AccountKey: Codable, Hashable, Sendable { serverId: String; accountId: Int; keychainAccount: String }
 public protocol SecretStore: Sendable { token(for:), setToken(_:for:), removeToken(for:) }   // KeychainSecretStore, InMemorySecretStore
 
-@MainActor @Observable public final class ServerBrowser { public private(set) var servers: [DiscoveredServer]; start(); stop() }
+@MainActor @Observable public final class ServerBrowser { public private(set) var servers: [DiscoveredServer]; var onUpdate; start(); stop() }
 public struct DiscoveredServer: Hashable, Sendable, Identifiable { id, name, version: String; baseURL: URL; init?(txt:host:port:); static merge(_:_:) }
 public enum ServerAddress { static func url(from: String) throws(Problem) -> URL; static func isLocal(host:) -> Bool }
 public struct AppVersion: Comparable, Sendable { init(_:); static var current: AppVersion }   // ServerInfo.supports(_:)

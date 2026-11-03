@@ -4,10 +4,13 @@ import Foundation
 /// with `request(for:)`, which puts it in the Authorization header (and only for this server).
 public struct MediaURLs: Sendable {
     public let baseURL: URL
+    /// The server's home-network address when `baseURL` is its public one (see `ServerRecord.localURL`).
+    public let localURL: URL?
     private let token: String?
 
-    public init(baseURL: URL, token: String?) {
+    public init(baseURL: URL, localURL: URL? = nil, token: String?) {
         self.baseURL = baseURL
+        self.localURL = localURL
         self.token = token
     }
 
@@ -45,7 +48,26 @@ public struct MediaURLs: Sendable {
         art("/art/playlist/\(playlistId)/preview?layout=\(layout.rawValue)&variant=\(variant)", size: size)
     }
 
-    /// A request for `url` carrying the token, when `url` is on this server.
+    /// `url` (one of these addresses) at the server's local address, to try when the public one can't be
+    /// reached; nil without a local address or for a URL elsewhere.
+    public func onLocalAddress(_ url: URL) -> URL? {
+        guard let localURL, Self.sameOrigin(url, baseURL),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let local = URLComponents(url: localURL, resolvingAgainstBaseURL: false)
+        else { return nil }
+        var basePath = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? ""
+        if basePath.hasSuffix("/") { basePath.removeLast() }
+        guard components.percentEncodedPath.hasPrefix(basePath) else { return nil }
+        var localPath = local.percentEncodedPath
+        if localPath.hasSuffix("/") { localPath.removeLast() }
+        components.scheme = local.scheme
+        components.host = local.host
+        components.port = local.port
+        components.percentEncodedPath = localPath + components.percentEncodedPath.dropFirst(basePath.count)
+        return components.url
+    }
+
+    /// A request for `url` carrying the token, when `url` is on this server (either address).
     public func request(for url: URL) -> URLRequest {
         var request = URLRequest(url: url)
         if let token, isOnServer(url) { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
@@ -53,6 +75,10 @@ public struct MediaURLs: Sendable {
     }
 
     private func isOnServer(_ url: URL) -> Bool {
-        url.scheme == baseURL.scheme && url.host() == baseURL.host() && url.port == baseURL.port
+        Self.sameOrigin(url, baseURL) || localURL.map { Self.sameOrigin(url, $0) } == true
+    }
+
+    private static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
+        a.scheme == b.scheme && a.host() == b.host() && a.port == b.port
     }
 }
