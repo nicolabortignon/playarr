@@ -1,6 +1,8 @@
 // App Store Connect API for the iOS app, with no dependencies: a JWT signed with node:crypto, and fetch.
 //
-//   node scripts/asc.mjs check   is the key accepted? Then: bundle id, app record, TestFlight group
+//   node scripts/asc.mjs check             is the key accepted? Then: bundle id, app record, TestFlight group
+//   node scripts/asc.mjs setup [email...]  register the bundle id; once the app record exists, create the
+//                                          internal TestFlight group "Household" and add those testers to it
 //
 // Run through the Makefile (`pnpm ios:setup`), which loads ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and
 // IOS_BUNDLE_ID from the repo's .env; CI sets them itself. The key is read from
@@ -114,14 +116,57 @@ async function check() {
   if (!ok) process.exitCode = 1;
 }
 
+async function setup(testers) {
+  const { bundleId } = config();
+  // Background audio and background downloads are Info.plist keys (UIBackgroundModes), not App ID
+  // capabilities, so the bundle id needs no capability registered.
+  if (await findBundleId(bundleId)) console.log(`✓ Bundle id ${bundleId} already registered`);
+  else {
+    await asc('POST', '/v1/bundleIds', { data: { type: 'bundleIds', attributes: { identifier: bundleId, name: 'Playarr', platform: 'IOS' } } });
+    console.log(`✓ Registered bundle id ${bundleId}`);
+  }
+
+  const app = await findApp(bundleId);
+  if (!app) {
+    console.log(`… No app record yet. Create it in App Store Connect (plan: docs/plans/2026-11-03-ios-phase0-pipeline.md), then run this again.`);
+    return;
+  }
+  let group = await findGroup(app.id);
+  if (group) console.log(`✓ TestFlight group "${GROUP}" already exists`);
+  else {
+    ({ data: group } = await asc('POST', '/v1/betaGroups', {
+      data: {
+        type: 'betaGroups',
+        attributes: { name: GROUP, isInternalGroup: true, hasAccessToAllBuilds: true },
+        relationships: { app: { data: { type: 'apps', id: app.id } } },
+      },
+    }));
+    console.log(`✓ Created the internal TestFlight group "${GROUP}", which gets every build`);
+  }
+
+  const { data: members } = await asc('GET', `/v1/betaGroups/${group.id}/betaTesters?limit=200`);
+  const have = new Set(members.map((t) => t.attributes.email?.toLowerCase()));
+  for (const email of testers) {
+    if (have.has(email.toLowerCase())) {
+      console.log(`✓ ${email} already in "${GROUP}"`);
+      continue;
+    }
+    // Internal groups only take people who are App Store Connect users of the team.
+    await asc('POST', '/v1/betaTesters', {
+      data: { type: 'betaTesters', attributes: { email }, relationships: { betaGroups: { data: [{ type: 'betaGroups', id: group.id }] } } },
+    });
+    console.log(`✓ Added ${email} to "${GROUP}"`);
+  }
+}
+
 export function fail(message) {
   console.error(`✗ ${message}`);
   process.exit(1);
 }
 
 if (import.meta.main) {
-  const [command] = process.argv.slice(2);
-  const commands = { check: () => check() };
-  if (!commands[command]) fail('Usage: node scripts/asc.mjs check');
+  const [command, ...args] = process.argv.slice(2);
+  const commands = { check: () => check(), setup: () => setup(args) };
+  if (!commands[command]) fail('Usage: node scripts/asc.mjs check | setup [tester email...]');
   await commands[command]().catch((err) => fail(err.message));
 }
