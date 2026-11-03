@@ -21,7 +21,9 @@ export interface SongMatch {
 
 const MIN_TITLE = 0.8;
 const MIN_ARTIST = 0.8;
-const MAX_LENGTH_DIFF_S = 5;
+/** How far a recording's length may be from the file's: a close search, and a wide one for radio edits. */
+export const CLOSE_LENGTH_S = 5;
+export const WIDE_LENGTH_S = 45;
 const VARIOUS_ARTISTS = new Set(['various artists', 'various', 'va']);
 
 export const isVariousArtists = (name: string) => VARIOUS_ARTISTS.has(normalize(name));
@@ -64,19 +66,19 @@ interface Pick {
 }
 
 /**
- * The best of a recording search for one file: a recording with the file's title and artist, within 5 s
- * of its length, on an official release that isn't by various artists; of those, the studio album
+ * The best of a recording search for one file: a recording with the file's title and artist, within
+ * `maxLengthDiff` of its length, on an official release that isn't by various artists; of those, the studio album
  * first, then EP, soundtrack, single, compilation and live (releaseGroupRank), the earliest first.
  * Null when no recording fits.
  */
-export function songMatch(file: SongFacts, hits: MbRecordingHit[]): SongMatch | null {
+export function songMatch(file: SongFacts, hits: MbRecordingHit[], maxLengthDiff = CLOSE_LENGTH_S): SongMatch | null {
   let best: Pick | undefined;
   for (const recording of hits) {
     const title = titleSimilarity(bareTitle(file.title), bareTitle(recording.title));
     const artist = artistSimilarity(file.artist, recording['artist-credit']);
     const length = (recording.length ?? 0) / 1000;
     if (title < MIN_TITLE || artist < MIN_ARTIST) continue;
-    if (length > 0 && file.duration > 0 && Math.abs(length - file.duration) > MAX_LENGTH_DIFF_S) continue;
+    if (length > 0 && file.duration > 0 && Math.abs(length - file.duration) > maxLengthDiff) continue;
     for (const release of recording.releases ?? []) {
       const rg = release['release-group'];
       if (!rg || (release.status && release.status !== 'Official')) continue;

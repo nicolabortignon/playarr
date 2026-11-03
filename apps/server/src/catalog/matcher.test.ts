@@ -165,6 +165,44 @@ describe('Matcher', () => {
     expect(store.matches(sourceId).get('01. Red Hot Chili Peppers - Can’t Stop.mp3')).toMatchObject({ state: 'auto', overlay: { album: 'By the Way' } });
   });
 
+  it('finds a compilation’s radio edit on its album with a wider search, and the rest by their sound', async () => {
+    const files = {
+      '57. Madonna - Die Another Day.mp3': hitsTags({ artist: 'Madonna', title: 'Die Another Day (From "Die Another Day")', duration: 240 }),
+      '68. Rupee - Tempted to Touch.mp3': hitsTags({ artist: 'Rupee', title: 'Tempted to Touch', duration: 243 }),
+      '03. Coldplay - Yellow.mp3': hitsTags({ artist: 'Coldplay', title: 'Yellow', duration: 240 }),
+    };
+    const { matcher, store, sourceId, mb, acoustid, fingerprint } = setup(files, {
+      hits: [],
+      acoustid: {
+        score: 0.95,
+        recordingId: 'rec-ttt',
+        title: 'Tempted to Touch',
+        artistName: 'Rupee',
+        artistId: 'art-rupee',
+        releaseGroups: [
+          { id: 'rg-hits', title: 'Soca Gold 2003', type: 'Album', secondaryTypes: ['Compilation'] },
+          { id: 'rg-1o1', title: '1 on 1', type: 'Album', secondaryTypes: [] },
+        ],
+      },
+    });
+    const searchRecordings = vi.fn(async (artist: string, title: string, seconds: number) => {
+      // The album version runs 4:38: only the search without a length finds it.
+      if (title === 'Die Another Day') return seconds ? [] : [recordingOf(artist, title, 'American Life', 278)];
+      return title === 'Yellow' ? [recordingOf(artist, title, 'Parachutes')] : [];
+    });
+    Object.assign(mb, { searchRecordings });
+    await matcher.matchSource(sourceId);
+    expect(searchRecordings).toHaveBeenCalledWith('Madonna', 'Die Another Day', 0);
+    expect(store.matches(sourceId).get('57. Madonna - Die Another Day.mp3')).toMatchObject({ state: 'auto', overlay: { album: 'American Life', albumArtist: 'Madonna' } });
+    // Not found by name: by its sound, on the artist's own album rather than another compilation.
+    expect(store.matches(sourceId).get('68. Rupee - Tempted to Touch.mp3')).toMatchObject({ state: 'auto', overlay: { album: '1 on 1', releaseGroupMbid: 'rg-1o1' } });
+    // Songs found by name aren't fingerprinted.
+    expect(fingerprint).toHaveBeenCalledTimes(1);
+    expect(fingerprint).toHaveBeenCalledWith(sourceId, '/music/68. Rupee - Tempted to Touch.mp3');
+    expect(acoustid.lookup).toHaveBeenCalledTimes(1);
+    expect(store.matches(sourceId).get('03. Coldplay - Yellow.mp3')).toMatchObject({ overlay: { album: 'Parachutes' } });
+  });
+
   it('keeps the songs found when MusicBrainz fails for one, and tries that one again after the next scan', async () => {
     const files = Object.fromEntries(Object.entries(hitsFolder).map(([rel, t]) => [rel, hitsTags(t)]));
     const { matcher, store, sourceId, mb } = setup(files, { hits: [] });

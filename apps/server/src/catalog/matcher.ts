@@ -7,7 +7,7 @@ import type { AcoustIdMatch, Fingerprint } from './acoustid.ts';
 import { describeFile } from './folder.ts';
 import { scoreRelease, verdict, type FileFacts, type ReleaseScore } from './match.ts';
 import { formatSummary, type MbReleaseInfo } from './mbRelease.ts';
-import { bareTitle, isVariousArtists, leadArtist, songMatch } from './songMatch.ts';
+import { bareTitle, isVariousArtists, leadArtist, songMatch, WIDE_LENGTH_S, type SongMatch } from './songMatch.ts';
 import type { CatalogStore } from './store.ts';
 import type { MatchOverlay, MatchRecord, TagInfo } from './tags.ts';
 
@@ -295,12 +295,17 @@ export class Matcher {
     const best = scored[0];
     const outcome = verdict(best);
     if (outcome === 'auto') return this.fromAlignment(group, best!, 'auto');
+    // Songs by many artists no release fits: each song on its own, by its name, then by its sound.
+    const compilation = isCompilation(group);
+    if (compilation) {
+      const bySong = await this.bySong(sourceId, group, true);
+      if (bySong) return bySong;
+    }
     const byFingerprint = await this.byFingerprint(sourceId, group);
     if (byFingerprint) return byFingerprint;
-    // No album fits the folder as a whole: songs by many artists, or an album MusicBrainz doesn't know.
-    const compilation = isCompilation(group);
-    if (compilation || outcome === 'unmatched') {
-      const bySong = await this.bySong(group, compilation);
+    // An album MusicBrainz doesn't know: its songs may still be on others.
+    if (!compilation && outcome === 'unmatched') {
+      const bySong = await this.bySong(sourceId, group, false);
       if (bySong) return bySong;
     }
     if (outcome === 'review') {
@@ -339,26 +344,35 @@ export class Matcher {
     const records: MatchRecord[] = [];
     let found = 0;
     for (const f of group.files) {
-      const fp = await fingerprint(sourceId, f.path);
-      const m = fp && (await acoustid.lookup(fp));
-      const rg = m && m.score >= FINGERPRINT_MIN_SCORE ? originalReleaseGroup(m.releaseGroups) : undefined;
-      if (!m || !rg) {
+      const m = await this.fingerprintMatch(sourceId, f, false);
+      if (!m) {
         records.push(this.record(group, f, 'unmatched'));
         continue;
       }
       found++;
-      const overlay: MatchOverlay = {
-        recordingMbid: m.recordingId,
-        title: m.title,
-        albumArtist: m.artistName,
-        albumArtistMbid: m.artistId,
-        releaseGroupMbid: rg.id,
-        album: rg.title,
-      };
-      records.push({ ...this.record(group, f, 'auto'), overlay, score: m.score });
+      records.push({ ...this.record(group, f, 'auto'), overlay: m.overlay, score: m.score });
     }
     // Mostly unknown to AcoustID: keep the group as names left it.
     return found * 2 >= group.files.length ? records : null;
+  }
+
+  /**
+   * One file by its sound (AcoustID), filed under the most original album its recording is on. A
+   * compilation's song skips compilations: one of those is no better than the one it came from.
+   */
+  private async fingerprintMatch(sourceId: number, f: GroupFile, offCompilation: boolean): Promise<SongMatch | null> {
+    const { acoustid, fingerprint } = this.deps;
+    if (!acoustid?.enabled || !fingerprint) return null;
+    const fp = await fingerprint(sourceId, f.path);
+    const m = fp && (await acoustid.lookup(fp));
+    if (!m || m.score < FINGERPRINT_MIN_SCORE) return null;
+    const groups = offCompilation ? m.releaseGroups.filter((g) => !g.secondaryTypes.includes('Compilation')) : m.releaseGroups;
+    const rg = originalReleaseGroup(groups);
+    if (!rg) return null;
+    return {
+      overlay: { recordingMbid: m.recordingId, title: m.title, albumArtist: m.artistName, albumArtistMbid: m.artistId, releaseGroupMbid: rg.id, album: rg.title },
+      score: m.score,
+    };
   }
 
   /**
@@ -367,22 +381,20 @@ export class Matcher {
    * keeps every song found; other folders only when most were, since the rest is likely an album
    * MusicBrainz lacks, better reviewed whole than scattered.
    */
-  private async bySong(group: FileGroup, compilation: boolean): Promise<MatchRecord[] | null> {
-    const { searchRecordings } = this.deps.mb;
-    if (!searchRecordings) return null;
+  private async bySong(sourceId: number, group: FileGroup, compilation: boolean): Promise<MatchRecord[] | null> {
+    if (!this.deps.mb.searchRecordings) return null;
     const records: MatchRecord[] = [];
     let found = 0;
     let failed: unknown;
     for (const f of group.files) {
-      let hits: MbRecordingHit[];
+      let m: SongMatch | null;
       try {
-        hits = await searchRecordings(f.artist, bareTitle(f.title), f.duration);
+        m = await this.songOf(sourceId, f, compilation);
       } catch (err) {
         // Left without a row, so tried again after the next scan, while the songs found keep their match.
         failed = err;
         continue;
       }
-      const m = songMatch(f, hits);
       if (!m) {
         records.push(this.record(group, f, 'unmatched'));
         continue;
@@ -392,6 +404,20 @@ export class Matcher {
     }
     if (!found && failed) throw failed;
     return found && (compilation || found * 2 >= records.length) ? records : null;
+  }
+
+  /**
+   * One song's album: its recording within 5 s of the file's length; else any length up to 45 s off (a
+   * radio edit is still its album's song); else, for a compilation's song, by its sound.
+   */
+  private async songOf(sourceId: number, f: GroupFile, compilation: boolean): Promise<SongMatch | null> {
+    const search = this.deps.mb.searchRecordings!;
+    const title = bareTitle(f.title);
+    const close = songMatch(f, await search(f.artist, title, f.duration));
+    if (close) return close;
+    const wide = f.duration > 0 ? songMatch(f, await search(f.artist, title, 0), WIDE_LENGTH_S) : null;
+    if (wide) return wide;
+    return compilation ? this.fingerprintMatch(sourceId, f, true) : null;
   }
 
   private fromAlignment(group: FileGroup, scored: ReleaseScore, state: 'auto' | 'manual'): MatchRecord[] {
