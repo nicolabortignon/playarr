@@ -2,9 +2,11 @@ import PlayarrPlayer
 import SwiftUI
 
 /// Settings → Playback, for this device (apps/web/src/components/PlaybackPanel.tsx). The engine can fade on a
-/// phone, so Crossfade is offered here, unlike the web on an iPhone. "On this device" storage comes in phase 7.
+/// phone, so Crossfade is offered here, unlike the web on an iPhone.
 struct PlaybackPanel: View {
   @Bindable var settings: PlaybackSettings
+  var downloads: DownloadStore?
+  var openDownloads: () -> Void = {}
 
   var body: some View {
     let panel = PlaybackPanelModel(settings: settings)
@@ -44,6 +46,9 @@ struct PlaybackPanel: View {
         case .crossfade: Text("Fades each song into the next. Never between songs of an album played in order.")
         case .dj: Text("Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on. Songs that can’t be mixed on the beat fade into each other for this long. How many songs are ready for DJ mix: Settings → Analysis.")
         }
+      }
+      if let downloads {
+        OfflineStorageSection(store: downloads, openDownloads: openDownloads)
       }
     }
     .navigationTitle("Playback")

@@ -27,12 +27,18 @@ public enum PrefetchPolicy {
 @MainActor @Observable
 public final class NetworkMonitor {
   public private(set) var kind: NetworkKind = .wifi
+  /// Called on the main actor when the kind changes.
+  @ObservationIgnored public var onChange: (@MainActor (NetworkKind) -> Void)?
   @ObservationIgnored private let monitor = NWPathMonitor()
 
   public init() {
     monitor.pathUpdateHandler = { [weak self] path in
       let kind = NetworkKind(path)
-      Task { @MainActor in self?.kind = kind }
+      Task { @MainActor in
+        guard let self, self.kind != kind else { return }
+        self.kind = kind
+        self.onChange?(kind)
+      }
     }
     monitor.start(queue: DispatchQueue(label: "playarr.network"))
   }

@@ -76,6 +76,7 @@ public final class AccountSession {
       Task { await session.favorites.toggle(track) }
     }
     let queries = QueryCache(directory: folder.appending(path: "queries", directoryHint: .isDirectory))
+    queries.setPinned(Set(player.downloads.downloads.flatMap(\.pageKeys)))
     let images = ImageCache(directory: imageFolder(for: record.key), media: media)
     Task {
       await queries.removeExpired()

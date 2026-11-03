@@ -41,6 +41,11 @@ public final class LevelStore {
     }
   }
 
+  /// Levels known without asking (kept with downloads, for playing offline); levels already known stay.
+  public func remember(_ known: [String: TrackLevel]) {
+    levels.merge(known) { current, _ in current }
+  }
+
   /// The gain (dB) a song plays at with even volume on: nil when off or not measured yet (it plays as it is).
   public func gainDb(for track: Track, in queue: QueueState, enabled: Bool) -> Double? {
     guard enabled, let level = levels[track.recordingId] else { return nil }

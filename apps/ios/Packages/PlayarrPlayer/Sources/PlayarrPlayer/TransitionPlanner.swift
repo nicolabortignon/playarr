@@ -82,6 +82,8 @@ public final class TransitionPlanner {
 
   /// Phase 7: a transition kept with a download, played instead of asking (offline, a Party queue takes Auto's).
   @ObservationIgnored public var kept: (@MainActor (Pair, _ online: Bool) -> TransitionAnswer?)?
+  /// Told when the pair asked about changes (a new one, or none): downloads leave the player's pair to the player.
+  @ObservationIgnored public var onPairChange: (@MainActor () -> Void)?
 
   private enum Ended { case answered, late, refused }
 
@@ -141,6 +143,7 @@ public final class TransitionPlanner {
         later(asking, Self.firstAskDelay)
       }
       upcoming = Upcoming(fromFileId: wanted?.from.fileId, toFileId: wanted?.to.fileId, result: nil)
+      onPairChange?()
       onChange?()
     }
     maybeAsk()

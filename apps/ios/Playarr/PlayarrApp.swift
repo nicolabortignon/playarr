@@ -4,17 +4,31 @@ import SwiftUI
 
 @main
 struct PlayarrApp: App {
+  @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @State private var model = PlayarrApp.makeModel()
 
   var body: some Scene {
     WindowGroup {
-      RootView(model: model)
-        .onOpenURL { model.open($0) }
+      #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestsDownloads") {
+          DownloadsDemoView()
+        } else {
+          root
+        }
+      #else
+        root
+      #endif
     }
+  }
+
+  private var root: some View {
+    RootView(model: model)
+      .onOpenURL { model.open($0) }
   }
 
   /// UI tests launch with `-UITests` (no servers, nothing kept between runs), plus `-UITestsDemo` to start signed in
   /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request.
+  /// `-UITestsDownloads` (Debug builds) opens Library → Downloads on made-up downloads (`DownloadsDemoView`).
   static func makeModel() -> AppModel {
     let arguments = ProcessInfo.processInfo.arguments
     if arguments.contains("-UITestsRequests") { return .demo(requests: true) }

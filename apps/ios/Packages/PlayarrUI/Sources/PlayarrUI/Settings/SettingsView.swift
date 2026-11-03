@@ -57,7 +57,8 @@ struct SettingsPanelView: View {
 
   var body: some View {
     switch panel {
-    case .playback: PlaybackPanel(settings: app.playback)
+    case .playback:
+      PlaybackPanel(settings: app.playback, downloads: session.player.downloads, openDownloads: { session.router.open(.downloads) })
     case .appearance: AppearancePanel(appearance: app.appearance)
     #if DEBUG
       case .playerLab:

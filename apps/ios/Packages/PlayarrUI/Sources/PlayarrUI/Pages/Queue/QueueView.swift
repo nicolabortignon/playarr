@@ -1,4 +1,5 @@
 import PlayarrAPI
+import PlayarrPlayer
 import SwiftUI
 
 /// The Queue tab (apps/web/src/pages/Queue.tsx).
@@ -76,6 +77,7 @@ struct QueueView: View {
         HStack(spacing: 8) {
           Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: session.player.queue.playing)
           Text(track.title).font(.headline).lineLimit(1)
+          OfflineMark(store: session.player.downloads, fileId: track.fileId)
         }
         .foregroundStyle(theme.accent.color)
         Button("\(track.artistName) · \(track.albumTitle)") { session.router.open(.album(track.albumId)) }
@@ -94,7 +96,10 @@ struct QueueView: View {
         HStack(spacing: 12) {
           Cover(path: track.coverUrl, points: 44, label: track.albumTitle).frame(width: 44, height: 44)
           VStack(alignment: .leading, spacing: 2) {
-            Text(track.title).lineLimit(1)
+            HStack(spacing: 6) {
+              Text(track.title).lineLimit(1)
+              OfflineMark(store: session.player.downloads, fileId: track.fileId)
+            }
             Text(track.artistName).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
           }
           Spacer()

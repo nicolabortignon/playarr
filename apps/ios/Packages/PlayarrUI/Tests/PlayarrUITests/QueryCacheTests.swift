@@ -36,6 +36,32 @@ import Testing
     #expect(later.cached(.artists, as: [String].self) == nil)
   }
 
+  @Test func keepsADownloadsPageHoweverOld() async throws {
+    var clock = Date(timeIntervalSince1970: 1_800_000_000)
+    let first = QueryCache(directory: directory) { clock }
+    _ = try await first.fetch(.album(70)) { ["Mezzanine"] }
+    await first.flush()
+    clock += 8 * 24 * 60 * 60
+    let pinned = QueryCache(directory: directory) { clock }
+    pinned.setPinned([["album", "70"]])
+    await pinned.removeExpired()
+    #expect(pinned.cached(.album(70), as: [String].self)?.value == ["Mezzanine"])
+    let unpinned = QueryCache(directory: directory) { clock }
+    #expect(unpinned.cached(.album(70), as: [String].self) == nil)
+  }
+
+  @Test func keepsADownloadedMixsPageOnDisk() async throws {
+    let first = QueryCache(directory: directory)
+    first.setPinned([["mix", "x"]])
+    _ = try await first.fetch(.mix("x")) { ["Late Night"] }
+    await first.flush()
+    let next = QueryCache(directory: directory)
+    next.setPinned([["mix", "x"]])
+    #expect(next.cached(.mix("x"), as: [String].self)?.value == ["Late Night"])
+    // Not downloaded: a mix's page isn't kept between launches.
+    #expect(QueryCache(directory: directory).cached(.mix("x"), as: [String].self) == nil)
+  }
+
   @Test func isStaleAfterItsTime() async throws {
     var clock = Date(timeIntervalSince1970: 1_800_000_000)
     let cache = QueryCache(directory: nil) { clock }

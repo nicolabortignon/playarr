@@ -33,6 +33,8 @@ public final class Player {
 
   public let settings: PlaybackSettings
   public let levels: LevelStore
+  /// Songs and transitions kept on this device for this account: downloads, and songs kept as you listen.
+  public let downloads: DownloadStore
   public let sleep = SleepTimer()
   /// DJ mix: the transition into the next song, its file, the songs' mix maps.
   public let transitions: TransitionCoordinator
@@ -41,6 +43,8 @@ public final class Player {
   @ObservationIgnored public var nowPlaying: NowPlayingBridge?
   @ObservationIgnored public var session: (any AudioSessionControlling)?
   @ObservationIgnored public var network: () -> NetworkKind = { .wifi }
+  /// How long the queue must stay put before keep-ahead fetches (tests: zero).
+  @ObservationIgnored public var settle: Duration = KeepAhead.settle
 
   @ObservationIgnored private let backend: any PlayerBackend
   @ObservationIgnored private let cache: StreamCache
@@ -56,6 +60,9 @@ public final class Player {
   /// The song whose start was last checked for a radio continuation.
   @ObservationIgnored private var radioAskedAt: Entry?
   @ObservationIgnored private var ticker: Task<Void, Never>?
+  @ObservationIgnored private var keepAheadTask: Task<Void, Never>?
+  @ObservationIgnored private var keptAhead: [Track] = []
+  @ObservationIgnored private var lastNetwork: NetworkKind = .wifi
   /// Edit mix points' "Play from": the song previewing now, if any.
   public private(set) var preview: Preview?
   /// The previews of one edit, on their own engine, while the queue waits paused.
@@ -78,22 +85,29 @@ public final class Player {
   /// Room for scheduling between a press of Next and where its mix may start.
   static let pressMargin = 0.25
 
-  /// `directory` is this server and account's folder in Application Support: the queue, unsent plays and the stream
-  /// cache live there. `makeSource` replaces the real sources (tests); `makeEngine` the real engine.
+  /// `directory` is this server and account's folder in Application Support: the queue, unsent plays, the stream
+  /// cache and downloads live there. `transport` fetches downloads (the app's background session; a foreground one by
+  /// default). `makeSource` replaces the real sources (tests); `makeEngine` the real engine.
   public init(
     backend: any PlayerBackend, directory: URL, settings: PlaybackSettings = PlaybackSettings(),
+    transport: any DownloadTransport = URLSessionTransport(configuration: .default),
     makeEngine: (@MainActor (@escaping @MainActor (EngineItem, Int64) -> any PCMSource) throws -> AudioEngine)? = nil,
     makeSource: (@MainActor (EngineItem, Int64) -> any PCMSource)? = nil, scheduler: (any Scheduling)? = nil
   ) throws {
-    let cache = StreamCache(directory: directory.appending(path: "stream", directoryHint: .isDirectory))
+    let folder = OfflineFolder(root: directory)
+    let cache = StreamCache(directory: folder.stream)
+    let downloads = DownloadStore(folder: folder, settings: settings, cache: cache, transport: transport, backend: backend)
     let levels = LevelStore { ids in try await backend.levels(ids) }
+    levels.remember(downloads.keptLevels)
     let reports = PlayReportQueue(file: directory.appending(path: "pending-plays.json")) { try await backend.reportPlays($0) }
     let sources: @MainActor (EngineItem, Int64) -> any PCMSource = makeSource ?? { item, frame in
       // After a transition into an MP3: the server's rest of it, which runs on from the transition sample for sample.
       if let rest = item.continuation {
         return TrackSource(
           track: Track.continuation(of: item.track, url: rest.url, from: rest.from), firstFrame: frame - EngineFormat.frames(rest.from),
-          origin: TrackSource.Origin(stream: backend.transitionRequest(rest.url), levelled: nil), cache: cache)
+          origin: TrackSource.Origin(
+            stream: backend.transitionRequest(rest.url), levelled: nil, kept: downloads.keptTransitionFile(rest.url)),
+          cache: cache)
       }
       return TrackSource(
         track: item.track, firstFrame: frame,
@@ -108,6 +122,8 @@ public final class Player {
       planner: TransitionPlanner(scheduler: scheduler) { try await backend.transition($0) },
       mixMaps: MixMapStore(scheduler: scheduler) { try await backend.mixMaps($0) },
       download: { path in
+        // Kept with a download: played from here, online too (the names are content keys).
+        if let local = await downloads.keptTransitionFile(path) { return local }
         let name = URL(string: path)?.lastPathComponent ?? path
         if let kept = await cache.completedTransition(named: name) { return kept }
         let download = await cache.transition(named: name, request: backend.transitionRequest(path))
@@ -117,6 +133,7 @@ public final class Player {
     self.backend = backend
     self.settings = settings
     self.levels = levels
+    self.downloads = downloads
     self.cache = cache
     self.reports = reports
     self.makeEngine = build
@@ -126,9 +143,21 @@ public final class Player {
     tracker = PlayTracker { _ in }
     tracker = PlayTracker { [weak self] plays in self?.report(plays) }
     engine.onEvent = { [weak self] in self?.handle($0) }
+    downloads.announce = { [weak self] text, isError in self?.notice = Notice(text: text, isError: isError) }
     transitions.planner.isPlaying = { [weak self] in self?.queue.playing ?? false }
     transitions.planner.isOnline = { [weak self] in self?.network() != .offline }
     transitions.onChange = { [weak self] in self?.updateUpcoming() }
+    // A transition kept with a download plays instead of asking: always offline, online while its mix point is well
+    // ahead (the planner's rule, `OfflinePlayback.useKept`'s). Levelled when the player sends the pair's gains.
+    transitions.planner.kept = { [weak downloads] pair, online in
+      downloads?.keptTransition(from: pair.from, to: pair.to, mode: pair.mode, online: online, levelled: pair.levels != nil)
+        .map { .ready($0.transition.answer) }
+    }
+    downloads.playerPair = { [weak transitions] in
+      guard let upcoming = transitions?.planner.upcoming, let from = upcoming.fromFileId, let to = upcoming.toFileId else { return nil }
+      return (fromFileId: from, toFileId: to)
+    }
+    transitions.planner.onPairChange = { [weak downloads] in downloads?.playerMoved() }
     sync()
     Task { await reports.retry() }
   }
@@ -234,6 +263,17 @@ public final class Player {
     }
   }
 
+  /// The network changed (NetworkMonitor): keep-ahead plans again, downloads wait or go on, play reports waiting go out
+  /// once back online, and offline the next song joined is one on this device.
+  public func networkChanged(_ kind: NetworkKind) {
+    let wasOffline = lastNetwork == .offline
+    lastNetwork = kind
+    downloads.networkChanged(kind)
+    if wasOffline && kind != .offline { Task { [reports] in await reports.retry() } }
+    updateUpcoming()
+    prefetch()
+  }
+
   /// The app is closing: the song so far is reported (never as a skip), the queue saved.
   public func appWillTerminate() {
     tracker.finish(.closed)
@@ -328,6 +368,7 @@ public final class Player {
       (time, duration) = (0, 0)
       return
     }
+    if network() == .offline, !downloads.isKept(track.fileId), skipToKept() { return loadCurrent(currentEntry) }
     // Played again from the start (repeat one, "previous" near the start): it counts as heard through.
     tracker.finish(loaded?.entry.index == entry.index ? .ended : .changed)
     tracker.start(track)
@@ -353,7 +394,9 @@ public final class Player {
     // A mix already placed plays out (the sleep timer then stops where it ends): taking it back would cost a new epoch.
     if sleep.endOfSong, engine.upcomingPlaced, upcoming?.join.leaveTime != nil { return }
     guard let current = loaded, !sleep.endOfSong,
-      let index = queue.repeatMode == .one ? current.entry.index : queue.upNextIndex
+      let index = queue.repeatMode == .one ? current.entry.index : queue.upNextIndex,
+      // Offline, a song not on this device isn't joined: the current one ends, and the next kept one is found then.
+      network() != .offline || downloads.isKept(queue.queue[index].fileId)
     else {
       upcoming = nil
       engine.setUpcoming(nil)
@@ -484,14 +527,41 @@ public final class Player {
     }
   }
 
+  /// What plays now and next: read by the engine, so never dropped or stopped, whatever the limit.
+  private var playingSongs: [Track] { [queue.currentTrack, queue.upNext].compactMap { $0 } }
+
+  /// Keep ahead (apps/web/src/player/loadAhead.ts): what plays now and next is protected at once; once the queue has
+  /// settled, the plan for this network is too, and the stream cache fetches what of it isn't here, one at a time.
   private func prefetch() {
-    let ahead = queue.upcoming(PrefetchPolicy.songsAhead(on: network()))
-    let keep = Set((ahead + [queue.currentTrack].compactMap { $0 }).map(\.fileId))
-    let requests = ahead.map { ($0, backend.streamRequest($0)) }
+    downloads.protect(Set((playingSongs + keptAhead).map(\.fileId)))
+    keepAheadTask?.cancel()
+    keepAheadTask = Task { [weak self, settle] in
+      if settle > .zero { try? await Task.sleep(for: settle) }
+      guard !Task.isCancelled else { return }
+      self?.keepAhead()
+    }
+  }
+
+  private func keepAhead() {
+    keptAhead = KeepAhead.plan(queue, network: network(), limit: settings.offlineLimit)
+    let keep = Set((playingSongs + keptAhead).map(\.fileId))
+    downloads.protect(keep)
+    let requests = keptAhead.filter { !downloads.isKept($0.fileId) }.map { ($0, backend.streamRequest($0)) }
     Task { [cache] in
       await cache.keepOnly(keep)
       await cache.prefetch(requests)
     }
+  }
+
+  /// Offline, a song not on this device can't play: on to the next one that is, with the web's toast. False online,
+  /// or when none is.
+  private func skipToKept() -> Bool {
+    guard network() == .offline, let p = OfflinePlayback.nextKept(in: queue, isKept: downloads.isKept) else { return false }
+    let playing = queue.playing
+    queue.jumpTo(p)
+    queue.playing = playing
+    notice = Notice(text: OfflinePlayback.skippedNotice, isError: false)
+    return true
   }
 
   private func showNowPlaying() {
@@ -546,6 +616,7 @@ public final class Player {
       }
     case .failed(let id, let failure):
       guard loaded?.item.id == id else { return }
+      if skipToKept() { return sync() }
       error = failure.message
       notice = Notice(text: failure.message, isError: true)
       queue.playing = false

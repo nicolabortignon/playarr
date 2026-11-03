@@ -2,7 +2,7 @@ import PlayarrAPI
 import PlayarrPlayer
 import SwiftUI
 
-/// Favorites: Play and Shuffle (Download joins in phase 7), then the songs with their hearts
+/// Favorites: Play, Shuffle and Download, then the songs with their hearts
 /// (apps/web/src/pages/Favorites.tsx).
 struct FavoritesView: View {
   let session: AccountSession
@@ -26,7 +26,10 @@ struct FavoritesView: View {
               Button("Shuffle", systemImage: "shuffle") { session.player.play(tracks, source: FavoritesStore.source, shuffle: true) }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
-              // Phase 7: Download for Favorites.
+              DownloadButton(
+                store: session.player.downloads,
+                item: DownloadItem(key: PinnedDownload.Key.favorites, title: "Favorites", subtitle: "Your favorite songs", href: "/favorites"),
+                tracks: tracks)
               Text("\(Format.plural(tracks.count, "song")) · \(Format.duration(favorites.duration))")
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)

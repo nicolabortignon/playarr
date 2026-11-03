@@ -65,6 +65,32 @@ struct TrackSourceTests {
     #expect(abs(pcm.left[0] - sine(10_000, 0)) < 1e-6)
   }
 
+  @Test func aKeptSongPlaysWithTheServerOutOfReach() async throws {
+    StubServer.serve("/stream/110", .init(body: Data(), unreachable: true))
+    let directory = temporaryDirectory()
+    try Data(contentsOf: AudioFiles.flac(seconds: 2)).write(to: directory.appending(path: "110.flac"))  // downloaded earlier
+    let cache = StreamCache(directory: directory, retryDelay: .milliseconds(5), configuration: StubServer.configuration)
+    let (kept, _) = source(110, from: 44_100, levelled: true, cache: cache)
+    let pcm = try await readAll(kept)
+    #expect(pcm.frames == 44_100)
+    #expect(abs(pcm.left[0] - sine(44_100, 0)) < 1e-6)
+    #expect(StubServer.requests("/stream/110").isEmpty)
+    #expect(StubServer.requests("/stream/110/levelled.wav").isEmpty)
+  }
+
+  @Test func aContinuationKeptWithADownloadPlaysFromItsFile() async throws {
+    StubServer.serve("/stream/111", .init(body: Data(), unreachable: true))
+    let kept = temporaryDirectory().appending(path: "4-5.rest.flac")
+    try Data(contentsOf: AudioFiles.flac(seconds: 2)).write(to: kept)
+    let cache = StreamCache(directory: temporaryDirectory(), retryDelay: .milliseconds(5), configuration: StubServer.configuration)
+    let origin = TrackSource.Origin(stream: StubServer.request("/stream/111"), levelled: nil, kept: kept)
+    let source = TrackSource(track: song(111), firstFrame: 44_100, origin: origin, cache: cache)
+    let pcm = try await readAll(source)
+    #expect(pcm.frames == 44_100)
+    #expect(abs(pcm.left[0] - sine(44_100, 0)) < 1e-6)
+    #expect(StubServer.requests("/stream/111").isEmpty)
+  }
+
   @Test func aFormatItCannotStreamPlaysFromTheLevelledStream() async throws {
     StubServer.serve("/stream/105", .init(body: Data(repeating: 1, count: 1000)))
     StubServer.serve("/stream/105/levelled.wav", .init(body: AudioFiles.levelledWAV(frames: 1000, signal: { _, _ in 0.25 })))

@@ -11,6 +11,12 @@ public struct QueryKey: Hashable, Sendable, CustomStringConvertible {
     self.parts = parts
   }
 
+  /// A key from its name and parts as one list (`["album", "70"]`), as downloads give them.
+  public init(path: [String]) {
+    self.name = path.first ?? ""
+    self.parts = Array(path.dropFirst())
+  }
+
   /// The library data kept on disk between launches, as the web's `KEPT` (apps/web/src/lib/queryClient.ts).
   public static let keptNames: Set<String> = ["artists", "artist", "albums", "album", "favorites", "playlists", "playlist", "mixes"]
 
@@ -39,6 +45,8 @@ public struct QueryKey: Hashable, Sendable, CustomStringConvertible {
   public static let playlists = QueryKey("playlists")
   public static func playlist(_ id: Int) -> QueryKey { QueryKey("playlist", String(id)) }
   public static let mixes = QueryKey("mixes")
+  /// A mix's page: kept on disk only while the mix is downloaded (not among the kept families).
+  public static func mix(_ key: String) -> QueryKey { QueryKey("mix", key) }
   public static let health = QueryKey("health")
   public static let recentAlbums = QueryKey("recent-albums")
   public static func search(_ query: String) -> QueryKey { QueryKey("search", query) }

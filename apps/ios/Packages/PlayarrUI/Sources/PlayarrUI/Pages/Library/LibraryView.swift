@@ -2,7 +2,7 @@ import PlayarrAPI
 import SwiftUI
 
 /// The Library tab (apps/web/src/pages/Library.tsx): everything that's yours in one place, and your playlists.
-/// Requests join the rows while there are some (phase 8), Downloads in phase 7; the MusicBrainz queue shows at the foot
+/// Requests and Downloads join the rows while there are some; the MusicBrainz queue shows at the foot
 /// while lookups wait (the desktop sidebar's footer).
 struct LibraryView: View {
   @State private var health: Query<HealthStatus>
@@ -24,6 +24,8 @@ struct LibraryView: View {
         row("Made for you", "sparkles", .mixes)
         row("Your listening", "chart.bar", .listening)
         row("Favorites", "heart", .favorites, detail: session.favorites.tracks.map { Format.plural($0.count, "song") })
+        let downloads = session.player.downloads.manifest.pins.count
+        if downloads > 0 { row("Downloads", "arrow.down.circle", .downloads, detail: String(downloads)) }
         row("Artists", "music.mic", .artists, detail: library.map { String($0.artists) })
         row("Albums", "square.stack", .albums(.artist), detail: library.map { String($0.albums) })
         if let count = discover?.requests.requests?.count, count > 0 {

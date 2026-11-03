@@ -1,4 +1,5 @@
 import PlayarrAPI
+import PlayarrPlayer
 import SwiftUI
 
 /// A playlist's page (apps/web/src/pages/Playlist.tsx): the cover (tap for a new one), name and description (tap to
@@ -113,7 +114,12 @@ struct PlaylistView: View {
           .buttonBorderShape(.capsule)
           .disabled(model.playable.isEmpty)
           .accessibilityLabel("Shuffle \(playlist.name)")
-        // Phase 7: Download for this playlist.
+        DownloadButton(
+          store: model.session.player.downloads,
+          item: DownloadItem(
+            key: PinnedDownload.Key.playlist(playlist.id), title: playlist.name, subtitle: "Playlist", coverUrl: playlist.cover.url,
+            href: "/playlists/\(playlist.id)"),
+          tracks: model.playable)
         Menu {
           ForEach(model.actions, id: \.self) { action in
             Button(action.label, systemImage: action.systemImage, role: action == .delete ? .destructive : nil) { perform(action) }

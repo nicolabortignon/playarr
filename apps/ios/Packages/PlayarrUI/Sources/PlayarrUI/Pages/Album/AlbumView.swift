@@ -1,4 +1,5 @@
 import PlayarrAPI
+import PlayarrPlayer
 import SwiftUI
 
 /// An album (apps/web/src/pages/Album.tsx).
@@ -102,7 +103,12 @@ struct AlbumView: View {
         Image(systemName: "ellipsis").frame(width: 44, height: 44)
       }
       .accessibilityLabel("More for \(album.title)")
-      // Phase 7: Download.
+      DownloadButton(
+        store: session.player.downloads,
+        item: DownloadItem(
+          key: PinnedDownload.Key.album(album.id), title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl,
+          href: "/albums/\(album.id)"),
+        tracks: album.tracks)
       RequestRestButton(album: Album(album))
     }
     .buttonBorderShape(.capsule)

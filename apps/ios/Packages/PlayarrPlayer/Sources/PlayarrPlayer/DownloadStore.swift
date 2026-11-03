@@ -191,6 +191,13 @@ public final class DownloadStore {
     return find(mode) ?? (!online && mode == .party ? find(.auto) : nil)
   }
 
+  /// A transition file kept with a download, by the `url` (or `continuationUrl`) of the server's answer: the player
+  /// plays it from here rather than downloading it again, online too (the names are content keys).
+  public func keptTransitionFile(_ url: String) -> URL? {
+    let name = KeptTransition.fileName(url)
+    return manifest.transitionFiles[name].map { folder.url($0.file) }
+  }
+
   // MARK: Changing
 
   /// Download an album, playlist, mix or Favorites, or update the songs of one already downloaded (a playlist edited
