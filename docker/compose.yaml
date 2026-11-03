@@ -1,5 +1,6 @@
 # Playarr as a standalone service on the NAS (deployed by docker/deploy.mjs into /volume1/docker/playarr),
-# at http://<nas>:4000. Settings come from .env next to this file: LIDARR_URL, LIDARR_API_KEY, MUSIC_DIR.
+# at http://<nas>:4000. Settings come from .env next to this file: LIDARR_URL, LIDARR_API_KEY, MUSIC_DIR,
+# and optionally PUBLIC_URL, TRUST_PROXY and SERVER_NAME (see .env.example; empty when unset).
 name: playarr
 
 services:
@@ -19,6 +20,11 @@ services:
       PATH_MAP: /data/media/music=/data/media/music
       TZ: ${TZ:-Europe/London}
       UPDATE_DIR: /update
+      # Behind a reverse proxy (e.g. https://tracklist.me): the address every client uses, and the
+      # proxy to believe about the visitor. Empty means unset, as if the line weren't here.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      SERVER_NAME: ${SERVER_NAME:-}
     volumes:
       - ${MUSIC_DIR}:/data/media/music:ro
       - ./config:/config # favorites, playlists, song analysis (keep)

@@ -14,7 +14,8 @@
 #   cd /volume1/docker/playarr && sudo wget -qO update.sh https://raw.githubusercontent.com/nicolabortignon/playarr/main/docker/update.sh && sudo sh update.sh
 #
 # Keeps ./config (favorites, playlists, analysis), ./cache and .env. compose.yaml is replaced by the
-# deployed commit's copy: put your own mounts and settings in compose.override.yaml, which is never touched.
+# deployed commit's copy: put your own mounts in compose.override.yaml, which is never touched, and settings
+# compose.yaml passes through (PUBLIC_URL, TRUST_PROXY, SERVER_NAME, …) in .env.
 # If the build fails, the running container is left as it was.
 set -eu
 

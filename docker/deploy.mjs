@@ -72,8 +72,16 @@ try {
     // Where the updater container mounts this folder (the same path as here: see compose.yaml).
     `PLAYARR_DIR=${DIR}`,
   ];
-  // chmod as well as umask: the NAS's inherited ACLs otherwise leave it readable by everyone.
-  await run(`umask 077 && cat > ${DIR}/.env && chmod 600 ${DIR}/.env`, { stdin: `${settings.join('\n')}\n` });
+  // The NAS's own lines (PUBLIC_URL, TRUST_PROXY, SERVER_NAME, …) are kept and these four replaced; an
+  // unreadable .env stops the deploy rather than losing them (grep answers 1 for "nothing left", 2 for errors).
+  const managed = settings.map((line) => line.split('=')[0]).join('|');
+  const env = `${DIR}/.env`;
+  await run(
+    `umask 077 && if [ -e ${env} ]; then grep -vE '^(${managed})=' ${env} > ${env}.new || [ $? -eq 1 ]; else : > ${env}.new; fi` +
+      // chmod as well as umask: the NAS's inherited ACLs otherwise leave it readable by everyone.
+      ` && cat >> ${env}.new && chmod 600 ${env}.new && mv ${env}.new ${env}`,
+    { stdin: `${settings.join('\n')}\n` },
+  );
 
   if (args.has('--with-data') || args.has('--force-data')) await copyData();
 

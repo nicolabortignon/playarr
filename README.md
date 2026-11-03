@@ -129,13 +129,13 @@ Anything under /host can then be added in Settings → Sources → Folder.
 
 `/config` holds accounts, favorites, playlists, listening history and song analysis: keep it and back it up. `/cache` holds artwork, covers and mixed transitions and is safe to delete.
 
-`compose.yaml` passes only the variables it lists into the container: put `PUBLIC_URL`, `TRUST_PROXY` or `SERVER_NAME` (see `.env.example`) under `services.playarr.environment` in `compose.override.yaml`. Bonjour (so the iOS app finds the server on the home network) needs host networking; with the port mapping above, add the server by its address instead.
+With `docker/compose.yaml`, `PUBLIC_URL`, `TRUST_PROXY` and `SERVER_NAME` (see `.env.example`) go in the `.env` next to it, like `LIDARR_URL`; left out, they stay unset. Bonjour (so the iOS app finds the server on the home network) needs host networking; with the port mapping above, add the server by its address instead.
 
 Forgot the owner's password? On the server host, `docker exec playarr node server/dist/cli.js reset-password <username>` (natively, `node dist/cli.js reset-password <username>` in `apps/server`; in development, `pnpm -C apps/server reset-password <username>`) signs that account out everywhere and prints a one-time setup code and link, on `PUBLIC_URL` or else `http://localhost:<PORT>`, to choose a new password with.
 
 ### Keeping a server up to date from GitHub
 
-`docker/compose.yaml` and `docker/update.sh` run Playarr as a compose service that rebuilds itself from the latest commit on GitHub. Put both in a folder on the server (for example `/volume1/docker/playarr`) with a `.env` holding `LIDARR_URL`, `LIDARR_API_KEY` and `MUSIC_DIR`, then:
+`docker/compose.yaml` and `docker/update.sh` run Playarr as a compose service that rebuilds itself from the latest commit on GitHub. Put both in a folder on the server (for example `/volume1/docker/playarr`) with a `.env` holding `LIDARR_URL`, `LIDARR_API_KEY` and `MUSIC_DIR` (and, behind a reverse proxy, `PUBLIC_URL` and `TRUST_PROXY`), then:
 
 ```bash
 sudo sh update.sh            # build and start the latest commit on main; does nothing if it's already running
@@ -147,7 +147,7 @@ It downloads the source from GitHub (no git needed), builds with `docker compose
 
 Automatic updates are turned on in **Settings → Updates**, which also shows the running and latest versions, the last result and its log, and has a Check now button. The work is done by the `updater` service in `compose.yaml`: a small container that is the only one with the Docker socket (Playarr's own container only gets the `update` folder, through which it passes the settings and Check now requests). After upgrading to a version that has it, run `sudo sh update.sh` once to start the updater; after that, remove any cron job you set up for `update.sh` (it's no longer needed, and a shared lock keeps the two from overlapping anyway). Only `main` of the configured repository (`PLAYARR_REPO`, default `nicolabortignon/playarr`) can be deployed this way: Settings can choose whether and how often, never the branch, commit or repository.
 
-From a development machine with the SSH settings in `.env`, `pnpm deploy:nas` does the same over SSH; `pnpm deploy:nas --local` ships the local last commit instead, for work that isn't pushed.
+From a development machine with the SSH settings in `.env`, `pnpm deploy:nas` does the same over SSH; `pnpm deploy:nas --local` ships the local last commit instead, for work that isn't pushed. It writes `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR` and `PLAYARR_DIR` into the NAS's `.env` and keeps its other lines (`PUBLIC_URL`, `TRUST_PROXY`, …).
 
 ## Status and roadmap
 
