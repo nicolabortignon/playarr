@@ -6,9 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { AlbumCard } from './Cards';
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 const album = (over: Partial<Album> = {}): Album => ({
   id: 70,
   title: 'Mezzanine',

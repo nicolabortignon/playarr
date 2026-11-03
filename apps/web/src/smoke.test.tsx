@@ -14,9 +14,6 @@ import { useToasts } from './lib/toast';
 import { useUI } from './lib/ui';
 import { routes } from './routes';
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 let reachable = false;
 beforeAll(async () => {
   reachable = await fetch('/api/health').then((r) => r.ok, () => false);

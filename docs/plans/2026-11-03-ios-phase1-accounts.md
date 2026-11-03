@@ -61,6 +61,7 @@ Two consequences, both deliberate: loudness is measured for the full library's b
 15. Playlists per account, private unless shared
 16. Server identity: `GET /api/server`
 17. Bonjour
+17b. Web tests: no unhandled animation rejections (the suite exits 0)
 18. Web: accounts on this device, auth API calls, 401 → sign in
 19. Web: sign-in, setup-code and setup pages
 20. Web: the account switcher on Home
@@ -5379,6 +5380,25 @@ EOF
 ```
 
 ---
+### Task 17b: Web tests: no unhandled animation rejections
+
+Added by the coordinator before the web tasks, so every later commit can be fully green.
+
+**Problem:** the web suite's tests all pass but `vitest run` exits 1 on 22 unhandled `AbortError: The animation was canceled` rejections, all from `AnalysisPanel.test.tsx`: motion (motion-dom 14.7) stops a native Web Animation, and happy-dom 21's `Animation.cancel()` rejects the animation's `finished` promise where nobody listens. Eleven test files already avoided it on their own with `Reflect.deleteProperty(Element.prototype, 'animate')` (without `Element.animate`, motion runs its JavaScript animations); `AnalysisPanel.test.tsx` didn't.
+
+**Files:**
+- Create: `apps/web/src/testSetup.ts` (the one deletion, with why)
+- Modify: `apps/web/vitest.config.ts` (`setupFiles: ['./src/testSetup.ts']`)
+- Modify: the eleven test files that deleted `Element.prototype.animate` themselves (`smoke`, `AlbumCard`, `ReviewDialog`, `MixPointsDialog`, `UpdatesPanel`, `TrackMetadataDialog`, `Mixes`, `StatsForNerds`, `TransitionView`, `Artist`, `Queue`): their copy and its comment go
+
+Rejected: `MotionGlobalConfig.skipAnimations` (changes what every animated component does under test, not just how) and swallowing that one rejection in a global handler (hides a real failure of the same name). Later web test files (Tasks 19-22) don't repeat the deletion.
+
+**Check:** `corepack pnpm --filter @playarr/web test` exits 0 (452 tests, no errors); web typecheck passes.
+
+**Commit:** "Web tests: run motion's JavaScript animations everywhere, so the suite exits cleanly".
+
+---
+
 ### Task 18: Web: accounts on this device, auth API calls, 401 → sign in
 
 **Files:**

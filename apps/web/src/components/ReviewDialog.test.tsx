@@ -5,9 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { ReviewDialog } from './ReviewDialog';
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 const candidate = (releaseId: string, title: string, extra: Partial<ReviewCandidate> = {}): ReviewCandidate => ({
   releaseId,
   releaseGroupId: `rg-${releaseId}`,

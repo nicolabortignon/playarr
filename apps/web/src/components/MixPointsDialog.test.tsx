@@ -16,9 +16,6 @@ import { TrackList } from './TrackList';
 // Whether saving asks for the coming transition afresh (the watcher itself is tested in transitions.test.ts).
 vi.mock('../player/transitions', async (original) => ({ ...(await original<typeof import('../player/transitions')>()), refreshUpcomingTransition: vi.fn() }));
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 const track = (id: number) =>
   ({ id, recordingId: `rec-${id}`, fileId: id, albumId: id, artistId: id, title: `Song ${id}`, artistName: `Artist ${id}`, albumTitle: 'A', duration: 240, streamUrl: `/s/${id}` }) as Track;
 

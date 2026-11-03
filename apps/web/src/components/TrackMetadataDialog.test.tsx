@@ -6,9 +6,6 @@ import { api } from '../lib/api';
 import { useUI } from '../lib/ui';
 import { describeFormat, primaryCopy, TrackMetadataDialog } from './TrackMetadataDialog';
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 const FLAC = { codec: 'FLAC', container: 'flac', bits: 24, sampleRate: 96000, channels: 2, lossless: true };
 
 const meta = (over: Partial<TrackMetadata> = {}): TrackMetadata => ({

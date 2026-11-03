@@ -6,9 +6,6 @@ import { useToasts } from '../lib/toast';
 import { Toasts } from './Toasts';
 import { UpdatesPanel } from './UpdatesPanel';
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();

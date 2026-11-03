@@ -11,6 +11,7 @@ export default mergeConfig(
         happyDOM: { url: process.env.PLAYARR_SERVER ?? 'http://localhost:4000' },
       },
       testTimeout: 20_000,
+      setupFiles: ['./src/testSetup.ts'],
     },
   }),
 );

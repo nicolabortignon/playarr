@@ -9,9 +9,6 @@ import { usePlayer } from '../player/store';
 import { MixCard } from './Mixes';
 import { MixesPanel } from './MixesPanel';
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 const track = (id: number) =>
   ({ id, recordingId: `rec-${id}`, fileId: id, albumId: id, artistId: id, title: `Song ${id}`, artistName: `Artist ${id}`, albumTitle: 'A', trackNumber: 1, discNumber: 1, duration: 200, explicit: false, streamUrl: `/stream/${id}` }) as Track;
 

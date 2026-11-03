@@ -12,9 +12,6 @@ import { useClock, usePlayer } from '../player/store';
 import { useTransition } from '../player/transitions';
 import { gridPosition, keyName, sectionAt, StatsForNerds } from './StatsForNerds';
 
-// happy-dom's Animation.cancel() throws where browsers reject a promise; make motion use JS animations.
-Reflect.deleteProperty(Element.prototype, 'animate');
-
 const track = (id: number) =>
   ({
     id,
