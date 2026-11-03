@@ -6,6 +6,7 @@ import { authHook } from '../accounts/auth.ts';
 import { Sessions } from '../accounts/sessions.ts';
 import { SetupCodes } from '../accounts/setupCodes.ts';
 import { freshDb } from '../catalog/testFixtures.ts';
+import { recordFixture } from '../testing/recordFixture.ts';
 import { authRoutes } from './auth.ts';
 
 const AWAY = '203.0.113.5';
@@ -49,13 +50,17 @@ describe('auth routes', () => {
     const wrong = await post('/api/auth/sign-in', { username: 'home', password: 'wrong horse', ...device });
     expect(wrong.statusCode).toBe(401);
     expect(wrong.json()).toEqual({ error: 'Wrong username or password', setup: false });
-    const { token, account } = (await post('/api/auth/sign-in', { username: 'HOME', password: 'correct horse', ...device })).json() as SignInResponse;
+    const signedIn = await post('/api/auth/sign-in', { username: 'HOME', password: 'correct horse', ...device });
+    const { token, account } = signedIn.json() as SignInResponse;
     expect(account.id).toBe(1);
+    recordFixture('auth-sign-in', signedIn, (answer) => ({ ...answer, token: 'token' }));
     const switched = await post('/api/auth/switch', { token });
     expect(switched.json()).toMatchObject({ id: 1, username: 'home' });
     expect(switched.headers['set-cookie']).toBe(`playarr_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000`);
     expect((await app.inject({ url: '/api/auth/me', headers: { cookie: `playarr_session=${token}` } })).json()).toMatchObject({ id: 1 });
-    expect((await app.inject({ url: '/api/auth/me', headers: { authorization: `Bearer ${token}` } })).json()).toMatchObject({ id: 1 });
+    const me = await app.inject({ url: '/api/auth/me', headers: { authorization: `Bearer ${token}` } });
+    expect(me.json()).toMatchObject({ id: 1 });
+    recordFixture('auth-me', me);
     expect((await post('/api/auth/switch', { token: 'nope' })).statusCode).toBe(401);
   });
 

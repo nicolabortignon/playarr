@@ -1,8 +1,8 @@
 {
   "account": {
-    "id": 2,
-    "username": "sam",
-    "name": "Sam",
+    "id": 3,
+    "username": "reviewer",
+    "name": "App Review",
     "role": "member",
     "canRequest": false,
     "sources": [
@@ -12,7 +12,7 @@
   },
   "setup": {
     "code": "K7PQ2MXA",
-    "link": "http://localhost/redeem?code=K7PQ2MXA",
+    "link": "http://nas:4000/redeem?code=K7PQ2MXA",
     "expiresAt": "2026-11-03T12:00:00.000Z"
   }
 }

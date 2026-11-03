@@ -1359,6 +1359,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 MSG
 ```
 
+*As executed:* the 7 hand-written stand-ins (written in Task 8 so `ContractTests` had something to decode) are now recorded. `server-info` was recorded first, with the commit that added `publicUrl` to `ServerInfo`: its test in `src/routes/server.test.ts` passes `name: 'Playarr'` and `publicUrl: 'https://playarr.example'`, and the tidy pins `id` (`8d1e6f0a-0000-4000-8000-000000000001`), `name` ("Playarr") and `version` ("0.7.0"), so the file is the same on every machine (the machine's name isn't in it) and at every version (the pre-commit hook bumps it). The others come from `src/routes/auth.test.ts` (`auth-sign-in`, token pinned to `token`; `auth-me`) and `src/routes/accounts.test.ts` (`account-created` and `setup-code`, code pinned to `K7PQ2MXA` with the link's code replaced to match, so the link keeps its recorded origin `http://nas:4000`; `accounts`; `sessions`, the member's own list). Timestamps are pinned by the recorder. The answers now name the test database's accounts (`home`, `sam`, `reviewer`) rather than the stand-ins' `owner`. Recorded twice: identical; 52 fixtures; `ContractTests` pass. Task 17's workflow (`.github/workflows/ios-contracts.yml`) doesn't exist yet; when it's added, `src/routes` already covers every recording.
+
 ---
 ### Task 6: Endpoints: every call the app makes, typed
 

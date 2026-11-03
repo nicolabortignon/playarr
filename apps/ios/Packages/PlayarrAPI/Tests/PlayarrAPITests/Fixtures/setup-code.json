@@ -1,5 +1,5 @@
 {
   "code": "K7PQ2MXA",
-  "link": "http://localhost/redeem?code=K7PQ2MXA",
+  "link": "http://nas:4000/redeem?code=K7PQ2MXA",
   "expiresAt": "2026-11-03T12:00:00.000Z"
 }

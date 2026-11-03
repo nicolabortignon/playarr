@@ -1,7 +1,7 @@
 {
   "id": 1,
-  "username": "owner",
-  "name": "Owner",
+  "username": "home",
+  "name": "Home",
   "role": "admin",
   "canRequest": true,
   "sources": null,

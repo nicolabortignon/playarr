@@ -1,8 +1,8 @@
 [
   {
     "id": 1,
-    "username": "owner",
-    "name": "Owner",
+    "username": "home",
+    "name": "Home",
     "role": "admin",
     "canRequest": true,
     "sources": null,
@@ -12,6 +12,15 @@
     "id": 2,
     "username": "sam",
     "name": "Sam",
+    "role": "member",
+    "canRequest": false,
+    "sources": null,
+    "hasPassword": true
+  },
+  {
+    "id": 3,
+    "username": "reviewer",
+    "name": "App Review",
     "role": "member",
     "canRequest": false,
     "sources": [

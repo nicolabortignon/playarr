@@ -7,7 +7,12 @@ import { Sessions } from '../accounts/sessions.ts';
 import { SetupCodes } from '../accounts/setupCodes.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { freshDb } from '../catalog/testFixtures.ts';
+import { recordFixture } from '../testing/recordFixture.ts';
 import { accountRoutes } from './accounts.ts';
+
+/** Setup codes are random: the fixtures get a fixed one. */
+const CODE = 'K7PQ2MXA';
+const pinCode = (code: SetupCode): SetupCode => ({ ...code, code: CODE, link: code.link.replace(code.code, CODE) });
 
 async function setup({ claimed = true, trustProxy = false, publicUrl = undefined as string | undefined } = {}) {
   const db = freshDb();
@@ -40,7 +45,10 @@ describe('account routes', () => {
     expect(account).toMatchObject({ username: 'reviewer', name: 'App Review', role: 'member', canRequest: false, sources: [cc], hasPassword: false });
     expect(code.code).toMatch(/^[A-HJKMNP-Z2-9]{8}$/);
     expect(code.link).toBe(`http://nas:4000/redeem?code=${code.code}`);
-    expect((await app.inject({ url: '/api/accounts', headers: as(admin) })).json()).toHaveLength(3);
+    recordFixture('account-created', res, (answer: CreatedAccount) => ({ ...answer, setup: pinCode(answer.setup) }));
+    const all = await app.inject({ url: '/api/accounts', headers: as(admin) });
+    expect(all.json()).toHaveLength(3);
+    recordFixture('accounts', all);
     const list = await app.inject({ url: '/api/accounts', headers: as(member) });
     expect(list.statusCode).toBe(403);
     expect(list.json()).toEqual({ error: 'Only an admin can see this' });
@@ -67,6 +75,7 @@ describe('account routes', () => {
     const { app, accounts, sam, admin, member, as } = await setup();
     const res = await app.inject({ method: 'POST', url: `/api/accounts/${sam.id}/reset`, headers: as(admin) });
     expect((res.json() as SetupCode).code).toMatch(/^[A-HJKMNP-Z2-9]{8}$/);
+    recordFixture('setup-code', res, pinCode);
     expect(accounts.get(sam.id)!.hasPassword).toBe(false);
     expect((await app.inject({ url: `/api/accounts/${sam.id}/sessions`, headers: as(member) })).statusCode).toBe(401);
   });
@@ -80,8 +89,10 @@ describe('account routes', () => {
 
   it('lists and ends sessions, for the account itself or an admin', async () => {
     const { app, sam, admin, member, as } = await setup();
-    const own = (await app.inject({ url: `/api/accounts/${sam.id}/sessions`, headers: as(member) })).json() as SessionInfo[];
+    const listed = await app.inject({ url: `/api/accounts/${sam.id}/sessions`, headers: as(member) });
+    const own = listed.json() as SessionInfo[];
     expect(own).toEqual([expect.objectContaining({ device: 'iPhone', platform: 'ios', current: true })]);
+    recordFixture('sessions', listed);
     expect(((await app.inject({ url: `/api/accounts/${sam.id}/sessions`, headers: as(admin) })).json() as SessionInfo[])[0]!.current).toBe(false);
     expect((await app.inject({ url: '/api/accounts/1/sessions', headers: as(member) })).statusCode).toBe(403);
     const ended = await app.inject({ method: 'DELETE', url: `/api/accounts/${sam.id}/sessions/${own[0]!.id}`, headers: as(admin) });

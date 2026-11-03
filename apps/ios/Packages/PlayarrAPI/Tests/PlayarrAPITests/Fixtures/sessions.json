@@ -1,18 +1,10 @@
 [
   {
-    "id": 1,
+    "id": 2,
     "device": "iPhone",
     "platform": "ios",
     "createdAt": "2026-11-03T12:00:00.000Z",
     "lastSeenAt": "2026-11-03T12:00:00.000Z",
     "current": true
-  },
-  {
-    "id": 2,
-    "device": "Unknown device",
-    "platform": "web",
-    "createdAt": "2026-11-03T12:00:00.000Z",
-    "lastSeenAt": "2026-11-03T12:00:00.000Z",
-    "current": false
   }
 ]
