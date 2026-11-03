@@ -1687,6 +1687,14 @@ describe('auth routes', () => {
     expect((await post('/api/auth/switch', { token: 'nope' })).statusCode).toBe(401);
   });
 
+  it('signs in without a device or platform, recording the defaults', async () => {
+    const { accounts, sessions, post } = setup();
+    await accounts.setPassword(1, 'correct horse');
+    const res = await post('/api/auth/sign-in', { username: 'home', password: 'correct horse' });
+    expect(res.statusCode).toBe(200);
+    expect(sessions.list(1)).toEqual([expect.objectContaining({ device: 'Unknown device', platform: 'web' })]);
+  });
+
   it('marks the cookie Secure when Playarr is reached over HTTPS', async () => {
     const { accounts, sessions, post } = setup();
     await accounts.setPassword(1, 'correct horse');
@@ -1762,7 +1770,7 @@ import type { SetupCodes } from '../accounts/setupCodes.ts';
 
 const device = {
   device: z.string().trim().max(80).default('Unknown device'),
-  platform: z.string().trim().max(20).default('unknown'),
+  platform: z.string().trim().max(20).default('web'),
 };
 const setupInput = z.object({ username: z.string().trim().min(1).max(64), name: z.string().trim().min(1).max(40), password: z.string().max(200), ...device });
 const signInInput = z.object({ username: z.string().trim().min(1).max(64), password: z.string().min(1).max(200), ...device });
@@ -1868,6 +1876,8 @@ export function authRoutes(
   });
 }
 ```
+
+*As executed:* `platform` defaults to `web` (the conventions' default), checked by the "signs in without a device or platform" test.
 
 **Step 4: Run the test again**
 
