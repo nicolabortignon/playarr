@@ -3050,6 +3050,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** no `DiscoverSectionHeader.swift` or `DiscoverShelf.swift`: phase 4's `SectionHeader`, `Shelf`, `Kicker` and `Skeleton` instead, padded the way phase 4's pages are (each section 20 points in, shelves by their content margins). The cards are internal (they default to phase 4's internal `ShelfCard` widths), use `Cover`, push `DiscoverDestination.….route`, and carry an accessibility label ("title, artist · year"). `Format.time` for the songs' lengths.
+
 ---
 
 ### Task 12: The Discover artist page, Find artist, "Not in your library" on an artist, and Requests
