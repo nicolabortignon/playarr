@@ -2138,8 +2138,8 @@ public enum PlaylistAction: Hashable, Sendable {
 `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Pages/Playlists/PlaylistRowAction.swift`:
 
 ```swift
-/// An item of a song's ⋯ menu on a playlist page, in the web's order and words. Show metadata joins it in
-/// phase 8.
+/// An item of a song's ⋯ menu on a playlist page, in the web's order and words. The page adds phase 8's Show metadata
+/// and Edit mix points (`TrackLibraryMenuItems`) after them for a song in the library.
 public enum PlaylistRowAction: Hashable, Sendable {
   case playNext, addToQueue, addToPlaylist, goToAlbum, goToArtist, remove
 
