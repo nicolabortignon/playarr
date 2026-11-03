@@ -34,7 +34,7 @@
 
 - Run everything from the repo root `/Users/bortignon/dev/playarr`. `corepack pnpm ios:<x>` runs `make -C apps/ios <x>`, and both forms do the same thing.
 - Make variables go after the target, through pnpm too: `corepack pnpm ios:setup TESTERS=you@example.com`, `make -C apps/ios build SIMULATOR="iPad Pro 13-inch (M5)"`. The `DEVICE="Name"` environment variable picks a phone for `ios:device`.
-- Claude's shell runs in a sandbox. Already handled: SwiftPM's own sandbox (`--disable-sandbox`, `-IDEPackageSupportDisableManifestSandbox=YES`). Simulators, `swift test`, the App Store Connect API and GitHub downloads all work there; this was checked while writing the plan. Two things may not work there: signing with `-allowProvisioningUpdates` (it writes a certificate to the login keychain) and `devicectl` reaching a phone. If Task 8 or 9 fails with a keychain error, `errSecInternalComponent`, or a phone that `xcrun devicectl list devices` doesn't show, ask the user to run the same `corepack pnpm ios:…` command in Terminal, or to approve running it outside the sandbox.
+- Claude's shell runs in a sandbox. Already handled: SwiftPM's own sandbox (`--disable-sandbox`, `-IDEPackageSupportDisableManifestSandbox=YES`). Simulators, `swift test`, the App Store Connect API and GitHub downloads all work there; this was checked while writing the plan. Task 9's flow (unsigned archive, cloud-signed export, altool upload) worked there for build 301; Xcode's own upload (`destination upload`) doesn't, which is why altool uploads. Two things may still not work there: development signing with `-allowProvisioningUpdates` (it writes a certificate to the login keychain) and `devicectl` reaching a phone. If Task 8 or 9 fails with a keychain error, `errSecInternalComponent`, or a phone that `xcrun devicectl list devices` doesn't show, ask the user to run the same `corepack pnpm ios:…` command in Terminal, or to approve running it outside the sandbox.
 - `corepack pnpm ios:beta` takes 15 to 45 minutes, mostly Apple processing the build. Run it in the background and wait for it to finish.
 - Commit after every task that changes files: on `main`, only that task's files, with a plain-English subject (no `feat:`) and the `Co-Authored-By` line. The pre-commit hook bumps `package.json`'s version; never bypass it. Claude's shell can't push: the user pushes (Task 10 needs that).
 - Steps the user has to do are marked **Checkpoint (user)**. Stop there until the user confirms.
@@ -1354,7 +1354,7 @@ EOF
 
 ### Task 9: `pnpm ios:beta` uploads to TestFlight
 
-`beta` checks the build number against the last upload, archives, and uploads with `xcodebuild -exportArchive` (destination `upload`). It then waits until App Store Connect reports the build `VALID` and sets "What to Test" from the commit subjects since the last build. Finally it makes sure "Household" gets the build: with automatic distribution that happens by itself, otherwise the script adds the build to the group. `ITSAppUsesNonExemptEncryption = NO` in the Info.plist answers the export-compliance question, so the build doesn't wait on "Missing Compliance".
+`beta` checks the build number against the last upload and archives **unsigned**. `xcodebuild -exportArchive` (destination `export`) then signs the app with Apple's cloud-managed distribution certificate and an App Store profile through the key, and `xcrun altool --upload-app` uploads the `.ipa` with the same key. No registered device is needed (see "Key decisions"). It then waits until App Store Connect reports the build `VALID` and sets "What to Test" from the commit subjects since the last build. Finally it makes sure "Household" gets the build: with automatic distribution that happens by itself, otherwise the script adds the build to the group. `ITSAppUsesNonExemptEncryption = NO` in the Info.plist answers the export-compliance question, so the build doesn't wait on "Missing Compliance".
 
 **Files:**
 - Modify: `apps/ios/scripts/release.mjs` (replaced as a whole)
@@ -1367,7 +1367,7 @@ EOF
 ```js
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { whatsNew } from './release.mjs';
+import { exportOptions, whatsNew } from './release.mjs';
 
 test('whatsNew lists the commit subjects, without merges', () => {
   assert.equal(
@@ -1389,6 +1389,14 @@ test('whatsNew stays under App Store Connect’s 4000 characters', () => {
 test('whatsNew says so when only merges came in', () => {
   assert.equal(whatsNew(["Merge branch 'main'"]), 'No changes since the last build.');
 });
+
+test('exportOptions signs for the App Store and writes an .ipa, keeping our build number', () => {
+  const plist = exportOptions('TEAM123');
+  for (const [key, value] of [['method', 'app-store-connect'], ['destination', 'export'], ['signingStyle', 'automatic'], ['teamID', 'TEAM123']]) {
+    assert.ok(plist.includes(`<key>${key}</key><string>${value}</string>`), `${key} = ${value}`);
+  }
+  assert.ok(plist.includes('<key>manageAppVersionAndBuildNumber</key><false/>'));
+});
 ```
 
 **Step 2: Run it to see it fail**
@@ -1397,23 +1405,25 @@ test('whatsNew says so when only merges came in', () => {
 node --test apps/ios/scripts/release.test.mjs
 ```
 
-Expected: FAIL with `SyntaxError: The requested module './release.mjs' does not provide an export named 'whatsNew'`.
+Expected: FAIL with `SyntaxError: The requested module './release.mjs' does not provide an export named 'exportOptions'`.
 
 **Step 3: Replace `release.mjs` as a whole**
 
 `apps/ios/scripts/release.mjs`:
 
 ```js
-// Release flows for the iOS app, on top of xcodebuild and asc.mjs.
+// Release flows for the iOS app, on top of xcodebuild, altool and asc.mjs.
 //
-//   node scripts/release.mjs beta     archive, upload, wait for processing, set "What to Test" from the commits
-//                                     since the last build, make sure the "Household" group gets it
-//   node scripts/release.mjs device   build and install on a paired iPhone (DEVICE="name or UDID" picks one)
+//   node scripts/release.mjs beta     archive (unsigned), sign for the App Store at export, upload with altool,
+//                                     wait for processing, set "What to Test" from the commits since the last
+//                                     build, make sure the "Household" group gets it
+//   node scripts/release.mjs device   build and install on a paired iPhone (DEVICE="name or UDID" picks one);
+//                                     optional, TestFlight needs no registered device
 //
 // Run through the Makefile (`pnpm ios:beta`, `pnpm ios:device`), which loads the repo's .env. The build
 // number is `git rev-list --count HEAD`; the marketing version is MARKETING_VERSION in Config/Base.xcconfig.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1439,6 +1449,9 @@ export function whatsNew(subjects) {
   return more ? `${shown.join('\n')}\n…and ${more} more` : shown.join('\n');
 }
 
+// TestFlight works with no registered device: a dev-signed archive would need one, so the archive is unsigned,
+// the export signs it with Apple's cloud-managed distribution certificate through the key, and altool uploads
+// the .ipa. (`destination upload` would need Xcode's ITunesSoftwareService, which Claude's sandbox can't reach.)
 async function beta() {
   const cfg = config();
   const build = Number(sh('git', ['rev-list', '--count', 'HEAD']));
@@ -1450,20 +1463,27 @@ async function beta() {
   if (build < lastBuild) fail(`Build ${build} is older than ${lastBuild}, the last one on App Store Connect. Pull, then try again.`);
   if (sh('git', ['status', '--porcelain'])) console.warn('! Uncommitted changes go into this build, but not into its number.');
 
-  step(`Archiving Playarr ${version} (${build})`);
+  step(`Archiving Playarr ${version} (${build}), unsigned`);
   rmSync(ARCHIVE, { recursive: true, force: true });
   xcodebuild([
     'archive', '-scheme', 'Playarr', '-configuration', 'Release', '-destination', 'generic/platform=iOS',
     '-archivePath', ARCHIVE, '-derivedDataPath', 'build/DerivedData', '-quiet',
-    `CURRENT_PROJECT_VERSION=${build}`, ...authFlags(cfg),
+    'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO', 'CODE_SIGN_IDENTITY=', `CURRENT_PROJECT_VERSION=${build}`,
   ]);
 
-  step('Uploading to App Store Connect');
   const tmp = mkdtempSync(join(tmpdir(), 'playarr-export-'));
   try {
+    step('Signing for the App Store (cloud-managed distribution certificate)');
     const options = join(tmp, 'ExportOptions.plist');
     writeFileSync(options, exportOptions(cfg.teamId));
     xcodebuild(['-exportArchive', '-archivePath', ARCHIVE, '-exportPath', join(tmp, 'export'), '-exportOptionsPlist', options, ...authFlags(cfg)]);
+    const ipa = join(tmp, 'export', 'Playarr.ipa');
+    if (!existsSync(ipa)) fail(`The export finished without ${ipa}.`);
+
+    step('Uploading to App Store Connect');
+    // altool reads the key from ~/.appstoreconnect/private_keys/AuthKey_<id>.p8, where config() found it.
+    // It prints a harmless "CDUploaderStateInfoResumeFilePath" ERROR line before it starts.
+    execFileSync('xcrun', ['altool', '--upload-app', '-f', ipa, '-t', 'ios', '--apiKey', cfg.keyId, '--apiIssuer', cfg.issuerId], { stdio: 'inherit' });
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -1507,8 +1527,9 @@ async function processed(appId, build) {
   fail(`Build ${build} still isn't processed after 45 minutes (last state: ${state}): see App Store Connect → TestFlight.`);
 }
 
-function exportOptions(teamId) {
-  const entries = { method: 'app-store-connect', destination: 'upload', signingStyle: 'automatic', teamID: teamId };
+/** Export options for an App Store build: cloud-managed signing, written to an .ipa for altool to upload. */
+export function exportOptions(teamId) {
+  const entries = { method: 'app-store-connect', destination: 'export', signingStyle: 'automatic', teamID: teamId };
   const xml = Object.entries(entries).map(([key, value]) => `  <key>${key}</key><string>${value}</string>`);
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -1577,7 +1598,7 @@ if (import.meta.main) {
 make -C apps/ios test-scripts 2>&1 | grep -E 'ℹ (pass|fail)'
 ```
 
-Expected: `ℹ pass 7`, `ℹ fail 0`.
+Expected: `ℹ pass 8`, `ℹ fail 0`.
 
 **Step 5: Commit** (before uploading, so the tree is clean and the build number counts this commit)
 
@@ -1602,9 +1623,12 @@ Expected, after the test output from Task 4, Step 7:
 ```
 make beta-upload
 …
-▸ Archiving Playarr 1.0.0 (<N>)
-▸ Uploading to App Store Connect
+▸ Archiving Playarr 1.0.0 (<N>), unsigned
+▸ Signing for the App Store (cloud-managed distribution certificate)
 … ** EXPORT SUCCEEDED **
+▸ Uploading to App Store Connect
+… ERROR: … CDUploaderStateInfoResumeFilePath …   (harmless; altool prints it before it starts)
+… UPLOAD SUCCEEDED …
 ▸ Waiting for App Store Connect to process the build (usually 5 to 15 minutes)
   <time> not visible yet
   <time> PROCESSING
@@ -1615,7 +1639,7 @@ make beta-upload
 ✓ Playarr 1.0.0 (<N>) is on TestFlight for "Household".
 ```
 
-`<N>` is `git rev-list --count HEAD`. Running it again without a new commit prints `✓ Build <N> is already on App Store Connect: nothing to upload.`
+`<N>` is `git rev-list --count HEAD`. It has to be above 301, the build uploaded by hand while this flow was worked out. Running it again without a new commit prints `✓ Build <N> is already on App Store Connect: nothing to upload.`
 
 **Step 7: Check**
 
@@ -1629,10 +1653,12 @@ Expected: `<N> VALID`. Then go through the "Final check" at the end of this plan
 
 | Message | What to do |
 |---|---|
-| `Your team has no devices from which to generate a provisioning profile` | Do Task 8 first; it registers the phone. |
+| `Your team has no devices from which to generate a provisioning profile` | The archive was signed. `beta` archives with `CODE_SIGNING_ALLOWED=NO`; check that the flags weren't dropped. |
+| `Connection init failed at lookup with error 3` (`ITunesSoftwareService`) | That's `destination upload`, which Claude's sandbox can't use. The export options must say `destination` `export`, and altool does the upload. |
 | `No Accounts`, or `No signing certificate "iOS Development" found` with `-allowProvisioningUpdates` | The key didn't reach xcodebuild. Run `node --env-file=.env apps/ios/scripts/asc.mjs check` and check the `.p8` path it names. |
 | `Cloud signing permission error`, or access to cloud-managed distribution certificates refused | The key needs the Admin role: App Store Connect → Users and Access → Integrations → App Store Connect API. Ask the user to check the key "Playarr CI". |
 | `errSecInternalComponent`, keychain prompts, or a hang at code signing in Claude's shell | Ask the user to run `corepack pnpm ios:beta` in Terminal (see Conventions). |
+| altool: `Failed to find API key` or a 401 | altool looks for `AuthKey_<ASC_KEY_ID>.p8` in `~/.appstoreconnect/private_keys`, the same place as `asc.mjs`. Run `node --env-file=.env apps/ios/scripts/asc.mjs check`. |
 | `ITMS-9xxxx: …` from the upload | Apple's validation names the problem, usually an Info.plist key or the icon. Fix `Config/Info.plist` or the asset catalog, commit (a new build number), and run again. |
 | `Build <N> is older than …` | Someone uploaded from a newer commit. Pull, then run again. |
 | `couldn't process build <N> (INVALID)` | Apple emails the reason to the account holder. Ask the user for it. |
@@ -1909,7 +1935,7 @@ These are assumptions about Apple's behaviour that couldn't be tried without cre
 2. **Creating an internal group through the API** (`POST /v1/betaGroups` with `isInternalGroup: true, hasAccessToAllBuilds: true`). The existing "Household" group shows exactly these attributes, and they are believed to be writable at creation, but this wasn't tried here. Fallback: Task 7, Step 3.
 3. **Adding internal testers through the API** (`POST /v1/betaTesters` with the email and the group). Believed to work only for people who are App Store Connect users of the team, and possibly not at all for internal groups. Fallback: Task 7, Step 3.
 4. **`betaBuildLocalizations`.** It isn't known whether App Store Connect creates the en-US localization on its own. `release.mjs` handles both cases (PATCH if it exists, POST if not).
-5. **Cloud-managed distribution signing with an API key.** It should work with an Admin key; if Apple wants an extra permission, the error says so (Task 9, Step 8).
+5. **Cloud-managed distribution signing with an API key.** Confirmed with the Admin key: build 301 was exported signed "Apple Distribution: W1T LTD" with an App Store profile and no devices.
 6. **CI signing**: whether the runner's login keychain lets `xcodebuild` create and use a development key without prompts (fallback: the temporary keychain in Task 10, Step 7), and how many "Created via API" development certificates Apple allows before refusing new ones.
 7. **`devicectl` JSON fields** for a physical phone (`hardwareProperties.reality == "physical"`, `udid`, `connectionProperties.pairingState` and `tunnelState`). They were checked on this Mac only against simulators, which `devicectl` now lists too.
 8. **`UIBackgroundModes`** is audio only. Background `URLSession` downloads (phase 7) need no background mode; `fetch` is for background app refresh, which the app doesn't use.
