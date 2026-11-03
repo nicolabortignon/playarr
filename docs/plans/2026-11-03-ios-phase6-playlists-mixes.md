@@ -989,7 +989,7 @@ import Testing
     api.on(.get, "/api/mixes", [Listening.summary(Listening.mix())])
     let mixes = MixesStore(api: api, queries: QueryCache(directory: nil), timeZone: TimeZone(identifier: "Europe/Rome")!)
     await mixes.load()
-    #expect(api.queries(.get, "/api/mixes") == ["tz=Europe/Rome"])
+    #expect(api.queries(.get, "/api/mixes", "tz") == ["Europe/Rome"])
     #expect(mixes.mixes?.map(\.title) == ["Your vibes"])
   }
 
