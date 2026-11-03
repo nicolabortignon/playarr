@@ -105,7 +105,8 @@ public final class RequestsModel {
           ? "Requested “\(made.title)”. Lidarr is searching for it"
           : "Requested “\(made.title)”. Lidarr will search for it on its schedule", false)
       invalidate(CacheFamily.requested)
-      await refresh()
+      // One is on its way now: asked for at once and then every 10 s, not after the minute the poll already waits.
+      if poller != nil { startPolling() } else { await refresh() }
     } catch {
       toast(error.localizedDescription, true)
     }

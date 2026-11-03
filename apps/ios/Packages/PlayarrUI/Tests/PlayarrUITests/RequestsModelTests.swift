@@ -41,6 +41,23 @@ import Testing
     #expect(requests.activeCount == 0)
   }
 
+  @Test func aRequestAsksForTheRequestsEveryTenSecondsAtOnce() async {
+    let api = FakeAPI()
+    api.on(.get, "/api/requests", [AlbumRequest]())
+    api.on(.post, "/api/requests", albumRequest("rg-1", "Mezzanine", .searching))
+    let clock = TestClock()
+    let requests = model(api, clock)
+    requests.startPolling()
+    #expect(await clock.nextSleep() == .seconds(60))
+    api.on(.get, "/api/requests", [albumRequest("rg-1", "Mezzanine", .searching)])
+    requests.request(AlbumRef(mbid: "rg-1", artistName: "Massive Attack", albumTitle: "Mezzanine"))
+    // Not after the minute the poll was already waiting: one is on its way now.
+    await eventually { clock.sleeping == 1 && clock.pendingSleep == .seconds(10) }
+    #expect(clock.pendingSleep == .seconds(10))
+    #expect(requests.activeCount == 1)
+    requests.stopPolling()
+  }
+
   @Test func keepsTheNotifierItIsGiven() {
     // The app makes its notifier inline: the model must hold on to it.
     weak var given: FakeNotifier?

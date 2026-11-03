@@ -1275,7 +1275,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
-**As built:** `RequestsModel(api:clock:notifier:toast:invalidate:)`; the 2-second "Looking up" sleep goes through the clock and is cancelled once the server answers. The tests use `FakeAPI` (`hold` with a `Gate` keeps the POST's answer back) and `TestClock` (the polling test reads each `nextSleep()`: 10, 10, 60, 60 s), and check the request's body.
+**As built:** `RequestsModel(api:clock:notifier:toast:invalidate:)`; the 2-second "Looking up" sleep goes through the clock and is cancelled once the server answers. The tests use `FakeAPI` (`hold` with a `Gate` keeps the POST's answer back) and `TestClock` (the polling test reads each `nextSleep()`: 10, 10, 60, 60 s), and check the request's body. Found while building Task 22: after a request the polling starts over (asked at once, then every 10 s) instead of finishing the minute it was already waiting, as react-query recomputes `refetchInterval` after each answer (`aRequestAsksForTheRequestsEveryTenSecondsAtOnce`).
 
 ---
 
