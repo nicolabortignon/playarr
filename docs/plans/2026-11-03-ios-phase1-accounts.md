@@ -7023,19 +7023,21 @@ Export a `resetPassword(db, username, origin): { name, code, link }` function an
 ### Task 23: Docs: README, PLAN.md, .env.example
 
 **Files:**
-- Modify: `README.md` (lines 59, 60, 129-134)
-- Modify: `PLAN.md` (§5 lines 114-137, §17 line 361 and 363, open question 3 line 233, decisions log: append a row)
-- Modify: `.env.example` (lines 54-57, append)
+- Modify: `README.md` (the Made for you and Settings bullets, Docker, Status and roadmap)
+- Modify: `PLAN.md` (§5, Phase 5's login item, open questions 3 and 4, §17, decisions log: append a row)
+- Modify: `.env.example` (the `LOCAL_HOSTNAMES` comment, append)
 
 No tests: documentation only.
 
 **Step 1: README.md**
 
-Line 59: replace `Listening history (per profile, kept on the server)` with `Listening history (per account, kept on the server)`, and its last sentence `Each person in the household can have a profile, picked per device; favorites and playlists stay shared.` with `Each person signs in with their own account; favorites and playlists are theirs, and a playlist can be shared with everyone on the server.`
+In the **Made for you** bullet: replace `Listening history (per profile, kept on the server)` with `Listening history (per account, kept on the server)`, and its last sentence `Each person in the household can have a profile, picked per device; favorites and playlists stay shared.` with `Each person signs in with their own account; favorites and playlists are theirs, and a playlist can be shared with everyone on the server.`
 
-Line 60: replace `Profiles and Mixes are covered above.` with `Accounts: who signs in (admins add accounts and hand out a one-time setup code; nobody chooses another person's password), what each may hear (every source or only some) and whether they may request albums, and the devices each is signed in on. Mixes is covered above.`, and `Sources and Requests apply to everyone and, until there's a login, can only be changed from the home network.` with `Sources, Requests, Analysis and Updates apply to everyone and are changed by admins (before the owner has set a password, from the home network).`
+In the **Settings** bullet: replace `Profiles and Mixes are covered above.` with `Accounts: who signs in (admins add accounts and hand out a one-time setup code; nobody chooses another person's password), what each may hear (every source or only some) and whether they may request albums, and the devices each is signed in on. Mixes is covered above.`, and `Sources and Requests apply to everyone and, until there's a login, can only be changed from the home network.` with `Sources, Requests, Analysis and Updates apply to everyone and are changed by admins (before the owner has set a password, from the home network).`
 
-Replace lines 129-134:
+In **Docker**, `/config` "holds accounts, favorites, …", and after that paragraph add two: `compose.yaml` passes only the variables it lists into the container, so `PUBLIC_URL`, `TRUST_PROXY` or `SERVER_NAME` go under `services.playarr.environment` in `compose.override.yaml` (and Bonjour needs host networking; with the port mapping, add the server by address); and owner recovery: `docker exec playarr node server/dist/cli.js reset-password <username>` (natively `node dist/cli.js reset-password <username>` in `apps/server`; in development `pnpm -C apps/server reset-password <username>`) signs the account out everywhere and prints a one-time setup code and link (on `PUBLIC_URL`, else `http://localhost:<PORT>`).
+
+In **Status and roadmap**, replace:
 
 ```
 Playarr has no login yet, so don't expose it to the internet without something in front of it: anyone who can reach it can stream the library and request albums through Lidarr. Planned next:
@@ -7049,7 +7051,7 @@ Playarr has no login yet, so don't expose it to the internet without something i
 with:
 
 ```
-Playarr asks everyone to sign in once its owner has set a password (open Playarr on the home network: Settings → Accounts → Set up the owner's account). Reach it from outside over HTTPS through a reverse proxy; the session cookie is marked Secure when the proxy says the visit is HTTPS. Planned next:
+Playarr asks everyone to sign in once its owner has set a password (open Playarr on the home network, by its IP or local name: Settings → Accounts → Set up the owner's account). Until then it works as before, open to anyone who can reach it, so claim it before exposing it. Reach it from outside over HTTPS through a reverse proxy; the session cookie is marked Secure when the proxy says the visit is HTTPS. Planned next:
 
 - The native iOS app (docs/plans/2026-11-03-ios-app-design.md)
 - ffmpeg transcoding for formats browsers can't play, and for mobile data (even volume's levelled streams are uncompressed WAV for now)
@@ -7068,9 +7070,9 @@ CRUD /api/accounts (+ :id/reset, :id/sessions)  → admins; each account its own
 
 and the last line of the block `     /api/settings/{sources,folders,matching,requests,mixes,listenbrainz,updates}  (changes: home network only)` with `     /api/settings/{sources,folders,matching,requests,mixes,listenbrainz,updates}  (changes: admins; ListenBrainz and history: each account)`.
 
-Replace the **Security** paragraph's last sentence `Playarr's own login is still to come (Phase 5).` and the sentence before it about local-only actions with: `Once the owner has set a password, every /api, /stream, /art and /transitions request needs a session (Bearer token from the app, HttpOnly cookie from the web; tokens stored as SHA-256), except finding the server and signing in; sign-ins are rate-limited per client address (the visitor's, behind a proxy trusted with TRUST_PROXY). Admins change settings; before setup, local-only actions need a home address, no proxy in between, and the server addressed by IP or a local name (no DNS rebinding). Each account hears every source or a chosen list, enforced in the catalog, search, streams, art, transitions, mixes, radio and stats through a per-account view of the catalog.`
+Replace the **Security** paragraph's last sentence `Playarr's own login is still to come (Phase 5).` and the sentence before it about local-only actions with: `Once the owner has set a password, every /api, /stream, /art and /transitions request needs a session (Bearer token from the app, HttpOnly cookie from the web; tokens stored as SHA-256), except finding the server and signing in; sign-ins are rate-limited per client address (the visitor's, behind a proxy trusted with TRUST_PROXY). Admins change settings; before setup, local-only actions need a home address, no proxy in between, and the server addressed by IP or a local name (no DNS rebinding). Each account hears every source or a chosen list, enforced in the catalog, search, streams, art, transitions, mixes, radio and stats through a per-account view of the catalog. A forgotten owner password is reset on the server host (`reset-password`), never over the network.`
 
-In §17, replace the **Profiles** bullet (line 361) with:
+In §17 (its heading becomes "Listening, accounts, mixes and even volume"), replace the **Profiles** bullet with:
 
 ```
 - **Accounts** (Settings → Accounts; `apps/server/src/accounts/`): each listener signs in; history, mixes, stats, the ListenBrainz account, favorites and playlists follow the account (playlists private unless shared with the server). Accounts are admins or members, may request or not, and hear every source or a chosen list. The web keeps a token per signed-in account on the device and switches between them from Home ("Not X? Listen as Y").
@@ -7078,7 +7080,9 @@ In §17, replace the **Profiles** bullet (line 361) with:
 
 and in the **ListenBrainz** bullet `the profile's ListenBrainz account` becomes `the account's ListenBrainz account`.
 
-Open question 3 (line 233) gets a second resolution appended: ` **Superseded 2026-11-03:** server accounts with passwords and device sessions replace profiles (iOS app, phase 1); favorites and playlists are per account.`
+In Phase 5, the **Login + HTTPS** item gains a first sub-bullet `*Login built differently (2026-11-03):* server accounts with passwords and device sessions instead of one shared password (§17, decisions log). HTTPS is still to do.`; open question 4's "Exposed without a login for now … login + HTTPS are planned (Phase 5)" becomes "Exposed without a login at first, by the user's choice; accounts and sign-in since 2026-11-03 (once the owner claims the server), HTTPS still planned (Phase 5)."
+
+Open question 3 gets a second resolution appended: ` **Superseded 2026-11-03:** server accounts with passwords and device sessions replace profiles (iOS app, phase 1); favorites and playlists are per account.`
 
 Append to the decisions log table:
 
@@ -7127,6 +7131,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
+
+*As executed:* the README and PLAN line numbers had moved (the iOS docs landed first), so the steps above now name sections; the README's wording otherwise matched. Added beyond the first draft: Task 22b's owner recovery in the README (as Task 22b asked), the note that Docker needs `compose.override.yaml` for `PUBLIC_URL`/`TRUST_PROXY`/`SERVER_NAME` (compose.yaml passes only the variables it lists) and host networking for Bonjour, PLAN's Phase 5 login item and open question 4, the §17 heading, and "per client address" and `reset-password` in the Security paragraph and decisions-log row. The grep leaves only dated history (roadmap ticks, open question 3's first resolution, older decisions-log rows).
 
 ---
 
