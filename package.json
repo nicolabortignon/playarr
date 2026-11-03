@@ -1,7 +1,7 @@
 {
   "name": "playarr",
   "private": true,
-  "version": "0.6.366",
+  "version": "0.6.367",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
@@ -19,6 +19,7 @@
     "ios:test": "make -C apps/ios test",
     "ios:models": "make -C apps/ios models",
     "ios:setup": "make -C apps/ios setup",
+    "ios:crashes": "make -C apps/ios crashes",
     "ios:beta": "make -C apps/ios beta",
     "ios:device": "make -C apps/ios device"
   },

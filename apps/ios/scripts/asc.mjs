@@ -3,12 +3,14 @@
 //   node scripts/asc.mjs check             is the key accepted? Then: bundle id, app record, TestFlight group
 //   node scripts/asc.mjs setup [email...]  register the bundle id; once the app record exists, create the
 //                                          internal TestFlight group "Household" and add those testers to it
+//   node scripts/asc.mjs crashes [--all]   crash reports testers sent from TestFlight not looked at yet (all of
+//                                          them with --all), each log saved in build/crashes/
 //
 // Run through the Makefile (`pnpm ios:setup`), which loads ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and
 // IOS_BUNDLE_ID from the repo's .env; CI sets them itself. The key is read from
 // ~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8. release.mjs builds on the exports.
 import { createPrivateKey, sign } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -166,6 +168,37 @@ async function setup(testers) {
   }
 }
 
+const CRASHES = join(import.meta.dirname, '..', 'build', 'crashes');
+
+/** Crash reports not in `seen`, oldest first. */
+export function unseenCrashes(reports, seen) {
+  return reports.filter((r) => !seen.has(r.id)).sort((a, b) => a.attributes.createdDate.localeCompare(b.attributes.createdDate));
+}
+
+/** The crash log's text from GET /v1/betaFeedbackCrashSubmissions/{id}/crashLog. */
+export const crashLogText = (answer) => answer.data.attributes.logText;
+
+async function crashes(all) {
+  const { bundleId } = config();
+  const app = (await findApp(bundleId)) ?? fail(`No app record for ${bundleId}`);
+  const { data: reports } = await asc('GET', `/v1/apps/${app.id}/betaFeedbackCrashSubmissions?limit=200`);
+  const seenFile = join(CRASHES, 'seen.json');
+  const seen = new Set(!all && existsSync(seenFile) ? JSON.parse(readFileSync(seenFile, 'utf8')) : []);
+  const fresh = unseenCrashes(reports, seen);
+  if (!fresh.length) return console.log(`✓ No new crash reports (${reports.length} in all)`);
+  mkdirSync(CRASHES, { recursive: true });
+  for (const r of fresh) {
+    const a = r.attributes;
+    const log = crashLogText(await asc('GET', `/v1/betaFeedbackCrashSubmissions/${r.id}/crashLog`));
+    const file = join(CRASHES, `${a.createdDate.slice(0, 19).replaceAll(':', '-')}-${r.id}.crash`);
+    writeFileSync(file, log);
+    const build = log.match(/^Version:\s+(.+)$/m)?.[1] ?? '?';
+    console.log(`✗ ${a.createdDate} · build ${build} · ${a.deviceModel} iOS ${a.osVersion} · “${a.comment ?? ''}”\n  ${file}`);
+    seen.add(r.id);
+  }
+  writeFileSync(seenFile, JSON.stringify([...seen]));
+}
+
 export function fail(message) {
   console.error(`✗ ${message}`);
   process.exit(1);
@@ -173,7 +206,7 @@ export function fail(message) {
 
 if (import.meta.main) {
   const [command, ...args] = process.argv.slice(2);
-  const commands = { check: () => check(), setup: () => setup(args) };
-  if (!commands[command]) fail('Usage: node scripts/asc.mjs check | setup [tester email...]');
+  const commands = { check: () => check(), setup: () => setup(args), crashes: () => crashes(args.includes('--all')) };
+  if (!commands[command]) fail('Usage: node scripts/asc.mjs check | setup [tester email...] | crashes [--all]');
   await commands[command]().catch((err) => fail(err.message));
 }

@@ -32,7 +32,7 @@ XCODEBUILD = xcodebuild -project Playarr.xcodeproj -scheme Playarr -derivedDataP
 # The repo's .env has ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and IOS_BUNDLE_ID; CI sets them itself.
 NODE = node --env-file-if-exists=../../.env
 
-.PHONY: bootstrap tools project build test test-scripts test-packages test-app models models-check setup beta beta-upload device clean
+.PHONY: bootstrap tools project build test test-scripts test-packages test-app models models-check setup crashes beta beta-upload device clean
 
 bootstrap: project
 
@@ -77,6 +77,10 @@ models-check:
 
 setup:
 	$(NODE) scripts/asc.mjs setup $(TESTERS)
+
+# Crash reports sent from TestFlight not looked at yet, logs saved in build/crashes/.
+crashes:
+	$(NODE) scripts/asc.mjs crashes
 
 beta: test
 	$(MAKE) beta-upload
