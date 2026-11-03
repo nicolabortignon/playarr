@@ -99,6 +99,27 @@ describe('folderSync', () => {
     expect(sync.copies[0]!.trackKey).toBe('mb:rg-1#rec-1');
   });
 
+  it('files a various-artists compilation’s songs under their own artists, never “Various Artists”', () => {
+    const va = { albumArtist: 'Various Artists', album: '00s Hits - 100 Top Songs', year: 2025, trackTotal: 100 };
+    const sync = folderSync(
+      [
+        entry('01. Massive Attack - Angel.mp3', { ...va, artist: 'Massive Attack', title: 'Angel', trackNumber: 1 }),
+        entry('03. Coldplay - Yellow.mp3', { ...va, artist: 'Coldplay', title: 'Yellow', trackNumber: 3 }),
+      ],
+      lidarrIndex(),
+    );
+    expect(sync.artists.map((a) => a.name).sort()).toEqual(['Coldplay', 'Massive Attack']);
+    // A song the library has joins its album; the others are their artist's loose songs.
+    expect(sync.copies.find((c) => c.ref.includes('Angel'))!.trackKey).toBe('mb:rg-1#rec-1');
+    expect(sync.albums.map((a) => a.title).sort()).toEqual(['Loose songs', 'Mezzanine']);
+    expect(sync.albums.find((a) => a.title === 'Loose songs')!.releaseDate).toBeUndefined();
+  });
+
+  it('keeps a song whose own artist is Various Artists, too, under its album', () => {
+    const sync = folderSync([entry('VA/Now 54/01.mp3', { albumArtist: 'Various Artists', artist: 'Various Artists', album: 'Now 54', title: 'Intro' })], EMPTY);
+    expect(sync.albums[0]!.title).toBe('Now 54');
+  });
+
   it('collects genres and the release year', () => {
     const sync = folderSync(
       [

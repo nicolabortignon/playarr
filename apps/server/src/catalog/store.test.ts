@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { albumKey, normalize } from '../library/search.ts';
 import { songNameKey } from './keys.ts';
 import { CatalogStore } from './store.ts';
-import { freshDb, mezzanine } from './testFixtures.ts';
+import { FLAC, freshDb, mezzanine } from './testFixtures.ts';
 
 function setup() {
   const store = new CatalogStore(freshDb());
@@ -295,6 +295,28 @@ describe('CatalogStore: several sources', () => {
 });
 
 describe('CatalogStore: matching', () => {
+  it('counts albums matched, waiting and left as tagged, with the albums tags already identify', () => {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('folder', 'Music', { path: '/m' });
+    const tags = (t: object) => ({ genres: [], duration: 200, format: FLAC, ...t });
+    store.saveFolderFiles(
+      id,
+      [
+        { rel: 'x/1.flac', size: 1, mtimeMs: 1, tags: tags({ recordingMbid: 'r1', releaseGroupMbid: 'rg-x' }) },
+        { rel: 'x/2.flac', size: 1, mtimeMs: 1, tags: tags({ recordingMbid: 'r2', releaseGroupMbid: 'rg-x' }) },
+        { rel: 'y/1.flac', size: 1, mtimeMs: 1, tags: tags({ recordingMbid: 'r3' }) },
+      ],
+      ['x/1.flac', 'x/2.flac', 'y/1.flac'],
+    );
+    store.saveMatches(id, [
+      { rel: 'a.flac', groupKey: 'g', state: 'auto', size: 1, mtimeMs: 1 },
+      { rel: 'b.flac', groupKey: 'g', state: 'auto', size: 1, mtimeMs: 1 },
+      { rel: 'c.flac', groupKey: 'h', state: 'unmatched', size: 1, mtimeMs: 1 },
+      { rel: 'd.flac', groupKey: 'i', state: 'ignored', size: 1, mtimeMs: 1 },
+    ]);
+    expect(store.matchCounts().get(id)).toEqual({ matched: 2, review: 1, ignored: 1 });
+  });
+
   it('saves, reads and clears matches, keeping user decisions', () => {
     const store = new CatalogStore(freshDb());
     const id = store.addSource('folder', 'Music', { path: '/m' });
@@ -304,7 +326,7 @@ describe('CatalogStore: matching', () => {
       { rel: 'c.flac', groupKey: 'h', state: 'review', candidates: ['rel-1', 'rel-2'], score: 0.6, size: 1, mtimeMs: 1 },
     ]);
     expect(store.matches(id).get('c.flac')).toMatchObject({ state: 'review', candidates: ['rel-1', 'rel-2'] });
-    expect(store.matchCounts().get(id)).toEqual({ review: 1 });
+    expect(store.matchCounts().get(id)).toEqual({ matched: 1, review: 1, ignored: 0 });
     store.clearMatches(id);
     expect([...store.matches(id).keys()]).toEqual(['b.flac']);
   });

@@ -160,11 +160,7 @@ function SourceRow({
         </div>
         <div className="truncate font-mono text-[12px] text-muted">{details}</div>
         <SourceStatus source={s} />
-        {s.kind === 'folder' && s.review > 0 && canEdit && (
-          <button type="button" onClick={onReview} className="mt-1 text-[13px] text-accent hover:underline">
-            {plural(s.review, 'album')} to review
-          </button>
-        )}
+        {s.kind === 'folder' && <MatchSummary source={s} canEdit={canEdit} onReview={onReview} />}
       </div>
       {canEdit && (
         <div className="flex items-center gap-1">
@@ -191,6 +187,34 @@ function SourceRow({
         </div>
       )}
     </Reorder.Item>
+  );
+}
+
+/** How a folder's albums were matched: those not matched open the review, to match them by hand. */
+export function MatchSummary({ source: s, canEdit, onReview }: { source: SourceInfo; canEdit: boolean; onReview: () => void }) {
+  if (!s.matched && !s.review && !s.ignored) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-paper-dim">
+      <span>{plural(s.matched, 'album')} matched</span>
+      {s.review > 0 && (
+        <>
+          <span aria-hidden="true">·</span>
+          {canEdit ? (
+            <button type="button" onClick={onReview} className="text-accent hover:underline" title="Match them by hand">
+              {s.review} not matched
+            </button>
+          ) : (
+            <span>{s.review} not matched</span>
+          )}
+        </>
+      )}
+      {s.ignored > 0 && (
+        <>
+          <span aria-hidden="true">·</span>
+          <span>{s.ignored} left as tagged</span>
+        </>
+      )}
+    </div>
   );
 }
 

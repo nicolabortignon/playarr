@@ -240,10 +240,13 @@ export class Matcher {
     const unmatched = [...matches.values()].filter((m) => m.state === 'unmatched');
     const notFound = new Set(unmatched.map((m) => m.groupKey));
     const keys = [...new Set([...review.map((m) => m.groupKey), ...notFound])];
+    const candidatesOf = new Map(review.map((m) => [m.groupKey, m.candidates ?? []]));
+    // The folder grouped once, not once per album: a folder of loose songs has hundreds of them.
+    const groups = new Map(this.allGroups(sourceId, matches).map((g) => [g.key, g]));
     return keys.flatMap((key) => {
-      const group = this.groupByKey(sourceId, key);
+      const group = groups.get(key);
       if (!group) return [];
-      const ids = review.find((m) => m.groupKey === key)?.candidates ?? [];
+      const ids = candidatesOf.get(key) ?? [];
       const candidates = ids.flatMap((id) => {
         const release = this.deps.store.cachedRelease(id);
         return release ? [toCandidate(scoreRelease(group.files, release))] : [];
@@ -253,7 +256,7 @@ export class Matcher {
           groupKey: key,
           artistName: group.artistName,
           albumTitle: group.albumTitle,
-          files: this.waiting(sourceId, group).map(({ rel, title, trackNumber, discNumber, duration }) => ({ rel, title, trackNumber, discNumber, duration })),
+          files: waitingIn(group, matches).map(({ rel, title, trackNumber, discNumber, duration }) => ({ rel, title, trackNumber, discNumber, duration })),
           candidates,
           ...(!candidates.length && notFound.has(key) ? { notFound: true } : {}),
         },
@@ -269,22 +272,18 @@ export class Matcher {
 
   /** A group with all its files, whatever their state. */
   private groupByKey(sourceId: number, groupKey: string): FileGroup | undefined {
-    const root = (this.deps.store.source(sourceId)?.settings as { path?: string } | undefined)?.path;
-    if (!root) return undefined;
-    return groupFiles(root, this.files(sourceId), this.deps.store.matches(sourceId), () => true).find((g) => g.key === groupKey);
+    return this.allGroups(sourceId).find((g) => g.key === groupKey);
   }
 
-  /**
-   * The files a review decision is about: those still waiting for one, so a compilation's songs already
-   * matched one by one keep their match; the whole group when none is waiting.
-   */
+  /** Every group with all its files, whatever their state. */
+  private allGroups(sourceId: number, matches = this.deps.store.matches(sourceId)): FileGroup[] {
+    const root = (this.deps.store.source(sourceId)?.settings as { path?: string } | undefined)?.path;
+    if (!root) return [];
+    return groupFiles(root, this.files(sourceId), matches, () => true);
+  }
+
   private waiting(sourceId: number, group: FileGroup): GroupFile[] {
-    const matches = this.deps.store.matches(sourceId);
-    const waiting = group.files.filter((f) => {
-      const state = matches.get(f.rel)?.state;
-      return !state || state === 'review' || state === 'unmatched';
-    });
-    return waiting.length ? waiting : group.files;
+    return waitingIn(group, this.deps.store.matches(sourceId));
   }
 
   private files(sourceId: number) {
@@ -421,6 +420,18 @@ export class Matcher {
   private record(group: FileGroup, f: GroupFile, state: MatchRecord['state']): MatchRecord {
     return { rel: f.rel, groupKey: group.key, state, size: f.size, mtimeMs: f.mtimeMs };
   }
+}
+
+/**
+ * The files a review decision is about: those still waiting for one, so a compilation's songs already
+ * matched one by one keep their match; the whole group when none is waiting.
+ */
+function waitingIn(group: FileGroup, matches: Map<string, MatchRecord>): GroupFile[] {
+  const waiting = group.files.filter((f) => {
+    const state = matches.get(f.rel)?.state;
+    return !state || state === 'review' || state === 'unmatched';
+  });
+  return waiting.length ? waiting : group.files;
 }
 
 /** Songs by many artists under one album name: a compilation, a mixtape, a playlist's folder. */

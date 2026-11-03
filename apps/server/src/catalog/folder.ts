@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { albumKey as albumNameKey, normalize } from '../library/search.ts';
 import { albumKeyFor, artistKeyFor, songNameKey, trackKeyFor } from './keys.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
+import { isVariousArtists } from './songMatch.ts';
 import type { TagInfo } from './tags.ts';
 import type { KnownTrack, NameIndex, SourceAlbum, SourceArtist, SourceSync, SourceTrack } from './types.ts';
 
@@ -68,10 +69,15 @@ export function folderSync(
   const sync: SourceSync = { artists: [], albums: [], tracks: [], copies: [], metaRank: FOLDER_META_RANK, addedAt: 'firstSeen' };
 
   for (const e of [...entries].sort((a, b) => a.rel.localeCompare(b.rel))) {
-    const t = e.tags;
-    const d = describeFile(e.rel, t);
-    let artistName = d.artistName;
-    const albumTitle = d.albumTitle;
+    const d = describeFile(e.rel, e.tags);
+    // A various-artists compilation's song is its artist's: filed as a loose song of theirs below (on the
+    // album the library has it on, if any), never under "Various Artists" and the compilation's name.
+    const various = isVariousArtists(d.artistName) && !!e.tags.artist && !isVariousArtists(e.tags.artist);
+    const t: TagInfo = various
+      ? { ...e.tags, albumArtist: undefined, albumArtistMbid: undefined, album: undefined, releaseGroupMbid: undefined, releaseId: undefined, year: undefined, trackTotal: undefined }
+      : e.tags;
+    let artistName = various ? e.tags.artist! : d.artistName;
+    const albumTitle = various ? undefined : d.albumTitle;
     const title = d.title;
     let artistKey = t.albumArtistMbid
       ? `mb:${t.albumArtistMbid}`

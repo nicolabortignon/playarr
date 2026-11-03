@@ -95,6 +95,13 @@ function isoDate(value: string | undefined): string | null {
   return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
+/** A folder source's album groups by how matching went (see matchCounts). */
+export interface MatchCounts {
+  matched: number;
+  review: number;
+  ignored: number;
+}
+
 /** The catalog in SQLite: what each source reported, with permanent Playarr ids. */
 export class CatalogStore {
   constructor(private readonly db: DatabaseSync) {}
@@ -641,14 +648,35 @@ export class CatalogStore {
     this.db.prepare("DELETE FROM folder_matches WHERE source_id = ? AND state NOT IN ('manual', 'ignored')").run(sourceId);
   }
 
-  /** Album groups waiting for review (to choose a match, or found nowhere on MusicBrainz), per source. */
-  matchCounts(): Map<number, { review: number }> {
+  /**
+   * Album groups per source: matched (on MusicBrainz, automatically or by the user's pick, named by the
+   * user, or already identified by their tags), waiting for review (to choose a match, or found nowhere
+   * on MusicBrainz), and left as their tags describe them.
+   */
+  matchCounts(): Map<number, MatchCounts> {
     const rows = this.db
       .prepare(
-        "SELECT source_id AS id, COUNT(DISTINCT group_key) AS review FROM folder_matches WHERE state IN ('review', 'unmatched') GROUP BY source_id",
+        `SELECT source_id AS id,
+           COUNT(DISTINCT CASE WHEN state IN ('auto', 'manual') THEN group_key END) AS matched,
+           COUNT(DISTINCT CASE WHEN state IN ('review', 'unmatched') THEN group_key END) AS review,
+           COUNT(DISTINCT CASE WHEN state = 'ignored' THEN group_key END) AS ignored
+         FROM folder_matches GROUP BY source_id`,
       )
-      .all() as { id: number; review: number }[];
-    return new Map(rows.map((r) => [r.id, { review: r.review }]));
+      .all() as { id: number; matched: number; review: number; ignored: number }[];
+    // Files whose tags already name their recording and album are never matched: count their albums.
+    const tagged = this.db
+      .prepare(
+        `SELECT source_id AS id, COUNT(DISTINCT json_extract(tags, '$.releaseGroupMbid')) AS albums FROM folder_files
+         WHERE json_extract(tags, '$.recordingMbid') IS NOT NULL AND json_extract(tags, '$.releaseGroupMbid') IS NOT NULL
+         GROUP BY source_id`,
+      )
+      .all() as { id: number; albums: number }[];
+    const counts = new Map(rows.map(({ id, matched, review, ignored }) => [id, { matched, review, ignored }]));
+    for (const t of tagged) {
+      const c = counts.get(t.id) ?? { matched: 0, review: 0, ignored: 0 };
+      counts.set(t.id, { ...c, matched: c.matched + t.albums });
+    }
+    return counts;
   }
 
   cachedRelease(releaseId: string): MbReleaseInfo | undefined {

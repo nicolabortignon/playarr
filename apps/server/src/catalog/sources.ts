@@ -7,7 +7,7 @@ import { FolderSource, isAudioFile } from './folderSource.ts';
 import { LidarrSource } from './lidarr.ts';
 import { isWritable } from './organizer.ts';
 import { checkFolder, listFolders } from './paths.ts';
-import type { CatalogStore, SourceRecord } from './store.ts';
+import type { CatalogStore, MatchCounts, SourceRecord } from './store.ts';
 import type { CatalogSource } from './types.ts';
 
 interface LidarrSettings {
@@ -327,15 +327,16 @@ export class SourceManager {
     });
   }
 
-  private matching(id: number, matchCounts: Map<number, { review: number }>) {
-    return { review: matchCounts.get(id)?.review ?? 0, matching: this.matcher?.pendingGroups(id) ?? 0 };
+  private matching(id: number, matchCounts: Map<number, MatchCounts>) {
+    const c = matchCounts.get(id);
+    return { matched: c?.matched ?? 0, review: c?.review ?? 0, ignored: c?.ignored ?? 0, matching: this.matcher?.pendingGroups(id) ?? 0 };
   }
 }
 
 function toInfo(
   s: SourceRecord,
   counts: { songs: number; albums: number } | undefined,
-  matching: { review: number; matching: number },
+  matching: MatchCounts & { matching: number },
   opts: { includeSettings: boolean; syncing: boolean },
 ): SourceInfo {
   const folder = s.kind === 'folder' ? (s.settings as FolderSettings) : undefined;
@@ -353,7 +354,9 @@ function toInfo(
     syncing: opts.syncing && s.enabled,
     songs: counts?.songs ?? 0,
     albums: counts?.albums ?? 0,
+    matched: matching.matched,
     review: matching.review,
+    ignored: matching.ignored,
     matching: matching.matching,
     ...(localPath ? { writable: isWritable(localPath) } : {}),
   };

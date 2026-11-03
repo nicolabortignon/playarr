@@ -378,8 +378,12 @@ export interface SourceInfo {
   syncing: boolean;
   songs: number;
   albums: number;
-  /** Folder sources: album groups waiting for the user's review. */
+  /** Folder sources: album groups matched on MusicBrainz (automatically, by you, or by their tags), or named by you. */
+  matched: number;
+  /** Folder sources: album groups waiting for the user's review (to pick a match, or found nowhere). */
   review: number;
+  /** Folder sources: album groups left as their tags describe them (ignored in review). */
+  ignored: number;
   /** Folder sources: album groups still being matched. */
   matching: number;
   /** Folder sources: Playarr can write to the folder (needed to organize it). */
