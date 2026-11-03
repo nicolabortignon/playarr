@@ -16,6 +16,10 @@ public final class PlaybackSettings {
   public var autoplay: Bool { didSet { defaults.set(autoplay, forKey: Key.autoplay) } }
   /// "Count what this device plays".
   public var recordPlays: Bool { didSet { defaults.set(recordPlays, forKey: Key.recordPlays) } }
+  /// "On this device: keep up to": room for songs kept as you listen, in bytes (0 = Off). See `OfflineLimit`.
+  public var offlineLimit: Int64 { didSet { defaults.set(offlineLimit, forKey: Key.offlineLimit) } }
+  /// "Allow downloads on mobile data" (and personal hotspots). Off: downloads wait for Wi-Fi.
+  public var cellularDownloads: Bool { didSet { defaults.set(cellularDownloads, forKey: Key.cellularDownloads) } }
 
   @ObservationIgnored private let defaults: UserDefaults
 
@@ -25,6 +29,8 @@ public final class PlaybackSettings {
     static let levelVolume = "playback.levelVolume"
     static let autoplay = "playback.autoplay"
     static let recordPlays = "playback.recordPlays"
+    static let offlineLimit = "playback.offlineLimit"
+    static let cellularDownloads = "playback.cellularDownloads"
   }
 
   public init(defaults: UserDefaults = .standard) {
@@ -35,6 +41,9 @@ public final class PlaybackSettings {
     levelVolume = defaults.object(forKey: Key.levelVolume) as? Bool ?? true
     autoplay = defaults.object(forKey: Key.autoplay) as? Bool ?? true
     recordPlays = defaults.object(forKey: Key.recordPlays) as? Bool ?? true
+    let limit = (defaults.object(forKey: Key.offlineLimit) as? NSNumber)?.int64Value
+    offlineLimit = limit.flatMap { OfflineLimit.options.contains($0) ? $0 : nil } ?? OfflineLimit.defaultLimit
+    cellularDownloads = defaults.object(forKey: Key.cellularDownloads) as? Bool ?? false
   }
 
   /// Seconds songs overlap on this setting: only Crossfade fades (DJ mix plays gapless until it can mix).
