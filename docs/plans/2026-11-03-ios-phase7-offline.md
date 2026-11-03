@@ -1686,6 +1686,8 @@ with:
 
 (If phase 5 already gave `FakeBackend` these calls, keep its versions and add only what's missing: `transitionAnswers` and `transitionAsks` are used by Task 8's tests.)
 
+**As implemented:** phase 5 had already added `transition(_:)` and `transitionRequest(_:)` to `PlayerBackend` and `APIBackend`, and `FakeBackend` already had `transitionAnswers` and `transitionAsks`, so this task only adds `TransitionPoller` and its tests.
+
 **Step 4: Run it to see it pass**
 
 ```bash
