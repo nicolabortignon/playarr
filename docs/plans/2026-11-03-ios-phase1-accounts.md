@@ -1912,7 +1912,7 @@ EOF
 
 ```ts
 // apps/server/src/routes/accounts.test.ts
-import type { Account, SessionInfo, SetupCode } from '@playarr/shared';
+import type { Account, CreatedAccount, SessionInfo, SetupCode } from '@playarr/shared';
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { Accounts } from '../accounts/accounts.ts';
@@ -1950,7 +1950,7 @@ describe('account routes', () => {
     const { app, cc, admin, member, as } = await setup();
     const res = await app.inject({ method: 'POST', url: '/api/accounts', headers: as(admin), payload: { username: 'reviewer', name: 'App Review', role: 'member', canRequest: false, sources: [cc] } });
     expect(res.statusCode).toBe(201);
-    const { account, setup: code } = res.json() as { account: Account; setup: SetupCode };
+    const { account, setup: code } = res.json() as CreatedAccount;
     expect(account).toMatchObject({ username: 'reviewer', name: 'App Review', role: 'member', canRequest: false, sources: [cc], hasPassword: false });
     expect(code.code).toMatch(/^[A-HJKMNP-Z2-9]{8}$/);
     expect(code.link).toBe(`http://nas:4000/redeem?code=${code.code}`);
@@ -2023,6 +2023,7 @@ Expected: FAIL: `./accounts.ts` not found.
 
 ```ts
 // apps/server/src/routes/accounts.ts
+import type { CreatedAccount } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AccountError, type Accounts } from '../accounts/accounts.ts';
@@ -2061,7 +2062,7 @@ export function accountRoutes(app: FastifyInstance, deps: { accounts: Accounts; 
   app.post('/api/accounts', { onRequest: [requireAdmin, ownerFirst] }, (req, reply) =>
     handleAccountErrors(reply, () => {
       const account = accounts.create(parseInput(accountInput, req.body));
-      return reply.code(201).send({ account, setup: setupCodes.issue(account.id, originOf(req)) });
+      return reply.code(201).send({ account, setup: setupCodes.issue(account.id, originOf(req)) } satisfies CreatedAccount);
     }),
   );
 
@@ -2110,6 +2111,8 @@ export function accountRoutes(app: FastifyInstance, deps: { accounts: Accounts; 
   );
 }
 ```
+
+*As executed:* the test and the route use the shared `CreatedAccount` type (added in task 2) for `POST /api/accounts`'s answer.
 
 **Step 4: Run the test again**
 
