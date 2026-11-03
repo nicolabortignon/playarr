@@ -4107,6 +4107,17 @@ struct PlayerTransitionTests {
     #expect(player.engine.tuning.scheduleAhead == 10)
   }
 
+  @Test func aClosedSessionAsksForNoMoreTransitions() async throws {
+    let player = try player()
+    player.play([a, b])
+    try await play(player, for: 1)
+    player.shutDown()
+    clock.advance(by: 30)
+    await player.transitions.planner.inFlight?.value
+    #expect(backend.transitionAsks.all.isEmpty)
+    #expect(player.transitions.planner.upcoming == .init())
+  }
+
   @Test func editedMixPointsAskAgainForTheMapAndTheTransition() async throws {
     let fixtures = MixFixtures.all
     backend.mixMapTable.withLock { $0 = ["rec-1": fixtures.song("steady"), "rec-2": fixtures.song("close")] }
@@ -4134,34 +4145,14 @@ Expected: `…/PlayerTransitionTests.swift:…: error: extra argument 'scheduler
 
 **Step 3: Implement**
 
+The patch is made against `main` after phase 4, whose `Player` asks for a radio once per song (`radioAskedAt`), and has `shutDown()` for a closed account session: `shutDown()` also drops the planner's pair, so a closed session asks the server nothing more (the test `aClosedSessionAsksForNoMoreTransitions`).
+
 ```bash
 cat > /tmp/phase5-task12-player.patch <<'PATCH'
-diff --git a/apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift b/apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift
---- a/apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift
-+++ b/apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift
-@@ -44,12 +44,16 @@
- 
- extension Player {
-   /// A Player on an offline engine whose songs are 441 Hz sines (see `Signals`).
--  static func testing(_ backend: FakeBackend = FakeBackend(), directory: URL = temporaryDirectory(), settings: PlaybackSettings? = nil) throws -> Player {
-+  static func testing(
-+    _ backend: FakeBackend = FakeBackend(), directory: URL = temporaryDirectory(), settings: PlaybackSettings? = nil,
-+    scheduler: (any Scheduling)? = nil, signals: [Int: @Sendable (Int64, Int) -> Float] = [:]
-+  ) throws -> Player {
-     let defaults = UserDefaults(suiteName: UUID().uuidString)!
-     return try Player(
-       backend: backend, directory: directory, settings: settings ?? PlaybackSettings(defaults: defaults),
-       makeEngine: { try AudioEngine(manualRendering: true, makeSource: $0) },
--      makeSource: { item, frame in SignalSource(seconds: item.track.duration, from: frame, signal: Signals.sine) })
-+      makeSource: { item, frame in SignalSource(seconds: item.track.duration, from: frame, signal: signals[item.track.id] ?? Signals.sine) },
-+      scheduler: scheduler)
-   }
- 
-   /// Renders `seconds` in steps of 0.1 s, ticking the Player's clock between them.
 diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift b/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift
 --- a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift
 +++ b/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift
-@@ -34,6 +34,8 @@
+@@ -34,6 +34,8 @@ public final class Player {
    public let settings: PlaybackSettings
    public let levels: LevelStore
    public let sleep = SleepTimer()
@@ -4170,8 +4161,8 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
  
    @ObservationIgnored public private(set) var engine: AudioEngine
    @ObservationIgnored public var nowPlaying: NowPlayingBridge?
-@@ -53,19 +55,42 @@
-   @ObservationIgnored private var lastSaved = Date.distantPast
+@@ -54,19 +56,42 @@ public final class Player {
+   /// The song whose start was last checked for a radio continuation.
    @ObservationIgnored private var radioAskedAt: Entry?
    @ObservationIgnored private var ticker: Task<Void, Never>?
 +  /// A press of Next being mixed live into the next song: its item and the mix (kept over later syncs).
@@ -4215,7 +4206,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
          track: item.track, firstFrame: frame,
          origin: TrackSource.Origin(
            stream: backend.streamRequest(item.track),
-@@ -73,6 +98,17 @@
+@@ -74,6 +99,17 @@ public final class Player {
          cache: cache)
      }
      let build = { try makeEngine?(sources) ?? AudioEngine(makeSource: sources) }
@@ -4233,7 +4224,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      self.backend = backend
      self.settings = settings
      self.levels = levels
-@@ -85,6 +121,9 @@
+@@ -86,6 +122,9 @@ public final class Player {
      tracker = PlayTracker { _ in }
      tracker = PlayTracker { [weak self] plays in self?.report(plays) }
      engine.onEvent = { [weak self] in self?.handle($0) }
@@ -4243,7 +4234,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      sync()
      Task { await reports.retry() }
    }
-@@ -115,8 +154,11 @@
+@@ -116,8 +155,11 @@ public final class Player {
    public func move(from: Int, to: Int) { change { $0.move(from: from, to: to) } }
    public func setUpcoming(_ queueIndices: [Int]) { change { $0.setUpcoming(queueIndices) } }
    public func clearUpcoming() { change { $0.clearUpcoming() } }
@@ -4257,7 +4248,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
    /// Restarts the song past 3 s, else goes back one.
    public func previous() { change { [time] in $0.prev(currentTime: time) } }
    public func toggleShuffle() { change { $0.toggleShuffle() } }
-@@ -135,6 +177,7 @@
+@@ -136,6 +178,7 @@ public final class Player {
    public func seek(to seconds: Double) {
      guard loaded != nil else { return }
      tracker.pause()
@@ -4265,7 +4256,16 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      engine.seek(to: seconds)
      time = seconds
      showNowPlaying()
-@@ -198,6 +241,13 @@
+@@ -199,6 +242,8 @@ public final class Player {
+     ticker = nil
+     appWillTerminate()
+     queue.playing = false
++    // A closed session asks the server nothing more.
++    transitions.planner.update(wanted: nil, playing: nil)
+     engine.stop()
+     nowPlaying?.update(track: nil, elapsed: 0, playing: false)
+     nowPlaying?.unregister()
+@@ -212,6 +257,13 @@ public final class Player {
      buffered = engine.bufferedAhead
      loading = engine.state == .loading || engine.state == .buffering
      if engine.state == .playing { tracker.tick(time) } else { tracker.pause() }
@@ -4279,7 +4279,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      let volume = queue.muted ? 0 : Float(queue.volume * queue.volume)
      engine.setMasterGain(volume * sleep.gain(at: now))
      if sleep.runsOut(at: now) {
-@@ -234,6 +284,7 @@
+@@ -248,6 +300,7 @@ public final class Player {
          engine.pause()
        }
      }
@@ -4287,7 +4287,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      updateUpcoming()
      loadLevels()
      continueRadio()
-@@ -258,6 +309,9 @@
+@@ -272,6 +325,9 @@ public final class Player {
      queue.startAt = nil
      firstLoad = false
      let item = EngineItem(track: track, gainDb: gainDb(track), startAt: start)
@@ -4297,7 +4297,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      loaded = (entry, item)
      upcoming = nil
      error = nil
-@@ -267,8 +321,11 @@
+@@ -281,8 +337,11 @@ public final class Player {
    }
  
    /// Tells the engine what plays after the current song and how: the album in order never fades (JoinRules), repeat
@@ -4310,7 +4310,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      guard let current = loaded, !sleep.endOfSong,
        let index = queue.repeatMode == .one ? current.entry.index : queue.upNextIndex
      else {
-@@ -277,11 +334,100 @@
+@@ -291,11 +350,100 @@ public final class Player {
        return
      }
      let track = queue.queue[index]
@@ -4415,7 +4415,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
    }
  
    private func gainDb(_ track: Track) -> Double {
-@@ -292,7 +438,9 @@
+@@ -306,7 +454,9 @@ public final class Player {
      let tracks = [queue.currentTrack, queue.upNext]
      Task {
        await levels.load(tracks)
@@ -4426,7 +4426,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      }
    }
  
-@@ -337,8 +485,15 @@
+@@ -353,8 +503,15 @@ public final class Player {
      switch event {
      case .advanced(let id):
        guard let joined = upcoming, joined.item.id == id else { return }
@@ -4444,7 +4444,7 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
        tracker.start(joined.item.track)
        queue.next(auto: true)
        if let entry = currentEntry { loaded = (entry, joined.item) }
-@@ -353,8 +508,14 @@
+@@ -369,8 +526,14 @@ public final class Player {
        // The sleep timer's "end of song": on to the next song, paused, for when you're back.
        if sleep.stopsAtSongEnd() { queue.playing = false }
        sync()
@@ -4461,6 +4461,28 @@ diff --git a/apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Player.swift 
      case .failed(let id, let failure):
        guard loaded?.item.id == id else { return }
        error = failure.message
+diff --git a/apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift b/apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift
+--- a/apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift
++++ b/apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift
+@@ -44,12 +44,16 @@ final class FakeBackend: PlayerBackend {
+ 
+ extension Player {
+   /// A Player on an offline engine whose songs are 441 Hz sines (see `Signals`).
+-  static func testing(_ backend: FakeBackend = FakeBackend(), directory: URL = temporaryDirectory(), settings: PlaybackSettings? = nil) throws -> Player {
++  static func testing(
++    _ backend: FakeBackend = FakeBackend(), directory: URL = temporaryDirectory(), settings: PlaybackSettings? = nil,
++    scheduler: (any Scheduling)? = nil, signals: [Int: @Sendable (Int64, Int) -> Float] = [:]
++  ) throws -> Player {
+     let defaults = UserDefaults(suiteName: UUID().uuidString)!
+     return try Player(
+       backend: backend, directory: directory, settings: settings ?? PlaybackSettings(defaults: defaults),
+       makeEngine: { try AudioEngine(manualRendering: true, makeSource: $0) },
+-      makeSource: { item, frame in SignalSource(seconds: item.track.duration, from: frame, signal: Signals.sine) })
++      makeSource: { item, frame in SignalSource(seconds: item.track.duration, from: frame, signal: signals[item.track.id] ?? Signals.sine) },
++      scheduler: scheduler)
+   }
+ 
+   /// Renders `seconds` in steps of 0.1 s, ticking the Player's clock between them.
 PATCH
 git apply /tmp/phase5-task12-player.patch
 ```
@@ -4472,7 +4494,7 @@ swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrPlayer --fi
 swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrPlayer 2>&1 | tail -1
 ```
 
-Expected: `Test run with 9 tests in 1 suite passed`, then the whole package: the count from Task 0 plus 52 (`Test run with 154 tests in 28 suites passed` from `4cc5200`).
+Expected: `Test run with 10 tests in 1 suite passed`, then the whole package: the count from Task 0 plus 53 (`Test run with 156 tests in 28 suites passed` on `main` after phase 4), phase 4's `clearingUpNextDoesntStartARadio` and `shutsDownWhenItsAccountIsSwitchedAway` included.
 
 **Step 5: Commit**
 

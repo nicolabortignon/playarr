@@ -34,6 +34,8 @@ public final class Player {
   public let settings: PlaybackSettings
   public let levels: LevelStore
   public let sleep = SleepTimer()
+  /// DJ mix: the transition into the next song, its file, the songs' mix maps.
+  public let transitions: TransitionCoordinator
 
   @ObservationIgnored public private(set) var engine: AudioEngine
   @ObservationIgnored public var nowPlaying: NowPlayingBridge?
@@ -54,19 +56,42 @@ public final class Player {
   /// The song whose start was last checked for a radio continuation.
   @ObservationIgnored private var radioAskedAt: Entry?
   @ObservationIgnored private var ticker: Task<Void, Never>?
+  /// A press of Next being mixed live into the next song: its item and the mix (kept over later syncs).
+  @ObservationIgnored private var pressed: (id: UUID, join: Join)?
+  /// A press of Next waiting for the mix into that song about to start.
+  @ObservationIgnored private var pressAwaits: UUID?
+  /// Items whose mix couldn't be placed in time: they follow gapless.
+  @ObservationIgnored private var missedMixes: Set<UUID> = []
+  /// The sleep timer ended the song in the middle of a mix: the music stops where the mix ends.
+  @ObservationIgnored private var pauseAtMixEnd: SampleTime?
+  @ObservationIgnored private var seekedSinceTick = false
+
+  /// The next song's mix couldn't be placed in time: it follows gapless (Stats for nerds says so).
+  public var upcomingMixMissed: Bool { upcoming.map { missedMixes.contains($0.item.id) } ?? false }
+
+  /// With DJ mix the engine keeps 2.5 s scheduled (not 10), so a press of Next mixes a few seconds after it.
+  static let djScheduleAhead = 2.5
+  /// Room for scheduling between a press of Next and where its mix may start.
+  static let pressMargin = 0.25
 
   /// `directory` is this server and account's folder in Application Support: the queue, unsent plays and the stream
   /// cache live there. `makeSource` replaces the real sources (tests); `makeEngine` the real engine.
   public init(
     backend: any PlayerBackend, directory: URL, settings: PlaybackSettings = PlaybackSettings(),
     makeEngine: (@MainActor (@escaping @MainActor (EngineItem, Int64) -> any PCMSource) throws -> AudioEngine)? = nil,
-    makeSource: (@MainActor (EngineItem, Int64) -> any PCMSource)? = nil
+    makeSource: (@MainActor (EngineItem, Int64) -> any PCMSource)? = nil, scheduler: (any Scheduling)? = nil
   ) throws {
     let cache = StreamCache(directory: directory.appending(path: "stream", directoryHint: .isDirectory))
     let levels = LevelStore { ids in try await backend.levels(ids) }
     let reports = PlayReportQueue(file: directory.appending(path: "pending-plays.json")) { try await backend.reportPlays($0) }
     let sources: @MainActor (EngineItem, Int64) -> any PCMSource = makeSource ?? { item, frame in
-      TrackSource(
+      // After a transition into an MP3: the server's rest of it, which runs on from the transition sample for sample.
+      if let rest = item.continuation {
+        return TrackSource(
+          track: Track.continuation(of: item.track, url: rest.url, from: rest.from), firstFrame: frame - EngineFormat.frames(rest.from),
+          origin: TrackSource.Origin(stream: backend.transitionRequest(rest.url), levelled: nil), cache: cache)
+      }
+      return TrackSource(
         track: item.track, firstFrame: frame,
         origin: TrackSource.Origin(
           stream: backend.streamRequest(item.track),
@@ -74,6 +99,17 @@ public final class Player {
         cache: cache)
     }
     let build = { try makeEngine?(sources) ?? AudioEngine(makeSource: sources) }
+    let scheduler = scheduler ?? TaskScheduling()
+    transitions = TransitionCoordinator(
+      planner: TransitionPlanner(scheduler: scheduler) { try await backend.transition($0) },
+      mixMaps: MixMapStore(scheduler: scheduler) { try await backend.mixMaps($0) },
+      download: { path in
+        let name = URL(string: path)?.lastPathComponent ?? path
+        if let kept = await cache.completedTransition(named: name) { return kept }
+        let download = await cache.transition(named: name, request: backend.transitionRequest(path))
+        try await download.waitUntilFinished()
+        return await cache.transitionFile(named: name)
+      })
     self.backend = backend
     self.settings = settings
     self.levels = levels
@@ -86,6 +122,9 @@ public final class Player {
     tracker = PlayTracker { _ in }
     tracker = PlayTracker { [weak self] plays in self?.report(plays) }
     engine.onEvent = { [weak self] in self?.handle($0) }
+    transitions.planner.isPlaying = { [weak self] in self?.queue.playing ?? false }
+    transitions.planner.isOnline = { [weak self] in self?.network() != .offline }
+    transitions.onChange = { [weak self] in self?.updateUpcoming() }
     sync()
     Task { await reports.retry() }
   }
@@ -116,8 +155,11 @@ public final class Player {
   public func move(from: Int, to: Int) { change { $0.move(from: from, to: to) } }
   public func setUpcoming(_ queueIndices: [Int]) { change { $0.setUpcoming(queueIndices) } }
   public func clearUpcoming() { change { $0.clearUpcoming() } }
-  /// A press of Next.
-  public func next() { change { $0.next() } }
+  /// A press of Next. With DJ mix it's mixed into the next song on the next bar, when it can be (see `takeNextPress`).
+  public func next() {
+    if takeNextPress() { return }
+    change { $0.next() }
+  }
   /// Restarts the song past 3 s, else goes back one.
   public func previous() { change { [time] in $0.prev(currentTime: time) } }
   public func toggleShuffle() { change { $0.toggleShuffle() } }
@@ -136,6 +178,7 @@ public final class Player {
   public func seek(to seconds: Double) {
     guard loaded != nil else { return }
     tracker.pause()
+    seekedSinceTick = true
     engine.seek(to: seconds)
     time = seconds
     showNowPlaying()
@@ -199,6 +242,8 @@ public final class Player {
     ticker = nil
     appWillTerminate()
     queue.playing = false
+    // A closed session asks the server nothing more.
+    transitions.planner.update(wanted: nil, playing: nil)
     engine.stop()
     nowPlaying?.update(track: nil, elapsed: 0, playing: false)
     nowPlaying?.unregister()
@@ -212,6 +257,13 @@ public final class Player {
     buffered = engine.bufferedAhead
     loading = engine.state == .loading || engine.state == .buffering
     if engine.state == .playing { tracker.tick(time) } else { tracker.pause() }
+    transitions.planner.clock(time, seeked: seekedSinceTick)
+    seekedSinceTick = false
+    if let end = pauseAtMixEnd, engine.now >= end {
+      // The sleep timer: the mix played out, and the next song waits here, paused.
+      pauseAtMixEnd = nil
+      setPlaying(false)
+    }
     let volume = queue.muted ? 0 : Float(queue.volume * queue.volume)
     engine.setMasterGain(volume * sleep.gain(at: now))
     if sleep.runsOut(at: now) {
@@ -248,6 +300,7 @@ public final class Player {
         engine.pause()
       }
     }
+    updateTransitions()
     updateUpcoming()
     loadLevels()
     continueRadio()
@@ -272,6 +325,9 @@ public final class Player {
     queue.startAt = nil
     firstLoad = false
     let item = EngineItem(track: track, gainDb: gainDb(track), startAt: start)
+    pressed = nil
+    pressAwaits = nil
+    pauseAtMixEnd = nil
     loaded = (entry, item)
     upcoming = nil
     error = nil
@@ -281,8 +337,11 @@ public final class Player {
   }
 
   /// Tells the engine what plays after the current song and how: the album in order never fades (JoinRules), repeat
-  /// one plays the song again without a gap, the sleep timer's "end of song" plays nothing after it.
+  /// one plays the song again without a gap, the sleep timer's "end of song" plays nothing after it. With DJ mix, the
+  /// join DJJoin picks (a transition, a mix played live, a cut on the beat), or a press of Next's mix.
   private func updateUpcoming() {
+    // A mix already placed plays out (the sleep timer then stops where it ends): taking it back would cost a new epoch.
+    if sleep.endOfSong, engine.upcomingPlaced, upcoming?.join.leaveTime != nil { return }
     guard let current = loaded, !sleep.endOfSong,
       let index = queue.repeatMode == .one ? current.entry.index : queue.upNextIndex
     else {
@@ -291,11 +350,100 @@ public final class Player {
       return
     }
     let track = queue.queue[index]
-    let fade = queue.repeatMode == .one ? 0 : JoinRules.fadeSeconds(current.item.track, track, crossfade: settings.crossfadeSeconds)
     let id = upcoming?.index == index ? upcoming?.item.id ?? UUID() : UUID()
-    let item = EngineItem(id: id, track: track, gainDb: gainDb(track))
-    upcoming = (index, item, .crossfade(seconds: fade))
-    engine.setUpcoming(item, join: .crossfade(seconds: fade))
+    var item = EngineItem(id: id, track: track, gainDb: gainDb(track))
+    let join: Join
+    if let pressed, pressed.id == id {
+      join = pressed.join
+    } else if settings.transitions == .dj, queue.repeatMode != .one, track.fileId != current.item.track.fileId, !missedMixes.contains(id) {
+      let decided = DJJoin.decide(djContext(current.item, track, gainB: item.gainDb))
+      join = decided.join
+      item.continuation = decided.continuation
+    } else {
+      let fade = queue.repeatMode == .one ? 0 : JoinRules.fadeSeconds(current.item.track, track, crossfade: settings.crossfadeSeconds)
+      join = .crossfade(seconds: fade)
+    }
+    upcoming = (index, item, join)
+    engine.setUpcoming(item, join: join)
+  }
+
+  private func djContext(_ a: EngineItem, _ b: Track, gainB: Double) -> DJJoin.Context {
+    let result = transitions.result(from: a.track, to: b)
+    return DJJoin.Context(
+      result: result, file: transitions.file(for: result), a: transitions.mixMaps.map(a.track.recordingId),
+      b: transitions.mixMaps.map(b.recordingId), mode: queue.mixMode,
+      sameAlbumInOrder: JoinRules.continues(a.track, b) && DJJoin.playsAlbum(queue.source, a.track), aDuration: a.track.duration,
+      position: time, gainA: a.gainDb, gainB: gainB)
+  }
+
+  /// DJ mix: the pair the planner asks the server about (none with mixing off, no next song, or the sleep timer
+  /// ending this song), at the levels the songs play at; the songs' mix maps; and less scheduled ahead.
+  private func updateTransitions() {
+    engine.tuning.scheduleAhead = settings.transitions == .dj ? Self.djScheduleAhead : AudioEngine.Tuning().scheduleAhead
+    guard settings.transitions == .dj, let current = loaded else {
+      transitions.planner.update(wanted: nil, playing: nil)
+      return
+    }
+    let a = current.item
+    let next = queue.upNext.flatMap { $0.fileId == a.track.fileId ? nil : $0 }
+    var wanted: TransitionPlanner.Pair?
+    if let next, queue.mixMode != .off, !sleep.endOfSong {
+      let gainB = gainDb(next)
+      wanted = TransitionPlanner.Pair(
+        from: a.track, to: next, mode: queue.mixMode, fade: settings.djFadeSeconds, albumQueue: DJJoin.playsAlbum(queue.source, a.track),
+        levels: a.gainDb != 0 || gainB != 0 ? .init(a: a.gainDb, b: gainB) : nil)
+    }
+    transitions.planner.update(wanted: wanted, playing: (a.track.fileId, current.entry.token))
+    let maps = transitions.mixMaps
+    if maps.map(a.track.recordingId) == nil || next.map({ maps.map($0.recordingId) == nil }) == true {
+      Task {
+        await maps.load([a.track, next])
+        updateUpcoming()
+      }
+    }
+  }
+
+  /// A song's mix points were edited (phase 8's Edit mix points): its map is asked for again, and a coming transition
+  /// planned with the old points is asked for afresh (the web's `forgetMixMap` and `refreshUpcomingTransition`).
+  public func mixPointsChanged(recordingId: String) {
+    let maps = transitions.mixMaps
+    maps.forget(recordingId)
+    transitions.planner.refresh(recordingId: recordingId)
+    let tracks = [queue.currentTrack, queue.upNext].filter { $0?.recordingId == recordingId }
+    guard !tracks.isEmpty else { return }
+    Task {
+      await maps.load(tracks)
+      updateUpcoming()
+    }
+  }
+
+  /// A press of Next with DJ mix: taken over (true) to mix into the song it goes to on A's next bar (planned here, as
+  /// the server never plans skips), or to wait for a mix into that song about to start; else the queue moves on at
+  /// once. Pressed again while waiting: no more waiting. As `takeNext` in the web's AudioEngine.tsx, which only a
+  /// desktop browser could do; the engine here mixes it with both songs' own audio, on the lock screen too.
+  private func takeNextPress() -> Bool {
+    if pressAwaits != nil || pressed != nil {
+      pressAwaits = nil
+      pressed = nil
+      return false
+    }
+    guard settings.transitions == .dj, queue.mixMode != .off, queue.repeatMode != .one, queue.playing, !sleep.endOfSong,
+      engine.state == .playing, engine.mix == nil, !engine.upcomingPlaced, let current = loaded, let to = queue.nextByPress,
+      to.fileId != current.item.track.fileId, let index = queue.upNextIndex, queue.queue[index].fileId == to.fileId
+    else { return false }
+    if let up = upcoming, up.index == index, let begins = up.join.mixBegins, begins - time >= -1, begins - time <= TransitionCoordinator.mixSoon {
+      pressAwaits = up.item.id
+      return true
+    }
+    guard let a = transitions.mixMaps.map(current.item.track.recordingId), let b = transitions.mixMaps.map(to.recordingId) else { return false }
+    let at = time + engine.tuning.scheduleAhead + engine.tuning.block + Self.pressMargin
+    let sameAlbum = JoinRules.continues(current.item.track, to) && DJJoin.playsAlbum(queue.source, current.item.track)
+    let plan = SkipPlanner.plan(a: a, b: b, mode: queue.mixMode, sameAlbumInOrder: sameAlbum, at: at)
+    guard plan.style != .straight else { return false }
+    let id = upcoming?.index == index ? upcoming?.item.id ?? UUID() : UUID()
+    pressed = (id, .mix(plan))
+    updateUpcoming()
+    return true
   }
 
   private func gainDb(_ track: Track) -> Double {
@@ -306,7 +454,9 @@ public final class Player {
     let tracks = [queue.currentTrack, queue.upNext]
     Task {
       await levels.load(tracks)
-      updateUpcoming()  // the next song's gain, if it came in time
+      // The next song's gain, if it came in time; with DJ mix the transition is asked for at it.
+      updateTransitions()
+      updateUpcoming()
     }
   }
 
@@ -353,8 +503,15 @@ public final class Player {
     switch event {
     case .advanced(let id):
       guard let joined = upcoming, joined.item.id == id else { return }
-      // Joined on its own at the end of the song: heard through.
-      tracker.finish(.ended)
+      // Joined on its own at the end of the song: heard through; mixed for a press of Next: skipped.
+      let skipped = pressed?.id == id || pressAwaits == id
+      pressed = nil
+      pressAwaits = nil
+      tracker.finish(skipped ? .changed : .ended)
+      // The sleep timer ends this song: in a mix, the music stops where the mix ends; at a cut, here.
+      if sleep.stopsAtSongEnd() {
+        if let mix = engine.mix, mix.to == id { pauseAtMixEnd = mix.end } else { queue.playing = false }
+      }
       tracker.start(joined.item.track)
       queue.next(auto: true)
       if let entry = currentEntry { loaded = (entry, joined.item) }
@@ -369,8 +526,14 @@ public final class Player {
       // The sleep timer's "end of song": on to the next song, paused, for when you're back.
       if sleep.stopsAtSongEnd() { queue.playing = false }
       sync()
-    case .mixMissed:
-      break  // Task 12 handles it.
+    case .mixMissed(let id):
+      missedMixes.insert(id)
+      // A press of Next whose mix couldn't be made in time goes through as a plain skip.
+      if pressed?.id == id || pressAwaits == id {
+        pressed = nil
+        pressAwaits = nil
+        change { $0.next() }
+      }
     case .failed(let id, let failure):
       guard loaded?.item.id == id else { return }
       error = failure.message

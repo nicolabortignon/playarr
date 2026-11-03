@@ -44,12 +44,16 @@ final class FakeBackend: PlayerBackend {
 
 extension Player {
   /// A Player on an offline engine whose songs are 441 Hz sines (see `Signals`).
-  static func testing(_ backend: FakeBackend = FakeBackend(), directory: URL = temporaryDirectory(), settings: PlaybackSettings? = nil) throws -> Player {
+  static func testing(
+    _ backend: FakeBackend = FakeBackend(), directory: URL = temporaryDirectory(), settings: PlaybackSettings? = nil,
+    scheduler: (any Scheduling)? = nil, signals: [Int: @Sendable (Int64, Int) -> Float] = [:]
+  ) throws -> Player {
     let defaults = UserDefaults(suiteName: UUID().uuidString)!
     return try Player(
       backend: backend, directory: directory, settings: settings ?? PlaybackSettings(defaults: defaults),
       makeEngine: { try AudioEngine(manualRendering: true, makeSource: $0) },
-      makeSource: { item, frame in SignalSource(seconds: item.track.duration, from: frame, signal: Signals.sine) })
+      makeSource: { item, frame in SignalSource(seconds: item.track.duration, from: frame, signal: signals[item.track.id] ?? Signals.sine) },
+      scheduler: scheduler)
   }
 
   /// Renders `seconds` in steps of 0.1 s, ticking the Player's clock between them.
