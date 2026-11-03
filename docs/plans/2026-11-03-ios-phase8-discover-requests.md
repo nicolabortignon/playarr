@@ -1673,6 +1673,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `DiscoverContext(api:account:clock:notifier:toast:forward:)`, without the `libraryArtistPage`/`libraryAlbumPage`/`openSearch` closures (the library pages are `Route`s, and Search opens through `AppRouter.search(_:)`, Task 21). It is the account's only health poller. One more test follows `start()` and `stop()` with `TestClock`, which gained `sleeping` (how many sleep on it).
+
 ---
 
 ### Task 7: Where Discover links lead, and Search's "Not in your library" model

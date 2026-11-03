@@ -77,6 +77,9 @@ final class TestClock: Clock, @unchecked Sendable {
     }
   }
 
+  /// How many are sleeping on this clock now.
+  var sleeping: Int { state.withLock { $0.sleepers.count } }
+
   /// How long the first sleeper still has to sleep, if something is sleeping.
   var pendingSleep: Duration? {
     state.withLock { state in state.sleepers.first.map { state.now.duration(to: $0.deadline) } }
