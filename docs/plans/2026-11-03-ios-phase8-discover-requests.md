@@ -4021,6 +4021,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `TrackMetadataModel(trackId:api:toast:invalidate:)`; the tests answer from `FakeAPI` and read the calls' order from it.
+
 ---
 
 ### Task 15: The Show metadata sheet
