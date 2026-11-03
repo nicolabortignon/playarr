@@ -115,6 +115,27 @@ describe('folderSync', () => {
     expect(sync.albums.find((a) => a.title === 'Loose songs')!.releaseDate).toBeUndefined();
   });
 
+  it('never gives a compilation’s cover to the albums its songs land on', () => {
+    const va = { albumArtist: 'Various Artists', album: '00s Hits - 100 Top Songs' };
+    // Left as tagged: a loose song, drawn without the compilation's picture.
+    const loose = folderSync([entry('03. Coldplay - Yellow.mp3', { ...va, artist: 'Coldplay', title: 'Yellow' })], EMPTY);
+    expect(loose.albums[0]).toMatchObject({ title: 'Loose songs', fileArt: false });
+    // Matched song by song (the overlay laid over its tags): the album's own cover, from the Cover Art Archive.
+    const matched = folderSync(
+      [
+        {
+          ...entry('03. Coldplay - Yellow.mp3', { ...va, artist: 'Coldplay', title: 'Yellow', albumArtist: 'Coldplay', album: 'Parachutes', releaseGroupMbid: 'rg-p' }),
+          compilation: true,
+        },
+      ],
+      EMPTY,
+    );
+    expect(matched.albums[0]!.coverUrl).toContain(encodeURIComponent('coverartarchive.org/release-group/rg-p/front-500'));
+    expect(matched.albums[0]!.fileArt).toBeUndefined();
+    // Any other folder album still draws its cover from its files.
+    expect(folderSync([entry('A/Album/01.flac', { title: 'One', album: 'Album', albumArtist: 'A' })], EMPTY).albums[0]).not.toHaveProperty('fileArt');
+  });
+
   it('keeps a song whose own artist is Various Artists, too, under its album', () => {
     const sync = folderSync([entry('VA/Now 54/01.mp3', { albumArtist: 'Various Artists', artist: 'Various Artists', album: 'Now 54', title: 'Intro' })], EMPTY);
     expect(sync.albums[0]!.title).toBe('Now 54');

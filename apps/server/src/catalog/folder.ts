@@ -3,6 +3,7 @@ import { albumKey as albumNameKey, normalize } from '../library/search.ts';
 import { albumKeyFor, artistKeyFor, songNameKey, trackKeyFor } from './keys.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
 import { isVariousArtists } from './songMatch.ts';
+import { coverArtArchive, remoteArtUrl } from '../discover/art.ts';
 import type { TagInfo } from './tags.ts';
 import type { KnownTrack, NameIndex, SourceAlbum, SourceArtist, SourceSync, SourceTrack } from './types.ts';
 
@@ -16,6 +17,8 @@ export interface FolderEntry {
   /** When the file appeared on this disk, where known (see FoundFile.createdMs). */
   createdMs?: number;
   tags: TagInfo;
+  /** Its own tags call it a various-artists compilation's song, whatever a match has said since. */
+  compilation?: boolean;
 }
 
 /** Folder tags are trusted less than Lidarr's metadata (lower wins). */
@@ -76,6 +79,8 @@ export function folderSync(
     const t: TagInfo = various
       ? { ...e.tags, albumArtist: undefined, albumArtistMbid: undefined, album: undefined, releaseGroupMbid: undefined, releaseId: undefined, year: undefined, trackTotal: undefined }
       : e.tags;
+    // Its pictures, embedded or beside it, are the compilation's cover.
+    const fromCompilation = various || !!e.compilation;
     let artistName = various ? e.tags.artist! : d.artistName;
     const albumTitle = various ? undefined : d.albumTitle;
     const title = d.title;
@@ -128,6 +133,10 @@ export function folderSync(
     }
     album.releaseDate ??= t.year ? `${t.year}-01-01T00:00:00Z` : undefined;
     for (const g of t.genres) if (album.genres.length < 3 && !album.genres.includes(g)) album.genres.push(g);
+    if (fromCompilation) {
+      if (album.mbid) album.coverUrl ??= remoteArtUrl(coverArtArchive(album.mbid, 500));
+      else album.fileArt = false;
+    }
     if (t.trackTotal && (album.totalTrackCount ?? 0) < t.trackTotal) album.totalTrackCount = t.trackTotal;
     const release = albumTitle && t.releaseId ? releases.get(t.releaseId) : undefined;
     if (release) {

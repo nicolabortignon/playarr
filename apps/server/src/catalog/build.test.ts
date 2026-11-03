@@ -96,6 +96,18 @@ describe('buildCatalog', () => {
     expect(first.coverUrl).toBe(album.coverUrl);
   });
 
+  it('draws no artwork from files whose pictures are another album’s', () => {
+    const store = new CatalogStore(freshDb());
+    const folder = store.addSource('folder', 'Music');
+    const sync = mezzanine();
+    sync.copies = sync.copies.map((c) => ({ ...c, preferredId: undefined }));
+    sync.albums = sync.albums.map((a) => ({ ...a, fileArt: false as const }));
+    store.applySync(folder, sync);
+    const album = buildCatalog(store.load()).albums.get(70)!;
+    expect(album.coverUrl).toBeUndefined();
+    expect(album.tracks[0]!.coverUrl).toBeUndefined();
+  });
+
   describe('best copy', () => {
     function twoSources(lidarrFormat: typeof FLAC, folderFormat: typeof FLAC) {
       const { db, store } = lidarrOnly();

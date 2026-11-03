@@ -4,6 +4,7 @@ import { join, posix } from 'node:path';
 import { folderSync, type FolderEntry } from './folder.ts';
 import type { FolderFs, FoundFile } from './folderFs.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
+import { isVariousArtists } from './songMatch.ts';
 import type { CatalogStore } from './store.ts';
 import type { TagInfo } from './tags.ts';
 import type { CatalogSource, SourceSync } from './types.ts';
@@ -77,6 +78,7 @@ export class FolderSource implements CatalogSource {
     const matches = store.matches(sourceId);
     const releases = new Map<string, MbReleaseInfo>();
     for (const e of entries) {
+      if (isVariousArtists(e.tags.albumArtist ?? '')) e.compilation = true;
       const m = matches.get(e.rel);
       if (!m?.overlay || (m.state !== 'auto' && m.state !== 'manual')) continue;
       e.tags = { ...e.tags, ...m.overlay };

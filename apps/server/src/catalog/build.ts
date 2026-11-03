@@ -146,8 +146,10 @@ export function buildCatalog(rows: CatalogRows): Catalog {
       (a, b) => a.discNumber - b.discNumber || a.trackNumber - b.trackNumber,
     );
     const first = entry.tracks[0]!;
-    // Folder albums have no artwork URL of their own: draw it from the first song's file.
-    const fallbackCover = kindOf.get(files.get(first.fileId)!.sourceId) === 'folder' ? `/art/copy/${first.fileId}` : undefined;
+    // Folder albums have no artwork URL of their own: draw it from the first song's file, unless its
+    // pictures are another album's (a compilation's).
+    const fallbackCover =
+      row.meta.fileArt !== false && kindOf.get(files.get(first.fileId)!.sourceId) === 'folder' ? `/art/copy/${first.fileId}` : undefined;
     const detail = toAlbumDetail(row, artist, entry.tracks, entry.added, missing, fallbackCover);
     for (const t of entry.tracks) t.coverUrl ??= detail.coverUrl;
     albums.set(albumId, detail);

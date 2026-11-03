@@ -49,13 +49,20 @@ describe('MatchSummary', () => {
 });
 
 describe('AlbumSummary', () => {
-  it('says how many albums the source has whole, in part, or unidentified', () => {
+  const counters = () => screen.getAllByRole('listitem').map((li) => li.textContent);
+
+  it('counts the source’s albums complete, incomplete and unidentified, each on its own', () => {
     render(<AlbumSummary source={folder({ albumsComplete: 10, albumsIncomplete: 918, albumsUnknown: 511 })} />);
-    expect(screen.getByText('10 Complete Albums · 918 Incomplete Albums · 511 Unidentified')).toBeTruthy();
+    expect(counters()).toEqual(['10Complete Albums', '918Incomplete Albums', '511Unidentified']);
   });
 
-  it('leaves out what it has none of', () => {
-    render(<AlbumSummary source={folder({ albumsComplete: 1, albumsIncomplete: 7 })} />);
-    expect(screen.getByText('1 Complete Album · 7 Incomplete Albums')).toBeTruthy();
+  it('shows every counter, at none too, and one album in the singular', () => {
+    render(<AlbumSummary source={folder({ albumsComplete: 1 })} />);
+    expect(counters()).toEqual(['1Complete Album', '0Incomplete Albums', '0Unidentified']);
+  });
+
+  it('shows nothing for a source without albums', () => {
+    const { container } = render(<AlbumSummary source={folder({ albums: 0 })} />);
+    expect(container.textContent).toBe('');
   });
 });

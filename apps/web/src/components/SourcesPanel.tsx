@@ -191,15 +191,24 @@ function SourceRow({
   );
 }
 
-/** How much of its albums a source has: complete, incomplete, or unidentified (their length unknown). */
+/** How much of its albums a source has: complete, incomplete, or unidentified (their length unknown), each counted. */
 export function AlbumSummary({ source: s }: { source: SourceInfo }) {
-  const parts = [
-    s.albumsComplete > 0 && plural(s.albumsComplete, 'Complete Album'),
-    s.albumsIncomplete > 0 && plural(s.albumsIncomplete, 'Incomplete Album'),
-    s.albumsUnknown > 0 && `${s.albumsUnknown} Unidentified`,
-  ].filter(Boolean);
-  if (!parts.length) return null;
-  return <div className="mt-1 text-[13px] text-paper-dim">{parts.join(' · ')}</div>;
+  if (!s.albums) return null;
+  const counters = [
+    [s.albumsComplete, 'Complete Album', 'Complete Albums'],
+    [s.albumsIncomplete, 'Incomplete Album', 'Incomplete Albums'],
+    [s.albumsUnknown, 'Unidentified', 'Unidentified'],
+  ] as const;
+  return (
+    <ul className="mt-2 flex flex-wrap gap-2" aria-label="Albums">
+      {counters.map(([n, one, many]) => (
+        <li key={one} className="flex items-baseline gap-1.5 rounded-md bg-ink-800 px-2 py-1">
+          <span className="font-mono text-[14px] text-paper tabular-nums">{n}</span>
+          <span className="text-[12px] text-paper-dim">{n === 1 ? one : many}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** How a folder's albums were matched: those not matched open the review, to match them by hand. */
