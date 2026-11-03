@@ -2243,6 +2243,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `FindArtistModel(api:name:album:)`, `Format.plural`. The lookup tests use `FakeAPI` (and check the name asked for); one more loads a discography again after MusicBrainz failed.
+
 ---
 
 ### Task 9: A request row's small print
