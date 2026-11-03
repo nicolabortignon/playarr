@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import type { Library } from '../library/library.ts';
 import { RECORDING_ID } from './recordingId.ts';
-import { requireLocal } from './settings.ts';
+import { requireAdmin } from '../accounts/rights.ts';
 
 const input = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(50) });
 const analyzeInput = z.object({ again: z.boolean().optional() });
@@ -66,7 +66,7 @@ export function mixMapRoutes(
   // → Analysis switch does when turned on (and from the home network, like that setting), without
   // turning it on; pressed twice, the songs already waiting aren't queued again. With `again`, Analyse
   // all again: every song, done ones included. Beat, sound or loudness analysis, tag lookup, or all of them.
-  app.post<{ Params: { kind: string } }>('/api/analysis/:kind', { onRequest: requireLocal }, async (req, reply) => {
+  app.post<{ Params: { kind: string } }>('/api/analysis/:kind', { onRequest: requireAdmin }, async (req, reply) => {
     const kind = ANALYSIS_KINDS.find((k) => k === req.params.kind);
     if (!kind) return reply.code(404).send({ error: 'Unknown analysis' });
     if (kind !== 'tags' && kind !== 'all' && !analyzer.canAnalyzeAudio) {

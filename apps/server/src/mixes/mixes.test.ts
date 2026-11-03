@@ -2,6 +2,7 @@ import type { Camelot, MixMapSummary } from '@playarr/mix';
 import type { Album, Artist, Track } from '@playarr/shared';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
+import { account, actAs, asAccount } from '../accounts/testAccess.ts';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { freshDb } from '../catalog/testFixtures.ts';
@@ -87,6 +88,15 @@ const at = (iso: string) => new Date(iso);
 const map = (bpm: number, camelot: Camelot): MixMapSummary => ({ bpm, beatConfidence: 0.9, gridStable: true, key: { camelot, confidence: 0.9 } });
 
 describe('Mixes', () => {
+  it('lets every account see and clear its own history, and only admins change the mixes', async () => {
+    const { app } = setup();
+    actAs(app, [account(1, { role: 'admin' }), account(2)]);
+    expect((await app.inject({ url: '/api/settings/mixes', headers: asAccount(2), remoteAddress: AWAY })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'PUT', url: '/api/settings/mixes', headers: asAccount(2), payload: { length: 75 } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'PUT', url: '/api/settings/mixes', headers: asAccount(1), payload: { length: 75 }, remoteAddress: AWAY })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'DELETE', url: '/api/settings/mixes/history', headers: asAccount(2), remoteAddress: AWAY })).statusCode).toBe(200);
+  });
+
   it('makes mixes once per period and keeps them, even as listening goes on', async () => {
     const { mixes, history, tracks } = setup();
     const first = await mixes.list('UTC', at('2026-11-01T10:05:00Z'));

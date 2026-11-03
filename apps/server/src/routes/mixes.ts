@@ -11,8 +11,7 @@ import { isStatsRange, listeningStats } from '../mixes/stats.ts';
 import { validTimeZone } from '../mixes/time.ts';
 import { stripAlbum, type Library } from '../library/library.ts';
 import { PlaylistError } from '../playlists.ts';
-import { accountId } from '../accounts/rights.ts';
-import { requireLocal } from './settings.ts';
+import { accountId, requireAdmin, requireOwn } from '../accounts/rights.ts';
 
 const playsInput = z.object({
   plays: z
@@ -148,12 +147,13 @@ export function mixRoutes(
     history: history.stats(who(req)),
   });
 
-  // Settings → Mixes: for everyone, changed from the home network like every setting.
-  const editable = { onRequest: requireLocal };
+  // Settings → Mixes: how mixes are made is the server's (admins); the history and ListenBrainz are each account's.
+  const adminOnly = { onRequest: requireAdmin };
+  const own = { onRequest: requireOwn };
 
-  app.get('/api/settings/mixes', editable, (req) => info(req));
+  app.get('/api/settings/mixes', own, (req) => info(req));
 
-  app.put('/api/settings/mixes', editable, (req, reply) => {
+  app.put('/api/settings/mixes', adminOnly, (req, reply) => {
     const parsed = settingsInput.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') });
     const current = readMixSettings(store);
@@ -168,8 +168,8 @@ export function mixRoutes(
   const { scrobbler } = deps;
   if (scrobbler) {
     const lbInput = z.object({ token: z.string().trim().min(1).max(200).optional(), enabled: z.boolean().optional() });
-    app.get('/api/settings/listenbrainz', editable, (req) => scrobbler.info(who(req)));
-    app.put('/api/settings/listenbrainz', editable, (req, reply) =>
+    app.get('/api/settings/listenbrainz', own, (req) => scrobbler.info(who(req)));
+    app.put('/api/settings/listenbrainz', own, (req, reply) =>
       handle(reply, async () => {
         const parsed = lbInput.safeParse(req.body ?? {});
         if (!parsed.success) return reply.code(400).send({ error: 'Invalid settings' });
@@ -178,12 +178,12 @@ export function mixRoutes(
         return scrobbler.info(who(req));
       }),
     );
-    app.delete('/api/settings/listenbrainz', editable, (req) => scrobbler.disconnect(who(req)));
-    app.post('/api/settings/listenbrainz/earlier', editable, (req) => scrobbler.sendEarlier(who(req)));
+    app.delete('/api/settings/listenbrainz', own, (req) => scrobbler.disconnect(who(req)));
+    app.post('/api/settings/listenbrainz/earlier', own, (req) => scrobbler.sendEarlier(who(req)));
   }
 
   /** Forget everything played; the mixes are made again from scratch. */
-  app.delete('/api/settings/mixes/history', editable, async (req) => {
+  app.delete('/api/settings/mixes/history', own, async (req) => {
     history.clear(who(req));
     await mixes.reset(who(req));
     return info(req);

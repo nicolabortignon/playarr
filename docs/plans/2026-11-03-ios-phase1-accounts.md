@@ -2516,7 +2516,7 @@ Expected: FAIL: members get through (or admins away get 403) because every guard
 import { isAdmin, requireAdmin } from '../accounts/rights.ts';
 ```
 
-Delete lines 116-121 (`const isLocal = …` and `requireLocal`). Line 162 becomes `const editable = { onRequest: requireAdmin };` and line 165 becomes `const canEdit = isAdmin(req);`.
+Delete lines 116-121 (`const isLocal = …` and `requireLocal`). Line 162 becomes `const editable = { onRequest: requireAdmin };` and line 165 becomes `const canEdit = isAdmin(req);`. Drop `FastifyRequest` from the `fastify` type import (nothing else in the file uses it; the typecheck doesn't flag unused imports).
 
 `apps/server/src/routes/api.ts`: line 7 becomes:
 
@@ -2595,7 +2595,9 @@ corepack pnpm -C apps/server typecheck
 grep -rn "requireLocal\|isLocalRequest" apps/server/src --include='*.ts' | grep -v "\.test\.ts"
 ```
 
-Expected: PASS; the grep lists only `net.ts` (the definition) and `accounts/rights.ts`.
+Expected: PASS; the grep lists only `net.ts` (the definition), `accounts/rights.ts`, and `routes/auth.ts` (whose `requireLocalSetup` contains the string).
+
+*As executed:* the plan's tests and guards fitted the code as written (helpers `setup()` and `withRoutes()`, `HOME`/`AWAY`, and `actAs` added after the routes all work: Fastify applies root hooks added before `ready`). Only the unused `FastifyRequest` import and the grep's third line differed.
 
 **Step 5: Commit**
 

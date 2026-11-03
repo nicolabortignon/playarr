@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
+import { account, actAs, asAccount } from '../accounts/testAccess.ts';
 import { Organizer } from '../catalog/organizer.ts';
 import { SourceManager } from '../catalog/sources.ts';
 import { CatalogStore } from '../catalog/store.ts';
@@ -57,6 +58,15 @@ function fakeMatcher() {
 }
 
 describe('settings routes', () => {
+  it('lets admin accounts change settings from anywhere, and members from nowhere', async () => {
+    const { app } = setup();
+    actAs(app, [account(1, { role: 'admin' }), account(2)]);
+    expect((await app.inject({ method: 'GET', url: '/api/settings/folders', headers: asAccount(2), remoteAddress: HOME })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: '/api/settings/folders', headers: asAccount(1), remoteAddress: AWAY })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/api/settings/sources', headers: asAccount(2), remoteAddress: HOME })).json().canEdit).toBe(false);
+    expect((await app.inject({ method: 'GET', url: '/api/settings/sources', headers: asAccount(1), remoteAddress: AWAY })).json().canEdit).toBe(true);
+  });
+
   it('browses folders from the home network only', async () => {
     const { app } = setup();
     const away = await app.inject({ method: 'GET', url: '/api/settings/folders', remoteAddress: AWAY });

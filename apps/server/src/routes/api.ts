@@ -4,7 +4,7 @@ import type { Config } from '../config.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { mapPath, type MediaSource } from '../media/index.ts';
-import { requireLocal } from './settings.ts';
+import { canRequest, requireAdmin } from '../accounts/rights.ts';
 
 const ALBUM_SORTS: AlbumSort[] = ['title', 'artist', 'year', 'added'];
 
@@ -45,7 +45,7 @@ export function apiRoutes(
     return result;
   };
 
-  app.get('/api/health', async (): Promise<HealthStatus> => {
+  app.get('/api/health', async (req): Promise<HealthStatus> => {
     const [lidarrResult, mediaResult] = await probes();
     const lidarrOk = lidarrResult.status === 'fulfilled';
     const mediaOk = mediaResult.status === 'fulfilled';
@@ -60,12 +60,13 @@ export function apiRoutes(
         ? { source: media.kind, ok: true }
         : { source: media.kind, ok: false, error: (mediaResult.reason as Error).message },
       library: await library.stats(),
-      requests: lidarr.configured && deps.requestSettings().enabled,
+      // Request buttons show only to accounts that may use them.
+      requests: lidarr.configured && deps.requestSettings().enabled && canRequest(req),
     };
   });
 
-  // A full rescan is heavy (every folder and Lidarr): from the home network only, like settings.
-  app.post('/api/library/refresh', { onRequest: requireLocal }, async () => {
+  // A full rescan is heavy (every folder and Lidarr): for admins, like settings.
+  app.post('/api/library/refresh', { onRequest: requireAdmin }, async () => {
     await library.refresh();
     return library.stats();
   });

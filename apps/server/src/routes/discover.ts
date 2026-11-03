@@ -1,6 +1,7 @@
 import type { AlbumRef } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Discover } from '../discover/discover.ts';
+import { requireCanRequest } from '../accounts/rights.ts';
 import { RequestError, type Requests } from '../discover/requests.ts';
 
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -65,7 +66,7 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
 
   app.get('/api/requests', () => requests.list());
 
-  app.post<{ Body: Partial<AlbumRef> }>('/api/requests', async (req, reply) => {
+  app.post<{ Body: Partial<AlbumRef> }>('/api/requests', { onRequest: requireCanRequest }, async (req, reply) => {
     const { mbid, releaseMbid, artistName, albumTitle } = req.body ?? {};
     if ((mbid !== undefined && !MBID.test(mbid)) || (releaseMbid !== undefined && !MBID.test(releaseMbid))) {
       return reply.code(400).send({ error: 'Invalid MusicBrainz id' });
@@ -81,7 +82,7 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
     }
   });
 
-  app.delete<{ Params: { mbid: string } }>('/api/requests/:mbid', async (req, reply) => {
+  app.delete<{ Params: { mbid: string } }>('/api/requests/:mbid', { onRequest: requireCanRequest }, async (req, reply) => {
     await requests.remove(req.params.mbid);
     return reply.code(204).send();
   });

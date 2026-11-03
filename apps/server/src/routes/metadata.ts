@@ -6,9 +6,9 @@ import type { CatalogStore } from '../catalog/store.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { trackMetadata } from '../library/trackMetadata.ts';
-import { isLocalRequest } from '../net.ts';
+import { isAdmin, requireAdmin } from '../accounts/rights.ts';
 
-/** Track menu → Show metadata. File paths and source locations only for the home network. */
+/** Track menu → Show metadata. File paths and source locations only for admins. */
 export function metadataRoutes(
   app: FastifyInstance,
   deps: {
@@ -20,11 +20,8 @@ export function metadataRoutes(
     lidarr?: Pick<LidarrClient, 'configured' | 'trackFile' | 'command'>;
   },
 ) {
-  // Show metadata → Match again. Changes the catalog, so the home network only, like Settings.
-  app.post<{ Params: { fileId: string } }>('/api/files/:fileId/rematch', async (req, reply): Promise<RematchResult | void> => {
-    if (!isLocalRequest(req)) {
-      return reply.code(403).send({ error: 'Matching songs again works from your home network' });
-    }
+  // Show metadata → Match again. Changes the catalog, so for admins, like Settings.
+  app.post<{ Params: { fileId: string } }>('/api/files/:fileId/rematch', { onRequest: requireAdmin }, async (req, reply): Promise<RematchResult | void> => {
     const fileId = Number(req.params.fileId);
     const copy = Number.isInteger(fileId) && fileId > 0 ? deps.store.copy(fileId) : undefined;
     const source = copy && deps.store.source(copy.sourceId);
@@ -73,7 +70,7 @@ export function metadataRoutes(
         },
       },
       id,
-      isLocalRequest(req),
+      isAdmin(req),
     );
     return meta ?? reply.code(404).send({ error: 'Track not found' });
   });

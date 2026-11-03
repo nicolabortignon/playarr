@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
+import { account, actAs, asAccount } from '../accounts/testAccess.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { FLAC, freshDb, mezzanine } from '../catalog/testFixtures.ts';
 import type { Library } from './library.ts';
@@ -92,6 +93,15 @@ describe('POST /api/files/:fileId/rematch', () => {
   }
   const post = (app: ReturnType<typeof Fastify>, fileId: number | string, remoteAddress = '192.168.1.20') =>
     app.inject({ method: 'POST', url: `/api/files/${fileId}/rematch`, remoteAddress });
+
+  it('is for admins once there are accounts, and shows them paths from anywhere', async () => {
+    const { app, folderCopy } = withRoutes();
+    actAs(app, [account(1, { role: 'admin' }), account(2)]);
+    expect((await app.inject({ method: 'POST', url: `/api/files/${folderCopy.id}/rematch`, headers: asAccount(2), remoteAddress: '192.168.1.20' })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url: `/api/files/${folderCopy.id}/rematch`, headers: asAccount(1), remoteAddress: '203.0.113.9' })).statusCode).toBe(200);
+    expect((await app.inject({ url: '/api/tracks/700/metadata', headers: asAccount(1), remoteAddress: '203.0.113.9' })).json().pathsHidden).toBe(false);
+    expect((await app.inject({ url: '/api/tracks/700/metadata', headers: asAccount(2), remoteAddress: '192.168.1.20' })).json().pathsHidden).toBe(true);
+  });
 
   it('matches a folder file again, rebuilds, and says which song it belongs to now', async () => {
     const { app, matcher, rebuild, folderCopy } = withRoutes();

@@ -5,7 +5,7 @@ import type {
   RequestSettingsInfo,
   SourcesResponse,
 } from '@playarr/shared';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Matcher } from '../catalog/matcher.ts';
 import { OrganizeError, type Organizer } from '../catalog/organizer.ts';
@@ -13,7 +13,7 @@ import { SourceError, type SourceManager } from '../catalog/sources.ts';
 import type { CatalogStore } from '../catalog/store.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
-import { isLocalRequest } from '../net.ts';
+import { isAdmin, requireAdmin } from '../accounts/rights.ts';
 import { UpdateError, type UpdateBridge } from '../update/bridge.ts';
 
 /** Where a folder is, and how to reach it over SSH, SFTP or SMB. */
@@ -113,13 +113,6 @@ export function readRequestSettings(store: Pick<CatalogStore, 'appSetting'>): Re
 type LibraryControl = Pick<Library, 'refresh' | 'reload' | 'refreshing'>;
 type Id = { Params: { id: string } };
 
-const isLocal = (req: FastifyRequest) => isLocalRequest(req);
-
-/** Until Playarr has a login, settings can only be changed from the local network. */
-export async function requireLocal(req: FastifyRequest, reply: FastifyReply) {
-  if (!isLocal(req)) return reply.code(403).send({ error: 'Settings can only be changed from your home network' });
-}
-
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body ?? {});
   if (!result.success) {
@@ -159,10 +152,10 @@ export function settingsRoutes(
   const { sources, library, matcher, organizer } = deps;
   // Sync errors are shown per source in the panel, so a failed background sync needs no handling here.
   const syncInBackground = () => void library.refresh().catch(() => {});
-  const editable = { onRequest: requireLocal };
+  const editable = { onRequest: requireAdmin };
 
   app.get('/api/settings/sources', (req): SourcesResponse => {
-    const canEdit = isLocal(req);
+    const canEdit = isAdmin(req);
     return { sources: sources.list({ includeSettings: canEdit, syncing: library.refreshing }), canEdit };
   });
 
