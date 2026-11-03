@@ -87,8 +87,10 @@ export interface SourceSync {
   /**
    * What copies' addedAt means. 'source' (default, Lidarr): when the source got the file, stored as is.
    * 'firstSeen' (folders): only the file's own time. The catalog then dates each file by when Playarr
-   * first found it, keeping that date on later scans; the file time is used only on the source's first
-   * sync, so an existing collection keeps its order instead of all arriving "now".
+   * first found it, keeping that date on later scans; the file time is used only when the folder is the
+   * library's first music, so an existing collection set up on day one keeps its order instead of all
+   * arriving "now". A folder added later is new to the library: in Recently added, whenever its files
+   * arrived on disk.
    */
   addedAt?: 'source' | 'firstSeen';
 }

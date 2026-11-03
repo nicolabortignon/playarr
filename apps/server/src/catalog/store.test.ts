@@ -76,7 +76,7 @@ describe('CatalogStore', () => {
     expect(added()).toBe('2026-10-01T10:00:00.000Z');
   });
 
-  it('dates folder files by when Playarr found them, using file times only on the first scan', () => {
+  it('dates folder files by when Playarr found them, using file times only for the library’s first music', () => {
     const store = new CatalogStore(freshDb());
     const folder = store.addSource('folder', 'Music');
     const first = mezzanine();
@@ -102,6 +102,20 @@ describe('CatalogStore', () => {
     skewed.copies = [{ ...skewed.copies[0]!, addedAt: '2999-01-01T00:00:00Z' }];
     other.applySync(src, skewed);
     expect(other.load().copies[0]!.addedAt! < '2999').toBe(true);
+  });
+
+  it('dates a folder added to a library that already has music by when it was added, whatever its file times', () => {
+    const { store, sourceId } = setup();
+    store.applySync(sourceId, mezzanine());
+    const folder = store.addSource('folder', '00s Hits');
+    const hits = mezzanine();
+    hits.addedAt = 'firstSeen';
+    hits.copies = hits.copies.map((c) => ({ ...c, ref: `hits/${c.ref}`, preferredId: undefined, addedAt: '2026-10-29T17:25:00Z' }));
+    const before = new Date().toISOString();
+    store.applySync(folder, hits);
+    const dates = store.load().copies.filter((c) => c.sourceId === folder).map((c) => c.addedAt!);
+    expect(dates.length).toBe(2);
+    expect(dates.every((d) => d >= before)).toBe(true);
   });
 
   it('re-dates folder files whose date was cleared (the birth-time migration), keeping Lidarr dates', () => {

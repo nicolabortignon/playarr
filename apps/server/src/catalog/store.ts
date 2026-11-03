@@ -82,10 +82,11 @@ export interface CatalogRows {
 
 type CatalogTable = 'catalog_artists' | 'catalog_albums' | 'catalog_tracks';
 
-/** How a sync's copies are dated (SourceSync.addedAt), and whether the source had no copies before. */
+/** How a sync's copies are dated (SourceSync.addedAt), and whether files may keep their own times. */
 interface CopyDating {
   mode: 'source' | 'firstSeen';
-  firstSync: boolean;
+  /** The library's first music: the first sync of a source while no other source has any copy. */
+  ownTimes: boolean;
 }
 
 /** A date as a canonical ISO string (so dates from different sources compare correctly as text), or null. */
@@ -315,7 +316,8 @@ export class CatalogStore {
       const seen = new Set<number>();
       const dating: CopyDating = {
         mode: sync.addedAt ?? 'source',
-        firstSync: !this.db.prepare('SELECT 1 FROM copies WHERE source_id = ? LIMIT 1').get(sourceId),
+        // A folder added to a library that already has music is new to it, whenever its files arrived on disk.
+        ownTimes: !this.db.prepare('SELECT 1 FROM copies LIMIT 1').get(),
       };
       for (const copy of sync.copies) {
         const trackId = trackIds.get(copy.trackKey);
@@ -849,14 +851,15 @@ export class CatalogStore {
     const existing = this.db
       .prepare('SELECT id, added_at FROM copies WHERE source_id = ? AND source_ref = ?')
       .get(sourceId, copy.ref) as { id: number; added_at: string | null } | undefined;
-    // Folders: when Playarr first found the file (its own time only on the first scan, never ahead of now).
+    // Folders: when Playarr first found the file (its own time only when it's the library's first music,
+    // never ahead of now).
     // Lidarr: when Lidarr imported it.
     const addedAt =
       dating.mode === 'source'
         ? own
         : existing
           ? (existing.added_at ?? own ?? now)
-          : dating.firstSync && own && own < now
+          : dating.ownTimes && own && own < now
             ? own
             : now;
     const fields = [trackId, copy.path, copy.size, JSON.stringify(copy.format), addedAt, now] as const;
