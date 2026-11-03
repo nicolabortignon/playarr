@@ -223,7 +223,7 @@ describe('CatalogStore: managing sources', () => {
     const id = store.ensureSource('lidarr', 'Lidarr');
     // Two of Mezzanine's 11 songs.
     store.applySync(id, mezzanine());
-    expect(store.sourceCounts().get(id)).toEqual({ songs: 2, albums: 1, complete: 0, incomplete: 1, unknown: 0 });
+    expect(store.sourceCounts().get(id)).toEqual({ songs: 2, albums: 1, complete: 0, incomplete: 1, unknown: 0, songsComplete: 0, songsIncomplete: 2, songsUnknown: 0 });
 
     const folder = store.addSource('folder', 'Music', { path: '/m' });
     const album = (key: string, title: string, extra: object = {}) => ({ key, artistKey: 'a', title, albumType: 'Album', secondaryTypes: [], genres: [], ...extra });
@@ -236,7 +236,11 @@ describe('CatalogStore: managing sources', () => {
       copies: [copy('w1.flac', 'w1'), copy('w2.flac', 'w2'), copy('d1.flac', 'd1'), copy('l1.flac', 'l1')],
     });
     // The demo and the loose songs are unidentified.
-    expect(store.sourceCounts().get(folder)).toEqual({ songs: 4, albums: 3, complete: 1, incomplete: 0, unknown: 2 });
+    expect(store.sourceCounts().get(folder)).toEqual({ songs: 4, albums: 3, complete: 1, incomplete: 0, unknown: 2, songsComplete: 2, songsIncomplete: 0, songsUnknown: 2 });
+    // A song waiting for a match is unidentified, whatever its album: as many as the folder has not matched.
+    store.saveMatches(folder, [{ rel: 'w2.flac', groupKey: 'g', state: 'review', size: 1, mtimeMs: 1 }]);
+    expect(store.sourceCounts().get(folder)).toMatchObject({ complete: 1, songsComplete: 1, songsIncomplete: 0, songsUnknown: 3 });
+    expect(store.matchCounts().get(folder)).toMatchObject({ review: 1 });
   });
 
   it('keeps app settings', () => {
@@ -323,10 +327,11 @@ describe('CatalogStore: several sources', () => {
 });
 
 describe('CatalogStore: matching', () => {
-  it('counts albums matched, waiting and left as tagged, with the albums tags already identify', () => {
+  it('counts songs matched, waiting and left as tagged, with the songs tags already identify', () => {
     const store = new CatalogStore(freshDb());
     const id = store.addSource('folder', 'Music', { path: '/m' });
     const tags = (t: object) => ({ genres: [], duration: 200, format: FLAC, ...t });
+    const rels = ['x/1.flac', 'x/2.flac', 'y/1.flac', 'a.flac', 'b.flac', 'c.flac', 'c (copy).flac', 'd.flac'];
     store.saveFolderFiles(
       id,
       [
@@ -334,15 +339,26 @@ describe('CatalogStore: matching', () => {
         { rel: 'x/2.flac', size: 1, mtimeMs: 1, tags: tags({ recordingMbid: 'r2', releaseGroupMbid: 'rg-x' }) },
         { rel: 'y/1.flac', size: 1, mtimeMs: 1, tags: tags({ recordingMbid: 'r3' }) },
       ],
-      ['x/1.flac', 'x/2.flac', 'y/1.flac'],
+      rels,
     );
+    // c.flac and its copy are one song; gone.flac is no longer in the folder.
+    const song = (rel: string) => (rel.startsWith('c') ? 'c' : rel);
+    store.applySync(id, {
+      artists: [{ key: 'a', name: 'A', sortName: 'A', genres: [] }],
+      albums: [{ key: 'al', artistKey: 'a', title: 'Al', albumType: 'Album', secondaryTypes: [], genres: [] }],
+      tracks: [...new Set(rels.map(song))].map((key) => ({ key, albumKey: 'al', recordingId: key, title: key, trackNumber: 1, discNumber: 1, duration: 200, explicit: false })),
+      copies: rels.map((rel) => ({ ref: rel, trackKey: song(rel), path: `/m/${rel}`, size: 1, format: FLAC })),
+    });
     store.saveMatches(id, [
       { rel: 'a.flac', groupKey: 'g', state: 'auto', size: 1, mtimeMs: 1 },
-      { rel: 'b.flac', groupKey: 'g', state: 'auto', size: 1, mtimeMs: 1 },
+      { rel: 'b.flac', groupKey: 'g', state: 'manual', size: 1, mtimeMs: 1 },
       { rel: 'c.flac', groupKey: 'h', state: 'unmatched', size: 1, mtimeMs: 1 },
+      { rel: 'c (copy).flac', groupKey: 'h', state: 'review', size: 1, mtimeMs: 1 },
       { rel: 'd.flac', groupKey: 'i', state: 'ignored', size: 1, mtimeMs: 1 },
+      { rel: 'gone.flac', groupKey: 'j', state: 'review', size: 1, mtimeMs: 1 },
     ]);
-    expect(store.matchCounts().get(id)).toEqual({ matched: 2, review: 1, ignored: 1 });
+    expect(store.matchCounts().get(id)).toEqual({ matched: 4, review: 1, ignored: 1 });
+    expect(store.sourceCounts().get(id)).toMatchObject({ songs: 7, songsUnknown: 7 });
   });
 
   it('saves, reads and clears matches, keeping user decisions', () => {
@@ -354,7 +370,6 @@ describe('CatalogStore: matching', () => {
       { rel: 'c.flac', groupKey: 'h', state: 'review', candidates: ['rel-1', 'rel-2'], score: 0.6, size: 1, mtimeMs: 1 },
     ]);
     expect(store.matches(id).get('c.flac')).toMatchObject({ state: 'review', candidates: ['rel-1', 'rel-2'] });
-    expect(store.matchCounts().get(id)).toEqual({ matched: 1, review: 1, ignored: 0 });
     store.clearMatches(id);
     expect([...store.matches(id).keys()]).toEqual(['b.flac']);
   });

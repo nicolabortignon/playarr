@@ -103,9 +103,12 @@ export interface SourceCounts {
   complete: number;
   incomplete: number;
   unknown: number;
+  songsComplete: number;
+  songsIncomplete: number;
+  songsUnknown: number;
 }
 
-/** A folder source's album groups by how matching went (see matchCounts). */
+/** A folder source's songs by how matching went (see matchCounts). */
 export interface MatchCounts {
   matched: number;
   review: number;
@@ -222,11 +225,12 @@ export class CatalogStore {
     this.db.prepare('UPDATE sources SET last_error = ? WHERE id = ?').run(error, id);
   }
 
-  /** How many songs and albums each source has a copy of. */
   /**
    * The songs and albums each source has, its albums by how much of them it has: complete or incomplete
    * when the album's length is known (Lidarr's, a MusicBrainz match's, or the files' track total),
-   * unidentified otherwise, loose songs included (one album per artist).
+   * unidentified otherwise, loose songs included (one album per artist). Its songs too, by the same
+   * album they're on; a folder's song waiting for a match is unidentified whatever its album, so a folder
+   * has as many unidentified songs as songs not matched, and those left as tagged on albums of unknown length.
    */
   sourceCounts(): Map<number, SourceCounts> {
     const rows = this.db
@@ -234,23 +238,37 @@ export class CatalogStore {
         `WITH size AS (
            SELECT a.id AS album_id,
              MAX(COUNT(t.id), IFNULL(json_extract(a.meta, '$.totalTrackCount'), 0)) AS total,
-             json_extract(a.meta, '$.totalTrackCount') IS NOT NULL AS known,
-             IFNULL(json_extract(a.meta, '$.albumType') = 'Loose', 0) AS loose
+             json_extract(a.meta, '$.totalTrackCount') IS NOT NULL AND IFNULL(json_extract(a.meta, '$.albumType') <> 'Loose', 1) AS known
            FROM catalog_albums a JOIN catalog_tracks t ON t.album_id = a.id
            GROUP BY a.id
          ), have AS (
-           SELECT c.source_id AS id, t.album_id, COUNT(DISTINCT c.track_id) AS songs
+           SELECT c.source_id AS id, t.album_id, COUNT(DISTINCT c.track_id) AS songs,
+             COUNT(DISTINCT CASE WHEN m.state IN ('review', 'unmatched') THEN c.track_id END) AS waiting
            FROM copies c JOIN catalog_tracks t ON t.id = c.track_id
+           LEFT JOIN folder_matches m ON m.source_id = c.source_id AND m.rel_path = c.source_ref
            GROUP BY c.source_id, t.album_id
          )
          SELECT h.id, SUM(h.songs) AS songs, COUNT(*) AS albums,
-           SUM(s.known AND NOT s.loose AND h.songs >= s.total) AS complete,
-           SUM(s.known AND NOT s.loose AND h.songs < s.total) AS incomplete,
-           SUM(NOT s.known OR s.loose) AS unknown
+           SUM(s.known AND h.songs >= s.total) AS complete,
+           SUM(s.known AND h.songs < s.total) AS incomplete,
+           SUM(NOT s.known) AS unknown,
+           SUM(IIF(s.known AND h.songs >= s.total, h.songs - h.waiting, 0)) AS songsComplete,
+           SUM(IIF(s.known AND h.songs < s.total, h.songs - h.waiting, 0)) AS songsIncomplete,
+           SUM(IIF(s.known, h.waiting, h.songs)) AS songsUnknown
          FROM have h JOIN size s ON s.album_id = h.album_id
          GROUP BY h.id`,
       )
-      .all() as { id: number; songs: number; albums: number; complete: number; incomplete: number; unknown: number }[];
+      .all() as {
+        id: number;
+        songs: number;
+        albums: number;
+        complete: number;
+        incomplete: number;
+        unknown: number;
+        songsComplete: number;
+        songsIncomplete: number;
+        songsUnknown: number;
+      }[];
     return new Map(rows.map(({ id, ...counts }) => [id, counts]));
   }
 
@@ -680,34 +698,30 @@ export class CatalogStore {
   }
 
   /**
-   * Album groups per source: matched (on MusicBrainz, automatically or by the user's pick, named by the
+   * Songs per folder source: matched (on MusicBrainz, automatically or by the user's pick, named by the
    * user, or already identified by their tags), waiting for review (to choose a match, or found nowhere
-   * on MusicBrainz), and left as their tags describe them.
+   * on MusicBrainz), and left as their tags describe them. Counted from the files the folder has now,
+   * a song once however many files it has, as sourceCounts counts them.
    */
   matchCounts(): Map<number, MatchCounts> {
     const rows = this.db
       .prepare(
-        `SELECT source_id AS id,
-           COUNT(DISTINCT CASE WHEN state IN ('auto', 'manual') THEN group_key END) AS matched,
-           COUNT(DISTINCT CASE WHEN state IN ('review', 'unmatched') THEN group_key END) AS review,
-           COUNT(DISTINCT CASE WHEN state = 'ignored' THEN group_key END) AS ignored
-         FROM folder_matches GROUP BY source_id`,
+        `SELECT c.source_id AS id,
+           COUNT(DISTINCT CASE
+             WHEN m.state IN ('auto', 'manual') THEN c.track_id
+             WHEN m.state IS NULL AND json_extract(f.tags, '$.recordingMbid') IS NOT NULL
+               AND json_extract(f.tags, '$.releaseGroupMbid') IS NOT NULL THEN c.track_id
+           END) AS matched,
+           COUNT(DISTINCT CASE WHEN m.state IN ('review', 'unmatched') THEN c.track_id END) AS review,
+           COUNT(DISTINCT CASE WHEN m.state = 'ignored' THEN c.track_id END) AS ignored
+         FROM copies c
+         JOIN sources s ON s.id = c.source_id AND s.kind = 'folder'
+         LEFT JOIN folder_matches m ON m.source_id = c.source_id AND m.rel_path = c.source_ref
+         LEFT JOIN folder_files f ON f.source_id = c.source_id AND f.rel_path = c.source_ref
+         GROUP BY c.source_id`,
       )
       .all() as { id: number; matched: number; review: number; ignored: number }[];
-    // Files whose tags already name their recording and album are never matched: count their albums.
-    const tagged = this.db
-      .prepare(
-        `SELECT source_id AS id, COUNT(DISTINCT json_extract(tags, '$.releaseGroupMbid')) AS albums FROM folder_files
-         WHERE json_extract(tags, '$.recordingMbid') IS NOT NULL AND json_extract(tags, '$.releaseGroupMbid') IS NOT NULL
-         GROUP BY source_id`,
-      )
-      .all() as { id: number; albums: number }[];
-    const counts = new Map(rows.map(({ id, matched, review, ignored }) => [id, { matched, review, ignored }]));
-    for (const t of tagged) {
-      const c = counts.get(t.id) ?? { matched: 0, review: 0, ignored: 0 };
-      counts.set(t.id, { ...c, matched: c.matched + t.albums });
-    }
-    return counts;
+    return new Map(rows.map(({ id, ...counts }) => [id, counts]));
   }
 
   cachedRelease(releaseId: string): MbReleaseInfo | undefined {

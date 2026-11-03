@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { LidarrClient } from '../lidarr/client.ts';
 import { SourceError, SourceManager } from './sources.ts';
 import { CatalogStore } from './store.ts';
-import { freshDb, tempDir } from './testFixtures.ts';
+import { freshDb, mezzanine, tempDir } from './testFixtures.ts';
 
 const ENV = { url: 'http://lidarr:8686', apiKey: 'secret-key' };
 
@@ -295,6 +295,9 @@ describe('SourceManager', () => {
       const { dir, store, manager, cleanup } = withFolders();
       try {
         const music = manager.add({ kind: 'folder', settings: { path: join(dir, 'Music') } });
+        const sync = mezzanine();
+        sync.copies = [{ ...sync.copies[0]!, ref: 'a.flac' }];
+        store.applySync(music.id, sync);
         store.saveMatches(music.id, [{ rel: 'a.flac', groupKey: 'g', state: 'review', candidates: [], size: 1, mtimeMs: 1 }]);
         manager.useMatcher({ pendingGroups: () => 3, enqueue: () => {} });
         expect(manager.list({ includeSettings: true, syncing: false })[0]).toMatchObject({ review: 1, matching: 3 });

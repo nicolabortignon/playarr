@@ -116,7 +116,7 @@ describe('Matcher', () => {
     });
     await matcher.matchSource(sourceId);
     expect(store.matches(sourceId).get('Massive Attack/Mezzanine/01 Angel.flac')).toMatchObject({ state: 'review', candidates: ['rel-1'] });
-    expect(store.matchCounts().get(sourceId)).toEqual({ matched: 0, review: 1, ignored: 0 });
+    expect(matcher.reviewGroups(sourceId)).toHaveLength(1);
   });
 
   it('falls back to fingerprints for loose songs', async () => {
@@ -261,10 +261,12 @@ describe('Matcher', () => {
       sourceId,
       Object.keys(files).map((rel) => ({ rel, groupKey: 'various artists|00s hits 100 top songs', state: 'unmatched' as const, size: 100, mtimeMs: 1 })),
     );
-    expect(store.matchCounts().get(sourceId)).toEqual({ matched: 0, review: 1, ignored: 0 });
     await matcher.matchSource(sourceId);
     expect(store.matches(sourceId).get('03. Coldplay - Yellow.mp3')).toMatchObject({ state: 'auto', overlay: { album: 'Parachutes' } });
-    expect(store.matchCounts().get(sourceId)).toEqual({ matched: 2, review: 1, ignored: 0 });
+    expect(store.matches(sourceId).get('99. Nobody - Unknown.mp3')).toMatchObject({
+      state: 'unmatched',
+      groupKey: 'various artists|00s hits 100 top songs|99. Nobody - Unknown.mp3',
+    });
     // Once grouped as it groups now, the song left over isn't looked up again.
     searchRecordings.mockClear();
     await matcher.matchSource(sourceId);
@@ -334,7 +336,6 @@ describe('Matcher', () => {
     await matcher.matchSource(sourceId);
     const [group] = matcher.reviewGroups(sourceId);
     expect(group).toMatchObject({ artistName: 'N Sync', albumTitle: 'No Strings Attached', candidates: [], notFound: true });
-    expect(store.matchCounts().get(sourceId)).toEqual({ matched: 0, review: 1, ignored: 0 });
     onMatched.mockClear();
     matcher.rename(sourceId, group!.groupKey, {
       artist: '*NSYNC',
@@ -388,7 +389,6 @@ describe('Matcher', () => {
     expect(group).toMatchObject({ artistName: 'Massive Attack', albumTitle: 'Mezzanine', files: [{ title: 'Angel' }, { title: 'Risingson' }] });
     expect(group!.candidates[0]).toMatchObject({ releaseId: 'rel-1', title: 'Mezzanine', year: 1998 });
     expect(group!.candidates[0]!.matches['Massive Attack/Mezzanine/01 Angel.flac']).toBe(0);
-    expect(store.matchCounts().get(sourceId)).toEqual({ matched: 0, review: 1, ignored: 0 });
   });
 
   it('shows what MusicBrainz knows about each edition, fetching details missing from the cache', async () => {

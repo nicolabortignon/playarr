@@ -191,16 +191,26 @@ function SourceRow({
   );
 }
 
-/** How much of its albums a source has: complete, incomplete, or unidentified (their length unknown), each counted. */
+/**
+ * How much of its albums a source has: complete, incomplete, or unidentified (their length unknown). Lidarr
+ * counts albums; a folder counts its songs, adding up to all of them, its songs not matched yet unidentified.
+ */
 export function AlbumSummary({ source: s }: { source: SourceInfo }) {
   if (!s.albums) return null;
-  const counters = [
-    [s.albumsComplete, 'Complete Album', 'Complete Albums'],
-    [s.albumsIncomplete, 'Incomplete Album', 'Incomplete Albums'],
-    [s.albumsUnknown, 'Unidentified', 'Unidentified'],
-  ] as const;
+  const counters =
+    s.kind === 'folder'
+      ? ([
+          [s.songsComplete, 'On complete albums', 'On complete albums'],
+          [s.songsIncomplete, 'On incomplete albums', 'On incomplete albums'],
+          [s.songsUnknown, 'Unidentified', 'Unidentified'],
+        ] as const)
+      : ([
+          [s.albumsComplete, 'Complete Album', 'Complete Albums'],
+          [s.albumsIncomplete, 'Incomplete Album', 'Incomplete Albums'],
+          [s.albumsUnknown, 'Unidentified', 'Unidentified'],
+        ] as const);
   return (
-    <ul className="mt-2 flex flex-wrap gap-2" aria-label="Albums">
+    <ul className="mt-2 flex flex-wrap gap-2" aria-label={s.kind === 'folder' ? 'Songs' : 'Albums'}>
       {counters.map(([n, one, many]) => (
         <li key={one} className="flex items-baseline gap-1.5 rounded-md bg-ink-800 px-2 py-1">
           <span className="font-mono text-[14px] text-paper tabular-nums">{n}</span>
@@ -211,12 +221,12 @@ export function AlbumSummary({ source: s }: { source: SourceInfo }) {
   );
 }
 
-/** How a folder's albums were matched: those not matched open the review, to match them by hand. */
+/** How a folder's songs were matched: those not matched open the review, to match them by hand. */
 export function MatchSummary({ source: s, canEdit, onReview }: { source: SourceInfo; canEdit: boolean; onReview: () => void }) {
   if (!s.matched && !s.review && !s.ignored) return null;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-paper-dim">
-      <span>{plural(s.matched, 'album')} matched</span>
+      <span>{plural(s.matched, 'song')} matched</span>
       {s.review > 0 && (
         <>
           <span aria-hidden="true">·</span>

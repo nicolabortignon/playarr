@@ -384,11 +384,17 @@ export interface SourceInfo {
   albumsIncomplete: number;
   /** Albums whose length isn't known (not identified on MusicBrainz), and each artist's loose songs. */
   albumsUnknown: number;
-  /** Folder sources: album groups matched on MusicBrainz (automatically, by you, or by their tags), or named by you. */
+  /** Songs on the albums this source has every song of (adding up to `songs` with the two below). */
+  songsComplete: number;
+  /** Songs on the albums this source has some of the songs of. */
+  songsIncomplete: number;
+  /** Songs on albums of unknown length, and a folder's songs not matched yet (`review`) whatever their album. */
+  songsUnknown: number;
+  /** Folder sources: songs matched on MusicBrainz (automatically, by you, or by their tags), or named by you. */
   matched: number;
-  /** Folder sources: album groups waiting for the user's review (to pick a match, or found nowhere). */
+  /** Folder sources: songs waiting for the user's review (to pick a match, or found nowhere). */
   review: number;
-  /** Folder sources: album groups left as their tags describe them (ignored in review). */
+  /** Folder sources: songs left as their tags describe them (ignored in review). */
   ignored: number;
   /** Folder sources: album groups still being matched. */
   matching: number;

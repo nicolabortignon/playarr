@@ -16,6 +16,9 @@ const folder = (counts: Partial<SourceInfo>): SourceInfo => ({
   albumsComplete: 0,
   albumsIncomplete: 0,
   albumsUnknown: 0,
+  songsComplete: 0,
+  songsIncomplete: 0,
+  songsUnknown: 0,
   matched: 0,
   review: 0,
   ignored: 0,
@@ -26,10 +29,10 @@ const folder = (counts: Partial<SourceInfo>): SourceInfo => ({
 afterEach(cleanup);
 
 describe('MatchSummary', () => {
-  it('says how many albums matched, and opens the review from those that didn’t', () => {
+  it('says how many songs matched, and opens the review from those that didn’t', () => {
     const onReview = vi.fn();
     render(<MatchSummary source={folder({ matched: 896, review: 546, ignored: 1 })} canEdit onReview={onReview} />);
-    expect(screen.getByText('896 albums matched')).toBeTruthy();
+    expect(screen.getByText('896 songs matched')).toBeTruthy();
     expect(screen.getByText('1 left as tagged')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '546 not matched' }));
     expect(onReview).toHaveBeenCalled();
@@ -37,7 +40,7 @@ describe('MatchSummary', () => {
 
   it('only counts, without a way to review, for someone who can’t change settings', () => {
     render(<MatchSummary source={folder({ matched: 1, review: 2 })} canEdit={false} onReview={() => {}} />);
-    expect(screen.getByText('1 album matched')).toBeTruthy();
+    expect(screen.getByText('1 song matched')).toBeTruthy();
     expect(screen.getByText('2 not matched')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
   });
@@ -51,14 +54,19 @@ describe('MatchSummary', () => {
 describe('AlbumSummary', () => {
   const counters = () => screen.getAllByRole('listitem').map((li) => li.textContent);
 
-  it('counts the source’s albums complete, incomplete and unidentified, each on its own', () => {
-    render(<AlbumSummary source={folder({ albumsComplete: 10, albumsIncomplete: 918, albumsUnknown: 511 })} />);
+  it('counts Lidarr’s albums complete, incomplete and unidentified, each on its own', () => {
+    render(<AlbumSummary source={folder({ kind: 'lidarr', albumsComplete: 10, albumsIncomplete: 918, albumsUnknown: 511 })} />);
     expect(counters()).toEqual(['10Complete Albums', '918Incomplete Albums', '511Unidentified']);
   });
 
   it('shows every counter, at none too, and one album in the singular', () => {
-    render(<AlbumSummary source={folder({ albumsComplete: 1 })} />);
+    render(<AlbumSummary source={folder({ kind: 'lidarr', albumsComplete: 1 })} />);
     expect(counters()).toEqual(['1Complete Album', '0Incomplete Albums', '0Unidentified']);
+  });
+
+  it('counts a folder’s songs, adding up to all of them, the unidentified as many as not matched', () => {
+    render(<AlbumSummary source={folder({ songs: 100, albums: 86, songsComplete: 3, songsIncomplete: 92, songsUnknown: 5, review: 5 })} />);
+    expect(counters()).toEqual(['3On complete albums', '92On incomplete albums', '5Unidentified']);
   });
 
   it('shows nothing for a source without albums', () => {
