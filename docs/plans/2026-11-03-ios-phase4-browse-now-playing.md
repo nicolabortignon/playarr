@@ -2513,6 +2513,8 @@ MSG
 
 `AppModel` gains this device's `PlaybackSettings` and `AppearanceSettings` (whoever is signed in), the `Theme`, the `ToastCenter`, and `session`. Its initializer keeps phase 2's four arguments first and adds defaulted ones, so phase 2's `AddServerModelTests` compile unchanged. `RootView` starts calling `syncSession()` in Task 25; until then nothing makes a session in the app.
 
+Since this plan was written, `main`'s `AppModel` also wires Bonjour to `ServerStore.discovered(_:)` in its initializer (a known server found at home keeps that address as its local one) and asks `anonymousClient(for: server)` (the record, so the local address is tried too) in `checkActiveServer()`. The replacement below keeps both.
+
 **Step 1: Write the test helper and the failing test**
 
 `apps/ios/Packages/PlayarrUI/Tests/PlayarrUITests/Support/TestSession.swift`:
@@ -2791,6 +2793,8 @@ public final class AppModel {
         self.appearance = appearance
         self.theme = Theme(appearance: appearance)
         self.makeSession = makeSession
+        // A known server found at home keeps that address as its local one.
+        browser.onUpdate = { [weak store] servers in store?.discovered(servers) }
     }
 
     public static func live() -> AppModel {
@@ -2839,7 +2843,7 @@ public final class AppModel {
     /// Asks the active server who it is: its name may have changed, or it may need a newer app.
     public func checkActiveServer() async {
         guard let server = store.activeServer else { return }
-        guard let info = try? await store.anonymousClient(for: server.baseURL).send(API.Server.info()), info.id == server.id else { return }
+        guard let info = try? await store.anonymousClient(for: server).send(API.Server.info()), info.id == server.id else { return }
         store.remember(info, at: server.baseURL)
         tooOld = info.supports(appVersion) ? nil : info
     }

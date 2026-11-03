@@ -1,25 +1,46 @@
 import Foundation
 import Observation
 import PlayarrAPI
+import PlayarrPlayer
 
 /// The app's root state: the servers and accounts, Bonjour, and what the root view shows.
 @MainActor @Observable
 public final class AppModel {
+    /// Makes the session of a signed-in account (live, or the demo).
+    public typealias SessionFactory = @MainActor (AccountRecord, AppModel) throws -> AccountSession?
+
     public let store: ServerStore
     public let browser: ServerBrowser
     public let appVersion: AppVersion
     public let device: DeviceInfo
+    /// Settings → Playback and Appearance: this device's, whoever is signed in.
+    public let playback: PlaybackSettings
+    public let appearance: AppearanceSettings
+    public let theme: Theme
+    public let toasts = ToastCenter()
+    /// The active account's session; nil while no account is signed in.
+    public private(set) var session: AccountSession?
     /// The active server needs a newer app.
     public private(set) var tooOld: ServerInfo?
     /// A setup-code link to open (playarr://redeem).
     public var redeemLink: RedeemLink?
     public var showingAccounts = false
 
-    public init(store: ServerStore, browser: ServerBrowser, appVersion: AppVersion, device: DeviceInfo) {
+    @ObservationIgnored private let makeSession: SessionFactory
+
+    public init(
+        store: ServerStore, browser: ServerBrowser, appVersion: AppVersion, device: DeviceInfo,
+        playback: PlaybackSettings = PlaybackSettings(), appearance: AppearanceSettings = AppearanceSettings(),
+        makeSession: @escaping SessionFactory = AccountSession.live
+    ) {
         self.store = store
         self.browser = browser
         self.appVersion = appVersion
         self.device = device
+        self.playback = playback
+        self.appearance = appearance
+        self.theme = Theme(appearance: appearance)
+        self.makeSession = makeSession
         // A known server found at home keeps that address as its local one.
         browser.onUpdate = { [weak store] servers in store?.discovered(servers) }
     }
@@ -32,6 +53,34 @@ public final class AppModel {
     public static func empty() -> AppModel {
         let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
         return AppModel(store: ServerStore(directory: directory, secrets: InMemorySecretStore()), browser: ServerBrowser(), appVersion: .current, device: .current())
+    }
+
+    /// Signed in to the demo library, playing silence: for UI tests (`-UITestsDemo`). Nothing is kept.
+    public static func demo() -> AppModel {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let store = ServerStore(directory: directory, secrets: InMemorySecretStore())
+        try? store.signedIn(SignInResponse(token: "demo", account: Demo.account), server: Demo.server, at: Demo.baseURL)
+        let defaults = UserDefaults(suiteName: "playarr-demo-\(UUID().uuidString)") ?? .standard
+        let model = AppModel(
+            store: store, browser: ServerBrowser(), appVersion: .current, device: .current(),
+            playback: PlaybackSettings(defaults: defaults), appearance: AppearanceSettings(defaults: defaults),
+            makeSession: { record, model in try AccountSession.demo(record, model: model) })
+        model.syncSession()
+        return model
+    }
+
+    /// Opens the session of the active, signed-in account, closing the one before; none while signed out.
+    public func syncSession() {
+        let record = store.activeAccount.flatMap { $0.signedIn ? $0 : nil }
+        guard record?.key != session?.key else { return }
+        session?.close()
+        session = nil
+        guard let record else { return }
+        do {
+            session = try makeSession(record, self)
+        } catch {
+            toasts.push(error.localizedDescription, tone: .error)
+        }
     }
 
     /// playarr:// links: redeem a setup code.
