@@ -30,6 +30,7 @@
     "@playarr/mix": "workspace:*",
     "@playarr/shared": "workspace:*",
     "@tokenizer/range": "^0.13.1",
+    "bonjour-service": "1.4.4",
     "chromotome": "^1.21.4",
     "fastify": "^5.12.7",
     "music-metadata": "^12.3.2",

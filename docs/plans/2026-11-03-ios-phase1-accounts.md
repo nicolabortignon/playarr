@@ -5239,7 +5239,7 @@ EOF
 **Step 1: Add the dependency and check its API**
 
 ```bash
-corepack pnpm -C apps/server add bonjour-service
+CI=true corepack pnpm -C apps/server add -E bonjour-service@1.4.4
 sed -n '1,80p' apps/server/node_modules/bonjour-service/dist/index.d.ts
 ```
 
@@ -5291,13 +5291,14 @@ export interface Advertised {
 
 /** A TXT string holds at most 255 bytes, its key and "=" included. */
 function fit(key: string, value: string): string {
-  let v = value;
-  while (Buffer.byteLength(`${key}=${v}`) > 255) v = v.slice(0, -1);
-  return v;
+  // By whole characters, so an emoji isn't cut in half.
+  const chars = [...value];
+  while (Buffer.byteLength(`${key}=${chars.join('')}`) > 255) chars.pop();
+  return chars.join('');
 }
 
 /** The TXT record of `_playarr._tcp`: which server (id), its version, its name, and where the API is. */
-export function txtRecord(info: Advertised): Record<string, string> {
+export function txtRecord(info: Advertised): { id: string; v: string; name: string; path: string } {
   return { id: info.id, v: info.version, name: fit('name', info.name), path: '/' };
 }
 
@@ -5358,6 +5359,8 @@ dns-sd -B _playarr._tcp local. & sleep 3; kill %1
 ```
 
 Expected: one line for the server's name. Stop the server.
+
+*As executed:* `bonjour-service` pinned exactly at 1.4.4 (MIT; adds `multicast-dns`, `dns-packet`, `@leichtgewicht/ip-codec`; `CI=true` keeps pnpm non-interactive). Its API is as described (the package is CommonJS with `module.exports.Bonjour`, and the named ESM import works under Node). Two small changes to the code above, already applied: `txtRecord` returns its four keys as a typed object (the test reads `name`, which `noUncheckedIndexedAccess` would make optional on a `Record`), and `fit` trims by whole characters so an emoji isn't cut in half. Checked live from the built server (`node dist/index.js`, `SERVER_NAME="Playarr test"`): `dns-sd -B` listed it, `dns-sd -L` showed `id`, `v`, `name` and `path=/`, and SIGTERM unpublished and exited cleanly.
 
 **Step 5: Commit**
 

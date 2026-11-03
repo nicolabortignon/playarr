@@ -38,6 +38,7 @@ import { lyricsRoutes } from './routes/lyrics.ts';
 import { LyricsService } from './lyrics/lyrics.ts';
 import { Scrobbler } from './listenbrainz/scrobbler.ts';
 import { Accounts } from './accounts/accounts.ts';
+import { advertise } from './bonjour.ts';
 import { authHook } from './accounts/auth.ts';
 import { Sessions } from './accounts/sessions.ts';
 import { SetupCodes } from './accounts/setupCodes.ts';
@@ -233,6 +234,7 @@ const shutdown = async () => {
   library.stop();
   await media.close();
   await folders.closeAll();
+  await bonjour?.stop();
   await app.close();
   analyzer.close();
   // A render a moment from done is let finish (its file is then complete); one that isn't is cut off.
@@ -246,6 +248,8 @@ const shutdown = async () => {
 process.on('SIGINT', shutdown).on('SIGTERM', shutdown);
 
 await app.listen({ port: config.PORT, host: config.HOST });
+// Apps on the home network find the server by Bonjour (BONJOUR=off to stop).
+const bonjour = config.BONJOUR === 'on' ? advertise({ port: config.PORT, info: info(), log: app.log }) : undefined;
 app.log.info(`Sources: ${store.listSources().map((s) => s.name).join(', ') || 'none'} · media source: ${media.kind}`);
 if (accounts.setupMode()) app.log.info('Nobody has set up Playarr yet: open Settings → Accounts from your home network to set the owner’s password');
 
