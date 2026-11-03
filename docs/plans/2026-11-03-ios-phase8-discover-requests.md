@@ -5460,6 +5460,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** the strip takes the model's `phrases` and `bars` (phase 5's `EnergyPicture` types, `heardHeight` for a column's height) and draws them in the theme's accent; `Format.time` for the times.
+
 ---
 
 ### Task 20: Opening the sheets from any song menu
