@@ -1416,6 +1416,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** `MusicBrainzStatusModel(api:clock:)`; `Format.wait` for the waits. The polling test watches in a task and reads each `TestClock.nextSleep()`.
+
 ---
 
 ### Task 6: DiscoverContext: the account's health, requests, queue and short-lived answers
