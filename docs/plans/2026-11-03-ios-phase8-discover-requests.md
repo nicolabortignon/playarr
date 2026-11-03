@@ -6141,6 +6141,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** the lines added say what was built: `AccountSession.discover` (not `AppModel.discover`), the new `Route` cases with `DiscoverDestination.route`, `AppRouter.search(_:)`, `.trackSheets(player:active:)`, `Format.wait`/`jsRound`, `FakeAPI`'s queries and holds and `TestClock.sleeping`, and `-UITestsRequests` with `DemoRequestsAPI` (no `Sleeper`, `TextFormat`, `ServerDate` or `UITestServer`).
+
 ---
 
 ### Task 24: On a phone, then TestFlight
