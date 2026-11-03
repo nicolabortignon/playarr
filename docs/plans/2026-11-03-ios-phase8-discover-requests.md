@@ -873,6 +873,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** as written.
+
 ---
 
 ### Task 4: The requests model: polling, requesting, removing, and the notification
