@@ -1,0 +1,13 @@
+[
+  {
+    "mbid": "a9a3d3bd-0c1c-3a6c-8b3f-4b1e3b1f5b7e",
+    "title": "Mezzanine",
+    "artistName": "Massive Attack",
+    "requestedAt": "2026-11-03T12:00:00.000Z",
+    "availability": {
+      "state": "downloading",
+      "progress": 0.4,
+      "message": "Downloading 4 of 11"
+    }
+  }
+]

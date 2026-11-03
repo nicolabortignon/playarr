@@ -7,6 +7,7 @@ import { SourceManager } from '../catalog/sources.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { flacBytes, freshDb, mezzanine, tempDir } from '../catalog/testFixtures.ts';
 import { LidarrClient } from '../lidarr/client.ts';
+import { recordFixture } from '../testing/recordFixture.ts';
 import { UpdateBridge } from '../update/bridge.ts';
 import { readRequestSettings, REQUESTS_KEY, settingsRoutes } from './settings.ts';
 
@@ -87,6 +88,7 @@ describe('settings routes', () => {
     const { app } = setup();
     const home = await app.inject({ method: 'GET', url: '/api/settings/folders/access', remoteAddress: HOME });
     expect(home.json()).toEqual({ smb: false });
+    recordFixture('folder-access', home);
     const away = await app.inject({ method: 'GET', url: '/api/settings/folders/access', remoteAddress: AWAY });
     expect(away.statusCode).toBe(403);
   });
@@ -129,6 +131,8 @@ describe('settings routes', () => {
     expect(res.json()).toMatchObject({ kind: 'lidarr', secrets: ['apiKey'], settings: { url: 'http://lidarr:8686' } });
     expect(res.body).not.toContain('secret-key');
     expect(library.refresh).toHaveBeenCalled();
+    recordFixture('settings-source', res);
+    recordFixture('settings-sources', await app.inject({ method: 'GET', url: '/api/settings/sources', remoteAddress: HOME }));
   });
 
   it('refuses changes from outside the home network', async () => {
@@ -184,6 +188,7 @@ describe('settings routes', () => {
     expect((await app.inject({ method: 'GET', url: '/api/settings/sources/1/review', remoteAddress: AWAY })).statusCode).toBe(403);
     const list = await app.inject({ method: 'GET', url: '/api/settings/sources/1/review', remoteAddress: HOME });
     expect(list.json()).toEqual([{ groupKey: 'g', artistName: 'A', files: [], candidates: [] }]);
+    recordFixture('review-groups', list);
     const apply = await app.inject({ method: 'POST', url: '/api/settings/sources/1/review', payload: { groupKey: 'g', releaseId: 'rel-1' }, remoteAddress: HOME });
     expect(apply.statusCode).toBe(204);
     expect(matcher.applyRelease).toHaveBeenCalledWith(1, 'g', 'rel-1');
@@ -211,6 +216,7 @@ describe('settings routes', () => {
     expect((await app.inject({ method: 'GET', url: '/api/settings/matching', remoteAddress: HOME })).json()).toEqual({ acoustid: false, fingerprints: true });
     const put = await app.inject({ method: 'PUT', url: '/api/settings/matching', payload: { acoustidKey: 'secret' }, remoteAddress: HOME });
     expect(put.json()).toEqual({ acoustid: true, fingerprints: true });
+    recordFixture('matching', put);
     expect(put.body).not.toContain('secret');
     expect((await app.inject({ method: 'PUT', url: '/api/settings/matching', payload: { acoustidKey: 'x' }, remoteAddress: AWAY })).statusCode).toBe(403);
   });
@@ -261,6 +267,7 @@ describe('settings routes', () => {
     it('starts with requests on and searching right away, with Lidarr’s choices', async () => {
       const res = await setup().app.inject({ method: 'GET', url, remoteAddress: HOME });
       expect(res.json()).toEqual({ enabled: true, searchOnAdd: true, lidarr: true, options });
+      recordFixture('request-settings', res);
     });
 
     it('saves, reads back and clears choices', async () => {
@@ -358,6 +365,7 @@ describe('settings routes', () => {
         expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 360 });
         const check = await app.inject({ method: 'POST', url: `${url}/check`, remoteAddress: HOME });
         expect(check.json()).toMatchObject({ requested: true });
+        recordFixture('updates', check);
         expect(existsSync(join(dir, 'request'))).toBe(true);
       } finally {
         cleanup();

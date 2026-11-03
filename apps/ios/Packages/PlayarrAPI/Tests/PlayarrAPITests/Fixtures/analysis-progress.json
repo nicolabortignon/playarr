@@ -1,0 +1,27 @@
+{
+  "enabled": true,
+  "songs": 2,
+  "beats": {
+    "ready": 1,
+    "beatModel": 1,
+    "failed": 0
+  },
+  "sound": {
+    "ready": 1,
+    "failed": 0
+  },
+  "loudness": {
+    "ready": 2,
+    "failed": 0
+  },
+  "tags": {
+    "ready": 2,
+    "songs": 2
+  },
+  "waiting": 1,
+  "working": 0,
+  "loudnessWaiting": 0,
+  "loudnessWorking": 0,
+  "tagsWaiting": 0,
+  "libraryScan": false
+}

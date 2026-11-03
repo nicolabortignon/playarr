@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import type { SongLoudness } from '../analysis/loudnessJobs.ts';
+import { recordFixture } from '../testing/recordFixture.ts';
 import { combinedLufs, gainFor, levelRoutes } from './levels.ts';
 
 const song = (lufs: number | null, peak: number | null = -0.5, fileId = 1, samples = 1000): SongLoudness => ({
@@ -57,7 +58,9 @@ describe('levels route', () => {
 
   it('answers each measured song’s gain, alone and within its album, and has the rest measured', async () => {
     const { app, ensure } = setup({ a1: song(-8), a2: song(-12), solo: song(-6), replaced: song(-9, -1, 1) });
-    const body = (await app.inject({ method: 'POST', url: '/api/levels', payload: { ids: ['a1', 'solo', 'a3', 'gone'] } })).json();
+    const res = await app.inject({ method: 'POST', url: '/api/levels', payload: { ids: ['a1', 'solo', 'a3', 'gone'] } });
+    recordFixture('levels', res);
+    const body = res.json();
     expect(body.a1.track).toBe(-6);
     // The album as a whole is quieter than its loudest song: a smaller cut, the same for every song of it.
     expect(body.a1.album).toBeLessThan(-3);

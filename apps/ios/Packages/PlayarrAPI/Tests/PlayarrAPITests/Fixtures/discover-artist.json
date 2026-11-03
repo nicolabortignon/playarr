@@ -1,0 +1,28 @@
+{
+  "mbid": "10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8",
+  "name": "Massive Attack",
+  "disambiguation": "Bristol group",
+  "genres": [
+    "trip hop"
+  ],
+  "artistId": 7,
+  "overview": "Formed in Bristol in 1988.",
+  "albums": [
+    {
+      "mbid": "a9a3d3bd-0c1c-3a6c-8b3f-4b1e3b1f5b7e",
+      "title": "Mezzanine",
+      "artistName": "Massive Attack",
+      "artistMbid": "10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8",
+      "year": 1998,
+      "type": "Album",
+      "secondaryTypes": [],
+      "coverUrl": "/art/remote?url=https%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Fx%2Ffront-250",
+      "availability": {
+        "state": "partial",
+        "albumId": 70,
+        "have": 2,
+        "total": 11
+      }
+    }
+  ]
+}

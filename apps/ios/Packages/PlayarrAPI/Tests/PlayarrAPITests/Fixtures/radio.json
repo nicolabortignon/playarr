@@ -1,0 +1,48 @@
+[
+  {
+    "id": 700,
+    "recordingId": "0b6a2c1e-1111-4222-8333-944455556666",
+    "fileId": 9000,
+    "albumId": 70,
+    "artistId": 7,
+    "title": "Angel",
+    "artistName": "Massive Attack",
+    "albumTitle": "Mezzanine",
+    "trackNumber": 1,
+    "discNumber": 1,
+    "duration": 379,
+    "explicit": false,
+    "format": {
+      "codec": "FLAC",
+      "container": "flac",
+      "bits": 16,
+      "sampleRate": 44100,
+      "lossless": true
+    },
+    "size": 40000000,
+    "streamUrl": "/stream/9000"
+  },
+  {
+    "id": 701,
+    "recordingId": "0b6a2c1e-1111-4222-8333-944455557777",
+    "fileId": 9001,
+    "albumId": 70,
+    "artistId": 7,
+    "title": "Risingson",
+    "artistName": "Massive Attack",
+    "albumTitle": "Mezzanine",
+    "trackNumber": 2,
+    "discNumber": 1,
+    "duration": 298,
+    "explicit": false,
+    "format": {
+      "codec": "FLAC",
+      "container": "flac",
+      "bits": 16,
+      "sampleRate": 44100,
+      "lossless": true
+    },
+    "size": 30000000,
+    "streamUrl": "/stream/9001"
+  }
+]

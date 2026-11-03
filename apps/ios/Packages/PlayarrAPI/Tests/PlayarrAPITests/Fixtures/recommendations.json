@@ -1,0 +1,54 @@
+{
+  "owned": [
+    {
+      "recordingId": "0b6a2c1e-1111-4222-8333-944455557777",
+      "title": "Risingson",
+      "artistName": "Massive Attack",
+      "albumTitle": "Mezzanine",
+      "because": "Angel",
+      "track": {
+        "id": 701,
+        "recordingId": "0b6a2c1e-1111-4222-8333-944455557777",
+        "fileId": 9001,
+        "albumId": 70,
+        "artistId": 7,
+        "title": "Risingson",
+        "artistName": "Massive Attack",
+        "albumTitle": "Mezzanine",
+        "trackNumber": 2,
+        "discNumber": 1,
+        "duration": 298,
+        "explicit": false,
+        "format": {
+          "codec": "FLAC",
+          "container": "flac",
+          "bits": 16,
+          "sampleRate": 44100,
+          "lossless": true
+        },
+        "size": 30000000,
+        "streamUrl": "/stream/9001"
+      },
+      "artistId": 7
+    }
+  ],
+  "missing": [
+    {
+      "recordingId": "b3c4d5e6-1111-4222-8333-944455558888",
+      "title": "Teardrop",
+      "artistName": "Massive Attack",
+      "albumTitle": "Mezzanine (Deluxe)",
+      "because": "Angel",
+      "album": {
+        "mbid": "a9a3d3bd-0c1c-3a6c-8b3f-4b1e3b1f5b7e",
+        "artistName": "Massive Attack",
+        "albumTitle": "Mezzanine (Deluxe)"
+      },
+      "availability": {
+        "state": "none"
+      },
+      "artistMbid": "10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8"
+    }
+  ],
+  "seedCount": 2
+}

@@ -1,0 +1,15 @@
+{
+  "enabled": {},
+  "length": 50,
+  "adventurous": 0.5,
+  "blastDays": 90,
+  "genreMixes": 3,
+  "decadeMixes": 2,
+  "recordHistory": true,
+  "analyzeLibrary": false,
+  "analysisAvailable": true,
+  "history": {
+    "plays": 2,
+    "since": "2026-11-03T12:00:00.000Z"
+  }
+}

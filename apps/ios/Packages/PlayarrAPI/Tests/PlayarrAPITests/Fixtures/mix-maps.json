@@ -1,0 +1,40 @@
+{
+  "0b6a2c1e-1111-4222-8333-944455556666": {
+    "version": 8,
+    "duration": 379,
+    "bpm": 80,
+    "firstBeat": 0.42,
+    "downbeatOffset": 1,
+    "downbeatConfidence": 0.8,
+    "gridStable": true,
+    "beatConfidence": 0.9,
+    "key": {
+      "camelot": "8A",
+      "confidence": 0.7
+    },
+    "introEnd": 32.5,
+    "outroStart": 340,
+    "firstDrop": 64,
+    "coldStart": false,
+    "coldEnd": false,
+    "soundStart": 0.1,
+    "soundEnd": 378.2,
+    "beatsFrom": "model",
+    "phraseEnergy": [
+      0.4,
+      0.8,
+      null,
+      1
+    ],
+    "phraseDrift": [
+      3,
+      null,
+      5
+    ],
+    "edgesStable": true,
+    "cues": {
+      "mixIn": 30,
+      "mixOut": 350
+    }
+  }
+}
