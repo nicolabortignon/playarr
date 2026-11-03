@@ -5,6 +5,7 @@ import SwiftUI
 struct SearchView: View {
   @State private var model: SearchModel
   @Environment(AccountSession.self) private var session
+  @Environment(DiscoverContext.self) private var discover: DiscoverContext?
 
   init(session: AccountSession) {
     _model = State(initialValue: SearchModel(session: session))
@@ -13,6 +14,7 @@ struct SearchView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 32) {
+        RequestsPill().padding(.horizontal, 20)
         if model.query.isEmpty {
           suggestions
         } else if model.isEmpty {
@@ -20,7 +22,7 @@ struct SearchView: View {
         } else if model.results != nil {
           results
         }
-        // Phase 8: "Not in your library" (Discover) goes here, below the library's results.
+        DiscoverSection(query: model.query)
       }
       .padding(.vertical, 16)
     }
@@ -56,7 +58,8 @@ struct SearchView: View {
   private var notFound: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Not in your crates.").font(.title.weight(.semibold))
-      Text("Nothing in your library matches “\(model.searched)”.").font(.subheadline).foregroundStyle(.secondary)
+      Text("Nothing in your library matches “\(model.searched)”." + (discover?.gate.hasLidarr == true ? " Here’s what’s out there:" : ""))
+        .font(.subheadline).foregroundStyle(.secondary)
     }
     .padding(.horizontal, 20)
   }

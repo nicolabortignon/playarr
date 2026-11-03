@@ -19,10 +19,12 @@ public final class AccountSession {
   public let images: ImageCache
   public let router = AppRouter()
   public let toasts: ToastCenter
+  /// Discover, requests and the song sheets (phase 8).
+  public let discover: DiscoverContext
 
   public init(
     key: AccountKey, account: Account, serverName: String, api: any APISending, client: APIClient?, player: Player,
-    queries: QueryCache, images: ImageCache, toasts: ToastCenter
+    queries: QueryCache, images: ImageCache, toasts: ToastCenter, notifier: (any RequestNotifier)? = nil
   ) {
     self.key = key
     self.account = account
@@ -33,6 +35,13 @@ public final class AccountSession {
     self.queries = queries
     self.images = images
     self.toasts = toasts
+    discover = DiscoverContext(
+      api: api, account: account, notifier: notifier,
+      toast: { text, isError in toasts.push(text, tone: isError ? .error : .info) },
+      // Phase 4's pages ask again for what a request or a new match made stale.
+      forward: { families in for family in families { queries.invalidate(family.rawValue) } })
+    discover.sheets.settings = player.settings
+    discover.sheets.cuesChanged = { [weak player] in player?.mixPointsChanged(recordingId: $0) }
   }
 
   /// The account's folder: Application Support/Playarr/<server id>/<account id>/ (queue, plays, stream cache, answers).
@@ -60,7 +69,8 @@ public final class AccountSession {
     }
     return AccountSession(
       key: record.key, account: record.account, serverName: server.name, api: client, client: client, player: player,
-      queries: queries, images: images, toasts: model.toasts)
+      queries: queries, images: images, toasts: model.toasts,
+      notifier: LocalRequestNotifier { [weak model] in model?.isActive ?? true })
   }
 
   /// The demo library (`Demo`), playing silence: for the UI tests, and view-model tests (`offline`: an engine that
@@ -82,6 +92,7 @@ public final class AccountSession {
 
   /// The account is no longer the one shown: its song so far is reported and its queue saved.
   public func close() {
+    discover.stop()
     player.shutDown()
   }
 }

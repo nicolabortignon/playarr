@@ -25,6 +25,8 @@ public final class AppModel {
     /// A setup-code link to open (playarr://redeem).
     public var redeemLink: RedeemLink?
     public var showingAccounts = false
+    /// The app is on screen (a request that lands in the background is a notification instead).
+    public var isActive = true
 
     @ObservationIgnored private let makeSession: SessionFactory
 

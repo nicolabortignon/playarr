@@ -26,7 +26,7 @@ struct ArtistView: View {
               .padding(.horizontal, 20)
             }
           }
-          // Phase 8: "Not in your library" (the rest of the discography, with Request) goes here.
+          if let mbid = artist.mbid { NotInLibrarySection(artistMbid: mbid, owned: artist.albums) }
           similar
           if let overview = artist.overview { about(overview) }
         }
@@ -78,23 +78,12 @@ struct ArtistView: View {
         SectionHeader(title: "Similar artists", kicker: "From ListenBrainz")
         Text("Couldn’t reach ListenBrainz for similar artists right now.").font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 20)
       }
-    } else if !model.similarInLibrary.isEmpty {
-      VStack(alignment: .leading, spacing: 0) {
-        SectionHeader(title: "Similar artists in your library", kicker: "From ListenBrainz")
-        Shelf {
-          ForEach(model.similarInLibrary, id: \.mbid) { artist in
-            if let id = artist.artistId {
-              NavigationLink(value: Route.artist(id)) {
-                VStack(spacing: 8) {
-                  Cover(path: artist.imageUrl, points: 140, label: artist.name, circle: true)
-                  Text(artist.name).font(.subheadline).lineLimit(1)
-                }
-                .frame(width: 140)
-              }
-              .buttonStyle(.plain)
-              .accessibilityLabel(artist.name)
-            }
-          }
+    } else if let artists = model.similar?.value {
+      // Those in the library first, then the others, whose discography opens to request albums.
+      ForEach(SimilarArtistGroups.make(artists), id: \.title) { group in
+        VStack(alignment: .leading, spacing: 0) {
+          SectionHeader(title: group.title, kicker: SimilarArtistGroups.kicker)
+          Shelf { ForEach(group.artists, id: \.mbid) { DiscoverArtistCard(artist: $0) } }
         }
       }
     }

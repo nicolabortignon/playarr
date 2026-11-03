@@ -2,12 +2,14 @@ import PlayarrAPI
 import SwiftUI
 
 /// The Library tab (apps/web/src/pages/Library.tsx): everything that's yours in one place, and your playlists.
-/// Downloads (phase 7) and Requests (phase 8) join the rows when they exist.
+/// Requests join the rows while there are some (phase 8), Downloads in phase 7; the MusicBrainz queue shows at the foot
+/// while lookups wait (the desktop sidebar's footer).
 struct LibraryView: View {
   @State private var health: Query<HealthStatus>
   @State private var favorites: Query<[FavoriteTrack]>
   @State private var playlists: Query<[PlaylistSummary]>
   @Environment(AppModel.self) private var app
+  @Environment(DiscoverContext.self) private var discover: DiscoverContext?
   @Environment(Theme.self) private var theme
 
   init(session: AccountSession) {
@@ -26,6 +28,9 @@ struct LibraryView: View {
         row("Favorites", "heart", .favorites, detail: favorites.value.map { Format.plural($0.count, "song") })
         row("Artists", "music.mic", .artists, detail: library.map { String($0.artists) })
         row("Albums", "square.stack", .albums(.artist), detail: library.map { String($0.albums) })
+        if let count = discover?.requests.requests?.count, count > 0 {
+          row("Requests", "arrow.down.circle", .requests, detail: String(count)).accessibilityIdentifier("library-requests")
+        }
         // Phase 9 finds Settings by this identifier.
         row("Settings", "gearshape", .settings).accessibilityIdentifier("settings")
       }
@@ -43,6 +48,10 @@ struct LibraryView: View {
             }
           }
         }
+      }
+      Section {
+      } footer: {
+        MusicBrainzIndicator()
       }
     }
     .navigationTitle("Library")

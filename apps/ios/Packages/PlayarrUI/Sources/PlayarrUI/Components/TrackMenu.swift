@@ -21,8 +21,8 @@ struct TrackMenu: View {
 }
 
 /// What can be done with a song (apps/web/src/components/TrackList.tsx): Play next, Add to queue, Start radio,
-/// Go to album (in mixed lists), Go to artist. Add to playlist (phase 6), Show metadata and Edit mix points (phase 8)
-/// join them later.
+/// Go to album (in mixed lists), Go to artist, Show metadata and (with DJ mix on) Edit mix points. Add to playlist
+/// (phase 6) joins them later.
 struct TrackMenuItems: View {
   let track: Track
   var showsAlbum = true
@@ -36,5 +36,6 @@ struct TrackMenuItems: View {
       Button("Go to album", systemImage: "square.stack") { session.actions.goToAlbum(track) }
     }
     Button("Go to artist", systemImage: "music.mic") { session.actions.goToArtist(track) }
+    TrackLibraryMenuItems(track: track)
   }
 }

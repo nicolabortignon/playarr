@@ -87,10 +87,11 @@ struct NowPlayingView: View {
         .accessibilityLabel("Lyrics")
         .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
       Menu {
-        // Phase 6: Add to playlist…  Phase 8: Show metadata, Edit mix points.
+        // Phase 6: Add to playlist…
         Button("Start radio", systemImage: "dot.radiowaves.left.and.right") { Task { await session.actions.startRadio(track) } }
         Button("Go to album", systemImage: "square.stack") { session.actions.goToAlbum(track) }
         Button("Go to artist", systemImage: "music.mic") { session.actions.goToArtist(track) }
+        TrackLibraryMenuItems(track: track)
         Button("Open queue", systemImage: "list.bullet") { session.router.showQueue() }
       } label: {
         Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44)

@@ -7,6 +7,7 @@ struct AppShell: View {
   let model: AppModel
   let session: AccountSession
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
     @Bindable var router = session.router
@@ -22,18 +23,23 @@ struct AppShell: View {
     .minimizingTabBar()
     .miniPlayer(isShown: session.player.queue.currentTrack != nil) { MiniPlayer(session: session) }
     .nowPlayingCover(isPresented: $router.nowPlaying) {
-      NowPlayingView(session: session).environment(session).environment(model.theme).environment(model.appearance)
+      NowPlayingView(session: session)
+        // Show metadata and Edit mix points from Now Playing's menu open over it.
+        .trackSheets(player: session.player, active: router.nowPlaying)
+        .environment(session).environment(session.discover).environment(model.theme).environment(model.appearance)
         .overlay(alignment: .top) { ToastsView().environment(model.toasts).environment(model.theme) }
         .overlay { stats }
     }
     .overlay(alignment: .top) { ToastsView() }
     .overlay { stats }
     .sheet(isPresented: Binding(get: { model.showingAccounts }, set: { model.showingAccounts = $0 })) { AccountSwitcherView(model: model) }
+    .trackSheets(player: session.player, active: !router.nowPlaying)
     // Settings → Appearance → Motion: Reduced keeps animations to a minimum, whatever the device says.
     .transaction { if model.appearance.reduceMotion(system: systemReduceMotion) { $0.animation = nil } }
     .tint(model.theme.accent.color)
     .preferredColorScheme(.dark)
     .environment(session)
+    .environment(session.discover)
     .environment(model)
     .environment(model.theme)
     .environment(model.appearance)
@@ -43,6 +49,17 @@ struct AppShell: View {
     }
     .onChange(of: session.player.notice) { _, notice in
       if let notice { model.toasts.push(notice.text, tone: notice.isError ? .error : .info) }
+    }
+    // Health and the requests, polled for as long as this account is the one shown (closing the session stops them).
+    .task(id: session.key) { session.discover.start() }
+    .onChange(of: scenePhase) { _, phase in
+      model.isActive = phase == .active
+      // Back on screen: the app may have been suspended, so health and the requests are asked for at once.
+      if phase == .active { session.discover.becameActive() }
+    }
+    // The account's rights changed (may request): Request buttons follow before the next health check.
+    .onChange(of: model.store.activeAccount?.account) { _, account in
+      if let account, account.id == session.account.id { session.discover.update(account) }
     }
   }
 

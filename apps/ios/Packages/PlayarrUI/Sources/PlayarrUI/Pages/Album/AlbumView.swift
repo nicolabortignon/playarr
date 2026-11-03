@@ -102,7 +102,8 @@ struct AlbumView: View {
         Image(systemName: "ellipsis").frame(width: 44, height: 44)
       }
       .accessibilityLabel("More for \(album.title)")
-      // Phase 7: Download. Phase 8: Request the rest.
+      // Phase 7: Download.
+      RequestRestButton(album: Album(album))
     }
     .buttonBorderShape(.capsule)
     .padding(.horizontal, 20)

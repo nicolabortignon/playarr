@@ -32,6 +32,18 @@ import Testing
     #expect(model.session == nil)
   }
 
+  @Test func eachSessionHasItsDiscoverContext() throws {
+    let model = demoModel()
+    let session = try #require(model.session)
+    #expect(session.discover.account == Demo.account)
+    #expect(session.discover.sheets.settings === session.player.settings)
+    // What a request or a new match makes stale is asked for again by phase 4's pages.
+    session.queries.set(Demo.albums, for: .albums(.artist))
+    #expect(!session.queries.isStale(.albums(.artist), after: 60))
+    session.discover.invalidate([.albums])
+    #expect(session.queries.isStale(.albums(.artist), after: 60))
+  }
+
   @Test func theDemoAppStartsSignedIn() {
     #expect(AppModel.demo().session?.account.username == "demo")
   }

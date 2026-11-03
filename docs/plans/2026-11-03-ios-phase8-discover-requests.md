@@ -5865,6 +5865,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** no `AppModel+Discover.swift` or `DiscoverRoot.swift`. `AccountSession` (the per-account root, made again on every account switch) owns `discover`: it forwards invalidations to its `QueryCache` by name, toasts through `ToastCenter`, hands `TrackSheets` the player's settings and `mixPointsChanged`, and `close()` stops the polling; `AccountSession.live` gives it a `LocalRequestNotifier` reading the new `AppModel.isActive` (the demo none). `AppShell` puts the context in the environment (and in Now Playing's cover), starts it per session (`.task(id: session.key)`), follows the scene phase (`isActive`, `becameActive()`) and the account's rights, and presents the song sheets (`.trackSheets(player:active:)` on the app and in Now Playing). Slots: Search (`RequestsPill`, " Here’s what’s out there:" with Lidarr, `DiscoverSection`), Artist (`NotInLibrarySection`; phase 4's similar artists now show both groups with `SimilarArtistGroups` and `DiscoverArtistCard`, from its own query, rather than a second `SimilarArtistsSection`), Album (`RequestRestButton` after ⋯), `TrackMenuItems` and Now Playing's ⋯ (`TrackLibraryMenuItems`), Library (the Requests row, `library-requests`, and `MusicBrainzIndicator` in a footer). Phase 6 doesn't exist yet: a `// Phase 6:` comment in `RouteDestination` says where its recommendation row's Request button goes. One more test in `SessionTests`.
+
 ---
 
 ### Task 22: A UI test that requests an album, against a pretend server in the app
