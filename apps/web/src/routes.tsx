@@ -15,6 +15,10 @@ import { PlaylistsPage } from './pages/Playlists';
  * less before anything shows. The service worker keeps those files cached, so later opens are instant.
  */
 export const routes: RouteObject[] = [
+  // Signing in, choosing a password from a setup code, and claiming the server: pages of their own, without the player.
+  { path: 'sign-in', lazy: () => import('./pages/SignIn').then((m) => ({ Component: m.SignInPage })) },
+  { path: 'redeem', lazy: () => import('./pages/SignIn').then((m) => ({ Component: m.RedeemPage })) },
+  { path: 'setup', lazy: () => import('./pages/SignIn').then((m) => ({ Component: m.SetupPage })) },
   {
     element: <AppShell />,
     children: [

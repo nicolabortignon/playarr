@@ -5726,7 +5726,7 @@ EOF
 - Modify: `apps/web/src/routes.tsx` (lines 17-19: three routes before the app shell)
 - Test: `apps/web/src/pages/SignIn.test.tsx` (create)
 
-The three pages stand outside the app shell (no player chrome, no polling). Setup is offered when the server says it's in setup mode; whether the visitor is on the home network is the server's call, and its 403 is shown as it comes.
+The three pages stand outside the app shell (no player chrome, no polling). Setup is offered when the server says it's in setup mode; whether the visitor is on the home network is the server's call, and its 403 is shown as it comes. The setup page pre-fills the owner's current username from `GET /api/server`'s `ownerUsername` (Task 9b/16) and shows the server's 409 ("That username belongs to <name>. Pick another; you can rename them later.") as it comes. A 429 always reads "Too many tries. Wait a few minutes and try again." (the server's own words, which a proxy's 429 wouldn't carry).
 
 **Step 1: Write the failing test**
 
@@ -5734,7 +5734,7 @@ The three pages stand outside the app shell (no player chrome, no polling). Setu
 // apps/web/src/pages/SignIn.test.tsx
 import type { Account, ServerInfo } from '@playarr/shared';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { remember, useAccounts } from '../lib/accounts';
@@ -5843,6 +5843,29 @@ describe('sign-in pages', () => {
     expect(await screen.findByText('Accounts settings')).toBeTruthy();
     expect(setup).toHaveBeenCalledWith(expect.objectContaining({ username: 'nicola', name: 'Nicola', password: 'correct horse' }));
   });
+
+  it('pre-fills the owner’s username and says whose a taken one is, as the server puts it', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue({ ...SERVER, setup: true, ownerUsername: 'home' });
+    vi.spyOn(api, 'setup').mockRejectedValue(new ApiError('That username belongs to Sam. Pick another; you can rename them later.', 409));
+    renderAt('/setup');
+    await waitFor(() => expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('home'));
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Nicola' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'sam' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct horse' } });
+    fireEvent.change(screen.getByLabelText('Repeat it'), { target: { value: 'correct horse' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Set up Playarr' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('That username belongs to Sam. Pick another; you can rename them later.');
+  });
+
+  it('asks to wait after too many tries, whatever answered', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue(SERVER);
+    vi.spyOn(api, 'signIn').mockRejectedValue(new ApiError('Request failed (429)', 429));
+    renderAt('/sign-in');
+    fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'nicola' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'nope nope' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Too many tries. Wait a few minutes and try again.');
+  });
 });
 ```
 
@@ -5862,7 +5885,7 @@ import { useState, type FormEvent, type InputHTMLAttributes, type ReactNode } fr
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Wordmark } from '../components/Nav';
 import { deviceName, signedIn, switchTo, useAccounts } from '../lib/accounts';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { useServerInfo } from '../lib/queries';
 
 const INPUT =
@@ -5897,6 +5920,12 @@ function Field({ label, ...input }: { label: string } & InputHTMLAttributes<HTML
   );
 }
 
+/** What to say when a step fails: the server's words, except after too many tries (a proxy's 429 may say nothing). */
+function problem(err: unknown): string {
+  if (err instanceof ApiError && err.status === 429) return 'Too many tries. Wait a few minutes and try again.';
+  return err instanceof Error ? err.message : 'Something went wrong';
+}
+
 /** Runs a step of signing in, keeping what went wrong to show. */
 function useStep() {
   const [error, setError] = useState<string | null>(null);
@@ -5907,7 +5936,7 @@ function useStep() {
     try {
       await step();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(problem(err));
     } finally {
       setBusy(false);
     }
@@ -6042,7 +6071,9 @@ export function SetupPage() {
   const navigate = useNavigate();
   const { data: server } = useServerInfo();
   const [name, setName] = useState('');
-  const [username, setUsername] = useState('');
+  // The owner's current username (their profile's) until they type another.
+  const [typed, setUsername] = useState<string | null>(null);
+  const username = typed ?? server?.ownerUsername ?? '';
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');
   const { error, busy, run } = useStep();
@@ -6122,6 +6153,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
+
+*As executed:* two additions from the server batch, with a test each: the setup page's username starts as `ownerUsername` (`typed ?? server?.ownerUsername ?? ''`, so it fills in when the server info arrives and the owner can still change it), and `useStep` turns any 429 into the friendly wording above via `problem(err)`; other errors, the 409 included, are shown verbatim. The test file and code above are the executed ones.
 
 ---
 
