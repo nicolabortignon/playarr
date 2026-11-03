@@ -111,7 +111,7 @@ Endpoints (JSON; errors are `{ error: string }` with a status code, as today):
 - **Tokens**: 32 random bytes, base64url; stored as SHA-256. Setup codes: 8 characters from an unambiguous alphabet, valid 7 days, single use; `link` is `<origin>/redeem?code=...` (the app also opens `playarr://redeem?server=<origin>&code=...`).
 - **Statuses**: rate-limited sign-in or redeem → 429; `POST /api/accounts` and `/reset` in setup mode → 409. `device` and `platform` are optional (defaults "Unknown device", "web").
 - **Usernames** match `^[a-z0-9][a-z0-9._-]{0,31}$` (lowercased on input); passwords need at least 8 characters.
-- **Owner recovery**: no endpoint. On the server host, `node dist/cli.js reset-password <username>` (in Docker: `docker exec playarr node dist/cli.js reset-password <username>`; in dev: `corepack pnpm -C apps/server reset-password <username>`) signs the account out everywhere and prints a setup code and link. Phase 1 adds it as its last code task.
+- **Owner recovery**: no endpoint. On the server host, `node dist/cli.js reset-password <username>` from `apps/server` (in Docker: `docker exec playarr node server/dist/cli.js reset-password <username>`, the image's working directory being `/app`; in dev: `corepack pnpm -C apps/server reset-password <username>`) signs the account out everywhere and prints a setup code and link (on `PUBLIC_URL`, else `http://localhost:<PORT>`). The old password ends too unless it's the server's only one (clearing that would put the server back in setup mode until the code is used). Phase 1 adds it as its last code task.
 - **Bonjour**: instance name = server name; `_playarr._tcp`, TXT `id=<server uuid>`, `v=<version>`, `name=<server name>`, `path=/`. Turned off with `BONJOUR=off`.
 
 ## Swift conventions

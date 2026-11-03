@@ -5,8 +5,9 @@ import { defineConfig } from 'tsup';
 const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
 
 export default defineConfig({
-  // The analysis workers are their own files next to index.js (see analysis/dspThread.ts, beatModelThread.ts).
-  entry: { index: 'src/index.ts', dspWorker: 'src/analysis/dspWorker.ts', beatModelWorker: 'src/analysis/beatModelWorker.ts' },
+  // The analysis workers are their own files next to index.js (see analysis/dspThread.ts, beatModelThread.ts);
+  // cli.js is the server host's own commands (reset-password).
+  entry: { index: 'src/index.ts', cli: 'src/cli.ts', dspWorker: 'src/analysis/dspWorker.ts', beatModelWorker: 'src/analysis/beatModelWorker.ts' },
   format: ['esm'],
   target: 'node22',
   platform: 'node',

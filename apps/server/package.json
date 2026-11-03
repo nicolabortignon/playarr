@@ -12,7 +12,8 @@
     "build": "tsup",
     "start": "node --env-file-if-exists=../../.env --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reset-password": "tsx --env-file-if-exists=../../.env --disable-warning=ExperimentalWarning src/cli.ts reset-password"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
