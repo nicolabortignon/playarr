@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct PlayarrApp: App {
+  @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @State private var model = PlayarrApp.makeModel()
 
   var body: some Scene {
