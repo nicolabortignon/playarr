@@ -31,6 +31,9 @@ struct SignedInHomeView: View {
             .sheet(isPresented: $model.showingAccounts) { AccountSwitcherView(model: model) }
             .task(id: model.store.active) { await load() }
         }
+        #if DEBUG
+            .playerLab(for: model)
+        #endif
     }
 
     private func load() async {
