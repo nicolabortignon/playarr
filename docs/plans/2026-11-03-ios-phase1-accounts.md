@@ -1023,6 +1023,9 @@ describe('Sessions', () => {
     expect(sessions.resolve('nope')).toBeUndefined();
     expect(sessions.list(1, id)[0]).toMatchObject({ device: 'Mac', current: false });
     expect(sessions.list(1, id).find((s) => s.id === id)).toMatchObject({ device: 'iPhone', platform: 'ios', current: true });
+    // Device and platform are optional: the web's sign-in may send neither.
+    const blank = sessions.create(1, ' ', '');
+    expect(sessions.list(1).find((s) => s.id === blank.id)).toMatchObject({ device: 'Unknown device', platform: 'web' });
   });
 
   it('writes when a session was last seen at most once a minute', () => {
@@ -1123,7 +1126,7 @@ export class Sessions {
     const at = new Date(this.now()).toISOString();
     const { lastInsertRowid } = this.db
       .prepare('INSERT INTO sessions (account_id, token_hash, device, platform, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(accountId, hashToken(token), device.trim().slice(0, 80) || 'Unknown device', platform.trim().slice(0, 20) || 'unknown', at, at);
+      .run(accountId, hashToken(token), device.trim().slice(0, 80) || 'Unknown device', platform.trim().slice(0, 20) || 'web', at, at);
     const id = Number(lastInsertRowid);
     this.touched.set(id, this.now());
     return { id, token };
@@ -1209,6 +1212,8 @@ export class SetupCodes {
   }
 }
 ```
+
+*As executed:* a blank platform defaults to `web` (the conventions: "device and platform are optional, defaults Unknown device, web"), not `unknown`; the first test checks it.
 
 **Step 4: Run the test again**
 
