@@ -18,4 +18,10 @@ public struct DemoPlayerBackend: PlayerBackend {
   public func streamRequest(_ track: Track) -> URLRequest { URLRequest(url: Demo.baseURL.appending(path: track.streamUrl)) }
   public func levelledRequest(_ track: Track) -> URLRequest { streamRequest(track) }
   public func artwork(_ track: Track, size: Int) async -> Data? { nil }
+  /// The demo has no analysis, so no mixes: DJ mix cuts or plays gapless.
+  public func transition(_ request: TransitionRequest) async throws -> TransitionAnswer {
+    .unavailable(.init(reason: "Mixed transitions need audio analysis"))
+  }
+  public func mixMaps(_ recordingIds: [String]) async throws -> [String: MixMapEntry] { [:] }
+  public func transitionRequest(_ path: String) -> URLRequest { URLRequest(url: Demo.baseURL.appending(path: path)) }
 }

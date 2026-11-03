@@ -3716,6 +3716,7 @@ EOF
 - Modify: `apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/PlayerBackend.swift`
 - Create: `apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/Recorder.swift`
 - Modify: `apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift`
+- Modify: `apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Demo/DemoPlayerBackend.swift` (phase 4's demo backend conforms to `PlayerBackend` too)
 
 **Step 1: Write them**
 
@@ -3907,13 +3908,25 @@ git apply /tmp/phase5-task11-backend.patch
 
 If phase 2 named the transition URL differently than `MediaURLs.transition(_:)`, change it in `APIBackend.transitionRequest` only.
 
+Phase 4's `DemoPlayerBackend` (the `-UITestsDemo` library, no server) gets the three calls too, at the end of the struct. The demo has no analysis, so it answers as a server without it:
+
+```swift
+  /// The demo has no analysis, so no mixes: DJ mix cuts or plays gapless.
+  public func transition(_ request: TransitionRequest) async throws -> TransitionAnswer {
+    .unavailable(.init(reason: "Mixed transitions need audio analysis"))
+  }
+  public func mixMaps(_ recordingIds: [String]) async throws -> [String: MixMapEntry] { [:] }
+  public func transitionRequest(_ path: String) -> URLRequest { URLRequest(url: Demo.baseURL.appending(path: path)) }
+```
+
 **Step 2: Everything still passes**
 
 ```bash
 swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrPlayer 2>&1 | tail -1
+swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrUI 2>&1 | tail -1
 ```
 
-Expected: `Test run with … tests in … suites passed` (the count from Task 0 plus 43).
+Expected: `Test run with … tests in … suites passed` (the count from Task 0 plus 43: 146 on `main` after phase 4), and `PlayarrUI` still builds and passes.
 
 **Step 3: Commit**
 
@@ -3922,7 +3935,8 @@ git add apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/TransitionCoordina
   apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/Track+Continuation.swift \
   apps/ios/Packages/PlayarrPlayer/Sources/PlayarrPlayer/PlayerBackend.swift \
   apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/Recorder.swift \
-  apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift
+  apps/ios/Packages/PlayarrPlayer/Tests/PlayarrPlayerTests/Support/FakeBackend.swift \
+  apps/ios/Packages/PlayarrUI/Sources/PlayarrUI/Demo/DemoPlayerBackend.swift
 git commit -F - <<'EOF'
 Ask the server for transitions and mix maps from the player, and download ready files
 

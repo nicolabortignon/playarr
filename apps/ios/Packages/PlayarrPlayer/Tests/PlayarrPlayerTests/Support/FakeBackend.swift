@@ -21,6 +21,25 @@ final class FakeBackend: PlayerBackend {
   func streamRequest(_ track: Track) -> URLRequest { StubServer.request(track.streamUrl) }
   func levelledRequest(_ track: Track) -> URLRequest { StubServer.request(track.streamUrl + "/levelled.wav") }
   func artwork(_ track: Track, size: Int) async -> Data? { nil }
+
+  /// Answers for POST /api/transitions by "<from id>-<to id>", in turn (the last one repeats); unavailable otherwise.
+  let transitionAnswers = Mutex<[String: [TransitionAnswer]]>([:])
+  let transitionAsks = Recorder<TransitionRequest>()
+  let mixMapTable = Mutex<[String: MixMapEntry]>([:])
+
+  func transition(_ request: TransitionRequest) async throws -> TransitionAnswer {
+    transitionAsks.append(request)
+    return transitionAnswers.withLock { table in
+      let key = "\(request.from)-\(request.to)"
+      guard let answers = table[key], let first = answers.first else { return .unavailable(.init(reason: "No mix map yet")) }
+      if answers.count > 1 { table[key] = Array(answers.dropFirst()) }
+      return first
+    }
+  }
+  func mixMaps(_ recordingIds: [String]) async throws -> [String: MixMapEntry] {
+    mixMapTable.withLock { table in table.filter { recordingIds.contains($0.key) } }
+  }
+  func transitionRequest(_ path: String) -> URLRequest { StubServer.request(path) }
 }
 
 extension Player {

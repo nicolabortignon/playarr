@@ -11,6 +11,12 @@ public protocol PlayerBackend: Sendable {
   /// The song's levelled stream at gain 0 (the phone applies the gain), authorized.
   func levelledRequest(_ track: Track) -> URLRequest
   func artwork(_ track: Track, size: Int) async -> Data?
+  /// `POST /api/transitions`.
+  func transition(_ request: TransitionRequest) async throws -> TransitionAnswer
+  /// `POST /api/mix-maps`, at most 50 at a time.
+  func mixMaps(_ recordingIds: [String]) async throws -> [String: MixMapEntry]
+  /// A transition file or the rest of a song after one (a path the server gave, `/transitions/…`), authorized.
+  func transitionRequest(_ path: String) -> URLRequest
 }
 
 /// The real server, through PlayarrAPI.
@@ -45,6 +51,18 @@ public struct APIBackend: PlayerBackend {
 
   public func levelledRequest(_ track: Track) -> URLRequest {
     media.request(for: media.levelled(track, gain: 0) ?? media.baseURL)
+  }
+
+  public func transition(_ request: TransitionRequest) async throws -> TransitionAnswer {
+    try await client.send(API.Playback.transition(request))
+  }
+
+  public func mixMaps(_ recordingIds: [String]) async throws -> [String: MixMapEntry] {
+    try await client.send(API.Playback.mixMaps(ids: recordingIds))
+  }
+
+  public func transitionRequest(_ path: String) -> URLRequest {
+    media.request(for: media.transition(path) ?? media.baseURL)
   }
 
   public func artwork(_ track: Track, size: Int) async -> Data? {
