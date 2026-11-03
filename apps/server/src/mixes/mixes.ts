@@ -215,7 +215,7 @@ export class Mixes {
     // A mix being made now would otherwise be written back from the old history.
     await Promise.all([...this.inflight.values()].map((job) => job.catch(() => {})));
     if (profile === undefined) this.deps.db.exec('DELETE FROM mixes');
-    else this.deps.db.prepare('DELETE FROM mixes WHERE profile_id = ?').run(profile);
+    else this.deps.db.prepare('DELETE FROM mixes WHERE account_id = ?').run(profile);
   }
 
   /**
@@ -290,8 +290,8 @@ export class Mixes {
   private write(profile: number, key: string, period: string, variant: number, stored: Stored | StoredPlan, now: Date) {
     this.deps.db
       .prepare(
-        `INSERT INTO mixes (profile_id, key, period, variant, data, generated_at) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (profile_id, key) DO UPDATE SET period = excluded.period, variant = excluded.variant, data = excluded.data, generated_at = excluded.generated_at`,
+        `INSERT INTO mixes (account_id, key, period, variant, data, generated_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (account_id, key) DO UPDATE SET period = excluded.period, variant = excluded.variant, data = excluded.data, generated_at = excluded.generated_at`,
       )
       .run(profile, key, period, variant, JSON.stringify(stored), now.toISOString());
   }
@@ -397,12 +397,12 @@ export class Mixes {
   }
 
   private rows(profile: number): Map<string, Row> {
-    const rows = this.deps.db.prepare('SELECT key, period, variant, data, generated_at FROM mixes WHERE profile_id = ?').all(profile) as unknown as Row[];
+    const rows = this.deps.db.prepare('SELECT key, period, variant, data, generated_at FROM mixes WHERE account_id = ?').all(profile) as unknown as Row[];
     return new Map(rows.map((r) => [r.key, r]));
   }
 
   private storedPlan(profile: number): StoredPlan | undefined {
-    const row = this.deps.db.prepare('SELECT data FROM mixes WHERE profile_id = ? AND key = ?').get(profile, PLAN_KEY) as { data: string } | undefined;
+    const row = this.deps.db.prepare('SELECT data FROM mixes WHERE account_id = ? AND key = ?').get(profile, PLAN_KEY) as { data: string } | undefined;
     return row ? (JSON.parse(row.data) as StoredPlan) : undefined;
   }
 }

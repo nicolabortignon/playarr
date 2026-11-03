@@ -538,8 +538,8 @@ export class CatalogStore {
   private moveRecording(from: string, to: string) {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO favorites (recording_id, track_id, title, artist_name, album_title, created_at)
-         SELECT ?, track_id, title, artist_name, album_title, created_at FROM favorites WHERE recording_id = ?`,
+        `INSERT OR IGNORE INTO favorites (account_id, recording_id, track_id, title, artist_name, album_title, created_at)
+         SELECT account_id, ?, track_id, title, artist_name, album_title, created_at FROM favorites WHERE recording_id = ?`,
       )
       .run(to, from);
     this.db.prepare('DELETE FROM favorites WHERE recording_id = ?').run(from);

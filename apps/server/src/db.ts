@@ -1,9 +1,13 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { usernameFrom } from './accounts/username.ts';
+
+/** SQL, or a function for the steps SQL can't do alone. */
+type Migration = string | ((db: DatabaseSync) => void);
 
 /** Ordered schema migrations; each runs once, tracked with SQLite's user_version. */
-const MIGRATIONS = [
+const MIGRATIONS: Migration[] = [
   `CREATE TABLE favorites (
      recording_id TEXT PRIMARY KEY,
      track_id     INTEGER,
@@ -244,6 +248,9 @@ const MIGRATIONS = [
      analyzed_at  TEXT NOT NULL
    );
    CREATE INDEX track_loudness_by_file ON track_loudness (file_id);`,
+  // Accounts replace listener profiles, keeping their ids (plays, mixes and ListenBrainz links stay
+  // theirs). See accountsMigration.
+  accountsMigration,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {
@@ -259,9 +266,97 @@ export function openDatabase(dataDir: string): DatabaseSync {
 export function migrate(db: DatabaseSync, upTo = MIGRATIONS.length) {
   const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
   for (let i = version; i < upTo; i++) {
+    const step = MIGRATIONS[i]!;
     db.exec('BEGIN');
-    db.exec(MIGRATIONS[i]!);
-    db.exec(`PRAGMA user_version = ${i + 1}`);
-    db.exec('COMMIT');
+    try {
+      if (typeof step === 'string') db.exec(step);
+      else step(db);
+      db.exec(`PRAGMA user_version = ${i + 1}`);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
   }
+}
+
+/**
+ * Profiles become accounts: a username from each profile's name, a password once set up, a role (the
+ * first profile is the owner, an admin), the right to request albums, and which sources it may hear
+ * (all, or those in account_sources). Favorites and playlists get an owner: the owner has the favorites
+ * so far, and the playlists so far stay visible to everyone by being shared. Sessions (tokens stored as
+ * SHA-256) and setup codes get tables of their own.
+ */
+function accountsMigration(db: DatabaseSync) {
+  db.exec(`
+    ALTER TABLE profiles RENAME TO accounts;
+    ALTER TABLE accounts ADD COLUMN username TEXT;
+    ALTER TABLE accounts ADD COLUMN password_hash TEXT;
+    ALTER TABLE accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'member';
+    ALTER TABLE accounts ADD COLUMN can_request INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE accounts ADD COLUMN all_sources INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE plays RENAME COLUMN profile_id TO account_id;
+    ALTER TABLE mixes RENAME COLUMN profile_id TO account_id;
+    DROP INDEX plays_by_profile;
+    CREATE INDEX plays_by_account ON plays (account_id, played_at);
+  `);
+  // Every install has had a profile since they were added; a database without one gets the owner back.
+  if (!db.prepare('SELECT 1 FROM accounts').get()) {
+    db.prepare(`INSERT INTO accounts (id, name, created_at) VALUES (1, 'Home', ?)`).run(new Date().toISOString());
+  }
+  const rows = db.prepare('SELECT id, name FROM accounts ORDER BY id').all() as { id: number; name: string }[];
+  const taken = new Set<string>();
+  const setUsername = db.prepare('UPDATE accounts SET username = ? WHERE id = ?');
+  for (const { id, name } of rows) {
+    const username = usernameFrom(name, taken);
+    taken.add(username);
+    setUsername.run(username, id);
+  }
+  const owner = rows[0]!.id;
+  db.prepare(`UPDATE accounts SET role = 'admin' WHERE id = ?`).run(owner);
+  db.exec(`
+    CREATE UNIQUE INDEX accounts_by_username ON accounts (username);
+    CREATE TABLE favorites_by_account (
+      account_id   INTEGER NOT NULL,
+      recording_id TEXT NOT NULL,
+      track_id     INTEGER,
+      title        TEXT NOT NULL,
+      artist_name  TEXT NOT NULL,
+      album_title  TEXT NOT NULL,
+      created_at   TEXT NOT NULL,
+      PRIMARY KEY (account_id, recording_id)
+    );
+  `);
+  db.prepare(
+    `INSERT INTO favorites_by_account (account_id, recording_id, track_id, title, artist_name, album_title, created_at)
+     SELECT ?, recording_id, track_id, title, artist_name, album_title, created_at FROM favorites`,
+  ).run(owner);
+  db.exec(`
+    DROP TABLE favorites;
+    ALTER TABLE favorites_by_account RENAME TO favorites;
+    ALTER TABLE playlists ADD COLUMN account_id INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE playlists ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE account_sources (
+      account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+      source_id  INTEGER NOT NULL REFERENCES sources (id) ON DELETE CASCADE,
+      PRIMARY KEY (account_id, source_id)
+    );
+    CREATE TABLE sessions (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id   INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+      token_hash   TEXT NOT NULL UNIQUE,
+      device       TEXT NOT NULL,
+      platform     TEXT NOT NULL,
+      created_at   TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+    CREATE INDEX sessions_by_account ON sessions (account_id);
+    CREATE TABLE setup_codes (
+      code_hash  TEXT PRIMARY KEY,
+      account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  db.prepare('UPDATE playlists SET account_id = ?, shared = 1').run(owner);
 }

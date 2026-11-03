@@ -86,7 +86,7 @@ describe('profiles', () => {
     // Removing Sam takes Sam's history and mixes along.
     const removed = await app.inject({ method: 'DELETE', url: `/api/profiles/${sam.id}`, headers: { 'x-playarr': '1' } });
     expect(removed.json()).toEqual([{ id: 1, name: 'Home' }]);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM plays WHERE profile_id = ?').get(sam.id) as { n: number }).n).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM mixes WHERE profile_id = ?').get(sam.id) as { n: number }).n).toBe(0);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM plays WHERE account_id = ?').get(sam.id) as { n: number }).n).toBe(0);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM mixes WHERE account_id = ?').get(sam.id) as { n: number }).n).toBe(0);
   });
 });

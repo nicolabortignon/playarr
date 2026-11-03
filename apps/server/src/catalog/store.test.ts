@@ -347,7 +347,7 @@ describe('CatalogStore: matching', () => {
     local.copies = local.copies.map((c) => ({ ...c, trackKey: `name:x#local:${c.trackKey.split('#')[1]}`, preferredId: undefined }));
     store.applySync(folder, local);
     const now = new Date().toISOString();
-    db.prepare('INSERT INTO favorites (recording_id, title, artist_name, album_title, created_at) VALUES (?, ?, ?, ?, ?)').run('local:rec-1', 'Angel', 'Massive Attack', 'Mezzanine', now);
+    db.prepare('INSERT INTO favorites (account_id, recording_id, title, artist_name, album_title, created_at) VALUES (1, ?, ?, ?, ?, ?)').run('local:rec-1', 'Angel', 'Massive Attack', 'Mezzanine', now);
     db.prepare('INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)').run('P', now, now);
     db.prepare('INSERT INTO playlist_items (playlist_id, position, recording_id, title, artist_name, album_title, added_at) VALUES (1, 0, ?, ?, ?, ?, ?)').run('local:rec-1', 'Angel', 'Massive Attack', 'Mezzanine', now);
     db.prepare('INSERT INTO track_features (recording_id, version, features, analyzed_at) VALUES (?, 1, ?, ?)').run('local:rec-1', '{}', now);

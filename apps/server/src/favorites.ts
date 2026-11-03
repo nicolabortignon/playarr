@@ -31,9 +31,9 @@ export class Favorites {
   add(track: Track) {
     this.db
       .prepare(
-        `INSERT INTO favorites (recording_id, track_id, title, artist_name, album_title, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (recording_id) DO NOTHING`,
+        `INSERT INTO favorites (account_id, recording_id, track_id, title, artist_name, album_title, created_at)
+         VALUES (1, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (account_id, recording_id) DO NOTHING`,
       )
       .run(track.recordingId, track.id, track.title, track.artistName, track.albumTitle, new Date().toISOString());
   }

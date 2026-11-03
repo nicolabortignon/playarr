@@ -70,7 +70,7 @@ export class Scrobbler {
   info(profile = 1): ListenBrainzInfo {
     const s = this.saved(profile);
     const count = (where: string, ...params: string[]) =>
-      (this.db.prepare(`SELECT COUNT(*) AS n FROM plays WHERE profile_id = ? AND ${where}`).get(profile, ...params) as { n: number }).n;
+      (this.db.prepare(`SELECT COUNT(*) AS n FROM plays WHERE account_id = ? AND ${where}`).get(profile, ...params) as { n: number }).n;
     const since = s.since ?? new Date().toISOString();
     return {
       connected: !!s.token,
@@ -149,7 +149,7 @@ export class Scrobbler {
       const rows = this.db
         .prepare(
           `SELECT id, recording_id, played_at, seconds FROM plays
-           WHERE profile_id = ? AND listenbrainz IS NULL AND skipped = 0 AND played_at >= ? ORDER BY played_at LIMIT ?`,
+           WHERE account_id = ? AND listenbrainz IS NULL AND skipped = 0 AND played_at >= ? ORDER BY played_at LIMIT ?`,
         )
         .all(profile, s.since ?? new Date().toISOString(), BATCH) as { id: number; recording_id: string; played_at: string; seconds: number }[];
       if (!rows.length) return;

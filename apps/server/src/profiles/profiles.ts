@@ -19,7 +19,7 @@ export class Profiles {
   constructor(private readonly db: DatabaseSync) {}
 
   list(): Profile[] {
-    return this.db.prepare('SELECT id, name FROM profiles ORDER BY id').all() as unknown as Profile[];
+    return this.db.prepare('SELECT id, name FROM accounts ORDER BY id').all() as unknown as Profile[];
   }
 
   ids(): number[] {
@@ -35,13 +35,13 @@ export class Profiles {
 
   create(name: string): Profile {
     const clean = this.name(name);
-    const { lastInsertRowid } = this.db.prepare('INSERT INTO profiles (name, created_at) VALUES (?, ?)').run(clean, new Date().toISOString());
+    const { lastInsertRowid } = this.db.prepare('INSERT INTO accounts (name, created_at) VALUES (?, ?)').run(clean, new Date().toISOString());
     return { id: Number(lastInsertRowid), name: clean };
   }
 
   rename(id: number, name: string): Profile {
     const clean = this.name(name, id);
-    if (!this.db.prepare('UPDATE profiles SET name = ? WHERE id = ?').run(clean, id).changes) throw new ProfileError('No such profile', 404);
+    if (!this.db.prepare('UPDATE accounts SET name = ? WHERE id = ?').run(clean, id).changes) throw new ProfileError('No such profile', 404);
     return { id, name: clean };
   }
 
@@ -52,10 +52,10 @@ export class Profiles {
     if (ids.length === 1) throw new ProfileError('There has to be one profile', 409);
     this.db.exec('BEGIN');
     try {
-      this.db.prepare('DELETE FROM plays WHERE profile_id = ?').run(id);
-      this.db.prepare('DELETE FROM mixes WHERE profile_id = ?').run(id);
+      this.db.prepare('DELETE FROM plays WHERE account_id = ?').run(id);
+      this.db.prepare('DELETE FROM mixes WHERE account_id = ?').run(id);
       this.db.prepare(`DELETE FROM app_settings WHERE key = ?`).run(`listenbrainz:${id}`);
-      this.db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
+      this.db.prepare('DELETE FROM accounts WHERE id = ?').run(id);
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');

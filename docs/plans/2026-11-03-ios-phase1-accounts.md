@@ -234,10 +234,15 @@ export function migrate(db: DatabaseSync, upTo = MIGRATIONS.length) {
   for (let i = version; i < upTo; i++) {
     const step = MIGRATIONS[i]!;
     db.exec('BEGIN');
-    if (typeof step === 'string') db.exec(step);
-    else step(db);
-    db.exec(`PRAGMA user_version = ${i + 1}`);
-    db.exec('COMMIT');
+    try {
+      if (typeof step === 'string') db.exec(step);
+      else step(db);
+      db.exec(`PRAGMA user_version = ${i + 1}`);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
   }
 }
 
@@ -393,6 +398,8 @@ corepack pnpm -C apps/server typecheck
 ```
 
 Expected: PASS everywhere (the profiles tests still pass: profiles are now rows of `accounts`).
+
+*As executed:* `migrate` rolls back a step that throws (a function migration does several statements, so a failure must not leave a half-migrated database). Checked on a database built with the previous `db.ts` (profiles, plays, mixes, favorites, playlists, ListenBrainz keys), copied, then opened with this one: ids, history and links kept, `foreign_key_check` empty, `integrity_check` ok, reopening a no-op. Baseline note: `src/analysis/beatModel*.test.ts` (3 tests) and the typecheck of `beatModel.ts` fail in a checkout whose `node_modules` lacks `onnxruntime-web` (declared in package.json); that's the environment, not this plan.
 
 **Step 5: Commit**
 
