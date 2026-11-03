@@ -3795,57 +3795,85 @@ MSG
 ### Task 14: App settings: local network, Bonjour, plain HTTP at home, the playarr:// scheme
 
 **Files:**
-- Modify: `apps/ios/project.yml`
-- Regenerated (by XcodeGen, committed if phase 0 commits it): `apps/ios/Config/Info.plist`
+- Modify: `apps/ios/Config/Info.plist` (phase 0's hand-written plist: `project.yml` points `INFOPLIST_FILE` at it)
+- Modify: `apps/ios/Makefile` and `apps/ios/scripts/release.mjs` (the compiler's macro sandbox, see Step 3)
 
 **Step 1: Check what's missing**
 
 ```bash
-make -C apps/ios bootstrap
 plutil -extract NSBonjourServices json -o - apps/ios/Config/Info.plist
 ```
 
-Expected: `error: No value at that key path or invalid key path: NSBonjourServices`.
+Expected: `Could not extract value, error: No value at that key path or invalid key path: NSBonjourServices`.
 
 **Step 2: Add the keys**
 
-In `apps/ios/project.yml`, under `targets: Playarr: info: properties:`, add these (keep phase 0's keys):
+In `apps/ios/Config/Info.plist`, add these keys to the top-level `<dict>` (keep phase 0's keys; the file keeps its keys in alphabetical order, so `CFBundleURLTypes` goes after `CFBundleShortVersionString` and the `NS…` keys after `LSRequiresIPhoneOS`):
 
-```yaml
-        NSLocalNetworkUsageDescription: Playarr looks for your music servers on this network.
-        NSBonjourServices:
-          - _playarr._tcp
-        NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
-        CFBundleURLTypes:
-          - CFBundleURLName: me.tracklistme.playarr
-            CFBundleURLSchemes:
-              - playarr
+```xml
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>me.tracklistme.playarr</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>playarr</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_playarr._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Playarr looks for your music servers on this network.</string>
 ```
 
 - `NSBonjourServices` lets NWBrowser browse `_playarr._tcp`. Without it, browsing fails silently on iOS. `NSLocalNetworkUsageDescription` is the text of the Local Network prompt.
 - `NSAllowsLocalNetworking` allows plain HTTP to local addresses only. Everything else stays HTTPS (no `NSAllowsArbitraryLoads`).
 - The URL scheme opens `playarr://redeem?server=…&code=…` links in the app.
 
-If phase 0 keeps a hand-written `Config/Info.plist` instead of `info.properties`, add the same keys there as plist XML.
+**Step 3: The compiler's macro sandbox**
 
-**Step 3: Regenerate and check**
+This is the first app build with `PlayarrAPI`'s `@Observable` types in it. Xcode's compiler runs the Observation macros in `swift-plugin-server` inside its own sandbox, which can't start inside Claude's (`error: external macro implementation type 'ObservationMacros.ObservableMacro' could not be found … produced malformed response`). SwiftPM's `--disable-sandbox` already covers `swift build`; xcodebuild needs the compiler's flag. In `apps/ios/Makefile`, add to the comment above `XCODEBUILD`:
+
+```make
+# -Xfrontend -disable-sandbox: nor can the compiler sandbox the macro plugins it runs (@Observable).
+```
+
+and end the `XCODEBUILD` definition's last line with ` 'OTHER_SWIFT_FLAGS=$$(inherited) -Xfrontend -disable-sandbox'`.
+
+In `apps/ios/scripts/release.mjs`, after the `xcodebuild` helper, add:
+
+```js
+/** For builds: the compiler can't sandbox the macro plugins it runs (@Observable) inside Claude's sandbox. */
+const NO_MACRO_SANDBOX = 'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sandbox';
+```
+
+and pass `NO_MACRO_SANDBOX` after `` `CURRENT_PROJECT_VERSION=${build}` `` in the `archive` call of `beta` and the `build` call of `device` (not in `-exportArchive`, which compiles nothing).
+
+**Step 4: Check**
 
 ```bash
-make -C apps/ios bootstrap
+plutil -lint apps/ios/Config/Info.plist
 plutil -extract NSBonjourServices json -o - apps/ios/Config/Info.plist
 plutil -extract NSAppTransportSecurity json -o - apps/ios/Config/Info.plist
 plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes json -o - apps/ios/Config/Info.plist
-make -C apps/ios build
+make -C apps/ios build test-scripts
 ```
 
-Expected: `["_playarr._tcp"]`, `{"NSAllowsLocalNetworking":true}`, `["playarr"]`, and the build succeeds.
+Expected: `OK`, `["_playarr._tcp"]`, `{"NSAllowsLocalNetworking":true}`, `["playarr"]`, the build succeeds and the scripts' 8 tests pass. (An unsigned Release archive with `NO_MACRO_SANDBOX`, as `ios:beta` makes it, was checked too.)
 
-**Step 4: Commit**
+**Step 5: Commit**
 
 ```bash
-git add apps/ios/project.yml
-git ls-files --error-unmatch apps/ios/Config/Info.plist >/dev/null 2>&1 && git add apps/ios/Config/Info.plist
+git add apps/ios/Config/Info.plist apps/ios/Makefile apps/ios/scripts/release.mjs
 git commit -F - <<'MSG'
 iOS: ask for the local network, browse for Playarr servers, plain HTTP only at home, open playarr:// links
 

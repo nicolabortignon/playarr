@@ -25,9 +25,10 @@ SIMULATOR ?= iPhone 17 Pro
 # That simulator's id, or the first available iPhone's when this Xcode has none by that name.
 SIMULATOR_ID = $(shell { xcrun simctl list devices available | grep -E '^ +$(SIMULATOR) [(][0-9A-F-]{36}[)]'; xcrun simctl list devices available | grep -E '^ +iPhone'; } | head -1 | grep -oE '[0-9A-F-]{36}')
 # -IDEPackageSupportDisableManifestSandbox: SwiftPM can't sandbox package manifests inside another sandbox (Claude's shell).
+# -Xfrontend -disable-sandbox: nor can the compiler sandbox the macro plugins it runs (@Observable).
 XCODEBUILD = xcodebuild -project Playarr.xcodeproj -scheme Playarr -derivedDataPath build/DerivedData \
   -IDEPackageSupportDisableManifestSandbox=YES -destination 'platform=iOS Simulator,id=$(SIMULATOR_ID)' \
-  CURRENT_PROJECT_VERSION=$$(git rev-list --count HEAD)
+  CURRENT_PROJECT_VERSION=$$(git rev-list --count HEAD) 'OTHER_SWIFT_FLAGS=$$(inherited) -Xfrontend -disable-sandbox'
 # The repo's .env has ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and IOS_BUNDLE_ID; CI sets them itself.
 NODE = node --env-file-if-exists=../../.env
 

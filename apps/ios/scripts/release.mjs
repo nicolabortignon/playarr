@@ -20,6 +20,8 @@ const ARCHIVE = join(IOS, 'build/Playarr.xcarchive');
 const sh = (cmd, args) => execFileSync(cmd, args, { cwd: IOS, encoding: 'utf8' }).trim();
 const xcodebuild = (args) =>
   execFileSync('xcodebuild', ['-project', 'Playarr.xcodeproj', '-IDEPackageSupportDisableManifestSandbox=YES', ...args], { cwd: IOS, stdio: 'inherit' });
+/** For builds: the compiler can't sandbox the macro plugins it runs (@Observable) inside Claude's sandbox. */
+const NO_MACRO_SANDBOX = 'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sandbox';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** "What to Test": one line per commit subject (merges left out), at most 25 lines and 4000 characters. */
@@ -54,7 +56,7 @@ async function beta() {
   xcodebuild([
     'archive', '-scheme', 'Playarr', '-configuration', 'Release', '-destination', 'generic/platform=iOS',
     '-archivePath', ARCHIVE, '-derivedDataPath', 'build/DerivedData', '-quiet',
-    'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO', 'CODE_SIGN_IDENTITY=', `CURRENT_PROJECT_VERSION=${build}`,
+    'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO', 'CODE_SIGN_IDENTITY=', `CURRENT_PROJECT_VERSION=${build}`, NO_MACRO_SANDBOX,
   ]);
 
   const tmp = mkdtempSync(join(tmpdir(), 'playarr-export-'));
@@ -154,7 +156,7 @@ async function device() {
   step(`Building for ${phone.deviceProperties.name}`);
   xcodebuild([
     'build', '-scheme', 'Playarr', '-configuration', 'Debug', '-destination', `id=${udid}`, '-derivedDataPath', 'build/DerivedData', '-quiet',
-    `CURRENT_PROJECT_VERSION=${build}`, ...authFlags(cfg), '-allowProvisioningDeviceRegistration',
+    `CURRENT_PROJECT_VERSION=${build}`, NO_MACRO_SANDBOX, ...authFlags(cfg), '-allowProvisioningDeviceRegistration',
   ]);
 
   step('Installing');
