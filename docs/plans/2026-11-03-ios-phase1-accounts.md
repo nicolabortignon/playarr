@@ -7140,9 +7140,9 @@ EOF
 
 No code and no commit: the owner does this on the real server once tasks 1-23 are deployed (`pnpm deploy:nas`, or the updater). Claude can't reach the NAS from its shell (macOS Local Network blocks it): hand these steps to the user and wait for them to confirm.
 
-**Step 1: Claim the server.** On the home network, open Playarr by its IP or local name (not through the reverse proxy). Settings → Accounts shows "Set up this server" → **Set up the owner's account**: your name, a username, a password (8+ characters). You land in Settings → Accounts signed in as the owner (an admin); your history, mixes, favorites and ListenBrainz link are still yours.
+**Step 1: Claim the server.** On the home network, open Playarr by its IP or local name (e.g. `http://192.168.1.103:4000`, not through a reverse proxy or the router's forward). Settings → Accounts shows "Set up this server" → **Set up the owner's account** (the `/setup` page): your name, a username (pre-filled with the owner account's current one, from the old "Home" profile; change it if you like), a password (8+ characters) twice → **Set up Playarr**. If the username you pick belongs to another profile-turned-account, the page says so ("That username belongs to <name>. Pick another; you can rename them later."). You land in Settings → Accounts signed in as the owner (an admin); your history, mixes, favorites and ListenBrainz link are still yours, and the playlists from before accounts are yours and shared with everyone.
 
-**Step 2: Check the lock.** In a private window, open Playarr: it goes to /sign-in. `curl -s -o /dev/null -w '%{http_code}\n' http://<server>:4000/api/albums` answers 401; `curl -s http://<server>:4000/api/server` answers the id, name, version and `"setup":false`.
+**Step 2: Check the lock.** In a private window, open Playarr: it goes to /sign-in (every phone and browser that was using Playarr now asks to sign in once). `curl -s -o /dev/null -w '%{http_code}\n' http://<server>:4000/api/albums` answers 401; `curl -s http://<server>:4000/api/server` answers the id, name, version and `"setup":false`.
 
 **Step 3: Make sure the Creative Commons folder is a source of its own.** Settings → Sources → Add source → a folder holding only Creative Commons music (e.g. albums from the Free Music Archive with CC BY licences), named "Creative Commons". Wait for its sync and matching to finish.
 
@@ -7152,11 +7152,11 @@ No code and no commit: the owner does this on the real server once tasks 1-23 ar
 
 **Step 6: Verify what the reviewer sees.** Still in that private window (signed in as `reviewer`):
 - Home and Library show only the Creative Commons albums; Search finds nothing else.
-- No Request buttons anywhere; Settings shows Accounts (their own name and devices) but no admin controls.
+- No Request buttons anywhere; Settings → Accounts shows only "You" (their name and devices), no "Everyone" list; Sources, Requests and Updates read "Only an admin can change these settings." (Mixes shows their own history and ListenBrainz link; its shared switches answer "Only an admin can change this")
 - Open an album URL from your own account (e.g. `/albums/<id of a non-CC album>`): "not found".
 - `curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer <token>" http://<server>:4000/stream/<fileId of a non-CC song>` answers 404 (get a token with `curl -s -X POST -H 'Content-Type: application/json' -H 'X-Playarr: 1' -d '{"username":"reviewer","password":"…","device":"curl","platform":"test"}' http://<server>:4000/api/auth/sign-in`). Sign that session out afterwards from Settings → Accounts → reviewer → Devices.
 
-**Step 7: Home devices.** Everyone else in the household gets an account the same way (Add account, their name, Member, every source, requests as you like), and opens their setup link on their own phone. On a shared device, Home → "Add account" signs in a second person; "Not X? Listen as Y" switches without a password.
+**Step 7: Home devices.** The household's old profiles are already accounts (same history, mixes and ListenBrainz link) without a password: in Settings → Accounts, check each one's username with the pencil (**Edit**), then the key (**New setup code for <name>**) gives the code and link they open on their own phone to choose a password. Anyone new gets **Add account** (their name, Member, every source, requests as you like). On a shared device, Home → "Add account" signs in a second person; "Not X? Listen as Y" switches without a password. A forgotten owner password: `docker exec playarr node server/dist/cli.js reset-password <username>` on the NAS.
 
 ---
 
