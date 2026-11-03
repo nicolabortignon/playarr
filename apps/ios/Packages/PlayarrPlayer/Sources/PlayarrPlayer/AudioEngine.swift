@@ -59,6 +59,7 @@ public final class AudioEngine {
   private var pumping = false
   private var pumpAgain = false
   private var events: [EngineEvent] = []
+  private var configurationWatch: Task<Void, Never>?
 
   /// `makeSource` opens a song's audio from a frame (44.1 kHz) on. `manualRendering` renders offline, for tests.
   public init(tuning: Tuning = Tuning(), manualRendering: Bool = false, makeSource: @escaping @MainActor (EngineItem, Int64) -> any PCMSource) throws {
@@ -86,6 +87,15 @@ public final class AudioEngine {
     if manualRendering {
       try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4096)
     }
+    configurationWatch = Task { [weak self, engine] in
+      for await _ in NotificationCenter.default.notifications(named: .AVAudioEngineConfigurationChange, object: engine) {
+        self?.configurationChanged()
+      }
+    }
+  }
+
+  isolated deinit {
+    configurationWatch?.cancel()
   }
 
   // MARK: Commands
@@ -146,6 +156,14 @@ public final class AudioEngine {
     }
   }
 
+  /// Plays the current item from `seconds` (a new epoch).
+  public func seek(to seconds: Double) {
+    guard let id = current?.segment?.id, var item = items[id] else { return }
+    item.startAt = max(0, seconds)
+    items[id] = item
+    reload(item)
+  }
+
   /// Stops and forgets everything.
   public func stop() {
     resetEpoch()
@@ -190,6 +208,22 @@ public final class AudioEngine {
       decks: (decks + [transitionDeck]).map { $0.snapshot(title: $0.segment.flatMap { items[$0.id] }?.track.title) })
   }
 
+  // MARK: Phase 5 seam: transitions
+
+  /// Where frame `songFrame` (44.1 kHz) of an item that's placed sits on the timeline; nil if it isn't placed.
+  public func timelineSample(of id: UUID, songFrame: Int64) -> SampleTime? {
+    guard let s = decks.compactMap(\.segment).first(where: { $0.id == id }), let start = s.timelineStart else { return nil }
+    return start + songFrame - s.firstFrame
+  }
+
+  /// Plays `source` on the transition node from timeline sample `sample`, sample-aligned with the decks. The node
+  /// must have played out what it had (a node's scheduled audio can't be taken back without a new epoch).
+  public func scheduleTransition(_ source: any PCMSource, at sample: SampleTime, envelope: GainEnvelope = GainEnvelope()) {
+    transitionDeck.load(id: UUID(), source: source, firstFrame: 0, expectedFrames: .max, holdback: 0, envelope: envelope)
+    transitionDeck.place(at: sample)
+    pump()
+  }
+
   // MARK: Driving
 
   /// Moves everything on: schedules and reads, prepares and places the next song, notices joins, ends, and running
@@ -218,6 +252,7 @@ public final class AudioEngine {
     advance(now: now)
     retire(now: now)
     startWhenReady(now: now)
+    watchBuffer(now: now)
     reportEnd(now: now)
   }
 
@@ -274,6 +309,26 @@ public final class AudioEngine {
     guard ready else { return }
     guard wantsToPlay else { return state = .paused }
     startNodes()
+  }
+
+  private func watchBuffer(now: SampleTime) {
+    guard state == .playing || state == .buffering else { return }
+    let low = EngineFormat.frames(tuning.lowWater)
+    let audible = decks.compactMap(\.segment).filter { s in
+      guard let start = s.timelineStart else { return false }
+      return start <= now + low && !s.fullyScheduled
+    }
+    let ahead = audible.compactMap { $0.scheduledEnd.map { $0 - now } }.min()
+    if state == .playing, let ahead {
+      if ahead < 0 { return reloadCurrent() }  // missed: buffers due before now would be dropped
+      if ahead < low {
+        engine.pause()
+        state = .buffering
+      }
+    } else if state == .buffering, (ahead ?? .max) >= EngineFormat.frames(tuning.highWater) {
+      resumeEngine()
+      state = .playing
+    }
   }
 
   private func reportEnd(now: SampleTime) {
@@ -339,6 +394,12 @@ public final class AudioEngine {
     item.startAt = position
     items[id] = item
     reload(item)
+  }
+
+  private func configurationChanged() {
+    // The output changed (rate, channels): AVAudioEngine stopped itself. Start over from here.
+    guard current != nil else { return }
+    reloadCurrent()
   }
 
   private func failed(_ id: UUID, _ error: any Error) {

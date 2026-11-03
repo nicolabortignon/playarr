@@ -87,4 +87,47 @@ struct AudioEngineTests {
     let lag = latency(of: out) { Signals.sine(Int64($0) + start, 0) }
     #expect(lag < 512)
   }
+
+  @Test func aSeekStartsAtThatVerySample() async throws {
+    let audio = try AudioEngine.offline([1: Signals.sine])
+    audio.load(EngineItem(track: song(1, duration: 3)), playing: true)
+    _ = try await audio.render(seconds: 0.3)
+    audio.seek(to: 1.5)
+    let out = try await audio.render(seconds: 0.5)
+    let lag = latency(of: out) { Signals.sine(Int64($0) + 66_150, 0) }
+    #expect(lag < 512)
+    let worst = (0..<10_000).map { abs(out.left[$0 + lag] - Signals.sine(Int64($0) + 66_150, 0)) }.max() ?? 1
+    #expect(worst < 1e-4)
+    #expect(abs(audio.position - (1.5 + 0.5)) < 0.1)
+  }
+
+  @Test func aTransitionFileLinesUpWithItsDeckToTheSample() async throws {
+    let audio = try AudioEngine.offline([1: Signals.constant(0.1, 0.1)])
+    let a = EngineItem(track: song(1, duration: 2))
+    audio.load(a, playing: true)
+    let at = try #require(audio.timelineSample(of: a.id, songFrame: 30_000))
+    audio.scheduleTransition(SignalSource(seconds: 0.01) { n, _ in n == 0 ? 0.5 : 0 }, at: at)
+    let out = try await audio.render(seconds: 1)
+    let lag = (0..<512).first { out.left[$0] > 0.05 } ?? 0  // A's start shows the limiter's delay
+    let click = out.left.indices.max { out.left[$0] < out.left[$1] } ?? 0
+    #expect(click - lag == 30_000)
+  }
+
+  @Test func runsShortThenWaitsForTheNetworkWithoutDrifting() async throws {
+    let gate = Gate()
+    let source = SignalSource(seconds: 10, signal: Signals.sine)
+    await source.stall(after: EngineFormat.frames(3), until: gate)
+    let audio = try AudioEngine(manualRendering: true) { _, _ in source }
+    audio.load(EngineItem(track: song(1, duration: 10)), playing: true)
+    _ = try await audio.render(seconds: 5)
+    #expect(audio.state == .buffering)
+    #expect(abs(audio.position - 2.5) < 0.2)
+    await gate.open()
+    await audio.settle()
+    #expect(audio.state == .playing)
+    let out = try await audio.render(seconds: 1)
+    let start = EngineFormat.frames(audio.position - 1)
+    let lag = latency(of: out) { Signals.sine(Int64($0) + start, 0) }
+    #expect(lag < 512)
+  }
 }
