@@ -895,6 +895,8 @@ export interface ServerInfo {
   version: string;
   minAppVersion: string;
   setup: boolean;
+  /** Only while `setup`: the owner's current username, for the setup page to pre-fill. */
+  ownerUsername?: string;
 }
 
 export interface SignInResponse {

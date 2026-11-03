@@ -30,6 +30,10 @@ const schema = z.object({
   TRUST_PROXY: z.string().optional(),
   // The folder shared with the updater container (Settings → Updates). docker/compose.yaml sets /update.
   UPDATE_DIR: z.string().optional(),
+  // What apps call this server (GET /api/server, Bonjour); the machine's name when unset.
+  SERVER_NAME: z.string().trim().max(63).optional(),
+  // Advertise the server on the home network (_playarr._tcp) so the iOS app finds it.
+  BONJOUR: z.enum(['on', 'off']).default('on'),
 
   MEDIA_SOURCE: z.enum(['none', 'local', 'sftp', 'ssh']).default('none'),
   // Comma-separated "lidarrPrefix=playarrPrefix" pairs.

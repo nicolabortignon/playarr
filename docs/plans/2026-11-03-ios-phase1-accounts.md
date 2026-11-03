@@ -5031,6 +5031,7 @@ EOF
 - Modify: `apps/server/tsup.config.ts` (whole file)
 - Modify: `apps/server/src/config.ts` (schema, after `UPDATE_DIR` line 22)
 - Modify: `apps/server/src/index.ts` (imports; register the route after `accountRoutes(…)`)
+- Modify: `packages/shared/src/index.ts` and `docs/plans/2026-11-03-ios-conventions.md` (`ServerInfo.ownerUsername?`, Task 9b)
 - Test: `apps/server/src/routes/server.test.ts` (create)
 
 **Step 1: Write the failing test**
@@ -5061,12 +5062,13 @@ describe('server identity', () => {
     const store = new CatalogStore(freshDb());
     let setup = true;
     const app = Fastify();
-    serverRoutes(app, { info: () => serverInfo({ store, name: undefined, setupMode: () => setup }) });
+    serverRoutes(app, { info: () => serverInfo({ store, name: undefined, setupMode: () => setup, ownerUsername: () => 'home' }) });
     const body = (await app.inject({ url: '/api/server' })).json() as ServerInfo;
-    expect(body).toEqual({ id: serverId(store), name: hostname(), version: VERSION, minAppVersion: MIN_APP_VERSION, setup: true });
+    // While nobody has set it up, the setup page pre-fills the owner's current username.
+    expect(body).toEqual({ id: serverId(store), name: hostname(), version: VERSION, minAppVersion: MIN_APP_VERSION, setup: true, ownerUsername: 'home' });
     setup = false;
-    expect(((await app.inject({ url: '/api/server' })).json() as ServerInfo).setup).toBe(false);
-    expect(serverInfo({ store, name: ' Living room ', setupMode: () => false }).name).toBe('Living room');
+    expect((await app.inject({ url: '/api/server' })).json()).toEqual({ ...body, setup: false, ownerUsername: undefined });
+    expect(serverInfo({ store, name: ' Living room ', setupMode: () => false, ownerUsername: () => 'home' }).name).toBe('Living room');
   });
 
   it('knows its version from the repository’s package.json', () => {
@@ -5134,13 +5136,22 @@ export function serverId(store: Pick<CatalogStore, 'appSetting' | 'setAppSetting
 }
 
 /** Which server this is (GET /api/server, and what Bonjour advertises). */
-export function serverInfo(deps: { store: Pick<CatalogStore, 'appSetting' | 'setAppSetting'>; name: string | undefined; setupMode: () => boolean }): ServerInfo {
+export function serverInfo(deps: {
+  store: Pick<CatalogStore, 'appSetting' | 'setAppSetting'>;
+  name: string | undefined;
+  setupMode: () => boolean;
+  /** The owner's current username (account 1's, from its profile), for the setup page to pre-fill. */
+  ownerUsername: () => string;
+}): ServerInfo {
+  const setup = deps.setupMode();
   return {
     id: serverId(deps.store),
     name: deps.name?.trim() || hostname(),
     version: VERSION,
     minAppVersion: MIN_APP_VERSION,
-    setup: deps.setupMode(),
+    setup,
+    // Only while nobody has a password: afterwards usernames aren't anyone's business before signing in.
+    ...(setup ? { ownerUsername: deps.ownerUsername() } : {}),
   };
 }
 
@@ -5183,10 +5194,10 @@ In `apps/server/src/config.ts`, add after the `UPDATE_DIR` entry:
   BONJOUR: z.enum(['on', 'off']).default('on'),
 ```
 
-In `apps/server/src/index.ts`, add `import { serverInfo, serverRoutes } from './routes/server.ts';` and, after `accountRoutes(app, { accounts, sessions, setupCodes });`:
+In `apps/server/src/index.ts`, add `import { serverInfo, serverRoutes } from './routes/server.ts';` and, after `accountRoutes(app, { accounts, sessions, setupCodes, publicUrl: config.PUBLIC_URL });`:
 
 ```ts
-const info = () => serverInfo({ store, name: config.SERVER_NAME, setupMode: () => accounts.setupMode() });
+const info = () => serverInfo({ store, name: config.SERVER_NAME, setupMode: () => accounts.setupMode(), ownerUsername: () => accounts.owner().username });
 serverRoutes(app, { info });
 ```
 
@@ -5201,10 +5212,12 @@ corepack pnpm -C apps/server build && grep -c "$(node -p "require('./package.jso
 
 Expected: PASS; the build contains the version (count ≥ 1).
 
+*As executed:* with Task 9b's `ownerUsername` folded in: `ServerInfo` gains `ownerUsername?: string` (shared type and the conventions line), `serverInfo` takes `ownerUsername: () => string` (`accounts.owner().username`) and includes it only while `setup` is true; the test checks it's there in setup mode and gone after. Otherwise as written.
+
 **Step 5: Commit**
 
 ```bash
-git add apps/server/src/version.ts apps/server/src/routes/server.ts apps/server/src/routes/server.test.ts apps/server/tsup.config.ts apps/server/src/config.ts apps/server/src/index.ts
+git add apps/server/src/version.ts apps/server/src/routes/server.ts apps/server/src/routes/server.test.ts apps/server/tsup.config.ts apps/server/src/config.ts apps/server/src/index.ts packages/shared/src/index.ts docs/plans/2026-11-03-ios-conventions.md
 git commit -m "$(cat <<'EOF'
 Add GET /api/server: a stable server id, its name, version and setup state
 
