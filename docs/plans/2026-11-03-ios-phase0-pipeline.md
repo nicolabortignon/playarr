@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Put an empty Playarr app on the user's iPhone through TestFlight. It has one SwiftUI screen showing "Playarr" and its version and build, and `pnpm ios:beta` builds and uploads it. GitHub Actions tests every push and uploads from `main`.
+**Goal:** Put an empty Playarr app on the user's iPhone through TestFlight. It has one SwiftUI screen showing "Playarr" and its version and build, and `pnpm ios:beta` builds and uploads it. GitHub Actions tests every push that changes the app and uploads from `main`.
 
 **Architecture:** `apps/ios` holds an XcodeGen spec, three local Swift packages (`PlayarrAPI`, `PlayarrPlayer`, `PlayarrUI`), each with a placeholder type and a test, the app target, and a UI test target. A Makefile is the only entry point (`pnpm ios:*` calls it). It downloads a pinned, checksummed XcodeGen and runs `node --test`, `swift test` and `xcodebuild`. Two Node scripts with no dependencies talk to App Store Connect with the API key: `asc.mjs` (JWT, `check`, `setup`) and `release.mjs` (install on the phone, upload a beta). Signing is Xcode's cloud-managed signing through the same key, so no Apple ID, certificate file or profile lives in the repo.
 
@@ -1665,10 +1665,14 @@ Expected: `<N> VALID`. Then go through the "Final check" at the end of this plan
 
 ---
 
-### Task 10: GitHub Actions: tests on every push, TestFlight from `main`
+### Task 10: GitHub Actions: tests on every push that changes the app, TestFlight from `main`
 
 **Files:**
 - Create: `.github/workflows/ios.yml`
+
+Facts this task relies on (checked 2026-11-03): `make -C apps/ios beta-upload` works end to end from the Mac (unsigned archive, cloud-signed export, altool upload, processing `VALID`, "Household" got build 304; builds 301 and 304 are on App Store Connect). Distribution signing is cloud-managed, so the export needs **no certificate or private key in the keychain**, and the archive is unsigned, so no development certificate is created either. The runner therefore needs no temporary keychain and no certificate import: only the `.p8` key, which `asc.mjs`, `xcodebuild -exportArchive` and `altool` all read from `~/.appstoreconnect/private_keys/`.
+
+The workflow runs only for pushes and pull requests that change `apps/ios/**` or the workflow file (a `paths` filter), since the macOS job takes 15 minutes or more and server changes don't affect the app. The repo is public, so secrets appear only in the two upload steps, which run only for pushes to `main`; pull requests (forks' or not) never reach them. A push whose build number is already on App Store Connect prints "already on App Store Connect: nothing to upload" and succeeds.
 
 **Step 1: Confirm the runner's Xcode**
 
@@ -1677,28 +1681,34 @@ curl -s https://raw.githubusercontent.com/actions/runner-images/main/images/maco
 curl -s https://raw.githubusercontent.com/actions/runner-images/main/images/macos/macos-26-arm64-Readme.md | grep -c 'iPhone 17 Pro'
 ```
 
-Expected on 2026-11-03: `| 26.6 (default) | 17F113 | /Applications/Xcode_26.6.app …` first, and a count of 1 or more. Put the newest version listed (not a beta) in `XCODE_VERSION` below. If `macos-26` has gone or an Xcode 27 image exists, check that image's README the same way and change `runs-on` to match.
+Found on 2026-11-03 (image 20261026.0455.2, macOS 26.6.2, Node.js 24.22.1): `| 26.6 (default) | 17F113 | /Applications/Xcode_26.6.app …` first, then 26.5 down to 26.0.1, and a count of 3. So `XCODE_VERSION` is `26.6` on `macos-26`. The project targets iOS 26, so Xcode 26.x is enough even though this Mac has 27.2. An `xcode-27` image (`runs-on: xcode-27`, Xcode 27.0 to 27.2 RC) exists but is a **preview**, and its README lists no "iPhone 17 Pro" simulator; move to it (or a `macos-27` image) once it's out of preview. Put the newest non-beta version listed in `XCODE_VERSION`; if `macos-26` has gone, check the replacement image's README the same way and change `runs-on` to match.
 
 **Step 2: Write the workflow**
 
 ```yaml
-# iOS app: the scripts' tests, the Swift package tests and the UI tests on a simulator, on every push and
-# pull request. Pushes to main that change apps/ios (or this file) also upload a TestFlight build
+# iOS app: the scripts' tests, the Swift package tests and the UI tests on a simulator, for every push and
+# pull request that changes apps/ios (or this file). Such pushes to main also upload a TestFlight build
 # (`make beta-upload`: `pnpm ios:beta` without running the tests a second time). Pull requests never see
-# the App Store Connect key: the upload steps only run for pushes to main, and GitHub doesn't give
-# secrets to forks' pull requests.
+# the App Store Connect key: only the upload steps use secrets, they only run for pushes to main, and
+# GitHub doesn't give secrets to forks' pull requests anyway.
+#
+# Signing needs no keychain set-up: the archive is unsigned and the export signs it with Apple's
+# cloud-managed distribution certificate through the key, so no certificate or private key is installed.
 name: iOS
 
 on:
   push:
+    paths: ['apps/ios/**', '.github/workflows/ios.yml']
   pull_request:
+    paths: ['apps/ios/**', '.github/workflows/ios.yml']
 
 permissions:
   contents: read
 
 concurrency:
   group: ios-${{ github.ref }}
-  # On main, runs queue up (each uploads a higher build number); elsewhere a newer push replaces the run.
+  # On main a run is never cancelled halfway through an upload; a newer push waits, and replaces any run
+  # still waiting (its build number is higher anyway). Elsewhere a newer push cancels the running one.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
@@ -1711,9 +1721,9 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # the build number is the commit count
+          fetch-depth: 0 # the build number is the commit count, and "What to Test" reads the log
 
       - name: Select Xcode
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
@@ -1724,29 +1734,18 @@ jobs:
       - name: Test
         run: make -C apps/ios test
 
-      - name: Did this push change the app?
-        id: changes
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          BEFORE: ${{ github.event.before }}
-        run: |
-          # A new branch or a force push has no usable "before": upload to be safe.
-          if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null || ! git diff --quiet "$BEFORE" HEAD -- apps/ios .github/workflows/ios.yml; then
-            echo "beta=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Install the App Store Connect key
-        if: steps.changes.outputs.beta == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
+          umask 077
           printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
-          chmod 600 ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
 
       - name: Upload to TestFlight
-        if: steps.changes.outputs.beta == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -1755,7 +1754,7 @@ jobs:
         run: make -C apps/ios beta-upload
 
       - name: Remove the key
-        if: always() && steps.changes.outputs.beta == 'true'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: rm -rf ~/.appstoreconnect
 ```
 
@@ -1770,36 +1769,35 @@ ruby -ryaml -e 'puts YAML.load_file(".github/workflows/ios.yml")["jobs"]["ios"][
 Expected:
 
 ```
-actions/checkout@v5
+actions/checkout@v7
 Select Xcode
 Bootstrap
 Test
-Did this push change the app?
 Install the App Store Connect key
 Upload to TestFlight
 Remove the key
 ```
 
-**Step 4: Checkpoint (user): the secrets.** On github.com/nicolabortignon/playarr → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**, add four secrets:
+**Step 4: Checkpoint (user): the secrets.** On github.com/nicolabortignon/playarr → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**, add four secrets (Name, then Secret, then **Add secret**; repeat for each):
 
-| Name | Value |
+| Name | Secret |
 |---|---|
 | `ASC_KEY_ID` | `43C35X77AJ` |
-| `ASC_ISSUER_ID` | the `ASC_ISSUER_ID` line of `.env` |
+| `ASC_ISSUER_ID` | `69a6de70-2636-47e3-e053-5b8c7c11a4d1` (the `ASC_ISSUER_ID` line of `.env`) |
 | `APPLE_TEAM_ID` | `M7ME2TS45S` |
-| `ASC_KEY_P8_BASE64` | run `base64 -i ~/.appstoreconnect/private_keys/AuthKey_43C35X77AJ.p8 \| pbcopy` in Terminal and paste |
+| `ASC_KEY_P8_BASE64` | run `base64 -i ~/.appstoreconnect/private_keys/AuthKey_43C35X77AJ.p8 \| pbcopy` in your own Terminal, then paste (it's one long line) |
 
-Claude must not print the key or its base64 in its own shell.
+`IOS_BUNDLE_ID` (`me.tracklistme.playarr`) is not a secret: the workflow sets it. Claude must not read, print or base64 the key in its own shell. Add the secrets before pushing the workflow: the first push to main uploads.
 
 **Step 5: Commit**
 
 ```bash
-git add .github/workflows/ios.yml
-git commit -m "$(cat <<'EOF'
-iOS app: GitHub Actions runs the iOS tests on every push and uploads TestFlight builds from main
+git add .github/workflows/ios.yml docs/plans/2026-11-03-ios-phase0-pipeline.md
+git commit -m "$(cat <<'EOF2'
+iOS app: GitHub Actions runs the iOS tests on every push that changes the app and uploads TestFlight builds from main
 
 Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
+EOF2
 )"
 ```
 
@@ -1810,25 +1808,14 @@ curl -s 'https://api.github.com/repos/nicolabortignon/playarr/actions/workflows/
   | node -e "const r = JSON.parse(require('fs').readFileSync(0, 'utf8')).workflow_runs?.[0]; console.log(r ? [r.head_sha.slice(0, 7), r.status, r.conclusion, r.html_url].join(' ') : 'no run yet')"
 ```
 
-Expected: the pushed commit, `in_progress` and then, after 20 to 60 minutes, `completed success`. This push contains the workflow file (and the earlier `apps/ios` commits, if they weren't pushed yet), so the upload steps run. Task 9, Step 7's check then shows a second `VALID` build, numbered with the pushed commit count.
+Expected: the pushed commit, `in_progress` and then, after 20 to 60 minutes, `completed success`. This push contains the workflow file, so the run starts and the upload steps run. Task 9, Step 7's check then shows a new `VALID` build, numbered with the pushed commit count (higher than 304).
 
 **Step 7: If the run fails**
 
 - `xcode-select: error: invalid developer directory`: that Xcode isn't on the image. Repeat Step 1.
-- Signing hangs, or fails with `errSecInternalComponent` on the runner: add this step before "Upload to TestFlight", commit and push again:
-
-  ```yaml
-      - name: Temporary keychain for signing
-        if: steps.changes.outputs.beta == 'true'
-        run: |
-          security create-keychain -p "" build.keychain
-          security list-keychains -d user -s build.keychain login.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "" build.keychain
-          security set-keychain-settings build.keychain
-  ```
-
-- Every runner starts empty, so each upload from CI creates a new "Apple Development … (Created via API)" certificate. The archive step uses it; the export uses the cloud-managed distribution certificate. After a few runs, ask the user to look at developer.apple.com → Certificates. If they pile up, revoke the old "Created via API" ones (each Mac re-creates its own when needed).
+- The Swift build fails on a language feature: the code was written with Swift 6.4 (Xcode 27.2) and the runner compiles with Xcode 26.6's Swift. Rewrite the line for the older compiler (tools version 6.2 is the floor), or move `runs-on` to the Xcode 27 image once it's out of preview.
+- `No App Store Connect key at …` or altool `Failed to find API key`: a secret is missing or misnamed (`ASC_KEY_ID` must match the key file's id). Check Step 4.
+- The export fails asking for a certificate or profile: the key must keep the Admin role (cloud-managed signing needs it). Run `node --env-file=.env apps/ios/scripts/asc.mjs check` on the Mac.
 
 ---
 
@@ -1936,6 +1923,6 @@ These are assumptions about Apple's behaviour that couldn't be tried without cre
 3. **Adding internal testers through the API** (`POST /v1/betaTesters` with the email and the group). Believed to work only for people who are App Store Connect users of the team, and possibly not at all for internal groups. Fallback: Task 7, Step 3.
 4. **`betaBuildLocalizations`.** It isn't known whether App Store Connect creates the en-US localization on its own. `release.mjs` handles both cases (PATCH if it exists, POST if not).
 5. **Cloud-managed distribution signing with an API key.** Confirmed with the Admin key: build 301 was exported signed "Apple Distribution: W1T LTD" with an App Store profile and no devices.
-6. **CI signing**: whether the runner's login keychain lets `xcodebuild` create and use a development key without prompts (fallback: the temporary keychain in Task 10, Step 7), and how many "Created via API" development certificates Apple allows before refusing new ones.
+6. **CI signing**: settled on the Mac, not yet seen on the runner. The archive is unsigned and the export uses the cloud-managed distribution certificate, so nothing goes into a keychain and no "Created via API" development certificates pile up; the workflow has no keychain step. The first run on `main` after Task 10 confirms it on GitHub's runner (Task 10, Step 7 lists what to check if it fails).
 7. **`devicectl` JSON fields** for a physical phone (`hardwareProperties.reality == "physical"`, `udid`, `connectionProperties.pairingState` and `tunnelState`). They were checked on this Mac only against simulators, which `devicectl` now lists too.
 8. **`UIBackgroundModes`** is audio only. Background `URLSession` downloads (phase 7) need no background mode; `fetch` is for background app refresh, which the app doesn't use.

@@ -1,0 +1,70 @@
+# iOS app: the scripts' tests, the Swift package tests and the UI tests on a simulator, for every push and
+# pull request that changes apps/ios (or this file). Such pushes to main also upload a TestFlight build
+# (`make beta-upload`: `pnpm ios:beta` without running the tests a second time). Pull requests never see
+# the App Store Connect key: only the upload steps use secrets, they only run for pushes to main, and
+# GitHub doesn't give secrets to forks' pull requests anyway.
+#
+# Signing needs no keychain set-up: the archive is unsigned and the export signs it with Apple's
+# cloud-managed distribution certificate through the key, so no certificate or private key is installed.
+name: iOS
+
+on:
+  push:
+    paths: ['apps/ios/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['apps/ios/**', '.github/workflows/ios.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  # On main a run is never cancelled halfway through an upload; a newer push waits, and replaces any run
+  # still waiting (its build number is higher anyway). Elsewhere a newer push cancels the running one.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # The newest Xcode in the runner image's list; check it there before changing runs-on or this:
+  # https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md
+  XCODE_VERSION: '26.6'
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the build number is the commit count, and "What to Test" reads the log
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - name: Bootstrap
+        run: make -C apps/ios bootstrap
+
+      - name: Test
+        run: make -C apps/ios test
+
+      - name: Install the App Store Connect key
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          umask 077
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: Upload to TestFlight
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_BUNDLE_ID: me.tracklistme.playarr
+        run: make -C apps/ios beta-upload
+
+      - name: Remove the key
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: rm -rf ~/.appstoreconnect
