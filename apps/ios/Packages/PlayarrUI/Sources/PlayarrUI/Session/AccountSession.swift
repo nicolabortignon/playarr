@@ -21,6 +21,12 @@ public final class AccountSession {
   public let toasts: ToastCenter
   /// Discover, requests and the song sheets (phase 8).
   public let discover: DiscoverContext
+  /// The account's own: favorites, playlists and mixes (phase 6).
+  public let favorites: FavoritesStore
+  public let playlists: PlaylistsStore
+  public let mixes: MixesStore
+  /// "Add to playlist" waiting to be shown (AccountSession.addToPlaylist).
+  public var picking: PlaylistPick?
 
   public init(
     key: AccountKey, account: Account, serverName: String, api: any APISending, client: APIClient?, player: Player,
@@ -42,6 +48,9 @@ public final class AccountSession {
       forward: { families in for family in families { queries.invalidate(family.rawValue) } })
     discover.sheets.settings = player.settings
     discover.sheets.cuesChanged = { [weak player] in player?.mixPointsChanged(recordingId: $0) }
+    favorites = FavoritesStore(api: api, queries: queries, toasts: toasts)
+    playlists = PlaylistsStore(api: api, queries: queries, toasts: toasts)
+    mixes = MixesStore(api: api, queries: queries)
   }
 
   /// The account's folder: Application Support/Playarr/<server id>/<account id>/ (queue, plays, stream cache, answers).

@@ -1159,20 +1159,20 @@ Expected: the build fails with `value of type 'AccountSession' has no member 're
 
 **Step 3: Implement**
 
-In `AccountSession.swift`, the stored properties:
+In `AccountSession.swift`, the stored properties (after phase 8's `discover`):
 
 Replace:
 
 ```swift
-  public let router = AppRouter()
-  public let toasts: ToastCenter
+  /// Discover, requests and the song sheets (phase 8).
+  public let discover: DiscoverContext
 ```
 
 with:
 
 ```swift
-  public let router = AppRouter()
-  public let toasts: ToastCenter
+  /// Discover, requests and the song sheets (phase 8).
+  public let discover: DiscoverContext
   /// The account's own: favorites, playlists and mixes (phase 6).
   public let favorites: FavoritesStore
   public let playlists: PlaylistsStore
@@ -1186,16 +1186,14 @@ and the end of `init`:
 Replace:
 
 ```swift
-    self.images = images
-    self.toasts = toasts
+    discover.sheets.cuesChanged = { [weak player] in player?.mixPointsChanged(recordingId: $0) }
   }
 ```
 
 with:
 
 ```swift
-    self.images = images
-    self.toasts = toasts
+    discover.sheets.cuesChanged = { [weak player] in player?.mixPointsChanged(recordingId: $0) }
     favorites = FavoritesStore(api: api, queries: queries, toasts: toasts)
     playlists = PlaylistsStore(api: api, queries: queries, toasts: toasts)
     mixes = MixesStore(api: api, queries: queries)
