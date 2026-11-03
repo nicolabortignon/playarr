@@ -16,14 +16,14 @@
 
 - The key authenticates and the API answers 200, so the "requires an in-effect agreement" 403 has cleared. Task 1's `check` still explains that 403 clearly in case it comes back (the agreement is renewed every year).
 - Already in App Store Connect: the bundle id `me.tracklistme.playarr` (platform UNIVERSAL); the app record "Playarr" (Apple id 6830169335, SKU `playarr-ios`, primary language English (U.S.)); and the internal TestFlight group "Household" (automatic distribution, one tester, not yet invited). They were created in parallel with the writing of this plan. Tasks 5 to 7 should therefore just confirm them, but they stay in the plan so that a new Apple account can be set up from it.
-- The team has **no registered devices** and no builds. So Task 8 (install on the phone, which registers it) comes before Task 9 (first TestFlight upload). See "Key decisions".
+- The team has **no registered devices**, and the user's iPhone can't be connected to this Mac. TestFlight doesn't need one: Task 9 archives unsigned and lets the export sign for distribution (see "Key decisions"). Build 301 went up that way on 2026-11-03. Task 8 (`ios:device`) is optional, for a phone that can be cabled to the Mac.
 - Apple's API returned 500s for a few minutes while this plan was written. `asc.mjs` retries GET requests for that reason. While Task 5 ran, it also answered from a lagging replica now and then: an empty group list, and a 404 for the "Household" group it had just listed. So GETs answered 404 are retried too, and `setup` asks three times before it creates the group.
 
 ## Key decisions in this plan
 
 - **XcodeGen from a pinned release zip, not Homebrew** (Homebrew isn't writable for this user). `make tools` downloads `xcodegen.zip` 2.46.0 into `apps/ios/.tools/` and checks its SHA-256. The Makefile starts with a placeholder checksum, and Task 2 computes the real one, checks it and fills it in. Task 11 updates the design doc, which still says `brew install xcodegen`.
 - **Every make target that builds regenerates the project first.** XcodeGen takes under a second, so adding a Swift file never needs an extra step.
-- **The phone goes before the first upload.** An archive is first signed with an Apple Development identity (the export re-signs it with Apple's cloud-managed distribution certificate). Apple can't make a development profile for a team with zero devices: the error is "Your team has no devices from which to generate a provisioning profile". `pnpm ios:device` passes `-allowProvisioningDeviceRegistration`, which registers the phone.
+- **TestFlight needs no registered device.** A normal archive is signed with an Apple Development identity, and Apple can't make a development profile for a team with zero devices ("Your team has no devices from which to generate a provisioning profile"). Automatic signing also refuses `CODE_SIGN_IDENTITY="Apple Distribution"`. So `release.mjs beta` archives **unsigned** (`CODE_SIGNING_ALLOWED=NO`). Then `xcodebuild -exportArchive` signs the app with Apple's cloud-managed distribution certificate and an App Store profile through the key (destination `export`, which writes `Playarr.ipa`). Finally `xcrun altool --upload-app` uploads it with the same key. `destination upload` isn't used because it needs Xcode's `ITunesSoftwareService` XPC service, which Claude's sandbox can't reach ("Connection init failed at lookup with error 3"). Tested with build 301 on 2026-11-03. `pnpm ios:device` (Task 8) passes `-allowProvisioningDeviceRegistration`, which registers a cabled phone; it isn't needed for TestFlight.
 - **No ExportOptions.plist in the repo.** `release.mjs` writes one from `APPLE_TEAM_ID` for each upload.
 - **The Node scripts have tests** (`node:test`) for the parts that don't need Apple: the JWT, the error explanations and "What to Test". `make test` runs them before the Swift tests.
 - **Background modes are Info.plist keys, not capabilities.** `UIBackgroundModes` (audio only: background `URLSession` downloads need no mode) needs nothing registered on the bundle id, so `ios:setup` registers no capability, and the entitlements file is empty. Phase 2's Bonjour also needs only Info.plist keys (`NSLocalNetworkUsageDescription`, `NSBonjourServices`).
@@ -1222,9 +1222,9 @@ Expected: `automatic distribution: true`, then one line per person. The state is
 
 ---
 
-### Task 8: `pnpm ios:device` installs on the phone, which registers it
+### Task 8 (optional): `pnpm ios:device` installs on a cabled phone, which registers it
 
-This comes before the first upload because the team has no registered devices (see "Key decisions").
+Only for a phone that can be cabled and paired to this Mac. TestFlight doesn't need it: Task 9 works with no registered device (see "Key decisions"). The code is written and committed anyway, because it's cheap. Skip Steps 1, 2 and 4 to 6 when there's no phone to connect.
 
 **Files:**
 - Create: `apps/ios/scripts/release.mjs`
@@ -1896,7 +1896,7 @@ EOF
 
 - [ ] Install **TestFlight** from the App Store on the iPhone.
 - [ ] Open the email "You're invited to test Playarr" (sent to the App Store Connect user's address once the first build is processed) and tap **View in TestFlight**. Or open TestFlight signed in with that Apple ID: Playarr is listed there.
-- [ ] Tap **Install** (or **Update**, if the Task 8 development build is on the phone: TestFlight replaces it).
+- [ ] Tap **Install** (or **Update**, if a Task 8 development build is on the phone: TestFlight replaces it).
 - [ ] Open Playarr: "Playarr" in large type and "Version 1.0.0 (N)". N is the build number `ios:beta` printed (or the GitHub Actions build's, if that one is newer).
 - [ ] In TestFlight, the Playarr page shows the "What to Test" text.
 - [ ] After a push to main that changes `apps/ios`, the GitHub Actions run goes green, and TestFlight offers the new build within the hour (with automatic updates on, it installs by itself).
@@ -1905,7 +1905,7 @@ EOF
 
 These are assumptions about Apple's behaviour that couldn't be tried without creating things in the account. Each one has a fallback in the task it belongs to.
 
-1. **Development signing with zero devices.** The plan assumes a dev-signed archive fails until a device is registered, so Task 8 comes first. If that assumption is wrong, the order costs nothing.
+1. **Development signing with zero devices.** Confirmed: a dev-signed archive fails until a device is registered. Task 9 therefore archives unsigned and signs at export, which worked for build 301.
 2. **Creating an internal group through the API** (`POST /v1/betaGroups` with `isInternalGroup: true, hasAccessToAllBuilds: true`). The existing "Household" group shows exactly these attributes, and they are believed to be writable at creation, but this wasn't tried here. Fallback: Task 7, Step 3.
 3. **Adding internal testers through the API** (`POST /v1/betaTesters` with the email and the group). Believed to work only for people who are App Store Connect users of the team, and possibly not at all for internal groups. Fallback: Task 7, Step 3.
 4. **`betaBuildLocalizations`.** It isn't known whether App Store Connect creates the en-US localization on its own. `release.mjs` handles both cases (PATCH if it exists, POST if not).
