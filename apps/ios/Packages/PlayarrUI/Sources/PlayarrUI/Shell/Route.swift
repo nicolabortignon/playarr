@@ -14,6 +14,8 @@ public enum Route: Hashable, Sendable {
   case mixes
   case mix(String)
   case listening
+  /// Your listening for a period or a calendar year ("halfyear", "2025"): the web's `?range=`.
+  case listeningRange(StatsRange)
   case settings
   case settingsPanel(SettingsPanel)
   /// An artist's MusicBrainz discography (phase 8); `album` brings one of its albums into view.
@@ -38,11 +40,11 @@ public enum Route: Hashable, Sendable {
     case ("playlists", 2): guard let id = Int(parts[1]) else { return nil }; self = .playlist(id)
     case ("mixes", 1): self = .mixes
     case ("mixes", 2): self = .mix(parts[1])
-    case ("stats", 1): self = .listening
+    case ("stats", 1): self = query("range").map(Route.listeningRange) ?? .listening
     case ("requests", 1): self = .requests
     case ("settings", 1): self = .settings
     case ("settings", 2):
-      if parts[1] == "listening" { self = .listening } else { self = SettingsPanel(rawValue: parts[1]).map(Route.settingsPanel) ?? .settings }
+      if parts[1] == "listening" { self = query("range").map(Route.listeningRange) ?? .listening } else { self = SettingsPanel(rawValue: parts[1]).map(Route.settingsPanel) ?? .settings }
     default: return nil
     }
   }

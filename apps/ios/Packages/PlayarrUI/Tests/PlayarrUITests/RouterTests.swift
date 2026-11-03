@@ -12,7 +12,7 @@ import Testing
     #expect(Route(href: "/playlists/3") == .playlist(3))
     #expect(Route(href: "/requests") == .requests)
     #expect(Route(href: "/mixes/genre-electronic") == .mix("genre-electronic"))
-    #expect(Route(href: "/settings/listening?range=2026") == .listening)
+    #expect(Route(href: "/settings/listening?range=2026") == .listeningRange("2026"))
     #expect(Route(href: "/settings/playback") == .settingsPanel(.playback))
     #expect(Route(href: "/settings/analysis") == .settingsPanel(.analysis))
     #expect(Route(href: "/nowhere") == nil)

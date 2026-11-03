@@ -4177,11 +4177,11 @@ import Testing
     let model = StatsModel(session: demoSession(api: api))
     await model.load()
     #expect(model.periods.map(\.label) == ["4 weeks", "6 months", "12 months", "All time", "2026", "2025"])
-    #expect(api.queries(.get, "/api/stats") == ["range=month"])
+    #expect(api.queries(.get, "/api/stats", "range") == ["month"])
     api.on(.get, "/api/stats", Listening.stats(range: "2025"))
     await model.select("2025")
     #expect(model.isYear)
-    #expect(api.queries(.get, "/api/stats").last == "range=2025")
+    #expect(api.queries(.get, "/api/stats", "range").last == "2025")
     await model.select("next week")
     #expect(model.range == "2025")
   }
@@ -4478,7 +4478,7 @@ with:
 swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrUI --filter "StatsModelTests|RouterTests"
 ```
 
-Expected: `Test run with 10 tests in 2 suites passed` (6 in `StatsModelTests`, phase 4's 4 in `RouterTests`).
+Expected: `Test run with 11 tests in 2 suites passed` (6 in `StatsModelTests`, 5 in `RouterTests`).
 
 **Commit**
 
