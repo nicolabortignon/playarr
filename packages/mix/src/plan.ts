@@ -11,7 +11,7 @@ import type { Automation, Camelot, CuePoints, MixMap, MixMode, TransitionPlan } 
  * Bump when the planner would plan the same two songs differently, so plans the server remembered
  * (and rendered) are made afresh rather than kept while the songs' maps stay the same.
  */
-export const PLANNER_VERSION = 3;
+export const PLANNER_VERSION = 4;
 
 export interface PlanInput {
   a: MixMap & { cues?: CuePoints };
@@ -70,6 +70,13 @@ const AUTO_BLEND_BEATS = 32;
 const SHORTEST_BLEND_BEATS = 16;
 /** Long blend lengths in A's beats, longest first. */
 const BLEND_BEATS = [LONGEST_BLEND_BEATS, AUTO_BLEND_BEATS, SHORTEST_BLEND_BEATS];
+/**
+ * A's outro this quiet (each phrase the blend covers at most this share of A's loudest: 6 dB down) has
+ * room for more than B's intro: over it, B may come in from its own start and play on past a short
+ * intro, its main part arriving as the bass swaps, for up to AUTO_BLEND_BEATS. Over a fuller outro,
+ * two main parts at once would crowd each other.
+ */
+const QUIET_OUTRO_ENERGY = 0.5;
 /** Auto keeps blends to 32 beats unless both songs have this much room (party always takes the longest that fits). */
 const ROOM_FOR_AUTO_LONGEST_BLEND = 2 * LONGEST_BLEND_BEATS;
 /** After a long blend, B eases back to its own tempo over 16 of its own bars. */
@@ -224,6 +231,10 @@ interface Pair {
   /** Room for a blend from A's first phrase line at leaveFrom, and in B's intro, both in A's beats (the blend's beats). */
   outroRoomBeats: number;
   introRoomBeats: number;
+  /** Room in B from its first downbeat to its outro (where it mustn't resume), in A's beats. */
+  bodyRoomBeats: number;
+  /** A's outro, where a blend would cover it, is quiet (see QUIET_OUTRO_ENERGY). */
+  aOutroQuiet: boolean;
   /** The song's bar starts can be trusted (see MIN_DOWNBEAT_CONFIDENCE). */
   aBarsSure: boolean;
   bBarsSure: boolean;
@@ -240,11 +251,19 @@ function describePair(input: PlanInput): Pair {
   const leaveFrom = Math.max(mixOutPoint(a), earliestStart);
   let outroRoomBeats = 0;
   let introRoomBeats = 0;
+  let bodyRoomBeats = 0;
+  let aOutroQuiet = false;
   if (tempos) {
     // A long blend starts on a phrase line, so its room runs from the first one A may leave on.
-    outroRoomBeats = (soundEndOf(a) - firstLineAtOrAfter(a, PHRASE_BEATS, leaveFrom, LINE_SLACK_S)) / beatLength(a);
+    const leaveLine = firstLineAtOrAfter(a, PHRASE_BEATS, leaveFrom, LINE_SLACK_S);
+    outroRoomBeats = (soundEndOf(a) - leaveLine) / beatLength(a);
     // B can start no earlier than its first downbeat; its seconds pass `ratio` times faster than the blend's.
     introRoomBeats = (mixInPoint(b) - gridLine(b, BAR_BEATS, 0)) / ratio / beatLength(a);
+    bodyRoomBeats = (resumeLimit(b) - gridLine(b, BAR_BEATS, 0)) / ratio / beatLength(a);
+    // The phrases of A's outro an AUTO_BLEND_BEATS blend from there would cover (unmeasured ones don't say).
+    const first = Math.round(linesAt(a, PHRASE_BEATS, leaveLine));
+    const covered = (a.phraseEnergy ?? []).slice(first, first + AUTO_BLEND_BEATS / PHRASE_BEATS).filter((e): e is number => e != null);
+    aOutroQuiet = covered.length > 0 && covered.every((e) => e <= QUIET_OUTRO_ENERGY);
   }
   return {
     input,
@@ -257,6 +276,8 @@ function describePair(input: PlanInput): Pair {
     leaveFrom,
     outroRoomBeats,
     introRoomBeats,
+    bodyRoomBeats,
+    aOutroQuiet,
     aBarsSure: barsSure(a),
     bBarsSure: barsSure(b),
     keys: keyRelation(a, b),
@@ -331,6 +352,10 @@ const STYLE_RULES: ((pair: Pair) => Decision | undefined)[] = [
   function longBlendOrQuickMix(pair) {
     // Whether the beats hold where the songs would play together is longPlan's to judge: it knows where that is.
     const beats = blendBeats(pair);
+    // B's intro is short, but A's outro quiet: B's main part may come in over it too.
+    if ((beats ?? 0) < AUTO_BLEND_BEATS && pair.aOutroQuiet && Math.min(pair.outroRoomBeats, pair.bodyRoomBeats) >= AUTO_BLEND_BEATS - EPSILON) {
+      return { style: 'long', beats: AUTO_BLEND_BEATS, reason: `${longReason(pair, AUTO_BLEND_BEATS)} (B’s intro is short, A’s outro quiet)` };
+    }
     if (beats === undefined) return { style: 'quick', reason: 'Not enough intro or outro room for a blend: quick mix' };
     if (pair.keys.kind === 'clash' && beats > CLASHING_KEYS_BEATS) {
       // Over A's outro and B's intro only (mostly drums, little to clash, and the bass swapped), not the longest.

@@ -441,6 +441,36 @@ describe('planTransition: a long blend', () => {
   });
 });
 
+describe('planTransition: a short intro over a quiet outro', () => {
+  /** A whose phrases are at `main` energy, and at `outro` from its outro on (null: not measured). */
+  function withOutroEnergy(outro: number | null, main = 0.9) {
+    const a = song({ outroBeats: 96 });
+    const phrase = 16 * beatOf(a);
+    const phrases = Math.ceil((a.soundEnd - firstDownbeatOf(a)) / phrase);
+    const outroFrom = Math.round((a.outroStart - firstDownbeatOf(a)) / phrase);
+    return { ...a, phraseEnergy: Array.from({ length: phrases }, (_, k) => (k >= outroFrom ? outro : main)) };
+  }
+  const shortIntro = song({ introBeats: 16 });
+
+  it('brings B in from its start over A’s quiet outro, past its 16-beat intro: 32 beats, its main part in at the bass swap', () => {
+    const a = withOutroEnergy(0.4);
+    const p = plan(a, shortIntro);
+    expect(p.style).toBe('long');
+    expect(p.beats).toBe(32);
+    expect(p.reason).toBe('Same tempo, keys compatible: 32-beat blend (B’s intro is short, A’s outro quiet)');
+    expect(p.bStart).toBeCloseTo(firstDownbeatOf(shortIntro), 9);
+    // The bass swaps halfway, 16 beats in: where B's intro ends and its main part comes in.
+    expect(p.bStart + p.switchAt).toBeCloseTo(shortIntro.introEnd, 6);
+  });
+
+  it('keeps to B’s intro over an outro that isn’t quiet, or wasn’t measured', () => {
+    for (const outro of [0.8, null]) {
+      const p = plan(withOutroEnergy(outro), shortIntro);
+      expect(p.beats, `outro at ${outro}`).toBe(16);
+    }
+  });
+});
+
 describe('planTransition: a quick mix', () => {
   it.each([
     ['beat drifts, tempos close', { bpm: 124 }, { bpm: 125, gridStable: false }],

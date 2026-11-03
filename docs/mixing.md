@@ -179,6 +179,8 @@ The rules run in order; the first that has something to say decides.
    - With no room even for 16 → **quick mix**.
    - Keys that clash cap the blend at 32 beats. The blend covers A's outro and B's intro only (mostly drums, the bass swapped), not the longest. Keys two steps apart blend as usual: that's an energy boost DJs use on purpose.
 
+   - A short intro over a quiet outro: when B's intro is too short for 32 beats but every phrase of A's outro the blend would cover is at most half A's loudest (6 dB down), B comes in from its own start and plays on past its intro, its main part arriving as the bass swaps: a 32-beat blend. Over a fuller outro, two main parts at once would crowd each other.
+
    A key clash used to force a quick mix. That felt rushed, while 32 beats over drums doesn't clash audibly.
 
 ### 2.3 Long blend
@@ -309,7 +311,7 @@ Whatever isn't known counts as 0.8 ("fine, not a match"), so it neither jumps th
 | constant | where | bump it when |
 |---|---|---|
 | `MIX_MAP_VERSION` (now 8) | `packages/mix/src/types.ts` | the analysis would measure a song differently: stored maps are re-measured in the background. Maps from version 2 on stay usable meanwhile. |
-| `PLANNER_VERSION` (now 3) | `plan.ts` | the planner would plan the same two maps differently: remembered plans are made afresh. |
+| `PLANNER_VERSION` (now 4) | `plan.ts` | the planner would plan the same two maps differently: remembered plans are made afresh. |
 | `RENDERER_VERSION` (now 3) | server `transitions.ts` | the rendered audio would differ for the same plan: cached files are made again. |
 
 Settings → Analysis shows how much of the library has a current mix map. It can analyse the songs left, or the whole collection again. After a restart, the background analysis picks up where it left off, if its switch is on.
