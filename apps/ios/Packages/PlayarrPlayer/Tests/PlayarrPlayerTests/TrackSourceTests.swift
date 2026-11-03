@@ -65,6 +65,19 @@ struct TrackSourceTests {
     #expect(abs(pcm.left[0] - sine(10_000, 0)) < 1e-6)
   }
 
+  @Test func aKeptSongPlaysWithTheServerOutOfReach() async throws {
+    StubServer.serve("/stream/110", .init(body: Data(), unreachable: true))
+    let directory = temporaryDirectory()
+    try Data(contentsOf: AudioFiles.flac(seconds: 2)).write(to: directory.appending(path: "110.flac"))  // downloaded earlier
+    let cache = StreamCache(directory: directory, retryDelay: .milliseconds(5), configuration: StubServer.configuration)
+    let (kept, _) = source(110, from: 44_100, levelled: true, cache: cache)
+    let pcm = try await readAll(kept)
+    #expect(pcm.frames == 44_100)
+    #expect(abs(pcm.left[0] - sine(44_100, 0)) < 1e-6)
+    #expect(StubServer.requests("/stream/110").isEmpty)
+    #expect(StubServer.requests("/stream/110/levelled.wav").isEmpty)
+  }
+
   @Test func aFormatItCannotStreamPlaysFromTheLevelledStream() async throws {
     StubServer.serve("/stream/105", .init(body: Data(repeating: 1, count: 1000)))
     StubServer.serve("/stream/105/levelled.wav", .init(body: AudioFiles.levelledWAV(frames: 1000, signal: { _, _ in 0.25 })))

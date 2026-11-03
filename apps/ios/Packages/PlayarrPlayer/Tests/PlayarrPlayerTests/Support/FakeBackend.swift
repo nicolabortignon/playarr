@@ -13,7 +13,12 @@ final class FakeBackend: PlayerBackend {
   func levels(_ recordingIds: [String]) async throws -> [String: TrackLevel] {
     levelTable.withLock { table in table.filter { recordingIds.contains($0.key) } }
   }
-  func reportPlays(_ reported: [PlayReport]) async throws { plays.withLock { $0 += reported } }
+  /// False: the server can't be reached (play reports fail and wait).
+  let reachable = Shared(true)
+  func reportPlays(_ reported: [PlayReport]) async throws {
+    guard reachable.value else { throw URLError(.notConnectedToInternet) }
+    plays.withLock { $0 += reported }
+  }
   func radio(seeds: [String], exclude: [String], count: Int) async throws -> [Track] {
     radioAsks.withLock { $0.append((seeds, exclude)) }
     return radioAnswer.withLock { $0 }
@@ -49,11 +54,14 @@ extension Player {
     scheduler: (any Scheduling)? = nil, signals: [Int: @Sendable (Int64, Int) -> Float] = [:]
   ) throws -> Player {
     let defaults = UserDefaults(suiteName: UUID().uuidString)!
-    return try Player(
+    let player = try Player(
       backend: backend, directory: directory, settings: settings ?? PlaybackSettings(defaults: defaults),
+      transport: FakeTransport(base: OfflineFolder(root: directory).base),
       makeEngine: { try AudioEngine(manualRendering: true, makeSource: $0) },
       makeSource: { item, frame in SignalSource(seconds: item.track.duration, from: frame, signal: signals[item.track.id] ?? Signals.sine) },
       scheduler: scheduler)
+    player.settle = .zero
+    return player
   }
 
   /// Renders `seconds` in steps of 0.1 s, ticking the Player's clock between them.
