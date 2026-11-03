@@ -15,13 +15,13 @@ import { Mixes } from './mixes.ts';
 const HOME = '192.168.1.20';
 const AWAY = '203.0.113.5';
 
-/** 12 artists × 6 songs, tagged rock (half) or jazz, from the 90s. */
-function fakeLibrary() {
-  const tracks: Track[] = [];
+/** 12 artists × 6 songs, tagged rock (half) or jazz, from the 90s; `keep` narrows it, as an account's view would. */
+function fakeLibrary(keep: (t: Track) => boolean = () => true, sources: number[] | null = null) {
+  const all: Track[] = [];
   for (let artist = 1; artist <= 12; artist++) {
     for (let n = 0; n < 6; n++) {
       const id = artist * 100 + n;
-      tracks.push({
+      all.push({
         id,
         recordingId: `rec-${id}`,
         fileId: id,
@@ -39,6 +39,7 @@ function fakeLibrary() {
       } as Track);
     }
   }
+  const tracks = all.filter(keep);
   const byId = new Map(tracks.map((t) => [t.id, t]));
   const byRecording = new Map(tracks.map((t) => [t.recordingId, t]));
   const albums = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, year: 1995, addedAt: '2020-01-01T00:00:00Z' }) as Album);
@@ -54,6 +55,7 @@ function fakeLibrary() {
       },
       artists: async () => artists,
       version: 1,
+      sources,
       tracksByIds: async (ids: number[]) => ids.flatMap((id) => byId.get(id) ?? []),
       tracksByRecordings: async (ids: string[]) => ids.flatMap((id) => byRecording.get(id) ?? []),
       track: async (id: number) => byId.get(id),
@@ -63,7 +65,7 @@ function fakeLibrary() {
   };
 }
 
-function setup(mixMaps = new Map<string, MixMapSummary>()) {
+function setup(mixMaps = new Map<string, MixMapSummary>(), views: Record<number, Library> = {}) {
   const db = freshDb();
   const store = new CatalogStore(db);
   const { library, tracks } = fakeLibrary();
@@ -76,7 +78,7 @@ function setup(mixMaps = new Map<string, MixMapSummary>()) {
   } as unknown as Analyzer;
   const history = new History(db, library);
   const playlists = { create: vi.fn(async (name: string) => ({ id: 1, name })) } as unknown as Playlists;
-  const mixes = new Mixes({ db, store, library, analyzer, history, playlists, similar: async () => [] });
+  const mixes = new Mixes({ db, store, library, analyzer, history, playlists, similar: async () => [], libraryFor: (account: number) => views[account] ?? library });
   const app = Fastify();
   mixRoutes(app, { mixes, history, store, analysisAvailable: false, analyzeLibrary: vi.fn(), library });
   return { db, store, tracks, history, mixes, playlists, analyzer, app };
@@ -88,6 +90,20 @@ const at = (iso: string) => new Date(iso);
 const map = (bpm: number, camelot: Camelot): MixMapSummary => ({ bpm, beatConfidence: 0.9, gridStable: true, key: { camelot, confidence: 0.9 } });
 
 describe('Mixes', () => {
+  it('makes each account’s mixes and radio from the songs it may hear', async () => {
+    const evenOnly = fakeLibrary((t) => t.artistId % 2 === 0, [2]).library;
+    const { mixes } = setup(new Map(), { 2: evenOnly });
+    const now = at('2026-11-01T10:05:00Z');
+    const theirs = await mixes.list('UTC', now, 2);
+    expect(theirs.length).toBeGreaterThan(0);
+    for (const m of theirs) for (const t of (await mixes.get(m.key, 'UTC', now, 2)).tracks) expect(t.artistId % 2).toBe(0);
+    const mine = await Promise.all((await mixes.list('UTC', now, 1)).map((m) => mixes.get(m.key, 'UTC', now, 1)));
+    expect(mine.flatMap((m) => m.tracks).some((t) => t.artistId % 2 === 1)).toBe(true);
+    const radio = await mixes.radio(['rec-200'], [], 25, 2);
+    expect(radio.length).toBeGreaterThan(0);
+    expect(radio.every((t) => t.artistId % 2 === 0)).toBe(true);
+  });
+
   it('lets every account see and clear its own history, and only admins change the mixes', async () => {
     const { app } = setup();
     actAs(app, [account(1, { role: 'admin' }), account(2)]);

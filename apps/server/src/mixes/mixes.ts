@@ -5,7 +5,7 @@ import type { Analyzer } from '../analysis/analyzer.ts';
 import type { CatalogStore } from '../catalog/store.ts';
 import { hash32, Rng } from '../cover/random.ts';
 import { similarRecordings } from '../discover/listenbrainz.ts';
-import type { Library } from '../library/library.ts';
+import type { Library, LibraryView } from '../library/library.ts';
 import type { Playlists } from '../playlists.ts';
 import { blendOrder, choose, generateMix, planMixes, spread, tempoAndKey, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
 import type { History } from './history.ts';
@@ -74,8 +74,8 @@ export class Mixes {
   /** Mixes being made, by account. */
   private inflight = new Map<number, Promise<void>>();
   private timer: NodeJS.Timeout | null = null;
-  /** Songs as the mixes see them, until the library or what's known about its songs changes. */
-  private songCache: { key: string; songs: Song[] } | null = null;
+  /** Songs as the mixes see them, per set of sources, until the library or what's known about its songs changes. */
+  private songCache = new Map<string, { key: string; songs: Song[] }>();
 
   constructor(
     private readonly deps: {
@@ -90,6 +90,8 @@ export class Mixes {
       log?: { warn: (msg: string) => void };
       /** Everyone listening (account ids): each has their own mixes. */
       accounts?: () => number[];
+      /** The library as each account may hear it (its sources); the whole library without it. */
+      libraryFor?: (account: number) => LibraryView;
     },
   ) {}
 
@@ -111,6 +113,11 @@ export class Mixes {
     if (this.timer) clearInterval(this.timer);
   }
 
+  /** The songs an account's mixes and radio come from. */
+  private view(account: number): LibraryView {
+    return this.deps.libraryFor?.(account) ?? this.deps.library;
+  }
+
   async list(clientTimeZone?: string, now = new Date(), account = 1): Promise<MixSummary[]> {
     const tz = this.timeZone(clientTimeZone);
     await this.ready(account, tz, now);
@@ -122,7 +129,7 @@ export class Mixes {
       const row = rows.get(p.key);
       const mix = row && (JSON.parse(row.data) as Stored).mix;
       if (!row || !mix) continue;
-      const tracks = await this.tracksOf(mix);
+      const tracks = await this.tracksOf(mix, this.view(account));
       if (tracks.length) out.push(summary(mix, tracks, row, now, local));
     }
     return out;
@@ -134,7 +141,7 @@ export class Mixes {
     const row = this.rows(account).get(key);
     const mix = row && (JSON.parse(row.data) as Stored).mix;
     if (!row || !mix) throw new MixError('This mix isn’t available right now', 404);
-    const tracks = await this.tracksOf(mix);
+    const tracks = await this.tracksOf(mix, this.view(account));
     return { ...summary(mix, tracks, row, now, localTime(now, tz)), tracks };
   }
 
@@ -159,8 +166,9 @@ export class Mixes {
    * for keeping the music going after the queue ends or "Start radio" on a song. Leaves out `exclude`.
    * Ordered to blend on from the last seed, the song playing when the queue runs out.
    */
-  async radio(seeds: string[], exclude: string[], count = 25): Promise<Track[]> {
-    const songs = await this.songs(readMixSettings(this.deps.store));
+  async radio(seeds: string[], exclude: string[], count = 25, account = 1): Promise<Track[]> {
+    const library = this.view(account);
+    const songs = await this.songs(readMixSettings(this.deps.store), library);
     const byRecording = new Map(songs.map((s) => [s.track.recordingId, s]));
     const seedSongs = seeds.flatMap((id) => byRecording.get(id) ?? []);
     if (!seedSongs.length) return [];
@@ -171,7 +179,7 @@ export class Mixes {
     const energies = seedSongs.flatMap((s) => (s.energy === undefined ? [] : [s.energy]));
     const energy = energies.length ? energies.reduce((a, b) => a + b, 0) / energies.length : undefined;
     const artists = new Set(seedSongs.map((s) => s.track.artistId));
-    const neighbours = await this.neighboursOf(seeds.filter((id) => MBID.test(id)).slice(0, 5));
+    const neighbours = await this.neighboursOf(seeds.filter((id) => MBID.test(id)).slice(0, 5), library);
     const skip = new Set([...seeds, ...exclude]);
     // Energy has its own term: this one is how well a song's tempo and key go with the seeds'. The song
     // playing (the last seed) is what the radio follows on from, so it weighs as much as the rest together.
@@ -276,7 +284,7 @@ export class Mixes {
     if (newPlan) {
       plan = { settings: hash, plan: planMixes(ctx) };
       this.write(account, PLAN_KEY, local.date, 0, plan, now);
-      if (plan.plan.some((p) => p.kind === 'discovery' && due(p)) && !ctx.neighbours.size) ctx = { ...ctx, neighbours: await this.neighbours(ctx.taste) };
+      if (plan.plan.some((p) => p.kind === 'discovery' && due(p)) && !ctx.neighbours.size) ctx = { ...ctx, neighbours: await this.neighbours(ctx.taste, this.view(account)) };
     }
     for (const p of plan!.plan) {
       if (!due(p)) continue;
@@ -298,7 +306,8 @@ export class Mixes {
 
   private async context(account: number, local: LocalTime, now: Date, settings: MixSettings, neighbours: boolean): Promise<MixContext> {
     const { history, db } = this.deps;
-    const songs = await this.songs(settings);
+    const library = this.view(account);
+    const songs = await this.songs(settings, library);
     const plays = history.since(365, now.getTime(), account);
     const favorites = new Set(
       (db.prepare('SELECT recording_id FROM favorites').all() as { recording_id: string }[]).map((r) => r.recording_id),
@@ -316,7 +325,7 @@ export class Mixes {
       local,
       now: now.getTime(),
       settings,
-      neighbours: neighbours ? await this.neighbours(taste) : new Map(),
+      neighbours: neighbours ? await this.neighbours(taste, library) : new Map(),
     };
   }
 
@@ -324,11 +333,13 @@ export class Mixes {
    * Every song as the mixes see it, one per recording (a song on its album and on a "best of" is one
    * song). Kept until the library changes or more songs are tagged or measured.
    */
-  private async songs(settings: MixSettings): Promise<Song[]> {
-    const { library, analyzer } = this.deps;
+  private async songs(settings: MixSettings, library: LibraryView): Promise<Song[]> {
+    const { analyzer } = this.deps;
     const progress = analyzer.progress();
+    const sources = library.sources?.join(',') ?? 'all';
     const key = `${library.version}:${progress.features}:${progress.meta}:${progress.mixMaps}:${settings.analyzeLibrary}`;
-    if (this.songCache?.key === key) return this.songCache.songs;
+    const cached = this.songCache.get(sources);
+    if (cached?.key === key) return cached.songs;
     const [tracks, albums, artists] = await Promise.all([library.allTracks(), library.albums(), library.artists()]);
     const seen = new Set<string>();
     const unique = tracks.filter((t) => !seen.has(t.recordingId) && seen.add(t.recordingId));
@@ -357,23 +368,24 @@ export class Mixes {
         mix: summaries.get(track.recordingId),
       });
     });
-    this.songCache = { key, songs };
+    this.songCache.set(sources, { key, songs });
     return songs;
   }
 
   /** Library songs ListenBrainz finds alike to the most played (or loved) ones, for Discovery Weekly. */
-  private neighbours(taste: Taste): Promise<Map<number, number>> {
+  private neighbours(taste: Taste, library: LibraryView): Promise<Map<number, number>> {
     return this.neighboursOf(
       [...taste.songAffinity]
         .filter(([id]) => MBID.test(id))
         .sort((a, b) => b[1] - a[1])
         .slice(0, NEIGHBOUR_SEEDS)
         .map(([id]) => id),
+      library,
     );
   }
 
   /** Library songs ListenBrainz finds alike to these recordings (track id → 0 … 1). */
-  private async neighboursOf(seeds: string[]): Promise<Map<number, number>> {
+  private async neighboursOf(seeds: string[], library: LibraryView): Promise<Map<number, number>> {
     const similar = this.deps.similar ?? ((id: string) => similarRecordings(id));
     const out = new Map<number, number>();
     const lists = await Promise.allSettled(seeds.map((id) => similar(id)));
@@ -382,8 +394,8 @@ export class Mixes {
       const max = Math.max(1, ...list.value.map((r) => r.score));
       for (const rec of list.value) {
         const track =
-          (await this.deps.library.trackByRecording(rec.recording_mbid)) ??
-          (await this.deps.library.trackByName(rec.artist_credit_name, rec.recording_name));
+          (await library.trackByRecording(rec.recording_mbid)) ??
+          (await library.trackByName(rec.artist_credit_name, rec.recording_name));
         if (track) out.set(track.id, Math.max(out.get(track.id) ?? 0, rec.score / max));
       }
     }
@@ -391,9 +403,9 @@ export class Mixes {
     return out;
   }
 
-  /** A stored mix's songs as the library has them now (by recording, which survives matching). */
-  private tracksOf(mix: GeneratedMix): Promise<Track[]> {
-    return mix.recordingIds ? this.deps.library.tracksByRecordings(mix.recordingIds) : this.deps.library.tracksByIds(mix.trackIds);
+  /** A stored mix's songs as the account's library has them now (by recording, which survives matching). */
+  private tracksOf(mix: GeneratedMix, library: LibraryView): Promise<Track[]> {
+    return mix.recordingIds ? library.tracksByRecordings(mix.recordingIds) : library.tracksByIds(mix.trackIds);
   }
 
   private rows(account: number): Map<string, Row> {

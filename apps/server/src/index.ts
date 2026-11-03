@@ -147,7 +147,18 @@ const history = new History(db, library);
 const accounts = new Accounts(db);
 const sessions = new Sessions(db);
 const setupCodes = new SetupCodes(db);
-const mixes = new Mixes({ db, store, library, analyzer, history, playlists, log: app.log, accounts: () => accounts.ids() });
+const mixes = new Mixes({
+  db,
+  store,
+  library,
+  analyzer,
+  history,
+  playlists,
+  log: app.log,
+  accounts: () => accounts.ids(),
+  // Each account's mixes and radio come from the sources it may hear.
+  libraryFor: (id) => library.view(accounts.get(id)?.sources ?? null),
+});
 mixes.start();
 const scrobbler = new Scrobbler(db, store, library, { log: app.log, accounts: () => accounts.ids() });
 scrobbler.start();

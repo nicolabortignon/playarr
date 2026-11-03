@@ -11,7 +11,7 @@ import { isStatsRange, listeningStats } from '../mixes/stats.ts';
 import { validTimeZone } from '../mixes/time.ts';
 import { stripAlbum, type Library } from '../library/library.ts';
 import { PlaylistError } from '../playlists.ts';
-import { accountId, requireAdmin, requireOwn } from '../accounts/rights.ts';
+import { accountId, libraryOf, requireAdmin, requireOwn } from '../accounts/rights.ts';
 
 const playsInput = z.object({
   plays: z
@@ -72,7 +72,7 @@ export function mixRoutes(
     analysisAvailable: boolean;
     /** Measure the whole library's sound, when that setting is turned on. */
     analyzeLibrary: () => void;
-    library: Pick<Library, 'album' | 'artists' | 'tracksByRecordings'>;
+    library: Pick<Library, 'album' | 'artists' | 'tracksByRecordings'> & Partial<Pick<Library, 'view'>>;
     /** The database the history is in, for stats. */
     db?: DatabaseSync;
     scrobbler?: Pick<Scrobbler, 'info' | 'connect' | 'disconnect' | 'setEnabled' | 'sendEarlier' | 'kick'>;
@@ -96,9 +96,10 @@ export function mixRoutes(
     return { recorded };
   });
 
-  /** Jump back in: albums heard lately that are still in the library. */
+  /** Jump back in: albums heard lately that the account can still play. */
   app.get('/api/plays/recent-albums', async (req) => {
-    const albums = await Promise.all(history.recentAlbums(24, who(req)).map((id) => deps.library.album(id)));
+    const library = libraryOf(deps.library, req);
+    const albums = await Promise.all(history.recentAlbums(24, who(req)).map((id) => library.album(id)));
     return albums.flatMap((a) => (a ? [stripAlbum(a)] : [])).slice(0, 12);
   });
 
@@ -107,14 +108,14 @@ export function mixRoutes(
     const range = req.query.range ?? 'month';
     if (!isStatsRange(range)) return reply.code(400).send({ error: 'Unknown range' });
     if (!deps.db) return reply.code(404).send({ error: 'Not available' });
-    return listeningStats(deps.db, deps.library, range, Date.now(), who(req));
+    return listeningStats(deps.db, libraryOf(deps.library, req), range, Date.now(), who(req));
   });
 
   /** Songs like these, from the library: to keep playing after the queue, or "Start radio". */
   app.post('/api/radio', async (req, reply) => {
     const parsed = radioInput.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' });
-    return mixes.radio(parsed.data.seeds, parsed.data.exclude ?? [], parsed.data.count ?? 25);
+    return mixes.radio(parsed.data.seeds, parsed.data.exclude ?? [], parsed.data.count ?? 25, who(req));
   });
 
   app.get<Tz>('/api/mixes', (req) => mixes.list(tz(req.query), new Date(), who(req)));

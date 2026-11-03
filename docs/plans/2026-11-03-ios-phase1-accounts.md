@@ -4215,6 +4215,8 @@ corepack pnpm -C apps/server typecheck
 
 Expected: PASS.
 
+*As executed:* fitted as written once found by content (stale line numbers). Mixes still read favorites and playlist songs server-wide for taste (`context`); Task 14 makes favorites per account.
+
 **Step 5: Commit**
 
 ```bash

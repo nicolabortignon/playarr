@@ -12,12 +12,16 @@ import type { Config } from '../config.ts';
 import { Library } from '../library/library.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { MediaSource } from '../media/index.ts';
+import { History } from '../mixes/history.ts';
+import { Mixes } from '../mixes/mixes.ts';
+import type { Playlists } from '../playlists.ts';
 import { apiRoutes } from '../routes/api.ts';
 import { artRoutes, type LocalArt } from '../routes/art.ts';
 import { levelRoutes } from '../routes/levels.ts';
 import { lyricsRoutes } from '../routes/lyrics.ts';
 import { metadataRoutes } from '../routes/metadata.ts';
 import { mixMapRoutes } from '../routes/mixMaps.ts';
+import { mixRoutes } from '../routes/mixes.ts';
 import { streamRoutes } from '../routes/stream.ts';
 import { transitionRoutes } from '../routes/transitions.ts';
 import type { TransitionAnswer } from '../transitions/transitions.ts';
@@ -206,5 +210,42 @@ describe('library access: files', () => {
     } finally {
       cleanup();
     }
+  });
+});
+
+describe('library access: listening', () => {
+  async function listening() {
+    const s = await setup();
+    const history = new History(s.db, s.library);
+    const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), mixSummaries: () => new Map(), progress: () => ({ features: 0, meta: 0, mixMaps: 0 }) } as unknown as Analyzer;
+    const sources: Record<number, number[] | null> = { 1: null, 2: [s.cc], 3: [s.lidarr] };
+    const mixes = new Mixes({ db: s.db, store: s.store, library: s.library, analyzer, history, playlists: {} as Playlists, similar: async () => [], libraryFor: (id) => s.library.view(sources[id] ?? null) });
+    mixRoutes(s.app, { mixes, history, store: s.store, analysisAvailable: false, analyzeLibrary: vi.fn(), library: s.library, db: s.db });
+    const cc = (await s.library.trackByRecording(CC_REC))!;
+    // Account 2 heard all three songs, back when it could hear Lidarr too.
+    const heard = [
+      { trackId: 700, recordingId: 'rec-1' },
+      { trackId: 701, recordingId: 'rec-2' },
+      { trackId: cc.id, recordingId: CC_REC },
+    ];
+    await history.record(heard.map((h, i) => ({ ...h, at: `2026-11-01T1${i}:00:00Z`, hour: 10 + i, weekday: 0, seconds: 200, skipped: false })), 2);
+    return { ...s, cc };
+  }
+
+  it('plays radio only from the account’s songs', async () => {
+    const { post } = await listening();
+    const radio = async (id: number) => ((await post('/api/radio', id, { seeds: [CC_REC] })).json() as Track[]).map((t) => t.recordingId);
+    expect(await radio(2)).toEqual([]);
+    const all = await radio(1);
+    expect(all.length).toBeGreaterThan(0);
+    expect(all.every((r) => r === 'rec-1' || r === 'rec-2')).toBe(true);
+  });
+
+  it('counts only the account’s songs in its stats and Jump back in', async () => {
+    const { get, cc } = await listening();
+    const stats = (await get('/api/stats?range=all', 2)).json();
+    expect((stats.topTracks as { track: Track }[]).map((t) => t.track.recordingId)).toEqual([CC_REC]);
+    expect(stats.firstSong).toBeUndefined(); // Angel came first, and is out of reach now
+    expect(((await get('/api/plays/recent-albums', 2)).json() as Album[]).map((a) => a.id)).toEqual([cc.albumId]);
   });
 });
