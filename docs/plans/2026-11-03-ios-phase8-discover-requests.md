@@ -2359,6 +2359,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 ```
 
+**As built:** no `ServerDate.swift`: phase 4's `Format.parseDate` reads the server's times, with or without milliseconds.
+
 ---
 
 ### Task 10: The Request button, the requests pill and "Request the rest"
