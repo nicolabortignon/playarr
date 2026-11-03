@@ -1,4 +1,5 @@
 import PlayarrAPI
+import PlayarrPlayer
 import SwiftUI
 
 /// Every server and its accounts: switch with a tap (no password), add an account or a server, sign out.
@@ -6,6 +7,7 @@ struct AccountSwitcherView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var adding: AddServerFlow.Start?
+    @State private var leaving: KeptForAccount?
 
     var body: some View {
         NavigationStack {
@@ -27,10 +29,10 @@ struct AccountSwitcherView: View {
                                 }
                             }
                             .swipeActions {
-                                Button("Sign out", role: .destructive) { Task { await model.store.signOut(record.key) } }
+                                Button("Sign out", role: .destructive) { signOut(record) }
                             }
                             .contextMenu {
-                                Button("Sign out", role: .destructive) { Task { await model.store.signOut(record.key) } }
+                                Button("Sign out", role: .destructive) { signOut(record) }
                             }
                         }
                         Button("Add account") { adding = .server(server.baseURL, username: nil) }
@@ -52,6 +54,23 @@ struct AccountSwitcherView: View {
                 .onAppear { if start == .address { model.browser.start() } }
                 .onDisappear { model.browser.stop() }
             }
+            .confirmationDialog("Sign out of \(leaving?.name ?? "")?", isPresented: Binding(get: { leaving != nil }, set: { if !$0 { leaving = nil } }), titleVisibility: .visible, presenting: leaving) { kept in
+                Button("Sign out and remove downloads", role: .destructive) {
+                    Task { await kept.signOutRemovingDownloads { await model.store.signOut($0) } }
+                }
+                Button("Sign out, keep downloads") { Task { await model.store.signOut(kept.key) } }
+                Button("Cancel", role: .cancel) {}
+            } message: { kept in
+                Text(kept.message)
+            }
+        }
+    }
+
+    private func signOut(_ record: AccountRecord) {
+        if let kept = KeptForAccount.of(record.key, name: record.account.name) {
+            leaving = kept
+        } else {
+            Task { await model.store.signOut(record.key) }
         }
     }
 }
