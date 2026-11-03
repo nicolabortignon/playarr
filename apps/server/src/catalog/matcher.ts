@@ -44,12 +44,16 @@ export interface MatcherDeps {
   fingerprint?: (sourceId: number, path: string) => Promise<Fingerprint | null>;
   /** Matches changed: rebuild the library (debounced by the caller). */
   onMatched: () => void;
+  /** When lookups failed: how many more passes, how long apart (6, 5 min by default). */
+  retry?: { times: number; afterMs: number };
   log: { warn: (msg: string) => void };
 }
 
 const SEARCH_MIN_SCORE = 70;
 const CANDIDATES = 3;
 const FINGERPRINT_MIN_SCORE = 0.8;
+const RETRY_TIMES = 6;
+const RETRY_AFTER_MS = 5 * 60_000;
 /** releaseGroupRank up to here is a song's own album: studio album, EP, soundtrack (not a single or compilation). */
 const ALBUM_RANK = 2;
 
@@ -128,12 +132,17 @@ export class Matcher {
     const groups = this.groups(sourceId);
     this.pending.set(sourceId, groups.length);
     let unsaved = 0;
+    let failed = false;
     for (const group of groups) {
       try {
-        this.deps.store.saveMatches(sourceId, await this.matchGroup(sourceId, group));
+        const records = await this.matchGroup(sourceId, group);
+        this.deps.store.saveMatches(sourceId, records);
+        // A song whose lookup failed was left without a row.
+        if (records.length < group.files.length) failed = true;
         unsaved++;
       } catch (err) {
-        // Left without a row: tried again after the next scan.
+        // Left without a row: tried again after the next scan, or the retry below.
+        failed = true;
         this.deps.log.warn(`Matching “${group.albumTitle ?? group.key}” failed: ${(err as Error).message}`);
       }
       this.pending.set(sourceId, Math.max(0, this.pendingGroups(sourceId) - 1));
@@ -143,6 +152,17 @@ export class Matcher {
       }
     }
     if (unsaved) this.deps.onMatched();
+    this.retryLater(sourceId, failed);
+  }
+
+  private readonly retries = new Map<number, number>();
+
+  /** Lookups failed (MusicBrainz busy or away): those songs again in a while, a few times, without a rescan. */
+  private retryLater(sourceId: number, failed: boolean) {
+    const tries = failed ? (this.retries.get(sourceId) ?? 0) + 1 : 0;
+    this.retries.set(sourceId, tries);
+    if (!failed || tries > (this.deps.retry?.times ?? RETRY_TIMES)) return;
+    setTimeout(() => this.enqueue(sourceId), this.deps.retry?.afterMs ?? RETRY_AFTER_MS).unref?.();
   }
 
   /** Use this release for a group (from the review list). */

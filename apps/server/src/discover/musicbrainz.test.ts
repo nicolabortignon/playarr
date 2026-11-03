@@ -30,4 +30,28 @@ describe('MusicBrainz queue status', () => {
     expect(mb.status().queued).toBe(0);
     await again;
   });
+
+  it('waits out a busy MusicBrainz for background work, but retries a search someone waits on only once', async () => {
+    vi.useFakeTimers();
+    try {
+      const busy = () => new Response('{}', { status: 503 });
+      const fetch = vi.spyOn(globalThis, 'fetch');
+      fetch.mockImplementation(async () => busy());
+      const mb = new MusicBrainz('Playarr-test');
+      const asked = mb.searchReleases('A', 'One').catch((err: Error) => err);
+      await vi.runAllTimersAsync();
+      expect(await asked).toBeInstanceOf(Error);
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      fetch.mockClear();
+      let calls = 0;
+      fetch.mockImplementation(async () => (++calls < 4 ? busy() : new Response(JSON.stringify({ releases: [] }))));
+      const background = mb.searchReleases('B', 'Two', undefined, { background: true });
+      await vi.runAllTimersAsync();
+      expect(await background).toEqual([]);
+      expect(fetch).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

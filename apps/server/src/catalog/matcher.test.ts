@@ -21,7 +21,10 @@ const release: MbReleaseInfo = {
 const hit: MbReleaseHit = { id: 'rel-1', score: 100, title: 'Mezzanine', 'track-count': 2 };
 const tags = (t: Partial<TagInfo>): TagInfo => ({ genres: [], duration: 300, format: FLAC, ...t });
 
-function setup(files: Record<string, Partial<TagInfo>>, opts: { hits?: MbReleaseHit[]; acoustid?: AcoustIdMatch | null } = {}) {
+function setup(
+  files: Record<string, Partial<TagInfo>>,
+  opts: { hits?: MbReleaseHit[]; acoustid?: AcoustIdMatch | null; retry?: { times: number; afterMs: number } } = {},
+) {
   const store = new CatalogStore(freshDb());
   const sourceId = store.addSource('folder', 'Music', { path: '/music' });
   store.saveFolderFiles(
@@ -36,7 +39,7 @@ function setup(files: Record<string, Partial<TagInfo>>, opts: { hits?: MbRelease
   const acoustid = { enabled: opts.acoustid !== undefined, lookup: vi.fn(async () => opts.acoustid ?? null) };
   const fingerprint = vi.fn(async () => ({ duration: 379, fingerprint: 'AQAA' }));
   const onMatched = vi.fn();
-  const matcher = new Matcher({ store, mb, acoustid, fingerprint, onMatched, log: { warn: () => {} } });
+  const matcher = new Matcher({ store, mb, acoustid, fingerprint, onMatched, log: { warn: () => {} }, retry: opts.retry ?? { times: 0, afterMs: 0 } });
   return { store, sourceId, mb, acoustid, fingerprint, onMatched, matcher };
 }
 
@@ -247,6 +250,22 @@ describe('Matcher', () => {
       ['Coldplay', 1],
       ['Nobody', 1],
     ]);
+  });
+
+  it('tries songs MusicBrainz failed for again a while later, without a rescan', async () => {
+    const files = Object.fromEntries(Object.entries(hitsFolder).map(([rel, t]) => [rel, hitsTags(t)]));
+    const { matcher, store, sourceId, mb } = setup(files, { hits: [], retry: { times: 2, afterMs: 5 } });
+    let busy = true;
+    Object.assign(mb, {
+      searchRecordings: vi.fn(async (artist: string, title: string) => {
+        if (title === 'Yellow' && busy) throw new Error('MusicBrainz 503 for /recording');
+        return albums[title] ? [recordingOf(artist, title, albums[title])] : [];
+      }),
+    });
+    await matcher.matchSource(sourceId);
+    expect(store.matches(sourceId).has('03. Coldplay - Yellow.mp3')).toBe(false);
+    busy = false;
+    await vi.waitFor(() => expect(store.matches(sourceId).get('03. Coldplay - Yellow.mp3')?.overlay?.album).toBe('Parachutes'));
   });
 
   it('tells a compilation by its songs’ artists, whoever the album artist is', async () => {

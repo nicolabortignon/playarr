@@ -55,6 +55,7 @@ export interface MbRecordingHit {
 const BASE = 'https://musicbrainz.org/ws/2';
 const MIN_INTERVAL_MS = 1100;
 const CACHE_TTL_MS = 30 * 60_000;
+const BACKGROUND_BACKOFFS_MS = [2000, 5000, 10_000, 20_000];
 
 export class MusicBrainz {
   private queue: Promise<unknown> = Promise.resolve();
@@ -89,14 +90,18 @@ export class MusicBrainz {
       signal?.throwIfAborted();
       this.lastRequest = Date.now();
 
-      // One retry on rate limiting (503) or a network hiccup, after a short back-off.
+      // Rate limiting (503) or a network hiccup: tried again after a back-off. Once for a search someone
+      // waits on; for background work (matching folder music), as long as it takes MusicBrainz to calm down.
+      const backoffs = opts.background ? BACKGROUND_BACKOFFS_MS : [2000];
       let res = await this.fetch(path).catch(() => null);
-      if (!res || res.status === 503) {
+      for (const ms of backoffs) {
+        if (res && res.status !== 503) break;
         signal?.throwIfAborted();
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, ms));
         this.lastRequest = Date.now();
-        res = await this.fetch(path);
+        res = await this.fetch(path).catch(() => null);
       }
+      if (!res) throw new Error(`MusicBrainz can't be reached for ${path.split('?')[0]}`);
       if (!res.ok) throw new Error(`MusicBrainz ${res.status} for ${path.split('?')[0]}`);
       const data = (await res.json()) as T;
       this.cache.set(path, { at: Date.now(), data });
