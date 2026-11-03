@@ -3309,8 +3309,9 @@ MSG
 ### Task 12: Typed addresses, app versions and setup-code links
 
 **Files:**
-- Create: `apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/ServerAddress.swift`, `AppVersion.swift`, `RedeemLink.swift`
-- Test: `apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/ServerAddressTests.swift`, `AppVersionTests.swift`, `RedeemLinkTests.swift`
+- Create: `apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/ServerAddress.swift`, `RedeemLink.swift`
+- Modify: `apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/AppVersion.swift` (phase 0's: marketing version, build and `label`; this task adds comparison)
+- Test: `apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/ServerAddressTests.swift`, `RedeemLinkTests.swift`; add to phase 0's `AppVersionTests.swift`
 
 `ServerAddress` lets plain HTTP through only for home-network hosts (localhost, single-label and `.local` names, private and link-local addresses), and adds `https://` to anything else typed without a scheme. That matches App Transport Security's `NSAllowsLocalNetworking` (Task 14). An `http://` address outside the home network is refused with a message, not left to fail in ATS.
 
@@ -3349,25 +3350,25 @@ import Testing
 }
 ```
 
-`apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/AppVersionTests.swift`:
+`apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/AppVersionTests.swift`: keep phase 0's two tests (`labelShowsTheMarketingVersionAndTheBuild`, `missingKeysReadAsZero`) and add, in the file's two-space style:
 
 ```swift
-import Foundation
-import Testing
-@testable import PlayarrAPI
-
 @Suite struct AppVersionTests {
-    @Test func comparesPartByPart() {
-        #expect(AppVersion("1.10.0") > AppVersion("1.9.3"))
-        #expect(AppVersion("1.0") == AppVersion("1.0.0"))
-        #expect(AppVersion("2") > AppVersion("1.99"))
-    }
+  @Test func comparesPartByPart() {
+    #expect(AppVersion("1.10.0") > AppVersion("1.9.3"))
+    #expect(AppVersion("1.0") == AppVersion("1.0.0"))
+    #expect(AppVersion("2") > AppVersion("1.99"))
+  }
 
-    @Test func knowsWhenTheAppIsTooOld() {
-        let server = ServerInfo(id: "s", name: "Home", version: "0.9.0", minAppVersion: "1.2.0", setup: false)
-        #expect(!server.supports(AppVersion("1.1.9")))
-        #expect(server.supports(AppVersion("1.2.0")))
-    }
+  @Test func comparesTheMarketingVersionOnly() {
+    #expect(AppVersion(marketing: "1.2.0", build: "812") == AppVersion("1.2.0"))
+  }
+
+  @Test func knowsWhenTheAppIsTooOld() {
+    let server = ServerInfo(id: "s", name: "Home", version: "0.9.0", minAppVersion: "1.2.0", setup: false)
+    #expect(!server.supports(AppVersion("1.1.9")))
+    #expect(server.supports(AppVersion("1.2.0")))
+  }
 }
 ```
 
@@ -3399,7 +3400,7 @@ import Testing
 swift test --package-path apps/ios/Packages/PlayarrAPI --filter "ServerAddressTests|AppVersionTests|RedeemLinkTests"
 ```
 
-Expected: build fails with `cannot find 'ServerAddress' in scope` (and `AppVersion`, `RedeemLink`).
+Expected: build fails with `cannot find 'ServerAddress' in scope` (and `RedeemLink`), and `missing argument label 'infoDictionary:' in call` for `AppVersion("1.10.0")`.
 
 **Step 3: Write them**
 
@@ -3468,39 +3469,63 @@ public enum ServerAddress {
 }
 ```
 
-`apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/AppVersion.swift`:
+`apps/ios/Packages/PlayarrAPI/Sources/PlayarrAPI/AppVersion.swift` (phase 0's type, which the phase 0 screen and its test use, with comparison added; equality now follows the marketing version too):
 
 ```swift
 import Foundation
 
-/// A dotted version ("1.2.3"), compared part by part; missing parts count as 0.
-public struct AppVersion: Comparable, Sendable, CustomStringConvertible {
-    public let parts: [Int]
+/// The app's version as people see it, "1.0.0 (812)": the marketing version and the build number.
+/// Versions compare by the marketing version, part by part ("1.10.0" > "1.9.3"; missing parts count
+/// as 0), which is what a server's `minAppVersion` names; the build doesn't take part.
+public struct AppVersion: Sendable, Comparable, CustomStringConvertible {
+  public let marketing: String
+  public let build: String
 
-    public init(_ string: String) {
-        parts = string.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
-    }
+  public init(marketing: String, build: String) {
+    self.marketing = marketing
+    self.build = build
+  }
 
-    /// This app's marketing version.
-    public static var current: AppVersion {
-        AppVersion(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0")
-    }
+  /// A marketing version alone, as a server writes it ("1.2.0").
+  public init(_ marketing: String) {
+    self.init(marketing: marketing, build: "0")
+  }
 
-    public var description: String { parts.map(String.init).joined(separator: ".") }
+  /// Reads `CFBundleShortVersionString` and `CFBundleVersion`, as found in `Bundle.main.infoDictionary`.
+  public init(infoDictionary: [String: Any]) {
+    self.init(
+      marketing: infoDictionary["CFBundleShortVersionString"] as? String ?? "0.0.0",
+      build: infoDictionary["CFBundleVersion"] as? String ?? "0"
+    )
+  }
 
-    public static func < (lhs: AppVersion, rhs: AppVersion) -> Bool {
-        let count = max(lhs.parts.count, rhs.parts.count)
-        let left = lhs.parts + Array(repeating: 0, count: count - lhs.parts.count)
-        let right = rhs.parts + Array(repeating: 0, count: count - rhs.parts.count)
-        return left.lexicographicallyPrecedes(right)
-    }
+  /// This app's version.
+  public static var current: AppVersion {
+    AppVersion(infoDictionary: Bundle.main.infoDictionary ?? [:])
+  }
 
-    public static func == (lhs: AppVersion, rhs: AppVersion) -> Bool { !(lhs < rhs) && !(rhs < lhs) }
+  public var label: String { "\(marketing) (\(build))" }
+
+  public var description: String { marketing }
+
+  /// The marketing version's numbers: "1.2.3" → [1, 2, 3].
+  public var parts: [Int] {
+    marketing.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 }
+  }
+
+  public static func < (lhs: AppVersion, rhs: AppVersion) -> Bool {
+    let count = max(lhs.parts.count, rhs.parts.count)
+    let left = lhs.parts + Array(repeating: 0, count: count - lhs.parts.count)
+    let right = rhs.parts + Array(repeating: 0, count: count - rhs.parts.count)
+    return left.lexicographicallyPrecedes(right)
+  }
+
+  public static func == (lhs: AppVersion, rhs: AppVersion) -> Bool { !(lhs < rhs) && !(rhs < lhs) }
 }
 
 extension ServerInfo {
-    /// The server works with this version of the app (its minAppVersion is not newer).
-    public func supports(_ app: AppVersion) -> Bool { app >= AppVersion(minAppVersion) }
+  /// The server works with this version of the app (its minAppVersion is not newer).
+  public func supports(_ app: AppVersion) -> Bool { app >= AppVersion(minAppVersion) }
 }
 ```
 
