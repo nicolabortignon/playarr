@@ -7,6 +7,12 @@
 #                    (TESTERS="a@example.com b@example.com" adds those App Store Connect users to it)
 #   make beta        test, then archive, upload and hand the build to TestFlight (beta-upload skips the tests)
 #   make device      build and install on a paired iPhone (DEVICE="name or UDID" picks one)
+#   make screenshots the App Store screenshots: a local server with the Creative Commons albums and the
+#                    StoreScreenshots UI test on simulators of their own (SETS="ipad-13" takes only that set)
+#   make store-check check the App Store text, settings and screenshots in store/ against Apple's limits
+#   make release     test, then put MARKETING_VERSION on the App Store and submit it for review
+#                    (release-submit skips the tests); VERSION=1.1.0 sets and commits a new version first,
+#                    DRY_RUN=1 changes nothing and prints what would change (and skips the tests)
 #   make screens     screenshots of the main screens on the demo library, saved in build/screens/ (its own simulator)
 #   make models      regenerate PlayarrAPI's Swift models from the shared TypeScript types (models-check: up to date?)
 #   make clean      remove build output and the generated project
@@ -33,7 +39,7 @@ XCODEBUILD = xcodebuild -project Playarr.xcodeproj -scheme Playarr -derivedDataP
 # The repo's .env has ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and IOS_BUNDLE_ID; CI sets them itself.
 NODE = node --env-file-if-exists=../../.env
 
-.PHONY: bootstrap tools project build test test-scripts test-packages test-app screens models models-check setup crashes beta beta-upload device clean
+.PHONY: bootstrap tools project build test test-scripts test-packages test-app screens models models-check setup crashes beta beta-upload device screenshots store-check release release-submit clean
 
 bootstrap: project
 
@@ -103,6 +109,18 @@ beta-upload: project
 
 device: project
 	$(NODE) scripts/release.mjs device
+
+screenshots: project
+	$(NODE) scripts/screenshots.mjs $(SETS)
+
+store-check:
+	$(NODE) scripts/release.mjs check-store
+
+release: $(if $(DRY_RUN),,test)
+	$(MAKE) release-submit
+
+release-submit: project
+	$(NODE) scripts/release.mjs release $(VERSION) $(if $(DRY_RUN),--dry-run)
 
 clean:
 	rm -rf build Playarr.xcodeproj Packages/*/.build
