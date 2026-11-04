@@ -2,7 +2,8 @@ import Foundation
 import Observation
 import PlayarrAPI
 
-/// Name, username, role, requests and library: for a new account, or to change one (AccountsPanel.tsx: AccountForm).
+/// Name, username, role, requests, what it may change on its devices and library: for a new account, or to change one
+/// (AccountsPanel.tsx: AccountForm).
 @MainActor @Observable
 public final class AccountFormModel {
   public let account: Account?
@@ -12,6 +13,8 @@ public final class AccountFormModel {
   public var canRequest: Bool
   public var everySource: Bool
   public private(set) var picked: [Int]
+  /// The device settings it may not change (asked for members only).
+  public private(set) var locked: [DeviceSetting]
   /// The sources to pick from, in their priority order.
   public let sources: [SourceInfo]
 
@@ -28,7 +31,21 @@ public final class AccountFormModel {
     canRequest = account?.canRequest ?? true
     everySource = account.map { $0.sources == nil } ?? true
     picked = account?.sources ?? []
+    locked = account?.locked ?? []
   }
+
+  /// The device settings an admin can stop a member from changing, as the form names them.
+  public static let deviceSettings: [(setting: DeviceSetting, label: String)] = [(.playback, "Playback"), (.appearance, "Appearance")]
+
+  public func mayChange(_ setting: DeviceSetting) -> Bool { !locked.contains(setting) }
+
+  public func setMayChange(_ setting: DeviceSetting, _ may: Bool) {
+    locked.removeAll { $0 == setting }
+    if !may { locked.append(setting) }
+  }
+
+  /// As the server keeps them: in the form's order.
+  var chosenLocked: [DeviceSetting] { Self.deviceSettings.map(\.setting).filter(locked.contains) }
 
   public func isPicked(_ source: SourceInfo) -> Bool { picked.contains(source.id) }
 
@@ -55,7 +72,7 @@ public final class AccountFormModel {
 
   /// POST /api/accounts.
   public var createEndpoint: Endpoint<CreatedAccount> {
-    API.Accounts.create(username: cleanUsername, name: name.trimmed, role: role, canRequest: canRequest, sources: chosenSources)
+    API.Accounts.create(username: cleanUsername, name: name.trimmed, role: role, canRequest: canRequest, sources: chosenSources, locked: chosenLocked)
   }
 
   /// PATCH /api/accounts/:id with only what changed; nil when nothing did.
@@ -67,6 +84,7 @@ public final class AccountFormModel {
     if role != account.role { patch.role = role }
     if canRequest != account.canRequest { patch.canRequest = canRequest }
     if chosenSources != account.sources { patch.sources = .some(chosenSources) }
+    if chosenLocked != (account.locked ?? []) { patch.locked = chosenLocked }
     return patch == AccountPatch() ? nil : patch
   }
 }

@@ -1,11 +1,20 @@
 import SwiftUI
 
-/// Settings → Appearance, for this device (apps/web/src/components/AppearancePanel.tsx).
+/// Settings → Appearance, for this device (apps/web/src/components/AppearancePanel.tsx); read-only when an admin has
+/// locked it for this account.
 struct AppearancePanel: View {
   @Bindable var appearance: AppearanceSettings
+  var locked = false
 
   var body: some View {
     Form {
+      if locked { LockedNotice(panel: "Appearance") }
+      Group { settings }.disabled(locked)
+    }
+    .navigationTitle("Appearance")
+  }
+
+  @ViewBuilder private var settings: some View {
       Section {
         HStack(spacing: 12) {
           ForEach(AppearanceSettings.Accent.all, id: \.self) { accent in
@@ -40,8 +49,6 @@ struct AppearancePanel: View {
           Text("An overlay with everything Playarr knows about the song playing: its tempo, key and beat grid as it plays, intro, outro and drop, loudness and the gain applied, the stream and its buffer, and the next transition.")
         }
       }
-    }
-    .navigationTitle("Appearance")
   }
 
   private func swatch(_ accent: AppearanceSettings.Accent) -> some View {

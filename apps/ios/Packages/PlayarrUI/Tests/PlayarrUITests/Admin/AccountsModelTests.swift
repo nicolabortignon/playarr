@@ -70,7 +70,7 @@ import Testing
     let reviewer = Account(id: 3, username: "reviewer", name: "App Review", role: .member, canRequest: false, sources: [2], hasPassword: false)
     api.on(.post, "/api/accounts", CreatedAccount(account: reviewer, setup: Self.setup))
     #expect(await model.create(form))
-    #expect(api.bodies(.post, "/api/accounts") == [#"{"canRequest":false,"name":"App Review","role":"member","sources":[2],"username":"reviewer"}"#])
+    #expect(api.bodies(.post, "/api/accounts") == [#"{"canRequest":false,"locked":[],"name":"App Review","role":"member","sources":[2],"username":"reviewer"}"#])
     #expect(model.setupShown?.setup.code == "ABCD2345")
     #expect(model.accounts?.map(\.id) == [1, 2, 3])
     #expect(model.summary(reviewer) == "reviewer · member · Creative Commons · not set up yet")
@@ -107,6 +107,22 @@ import Testing
     #expect(await model.update(form))
     #expect(api.bodies(.patch, "/api/accounts/2") == [#"{"canRequest":true,"sources":[2]}"#])
     #expect(model.accounts?.last?.sources == [2])
+  }
+
+  @Test func locksWhatAMemberMayChangeOnTheirDevices() {
+    let form = AccountFormModel(account: Self.sam, sources: [])
+    #expect(form.mayChange(.playback) && form.mayChange(.appearance))
+    form.setMayChange(.appearance, false)
+    form.setMayChange(.playback, false)
+    // Sent in the form's order, and only once changed.
+    #expect(form.patch == AccountPatch(locked: [.playback, .appearance]))
+    form.setMayChange(.playback, true)
+    #expect(form.patch == AccountPatch(locked: [.appearance]))
+    var locked = Self.sam
+    locked.locked = [.appearance]
+    #expect(AccountFormModel(account: locked, sources: []).patch == nil)
+    let model = AccountsModel(api: api)
+    #expect(model.summary(locked) == "sam · member · every source · Appearance locked")
   }
 
   @Test func givesEverySourceBackWithNull() {

@@ -60,8 +60,10 @@ struct SettingsPanelView: View {
   var body: some View {
     switch panel {
     case .playback:
-      PlaybackPanel(settings: app.playback, downloads: session.player.downloads, openDownloads: { session.router.open(.downloads) })
-    case .appearance: AppearancePanel(appearance: app.appearance)
+      PlaybackPanel(
+        settings: app.playback, downloads: session.player.downloads, openDownloads: { session.router.open(.downloads) },
+        locked: isLocked(.playback))
+    case .appearance: AppearancePanel(appearance: app.appearance, locked: isLocked(.appearance))
     #if DEBUG
       case .playerLab:
         if let client = session.client { PlayerLabView(player: session.player, client: client) }
@@ -77,6 +79,11 @@ struct SettingsPanelView: View {
     case .requests: RequestsPanel(api: session.api, requestsChanged: { session.discover.invalidate([.requests, .health]) })
     case .updates: UpdatesPanel(api: session.api)
     }
+  }
+
+  /// An admin has stopped this account from changing this setting on its devices (the store's copy follows changes).
+  private func isLocked(_ setting: DeviceSetting) -> Bool {
+    (app.store.activeAccount?.account ?? session.account).locked?.contains(setting) == true
   }
 
   private var isAdmin: Bool { (app.store.activeAccount?.account.role ?? session.account.role) == .admin }

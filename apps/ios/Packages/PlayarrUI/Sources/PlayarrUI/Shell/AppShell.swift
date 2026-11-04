@@ -61,7 +61,10 @@ struct AppShell: View {
     .onChange(of: scenePhase) { _, phase in
       model.isActive = phase == .active
       // Back on screen: the app may have been suspended, so health and the requests are asked for at once.
-      if phase == .active { session.discover.becameActive() }
+      if phase == .active {
+        session.discover.becameActive()
+        Task { await model.refreshAccount() }
+      }
     }
     // The account's rights changed (may request): Request buttons follow before the next health check.
     .onChange(of: model.store.activeAccount?.account) { _, account in

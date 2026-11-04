@@ -5,8 +5,11 @@ extension API {
         public static func list() -> Endpoint<[ListedAccount]> { Endpoint(.get, "/api/accounts") }
 
         /// A new account and its one-time setup code. `sources` nil: every source.
-        public static func create(username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?) -> Endpoint<CreatedAccount> {
-            Endpoint(.post, "/api/accounts", body: CreateBody(username: username, name: name, role: role, canRequest: canRequest, sources: sources))
+        /// `locked`: the device settings it may not change.
+        public static func create(
+            username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?, locked: [DeviceSetting] = []
+        ) -> Endpoint<CreatedAccount> {
+            Endpoint(.post, "/api/accounts", body: CreateBody(username: username, name: name, role: role, canRequest: canRequest, sources: sources, locked: locked))
         }
 
         public static func update(id: Int, _ patch: AccountPatch) -> Endpoint<Account> { Endpoint(.patch, "/api/accounts/\(id)", body: patch) }
@@ -29,6 +32,7 @@ extension API {
             let role: AccountRole
             let canRequest: Bool
             let sources: [Int]?
+            let locked: [DeviceSetting]
 
             func encode(to encoder: any Encoder) throws {
                 var container = encoder.container(keyedBy: CodingKeys.self)
@@ -37,9 +41,10 @@ extension API {
                 try container.encode(role, forKey: .role)
                 try container.encode(canRequest, forKey: .canRequest)
                 try container.encode(sources, forKey: .sources) // null: every source
+                try container.encode(locked, forKey: .locked)
             }
 
-            private enum CodingKeys: String, CodingKey { case username, name, role, canRequest, sources }
+            private enum CodingKeys: String, CodingKey { case username, name, role, canRequest, sources, locked }
         }
     }
 }
@@ -51,13 +56,18 @@ public struct AccountPatch: Encodable, Sendable, Equatable {
     public var role: AccountRole?
     public var canRequest: Bool?
     public var sources: [Int]??
+    public var locked: [DeviceSetting]?
 
-    public init(username: String? = nil, name: String? = nil, role: AccountRole? = nil, canRequest: Bool? = nil, sources: [Int]?? = nil) {
+    public init(
+        username: String? = nil, name: String? = nil, role: AccountRole? = nil, canRequest: Bool? = nil, sources: [Int]?? = nil,
+        locked: [DeviceSetting]? = nil
+    ) {
         self.username = username
         self.name = name
         self.role = role
         self.canRequest = canRequest
         self.sources = sources
+        self.locked = locked
     }
 }
 

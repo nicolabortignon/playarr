@@ -99,6 +99,16 @@ public final class AppModel {
         guard let info = try? await store.anonymousClient(for: server).send(API.Server.info()), info.id == server.id else { return }
         store.remember(info, at: server.baseURL)
         tooOld = info.supports(appVersion) ? nil : info
+        await refreshAccount()
+    }
+
+    /// Asks the server for the signed-in account again: an admin may have renamed it, changed its role or rights,
+    /// or locked settings on its devices since it signed in here.
+    public func refreshAccount() async {
+        guard let record = store.activeAccount, record.signedIn, let client = store.client(for: record),
+            let me = try? await client.send(API.Auth.me()), me.id == record.account.id, me != record.account
+        else { return }
+        store.update(me, on: record.serverId)
     }
 
     /// Someone came through a server's checks: it is new enough.

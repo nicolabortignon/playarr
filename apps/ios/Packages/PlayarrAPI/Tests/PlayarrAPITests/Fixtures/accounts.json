@@ -7,6 +7,7 @@
     "canRequest": true,
     "sources": null,
     "hasPassword": true,
+    "locked": [],
     "plays": 0,
     "playlists": 0
   },
@@ -18,6 +19,7 @@
     "canRequest": false,
     "sources": null,
     "hasPassword": true,
+    "locked": [],
     "plays": 0,
     "playlists": 0
   },
@@ -31,6 +33,7 @@
       1
     ],
     "hasPassword": false,
+    "locked": [],
     "plays": 0,
     "playlists": 0
   }

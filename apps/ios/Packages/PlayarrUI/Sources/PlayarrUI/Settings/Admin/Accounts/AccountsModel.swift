@@ -151,7 +151,7 @@ public final class AccountsModel {
   public func removeTitle(_ account: Account) -> String { "Remove \(account.name)?" }
   public func resetTitle(_ account: Account) -> String { "New setup code for \(account.name)?" }
 
-  /// "sam · member · can request albums · Creative Commons · not set up yet".
+  /// "sam · member · can request albums · Creative Commons · Playback locked · not set up yet".
   public func summary(_ account: Account) -> String {
     let names = Dictionary(sources.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     let library: String
@@ -160,7 +160,11 @@ public final class AccountsModel {
     } else {
       library = "every source"
     }
-    return [account.username, account.role.rawValue, account.canRequest ? "can request albums" : nil, library, account.hasPassword ? nil : "not set up yet"]
+    let locked = AccountFormModel.deviceSettings.filter { account.locked?.contains($0.setting) == true }.map(\.label)
+    return [
+      account.username, account.role.rawValue, account.canRequest ? "can request albums" : nil, library,
+      locked.isEmpty ? nil : "\(locked.joined(separator: " and ")) locked", account.hasPassword ? nil : "not set up yet",
+    ]
       .compactMap { $0 }
       .joined(separator: " · ")
   }

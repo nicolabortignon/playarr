@@ -4,7 +4,6 @@
 /// Mix maps stored with an older version are measured again (packages/mix MIX_MAP_VERSION).
 public let mixMapVersion = 8
 
-/// Someone who signs in to this server: their history, mixes, favorites and playlists are their own.
 public struct Account: Codable, Hashable, Sendable, Identifiable {
     public var id: Int
     public var username: String
@@ -13,8 +12,10 @@ public struct Account: Codable, Hashable, Sendable, Identifiable {
     public var canRequest: Bool
     public var sources: [Int]?
     public var hasPassword: Bool
+    /// The device settings an admin has stopped this account from changing (never an admin's own). Missing from servers older than this field: nothing locked.
+    public var locked: [DeviceSetting]?
 
-    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?, hasPassword: Bool) {
+    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?, hasPassword: Bool, locked: [DeviceSetting]? = nil) {
         self.id = id
         self.username = username
         self.name = name
@@ -22,6 +23,7 @@ public struct Account: Codable, Hashable, Sendable, Identifiable {
         self.canRequest = canRequest
         self.sources = sources
         self.hasPassword = hasPassword
+        self.locked = locked
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -33,6 +35,7 @@ public struct Account: Codable, Hashable, Sendable, Identifiable {
         try container.encode(canRequest, forKey: .canRequest)
         try container.encode(sources, forKey: .sources)
         try container.encode(hasPassword, forKey: .hasPassword)
+        try container.encodeIfPresent(locked, forKey: .locked)
     }
 }
 
@@ -610,6 +613,41 @@ public struct CuePoints: Codable, Hashable, Sendable {
     }
 }
 
+/// Settings kept on each device that an admin can stop an account from changing.
+public enum DeviceSetting: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case playback
+    case appearance
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [DeviceSetting] = [.playback, .appearance]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "playback": self = .playback
+        case "appearance": self = .appearance
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .playback: "playback"
+        case .appearance: "appearance"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 public struct DiscoverAlbum: Codable, Hashable, Sendable {
     public var mbid: String
     public var title: String
@@ -1031,10 +1069,12 @@ public struct ListedAccount: Codable, Hashable, Sendable, Identifiable {
     public var canRequest: Bool
     public var sources: [Int]?
     public var hasPassword: Bool
+    /// The device settings an admin has stopped this account from changing (never an admin's own). Missing from servers older than this field: nothing locked.
+    public var locked: [DeviceSetting]?
     public var plays: Int
     public var playlists: Int
 
-    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?, hasPassword: Bool, plays: Int, playlists: Int) {
+    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?, hasPassword: Bool, locked: [DeviceSetting]? = nil, plays: Int, playlists: Int) {
         self.id = id
         self.username = username
         self.name = name
@@ -1042,6 +1082,7 @@ public struct ListedAccount: Codable, Hashable, Sendable, Identifiable {
         self.canRequest = canRequest
         self.sources = sources
         self.hasPassword = hasPassword
+        self.locked = locked
         self.plays = plays
         self.playlists = playlists
     }
@@ -1055,6 +1096,7 @@ public struct ListedAccount: Codable, Hashable, Sendable, Identifiable {
         try container.encode(canRequest, forKey: .canRequest)
         try container.encode(sources, forKey: .sources)
         try container.encode(hasPassword, forKey: .hasPassword)
+        try container.encodeIfPresent(locked, forKey: .locked)
         try container.encode(plays, forKey: .plays)
         try container.encode(playlists, forKey: .playlists)
     }

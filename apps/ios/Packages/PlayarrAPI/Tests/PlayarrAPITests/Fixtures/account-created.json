@@ -8,7 +8,8 @@
     "sources": [
       1
     ],
-    "hasPassword": false
+    "hasPassword": false,
+    "locked": []
   },
   "setup": {
     "code": "K7PQ2MXA",

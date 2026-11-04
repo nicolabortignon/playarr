@@ -40,6 +40,13 @@ struct AccountFormView: View {
       Section {
         Toggle("Can request albums", isOn: $form.canRequest).accessibilityIdentifier("account.canRequest")
       }
+      if form.role == .member {
+        Section("May change on their devices") {
+          ForEach(AccountFormModel.deviceSettings, id: \.label) { item in
+            Toggle(item.label, isOn: Binding(get: { form.mayChange(item.setting) }, set: { form.setMayChange(item.setting, $0) }))
+          }
+        }
+      }
       Section("Library") {
         Picker("Library", selection: $form.everySource) {
           Text("Every source").tag(true)
