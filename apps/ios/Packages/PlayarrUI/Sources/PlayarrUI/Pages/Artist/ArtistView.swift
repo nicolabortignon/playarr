@@ -56,8 +56,7 @@ struct ArtistView: View {
       LinearGradient(colors: [.clear, .black.opacity(0.45), .black], startPoint: .top, endPoint: .bottom)
       VStack(alignment: .leading, spacing: 12) {
         Kicker(text: model.kicker)
-        Text(artist.name).font(.display(.largeTitle)).lineLimit(2).minimumScaleFactor(0.5)
-          .accessibilityAddTraits(.isHeader)
+        ArtistTitle(name: artist.name, logoUrl: artist.logoUrl)
         // The counts beside the buttons on one line, else under them.
         ViewThatFits(in: .horizontal) {
           HStack(spacing: 12) {
@@ -114,5 +113,32 @@ extension ArtistView {
 
   @ViewBuilder fileprivate var counts: some View {
     if let counts = model.counts { Text(counts).font(.mono(.caption)).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
+  }
+}
+
+/// The artist's name, or their logo where the server has one (apps/web/src/pages/Artist.tsx): the name stays what
+/// VoiceOver reads, and shows if the logo can't be had.
+private struct ArtistTitle: View {
+  let name: String
+  let logoUrl: String?
+
+  @Environment(AccountSession.self) private var session
+  @State private var logo: Image?
+
+  var body: some View {
+    Group {
+      if let logo {
+        logo.resizable().scaledToFit()
+          .frame(maxWidth: 360, maxHeight: 96, alignment: .leading)
+          .shadow(color: .black.opacity(0.6), radius: 12, y: 4)
+          .accessibilityLabel(name)
+      } else {
+        Text(name).font(.display(.largeTitle)).lineLimit(2).minimumScaleFactor(0.5)
+      }
+    }
+    .accessibilityAddTraits(.isHeader)
+    .task(id: logoUrl) {
+      logo = await session.images.original(logoUrl).flatMap(Image.decoded)
+    }
   }
 }

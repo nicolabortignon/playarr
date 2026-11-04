@@ -43,6 +43,12 @@ public actor ImageCache {
     return await data(for: url)
   }
 
+  /// An image as the server has it, not resized: an artist's logo, whose transparency a resize could lose.
+  public func original(_ path: String?) async -> Data? {
+    guard let path, let url = media.url(path) else { return nil }
+    return await data(for: url)
+  }
+
   public func data(for url: URL) async -> Data? {
     if let hit = memory.object(forKey: url as NSURL) { return hit as Data }
     let file = self.file(for: url)
