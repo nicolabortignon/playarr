@@ -24,16 +24,15 @@ struct SettingsView: View {
       } footer: {
         Text("These settings are for this device.")
       }
-      if session.account.role == .admin {
-        Section {
-          ForEach(SettingsPanel.server, id: \.self) { panel in
-            NavigationLink(panel.title, value: Route.settingsPanel(panel))
-          }
-        } header: {
-          Text("Server")
-        } footer: {
-          Text("These settings apply to everyone.")
+      Section {
+        ForEach(SettingsPanel.server(for: role), id: \.self) { panel in
+          NavigationLink(panel.title, value: Route.settingsPanel(panel))
+            .accessibilityIdentifier("settings.\(panel.rawValue)")
         }
+      } header: {
+        Text(role == .admin ? "Server" : "Your account")
+      } footer: {
+        if role == .admin { Text("These settings apply to everyone.") }
       }
       #if DEBUG
         if session.client != nil {
@@ -47,6 +46,9 @@ struct SettingsView: View {
     }
     .navigationTitle("Settings")
   }
+
+  /// The store's copy, which follows a role changed in Settings → Accounts.
+  private var role: AccountRole { app.store.activeAccount?.account.role ?? session.account.role }
 }
 
 /// One panel of Settings.
@@ -64,7 +66,24 @@ struct SettingsPanelView: View {
       case .playerLab:
         if let client = session.client { PlayerLabView(player: session.player, client: client) }
     #endif
-    default: PlaceholderPage(title: panel.title)
+    case .sources: SourcesPanel(api: session.api, libraryChanged: libraryChanged)
+    case .accounts:
+      AccountsPanel(
+        api: session.api,
+        signOutHere: { [store = app.store, key = session.key] in await store.signOut(key) },
+        accountChanged: { [store = app.store, key = session.key] account in store.update(account, on: key.serverId) })
+    case .mixes: MixesPanel(api: session.api, isAdmin: isAdmin, mixesChanged: { Task { await session.mixes.load() } })
+    case .analysis: AnalysisPanel(api: session.api)
+    case .requests: RequestsPanel(api: session.api, requestsChanged: { session.discover.invalidate([.requests, .health]) })
+    case .updates: UpdatesPanel(api: session.api)
     }
+  }
+
+  private var isAdmin: Bool { (app.store.activeAccount?.account.role ?? session.account.role) == .admin }
+
+  /// A source synced or was removed, or files moved: everything showing the library is asked again.
+  private func libraryChanged() {
+    session.discover.invalidate(CacheFamily.allCases)
+    Task { await session.mixes.load() }
   }
 }
