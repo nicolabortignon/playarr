@@ -5,16 +5,18 @@ import SwiftUI
 /// how that's going (components/Discover.tsx RequestRest).
 public struct RequestRestButton: View {
   let album: Album
+  var small: Bool
 
   @Environment(DiscoverContext.self) private var context: DiscoverContext?
 
-  public init(album: Album) {
+  public init(album: Album, small: Bool = false) {
     self.album = album
+    self.small = small
   }
 
   public var body: some View {
     if let rest = context?.requests.rest(of: album) {
-      RequestButton(album: rest.album, availability: rest.availability)
+      RequestButton(album: rest.album, availability: rest.availability, small: small)
     }
   }
 }

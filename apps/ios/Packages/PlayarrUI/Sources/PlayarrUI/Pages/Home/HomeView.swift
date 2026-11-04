@@ -38,25 +38,33 @@ struct HomeView: View {
         .font(.sans(.callout))
         .foregroundStyle(.secondary)
         .redacted(reason: model.libraryLine == nil ? .placeholder : [])
-      FlowLayout(spacing: 12) {
+      // Side by side on one line: a long song title is cut short rather than pushing Resume onto the next.
+      HStack(spacing: 12) {
         Button { Task { await model.shuffleEverything() } } label: {
-          Label("Shuffle everything", systemImage: "shuffle").padding(.horizontal, 8).padding(.vertical, 6)
+          Label("Shuffle all", systemImage: "shuffle").padding(.horizontal, 6).padding(.vertical, 6)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
         .tint(theme.accent.color)
         .foregroundStyle(.black)
+        .fixedSize()
+        .accessibilityLabel("Shuffle all")
         if let track = model.resumable {
           Button { model.resume() } label: {
             HStack(spacing: 10) {
-              Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true).frame(width: 36, height: 36)
+              // The play sign on the album's cover, so the button stays narrow.
+              Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true)
+                .frame(width: 36, height: 36)
+                .overlay {
+                  Circle().fill(.black.opacity(0.45))
+                  Image(systemName: "play.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                }
               VStack(alignment: .leading, spacing: 0) {
                 Kicker(text: "Resume")
                 Text(track.title).font(.sans(.subheadline)).lineLimit(1)
               }
-              Image(systemName: "play.fill")
             }
-            .padding(.trailing, 12)
+            .padding(.trailing, 8)
           }
           .buttonStyle(.bordered)
           .buttonBorderShape(.capsule)

@@ -14,34 +14,40 @@ struct AlbumView: View {
 
   var body: some View {
     ScrollView {
-      if let error = model.album.error {
-        ErrorState(message: error) { await model.album.refresh() }
-      } else if let album = model.album.value {
-        VStack(alignment: .leading, spacing: 24) {
-          header(album)
-          buttons(album)
-          songs
-          if let overview = album.overview { linerNotes(overview) }
-          if !model.moreByArtist.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-              SectionHeader(title: "More by \(album.artistName)", kicker: "Discography", seeAll: .artist(album.artistId))
-              Shelf { ForEach(model.moreByArtist) { AlbumCard(album: $0, width: ShelfCard.width) } }
-            }
-          }
-        }
-        .padding(.bottom, 24)
-        .background(alignment: .top) { tint }
-      } else {
-        VStack(spacing: 16) {
-          Skeleton().frame(width: 260)
-          ForEach(0..<8, id: \.self) { _ in Skeleton(aspectRatio: nil, height: 36) }
-        }
-        .padding(20)
-      }
+      // The header starts under the navigation bar, the cover beside the back button, with no empty band above it.
+      Group { content }.padding(.top, ScreenInsets.top)
     }
+    .ignoresSafeArea(edges: .top)
     .inlineTitle()
     .task { await model.load() }
     .refreshable { await model.album.refresh() }
+  }
+
+  @ViewBuilder private var content: some View {
+    if let error = model.album.error {
+      ErrorState(message: error) { await model.album.refresh() }
+    } else if let album = model.album.value {
+      VStack(alignment: .leading, spacing: 24) {
+        header(album)
+        buttons(album)
+        songs
+        if let overview = album.overview { linerNotes(overview) }
+        if !model.moreByArtist.isEmpty {
+          VStack(alignment: .leading, spacing: 0) {
+            SectionHeader(title: "More by \(album.artistName)", kicker: "Discography", seeAll: .artist(album.artistId))
+            Shelf { ForEach(model.moreByArtist) { AlbumCard(album: $0, width: ShelfCard.width) } }
+          }
+        }
+      }
+      .padding(.bottom, 24)
+      .background(alignment: .top) { tint }
+    } else {
+      VStack(spacing: 16) {
+        Skeleton().frame(width: 260)
+        ForEach(0..<8, id: \.self) { _ in Skeleton(aspectRatio: nil, height: 36) }
+      }
+      .padding(20)
+    }
   }
 
   /// The header's wash, tinted with the album's own colour.
@@ -63,7 +69,18 @@ struct AlbumView: View {
         .frame(maxWidth: .infinity)
         .shadow(color: .black.opacity(0.6), radius: 24, y: 16)
         .padding(.bottom, 8)
-      if let kicker = model.kicker { Kicker(text: kicker) }
+      // The kicker's line, with the album's own buttons on the right (the empty space under the cover).
+      HStack(spacing: 10) {
+        if let kicker = model.kicker { Kicker(text: kicker) }
+        Spacer(minLength: 8)
+        RequestRestButton(album: Album(album), small: true)
+        DownloadButton(
+          store: session.player.downloads,
+          item: DownloadItem(
+            key: PinnedDownload.Key.album(album.id), title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl,
+            href: "/albums/\(album.id)"),
+          tracks: album.tracks)
+      }
       Text(album.title).font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
       NavigationLink(value: Route.artist(album.artistId)) {
         HStack(spacing: 8) {
@@ -82,19 +99,29 @@ struct AlbumView: View {
     .padding(.horizontal, 20)
   }
 
+  /// Play and Shuffle as round icons, ⋯ on the right.
   private func buttons(_ album: AlbumDetail) -> some View {
     HStack(spacing: 12) {
       Button { model.playOrPause() } label: {
-        Label(model.playLabel, systemImage: model.isPlaying ? "pause.fill" : "play.fill").padding(.horizontal, 6)
+        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+          .font(.system(size: 22, weight: .semibold))
+          .frame(width: 56, height: 56)
+          .background(theme.accent.color, in: Circle())
+          .foregroundStyle(.black)
       }
-      .buttonStyle(.borderedProminent)
-      .tint(theme.accent.color)
-      .foregroundStyle(.black)
+      .buttonStyle(.plain)
       .accessibilityLabel("\(model.playLabel) \(album.title)")
       .sensoryFeedback(.selection, trigger: model.isPlaying)
-      Button { model.shuffle() } label: { Label("Shuffle", systemImage: "shuffle") }
-        .buttonStyle(.bordered)
-        .accessibilityLabel("Shuffle \(album.title)")
+      Button { model.shuffle() } label: {
+        Image(systemName: "shuffle")
+          .font(.system(size: 18, weight: .semibold))
+          .frame(width: 48, height: 48)
+          .background(theme.accent.color.opacity(0.18), in: Circle())
+          .foregroundStyle(theme.accent.color)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Shuffle \(album.title)")
+      Spacer(minLength: 0)
       Menu {
         Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { session.actions.playNext(album.tracks) }
         Button("Add to queue", systemImage: "text.append") { session.actions.addToQueue(album.tracks) }
@@ -103,15 +130,7 @@ struct AlbumView: View {
         Image(systemName: "ellipsis").frame(width: 44, height: 44)
       }
       .accessibilityLabel("More for \(album.title)")
-      DownloadButton(
-        store: session.player.downloads,
-        item: DownloadItem(
-          key: PinnedDownload.Key.album(album.id), title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl,
-          href: "/albums/\(album.id)"),
-        tracks: album.tracks)
-      RequestRestButton(album: Album(album))
     }
-    .buttonBorderShape(.capsule)
     .padding(.horizontal, 20)
   }
 

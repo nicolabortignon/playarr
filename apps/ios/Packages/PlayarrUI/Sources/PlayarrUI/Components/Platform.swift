@@ -6,6 +6,19 @@ import SwiftUI
   import AppKit
 #endif
 
+/// The window's own insets, without any bars.
+enum ScreenInsets {
+  /// The status bar's (Dynamic Island's) height: where a page that starts under the navigation bar puts its header,
+  /// beside the bar's back button rather than below the bar.
+  @MainActor static var top: CGFloat {
+    #if os(iOS)
+      UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.safeAreaInsets.top ?? 0
+    #else
+      0
+    #endif
+  }
+}
+
 /// The few things iOS and the Mac (where `swift test` builds this package) do differently.
 extension View {
   /// The mini player: in the tab bar's accessory on iOS, over the bottom edge elsewhere.
