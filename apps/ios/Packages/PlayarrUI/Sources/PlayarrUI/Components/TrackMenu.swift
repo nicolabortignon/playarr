@@ -15,7 +15,8 @@ struct TrackMenu: View {
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .foregroundStyle(.secondary)
+    .foregroundStyle(.muted)
+    .pointerHover()
     .accessibilityLabel("More for \(track.title)")
   }
 }

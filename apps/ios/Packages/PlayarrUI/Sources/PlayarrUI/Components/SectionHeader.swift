@@ -16,7 +16,7 @@ struct SectionHeader<Action: View>: View {
       Spacer()
       action()
       if let seeAll {
-        NavigationLink(value: seeAll) { Kicker(text: "See all") }
+        NavigationLink(value: seeAll) { Kicker(text: "See all").frame(minHeight: 44).contentShape(Rectangle()) }
           .accessibilityLabel("See all \(title)")
       }
     }
@@ -41,6 +41,6 @@ struct Kicker: View {
     Text(text.uppercased())
       .font(.mono(.caption2))
       .tracking(tracking)
-      .foregroundStyle(.secondary)
+      .foregroundStyle(.muted)
   }
 }

@@ -16,13 +16,14 @@ struct AlbumCard: View {
       VStack(alignment: .leading, spacing: 6) {
         Cover(path: album.coverUrl, points: width ?? 180, label: album.title)
           .shadow(color: .black.opacity(0.5), radius: 10, y: 6)
-        Text(album.title).font(.sans(.subheadline)).lineLimit(1).foregroundStyle(current ? theme.accent.color : .primary)
-        Text(subtitle).font(.sans(.caption)).lineLimit(1).foregroundStyle(.secondary)
+        Text(album.title).font(.sans(.subheadline)).essentialLineLimit().foregroundStyle(current ? theme.accent.color : .primary)
+        Text(subtitle).font(.sans(.caption)).essentialLineLimit().foregroundStyle(.muted)
       }
       .frame(width: width)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .pointerHover()
     .accessibilityLabel("\(album.title), \(subtitle)")
     .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
     .contextMenu {

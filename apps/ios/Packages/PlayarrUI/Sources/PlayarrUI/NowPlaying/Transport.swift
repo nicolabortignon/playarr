@@ -9,24 +9,24 @@ struct Transport: View {
   var body: some View {
     let q = player.queue
     HStack {
-      Button { player.toggleShuffle() } label: { Image(systemName: "shuffle").font(.title3) }
+      Button { player.toggleShuffle() } label: { Image(systemName: "shuffle").font(.title3).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
         .foregroundStyle(q.shuffle ? theme.accent.color : .secondary)
         .accessibilityLabel("Shuffle")
         .accessibilityAddTraits(q.shuffle ? .isSelected : [])
-        .sensoryFeedback(.selection, trigger: q.shuffle)
+        .sensoryFeedback(Haptic.toggle, trigger: q.shuffle)
       Spacer()
-      Button { player.previous() } label: { Image(systemName: "backward.fill").font(.title) }
+      Button { player.previous() } label: { Image(systemName: "backward.fill").font(.title).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
         .accessibilityLabel("Previous")
       Spacer()
       PlayPauseButton(player: player, size: 72)
       Spacer()
-      Button { player.next() } label: { Image(systemName: "forward.fill").font(.title) }
+      Button { player.next() } label: { Image(systemName: "forward.fill").font(.title).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
         .accessibilityLabel("Next")
       Spacer()
-      Button { player.cycleRepeat() } label: { Image(systemName: q.repeatMode == .one ? "repeat.1" : "repeat").font(.title3) }
+      Button { player.cycleRepeat() } label: { Image(systemName: q.repeatMode == .one ? "repeat.1" : "repeat").font(.title3).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
         .foregroundStyle(q.repeatMode == .off ? .secondary : theme.accent.color)
         .accessibilityLabel(NowPlayingModel(player: player).repeatLabel)
-        .sensoryFeedback(.selection, trigger: q.repeatMode)
+        .sensoryFeedback(Haptic.toggle, trigger: q.repeatMode)
     }
     .buttonStyle(.plain)
   }
@@ -56,6 +56,6 @@ struct PlayPauseButton: View {
     .buttonStyle(.plain)
     .disabled(player.queue.pos < 0)
     .accessibilityLabel(playing ? "Pause" : "Play")
-    .sensoryFeedback(.impact(weight: .medium), trigger: playing)
+    .sensoryFeedback(Haptic.playPause, trigger: playing)
   }
 }

@@ -11,12 +11,13 @@ struct MixCard: View {
     NavigationLink(value: Route.mix(mix.key)) {
       VStack(alignment: .leading, spacing: 6) {
         MixCover(mix: mix, width: width)
-        Text(mix.subtitle).font(.sans(.subheadline)).lineLimit(1)
-        Text(Format.plural(mix.trackCount, "song")).font(.mono(.caption)).foregroundStyle(.secondary)
+        Text(mix.subtitle).font(.sans(.subheadline)).essentialLineLimit()
+        Text(Format.plural(mix.trackCount, "song")).font(.mono(.caption)).foregroundStyle(.muted)
       }
       .frame(width: width)
     }
     .buttonStyle(.plain)
+    .pointerHover()
     .accessibilityLabel("\(mix.title), \(mix.subtitle), \(Format.plural(mix.trackCount, "song"))")
     .accessibilityAddTraits(.isButton)
   }
@@ -69,11 +70,12 @@ struct MixCover: View {
         }
       }
       .frame(width: width, height: width, alignment: .topLeading)
-      VStack(alignment: .leading, spacing: 2) {
-        Text("MADE FOR YOU").font(.mono(size: width * 0.046)).tracking(2).foregroundStyle(.white.opacity(0.75))
-        Text(mix.title).font(.display(size: width * 0.125)).foregroundStyle(.white).lineLimit(2)
-          .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
-      }
+      // Part of the picture: it scales with the cover, and the card's own label is what VoiceOver reads.
+      ArtworkText(lines: [
+        Text("MADE FOR YOU").font(.mono(size: width * 0.046)).tracking(2).foregroundStyle(.white.opacity(0.75)),
+        Text(mix.title).font(.display(size: width * 0.125)).foregroundStyle(.white),
+      ])
+      .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
       .padding(width * 0.07)
     }
     .frame(width: width, height: width)

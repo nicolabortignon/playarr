@@ -35,6 +35,7 @@ struct ArtistCard: View {
         .frame(width: width)
     }
     .buttonStyle(.plain)
+    .pointerHover()
     .accessibilityLabel("\(artist.name), \(counts)")
     .accessibilityAddTraits(.isButton)
     .prefetch { session.prefetchArtist(artist.id) }

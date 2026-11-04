@@ -34,8 +34,8 @@ struct MiniPlayer: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Open now playing")
         .accessibilityValue("\(track.title), \(track.artistName)")
-        PlayPauseButton(player: player, size: 36, filled: false)
-        Button { player.next() } label: { Image(systemName: "forward.fill").frame(width: 36, height: 36) }
+        PlayPauseButton(player: player, size: 44, filled: false)
+        Button { player.next() } label: { Image(systemName: "forward.fill").frame(width: 44, height: 44).contentShape(Rectangle()) }
           .buttonStyle(.plain)
           .accessibilityLabel("Next")
       }

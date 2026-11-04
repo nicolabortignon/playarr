@@ -24,9 +24,7 @@ struct ToastsView: View {
         .foregroundStyle(toast.tone == .error ? Color.red : Color.primary)
         .onTapGesture { if toast.action == nil { center.dismiss(toast.id) } }
         .transition(.move(edge: .top).combined(with: .opacity))
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isStaticText)
-        .sensoryFeedback(toast.tone == .error ? .error : .success, trigger: toast.id)
+        .sensoryFeedback(Haptic.toast(isError: toast.tone == .error), trigger: toast.id)
       }
     }
     .padding(.horizontal, 16)
