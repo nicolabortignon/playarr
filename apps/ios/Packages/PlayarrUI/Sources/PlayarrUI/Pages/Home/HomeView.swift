@@ -57,7 +57,7 @@ struct HomeView: View {
         .foregroundStyle(.black)
         .fixedSize()
         .accessibilityLabel("Shuffle all")
-        if let track = model.listening { ListeningButton(track: track, playing: model.isPlaying) { model.togglePlay() } }
+        if let track = model.listening { ListeningButton(track: track, playing: model.isPlaying, player: session.player) { model.togglePlay() } }
       }
     }
     .padding(.horizontal, 20)
@@ -164,18 +164,23 @@ struct HomeView: View {
 }
 
 /// The listening session, beside Shuffle all: paused, "Resume" and the song's title beside its cover with a play sign;
-/// playing, just the cover, round, with a pause sign. It draws in and out between the two (apps/web/src/pages/Home.tsx
-/// ResumeButton, which hides while playing).
+/// playing, just the cover, round, ringed by how far into the song it is, with a pause sign. It draws in and out between
+/// the two (apps/web/src/pages/Home.tsx ListeningButton).
 private struct ListeningButton: View {
   let track: Track
   let playing: Bool
+  let player: Player
   let toggle: () -> Void
+  @Environment(Theme.self) private var theme
 
   var body: some View {
     Button(action: toggle) {
       HStack(spacing: 10) {
         Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true)
           .frame(width: 36, height: 36)
+          .overlay {
+            if playing { SongRing(player: player).tint(theme.accent.color).padding(-3) }
+          }
           .overlay {
             Circle().fill(.black.opacity(0.45))
             Image(systemName: playing ? "pause.fill" : "play.fill")
@@ -203,3 +208,12 @@ private struct ListeningButton: View {
   }
 }
 
+/// How far into the song it is, as a ring: its own view, so only it redraws as the song plays.
+private struct SongRing: View {
+  let player: Player
+
+  var body: some View {
+    ProgressRing(fraction: player.duration > 0 ? min(1, player.time / player.duration) : 0, lineWidth: 2)
+      .accessibilityHidden(true)
+  }
+}

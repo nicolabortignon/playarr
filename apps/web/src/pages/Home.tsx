@@ -1,4 +1,5 @@
-import { Dices, Play, Shuffle } from 'lucide-react';
+import { Dices, Pause, Play, Shuffle } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { AlbumCard, ArtistCard } from '../components/Cards';
@@ -7,13 +8,14 @@ import { MixCard } from '../components/Mixes';
 import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
+import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
 import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
 import { AccountSwitcher } from '../components/AccountSwitcher';
 import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
 import { shuffleLibrary } from '../player/actions';
-import { useCurrentTrack, usePlayer } from '../player/store';
+import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 
 export function HomePage() {
   const { data: health } = useHealth();
@@ -53,7 +55,7 @@ export function HomePage() {
             >
               <Shuffle className="size-[18px]" /> Shuffle everything
             </button>
-            <ResumeButton />
+            <ListeningButton />
           </div>
         </div>
         <CoverStack albums={recent?.slice(0, 3)} />
@@ -251,23 +253,78 @@ function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl
   );
 }
 
-function ResumeButton() {
+/**
+ * The listening session, beside Shuffle: paused, "Resume" and the song's title beside its cover with a play sign;
+ * playing, just the cover, round, ringed by how far into the song it is, with a pause sign. It draws in and out
+ * between the two, as the iOS app's Home does.
+ */
+function ListeningButton() {
   const track = useCurrentTrack();
   const playing = usePlayer((s) => s.playing);
   const toggle = usePlayer((s) => s.toggle);
-  if (!track || playing) return null;
+  if (!track) return null;
+  const spring = { type: 'spring', duration: 0.4, bounce: 0.15 } as const;
   return (
-    <button
+    <motion.button
+      layout
       type="button"
       onClick={toggle}
-      className="inline-flex h-12 max-w-full items-center gap-3 rounded-full border border-line bg-paper/[0.03] pr-5 pl-1.5 text-left transition hover:bg-paper/[0.07]"
+      transition={spring}
+      // Set here rather than as a class, so the layout animation keeps it round while the pill narrows.
+      style={{ borderRadius: 999 }}
+      aria-label={playing ? `Pause ${track.title}` : `Resume ${track.title}`}
+      className={cn(
+        'inline-flex h-12 max-w-full items-center gap-3 overflow-hidden border border-line bg-paper/[0.03] p-[3px] text-left transition-colors hover:bg-paper/[0.07]',
+        !playing && 'pr-5',
+      )}
     >
-      <Cover src={track.coverUrl} size={36} alt="" className="size-9 shrink-0 rounded-full" />
-      <span className="min-w-0">
-        <span className="block font-mono text-[10px] tracking-[0.2em] text-muted uppercase">Resume</span>
-        <span className="block max-w-56 truncate text-sm text-paper">{track.title}</span>
-      </span>
-      <Play className="size-4 shrink-0 fill-paper text-paper" />
-    </button>
+      <motion.span layout="position" transition={spring} className="relative grid size-10 shrink-0 place-items-center">
+        <Cover src={track.coverUrl} size={36} alt="" className="size-[34px] rounded-full" />
+        {playing && <ProgressRing />}
+        <span className="absolute inset-[3px] grid place-items-center rounded-full bg-black/45">
+          {playing ? <Pause className="size-3.5 fill-white text-white" /> : <Play className="size-3.5 translate-x-px fill-white text-white" />}
+        </span>
+      </motion.span>
+      <AnimatePresence initial={false} mode="popLayout">
+        {!playing && (
+          <motion.span
+            key="resume"
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -8 }}
+            transition={spring}
+            className="min-w-0"
+          >
+            <span className="block font-mono text-[10px] tracking-[0.2em] text-muted uppercase">Resume</span>
+            <span className="block max-w-56 truncate text-sm text-paper">{track.title}</span>
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </motion.button>
+  );
+}
+
+const RING_R = 19;
+const RING_LENGTH = 2 * Math.PI * RING_R;
+
+/** How far into the song it is, as a ring round the cover. Its own component: the clock ticks many times a second. */
+function ProgressRing() {
+  const time = useClock((s) => s.time);
+  const duration = useClock((s) => s.duration);
+  const done = duration > 0 ? Math.min(1, time / duration) : 0;
+  return (
+    <svg viewBox="0 0 40 40" className="pointer-events-none absolute inset-0 size-10 -rotate-90" aria-hidden>
+      <circle cx="20" cy="20" r={RING_R} fill="none" strokeWidth="2" className="stroke-paper/15" />
+      <circle
+        cx="20"
+        cy="20"
+        r={RING_R}
+        fill="none"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeDasharray={`${RING_LENGTH * done} ${RING_LENGTH}`}
+        className="stroke-accent"
+      />
+    </svg>
   );
 }
