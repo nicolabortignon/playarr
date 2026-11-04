@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { KeepMounted } from '../lib/viewport';
 
@@ -22,7 +22,7 @@ export function SectionHeader({ title, kicker, to, action }: { title: string; ki
   );
 }
 
-/** Horizontal, snap-scrolling row with arrow buttons on pointer devices. */
+/** Horizontal, snap-scrolling row with arrow buttons on pointer devices, and a thin line under it showing where it's scrolled to. */
 export function Shelf({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const scroll = (dir: 1 | -1) => ref.current?.scrollBy({ left: dir * ref.current.clientWidth * 0.8, behavior: 'smooth' });
@@ -34,6 +34,7 @@ export function Shelf({ children }: { children: ReactNode }) {
       >
         <KeepMounted value>{children}</KeepMounted>
       </div>
+      <ScrollIndicator target={ref} />
       {[-1, 1].map((dir) => (
         <button
           key={dir}
@@ -45,6 +46,59 @@ export function Shelf({ children }: { children: ReactNode }) {
           {dir < 0 ? <ChevronLeft className="size-5" /> : <ChevronRight className="size-5" />}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * In place of a scrollbar: a hairline across most of the row, with a brighter stretch on it for the part in view, which
+ * slides along as the row scrolls. Only there when the row is wider than the screen. Moved by hand, not by React, so
+ * scrolling doesn't re-render the row.
+ */
+function ScrollIndicator({ target }: { target: RefObject<HTMLDivElement | null> }) {
+  const track = useRef<HTMLDivElement>(null);
+  const thumb = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = target.current;
+    if (!row) return;
+    let frame = 0;
+    const draw = () => {
+      frame = 0;
+      const { scrollLeft, scrollWidth, clientWidth } = row;
+      const over = scrollWidth - clientWidth;
+      track.current!.style.visibility = over > 1 ? 'visible' : 'hidden';
+      if (over <= 1) return;
+      const size = clientWidth / scrollWidth;
+      thumb.current!.style.width = `${size * 100}%`;
+      // translateX's percentages are of the thumb's own width.
+      thumb.current!.style.transform = `translateX(${(((scrollLeft / over) * (1 - size)) / size) * 100}%)`;
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(draw);
+    };
+    draw();
+    row.addEventListener('scroll', schedule, { passive: true });
+    // The row's width, and its cards' (they mount, load, come and go), change how far it scrolls.
+    const sizes = new ResizeObserver(schedule);
+    const watch = () => {
+      sizes.disconnect();
+      sizes.observe(row);
+      for (const card of row.children) sizes.observe(card);
+      schedule();
+    };
+    watch();
+    const cards = new MutationObserver(watch);
+    cards.observe(row, { childList: true });
+    return () => {
+      row.removeEventListener('scroll', schedule);
+      sizes.disconnect();
+      cards.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [target]);
+  return (
+    <div ref={track} aria-hidden className="invisible relative mx-auto mt-3 h-px w-[90%] bg-paper/10">
+      <div ref={thumb} className="absolute -top-px left-0 h-[3px] rounded-full bg-paper/55 transition-[width] duration-300" />
     </div>
   );
 }
