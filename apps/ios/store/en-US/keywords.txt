@@ -1,0 +1,1 @@
+self-hosted,music player,home server,flac,gapless,lyrics,dj mix,crossfade,offline,nas,library

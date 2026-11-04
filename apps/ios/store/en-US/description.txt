@@ -1,0 +1,27 @@
+Playarr plays the music on your own server: the albums you own, kept on your computer or NAS, wherever you are.
+
+Playarr is a free, open-source music server that you run yourself, at home or on a machine you rent. It reads the music folders you give it and, if you use Lidarr, the library Lidarr manages. This app is its player for iPhone and iPad. You need a Playarr server to use it: set one up from github.com/nicolabortignon/playarr, or ask someone who runs one for an account.
+
+LISTEN
+• Gapless albums, played from each song's own file (FLAC or MP3)
+• Even volume: every song at the same loudness, quiet ones turned up as well as loud ones down
+• Crossfade, or DJ mix: songs blend into each other on the beat, prepared by your server
+• Synced lyrics, a sleep timer, and radio that keeps playing similar songs from your library when the queue ends
+• Controls on the Lock Screen and in Control Center, AirPlay and Bluetooth
+
+YOUR LIBRARY
+• Home, with Jump back in and mixes made from what you listen to
+• Search, artists, albums, favorites and playlists
+• Your listening: top artists, songs and albums
+• Downloads: keep albums, playlists and mixes on the device and listen with no connection
+• On iPad, a sidebar, with the queue and lyrics beside what you browse
+
+YOUR SERVER, YOUR ACCOUNTS
+• Finds Playarr servers on your home network, or connects to yours over HTTPS from anywhere
+• One server, many people: each has their own account, history, favorites and playlists
+• Switch between accounts and servers with one tap
+• The server's owner manages sources, accounts and settings from the app
+• Where the server's owner allows it, ask for an album to be added to the server's Lidarr library
+
+NOTHING ELSE
+Playarr talks only to the servers you add. No ads, no tracking, no account with us.

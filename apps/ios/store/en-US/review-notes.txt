@@ -1,0 +1,27 @@
+Playarr is the player for Playarr, a free, open-source music server that people run themselves (https://github.com/nicolabortignon/playarr). The app has no music of its own and no sign-up: you connect to a server and sign in with an account its owner created.
+
+HOW TO SIGN IN
+1. Open Playarr. On "Add a server", type this address in "Server address" and tap Connect:
+   {{REVIEW_SERVER_URL}}
+2. On "Sign in to …", use the demo account in the Sign-In Information fields (username {{REVIEW_USERNAME}}).
+
+THE DEMO ACCOUNT
+It is on the developer's own Playarr server. It sees only a folder of Creative Commons albums (CC BY), so everything it plays may be shared. It is a regular member: no admin settings and no requests.
+
+WHAT TO TRY
+- Library: open an album and play it (gapless, at an even volume).
+- Tap the mini player for Now Playing: lyrics where the song has them, the sleep timer, the queue.
+- On iPhone, turn the phone sideways with Now Playing open: the cover beside the queue, as a tracklist.
+- On iPad: the sidebar, and the queue or lyrics in a column beside the page.
+- The account button → Settings → Playback: crossfade or DJ mix.
+- On an album's page, tap Download, then turn on Airplane Mode and play it.
+- Lock the device: the Lock Screen controls keep working.
+
+FEATURES THE DEMO ACCOUNT DOESN'T SEE
+- Admin settings (sources, accounts, analysis, updates) appear only for a server's owner and the admins they name.
+- Requests: a server's owner can connect it to Lidarr, their own library manager, and let chosen accounts ask for an album to be added to that library. The owner turns this on for the server and for each account; the demo account can't request, so no request buttons appear. The app only sends the request to the user's own server; it doesn't download, sell or stream music from any other service.
+
+PRIVACY
+The app sends data only to the servers the user adds (sign-in, what is played, favorites and playlists). The developer receives nothing; there are no analytics or ads.
+
+The local network permission is used to find Playarr servers at home (Bonjour).
