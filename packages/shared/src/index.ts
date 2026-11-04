@@ -745,6 +745,13 @@ export type MixKind =
   | 'focus'
   | 'onthisday';
 
+/** Feeling Lucky: songs put together on the spot from one that suits the hour. */
+export interface LuckyMix {
+  tracks: Track[];
+  /** What the first song was picked for: "Your 9 PM sound", "Evening: warm". */
+  subtitle: string;
+}
+
 export interface MixSummary {
   /** Stable per mix, e.g. "vibes", "genre-electronic", "decade-1990". */
   key: string;

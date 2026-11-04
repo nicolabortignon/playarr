@@ -24,6 +24,7 @@ import type {
   FolderListing,
   HealthStatus,
   ListedAccount,
+  LuckyMix,
   ListenBrainzInfo,
   ListeningStats,
   Lyrics,
@@ -254,6 +255,8 @@ export const api = {
     request<CuePoints>(`/api/recordings/${encodeURIComponent(recordingId)}/cues`, { method: 'PUT', body: JSON.stringify(cues) }),
   radio: (seeds: string[], exclude: string[] = [], count = 25) =>
     request<Track[]>('/api/radio', { method: 'POST', body: JSON.stringify({ seeds, exclude, count }) }),
+  /** Feeling lucky: 15 songs put together now, from one that suits the hour. */
+  lucky: () => request<LuckyMix>(`/api/lucky?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }),
   mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`),
   mix: (key: string) => get<MixDetail>(`/api/mixes/${key}?tz=${encodeURIComponent(timeZone())}`),
   regenerateMix: (key: string) =>

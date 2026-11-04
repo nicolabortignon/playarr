@@ -1,5 +1,5 @@
 import { blendScore } from '@playarr/mix';
-import type { MixDetail, MixKind, MixSettings, MixSummary, PlaylistDetail, Track } from '@playarr/shared';
+import type { LuckyMix, MixDetail, MixKind, MixSettings, MixSummary, PlaylistDetail, Track } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import type { CatalogStore } from '../catalog/store.ts';
@@ -7,7 +7,7 @@ import { hash32, Rng } from '../cover/random.ts';
 import { similarRecordings } from '../discover/listenbrainz.ts';
 import type { Library, LibraryView } from '../library/library.ts';
 import type { Playlists } from '../playlists.ts';
-import { blendOrder, choose, generateMix, planMixes, spread, tempoAndKey, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
+import { blendOrder, choose, generateMix, luckySeed, planMixes, spread, tempoAndKey, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
 import type { History } from './history.ts';
 import { MIXES_KEY, readMixSettings } from './settings.ts';
 import { buildTaste, familySimilarity, toSong, type Song, type Taste } from './taste.ts';
@@ -20,6 +20,10 @@ const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NEIGHBOUR_SEEDS = 10;
 /** How often the background check looks for mixes that are due. */
 const CHECK_EVERY_MS = 60_000;
+/** Feeling Lucky's length, and how many presses' first songs (and songs) the next press avoids. */
+export const LUCKY_SONGS = 15;
+const LUCKY_REMEMBERED_SEEDS = 20;
+const LUCKY_REMEMBERED_SONGS = LUCKY_SONGS * 3;
 
 /** How often each kind of mix is made again. */
 const CADENCE: Record<MixKind, 'hour' | 'day' | 'week'> = {
@@ -76,6 +80,8 @@ export class Mixes {
   private timer: NodeJS.Timeout | null = null;
   /** Songs as the mixes see them, per set of sources, until the library or what's known about its songs changes. */
   private songCache = new Map<string, { key: string; songs: Song[] }>();
+  /** What the last Feeling Lucky presses gave, by account (newest first): the next press goes elsewhere. */
+  private luckyRecent = new Map<number, { seeds: string[]; songs: string[] }>();
 
   constructor(
     private readonly deps: {
@@ -208,6 +214,28 @@ export class Mixes {
     return blendOrder([seedSongs.at(-1)!, ...spread(choose(scored, count, 2), rng)])
       .slice(1)
       .map((s) => s.track);
+  }
+
+  /**
+   * Feeling Lucky: `count` songs put together on the spot. The first suits this hour (see `luckySeed`); the rest follow
+   * on from it as radio does (style, energy, ListenBrainz neighbours, tempo and key). Every press is new: the first
+   * songs of the last presses, and their songs, are left out.
+   */
+  async lucky(clientTimeZone?: string, now = new Date(), account = 1, count = LUCKY_SONGS): Promise<LuckyMix> {
+    const tz = this.timeZone(clientTimeZone);
+    const ctx = await this.context(account, localTime(now, tz), now, readMixSettings(this.deps.store), false);
+    const recent = this.luckyRecent.get(account) ?? { seeds: [], songs: [] };
+    // The first song avoids recent first songs and the last press's songs; the rest avoid the last few presses' songs.
+    const avoid = new Set([...recent.seeds, ...recent.songs.slice(0, count)]);
+    const seed = luckySeed(ctx, new Rng((now.getTime() ^ (account * 2654435761)) >>> 0), avoid);
+    if (!seed) return { tracks: [], subtitle: '' };
+    const rest = await this.radio([seed.song.track.recordingId], recent.songs, count - 1, account);
+    const tracks = [seed.song.track, ...rest];
+    this.luckyRecent.set(account, {
+      seeds: [seed.song.track.recordingId, ...recent.seeds].slice(0, LUCKY_REMEMBERED_SEEDS),
+      songs: [...tracks.map((t) => t.recordingId), ...recent.songs].slice(0, LUCKY_REMEMBERED_SONGS),
+    });
+    return { tracks, subtitle: seed.subtitle };
   }
 
   /** Keep the mix as an ordinary playlist. */

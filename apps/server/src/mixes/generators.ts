@@ -162,6 +162,48 @@ function vibes(ctx: MixContext, rng: Rng): Made | null {
   };
 }
 
+/** The first song of a Feeling Lucky press, and what it was picked for ("Your 9 PM sound", "Evening: warm"). */
+export interface LuckySeed {
+  song: Song;
+  subtitle: string;
+}
+
+/**
+ * Feeling Lucky's first song: one that suits this hour, scored as Vibes of the hour scores its songs (what this account
+ * plays around now once there's enough history at this hour, else the time of day's mood), but picked with a big dose
+ * of chance among the best, so every press starts somewhere else. One press in four wanders: a song not heard at this
+ * hour, in the same mood. `avoid`: recent first songs and the last press's songs.
+ */
+export function luckySeed(ctx: MixContext, rng: Rng, avoid: Set<string>): LuckySeed | null {
+  const { local, taste } = ctx;
+  const part = daypart(local.hour);
+  const profile = hourProfile(ctx.songs, ctx.plays, local.hour, local.weekday);
+  const targetFamilies = profile?.families ?? Object.fromEntries(part.families.map((f, i) => [f, (5 - i) / 15]));
+  const targetEnergy = profile?.energy ?? part.energy;
+  const wander = !profile || rng.next() < 0.25;
+  const candidates = ctx.songs.filter((s) => !avoid.has(s.track.recordingId) && (!wander || !profile?.songs.has(s.track.recordingId)));
+  const pool = candidates.length ? candidates : ctx.songs;
+  const scored = pool.map((song) => {
+    const heardHere = profile?.songs.get(song.track.recordingId) ?? 0;
+    const artistHere = profile?.artists.get(song.track.artistId) ?? 0;
+    const energyFit = song.energy === undefined ? 0.4 : 1 - Math.abs(song.energy - targetEnergy) * 1.6;
+    const score =
+      0.3 * artistHere +
+      0.3 * familySimilarity(song.families, targetFamilies) +
+      0.2 * energyFit +
+      0.1 * (taste.artists.get(song.track.artistId) ?? 0) +
+      (wander ? 0 : 0.1 * Math.min(1, heardHere / 3)) -
+      skipPenalty(ctx, song) +
+      rng.next() * 0.45;
+    return { song, score };
+  });
+  // Any of the best sixteen: chance has already shuffled which those are.
+  const best = scored.sort((a, b) => b.score - a.score).slice(0, 16);
+  const pick = best[Math.floor(rng.next() * best.length)];
+  if (!pick) return null;
+  return { song: pick.song, subtitle: profile ? `Your ${hourLabel(local.hour)} sound` : `${part.name}: ${part.words}` };
+}
+
 function discovery(ctx: MixContext, rng: Rng): Made | null {
   const { taste, settings } = ctx;
   const a = settings.adventurous;

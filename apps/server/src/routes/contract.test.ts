@@ -266,7 +266,7 @@ describe('contract fixtures', () => {
     const listenBrainz: ListenBrainzInfo = { connected: true, user: 'listener', enabled: true, pending: 0, sent: 42, earlier: 3, lastSentAt: '2026-11-03T12:00:00.000Z' };
     const app = Fastify();
     mixRoutes(app, {
-      mixes: { list: async () => [summary], get: async () => detail, regenerate: async () => detail, radio: async () => tracks, reset: async () => {} } as unknown as Mixes,
+      mixes: { list: async () => [summary], get: async () => detail, regenerate: async () => detail, radio: async () => tracks, lucky: async () => ({ tracks, subtitle: 'Evening: warm' }), reset: async () => {} } as unknown as Mixes,
       history: new History(db, library),
       store,
       analysisAvailable: true,
@@ -288,6 +288,7 @@ describe('contract fixtures', () => {
       ['listenbrainz', '/api/settings/listenbrainz'],
     ]);
     recordFixture('radio', await app.inject({ method: 'POST', url: '/api/radio', payload: { seeds: [ANGEL] } }));
+    recordFixture('lucky', await app.inject({ method: 'POST', url: '/api/lucky?tz=Europe/London' }));
   });
 
   it('mix maps, cue points and transitions', async () => {

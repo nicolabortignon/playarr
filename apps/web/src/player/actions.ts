@@ -23,9 +23,11 @@ export async function playArtist(id: number, opts?: { shuffle?: boolean }) {
   usePlayer.getState().playTracks(tracks, 0, { shuffle: false, ...opts, source });
 }
 
-export async function shuffleLibrary() {
-  const tracks = await api.randomTracks(300);
-  usePlayer.getState().playTracks(tracks, 0, { shuffle: true, source: { label: 'Your whole library', href: '/albums' } });
+/** Feeling lucky: 15 songs put together on the server, starting from one that suits the hour; new at every press. */
+export async function feelingLucky() {
+  const { tracks, subtitle } = await api.lucky();
+  if (!tracks.length) return toast('Nothing to play yet: add some music to the library first.');
+  usePlayer.getState().playTracks(tracks, 0, { source: { label: `Feeling lucky · ${subtitle}`, href: '/' } });
 }
 
 export function queueTracks(tracks: Track[], mode: 'next' | 'end') {

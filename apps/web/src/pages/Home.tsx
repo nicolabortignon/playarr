@@ -1,4 +1,4 @@
-import { Dices, Pause, Play, Shuffle } from 'lucide-react';
+import { Dices, Pause, Play, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -10,11 +10,12 @@ import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
+import { toast } from '../lib/toast';
 import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
 import { AccountSwitcher } from '../components/AccountSwitcher';
 import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
-import { shuffleLibrary } from '../player/actions';
+import { feelingLucky } from '../player/actions';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 
 export function HomePage() {
@@ -48,13 +49,7 @@ export function HomePage() {
             )}
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => void shuffleLibrary()}
-              className="inline-flex h-12 items-center gap-2.5 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-10px_var(--accent)] transition hover:brightness-110 active:scale-[0.98]"
-            >
-              <Shuffle className="size-[18px]" /> Shuffle everything
-            </button>
+            <LuckyButton />
             <ListeningButton />
           </div>
         </div>
@@ -253,8 +248,41 @@ function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl
   );
 }
 
+/** Feeling lucky: 15 songs put together now, a new set at every press. The sparkle turns while they're picked. */
+function LuckyButton() {
+  const [picking, setPicking] = useState(false);
+  const press = async () => {
+    setPicking(true);
+    try {
+      await feelingLucky();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    } finally {
+      setPicking(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => void press()}
+      disabled={picking}
+      aria-busy={picking}
+      className="inline-flex h-12 items-center gap-2.5 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-10px_var(--accent)] transition hover:brightness-110 active:scale-[0.98] disabled:cursor-progress"
+    >
+      <motion.span
+        animate={picking ? { rotate: 360, scale: [1, 1.25, 1] } : { rotate: 0, scale: 1 }}
+        transition={picking ? { rotate: { repeat: Infinity, duration: 1.1, ease: 'linear' }, scale: { repeat: Infinity, duration: 0.55 } } : { duration: 0.2 }}
+        className="grid"
+      >
+        <Sparkles className="size-[18px]" />
+      </motion.span>
+      Feeling lucky
+    </button>
+  );
+}
+
 /**
- * The listening session, beside Shuffle: paused, "Resume" and the song's title beside its cover with a play sign;
+ * The listening session, beside Feeling lucky: paused, "Resume" and the song's title beside its cover with a play sign;
  * playing, just the cover, round, ringed by how far into the song it is, with a pause sign. It draws in and out
  * between the two, as the iOS app's Home does.
  */

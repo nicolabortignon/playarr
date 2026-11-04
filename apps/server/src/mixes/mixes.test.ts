@@ -1,5 +1,5 @@
 import type { Camelot, MixMapSummary } from '@playarr/mix';
-import type { Album, Artist, Track } from '@playarr/shared';
+import type { Album, Artist, LuckyMix, Track } from '@playarr/shared';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import { account, actAs, asAccount } from '../accounts/testAccess.ts';
@@ -220,6 +220,54 @@ describe('Radio', () => {
     } finally {
       vi.mocked(Date.now).mockRestore();
     }
+  });
+});
+
+describe('Feeling Lucky', () => {
+  const evening = at('2026-11-02T21:30:00Z'); // a Monday
+
+  it('puts 15 songs together, a new set at every press', async () => {
+    const { mixes } = setup();
+    const first = await mixes.lucky('UTC', evening);
+    expect(first.tracks).toHaveLength(15);
+    expect(new Set(first.tracks.map((t) => t.recordingId)).size).toBe(15);
+    // Nothing played yet: the evening's mood.
+    expect(first.subtitle).toBe('Evening: warm');
+    const second = await mixes.lucky('UTC', new Date(evening.getTime() + 1000));
+    expect(second.tracks).toHaveLength(15);
+    const before = new Set(first.tracks.map((t) => t.recordingId));
+    expect(second.tracks.filter((t) => before.has(t.recordingId))).toEqual([]);
+  });
+
+  it('starts from what this account plays around this hour, once it has played enough then', async () => {
+    const { mixes, app } = setup();
+    // Three weeks of Monday evenings with artist 3 (rock), at 9 PM.
+    const plays = Array.from({ length: 18 }, (_, i) => ({
+      trackId: 300 + (i % 6),
+      recordingId: `rec-${300 + (i % 6)}`,
+      at: new Date(evening.getTime() - (1 + Math.floor(i / 6)) * 7 * 86_400_000 + i * 240_000).toISOString(),
+      hour: 21,
+      weekday: 1,
+      seconds: 170,
+      skipped: false,
+    }));
+    expect((await app.inject({ method: 'POST', url: '/api/plays', payload: { plays } })).json()).toEqual({ recorded: 18 });
+    const firsts: Track[] = [];
+    for (let i = 0; i < 12; i++) {
+      const lucky = await mixes.lucky('UTC', new Date(evening.getTime() + i * 1000));
+      expect(lucky.subtitle).toBe('Your 9 PM sound');
+      firsts.push(lucky.tracks[0]!);
+    }
+    // Rock, like what's played at this hour, nearly every time; never the same first song twice in a row.
+    expect(firsts.filter((t) => t.artistId % 2 === 1).length).toBeGreaterThanOrEqual(9);
+    for (let i = 1; i < firsts.length; i++) expect(firsts[i]!.recordingId).not.toBe(firsts[i - 1]!.recordingId);
+  });
+
+  it('answers at POST /api/lucky', async () => {
+    const { app } = setup();
+    const res = await app.inject({ method: 'POST', url: '/api/lucky?tz=UTC' });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as LuckyMix).tracks).toHaveLength(15);
   });
 });
 

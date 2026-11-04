@@ -118,6 +118,9 @@ export function mixRoutes(
     return mixes.radio(parsed.data.seeds, parsed.data.exclude ?? [], parsed.data.count ?? 25, who(req));
   });
 
+  /** Feeling Lucky: 15 songs put together now, starting from one that suits the hour. A new set every time. */
+  app.post<Tz>('/api/lucky', (req) => mixes.lucky(tz(req.query), new Date(), who(req)));
+
   app.get<Tz>('/api/mixes', (req) => mixes.list(tz(req.query), new Date(), who(req)));
 
   app.get<KeyTz>('/api/mixes/:key', (req, reply) =>
