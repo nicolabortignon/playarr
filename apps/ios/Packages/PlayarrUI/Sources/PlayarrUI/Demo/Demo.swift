@@ -90,7 +90,7 @@ public enum Demo {
   public static let mix = MixSummary(
     key: "vibes", kind: .vibes, title: "Your vibes", subtitle: "Massive Attack and more",
     description: "Songs you play the most at this hour", trackCount: 3, duration: 1033,
-    covers: ["/art/album/70/cover"], hue: 210, generatedAt: when, refreshesAt: when)
+    covers: ["/art/album/70/cover", "/art/album/71/cover", "/art/album/80/cover"], hue: 210, generatedAt: when, refreshesAt: when)
 
   public static let playlist = PlaylistSummary(
     id: 1, name: "Late night", description: "For the drive home", trackCount: 2, duration: 677,
