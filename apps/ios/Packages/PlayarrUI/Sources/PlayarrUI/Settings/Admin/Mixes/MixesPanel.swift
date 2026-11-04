@@ -1,8 +1,8 @@
 import PlayarrAPI
 import SwiftUI
 
-/// Settings → Mixes: admins choose which mixes Home shows and how they're made; everyone sees their own
-/// listening history (and clears it) and their ListenBrainz link.
+/// Settings → Mixes: admins choose which mixes Home shows and how they're made, which members see but can't
+/// change; everyone sees their own listening history (and clears it) and their ListenBrainz link.
 public struct MixesPanel: View {
   @State private var model: MixSettingsModel
   @State private var listenBrainz: ListenBrainzModel
@@ -17,10 +17,11 @@ public struct MixesPanel: View {
     Form {
       if let info = model.info {
         if let notice = model.notice { InlineMessage(text: notice, isError: model.failed) }
-        if model.isAdmin {
-          kinds
-          howTheyreMade(info)
+        if !model.isAdmin {
+          Section { Text("Only an admin can change how mixes are made.").font(.footnote).foregroundStyle(.secondary) }
         }
+        kinds.disabled(!model.isAdmin)
+        howTheyreMade(info).disabled(!model.isAdmin)
         history(info)
         ListenBrainzSection(model: listenBrainz)
         if model.isAdmin {
@@ -61,7 +62,7 @@ public struct MixesPanel: View {
     Section("How they’re made") {
       VStack(alignment: .leading, spacing: 6) {
         LabeledContent("Time zone", value: model.timeZoneText)
-        if let label = model.useDeviceZoneLabel {
+        if model.isAdmin, let label = model.useDeviceZoneLabel {
           Button(label) { Task { await model.useDeviceTimeZone() } }.buttonStyle(.bordered)
         }
         Text("When hours, days and Mondays begin for everyone’s mixes.").font(.footnote).foregroundStyle(.secondary)
@@ -86,12 +87,11 @@ public struct MixesPanel: View {
 
   private func history(_ info: MixSettingsInfo) -> some View {
     Section {
-      if model.isAdmin {
-        Toggle(isOn: Binding(get: { info.recordHistory }, set: { on in Task { await model.setRecordHistory(on) } })) {
-          Text("Remember what’s played")
-          Text("Off stops recording; the mixes keep using what’s already there.")
-        }
+      Toggle(isOn: Binding(get: { info.recordHistory }, set: { on in Task { await model.setRecordHistory(on) } })) {
+        Text("Remember what’s played")
+        Text("Off stops recording; the mixes keep using what’s already there.")
       }
+      .disabled(!model.isAdmin)
       HStack {
         Text(model.historyText).font(.footnote)
         Spacer()
