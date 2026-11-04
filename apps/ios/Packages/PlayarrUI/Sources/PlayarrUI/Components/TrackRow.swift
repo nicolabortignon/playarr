@@ -13,23 +13,24 @@ struct TrackRow: View {
 
   @Environment(AccountSession.self) private var session
   @Environment(Theme.self) private var theme
+  @Environment(\.reducesMotion) private var reducesMotion
 
   var body: some View {
     let current = session.player.queue.currentTrack?.fileId == track.fileId
     let playing = current && session.player.queue.playing
     HStack(spacing: 12) {
       Button(action: onTap) {
-        HStack(spacing: 12) {
+        AdaptiveStack(spacing: 12) {
           leading(current: current, playing: playing)
           VStack(alignment: .leading, spacing: 2) {
-            Text(track.title).lineLimit(1).foregroundStyle(current ? theme.accent.color : .primary)
+            Text(track.title).essentialLineLimit().foregroundStyle(current ? theme.accent.color : .primary)
             if style == .mixed {
-              Text("\(track.artistName) · \(track.albumTitle)").font(.sans(.footnote)).lineLimit(1).foregroundStyle(.secondary)
+              Text("\(track.artistName) · \(track.albumTitle)").font(.sans(.footnote)).essentialLineLimit().foregroundStyle(.muted)
             }
           }
           OfflineMark(store: session.player.downloads, fileId: track.fileId)
           Spacer(minLength: 8)
-          Text(Format.time(track.duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
+          Text(Format.time(track.duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.muted)
         }
         .contentShape(Rectangle())
       }
@@ -37,6 +38,14 @@ struct TrackRow: View {
       .accessibilityLabel(accessibilityLabel)
       .accessibilityValue(playing ? "Playing" : current ? "Paused" : "")
       .accessibilityHint(current ? "Plays or pauses the song" : "Plays the song")
+      .accessibilityActions {
+        TrackMenuItems(track: track, showsAlbum: style == .mixed)
+        Button(session.isFavorite(track) ? "Remove from Favorites" : "Add to Favorites") { session.toggleFavorite(track) }
+      }
+      .draggable(TrackDrag(tracks: [track])) {
+        Label(track.title, systemImage: "music.note").padding(10).background(.regularMaterial, in: Capsule())
+      }
+      .pointerHover()
       FavoriteButton(track: track, size: .row)
       TrackMenu(track: track, showsAlbum: style == .mixed)
     }
@@ -50,9 +59,9 @@ struct TrackRow: View {
     case .album:
       Group {
         if current {
-          Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: playing).foregroundStyle(theme.accent.color)
+          Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: playing && !reducesMotion).foregroundStyle(theme.accent.color)
         } else {
-          Text("\(track.trackNumber)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.secondary)
+          Text("\(track.trackNumber)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.muted)
         }
       }
       .frame(width: 28)
@@ -61,7 +70,7 @@ struct TrackRow: View {
         .frame(width: 44, height: 44)
         .overlay {
           if current {
-            Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: playing)
+            Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: playing && !reducesMotion)
               .foregroundStyle(.white).frame(maxWidth: .infinity, maxHeight: .infinity).background(.black.opacity(0.5))
           }
         }
