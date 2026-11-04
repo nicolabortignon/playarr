@@ -50,6 +50,12 @@ final class HomeModel {
     _ = await (a, b, c, d, e, f, g, h, i)
   }
 
+  /// Nothing to show and the server can't be reached (nothing kept either): Home says so, with Try again.
+  var failure: String? {
+    guard health.value == nil, recent.value == nil, artists.value == nil else { return nil }
+    return health.error ?? recent.error ?? artists.error
+  }
+
   /// Pull to refresh.
   func refresh() async {
     for query in [health.refresh, recent.refresh, artists.refresh, heardLately.refresh] {

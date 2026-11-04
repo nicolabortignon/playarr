@@ -85,3 +85,17 @@ import Testing
     #expect(api.calls(.get, "/api/albums/random").count == 2)
   }
 }
+
+@MainActor @Suite struct HomeFailureTests {
+  @Test func saysSoWhenNothingCanBeLoaded() async {
+    let model = HomeModel(session: demoSession(api: FakeAPI()))
+    await model.load()
+    #expect(model.failure != nil)
+  }
+
+  @Test func showsTheLibraryWhenItLoads() async {
+    let model = HomeModel(session: demoSession())
+    await model.load()
+    #expect(model.failure == nil)
+  }
+}

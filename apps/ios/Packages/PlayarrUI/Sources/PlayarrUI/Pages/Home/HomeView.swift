@@ -35,6 +35,11 @@ struct HomeView: View {
     .inlineTitle()
     .task { await model.load() }
     .refreshable { await model.refresh() }
+    .overlay {
+      if let failure = model.failure {
+        ErrorState(message: failure) { await model.refresh() }.background(.background)
+      }
+    }
   }
 
   private var intro: some View {
