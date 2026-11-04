@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
-import { useEffect, useRef, type MouseEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { nearestEdge, scrollForPoint } from '../lib/shelfScroll';
 import { KeepMounted } from '../lib/viewport';
@@ -66,7 +66,7 @@ export function Shelf({ children }: { children: ReactNode }) {
 
 /**
  * In place of a scrollbar: a hairline across most of the row, with a brighter stretch on it for the part in view, which
- * slides along as the row scrolls. A click anywhere on it glides the row there. Only there when the row is wider than
+ * slides along as the row scrolls. Press anywhere on it to glide the row there, or drag along it. Only there when the row is wider than
  * the screen. Moved by hand, not by React, so scrolling doesn't re-render the row.
  */
 function ScrollIndicator({ target }: { target: RefObject<HTMLDivElement | null> }) {
@@ -110,18 +110,44 @@ function ScrollIndicator({ target }: { target: RefObject<HTMLDivElement | null> 
       cancelAnimationFrame(frame);
     };
   }, [target]);
-  const jump = (e: MouseEvent<HTMLDivElement>) => {
+  // Pressing anywhere on the line glides the row there; dragging moves it along with the pointer, held where it was
+  // grabbed when that's on the marker. The row stops snapping to cards while dragged.
+  const drag = useRef<{ line: DOMRect; grab: number } | null>(null);
+  const to = (row: HTMLDivElement, x: number, behavior: ScrollBehavior) => {
+    const { line, grab } = drag.current!;
+    row.scrollTo({ left: scrollForPoint((x - line.left) / line.width - grab, row.clientWidth, row.scrollWidth), behavior });
+  };
+  const press = (e: PointerEvent<HTMLDivElement>) => {
     const row = target.current;
     const line = e.currentTarget.firstElementChild!.getBoundingClientRect();
-    if (!row || !line.width) return;
-    const at = (e.clientX - line.left) / line.width;
-    row.scrollTo({ left: scrollForPoint(at, row.clientWidth, row.scrollWidth), behavior: 'smooth' });
+    if (!row || !line.width || e.button !== 0) return;
+    const marker = thumb.current!.getBoundingClientRect();
+    const onMarker = e.clientX >= marker.left && e.clientX <= marker.right;
+    drag.current = { line, grab: onMarker ? (e.clientX - (marker.left + marker.width / 2)) / line.width : 0 };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    row.style.scrollSnapType = 'none';
+    if (!onMarker) to(row, e.clientX, 'smooth');
   };
-  // The line is a hairline; the space round it takes the clicks. The arrows and keys scroll the row for everyone else.
+  const move = (e: PointerEvent<HTMLDivElement>) => {
+    if (drag.current && target.current) to(target.current, e.clientX, 'instant');
+  };
+  const release = () => {
+    drag.current = null;
+    if (target.current) target.current.style.scrollSnapType = '';
+  };
+  // The line is a hairline; the space round it takes the pointer. The arrows and keys scroll the row for everyone else.
   return (
-    <div ref={track} aria-hidden onClick={jump} className="group/line invisible mx-auto mt-1 w-[90%] cursor-pointer py-2">
-      <div className="relative h-px bg-paper/[0.06] transition-colors group-hover/line:bg-paper/10">
-        <div ref={thumb} className="absolute top-0 left-0 h-px bg-paper/30 transition-[width,background-color] duration-300 group-hover/line:bg-paper/50" />
+    <div
+      ref={track}
+      aria-hidden
+      onPointerDown={press}
+      onPointerMove={move}
+      onPointerUp={release}
+      onPointerCancel={release}
+      className="group/line invisible mx-auto mt-1 w-[90%] cursor-pointer touch-pan-y py-2 select-none"
+    >
+      <div className="relative h-px bg-paper/[0.04] transition-colors group-hover/line:bg-paper/[0.07]">
+        <div ref={thumb} className="absolute top-0 left-0 h-px bg-paper/20 transition-[width,background-color] duration-300 group-hover/line:bg-paper/35" />
       </div>
     </div>
   );
