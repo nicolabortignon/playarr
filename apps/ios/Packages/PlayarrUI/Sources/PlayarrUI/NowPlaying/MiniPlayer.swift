@@ -13,7 +13,16 @@ struct MiniPlayer: View {
       HStack(spacing: 12) {
         Button { session.router.nowPlaying = true } label: {
           HStack(spacing: 12) {
-            Cover(path: track.coverUrl, points: 36, label: track.albumTitle, corner: 6).frame(width: 36, height: 36)
+            // The cover, round, ringed by how far into the song it is (filling clockwise from the top), rather than a bar
+            // along the glass's edge: the accessory's own inset kept a bar off its bottom.
+            Cover(path: track.coverUrl, points: 32, label: track.albumTitle, circle: true)
+              .frame(width: 32, height: 32)
+              .padding(4)
+              .overlay {
+                ProgressRing(fraction: player.duration > 0 ? min(1, player.time / player.duration) : 0, lineWidth: 2)
+                  .tint(theme.accent.color)
+                  .accessibilityHidden(true)
+              }
             VStack(alignment: .leading, spacing: 0) {
               Text(track.title).font(.sans(.subheadline)).lineLimit(1)
               Text(track.artistName).font(.sans(.caption)).foregroundStyle(.secondary).lineLimit(1)
@@ -30,16 +39,8 @@ struct MiniPlayer: View {
           .buttonStyle(.plain)
           .accessibilityLabel("Next")
       }
-      .padding(.horizontal, 12)
-      .overlay(alignment: .bottom) {
-        GeometryReader { geometry in
-          let fraction = player.duration > 0 ? min(1, player.time / player.duration) : 0
-          Capsule().fill(theme.accent.color).frame(width: geometry.size.width * fraction, height: 2)
-        }
-        .frame(height: 2)
-        .padding(.horizontal, 12)
-        .accessibilityHidden(true)
-      }
+      .padding(.leading, 6)
+      .padding(.trailing, 12)
       .accessibilityIdentifier("miniPlayer")
     }
   }
