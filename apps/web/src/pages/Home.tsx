@@ -1,4 +1,4 @@
-import { Dices, Pause, Play, Sparkles } from 'lucide-react';
+import { Dices, Pause, Play } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -246,7 +246,7 @@ function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl
   );
 }
 
-/** Feeling lucky: 15 songs put together now, a new set at every press. The sparkle turns while they're picked. */
+/** Feeling lucky: 15 songs put together now, a new set at every press. The sparkles twinkle while they're picked. */
 function LuckyButton() {
   const [picking, setPicking] = useState(false);
   const press = async () => {
@@ -267,15 +267,39 @@ function LuckyButton() {
       aria-busy={picking}
       className="inline-flex h-12 items-center gap-2.5 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-10px_var(--accent)] transition hover:brightness-110 active:scale-[0.98] disabled:cursor-progress"
     >
-      <motion.span
-        animate={picking ? { rotate: 360, scale: [1, 1.25, 1] } : { rotate: 0, scale: 1 }}
-        transition={picking ? { rotate: { repeat: Infinity, duration: 1.1, ease: 'linear' }, scale: { repeat: Infinity, duration: 0.55 } } : { duration: 0.2 }}
-        className="grid"
-      >
-        <Sparkles className="size-[18px]" />
-      </motion.span>
+      <Twinkle on={picking} />
       Feeling lucky
     </button>
+  );
+}
+
+/** A four-pointed star with curved sides, centred on 0,0, reaching 1 out. */
+const STAR = 'M0-1C.2-.2.2-.2 1 0 .2.2.2.2 0 1-.2.2-.2.2-1 0-.2-.2-.2-.2 0-1Z';
+/** Where Feeling lucky's three stars sit in its 24-unit icon, how big, and when each twinkles. */
+const STARS = [
+  { x: 10, y: 13.5, r: 8.5, low: 0.45, delay: 0 },
+  { x: 19, y: 5, r: 4, low: 0, delay: 0.35 },
+  { x: 19.5, y: 19, r: 2.75, low: 0, delay: 0.7 },
+];
+
+/**
+ * Feeling lucky's sparkles: still at rest; while the songs are picked, each star in turn swells, turns a little and
+ * shrinks away (the big one only dims), then comes back, like light catching glitter.
+ */
+function Twinkle({ on }: { on: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5 overflow-visible" aria-hidden>
+      {STARS.map((s, i) => (
+        <g key={i} transform={`translate(${s.x} ${s.y}) scale(${s.r})`}>
+          <motion.path
+            d={STAR}
+            fill="currentColor"
+            animate={on ? { scale: [1, 1.2, s.low, 1], rotate: [0, 0, 45, 90], opacity: [1, 1, s.low ? 0.7 : 0, 1] } : { scale: 1, rotate: 0, opacity: 1 }}
+            transition={on ? { duration: 1.2, times: [0, 0.2, 0.6, 1], ease: 'easeInOut', repeat: Infinity, delay: s.delay } : { duration: 0.25 }}
+          />
+        </g>
+      ))}
+    </svg>
   );
 }
 
