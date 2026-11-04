@@ -12,7 +12,6 @@ import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
 import { toast } from '../lib/toast';
 import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
-import { AccountSwitcher } from '../components/AccountSwitcher';
 import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
 import { feelingLucky } from '../player/actions';
@@ -34,7 +33,6 @@ export function HomePage() {
         <Wordmark />
       </div>
 
-      <AccountSwitcher className="mb-8 animate-rise" />
 
       <section className="relative mb-14 grid items-end gap-10 md:mb-20 xl:grid-cols-[1fr_auto]">
         <div className="animate-rise">

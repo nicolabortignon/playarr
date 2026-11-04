@@ -8,7 +8,7 @@ import { toast } from '../lib/toast';
 
 const LINK = 'text-paper-dim underline-offset-2 hover:text-paper hover:underline disabled:opacity-50';
 
-/** Top of Home: who listens on this device, and the other accounts signed in on it, a tap away. */
+/** Who listens on this device, and the other accounts signed in on it, a tap away. Off Home's top for now; its new place is to be decided. */
 export function AccountSwitcher({ className }: { className?: string }) {
   const { data: me } = useMe();
   const stored = useAccounts((s) => s.accounts);
