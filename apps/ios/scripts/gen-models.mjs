@@ -28,11 +28,11 @@ const OUTPUT = resolve(here, '../Packages/PlayarrAPI/Sources/PlayarrAPI/Models.g
 const SKIP = new Set(['parseRange', 'ByteRange']);
 /** Numbers that are whole: what the server stores as SQLite integers or counts. */
 const INTEGERS = new Set([
-  'albums', 'analyzed', 'artists', 'audioFiles', 'background', 'batchId', 'beatModel', 'bits', 'channels',
+  'albums', 'albumsComplete', 'albumsIncomplete', 'albumsUnknown', 'analyzed', 'artists', 'audioFiles', 'background', 'batchId', 'beatModel', 'bits', 'channels',
   'days', 'decadeMixes', 'disc', 'discNumber', 'earlier', 'era', 'failed', 'files', 'freeSpace', 'genreMixes',
-  'have', 'hour', 'lastCheck', 'lastUpdate', 'longestStreak', 'loudnessWaiting', 'loudnessWorking', 'matches',
-  'matching', 'moved', 'newArtists', 'pending', 'plays', 'port', 'position', 'profile', 'queued', 'ready',
-  'recorded', 'restored', 'review', 'sampleRate', 'sent', 'size', 'sizeBytes', 'songs', 'sources',
+  'have', 'hour', 'ignored', 'lastCheck', 'lastUpdate', 'longestStreak', 'loudnessWaiting', 'loudnessWorking', 'matches',
+  'matched', 'matching', 'moved', 'newArtists', 'pending', 'plays', 'port', 'position', 'profile', 'queued', 'ready',
+  'recorded', 'restored', 'review', 'sampleRate', 'sent', 'size', 'sizeBytes', 'songs', 'songsComplete', 'songsIncomplete', 'songsUnknown', 'sources',
   'tagsWaiting', 'total', 'trackNumber', 'trackTotal', 'tracks', 'variant', 'version', 'waiting', 'weekday',
   'working', 'year', 'years',
 ]);

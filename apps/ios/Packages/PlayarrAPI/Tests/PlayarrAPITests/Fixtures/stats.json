@@ -19,7 +19,8 @@
         ],
         "albumCount": 1,
         "trackCount": 2,
-        "mbid": "art-1"
+        "mbid": "art-1",
+        "imageUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
       },
       "plays": 2,
       "minutes": 11
@@ -42,6 +43,7 @@
         "duration": 677,
         "trackCount": 2,
         "totalTrackCount": 11,
+        "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500",
         "addedAt": "2026-11-03T12:00:00.000Z",
         "mbid": "rg-1",
         "format": {
@@ -79,7 +81,8 @@
           "lossless": true
         },
         "size": 40000000,
-        "streamUrl": "/stream/9000"
+        "streamUrl": "/stream/9000",
+        "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
       },
       "plays": 1
     },
@@ -105,7 +108,8 @@
           "lossless": true
         },
         "size": 30000000,
-        "streamUrl": "/stream/9001"
+        "streamUrl": "/stream/9001",
+        "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
       },
       "plays": 1
     }
@@ -173,7 +177,8 @@
         "lossless": true
       },
       "size": 40000000,
-      "streamUrl": "/stream/9000"
+      "streamUrl": "/stream/9000",
+      "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
     },
     "at": "2026-11-03T12:00:00.000Z"
   },

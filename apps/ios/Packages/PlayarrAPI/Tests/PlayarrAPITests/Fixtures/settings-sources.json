@@ -15,7 +15,15 @@
       "syncing": false,
       "songs": 0,
       "albums": 0,
+      "albumsComplete": 0,
+      "albumsIncomplete": 0,
+      "albumsUnknown": 0,
+      "songsComplete": 0,
+      "songsIncomplete": 0,
+      "songsUnknown": 0,
+      "matched": 0,
       "review": 0,
+      "ignored": 0,
       "matching": 0
     }
   ],

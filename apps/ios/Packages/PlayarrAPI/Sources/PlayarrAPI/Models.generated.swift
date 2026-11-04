@@ -2627,14 +2627,30 @@ public struct SourceInfo: Codable, Hashable, Sendable, Identifiable {
     public var syncing: Bool
     public var songs: Int
     public var albums: Int
-    /// Folder sources: album groups waiting for the user's review.
+    /// Albums this source has every song of (their length known from Lidarr, a MusicBrainz match or the files' track total).
+    public var albumsComplete: Int
+    /// Albums this source has some of the songs of.
+    public var albumsIncomplete: Int
+    /// Albums whose length isn't known (not identified on MusicBrainz), and each artist's loose songs.
+    public var albumsUnknown: Int
+    /// Songs on the albums this source has every song of (adding up to `songs` with the two below).
+    public var songsComplete: Int
+    /// Songs on the albums this source has some of the songs of.
+    public var songsIncomplete: Int
+    /// Songs on albums of unknown length, and a folder's songs not matched yet (`review`) whatever their album.
+    public var songsUnknown: Int
+    /// Folder sources: songs matched on MusicBrainz (automatically, by you, or by their tags), or named by you.
+    public var matched: Int
+    /// Folder sources: songs waiting for the user's review (to pick a match, or found nowhere).
     public var review: Int
+    /// Folder sources: songs left as their tags describe them (ignored in review).
+    public var ignored: Int
     /// Folder sources: album groups still being matched.
     public var matching: Int
     /// Folder sources: Playarr can write to the folder (needed to organize it).
     public var writable: Bool?
 
-    public init(id: Int, kind: SourceKind, name: String, position: Int, enabled: Bool, settings: Settings? = nil, secrets: [String], lastSyncAt: String? = nil, error: String? = nil, syncing: Bool, songs: Int, albums: Int, review: Int, matching: Int, writable: Bool? = nil) {
+    public init(id: Int, kind: SourceKind, name: String, position: Int, enabled: Bool, settings: Settings? = nil, secrets: [String], lastSyncAt: String? = nil, error: String? = nil, syncing: Bool, songs: Int, albums: Int, albumsComplete: Int, albumsIncomplete: Int, albumsUnknown: Int, songsComplete: Int, songsIncomplete: Int, songsUnknown: Int, matched: Int, review: Int, ignored: Int, matching: Int, writable: Bool? = nil) {
         self.id = id
         self.kind = kind
         self.name = name
@@ -2647,7 +2663,15 @@ public struct SourceInfo: Codable, Hashable, Sendable, Identifiable {
         self.syncing = syncing
         self.songs = songs
         self.albums = albums
+        self.albumsComplete = albumsComplete
+        self.albumsIncomplete = albumsIncomplete
+        self.albumsUnknown = albumsUnknown
+        self.songsComplete = songsComplete
+        self.songsIncomplete = songsIncomplete
+        self.songsUnknown = songsUnknown
+        self.matched = matched
         self.review = review
+        self.ignored = ignored
         self.matching = matching
         self.writable = writable
     }

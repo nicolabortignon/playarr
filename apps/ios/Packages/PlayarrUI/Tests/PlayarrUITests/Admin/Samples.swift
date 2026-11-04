@@ -6,12 +6,13 @@ enum Samples {
     SourceInfo(
       id: id, kind: .lidarr, name: "Lidarr", position: 0, enabled: true,
       settings: .init(url: "http://192.168.1.10:8686"), secrets: ["apiKey"], lastSyncAt: "2026-11-03T10:00:00Z",
-      syncing: syncing, songs: 1200, albums: 100, review: 0, matching: 0)
+      syncing: syncing, songs: 1200, albums: 100, albumsComplete: 80, albumsIncomplete: 15, albumsUnknown: 5,
+      songsComplete: 1000, songsIncomplete: 150, songsUnknown: 50, matched: 0, review: 0, ignored: 0, matching: 0)
   }
 
   static func folder(
     id: Int = 2, name: String = "Music", access: FolderAccessKind? = nil, syncing: Bool = false, matching: Int = 0,
-    review: Int = 0, secrets: [String] = []
+    review: Int = 0, matched: Int = 0, ignored: Int = 0, secrets: [String] = []
   ) -> SourceInfo {
     let remote = access != nil && access != .local
     return SourceInfo(
@@ -19,7 +20,9 @@ enum Samples {
       settings: .init(
         path: access == .smb ? "/music/Albums" : "/music", access: access, host: remote ? "nas" : nil,
         port: access == .smb ? 445 : (remote ? 22 : nil), user: remote ? "guest" : nil),
-      secrets: secrets, syncing: syncing, songs: 1, albums: 1, review: review, matching: matching, writable: true)
+      secrets: secrets, syncing: syncing, songs: 1, albums: 1, albumsComplete: 0, albumsIncomplete: 0, albumsUnknown: 1,
+      songsComplete: 0, songsIncomplete: 0, songsUnknown: 1, matched: matched, review: review, ignored: ignored, matching: matching,
+      writable: true)
   }
 
   static func sources(_ list: [SourceInfo], canEdit: Bool = true) -> SourcesResponse {
