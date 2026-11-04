@@ -3,7 +3,7 @@ import PlayarrAPI
 
 /// A page the app can show, named after the web's routes (apps/web/src/routes.tsx). Pages are values, so the same
 /// destinations work in the iPhone's tab stacks now and in an iPad split view later.
-public enum Route: Hashable, Sendable {
+public enum Route: Hashable, Sendable, Codable {
   case album(Int)
   case artist(Int)
   case albums(AlbumSort)

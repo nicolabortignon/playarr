@@ -4,7 +4,7 @@ import PlayarrAPI
 /// (a page of its own here). Playback and Appearance are this device's; the rest are the server's. Sources, Analysis,
 /// Requests and Updates are for admins; a member sees Accounts (their own name and devices) and Mixes (their own
 /// listening history and ListenBrainz).
-public enum SettingsPanel: String, Hashable, Sendable, CaseIterable {
+public enum SettingsPanel: String, Hashable, Sendable, CaseIterable, Codable {
   case playback, appearance, sources, mixes, analysis, requests, updates, accounts
   #if DEBUG
     case playerLab = "player-lab"
