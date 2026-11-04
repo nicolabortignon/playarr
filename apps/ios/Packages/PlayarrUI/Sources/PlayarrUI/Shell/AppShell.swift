@@ -1,8 +1,8 @@
 import PlayarrAPI
 import SwiftUI
 
-/// The signed-in app on a phone: Home, Search, Library and Queue tabs (apps/web/src/components/Nav.tsx), the mini
-/// player above them, Now Playing over everything, and toasts.
+/// The signed-in app: the phone's tabs with the mini player, or on a wide iPad window the sidebar, page, side column
+/// and player bar (`AdaptiveShell`); Now Playing over everything, and toasts.
 struct AppShell: View {
   let model: AppModel
   let session: AccountSession
@@ -11,23 +11,15 @@ struct AppShell: View {
 
   var body: some View {
     @Bindable var router = session.router
-    TabView(selection: Binding(get: { router.tab }, set: { router.select($0) })) {
-      ForEach(AppTab.allCases, id: \.self) { tab in
-        Tab(tab.title, systemImage: tab.systemImage, value: tab, role: tab == .search ? .search : nil) {
-          NavigationStack(path: Binding(get: { router.paths[tab] ?? [] }, set: { router.paths[tab] = $0 })) {
-            root(tab).accountMenu().routeDestinations(session)
-          }
-        }
-      }
-    }
-    .minimizingTabBar()
-    .miniPlayer(isShown: session.player.queue.currentTrack != nil) { MiniPlayer(session: session) }
+    // The phone's tabs, or the iPad's sidebar and player bar, as wide as the window is.
+    AdaptiveShell(session: session)
     .nowPlayingCover(isPresented: $router.nowPlaying) {
       NowPlayingView(session: session)
         // Show metadata and Edit mix points from Now Playing's menu open over it.
         .trackSheets(player: session.player, active: router.nowPlaying)
         .addToPlaylistSheet(session, active: router.nowPlaying)
         .environment(session).environment(session.discover).environment(model.theme).environment(model.appearance)
+        .environment(\.reducesMotion, model.appearance.reduceMotion(system: systemReduceMotion))
         .overlay(alignment: .top) { ToastsView().environment(model.toasts).environment(model.theme) }
         .overlay { stats }
     }
@@ -38,6 +30,7 @@ struct AppShell: View {
     .trackSheets(player: session.player, active: !router.nowPlaying)
     // Settings → Appearance → Motion: Reduced keeps animations to a minimum, whatever the device says.
     .transaction { if model.appearance.reduceMotion(system: systemReduceMotion) { $0.animation = nil } }
+    .environment(\.reducesMotion, model.appearance.reduceMotion(system: systemReduceMotion))
     .tint(model.theme.accent.color)
     .preferredColorScheme(.dark)
     .environment(session)
@@ -77,14 +70,5 @@ struct AppShell: View {
     StatsForNerdsOverlay(
       player: session.player, appearance: model.appearance, toasts: model.toasts,
       metadata: { [api = session.api] id in try? await api.send(API.Library.trackMetadata(id: id)) })
-  }
-
-  @ViewBuilder private func root(_ tab: AppTab) -> some View {
-    switch tab {
-    case .home: HomeView(session: session)
-    case .search: SearchView(session: session)
-    case .library: LibraryView(session: session)
-    case .queue: QueueView(session: session)
-    }
   }
 }

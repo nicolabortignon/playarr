@@ -25,6 +25,9 @@ public final class AppModel {
     /// A setup-code link to open (playarr://redeem).
     public var redeemLink: RedeemLink?
     public var showingAccounts = false
+    /// The window comes back where it was after iOS closed the app in the background. UI tests turn it off (each
+    /// test starts on Home) unless they launch with `-UITestsRestore`.
+    public var restoresPlace = true
     /// The app is on screen (a request that lands in the background is a notification instead).
     public var isActive = true
 
@@ -59,11 +62,12 @@ public final class AppModel {
 
     /// Signed in to the demo library, playing silence: for UI tests (`-UITestsDemo`). Nothing is kept. `requests`: the
     /// demo with Lidarr and an album to request, as an account that may request (`-UITestsRequests`, `DemoRequestsAPI`).
-    public static func demo(requests: Bool = false) -> AppModel {
+    /// `api`: another server to answer (one that can't be reached, for the error states).
+    public static func demo(requests: Bool = false, api custom: (any APISending)? = nil) -> AppModel {
         let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
         let store = ServerStore(directory: directory, secrets: InMemorySecretStore())
         let account = requests ? DemoRequestsAPI.account : Demo.account
-        let api: any APISending = requests ? DemoRequestsAPI() : DemoAPI()
+        let api: any APISending = custom ?? (requests ? DemoRequestsAPI() : DemoAPI())
         try? store.signedIn(SignInResponse(token: "demo", account: account), server: Demo.server, at: Demo.baseURL)
         let defaults = UserDefaults(suiteName: "playarr-demo-\(UUID().uuidString)") ?? .standard
         let model = AppModel(
