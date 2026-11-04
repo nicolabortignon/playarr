@@ -117,6 +117,7 @@ public struct SourcesPanel: View {
               if model.canEdit {
                 Button(notMatched) { sheet = .review(source.id) }
                   .buttonStyle(.borderless)
+                  .foregroundStyle(.tint)
                   .accessibilityHint("Match them by hand")
               } else {
                 Text(notMatched)
