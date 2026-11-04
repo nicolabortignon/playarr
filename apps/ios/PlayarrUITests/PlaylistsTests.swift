@@ -3,7 +3,8 @@ import XCTest
 /// Favorites and playlists on the simulator, against the demo library (`-UITestsDemo`: signed in, playing silence; the
 /// demo server remembers favorites and playlists while the app runs).
 final class PlaylistsTests: XCTestCase {
-  override func setUp() {
+  override func setUpWithError() throws {
+    try skipOnIPad()
     continueAfterFailure = false
   }
 

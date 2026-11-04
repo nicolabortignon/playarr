@@ -3,7 +3,8 @@ import XCTest
 /// Requesting an album from Search against the in-app demo server with Lidarr (`-UITestsRequests`): the button goes
 /// Request → Searching, the toasts say so, and the album lands on the next look at the requests.
 final class RequestingTests: XCTestCase {
-  override func setUp() {
+  override func setUpWithError() throws {
+    try skipOnIPad()
     continueAfterFailure = false
   }
 

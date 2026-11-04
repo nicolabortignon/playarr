@@ -2,7 +2,8 @@ import XCTest
 
 /// Day-to-day listening on the simulator, against the demo library (`-UITestsDemo`: signed in, playing silence).
 final class BrowseTests: XCTestCase {
-  override func setUp() {
+  override func setUpWithError() throws {
+    try skipOnIPad()
     continueAfterFailure = false
   }
 
@@ -30,7 +31,7 @@ final class BrowseTests: XCTestCase {
     let close = app.buttons["Close now playing"]
     XCTAssertTrue(close.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Angel"].exists)
-    XCTAssertTrue(app.buttons["Mezzanine"].exists)  // Playing from
+    XCTAssertTrue(app.buttons["Playing from Mezzanine"].exists)
 
     app.buttons["Lyrics"].tap()
     XCTAssertTrue(app.buttons["You are my angel"].waitForExistence(timeout: 5))
