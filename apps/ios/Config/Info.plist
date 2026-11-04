@@ -70,5 +70,18 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Playarr songs</string>
+			<key>UTTypeIdentifier</key>
+			<string>me.tracklistme.playarr.tracks</string>
+		</dict>
+	</array>
 </dict>
 </plist>
