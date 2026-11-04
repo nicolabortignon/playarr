@@ -19,7 +19,7 @@ Notes for picking the iOS work up again. The plans are in this folder:
 | 6 | Favorites, playlists, mixes, Your listening | Done. The older `2026-11-03-ios-phase6-next-steps.md` is out of date: phase 6 has landed. |
 | 7 | Offline downloads | Code done (Tasks 0–21 committed). Hands-on checks still open, see below. |
 | 8 | Discover, requests, Show metadata, Edit mix points | Done. |
-| 9 | Admin settings (Sources, Mixes, Analysis, Requests, Updates, Accounts) | **Not started.** The plan is written. These Settings panels still show `PlaceholderPage`. |
+| 9 | Admin settings (Sources, Mixes, Analysis, Requests, Updates, Accounts) | Done (2026-11-04), on TestFlight. Beyond the plan: Sources counts as the web now does (complete/incomplete/unidentified, matched/not matched/left as tagged), members see the mix settings read-only, Everyone shows songs played and playlists made, and an admin can lock Playback or Appearance per member. The on-phone checklist (plan Task 19, step 2) is still open. |
 | 10 | iPad split view, keyboard shortcuts, drag and drop, accessibility, icons, App Intents | **Not started.** The plan is written. |
 | 11 | App Store (store text, privacy page, screenshots, `ios:release`) | **Not started.** The plan is written. There's no `apps/ios/store/` yet and no `ios:release` script. |
 
@@ -61,8 +61,8 @@ Where phase 7 differs from its plan:
 
 ## Next up
 
-- Phase 9, admin settings. It reuses `Polling`, `FakeAPI`, `TestClock` and `Gate`. Follow the plan, one commit per task.
-- Then phase 10 (iPad and polish), then phase 11 (App Store).
+- Phase 10 (iPad and polish), then phase 11 (App Store).
+- Phase 9 differs from its plan: the panels are `SettingsPanel` cases shown by `SettingsPanelView` (no `AdminPanel` enum), and the MusicBrainz queue reuses phase 8's `MusicBrainzIndicator`.
 
 ## How to work on it
 
@@ -70,6 +70,8 @@ Where phase 7 differs from its plan:
 - **Package tests:** `make -C apps/ios test-packages`.
 - **Everything:** `make -C apps/ios test`.
 - **In Claude's shell:** Swift and Xcode commands need the sandbox off. `swift test` needs `--disable-sandbox`; the Makefile already passes the xcodebuild flags.
+- **TestFlight from here:** build from a clean worktree (`git worktree add --detach /tmp/playarr-tf HEAD`, copy `.env` and `apps/ios/.tools`), then `make -C apps/ios beta-upload` there, so edits in progress can't leak into the archive.
+- **Everything, on the right simulator:** `make -C apps/ios test SIMULATOR_ID=<the iOS 26.5 iPhone 17 Pro's id>` (the Makefile otherwise picks the 26.3 one listed first).
 - **Simulator:** use "iPhone 17 Pro" on **iOS 26.5**. The 26.3 runtime is broken on this Mac, and two simulators share that name, so pick by id:
   `xcrun simctl list devices available`, then `-destination 'platform=iOS Simulator,id=<id>'`.
 - **One UI test:** add `-only-testing:PlayarrUITests/<Class>` to the XCODEBUILD line in `apps/ios/Makefile`.
