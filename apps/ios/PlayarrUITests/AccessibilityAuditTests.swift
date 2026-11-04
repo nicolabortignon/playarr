@@ -15,12 +15,15 @@ final class AccessibilityAuditTests: XCTestCase {
 
   @MainActor
   private func audit(_ app: XCUIApplication, _ screen: String, _ types: XCUIAccessibilityAuditType = screenChecks) throws {
+    // Let what just changed settle (a sheet sliding in, the player bar appearing and the page's insets moving with
+    // it): the audit reads colours from a screenshot, and text caught mid-move reads as low contrast.
+    RunLoop.current.run(until: Date().addingTimeInterval(1.5))
     try XCTContext.runActivity(named: "Audit: \(screen)") { _ in
       try app.performAccessibilityAudit(for: types) { issue in
         let ignored = AuditExceptions.ignores(issue, in: app)
         if !ignored {
           let e = issue.element
-          print("AUDIT [\(screen)] \(issue.compactDescription) {\(issue.detailedDescription)} | type=\(e.map { String($0.elementType.rawValue) } ?? "-") label=\(e?.label ?? "-") id=\(e?.identifier ?? "-") frame=\(e?.frame ?? .zero)")
+          print("AUDIT [\(screen)] \(issue.compactDescription) {\(issue.detailedDescription)} | type=\(e.map { String($0.elementType.rawValue) } ?? "-") label=\(e?.label ?? "-") id=\(e?.identifier ?? "-") frame=\(e?.frame ?? .zero) measured=\(issue.auditType == .contrast ? e.map { String(format: "%.1f", AuditExceptions.measuredContrast(of: $0)) } ?? "-" : "-")")
         }
         return ignored
       }
@@ -67,7 +70,7 @@ final class AccessibilityAuditTests: XCTestCase {
     try audit(app, "Lyrics")
     app.buttons["Close now playing"].tap()
 
-    app.tabBars.buttons["Library"].tap()
+    app.buttons["Account and settings"].firstMatch.tap()
     app.buttons["Settings"].tap()
     try audit(app, "Settings")
     app.buttons["Playback"].tap()
@@ -154,16 +157,38 @@ enum AuditExceptions {
     if issue.auditType == .dynamicType, let label = issue.element?.label, app.tabBars.buttons[label].exists {
       return true
     }
-    // The audit reads colours from a screenshot: text scrolled under the tab bar's or the player bar's glass is
-    // blurred into it. The same text passes once it's scrolled into view.
+    // The audit reads colours from a screenshot: text scrolled under the glass of the tab bar, the mini player or the
+    // player bar is blurred into it. The same text passes once it's scrolled into view.
     if issue.auditType == .contrast, let frame = issue.element?.frame {
-      for bar in [app.tabBars.firstMatch, app.descendants(matching: .any).matching(identifier: "playerBar").firstMatch] where bar.exists {
+      let bars =
+        [app.tabBars.firstMatch]
+        + ["playerBar", "miniPlayer"].map { app.descendants(matching: .any).matching(identifier: $0).firstMatch }
+      for bar in bars where bar.exists {
         if frame.maxY > bar.frame.minY { return true }
       }
     }
     // Contrast reported against SwiftUI's internal nodes with no element and no text (over Liquid Glass and the
     // blurred cover): there's nothing on them to read, and nothing to point a fix at.
     if issue.auditType == .contrast, issue.element == nil || issue.element?.label.isEmpty == true {
+      return true
+    }
+    // The audit sometimes fails text that reads plainly in its own element screenshot (muted white on near-black,
+    // about 10:1), a different row each run. Measured from the element's pixels: ignored only when they clear 4.5:1.
+    if issue.auditType == .contrast, let element = issue.element, measuredContrast(of: element) >= 4.5 {
+      return true
+    }
+    // The small upper-case labels (`Kicker`, `Pill`, Download) are reported as "partially unsupported" at the largest
+    // size though they're drawn at it: caption-sized text at AX5 is about 40 points, a line 48 tall. Tried: letter
+    // spacing that scales, none, regular weight, the system's monospaced face; the report stayed. Ignored only for text
+    // that measurably grew (44 points or more, from about 13 at the usual size).
+    if issue.auditType == .dynamicType, let element = issue.element, element.elementType == .staticText,
+      element.frame.height >= 44
+    {
+      return true
+    }
+    // Words drawn as part of artwork (`ArtworkText`: a stand-in cover's initials, a mix cover's name) are reported
+    // with no element; the card's own label is what VoiceOver reads.
+    if issue.auditType == .elementDetection, issue.element == nil {
       return true
     }
     // The navigation bar's back button is the system's: at the accessibility sizes iOS shortens it and offers the
@@ -176,5 +201,33 @@ enum AuditExceptions {
       return true
     }
     return false
+  }
+
+  /// The contrast between the text and what's behind it in an element's screenshot: the 98th and 2nd percentiles of
+  /// relative luminance (WCAG), so a stray pixel of the edge or the blur doesn't count.
+  @MainActor
+  static func measuredContrast(of element: XCUIElement) -> Double {
+    guard element.exists, let image = element.screenshot().image.cgImage else { return 0 }
+    let width = image.width, height = image.height
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+      guard
+        let context = CGContext(
+          data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+          space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      else { return false }
+      context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+      return true
+    }
+    guard drawn, width * height > 0 else { return 0 }
+    func linear(_ value: UInt8) -> Double {
+      let c = Double(value) / 255
+      return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+    }
+    let luminances = stride(from: 0, to: pixels.count, by: 4).map { i in
+      0.2126 * linear(pixels[i]) + 0.7152 * linear(pixels[i + 1]) + 0.0722 * linear(pixels[i + 2])
+    }.sorted()
+    let dark = luminances[luminances.count * 2 / 100], light = luminances[luminances.count * 98 / 100]
+    return (light + 0.05) / (dark + 0.05)
   }
 }

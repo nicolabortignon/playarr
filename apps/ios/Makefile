@@ -71,8 +71,9 @@ test-scripts:
 test-packages:
 	@set -e; for p in $(PACKAGES); do echo "▸ swift test $$p"; swift test --disable-sandbox --package-path Packages/$$p; done
 
+# ONLY="AccessibilityAuditTests IPadLayoutTests" runs just those UI test classes.
 test-app: project
-	$(XCODEBUILD) test
+	$(XCODEBUILD) test $(foreach t,$(ONLY),-only-testing:PlayarrUITests/$(t))
 
 # The ScreenTour UI test, on a simulator of its own (parallel UI tests on a shared one break each other): its screenshots
 # land in build/screens/ (SCREENS_DIR reaches the test runner through xcodebuild's TEST_RUNNER_ prefix).

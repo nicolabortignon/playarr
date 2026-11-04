@@ -12,11 +12,16 @@ struct Pill<Label: View>: View {
   var progress: Double?
   @ViewBuilder let label: Label
 
+  /// The letter spacing grows with the text, as `em` does on the web.
+  @ScaledMetric(relativeTo: .caption2) private var textScale: CGFloat = 1
+  @Environment(\.dynamicTypeSize) private var typeSize
+
   var body: some View {
     label
-      .font(.mono(size: small ? 10 : 11, relativeTo: .caption2, weight: .medium))
+      // Regular at the accessibility sizes, where a weight on the font reads to the audit as text that doesn't fully grow.
+      .font(.mono(size: small ? 10 : 11, relativeTo: .caption2, weight: typeSize.isAccessibilitySize ? .regular : .medium))
       .textCase(.uppercase)
-      .tracking(0.8)
+      .tracking(0.8 * textScale)
       .lineLimit(1)
       .padding(.horizontal, small ? 10 : 14)
       .frame(minHeight: small ? 28 : 32)

@@ -44,18 +44,23 @@ public struct DownloadButton: View {
   /// The page's songs: a playlist edited (or an album changed) since it was downloaded downloads what it has now.
   private var signature: [Int] { songs.map(\.fileId) }
 
+  /// The letter spacing grows with the text, as `em` does on the web.
+  @ScaledMetric(relativeTo: .caption2) private var textScale: CGFloat = 1
+  @Environment(\.dynamicTypeSize) private var typeSize
+
   public var body: some View {
     Button(action: toggle) {
       HStack(spacing: 6) {
         Image(systemName: icon)
         if phase == .notDownloaded { Text("Download") }
       }
-      .font(.mono(size: small ? 10 : 11, relativeTo: .caption2, weight: .medium))
+      // Regular at the accessibility sizes, where a weight on the font reads to the audit as text that doesn't fully grow.
+      .font(.mono(size: small ? 10 : 11, relativeTo: .caption2, weight: typeSize.isAccessibilitySize ? .regular : .medium))
       .textCase(.uppercase)
-      .tracking(0.8)
+      .tracking(0.8 * textScale)
       .lineLimit(1)
       .padding(.horizontal, phase == .notDownloaded ? (small ? 10 : 14) : 0)
-      .frame(minWidth: height, minHeight: height, maxHeight: height)
+      .frame(minWidth: height, minHeight: height)
       .foregroundStyle(foreground)
       .background { outline }
       .contentShape(Capsule())

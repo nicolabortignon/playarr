@@ -179,9 +179,12 @@ struct NowPlayingView: View {
     HStack(alignment: .top) {
       VStack(alignment: .leading, spacing: 6) {
         Text(track.title).font(.display(.title)).essentialLineLimit(2)
-        HStack(spacing: 8) {
+        // The format under the artist at the accessibility sizes, so the name wraps rather than being cut.
+        AdaptiveStack(spacing: 8) {
           Button(track.artistName) { session.actions.goToArtist(track) }
             .font(.sans(.title3)).foregroundStyle(.secondary).buttonStyle(.plain)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
           FormatBadge(format: track.format)
         }
       }

@@ -16,11 +16,13 @@ struct AccountMenu: ViewModifier {
           Button("Settings", systemImage: "gearshape") { session.router.open(.settings) }
             .accessibilityIdentifier("settings")
         } label: {
-          Text(initial)
-            .font(.sans(.subheadline).weight(.semibold))
-            .foregroundStyle(.black)
+          // The initial as a symbol, a picture rather than text: bar buttons don't grow with the text size (a long press
+          // shows the large content viewer instead), and the button's label says what it is.
+          Image(systemName: initialSymbol)
+            .font(.system(size: 34))
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.black, theme.accent.color)
             .frame(width: 34, height: 34)
-            .background(theme.accent.color, in: Circle())
             .contentShape(Circle())
         }
         .accessibilityLabel("Account and settings")
@@ -30,8 +32,11 @@ struct AccountMenu: ViewModifier {
     }
   }
 
-  private var initial: String {
-    String(session.account.name.trimmingCharacters(in: .whitespaces).first ?? "?").uppercased()
+  /// "d.circle.fill" for Demo; a person for a name that doesn't start with a letter A to Z.
+  private var initialSymbol: String {
+    let first = session.account.name.trimmingCharacters(in: .whitespaces).lowercased().first
+    guard let first, ("a"..."z").contains(first) else { return "person.crop.circle.fill" }
+    return "\(first).circle.fill"
   }
 }
 
