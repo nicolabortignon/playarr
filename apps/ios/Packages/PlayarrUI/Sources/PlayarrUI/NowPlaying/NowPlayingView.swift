@@ -9,6 +9,7 @@ struct NowPlayingView: View {
   @Environment(Theme.self) private var theme
   @Environment(AppearanceSettings.self) private var appearance
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.dynamicTypeSize) private var typeSize
   @State private var drag: CGFloat = 0
 
   var body: some View {
@@ -22,16 +23,26 @@ struct NowPlayingView: View {
           header(model, track: track)
             .contentShape(Rectangle())
             .gesture(closeGesture)
-          if router.lyrics {
-            LyricsView(trackId: track.id, session: session).id(track.id)
+          if router.layout == .split && !typeSize.isAccessibilitySize {
+            // The web's desktop Now Playing: the cover (or lyrics) beside the song, its controls and Up next.
+            HStack(spacing: 64) {
+              artwork(track)
+              VStack(spacing: 24) {
+                song(track)
+                SeekBar(player: player)
+                Transport(player: player)
+                TransitionLine(player: player)
+                UpNextPreview(session: session)
+              }
+              .frame(maxWidth: 480)
+            }
           } else {
-            cover(track, playing: player.queue.playing)
-              .gesture(closeGesture)
+            artwork(track)
+            song(track)
+            SeekBar(player: player)
+            Transport(player: player)
+            TransitionLine(player: player)
           }
-          song(track)
-          SeekBar(player: player)
-          Transport(player: player)
-          TransitionLine(player: player)
           Spacer(minLength: 0)
         }
         .padding(.horizontal, 24)
@@ -59,6 +70,17 @@ struct NowPlayingView: View {
       }
   }
 
+  /// The cover, or the lyrics in its place.
+  @ViewBuilder
+  private func artwork(_ track: Track) -> some View {
+    if session.router.lyrics {
+      LyricsView(trackId: track.id, session: session).id(track.id)
+    } else {
+      cover(track, playing: session.player.queue.playing)
+        .gesture(closeGesture)
+    }
+  }
+
   /// The cover itself, blown up and blurred.
   private func backdrop(_ track: Track) -> some View {
     ZStack {
@@ -73,19 +95,21 @@ struct NowPlayingView: View {
     HStack {
       Button { session.router.nowPlaying = false } label: { Image(systemName: "chevron.down").font(.title2).frame(width: 44, height: 44) }
         .accessibilityLabel("Close now playing")
+        .keyboardShortcut(.cancelAction)
       Spacer()
       VStack(spacing: 2) {
-        Kicker(text: "Playing from")
+        Kicker(text: "Playing from").accessibilityHidden(true)
         Button(model.playingFrom ?? "") { if let route = model.playingFromRoute { session.router.go(route) } }
-          .font(.sans(.footnote)).lineLimit(1)
+          .font(.sans(.footnote)).essentialLineLimit()
+          .accessibilityLabel("Playing from \(model.playingFrom ?? "")")
       }
-      .accessibilityElement(children: .combine)
       Spacer()
       SleepTimerMenu(player: session.player)
       Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44) }
         .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
         .accessibilityLabel("Lyrics")
         .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
+        .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
       Menu {
         Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
         Button("Start radio", systemImage: "dot.radiowaves.left.and.right") { Task { await session.actions.startRadio(track) } }
@@ -114,7 +138,7 @@ struct NowPlayingView: View {
   private func song(_ track: Track) -> some View {
     HStack(alignment: .top) {
       VStack(alignment: .leading, spacing: 6) {
-        Text(track.title).font(.display(.title)).lineLimit(2)
+        Text(track.title).font(.display(.title)).essentialLineLimit(2)
         HStack(spacing: 8) {
           Button(track.artistName) { session.actions.goToArtist(track) }
             .font(.sans(.title3)).foregroundStyle(.secondary).buttonStyle(.plain)
