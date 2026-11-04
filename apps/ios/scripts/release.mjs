@@ -7,7 +7,7 @@
 //                                     optional, TestFlight needs no registered device
 //
 // Run through the Makefile (`pnpm ios:beta`, `pnpm ios:device`), which loads the repo's .env. The build
-// number is `git rev-list --count HEAD`; the marketing version is MARKETING_VERSION in Config/Base.xcconfig.
+// number is `git rev-list --count HEAD` (or BUILD_NUMBER); the marketing version is MARKETING_VERSION in Config/Base.xcconfig.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,7 +48,9 @@ export const uploadNeeded = (build, lastBuild) => build > lastBuild;
 // the .ipa. (`destination upload` would need Xcode's ITunesSoftwareService, which Claude's sandbox can't reach.)
 async function beta() {
   const cfg = config();
-  const build = Number(sh('git', ['rev-list', '--count', 'HEAD']));
+  // BUILD_NUMBER overrides the commit count: for when a build from work not on main yet (another Mac's) took a higher
+  // number, so this one would otherwise be skipped as older.
+  const build = Number(process.env.BUILD_NUMBER || sh('git', ['rev-list', '--count', 'HEAD']));
   const version = readFileSync(join(IOS, 'Config/Base.xcconfig'), 'utf8').match(/^MARKETING_VERSION = (.+)$/m)[1];
   const app = (await findApp(cfg.bundleId)) ?? fail(`No app record for ${cfg.bundleId} in App Store Connect: create it first (see the phase 0 plan).`);
   const { data: [last] } = await asc('GET', `/v1/builds?filter[app]=${app.id}&sort=-uploadedDate&limit=1&fields[builds]=version`);
