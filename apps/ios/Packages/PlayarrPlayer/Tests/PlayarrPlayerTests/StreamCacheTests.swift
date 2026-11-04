@@ -20,6 +20,21 @@ struct StreamCacheTests {
     #expect(StubServer.requests("/stream/203").count == 1)
   }
 
+  /// On the phone the cache is under "Library/Application Support": a space in its path must neither stop a song's file
+  /// being written (every song failed with "kept stopping loading") nor hide the file once it's here.
+  @Test func keepsSongsInAFolderWithASpaceInItsName() async throws {
+    StubServer.serve("/stream/211", .init(body: body))
+    let cache = StreamCache(
+      directory: temporaryDirectory().appending(path: "Application Support/Playarr"), retryDelay: .milliseconds(5),
+      configuration: StubServer.configuration)
+    let download = await cache.download(for: song(211), request: StubServer.request("/stream/211"))
+    try await download.waitUntilFinished()
+    let file = try #require(await cache.completedFile(for: song(211)))
+    #expect(try Data(contentsOf: file) == body)
+    await cache.remove([211])
+    #expect(await cache.completedFile(for: song(211)) == nil)
+  }
+
   @Test func theNetworkPolicyIsThreeOnWiFiOneOnMobileDataNoneOtherwise() {
     #expect(PrefetchPolicy.songsAhead(on: .wifi) == 3)
     #expect(PrefetchPolicy.songsAhead(on: .cellular) == 1)

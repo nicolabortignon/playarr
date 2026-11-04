@@ -87,7 +87,7 @@ public actor TrackSource: PCMSource {
   }
 
   private func open() async throws -> Mode {
-    if let url = origin.kept, FileManager.default.fileExists(atPath: url.path()) {
+    if let url = origin.kept, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
       return .file(try FileDecoder(url: url, firstFrame: firstFrame))
     }
     if let url = await cache.completedFile(for: track) {

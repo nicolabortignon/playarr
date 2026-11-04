@@ -61,7 +61,7 @@
 
     /// A file that says it's `bytes` long and takes no room (APFS keeps the hole).
     static func sparseFile(_ url: URL, bytes: Int64) {
-      FileManager.default.createFile(atPath: url.path(), contents: nil)
+      FileManager.default.createFile(atPath: url.path(percentEncoded: false), contents: nil)
       guard let handle = try? FileHandle(forWritingTo: url) else { return }
       try? handle.truncate(atOffset: UInt64(bytes))
       try? handle.close()

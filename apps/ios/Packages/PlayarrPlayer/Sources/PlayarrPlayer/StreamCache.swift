@@ -40,8 +40,8 @@ public actor StreamCache {
   /// The whole file, if it's here. Marks it as just played.
   public func completedFile(for track: Track) -> URL? {
     let url = file(for: track)
-    guard FileManager.default.fileExists(atPath: url.path()) else { return nil }
-    try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path())
+    guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return nil }
+    try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path(percentEncoded: false))
     ledger?(.used(fileId: track.fileId))
     return url
   }
@@ -66,8 +66,8 @@ public actor StreamCache {
   /// The whole transition file, if it's here. Marks it as just played.
   public func completedTransition(named name: String) -> URL? {
     let url = transitionFile(named: name)
-    guard FileManager.default.fileExists(atPath: url.path()) else { return nil }
-    try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path())
+    guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return nil }
+    try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path(percentEncoded: false))
     return url
   }
 
@@ -124,7 +124,7 @@ public actor StreamCache {
 
   /// Drops these songs' files, whole or partial; not one being downloaded right now (it's being played).
   public func remove(_ fileIds: Set<Int>) {
-    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path())) ?? []
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))) ?? []
     for id in fileIds where downloads[id]?.isActive != true {
       downloads[id] = nil
       for name in names where name.hasPrefix("\(id).") {

@@ -57,7 +57,7 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
     self.firstByte = firstByte
     self.retryDelay = retryDelay
     self.configuration = configuration
-    let existing = (try? FileManager.default.attributesOfItem(atPath: file.path())[.size] as? Int64) ?? 0
+    let existing = (try? FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.size] as? Int64) ?? 0
     state = Mutex(State(file: file, finalFile: finalFile, received: existing, retriesLeft: retries))
   }
 
@@ -74,8 +74,8 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
   public func start() {
     state.withLock { s in
       guard s.session == nil, !s.finished, !s.cancelled, s.failure == nil else { return }
-      if !FileManager.default.fileExists(atPath: s.file.path()) {
-        FileManager.default.createFile(atPath: s.file.path(), contents: nil)
+      if !FileManager.default.fileExists(atPath: s.file.path(percentEncoded: false)) {
+        FileManager.default.createFile(atPath: s.file.path(percentEncoded: false), contents: nil)
       }
       s.session = URLSession(configuration: configuration(), delegate: self, delegateQueue: nil)
       begin(&s)
