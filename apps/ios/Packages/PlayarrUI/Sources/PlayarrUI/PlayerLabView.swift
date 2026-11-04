@@ -56,7 +56,7 @@
                 if !editing { scrubbing = nil }
               })
             Text("\(clock(player.time)) / \(clock(player.duration)) · \(Int(player.buffered)) s ahead\(player.loading ? " · loading" : "")")
-              .font(.caption.monospacedDigit())
+              .font(.sans(.caption).monospacedDigit())
           }
         }
         HStack {
@@ -105,7 +105,7 @@
           VStack(alignment: .leading, spacing: 6) {
             Text("\(String(describing: snapshot.state)) · timeline \(clock(snapshot.now)) · gain \(String(format: "%.2f", player.engine.masterGain))")
             ForEach(snapshot.decks, id: \.name) { deck in
-              Text(describe(deck)).font(.caption.monospaced())
+              Text(describe(deck)).font(.mono(.caption))
             }
           }
         }

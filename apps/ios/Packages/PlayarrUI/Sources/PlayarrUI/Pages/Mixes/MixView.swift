@@ -23,10 +23,10 @@ struct MixView: View {
               .shadow(color: .black.opacity(0.8), radius: 30, y: 20)
               .frame(maxWidth: .infinity)
             Kicker(text: "Made for you")
-            Text(mix.title).font(.largeTitle.weight(.semibold))
+            Text(mix.title).font(.display(.largeTitle))
             Text(mix.description).foregroundStyle(.secondary)
             TimelineView(.periodic(from: .now, by: 60)) { context in
-              Text(model.facts(now: context.date)).font(.caption.monospaced()).foregroundStyle(.secondary)
+              Text(model.facts(now: context.date)).font(.mono(.caption)).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
               Button("Play", systemImage: "play.fill") { model.play(shuffle: false) }

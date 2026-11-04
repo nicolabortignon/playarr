@@ -56,14 +56,18 @@ struct ArtistView: View {
       LinearGradient(colors: [.clear, .black.opacity(0.45), .black], startPoint: .top, endPoint: .bottom)
       VStack(alignment: .leading, spacing: 12) {
         Kicker(text: model.kicker)
-        Text(artist.name).font(.system(.largeTitle, design: .serif, weight: .bold)).lineLimit(2).minimumScaleFactor(0.5)
+        Text(artist.name).font(.display(.largeTitle)).lineLimit(2).minimumScaleFactor(0.5)
           .accessibilityAddTraits(.isHeader)
-        HStack(spacing: 12) {
-          Button { Task { await model.play() } } label: { Label("Play", systemImage: "play.fill").padding(.horizontal, 6) }
-            .buttonStyle(.borderedProminent).tint(theme.accent.color).foregroundStyle(.black)
-          Button { Task { await model.play(shuffle: true) } } label: { Label("Shuffle", systemImage: "shuffle") }
-            .buttonStyle(.bordered)
-          if let counts = model.counts { Text(counts).font(.caption.monospaced()).foregroundStyle(.secondary) }
+        // The counts beside the buttons on one line, else under them.
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: 12) {
+            playButtons
+            counts
+          }
+          VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) { playButtons }
+            counts
+          }
         }
         .buttonBorderShape(.capsule)
       }
@@ -76,7 +80,7 @@ struct ArtistView: View {
     if model.similar?.error != nil {
       VStack(alignment: .leading, spacing: 0) {
         SectionHeader(title: "Similar artists", kicker: "From ListenBrainz")
-        Text("Couldn’t reach ListenBrainz for similar artists right now.").font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 20)
+        Text("Couldn’t reach ListenBrainz for similar artists right now.").font(.sans(.subheadline)).foregroundStyle(.secondary).padding(.horizontal, 20)
       }
     } else if let artists = model.similar?.value {
       // Those in the library first, then the others, whose discography opens to request albums.
@@ -92,9 +96,22 @@ struct ArtistView: View {
   private func about(_ overview: String) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       SectionHeader(title: "About")
-      Text(overview).font(.callout).foregroundStyle(.secondary).lineLimit(model.bioOpen ? nil : 5).padding(.horizontal, 20)
+      Text(overview).font(.sans(.callout)).foregroundStyle(.secondary).lineLimit(model.bioOpen ? nil : 5).padding(.horizontal, 20)
       Button { model.bioOpen.toggle() } label: { Kicker(text: model.bioOpen ? "Less" : "Read more") }
         .padding(.horizontal, 20)
     }
+  }
+}
+
+extension ArtistView {
+  @ViewBuilder fileprivate var playButtons: some View {
+    Button { Task { await model.play() } } label: { Label("Play", systemImage: "play.fill").padding(.horizontal, 6) }
+      .buttonStyle(.borderedProminent).tint(theme.accent.color).foregroundStyle(.black)
+    Button { Task { await model.play(shuffle: true) } } label: { Label("Shuffle", systemImage: "shuffle") }
+      .buttonStyle(.bordered)
+  }
+
+  @ViewBuilder fileprivate var counts: some View {
+    if let counts = model.counts { Text(counts).font(.mono(.caption)).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
   }
 }

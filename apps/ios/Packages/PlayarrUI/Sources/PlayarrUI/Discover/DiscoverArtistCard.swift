@@ -17,9 +17,9 @@ struct DiscoverArtistCard: View {
     NavigationLink(value: DiscoverDestination.card(artist).route) {
       VStack(spacing: 8) {
         Cover(path: artist.imageUrl, points: width, label: artist.name, circle: true).frame(width: width, height: width)
-        Text(artist.name).font(.subheadline).lineLimit(1)
+        Text(artist.name).font(.sans(.subheadline)).lineLimit(1)
         Text(detail.uppercased())
-          .font(.system(size: 10, design: .monospaced)).tracking(1.5)
+          .font(.mono(size: 10)).tracking(1.5)
           .foregroundStyle(.secondary).lineLimit(1)
       }
       .frame(width: width)

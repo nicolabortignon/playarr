@@ -28,7 +28,7 @@ struct LyricsView: View {
       case .plain(let text, let source):
         ScrollView {
           VStack(alignment: .leading, spacing: 24) {
-            Text(text).font(.title2.weight(.semibold))
+            Text(text).font(.display(.title2))
             LyricsCredit(source: source)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -50,7 +50,7 @@ struct LyricsView: View {
           ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
             Button { model.seek(to: line) } label: {
               Text(line.text.isEmpty ? "♪" : line.text)
-                .font(.title2.weight(.semibold))
+                .font(.display(.title2))
                 .multilineTextAlignment(.leading)
                 .foregroundStyle(index == current ? Color.primary : index < current ? Color.primary.opacity(0.35) : Color.primary.opacity(0.55))
             }
@@ -77,7 +77,7 @@ struct LyricsView: View {
   }
 
   private func notice(_ text: String) -> some View {
-    Text(text).font(.title3).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+    Text(text).font(.sans(.title3)).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 
@@ -96,7 +96,7 @@ struct LyricsCredit: View {
         Text("LYRICS FROM THE FILE")
       }
     }
-    .font(.caption2.monospaced())
+    .font(.mono(.caption2))
     .tracking(2)
     .foregroundStyle(.secondary)
   }

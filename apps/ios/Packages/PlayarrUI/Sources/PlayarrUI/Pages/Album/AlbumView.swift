@@ -64,7 +64,7 @@ struct AlbumView: View {
         .shadow(color: .black.opacity(0.6), radius: 24, y: 16)
         .padding(.bottom, 8)
       if let kicker = model.kicker { Kicker(text: kicker) }
-      Text(album.title).font(.system(.largeTitle, design: .serif, weight: .bold)).accessibilityAddTraits(.isHeader)
+      Text(album.title).font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
       NavigationLink(value: Route.artist(album.artistId)) {
         HStack(spacing: 8) {
           if let image = model.artist?.value?.imageUrl {
@@ -75,7 +75,7 @@ struct AlbumView: View {
       }
       .buttonStyle(.plain)
       HStack(spacing: 8) {
-        if let details = model.details() { Text(details).font(.caption.monospaced()).foregroundStyle(.secondary) }
+        if let details = model.details() { Text(details).font(.mono(.caption)).foregroundStyle(.secondary) }
         FormatBadge(format: album.format)
       }
     }
@@ -121,7 +121,7 @@ struct AlbumView: View {
         switch row {
         case .disc(let number):
           Label("Disc \(number)", systemImage: "opticaldisc")
-            .font(.caption2.monospaced())
+            .font(.mono(.caption2))
             .foregroundStyle(.secondary)
             .padding(.top, 16)
             .accessibilityAddTraits(.isHeader)
@@ -138,7 +138,7 @@ struct AlbumView: View {
   private func linerNotes(_ overview: String) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       Kicker(text: "Liner notes")
-      Text(overview).font(.callout).foregroundStyle(.secondary)
+      Text(overview).font(.sans(.callout)).foregroundStyle(.secondary)
     }
     .padding(.horizontal, 20)
   }

@@ -77,7 +77,7 @@ struct NowPlayingView: View {
       VStack(spacing: 2) {
         Kicker(text: "Playing from")
         Button(model.playingFrom ?? "") { if let route = model.playingFromRoute { session.router.go(route) } }
-          .font(.footnote).lineLimit(1)
+          .font(.sans(.footnote)).lineLimit(1)
       }
       .accessibilityElement(children: .combine)
       Spacer()
@@ -114,10 +114,10 @@ struct NowPlayingView: View {
   private func song(_ track: Track) -> some View {
     HStack(alignment: .top) {
       VStack(alignment: .leading, spacing: 6) {
-        Text(track.title).font(.title.weight(.semibold)).lineLimit(2)
+        Text(track.title).font(.display(.title)).lineLimit(2)
         HStack(spacing: 8) {
           Button(track.artistName) { session.actions.goToArtist(track) }
-            .font(.title3).foregroundStyle(.secondary).buttonStyle(.plain)
+            .font(.sans(.title3)).foregroundStyle(.secondary).buttonStyle(.plain)
           FormatBadge(format: track.format)
         }
       }

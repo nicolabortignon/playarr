@@ -49,14 +49,14 @@ struct RecommendationsSection: View {
               }
             }
             if let more = model.moreLabel {
-              Button(more) { model.showAll.toggle() }.font(.caption.monospaced()).buttonStyle(.borderless)
+              Button(more) { model.showAll.toggle() }.font(.mono(.caption)).buttonStyle(.borderless)
             }
           }
         } header: {
           HStack(alignment: .lastTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
               Kicker(text: "From ListenBrainz")
-              Text("Songs like these").font(.title2.weight(.semibold)).foregroundStyle(.primary).textCase(nil)
+              Text("Songs like these").font(.display(.title2)).foregroundStyle(.primary).textCase(nil)
             }
             Spacer()
             Button("New mix", systemImage: "dice") { Task { await model.newMix() } }
@@ -94,11 +94,11 @@ struct RecommendationsSection: View {
             Button(recommendation.albumTitle) { session.router.open(RecommendationsModel.album(recommendation).route) }
           }
         }
-        .font(.footnote)
+        .font(.sans(.footnote))
         .foregroundStyle(.secondary)
         .lineLimit(1)
         if !recommendation.because.isEmpty {
-          Text("like \(recommendation.because)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+          Text("like \(recommendation.because)").font(.sans(.caption)).foregroundStyle(.secondary).lineLimit(1)
         }
       }
       // Each button takes only its own taps in a list row.

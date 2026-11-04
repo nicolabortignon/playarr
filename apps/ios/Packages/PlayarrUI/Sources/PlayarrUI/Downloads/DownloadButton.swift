@@ -48,7 +48,7 @@ public struct DownloadButton: View {
         case .downloading: ProgressRing(fraction: phase.fraction).frame(width: 20, height: 20)
         }
       }
-      .font(.title3)
+      .font(.sans(.title3))
       .frame(width: 48, height: 48)
       .overlay(Circle().stroke(.secondary.opacity(0.3)))
       .foregroundStyle(phase == .notDownloaded ? AnyShapeStyle(.primary) : AnyShapeStyle(.tint))

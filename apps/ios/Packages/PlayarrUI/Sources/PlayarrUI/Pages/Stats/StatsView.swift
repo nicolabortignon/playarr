@@ -16,7 +16,7 @@ struct StatsView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 32) {
-        if model.isYear { Text("Your \(model.range)").font(.largeTitle.weight(.semibold)) }
+        if model.isYear { Text("Your \(model.range)").font(.display(.largeTitle)) }
         ScrollView(.horizontal) {
           HStack(spacing: 8) {
             ForEach(model.periods, id: \.self) { period in
@@ -51,10 +51,10 @@ struct StatsView: View {
 
   @ViewBuilder private func report(_ stats: ListeningStats) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      if model.isYear { Text("YEAR IN REVIEW").font(.caption2.monospaced()).tracking(2).foregroundStyle(theme.accent.color) }
+      if model.isYear { Text("YEAR IN REVIEW").font(.mono(.caption2)).tracking(2).foregroundStyle(theme.accent.color) }
       HStack(alignment: .firstTextBaseline, spacing: 10) {
-        Text(Format.number(Int(stats.minutes.rounded()))).font(.system(size: 56, weight: .semibold)).monospacedDigit()
-        Text("minutes").font(.title3).foregroundStyle(.secondary)
+        Text(Format.number(Int(stats.minutes.rounded()))).font(.sans(size: 56, weight: .semibold)).monospacedDigit()
+        Text("minutes").font(.sans(.title3)).foregroundStyle(.secondary)
       }
       Text(StatsModel.summary(stats)).foregroundStyle(.secondary)
       Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 16) {
@@ -70,8 +70,8 @@ struct StatsView: View {
           Cover(path: top.artist.imageUrl, points: 120, label: top.artist.name).frame(width: 120, height: 120)
           VStack(alignment: .leading, spacing: 4) {
             Kicker(text: "Your artist of the year")
-            Text(top.artist.name).font(.title.weight(.semibold))
-            Text(artistLine(top, first: stats.firstSong)).font(.subheadline).foregroundStyle(.secondary)
+            Text(top.artist.name).font(.display(.title))
+            Text(artistLine(top, first: stats.firstSong)).font(.sans(.subheadline)).foregroundStyle(.secondary)
           }
         }
       }
@@ -81,11 +81,11 @@ struct StatsView: View {
       ForEach(Array(stats.topArtists.enumerated()), id: \.element.artist.id) { index, item in
         NavigationLink(value: Route.artist(item.artist.id)) {
           HStack(spacing: 14) {
-            Text("\(index + 1)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
+            Text("\(index + 1)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
             Cover(path: item.artist.imageUrl, points: 48, label: item.artist.name, circle: true).frame(width: 48, height: 48)
             Text(item.artist.name).lineLimit(1)
             Spacer()
-            Text("\(Format.minutes(item.minutes)) · \(Format.plural(item.plays, "play"))").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+            Text("\(Format.minutes(item.minutes)) · \(Format.plural(item.plays, "play"))").font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
           }
         }
         .buttonStyle(.plain)
@@ -100,14 +100,14 @@ struct StatsView: View {
       ForEach(Array(stats.topTracks.enumerated()), id: \.element.track.id) { index, item in
         Button { model.playTop(from: index, all: false) } label: {
           HStack(spacing: 14) {
-            Text("\(index + 1)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
+            Text("\(index + 1)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
             Cover(path: item.track.coverUrl, points: 44, label: item.track.albumTitle).frame(width: 44, height: 44)
             VStack(alignment: .leading) {
               Text(item.track.title).lineLimit(1)
-              Text(item.track.artistName).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+              Text(item.track.artistName).font(.sans(.footnote)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
-            Text(Format.plural(item.plays, "play")).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+            Text(Format.plural(item.plays, "play")).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
           }
           .contentShape(Rectangle())
         }
@@ -132,7 +132,7 @@ struct StatsView: View {
           ForEach(stats.topGenres, id: \.genre) { genre in
             HStack(spacing: 6) {
               Text(genre.genre)
-              Text(Format.minutes(genre.minutes)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+              Text(Format.minutes(genre.minutes)).font(.sans(.caption).monospacedDigit()).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
@@ -145,14 +145,14 @@ struct StatsView: View {
 
   private func tile(_ tile: (label: String, value: String)) -> some View {
     VStack(alignment: .leading, spacing: 2) {
-      Text(tile.label).font(.footnote).foregroundStyle(.secondary)
-      Text(tile.value).font(.title2.weight(.semibold)).monospacedDigit()
+      Text(tile.label).font(.sans(.footnote)).foregroundStyle(.secondary)
+      Text(tile.value).font(.sans(.title2).weight(.semibold)).monospacedDigit()
     }
   }
 
   private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text(title).font(.title.weight(.semibold)).accessibilityAddTraits(.isHeader)
+      Text(title).font(.display(.title)).accessibilityAddTraits(.isHeader)
       content()
     }
   }

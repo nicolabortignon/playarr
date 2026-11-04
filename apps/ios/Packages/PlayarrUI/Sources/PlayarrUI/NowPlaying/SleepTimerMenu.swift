@@ -22,7 +22,7 @@ struct SleepTimerMenu: View {
       } label: {
         HStack(spacing: 4) {
           Image(systemName: "moon")
-          if let label { Text(label.uppercased()).font(.caption2.monospaced()) }
+          if let label { Text(label.uppercased()).font(.mono(.caption2)) }
         }
         .frame(minWidth: 44, minHeight: 44)
         .foregroundStyle(label == nil ? Color.primary : theme.accent.color)

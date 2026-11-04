@@ -24,7 +24,7 @@ private struct RequestsList: View {
     List {
       Section {
         Text("Albums you asked Lidarr to find. Progress updates live; finished albums land in your library automatically.")
-          .font(.footnote).foregroundStyle(.secondary)
+          .font(.sans(.footnote)).foregroundStyle(.secondary)
       }
       if let error = requests.error, requests.requests == nil {
         Text(error).foregroundStyle(.secondary)
@@ -34,7 +34,7 @@ private struct RequestsList: View {
             Text("No requests yet. Search for something that isn’t in your library and hit Request.")
             Button("Search") { session.router.search("") }.buttonStyle(.borderless)
           }
-          .font(.footnote).foregroundStyle(.secondary)
+          .font(.sans(.footnote)).foregroundStyle(.secondary)
         }
         ForEach(list, id: \.mbid) { request in
           row(request)
@@ -76,9 +76,9 @@ private struct RequestsList: View {
       Cover(path: request.coverUrl, points: 64, label: request.title).frame(width: 64, height: 64)
       VStack(alignment: .leading, spacing: 3) {
         Text(request.title).lineLimit(1)
-        Text(request.artistName).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+        Text(request.artistName).font(.sans(.footnote)).foregroundStyle(.secondary).lineLimit(1)
         TimelineView(.periodic(from: .now, by: 60)) { clock in
-          Text(RequestRowText.status(request, now: clock.date)).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+          Text(RequestRowText.status(request, now: clock.date)).font(.mono(.caption2)).foregroundStyle(.secondary).lineLimit(1)
         }
         if request.availability.state == .downloading {
           ProgressView(value: min(max(request.availability.progress ?? 0, 0), 1)).frame(maxWidth: 240)

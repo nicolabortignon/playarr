@@ -50,7 +50,7 @@ struct Chip: View {
   var body: some View {
     NavigationLink(value: route) {
       Text(text)
-        .font(.subheadline)
+        .font(.sans(.subheadline))
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .overlay(Capsule().stroke(Color.secondary.opacity(0.4)))

@@ -18,15 +18,15 @@ struct TransitionSheet: View {
         VStack(alignment: .leading, spacing: 24) {
           VStack(alignment: .leading, spacing: 6) {
             Text(words.style.prefix(1).uppercased() + words.style.dropFirst())
-              .font(.title2.weight(.semibold))
+              .font(.display(.title2))
             if words.preparing {
               Text("Getting the mix ready…".uppercased())
-                .font(.caption2.monospaced())
+                .font(.mono(.caption2))
                 .tracking(1.5)
                 .foregroundStyle(.secondary)
             }
             Text(words.why)
-              .font(.subheadline)
+              .font(.sans(.subheadline))
               .foregroundStyle(.secondary)
           }
           VStack(alignment: .leading, spacing: 6) {
@@ -38,7 +38,7 @@ struct TransitionSheet: View {
           }
           VStack(alignment: .leading, spacing: 8) {
             Text("Mixing for this queue".uppercased())
-              .font(.caption2.monospaced())
+              .font(.mono(.caption2))
               .tracking(2)
               .foregroundStyle(.secondary)
             Picker("Mixing for this queue", selection: Binding(get: { player.queue.mixMode }, set: { player.setMixMode($0) })) {
@@ -46,7 +46,7 @@ struct TransitionSheet: View {
             }
             .pickerStyle(.segmented)
             Text(TransitionWords.modes.first { $0.value == player.queue.mixMode }?.hint ?? "")
-              .font(.footnote)
+              .font(.sans(.footnote))
               .foregroundStyle(.secondary)
           }
         }
@@ -62,7 +62,7 @@ struct TransitionSheet: View {
   private func facts(_ label: String, _ track: Track, _ map: MixMapEntry?) -> some View {
     HStack(alignment: .firstTextBaseline, spacing: 12) {
       Text(label.uppercased())
-        .font(.caption2.monospaced())
+        .font(.mono(.caption2))
         .foregroundStyle(.secondary)
         .frame(width: 40, alignment: .leading)
       Text(track.title)
@@ -74,6 +74,6 @@ struct TransitionSheet: View {
           .foregroundStyle(.secondary)
       }
     }
-    .font(.subheadline)
+    .font(.sans(.subheadline))
   }
 }

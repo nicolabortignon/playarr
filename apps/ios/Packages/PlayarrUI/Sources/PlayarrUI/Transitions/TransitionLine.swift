@@ -31,7 +31,7 @@ public struct TransitionLine: View {
         open = true
       } label: {
         Label(text, systemImage: "arrow.triangle.merge")
-          .font(.footnote.monospacedDigit())
+          .font(.sans(.footnote).monospacedDigit())
           .lineLimit(1)
           .foregroundStyle(.secondary)
           .frame(minHeight: 44)

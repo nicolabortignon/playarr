@@ -57,9 +57,9 @@ struct SearchView: View {
 
   private var notFound: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("Not in your crates.").font(.title.weight(.semibold))
+      Text("Not in your crates.").font(.display(.title))
       Text("Nothing in your library matches “\(model.searched)”." + (discover?.gate.hasLidarr == true ? " Here’s what’s out there:" : ""))
-        .font(.subheadline).foregroundStyle(.secondary)
+        .font(.sans(.subheadline)).foregroundStyle(.secondary)
     }
     .padding(.horizontal, 20)
   }
@@ -72,7 +72,7 @@ struct SearchView: View {
           HStack(spacing: 16) {
             Cover(path: top.imageUrl, points: 96, label: top.name, circle: true).frame(width: 96, height: 96)
             VStack(alignment: .leading, spacing: 4) {
-              Text(top.name).font(.title.weight(.semibold))
+              Text(top.name).font(.display(.title))
               Kicker(text: "Artist")
             }
             Spacer()

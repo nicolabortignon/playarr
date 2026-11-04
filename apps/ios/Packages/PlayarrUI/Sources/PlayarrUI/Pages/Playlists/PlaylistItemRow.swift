@@ -22,14 +22,14 @@ struct PlaylistItemRow: View {
             Text(item.title).lineLimit(1).foregroundStyle(current ? theme.accent.color : .primary)
             HStack(spacing: 6) {
               Text("\(item.artistName) · \(item.albumTitle)").lineLimit(1)
-              if item.track == nil { Text("NOT IN LIBRARY").font(.caption2.monospaced()) }
+              if item.track == nil { Text("NOT IN LIBRARY").font(.mono(.caption2)) }
             }
-            .font(.footnote)
+            .font(.sans(.footnote))
             .foregroundStyle(.secondary)
           }
           Spacer(minLength: 8)
           if let track = item.track {
-            Text(Format.time(track.duration)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+            Text(Format.time(track.duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
           }
         }
         .contentShape(Rectangle())

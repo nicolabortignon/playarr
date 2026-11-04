@@ -24,12 +24,12 @@ struct TrackRow: View {
           VStack(alignment: .leading, spacing: 2) {
             Text(track.title).lineLimit(1).foregroundStyle(current ? theme.accent.color : .primary)
             if style == .mixed {
-              Text("\(track.artistName) · \(track.albumTitle)").font(.footnote).lineLimit(1).foregroundStyle(.secondary)
+              Text("\(track.artistName) · \(track.albumTitle)").font(.sans(.footnote)).lineLimit(1).foregroundStyle(.secondary)
             }
           }
           OfflineMark(store: session.player.downloads, fileId: track.fileId)
           Spacer(minLength: 8)
-          Text(Format.time(track.duration)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+          Text(Format.time(track.duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
         }
         .contentShape(Rectangle())
       }
@@ -52,7 +52,7 @@ struct TrackRow: View {
         if current {
           Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: playing).foregroundStyle(theme.accent.color)
         } else {
-          Text("\(track.trackNumber)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+          Text("\(track.trackNumber)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.secondary)
         }
       }
       .frame(width: 28)
@@ -80,10 +80,10 @@ struct MissingTrackRow: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      Text("\(missing.trackNumber)").font(.subheadline.monospacedDigit()).frame(width: 28)
+      Text("\(missing.trackNumber)").font(.sans(.subheadline).monospacedDigit()).frame(width: 28)
       Text(missing.title).lineLimit(1)
       Spacer()
-      Text(Format.time(missing.duration)).font(.footnote.monospacedDigit())
+      Text(Format.time(missing.duration)).font(.sans(.footnote).monospacedDigit())
     }
     .foregroundStyle(.secondary)
     .opacity(0.5)

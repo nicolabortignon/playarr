@@ -57,7 +57,7 @@ public struct DownloadsView<Cover: View>: View {
           .buttonStyle(.plain)
           .lineLimit(1)
         Text("\(OfflineWording.rowDetail(d, progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.red.opacity(0.8)))")
-          .font(.footnote)
+          .font(.sans(.footnote))
           .foregroundStyle(.secondary)
           .lineLimit(1)
         if !progress.isComplete {

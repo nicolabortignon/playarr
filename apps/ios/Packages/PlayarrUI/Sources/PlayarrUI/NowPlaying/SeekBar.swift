@@ -26,7 +26,7 @@ struct SeekBar: View {
         Spacer()
         Text("-" + Format.time(max(0, player.duration - (scrubbing ?? player.time))))
       }
-      .font(.caption.monospacedDigit())
+      .font(.sans(.caption).monospacedDigit())
       .foregroundStyle(.secondary)
       .accessibilityHidden(true)
     }

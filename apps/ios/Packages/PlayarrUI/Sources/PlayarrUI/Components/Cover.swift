@@ -66,7 +66,7 @@ struct CoverPlaceholder: View {
           .fill(theme.accent.color.opacity(0.9))
           .frame(width: side * 0.38, height: side * 0.38)
           .overlay {
-            Text(initials).font(.system(size: max(8, side * 0.14), weight: .semibold, design: .serif)).foregroundStyle(.black)
+            Text(initials).font(.display(size: max(8, side * 0.14))).foregroundStyle(.black)
           }
       }
     }

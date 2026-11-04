@@ -82,7 +82,7 @@ struct PlaylistView: View {
 
       Kicker(text: "Playlist")
       if editing {
-        TextField("Playlist name", text: $name).font(.largeTitle.weight(.semibold)).accessibilityIdentifier("playlist.editName")
+        TextField("Playlist name", text: $name).font(.display(.largeTitle)).accessibilityIdentifier("playlist.editName")
         TextField("Add a description", text: $details, axis: .vertical).lineLimit(2...4)
         HStack {
           Button("Save") { Task { if await model.save(name: name, description: details) { editing = false } } }
@@ -90,14 +90,14 @@ struct PlaylistView: View {
           Button("Cancel") { editing = false }.buttonStyle(.bordered)
         }
       } else {
-        Text(playlist.name).font(.largeTitle.weight(.semibold)).onTapGesture(perform: startEditing)
+        Text(playlist.name).font(.display(.largeTitle)).onTapGesture(perform: startEditing)
         if !playlist.description.isEmpty {
           Text(playlist.description).foregroundStyle(.secondary).onTapGesture(perform: startEditing)
         }
       }
-      Text(model.facts).font(.caption.monospaced()).foregroundStyle(.secondary)
+      Text(model.facts).font(.mono(.caption)).foregroundStyle(.secondary)
       if let sharing = model.sharing {
-        Text(sharing).font(.caption.monospaced()).foregroundStyle(.secondary)
+        Text(sharing).font(.mono(.caption)).foregroundStyle(.secondary)
       }
       if model.canPickCover { coverNote(CoverNote(playlist.cover)) }
 
@@ -135,12 +135,12 @@ struct PlaylistView: View {
   private func coverNote(_ note: CoverNote) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       if let listening = note.listening {
-        Label(listening, systemImage: "circle.fill").symbolEffect(.pulse).font(.footnote).foregroundStyle(.secondary)
+        Label(listening, systemImage: "circle.fill").symbolEffect(.pulse).font(.sans(.footnote)).foregroundStyle(.secondary)
       } else {
-        Text(note.story).font(.footnote).foregroundStyle(.secondary)
-        Text(note.facts.uppercased()).font(.caption2.monospaced()).foregroundStyle(.secondary)
+        Text(note.story).font(.sans(.footnote)).foregroundStyle(.secondary)
+        Text(note.facts.uppercased()).font(.mono(.caption2)).foregroundStyle(.secondary)
         Button(note.stale ? "The playlist has changed a lot since this cover was drawn. New cover" : "New cover") { pickingCover = true }
-          .font(.caption.monospaced())
+          .font(.mono(.caption))
       }
     }
   }

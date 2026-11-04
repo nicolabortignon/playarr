@@ -35,7 +35,7 @@ struct HomeView: View {
   private var intro: some View {
     VStack(alignment: .leading, spacing: 20) {
       Text(model.libraryLine ?? "Loading library")
-        .font(.callout)
+        .font(.sans(.callout))
         .foregroundStyle(.secondary)
         .redacted(reason: model.libraryLine == nil ? .placeholder : [])
       FlowLayout(spacing: 12) {
@@ -52,7 +52,7 @@ struct HomeView: View {
               Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true).frame(width: 36, height: 36)
               VStack(alignment: .leading, spacing: 0) {
                 Kicker(text: "Resume")
-                Text(track.title).font(.subheadline).lineLimit(1)
+                Text(track.title).font(.sans(.subheadline)).lineLimit(1)
               }
               Image(systemName: "play.fill")
             }
@@ -87,10 +87,10 @@ struct HomeView: View {
           Cover(path: top.imageUrl, points: 96, label: top.name).frame(width: 96, height: 96)
         }
         VStack(alignment: .leading, spacing: 4) {
-          Text("YEAR IN REVIEW").font(.caption2.monospaced()).tracking(2).foregroundStyle(theme.accent.color)
-          Text("Your \(String(review.year)) in music").font(.title.weight(.semibold))
+          Text("YEAR IN REVIEW").font(.mono(.caption2)).tracking(2).foregroundStyle(theme.accent.color)
+          Text("Your \(String(review.year)) in music").font(.display(.title))
           Text("\(review.minutes.formatted()) minutes\(review.top.map { ", most of all \($0.name)" } ?? "")")
-            .font(.subheadline).foregroundStyle(.secondary)
+            .font(.sans(.subheadline)).foregroundStyle(.secondary)
         }
       }
       .padding(16)

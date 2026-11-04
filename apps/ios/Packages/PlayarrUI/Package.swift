@@ -8,7 +8,8 @@ let package = Package(
   products: [.library(name: "PlayarrUI", targets: ["PlayarrUI"])],
   dependencies: [.package(path: "../PlayarrAPI"), .package(path: "../PlayarrPlayer")],
   targets: [
-    .target(name: "PlayarrUI", dependencies: ["PlayarrAPI", "PlayarrPlayer"]),
+    // Fonts: the web's (Schibsted Grotesk, Gloock, DM Mono), as TrueType, with their SIL Open Font Licenses.
+    .target(name: "PlayarrUI", dependencies: ["PlayarrAPI", "PlayarrPlayer"], resources: [.copy("Fonts")]),
     .testTarget(name: "PlayarrUITests", dependencies: ["PlayarrUI"]),
   ]
 )

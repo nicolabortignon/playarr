@@ -11,8 +11,8 @@ struct MixCard: View {
     NavigationLink(value: Route.mix(mix.key)) {
       VStack(alignment: .leading, spacing: 6) {
         MixCover(mix: mix, width: width)
-        Text(mix.subtitle).font(.subheadline).lineLimit(1)
-        Text(Format.plural(mix.trackCount, "song")).font(.caption.monospaced()).foregroundStyle(.secondary)
+        Text(mix.subtitle).font(.sans(.subheadline)).lineLimit(1)
+        Text(Format.plural(mix.trackCount, "song")).font(.mono(.caption)).foregroundStyle(.secondary)
       }
       .frame(width: width)
     }
@@ -49,8 +49,8 @@ struct MixCover: View {
           .init(color: OKLCH.rgb(l: 0.2, c: 0.07, h: mix.hue).color.opacity(0.95), location: 1),
         ], startPoint: wash.start, endPoint: wash.end)
       VStack(alignment: .leading, spacing: 2) {
-        Text("MADE FOR YOU").font(.system(size: width * 0.046, design: .monospaced)).tracking(2).foregroundStyle(.white.opacity(0.75))
-        Text(mix.title).font(.system(size: width * 0.125, weight: .semibold, design: .serif)).foregroundStyle(.white).lineLimit(2)
+        Text("MADE FOR YOU").font(.mono(size: width * 0.046)).tracking(2).foregroundStyle(.white.opacity(0.75))
+        Text(mix.title).font(.display(size: width * 0.125)).foregroundStyle(.white).lineLimit(2)
       }
       .padding(width * 0.07)
     }

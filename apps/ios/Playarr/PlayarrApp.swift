@@ -7,6 +7,10 @@ struct PlayarrApp: App {
   @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @State private var model = PlayarrApp.makeModel()
 
+  init() {
+    Typography.register()
+  }
+
   var body: some Scene {
     WindowGroup {
       #if DEBUG

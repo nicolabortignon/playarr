@@ -7,7 +7,7 @@ struct ErrorState: View {
 
   var body: some View {
     ContentUnavailableView {
-      Text("Something skipped.").font(.title.weight(.semibold))
+      Text("Something skipped.").font(.display(.title))
     } description: {
       Text(message)
     } actions: {

@@ -76,12 +76,12 @@ struct QueueView: View {
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 8) {
           Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: session.player.queue.playing)
-          Text(track.title).font(.headline).lineLimit(1)
+          Text(track.title).font(.sans(.headline)).lineLimit(1)
           OfflineMark(store: session.player.downloads, fileId: track.fileId)
         }
         .foregroundStyle(theme.accent.color)
         Button("\(track.artistName) · \(track.albumTitle)") { session.router.open(.album(track.albumId)) }
-          .font(.subheadline).foregroundStyle(.secondary).lineLimit(1).buttonStyle(.plain)
+          .font(.sans(.subheadline)).foregroundStyle(.secondary).lineLimit(1).buttonStyle(.plain)
         FormatBadge(format: track.format)
       }
     }
@@ -100,10 +100,10 @@ struct QueueView: View {
               Text(track.title).lineLimit(1)
               OfflineMark(store: session.player.downloads, fileId: track.fileId)
             }
-            Text(track.artistName).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            Text(track.artistName).font(.sans(.footnote)).foregroundStyle(.secondary).lineLimit(1)
           }
           Spacer()
-          Text(Format.time(track.duration)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+          Text(Format.time(track.duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
         }
         .contentShape(Rectangle())
       }

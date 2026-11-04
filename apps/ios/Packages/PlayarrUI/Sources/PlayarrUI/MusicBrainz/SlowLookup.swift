@@ -19,7 +19,7 @@ public struct SlowLookup: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
           Circle().fill(.tint).frame(width: 6, height: 6)
           Text(SlowLookupText.waiting(for: what, status: context?.musicBrainz.status))
-            .font(.footnote).foregroundStyle(.secondary)
+            .font(.sans(.footnote)).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
       }

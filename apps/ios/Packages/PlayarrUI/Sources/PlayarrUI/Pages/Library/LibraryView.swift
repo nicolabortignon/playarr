@@ -52,7 +52,7 @@ struct LibraryView: View {
                 PlaylistCover(cover: playlist.cover, points: 56, name: playlist.name).frame(width: 56, height: 56)
                 VStack(alignment: .leading) {
                   Text(playlist.name).lineLimit(1)
-                  Text(Format.plural(playlist.trackCount, "song")).font(.caption.monospaced()).foregroundStyle(.secondary)
+                  Text(Format.plural(playlist.trackCount, "song")).font(.mono(.caption)).foregroundStyle(.secondary)
                 }
               }
             }
@@ -92,7 +92,7 @@ struct LibraryView: View {
           .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15)))
         Text(title)
         Spacer()
-        if let detail { Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary) }
+        if let detail { Text(detail).font(.mono(.caption)).foregroundStyle(.secondary) }
       }
     }
   }

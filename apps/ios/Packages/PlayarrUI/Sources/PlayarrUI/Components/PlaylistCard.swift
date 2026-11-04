@@ -10,8 +10,8 @@ struct PlaylistCard: View {
     NavigationLink(value: Route.playlist(playlist.id)) {
       VStack(alignment: .leading, spacing: 6) {
         PlaylistCover(cover: playlist.cover, points: width, name: playlist.name)
-        Text(playlist.name).font(.subheadline).lineLimit(1)
-        Text(subtitle).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+        Text(playlist.name).font(.sans(.subheadline)).lineLimit(1)
+        Text(subtitle).font(.mono(.caption)).foregroundStyle(.secondary).lineLimit(1)
       }
       .frame(width: width)
     }

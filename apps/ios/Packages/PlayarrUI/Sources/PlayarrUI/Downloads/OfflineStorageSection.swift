@@ -23,7 +23,7 @@ public struct OfflineStorageSection: View {
           Label(OfflineWording.headline(count: kept.count, limit: limit), systemImage: "internaldrive")
           Spacer()
           if let usage = OfflineWording.usage(bytes: kept.bytes, limit: limit) {
-            Text(usage).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Text(usage).font(.sans(.caption).monospacedDigit()).foregroundStyle(.secondary)
           }
         }
         if limit > 0 {
@@ -34,7 +34,7 @@ public struct OfflineStorageSection: View {
       if let line = OfflineWording.downloadsLine(count: downloads, bytes: store.downloadsBytes) {
         Button(action: openDownloads) {
           Text("Plus \(Text(line.link).foregroundStyle(.tint))\(line.rest)")
-            .font(.subheadline)
+            .font(.sans(.subheadline))
             .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)

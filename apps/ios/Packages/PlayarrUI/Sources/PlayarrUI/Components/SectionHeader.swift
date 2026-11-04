@@ -11,7 +11,7 @@ struct SectionHeader<Action: View>: View {
     HStack(alignment: .lastTextBaseline) {
       VStack(alignment: .leading, spacing: 2) {
         if let kicker { Kicker(text: kicker) }
-        Text(title).font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
+        Text(title).font(.display(.title2)).accessibilityAddTraits(.isHeader)
       }
       Spacer()
       action()
@@ -34,11 +34,13 @@ extension SectionHeader where Action == EmptyView {
 /// The small, spaced, upper-case line above titles.
 struct Kicker: View {
   let text: String
+  /// The web's `tracking-[0.2em]`; counts under a name use `tracking-wider` (0.55).
+  var tracking: CGFloat = 2
 
   var body: some View {
     Text(text.uppercased())
-      .font(.caption2.monospaced())
-      .tracking(2)
+      .font(.mono(.caption2))
+      .tracking(tracking)
       .foregroundStyle(.secondary)
   }
 }

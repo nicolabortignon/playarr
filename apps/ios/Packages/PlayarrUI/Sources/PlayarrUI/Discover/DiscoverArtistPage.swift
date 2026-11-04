@@ -34,7 +34,7 @@ private struct DiscographyView: View {
         VStack(alignment: .leading, spacing: 32) {
           if let artist = model.artist, let discography = model.discography {
             hero(artist, discography)
-            if let notice = discography.notice { Text(notice).font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 20) }
+            if let notice = discography.notice { Text(notice).font(.sans(.footnote)).foregroundStyle(.secondary).padding(.horizontal, 20) }
             ForEach(discography.groups) { group in
               VStack(alignment: .leading, spacing: 0) {
                 SectionHeader(title: group.title, kicker: group.kicker)
@@ -46,8 +46,8 @@ private struct DiscographyView: View {
             }
             if let failure = artist.discographyError {
               VStack(alignment: .leading, spacing: 8) {
-                Text("Couldn’t load the discography from MusicBrainz right now.").font(.subheadline).foregroundStyle(.secondary)
-                Text(failure).font(.caption.monospaced()).foregroundStyle(.secondary)
+                Text("Couldn’t load the discography from MusicBrainz right now.").font(.sans(.subheadline)).foregroundStyle(.secondary)
+                Text(failure).font(.mono(.caption)).foregroundStyle(.secondary)
                 TryAgainButton(busy: model.loading) { Task { await model.load(again: true) } }
               }
               .padding(.horizontal, 20)
@@ -86,7 +86,7 @@ private struct DiscographyView: View {
   private func hero(_ artist: DiscoverArtistDetail, _ discography: Discography) -> some View {
     VStack(alignment: .leading, spacing: 12) {
       Kicker(text: artist.genres.isEmpty ? (artist.disambiguation ?? "Artist") : artist.genres.joined(separator: " · "))
-      Text(artist.name).font(.system(.largeTitle, design: .serif, weight: .bold)).accessibilityAddTraits(.isHeader)
+      Text(artist.name).font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
       HStack(spacing: 16) {
         Text(discography.summary)
         if let id = artist.artistId {
@@ -94,10 +94,10 @@ private struct DiscographyView: View {
             .foregroundStyle(.tint)
         }
       }
-      .font(.caption.monospaced())
+      .font(.mono(.caption))
       .foregroundStyle(.secondary)
       if let overview = artist.overview {
-        Text(overview).font(.callout).foregroundStyle(.secondary).lineLimit(bioOpen ? nil : 3)
+        Text(overview).font(.sans(.callout)).foregroundStyle(.secondary).lineLimit(bioOpen ? nil : 3)
         Button { bioOpen.toggle() } label: { Kicker(text: bioOpen ? "Less" : "Read more") }
       }
     }

@@ -31,7 +31,7 @@ public struct NotInLibrarySection: View {
       VStack(alignment: .leading, spacing: 0) {
         SectionHeader(title: "Not in your library")
         VStack(alignment: .leading, spacing: 12) {
-          Text("Couldn’t load the rest of this artist’s albums from MusicBrainz right now.").font(.footnote).foregroundStyle(.secondary)
+          Text("Couldn’t load the rest of this artist’s albums from MusicBrainz right now.").font(.sans(.footnote)).foregroundStyle(.secondary)
           TryAgainButton(busy: loading) { context?.invalidate([.discoverArtist]) }
         }
         .padding(.horizontal, 20)

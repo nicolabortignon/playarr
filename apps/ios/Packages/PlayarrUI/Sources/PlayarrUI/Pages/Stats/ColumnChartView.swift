@@ -15,7 +15,7 @@ struct ColumnChartView: View {
         Kicker(text: chart.title)
         Spacer()
         if let caption = chart.caption(selected: selected) {
-          Text(caption).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+          Text(caption).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
         }
       }
       Chart(chart.columns) { column in
@@ -27,7 +27,7 @@ struct ColumnChartView: View {
       .chartXAxis {
         AxisMarks(values: chart.columns.filter(\.tick).map(\.id)) { value in
           AxisValueLabel {
-            if let id = value.as(Int.self) { Text(chart.columns[id].label).font(.caption2.monospaced()) }
+            if let id = value.as(Int.self) { Text(chart.columns[id].label).font(.mono(.caption2)) }
           }
         }
       }

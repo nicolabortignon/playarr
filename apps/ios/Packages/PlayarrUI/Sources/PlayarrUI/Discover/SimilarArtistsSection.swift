@@ -19,7 +19,7 @@ public struct SimilarArtistsSection: View {
       if failed {
         VStack(alignment: .leading, spacing: 0) {
           SectionHeader(title: "Similar artists", kicker: SimilarArtistGroups.kicker)
-          Text(SimilarArtistGroups.failed).font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 20)
+          Text(SimilarArtistGroups.failed).font(.sans(.subheadline)).foregroundStyle(.secondary).padding(.horizontal, 20)
         }
       } else if let artists {
         ForEach(SimilarArtistGroups.make(artists), id: \.title) { group in

@@ -19,7 +19,7 @@ public struct OfflineMark: View {
         .accessibilityLabel("Downloading, \(Int((active.fraction * 100).rounded()))%")
     } else if store.isKept(fileId) {
       Image(systemName: "arrow.down.circle.fill")
-        .font(.caption)
+        .font(.sans(.caption))
         .foregroundStyle(.tint.opacity(0.8))
         .accessibilityLabel("On this device")
     }

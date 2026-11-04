@@ -37,11 +37,11 @@ private struct DiscoverResultsView: View {
       VStack(alignment: .leading, spacing: 6) {
         Kicker(text: "Lidarr · MusicBrainz · Deezer")
         HStack(spacing: 10) {
-          Text("Not in your library").font(.largeTitle.weight(.semibold)).accessibilityAddTraits(.isHeader)
+          Text("Not in your library").font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
           if model.fetching { Circle().fill(.tint).frame(width: 8, height: 8).accessibilityLabel("Searching") }
         }
         Text("Request an album and Lidarr will search your indexers for it. It shows up here when it’s ready.")
-          .font(.footnote).foregroundStyle(.secondary)
+          .font(.sans(.footnote)).foregroundStyle(.secondary)
       }
       .padding(.horizontal, 20)
       if model.loading {
@@ -49,10 +49,10 @@ private struct DiscoverResultsView: View {
           .padding(.horizontal, 20)
       }
       if let error = model.error, model.results == nil {
-        Text(error).font(.footnote).foregroundStyle(.red).padding(.horizontal, 20)
+        Text(error).font(.sans(.footnote)).foregroundStyle(.red).padding(.horizontal, 20)
       }
       if model.nothing {
-        Text("Nothing found for “\(model.answered)”.").font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 20)
+        Text("Nothing found for “\(model.answered)”.").font(.sans(.footnote)).foregroundStyle(.secondary).padding(.horizontal, 20)
       }
       if !model.tracks.isEmpty {
         VStack(alignment: .leading, spacing: 0) {

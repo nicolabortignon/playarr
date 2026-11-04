@@ -14,7 +14,7 @@ struct Pill<Label: View>: View {
 
   var body: some View {
     label
-      .font(.system(size: small ? 10 : 11, weight: .medium, design: .monospaced))
+      .font(.mono(size: small ? 10 : 11, weight: .medium))
       .textCase(.uppercase)
       .tracking(0.8)
       .lineLimit(1)

@@ -33,7 +33,7 @@ struct DiscoverAlbumCard: View {
             .overlay(alignment: .topLeading) {
               if album.availability.state != .available {
                 Text(kind.uppercased())
-                  .font(.system(size: 9, design: .monospaced)).tracking(1.5)
+                  .font(.mono(size: 9)).tracking(1.5)
                   .padding(.horizontal, 6).padding(.vertical, 2)
                   .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 3))
                   .padding(8)
@@ -43,8 +43,8 @@ struct DiscoverAlbumCard: View {
               if highlighted { RoundedRectangle(cornerRadius: 4).strokeBorder(.tint, lineWidth: 2).padding(-4) }
             }
           VStack(alignment: .leading, spacing: 2) {
-            Text(album.title).font(.subheadline).lineLimit(1)
-            Text(byline).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            Text(album.title).font(.sans(.subheadline)).lineLimit(1)
+            Text(byline).font(.sans(.footnote)).foregroundStyle(.secondary).lineLimit(1)
           }
         }
       }

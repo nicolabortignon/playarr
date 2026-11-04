@@ -75,7 +75,7 @@ public struct StatsForNerdsOverlay: View {
             ForEach(NerdStats.groups(input)) { group in
               VStack(alignment: .leading, spacing: 2) {
                 Text(group.title.uppercased())
-                  .font(.system(size: 9.5, design: .monospaced))
+                  .font(.mono(size: 9.5))
                   .tracking(2)
                   .foregroundStyle(Color.accentColor)
                 Grid(alignment: .topLeading, horizontalSpacing: 8, verticalSpacing: 1) {
@@ -94,7 +94,7 @@ public struct StatsForNerdsOverlay: View {
         .frame(maxHeight: 520)
       }
     }
-    .font(.system(size: 11, design: .monospaced).monospacedDigit())
+    .font(.mono(size: 11).monospacedDigit())
     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
     .overlay(RoundedRectangle(cornerRadius: 10).stroke(.primary.opacity(0.1)))
     .shadow(radius: 20)
@@ -105,7 +105,7 @@ public struct StatsForNerdsOverlay: View {
   private func header(summary: String, beat: Int?) -> some View {
     HStack(spacing: 8) {
       Text("Stats for nerds".uppercased())
-        .font(.system(size: 10, design: .monospaced))
+        .font(.mono(size: 10))
         .tracking(2)
         .lineLimit(1)
         .fixedSize()
@@ -193,7 +193,7 @@ struct PhraseEnergyStrip: View {
         Label(strip.introLabel, systemImage: "line.diagonal").labelStyle(.titleOnly).foregroundStyle(.cyan)
         Label(strip.outroLabel, systemImage: "line.diagonal").labelStyle(.titleOnly).foregroundStyle(.pink)
       }
-      .font(.system(size: 10, design: .monospaced))
+      .font(.mono(size: 10))
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Phrase energy, now \(strip.energyNow); \(strip.introLabel); \(strip.outroLabel)")

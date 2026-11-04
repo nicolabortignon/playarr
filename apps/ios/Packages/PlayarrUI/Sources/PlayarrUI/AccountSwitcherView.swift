@@ -22,7 +22,7 @@ struct AccountSwitcherView: View {
                                 HStack {
                                     VStack(alignment: .leading) {
                                         Text(record.account.name)
-                                        Text(record.signedIn ? "@\(record.account.username)" : "Signed out").font(.caption).foregroundStyle(.secondary)
+                                        Text(record.signedIn ? "@\(record.account.username)" : "Signed out").font(.sans(.caption)).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                     if record.key == model.store.active { Image(systemName: "checkmark") }

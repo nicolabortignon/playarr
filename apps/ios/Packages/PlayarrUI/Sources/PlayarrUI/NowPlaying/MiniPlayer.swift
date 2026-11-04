@@ -15,8 +15,8 @@ struct MiniPlayer: View {
           HStack(spacing: 12) {
             Cover(path: track.coverUrl, points: 36, label: track.albumTitle, corner: 6).frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 0) {
-              Text(track.title).font(.subheadline).lineLimit(1)
-              Text(track.artistName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+              Text(track.title).font(.sans(.subheadline)).lineLimit(1)
+              Text(track.artistName).font(.sans(.caption)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
           }

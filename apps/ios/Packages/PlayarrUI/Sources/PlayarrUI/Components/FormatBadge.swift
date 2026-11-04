@@ -16,7 +16,7 @@ struct FormatBadge: View {
         if format?.lossless == true { Circle().fill(color).frame(width: 4, height: 4) }
         Text(text.uppercased())
       }
-      .font(.caption2.monospaced())
+      .font(.mono(.caption2))
       .foregroundStyle(color)
       .padding(.horizontal, 5)
       .padding(.vertical, 1)

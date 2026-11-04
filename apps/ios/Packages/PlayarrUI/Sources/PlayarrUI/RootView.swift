@@ -11,6 +11,8 @@ public struct RootView: View {
 
     public var body: some View {
         content
+            // Text without a font of its own is in the web's (Typography).
+            .font(.sans(.body))
             .sheet(item: $model.redeemLink) { link in
                 AddServerFlow(app: model, start: .redeem(link)) { model.redeemLink = nil }
             }

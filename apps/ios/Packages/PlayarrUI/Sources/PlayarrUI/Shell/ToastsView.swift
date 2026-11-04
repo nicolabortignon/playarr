@@ -9,14 +9,14 @@ struct ToastsView: View {
     VStack(spacing: 8) {
       ForEach(center.toasts) { toast in
         HStack(spacing: 12) {
-          Text(toast.message).font(.subheadline)
+          Text(toast.message).font(.sans(.subheadline))
           if let action = toast.action {
             Spacer(minLength: 8)
             Button(action.label) { center.perform(toast) }.foregroundStyle(theme.accent.color)
             Button("Later") { center.dismiss(toast.id) }.foregroundStyle(.secondary)
           }
         }
-        .font(.caption.weight(.semibold))
+        .font(.sans(.caption).weight(.semibold))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.regularMaterial, in: Capsule())

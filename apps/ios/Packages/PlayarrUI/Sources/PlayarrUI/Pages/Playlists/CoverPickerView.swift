@@ -17,7 +17,7 @@ struct CoverPickerView: View {
   var body: some View {
     NavigationStack {
       ScrollView {
-        Text(picker.intro).font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+        Text(picker.intro).font(.sans(.subheadline)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 16) {
           ForEach(CoverPickerModel.styles, id: \.layout) { style in
             let chosen = picker.chosen == style.layout

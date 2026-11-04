@@ -43,7 +43,7 @@ struct AddToPlaylistSheet: View {
               PlaylistCover(cover: playlist.cover, points: 48, name: playlist.name).frame(width: 48, height: 48)
               VStack(alignment: .leading) {
                 Text(playlist.name).lineLimit(1)
-                Text(Format.plural(playlist.trackCount, "song")).font(.caption.monospaced()).foregroundStyle(.secondary)
+                Text(Format.plural(playlist.trackCount, "song")).font(.mono(.caption)).foregroundStyle(.secondary)
               }
               Spacer(minLength: 0)
             }

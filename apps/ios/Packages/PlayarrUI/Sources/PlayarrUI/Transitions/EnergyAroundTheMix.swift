@@ -11,14 +11,14 @@ struct EnergyAroundTheMix: View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .firstTextBaseline) {
         Text("Energy around the mix".uppercased())
-          .font(.caption2.monospaced())
+          .font(.mono(.caption2))
           .tracking(2)
           .foregroundStyle(.secondary)
         Spacer()
         if let picked, strips.indices.contains(picked.strip), strips[picked.strip].phrases.indices.contains(picked.phrase) {
           let phrase = strips[picked.strip].phrases[picked.phrase]
           Text("\(NerdFormat.time(phrase.at)) · \(Int((phrase.energy * 100).rounded()))%")
-            .font(.footnote.monospacedDigit())
+            .font(.sans(.footnote).monospacedDigit())
         }
       }
       ForEach(strips.indices, id: \.self) { i in
@@ -29,7 +29,7 @@ struct EnergyAroundTheMix: View {
             Spacer()
             Text(strip.note).monospacedDigit().foregroundStyle(.tertiary)
           }
-          .font(.caption)
+          .font(.sans(.caption))
           GeometryReader { geo in
             canvas(strip, index: i, size: geo.size)
               .contentShape(Rectangle())
@@ -50,7 +50,7 @@ struct EnergyAroundTheMix: View {
             Text("Energy").gridColumnAlignment(.trailing)
             Text("In the mix").gridColumnAlignment(.trailing)
           }
-          .font(.caption2.monospaced())
+          .font(.mono(.caption2))
           .foregroundStyle(.secondary)
           ForEach(strips.indices, id: \.self) { i in
             ForEach(strips[i].phrases.indices, id: \.self) { k in
@@ -61,12 +61,12 @@ struct EnergyAroundTheMix: View {
                 Text("\(Int((p.energy * 100).rounded()))%")
                 Text(p.inMix ? "Yes" : "")
               }
-              .font(.footnote.monospacedDigit())
+              .font(.sans(.footnote).monospacedDigit())
             }
           }
         }
       }
-      .font(.caption2.monospaced())
+      .font(.mono(.caption2))
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Energy around the mix")

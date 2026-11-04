@@ -39,14 +39,14 @@ public struct TrackMetadataSheet: View {
 
   @ViewBuilder private func content(_ m: TrackMetadata) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(m.title).font(.title3)
-      Text("\(m.artistName) · \(m.albumTitle)").font(.subheadline).foregroundStyle(.secondary)
+      Text(m.title).font(.sans(.title3))
+      Text("\(m.artistName) · \(m.albumTitle)").font(.sans(.subheadline)).foregroundStyle(.secondary)
       if let primary = model.primary { rematch(primary) }
-      if m.pathsHidden { Text(MetadataFormat.rematchHiddenNote).font(.footnote).foregroundStyle(.secondary).padding(.top, 8) }
+      if m.pathsHidden { Text(MetadataFormat.rematchHiddenNote).font(.sans(.footnote)).foregroundStyle(.secondary).padding(.top, 8) }
     }
     section("Song") { rows(MetadataFormat.song(m)) }
     section(m.copies.count == 1 ? "File" : "Files (\(m.copies.count))") {
-      if m.pathsHidden { Text(MetadataFormat.pathsHiddenNote).font(.footnote).foregroundStyle(.secondary) }
+      if m.pathsHidden { Text(MetadataFormat.pathsHiddenNote).font(.sans(.footnote)).foregroundStyle(.secondary) }
       ForEach(m.copies, id: \.fileId) { copyCard($0) }
     }
     if let analysis = m.analysis {
@@ -58,11 +58,11 @@ public struct TrackMetadataSheet: View {
     VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 6) {
         Text(c.source.name)
-        if let location = c.source.location { Text("· \(location)").foregroundStyle(.secondary).font(.footnote) }
+        if let location = c.source.location { Text("· \(location)").foregroundStyle(.secondary).font(.sans(.footnote)) }
         Spacer()
         if c.playing {
           Label("Plays", systemImage: "play.fill")
-            .font(.system(size: 10, design: .monospaced)).textCase(.uppercase)
+            .font(.mono(size: 10)).textCase(.uppercase)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(.tint.opacity(0.15), in: Capsule()).foregroundStyle(.tint)
         }
@@ -71,7 +71,7 @@ public struct TrackMetadataSheet: View {
       if model.offersRematch(for: c) { rematch(c) }
       if let tags = c.tags {
         DisclosureGroup("Tags in the file") { rows(MetadataFormat.tags(tags)).padding(.top, 6) }
-          .font(.system(size: 11, design: .monospaced)).textCase(.uppercase)
+          .font(.mono(size: 11)).textCase(.uppercase)
       }
     }
     .padding(12)
@@ -87,7 +87,7 @@ public struct TrackMetadataSheet: View {
           if busy { ProgressView().controlSize(.mini) } else { Image(systemName: "arrow.clockwise") }
           Text(MetadataFormat.rematchLabel(lidarr: lidarr, busy: busy))
         }
-        .font(.footnote)
+        .font(.sans(.footnote))
         .padding(.horizontal, 14).frame(height: 32)
         .overlay(Capsule().strokeBorder(.separator))
       }
@@ -95,7 +95,7 @@ public struct TrackMetadataSheet: View {
       .disabled(model.rematching != nil)
       if busy && !lidarr { SlowLookup(what: "this album") }
       if let outcome = model.outcomes[c.fileId] {
-        Text(outcome.text).font(.footnote).foregroundStyle(outcome.isError ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+        Text(outcome.text).font(.sans(.footnote)).foregroundStyle(outcome.isError ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
       }
     }
     .padding(.top, 8)
@@ -103,7 +103,7 @@ public struct TrackMetadataSheet: View {
 
   private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text(title).font(.system(size: 11, design: .monospaced)).textCase(.uppercase).tracking(2).foregroundStyle(.secondary)
+      Text(title).font(.mono(size: 11)).textCase(.uppercase).tracking(2).foregroundStyle(.secondary)
         .accessibilityAddTraits(.isHeader)
       content()
     }
@@ -113,8 +113,8 @@ public struct TrackMetadataSheet: View {
     Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {
       ForEach(rows) { row in
         GridRow {
-          Text(row.label).font(.system(size: 11, design: .monospaced)).textCase(.uppercase).foregroundStyle(.secondary)
-          value(row.value).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+          Text(row.label).font(.mono(size: 11)).textCase(.uppercase).foregroundStyle(.secondary)
+          value(row.value).font(.sans(.footnote)).frame(maxWidth: .infinity, alignment: .leading)
         }
       }
     }
@@ -127,13 +127,13 @@ public struct TrackMetadataSheet: View {
     case .musicBrainz(let id, let kind):
       if let url = MetadataFormat.musicBrainzURL(id: id, kind: kind) {
         Link(destination: url) { Label(id, systemImage: "arrow.up.right.square").labelStyle(TrailingIcon()) }
-          .font(.system(size: 12, design: .monospaced))
+          .font(.mono(size: 12))
       } else {
-        Text("\(id) (not on MusicBrainz yet)").font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+        Text("\(id) (not on MusicBrainz yet)").font(.mono(size: 12)).foregroundStyle(.secondary)
       }
     case .path(let path):
       HStack(alignment: .top, spacing: 8) {
-        Text(path).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+        Text(path).font(.mono(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
         Button { Pasteboard.copy(path) } label: { Image(systemName: "doc.on.doc") }
           .buttonStyle(.borderless)
           .accessibilityLabel("Copy path")
@@ -141,7 +141,7 @@ public struct TrackMetadataSheet: View {
     case .meter(let percent):
       HStack(spacing: 8) {
         ProgressView(value: Double(percent), total: 100).frame(width: 128)
-        Text("\(percent)").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+        Text("\(percent)").font(.mono(size: 11)).foregroundStyle(.secondary)
       }
       .accessibilityElement(children: .ignore)
       .accessibilityValue("\(percent) percent")

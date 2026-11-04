@@ -31,7 +31,7 @@ struct FavoritesView: View {
                 item: DownloadItem(key: PinnedDownload.Key.favorites, title: "Favorites", subtitle: "Your favorite songs", href: "/favorites"),
                 tracks: tracks)
               Text("\(Format.plural(tracks.count, "song")) · \(Format.duration(favorites.duration))")
-                .font(.caption.monospaced())
+                .font(.mono(.caption))
                 .foregroundStyle(.secondary)
             }
             LazyVStack(spacing: 0) {
@@ -58,7 +58,7 @@ struct FavoritesView: View {
   private var empty: some View {
     VStack(alignment: .leading, spacing: 12) {
       Image(systemName: "heart").font(.largeTitle).foregroundStyle(.secondary)
-      Text("Nothing hearted yet.").font(.title.weight(.semibold))
+      Text("Nothing hearted yet.").font(.display(.title))
       Text("Tap the heart next to any song: in an album, the queue, the player or Now Playing. It shows up here, on every device.")
         .foregroundStyle(.secondary)
     }

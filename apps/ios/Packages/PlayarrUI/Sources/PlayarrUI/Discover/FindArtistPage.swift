@@ -32,14 +32,14 @@ private struct FindArtistView: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 16) {
             Kicker(text: "Artist")
-            Text(model.name).font(.system(.largeTitle, design: .serif, weight: .bold)).accessibilityAddTraits(.isHeader)
+            Text(model.name).font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
             if let error = model.error {
-              Text(error).font(.footnote).foregroundStyle(.secondary)
+              Text(error).font(.sans(.footnote)).foregroundStyle(.secondary)
               if !model.name.isEmpty {
-                Button("Search for “\(model.name)” instead") { session.router.search(model.name) }.font(.footnote)
+                Button("Search for “\(model.name)” instead") { session.router.search(model.name) }.font(.sans(.footnote))
               }
             } else {
-              Text("Looking them up on MusicBrainz…").font(.caption.monospaced()).foregroundStyle(.secondary)
+              Text("Looking them up on MusicBrainz…").font(.mono(.caption)).foregroundStyle(.secondary)
               SlowLookup(what: "“\(model.name)”")
               Skeleton(aspectRatio: nil, height: 190)
             }

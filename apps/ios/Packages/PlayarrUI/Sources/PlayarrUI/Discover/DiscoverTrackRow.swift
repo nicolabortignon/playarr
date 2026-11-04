@@ -30,13 +30,13 @@ struct DiscoverTrackRow: View {
             ).route)
         }
         .buttonStyle(.plain)
-        .font(.footnote)
+        .font(.sans(.footnote))
         .foregroundStyle(.secondary)
         .lineLimit(1)
       }
       Spacer(minLength: 8)
       if let duration = track.duration {
-        Text(Format.time(duration)).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+        Text(Format.time(duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
       }
       RequestButton(album: track.album, availability: track.availability, small: true)
     }
