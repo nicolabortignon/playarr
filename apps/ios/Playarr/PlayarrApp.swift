@@ -30,9 +30,12 @@ struct PlayarrApp: App {
       // No scroll bars anywhere: every page, list and sheet below inherits this.
       .scrollIndicators(.hidden)
       .onOpenURL { model.open($0) }
+      // A UI test may hand over a session it started on a dev server (AccountsUITests).
+      .task { if ProcessInfo.processInfo.arguments.contains("-UITests") { await model.signInForUITests() } }
   }
 
-  /// UI tests launch with `-UITests` (no servers, nothing kept between runs), plus `-UITestsDemo` to start signed in
+  /// UI tests launch with `-UITests` (no servers, nothing kept between runs; a dev server's session when the test hands
+  /// one over in PLAYARR_UITEST_SERVER and PLAYARR_UITEST_TOKEN), plus `-UITestsDemo` to start signed in
   /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request.
   /// `-UITestsDownloads` (Debug builds) opens Library → Downloads on made-up downloads (`DownloadsDemoView`).
   static func makeModel() -> AppModel {
