@@ -1022,6 +1022,44 @@ public struct LibraryStats: Codable, Hashable, Sendable {
     }
 }
 
+/// An account as Settings → Accounts lists it for admins: with how many songs it has played (skips aside) and how many playlists it has made.
+public struct ListedAccount: Codable, Hashable, Sendable, Identifiable {
+    public var id: Int
+    public var username: String
+    public var name: String
+    public var role: AccountRole
+    public var canRequest: Bool
+    public var sources: [Int]?
+    public var hasPassword: Bool
+    public var plays: Int
+    public var playlists: Int
+
+    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?, hasPassword: Bool, plays: Int, playlists: Int) {
+        self.id = id
+        self.username = username
+        self.name = name
+        self.role = role
+        self.canRequest = canRequest
+        self.sources = sources
+        self.hasPassword = hasPassword
+        self.plays = plays
+        self.playlists = playlists
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(username, forKey: .username)
+        try container.encode(name, forKey: .name)
+        try container.encode(role, forKey: .role)
+        try container.encode(canRequest, forKey: .canRequest)
+        try container.encode(sources, forKey: .sources)
+        try container.encode(hasPassword, forKey: .hasPassword)
+        try container.encode(plays, forKey: .plays)
+        try container.encode(playlists, forKey: .playlists)
+    }
+}
+
 /// Settings → Mixes → ListenBrainz. The token is never sent back.
 public struct ListenBrainzInfo: Codable, Hashable, Sendable {
     /// A token is saved.

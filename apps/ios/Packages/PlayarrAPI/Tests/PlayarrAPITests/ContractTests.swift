@@ -23,7 +23,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("server-info", ServerInfo.self),
         Contract("auth-sign-in", SignInResponse.self),
         Contract("auth-me", Account.self),
-        Contract("accounts", [Account].self),
+        Contract("accounts", [ListedAccount].self),
         Contract("account-created", CreatedAccount.self),
         Contract("setup-code", SetupCode.self),
         Contract("sessions", [SessionInfo].self),

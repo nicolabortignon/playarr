@@ -6,7 +6,9 @@
     "role": "admin",
     "canRequest": true,
     "sources": null,
-    "hasPassword": true
+    "hasPassword": true,
+    "plays": 0,
+    "playlists": 0
   },
   {
     "id": 2,
@@ -15,7 +17,9 @@
     "role": "member",
     "canRequest": false,
     "sources": null,
-    "hasPassword": true
+    "hasPassword": true,
+    "plays": 0,
+    "playlists": 0
   },
   {
     "id": 3,
@@ -26,6 +30,8 @@
     "sources": [
       1
     ],
-    "hasPassword": false
+    "hasPassword": false,
+    "plays": 0,
+    "playlists": 0
   }
 ]

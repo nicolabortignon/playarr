@@ -68,6 +68,9 @@ public struct AccountsPanel: View {
               if account.id == me.id { Text("you").font(.footnote).foregroundStyle(.secondary) }
             }
             Text(model.summary(account)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            if let activity = model.activityText(account) {
+              Text(activity).font(.caption).foregroundStyle(.secondary)
+            }
           }
         }
       }

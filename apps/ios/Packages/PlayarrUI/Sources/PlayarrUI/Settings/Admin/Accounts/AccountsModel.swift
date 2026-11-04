@@ -17,6 +17,8 @@ public final class AccountsModel {
   public private(set) var me: Account?
   /// Every account (admins only).
   public private(set) var accounts: [Account]?
+  /// How many songs each account has played and playlists it has made, by account id (admins only).
+  public private(set) var activity: [Int: ListedAccount] = [:]
   /// For the library picker and the accounts' summaries (admins only).
   public private(set) var sources: [SourceInfo] = []
   public private(set) var sessions: [Int: [SessionInfo]] = [:]
@@ -58,7 +60,7 @@ public final class AccountsModel {
       loadError = nil
       await loadSessions(of: me.id)
       if me.role == .admin {
-        accounts = try await api.send(API.Accounts.list())
+        listed(try await api.send(API.Accounts.list()))
         sources = (try? await api.send(API.Settings.sources()))?.sources ?? []
       }
     } catch {
@@ -142,7 +144,7 @@ public final class AccountsModel {
 
   /// After the question. Removing yourself signs you out here.
   public func remove(_ account: Account) async {
-    let removed = await act { accounts = try await api.send(API.Accounts.delete(id: account.id)) }
+    let removed = await act { listed(try await api.send(API.Accounts.delete(id: account.id))) }
     if removed, account.id == me?.id { await signOutHere() }
   }
 
@@ -163,10 +165,21 @@ public final class AccountsModel {
       .joined(separator: " · ")
   }
 
+  /// "1,234 songs played · 3 playlists", once the list has come.
+  public func activityText(_ account: Account) -> String? {
+    guard let counts = activity[account.id] else { return nil }
+    return "\(AdminText.count(counts.plays)) \(counts.plays == 1 ? "song" : "songs") played · \(AdminText.plural(counts.playlists, "playlist"))"
+  }
+
   /// "Give them this code or link: …. It works once, until 10 November."
   public static func setupText(_ setup: SetupCode) -> String {
     let until = AdminText.date(setup.expiresAt).map { $0.formatted(.dateTime.day().month(.wide)) } ?? setup.expiresAt
     return "Give them this code or link: they choose their own password with it. It works once, until \(until)."
+  }
+
+  private func listed(_ list: [ListedAccount]) {
+    accounts = list.map(\.account)
+    activity = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
   }
 
   private func replace(_ account: Account) {

@@ -1,7 +1,8 @@
 extension API {
     /// Settings → Accounts (admin; an account may rename itself and see its own sessions).
     public enum Accounts {
-        public static func list() -> Endpoint<[Account]> { Endpoint(.get, "/api/accounts") }
+        /// Everyone, with how many songs each has played and playlists each has made.
+        public static func list() -> Endpoint<[ListedAccount]> { Endpoint(.get, "/api/accounts") }
 
         /// A new account and its one-time setup code. `sources` nil: every source.
         public static func create(username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?) -> Endpoint<CreatedAccount> {
@@ -11,7 +12,7 @@ extension API {
         public static func update(id: Int, _ patch: AccountPatch) -> Endpoint<Account> { Endpoint(.patch, "/api/accounts/\(id)", body: patch) }
 
         /// The accounts left (the last admin can't be deleted).
-        public static func delete(id: Int) -> Endpoint<[Account]> { Endpoint(.delete, "/api/accounts/\(id)") }
+        public static func delete(id: Int) -> Endpoint<[ListedAccount]> { Endpoint(.delete, "/api/accounts/\(id)") }
 
         /// A new setup code; every session of the account is signed out.
         public static func reset(id: Int) -> Endpoint<SetupCode> { Endpoint(.post, "/api/accounts/\(id)/reset") }
@@ -57,5 +58,12 @@ public struct AccountPatch: Encodable, Sendable, Equatable {
         self.role = role
         self.canRequest = canRequest
         self.sources = sources
+    }
+}
+
+extension ListedAccount {
+    /// The account without its counts.
+    public var account: Account {
+        Account(id: id, username: username, name: name, role: role, canRequest: canRequest, sources: sources, hasPassword: hasPassword)
     }
 }

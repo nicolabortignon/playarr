@@ -12,10 +12,17 @@ import Testing
   static let phone = SessionInfo(id: 7, device: "iPhone", platform: "ios", createdAt: "2026-11-03T10:00:00Z", lastSeenAt: "2026-11-03T11:00:00Z", current: true)
   static let ipad = SessionInfo(id: 8, device: "Playarr on iPad", platform: "ipados", createdAt: "2026-11-02T10:00:00Z", lastSeenAt: "2026-11-02T11:00:00Z", current: false)
 
+  /// An account as the admin list answers it, with its counts.
+  static func listed(_ account: Account, plays: Int = 0, playlists: Int = 0) -> ListedAccount {
+    ListedAccount(
+      id: account.id, username: account.username, name: account.name, role: account.role, canRequest: account.canRequest,
+      sources: account.sources, hasPassword: account.hasPassword, plays: plays, playlists: playlists)
+  }
+
   func signedIn(as me: Account) {
     api.on(.get, "/api/auth/me", me)
     api.on(.get, "/api/accounts/\(me.id)/sessions", [Self.phone, Self.ipad])
-    api.on(.get, "/api/accounts", [Self.nicola, Self.sam])
+    api.on(.get, "/api/accounts", [Self.listed(Self.nicola, plays: 1234, playlists: 3), Self.listed(Self.sam, plays: 1)])
     api.on(.get, "/api/settings/sources", Samples.sources([Samples.lidarr(), Self.creativeCommons]))
   }
 
@@ -126,7 +133,9 @@ import Testing
     let model = AccountsModel(api: api)
     await model.load()
     #expect(!model.canRemove(Self.nicola) && model.canRemove(Self.sam))
-    api.on(.delete, "/api/accounts/2", [Self.nicola])
+    #expect(model.activityText(Self.nicola) == "1,234 songs played · 3 playlists")
+    #expect(model.activityText(Self.sam) == "1 song played · 0 playlists")
+    api.on(.delete, "/api/accounts/2", [Self.listed(Self.nicola)])
     await model.remove(Self.sam)
     #expect(model.accounts == [Self.nicola])
     #expect(model.removeTitle(Self.sam) == "Remove Sam?")
@@ -136,11 +145,11 @@ import Testing
     var nicola2 = Self.nicola
     nicola2.id = 5
     signedIn(as: nicola2)
-    api.on(.get, "/api/accounts", [Self.nicola, nicola2])
+    api.on(.get, "/api/accounts", [Self.listed(Self.nicola), Self.listed(nicola2)])
     var signedOut = false
     let model = AccountsModel(api: api, signOutHere: { signedOut = true })
     await model.load()
-    api.on(.delete, "/api/accounts/5", [Self.nicola])
+    api.on(.delete, "/api/accounts/5", [Self.listed(Self.nicola)])
     await model.remove(nicola2)
     #expect(signedOut)
   }

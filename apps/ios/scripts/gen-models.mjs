@@ -31,7 +31,7 @@ const INTEGERS = new Set([
   'albums', 'albumsComplete', 'albumsIncomplete', 'albumsUnknown', 'analyzed', 'artists', 'audioFiles', 'background', 'batchId', 'beatModel', 'bits', 'channels',
   'days', 'decadeMixes', 'disc', 'discNumber', 'earlier', 'era', 'failed', 'files', 'freeSpace', 'genreMixes',
   'have', 'hour', 'ignored', 'lastCheck', 'lastUpdate', 'longestStreak', 'loudnessWaiting', 'loudnessWorking', 'matches',
-  'matched', 'matching', 'moved', 'newArtists', 'pending', 'plays', 'port', 'position', 'profile', 'queued', 'ready',
+  'matched', 'matching', 'moved', 'newArtists', 'pending', 'plays', 'playlists', 'port', 'position', 'profile', 'queued', 'ready',
   'recorded', 'restored', 'review', 'sampleRate', 'sent', 'size', 'sizeBytes', 'songs', 'songsComplete', 'songsIncomplete', 'songsUnknown', 'sources',
   'tagsWaiting', 'total', 'trackNumber', 'trackTotal', 'tracks', 'variant', 'version', 'waiting', 'weekday',
   'working', 'year', 'years',
