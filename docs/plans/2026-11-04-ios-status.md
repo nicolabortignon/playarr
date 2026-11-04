@@ -20,8 +20,8 @@ Notes for picking the iOS work up again. The plans are in this folder:
 | 7 | Offline downloads | Code done (Tasks 0–21 committed). Hands-on checks still open, see below. |
 | 8 | Discover, requests, Show metadata, Edit mix points | Done. |
 | 9 | Admin settings (Sources, Mixes, Analysis, Requests, Updates, Accounts) | Done (2026-11-04), on TestFlight. Beyond the plan: Sources counts as the web now does (complete/incomplete/unidentified, matched/not matched/left as tagged), members see the mix settings read-only, Everyone shows songs played and playlists made, and an admin can lock Playback or Appearance per member. The on-phone checklist (plan Task 19, step 2) is still open. |
-| 10 | iPad split view, keyboard shortcuts, drag and drop, accessibility, icons, App Intents | **Not started.** The plan is written. |
-| 11 | App Store (store text, privacy page, screenshots, `ios:release`) | **Not started.** The plan is written. There's no `apps/ios/store/` yet and no `ios:release` script. |
+| 10 | iPad split view, keyboard shortcuts, drag and drop, accessibility, icons, App Intents | Done (2026-11-04), with Now Playing held sideways on the iPhone (`2026-11-04-ios-now-playing-landscape.md`). The device checklist (plan Task 26) is open, see below. |
+| 11 | App Store (store text, privacy page, screenshots, `ios:release`) | Tooling in (Tasks 2 and 4–11): the listing in `apps/ios/store/`, `store.mjs`, `appstore.mjs`, `release.mjs release`/`check-store`, `make screenshots`, the `StoreScreenshots` UI test. Waiting on the user's Task 1 answers (developer name, demo server and account, support email, the Creative Commons albums folder, the `.env` lines); Task 3's pages need the support email. |
 
 Work done outside the phase plans, all on main:
 - `pnpm ios:crashes` lists new TestFlight crash reports and saves their logs to `apps/ios/build/crashes/`.
@@ -59,9 +59,19 @@ Where phase 7 differs from its plan:
 - An album download keeps the albums list under the key `["albums", "artist"]` (the plan assumed `["albums"]`).
 - Now Playing has no up-next list, so the offline mark is on song rows and both kinds of queue row only.
 
+## Phase 10 and sideways Now Playing: what's left
+
+The code and UI tests are in, and both simulators pass the accessibility audits. These need a real iPad or iPhone (plan Task 26 has the full list):
+- Escape closes Now Playing with a hardware keyboard. The simulator doesn't deliver it.
+- Coming back where you were after iOS closes the app in the background. `testComesBackWhereItWas` only runs with `PLAYARR_RESTORE=1`, because XCTest's terminate on the simulator doesn't keep `@SceneStorage`.
+- Narrow windows (Split View, Slide Over, Stage Manager), the pointer's highlight, drag onto the sidebar and VoiceOver's rotor.
+- Siri, Shortcuts and the Action button for the three App Intents.
+- Haptics, Bold Text and the icon's dark and tinted versions.
+- On the iPhone, sideways: turning the phone opens Now Playing, Portrait Orientation Lock stops that, the screen stays on in a stand while charging, and the stage starts after 12 s untouched.
+
 ## Next up
 
-- Phase 10 (iPad and polish), then phase 11 (App Store).
+- Phase 11 from Task 1 (the user's decisions), then Task 3 (pages), 12 (screenshots), 13 (CI secrets), 14 (dry run), 15 and 16.
 - Phase 9 differs from its plan: the panels are `SettingsPanel` cases shown by `SettingsPanelView` (no `AdminPanel` enum), and the MusicBrainz queue reuses phase 8's `MusicBrainzIndicator`.
 
 ## How to work on it
