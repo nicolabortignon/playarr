@@ -5,6 +5,8 @@ import SwiftUI
 /// Home (apps/web/src/pages/Home.tsx), every section in the web's order.
 struct HomeView: View {
   @State private var model: HomeModel
+  /// Feeling lucky is picking its songs.
+  @State private var picking = false
   @Environment(Theme.self) private var theme
   @Environment(AccountSession.self) private var session
 
@@ -48,15 +50,30 @@ struct HomeView: View {
         .redacted(reason: model.libraryLine == nil ? .placeholder : [])
       // Side by side on one line: a long song title is cut short rather than pushing Resume onto the next.
       HStack(spacing: 12) {
-        Button { Task { await model.shuffleEverything() } } label: {
-          Label("Shuffle all", systemImage: "shuffle").padding(.horizontal, 6).padding(.vertical, 6)
+        Button {
+          Task {
+            picking = true
+            await model.feelingLucky()
+            picking = false
+          }
+        } label: {
+          // The sparkle turns while the songs are picked.
+          Label {
+            Text("Feeling lucky")
+          } icon: {
+            Image(systemName: "sparkles").symbolEffect(.rotate, options: .repeat(.continuous), isActive: picking)
+          }
+          .padding(.horizontal, 6).padding(.vertical, 6)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
         .tint(theme.accent.color)
         .foregroundStyle(.black)
         .fixedSize()
-        .accessibilityLabel("Shuffle all")
+        .disabled(picking)
+        .accessibilityLabel("Feeling lucky")
+        .accessibilityHint("Plays 15 songs picked for this hour, new every time")
+        .sensoryFeedback(.success, trigger: picking) { wasPicking, nowPicking in wasPicking && !nowPicking }
         if let track = model.listening { ListeningButton(track: track, playing: model.isPlaying, player: session.player) { model.togglePlay() } }
       }
     }
@@ -163,7 +180,7 @@ struct HomeView: View {
   }
 }
 
-/// The listening session, beside Shuffle all: paused, "Resume" and the song's title beside its cover with a play sign;
+/// The listening session, beside Feeling lucky: paused, "Resume" and the song's title beside its cover with a play sign;
 /// playing, just the cover, round, ringed by how far into the song it is, with a pause sign. It draws in and out between
 /// the two (apps/web/src/pages/Home.tsx ListeningButton).
 private struct ListeningButton: View {

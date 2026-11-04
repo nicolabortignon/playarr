@@ -18,6 +18,9 @@ extension API {
             Endpoint(.post, "/api/mixes/\(Endpoint<PlaylistDetail>.segment(key))/save", query: tz(timeZone))
         }
 
+        /// Feeling lucky: 15 songs put together now, from one that suits the hour; a new set every time.
+        public static func lucky(timeZone: TimeZone = .current) -> Endpoint<LuckyMix> { Endpoint(.post, "/api/lucky", query: tz(timeZone)) }
+
         private static func tz(_ zone: TimeZone) -> [URLQueryItem] { [URLQueryItem(name: "tz", value: zone.identifier)] }
     }
 }

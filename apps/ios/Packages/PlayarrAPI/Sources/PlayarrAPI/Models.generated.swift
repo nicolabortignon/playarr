@@ -1238,6 +1238,18 @@ public struct ListeningStats: Codable, Hashable, Sendable {
     }
 }
 
+/// Feeling Lucky: songs put together on the spot from one that suits the hour.
+public struct LuckyMix: Codable, Hashable, Sendable {
+    public var tracks: [Track]
+    /// What the first song was picked for: "Your 9 PM sound", "Evening: warm".
+    public var subtitle: String
+
+    public init(tracks: [Track], subtitle: String) {
+        self.tracks = tracks
+        self.subtitle = subtitle
+    }
+}
+
 /// A song's words: timed lines when known (to follow along), else the text.
 public struct Lyrics: Codable, Hashable, Sendable {
     /// Lines with when they're sung, in seconds.

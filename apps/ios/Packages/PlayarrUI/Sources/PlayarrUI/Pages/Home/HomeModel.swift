@@ -88,11 +88,15 @@ final class HomeModel {
     await rediscover.load()
   }
 
-  /// Shuffle everything: 300 random songs from the library.
-  func shuffleEverything() async {
+  /// Feeling lucky: 15 songs the server puts together now, starting from one that suits the hour; new at every press.
+  func feelingLucky() async {
     do {
-      let tracks = try await session.api.send(API.Library.randomTracks(limit: 300))
-      session.player.play(tracks, source: PlaySource(label: "Your whole library", href: "/albums"), shuffle: true)
+      let lucky = try await session.api.send(API.Mixes.lucky())
+      guard !lucky.tracks.isEmpty else {
+        session.toasts.push("Nothing to play yet: add some music to the library first.")
+        return
+      }
+      session.player.play(lucky.tracks, source: PlaySource(label: "Feeling lucky · \(lucky.subtitle)", href: "/"))
     } catch {
       session.toasts.push(error.localizedDescription, tone: .error)
     }

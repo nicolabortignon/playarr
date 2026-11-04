@@ -70,6 +70,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("transition-straight", TransitionAnswer.self),
         Contract("transition-unavailable", TransitionAnswer.self),
         Contract("radio", [Track].self),
+        Contract("lucky", LuckyMix.self),
         Contract("mix-maps", [String: MixMapEntry].self),
         Contract("cues", CuePoints.self),
         // Mixes and stats

@@ -51,13 +51,13 @@ import Testing
     #expect(model.yearInReview == nil)
   }
 
-  @Test func shufflesTheWholeLibrary() async {
+  @Test func playsWhatFeelingLuckyPutsTogetherInItsOrder() async {
     let session = demoSession()
     let model = HomeModel(session: session)
-    await model.shuffleEverything()
-    #expect(session.player.queue.shuffle)
-    #expect(session.player.queue.queue.count == Demo.tracks.count)
-    #expect(session.player.queue.source == PlaySource(label: "Your whole library", href: "/albums"))
+    await model.feelingLucky()
+    #expect(!session.player.queue.shuffle)
+    #expect(session.player.queue.queue.map(\.id) == Demo.tracks.map(\.id))
+    #expect(session.player.queue.source == PlaySource(label: "Feeling lucky · Evening: warm", href: "/"))
   }
 
   @Test func offersTheSongOfTheSessionToPauseAndResume() {

@@ -116,6 +116,7 @@ public enum Demo {
       (.get, "/api/albums", albums),
       (.get, "/api/albums/random", albums),
       (.get, "/api/tracks/random", tracks),
+      (.post, "/api/lucky", LuckyMix(tracks: tracks, subtitle: "Evening: warm")),
       (.get, "/api/plays/recent-albums", albums),
       (.get, "/api/favorites", [favorite]),
       (.get, "/api/playlists", [playlist]),
