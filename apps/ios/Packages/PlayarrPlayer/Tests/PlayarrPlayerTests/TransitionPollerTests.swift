@@ -6,6 +6,8 @@ import Testing
 
 struct TransitionPollerTests {
   let quick = TransitionPoller.Timing(poll: .milliseconds(1), slowPoll: .milliseconds(3), fastPolls: 5, giveUp: .milliseconds(200))
+  /// Polls as quick, but with all the time a busy CI machine needs to get through them before giving up.
+  let patient = TransitionPoller.Timing(poll: .milliseconds(1), slowPoll: .milliseconds(3), fastPolls: 5, giveUp: .seconds(60))
 
   /// Answers in turn, the last one repeating.
   final class Answers: Sendable {
@@ -20,7 +22,7 @@ struct TransitionPollerTests {
 
   @Test func pollsWhileItRendersAndKeepsTheReadyAnswer() async throws {
     let answers = Answers(Array(repeating: .pending(.init(plan: longPlan)), count: 7) + [.ready(ready(4, 5))])
-    let outcome = try await TransitionPoller(timing: quick).ask { answers.next() }
+    let outcome = try await TransitionPoller(timing: patient).ask { answers.next() }
     #expect(outcome == .ready(ready(4, 5)))
     #expect(answers.asked.withLock { $0 } == 8)
   }
