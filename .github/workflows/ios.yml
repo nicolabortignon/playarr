@@ -43,6 +43,13 @@ jobs:
       - name: Bootstrap
         run: make -C apps/ios bootstrap
 
+      # scripts/mix-fixtures.test.mjs runs the web's mixing rules (apps/web/src/player, @playarr/mix) to check the Swift
+      # fixtures against them: the web's packages, and the ones it uses from the workspace.
+      - name: Install the web's packages
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --filter '@playarr/web...'
+
       - name: Test
         run: make -C apps/ios test
 
