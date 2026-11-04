@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
-import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { nearestEdge, scrollForPoint } from '../lib/shelfScroll';
 import { KeepMounted } from '../lib/viewport';
 
 export function SectionHeader({ title, kicker, to, action }: { title: string; kicker?: string; to?: string; action?: ReactNode }) {
@@ -22,15 +23,28 @@ export function SectionHeader({ title, kicker, to, action }: { title: string; ki
   );
 }
 
-/** Horizontal, snap-scrolling row with arrow buttons on pointer devices, and a thin line under it showing where it's scrolled to. */
+/**
+ * Horizontal row with arrow buttons on pointer devices, and a thin line under it showing where it's scrolled to. It
+ * snaps to cards on touch screens only: with a trackpad, snapping fights the scroll's own momentum. Scrolling past its
+ * ends doesn't swipe the browser back a page.
+ */
 export function Shelf({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const scroll = (dir: 1 | -1) => ref.current?.scrollBy({ left: dir * ref.current.clientWidth * 0.8, behavior: 'smooth' });
+  // Most of a screen along, landing on a card's edge (the row only snaps to cards on touch screens). The row is
+  // positioned, so the cards' offsets are from its start.
+  const scroll = (dir: 1 | -1) => {
+    const row = ref.current;
+    if (!row) return;
+    const pad = parseFloat(getComputedStyle(row).scrollPaddingLeft) || 0;
+    const goal = row.scrollLeft + dir * row.clientWidth * 0.8;
+    const edges = [...row.children].map((card) => (card as HTMLElement).offsetLeft - pad);
+    row.scrollTo({ left: nearestEdge(edges, goal), behavior: 'smooth' });
+  };
   return (
     <div className="group/shelf relative -mx-5 md:-mx-10">
       <div
         ref={ref}
-        className="scrollbar-none flex snap-x snap-mandatory scroll-px-5 gap-4 overflow-x-auto px-5 pb-2 md:scroll-px-10 md:gap-6 md:px-10 overflow-y-hidden"
+        className="scrollbar-none relative flex snap-x snap-mandatory scroll-px-5 gap-4 overflow-x-auto overflow-y-hidden overscroll-x-contain px-5 pb-2 md:scroll-px-10 md:gap-6 md:px-10 pointer-fine:snap-none"
       >
         <KeepMounted value>{children}</KeepMounted>
       </div>
@@ -52,8 +66,8 @@ export function Shelf({ children }: { children: ReactNode }) {
 
 /**
  * In place of a scrollbar: a hairline across most of the row, with a brighter stretch on it for the part in view, which
- * slides along as the row scrolls. Only there when the row is wider than the screen. Moved by hand, not by React, so
- * scrolling doesn't re-render the row.
+ * slides along as the row scrolls. A click anywhere on it glides the row there. Only there when the row is wider than
+ * the screen. Moved by hand, not by React, so scrolling doesn't re-render the row.
  */
 function ScrollIndicator({ target }: { target: RefObject<HTMLDivElement | null> }) {
   const track = useRef<HTMLDivElement>(null);
@@ -96,9 +110,19 @@ function ScrollIndicator({ target }: { target: RefObject<HTMLDivElement | null> 
       cancelAnimationFrame(frame);
     };
   }, [target]);
+  const jump = (e: MouseEvent<HTMLDivElement>) => {
+    const row = target.current;
+    const line = e.currentTarget.firstElementChild!.getBoundingClientRect();
+    if (!row || !line.width) return;
+    const at = (e.clientX - line.left) / line.width;
+    row.scrollTo({ left: scrollForPoint(at, row.clientWidth, row.scrollWidth), behavior: 'smooth' });
+  };
+  // The line is a hairline; the space round it takes the clicks. The arrows and keys scroll the row for everyone else.
   return (
-    <div ref={track} aria-hidden className="invisible relative mx-auto mt-3 h-px w-[90%] bg-paper/10">
-      <div ref={thumb} className="absolute -top-px left-0 h-[3px] rounded-full bg-paper/55 transition-[width] duration-300" />
+    <div ref={track} aria-hidden onClick={jump} className="group/line invisible mx-auto mt-1 w-[90%] cursor-pointer py-2">
+      <div className="relative h-px bg-paper/[0.06] transition-colors group-hover/line:bg-paper/10">
+        <div ref={thumb} className="absolute top-0 left-0 h-px bg-paper/30 transition-[width,background-color] duration-300 group-hover/line:bg-paper/50" />
+      </div>
     </div>
   );
 }
