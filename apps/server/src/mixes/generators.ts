@@ -33,7 +33,8 @@ export interface GeneratedMix {
   title: string;
   subtitle: string;
   description: string;
-  hue: number;
+  /** Only Vibes, Discovery and On Repeat have one of their own (the rest take theirs from `planHues`). */
+  hue?: number;
   trackIds: number[];
   /** The same songs by recording: they survive a song getting a new track id (matched on MusicBrainz). */
   recordingIds?: string[];
@@ -67,6 +68,29 @@ export function planMixes(ctx: MixContext): MixPlan[] {
   return plan;
 }
 
+/**
+ * Each kind of mix owns a stretch of the colour wheel (OKLCH hue), so a shelf of them doesn't repeat a colour: the
+ * fixed mixes the pinks, reds and ambers (one each), genres the greens to azures, decades the blues to violets. Genres
+ * and decades are spread evenly over theirs (decades oldest first), so two of them are never close. Vibes, Discovery
+ * and On Repeat keep a hue of their own, which the apps only show until they've blended the colours of the mix's
+ * first two covers.
+ */
+const FIXED_HUES: Partial<Record<MixKind, number>> = { focus: 338, winddown: 356, energy: 14, blast: 32, deepcuts: 50, onthisday: 68, fresh: 86 };
+const GENRE_HUES = { from: 110, to: 225 };
+const DECADE_HUES = { from: 240, to: 320 };
+const FAMILY_ORDER = Object.keys(FAMILIES) as StyleFamily[];
+
+export function planHues(plan: MixPlan[]): Map<string, number> {
+  const hues = new Map<string, number>();
+  const spread = (entries: MixPlan[], band: { from: number; to: number }) =>
+    entries.forEach((p, i) => hues.set(p.key, Math.round(band.from + ((band.to - band.from) * (i + 0.5)) / entries.length)));
+  for (const p of plan) if (FIXED_HUES[p.kind] !== undefined) hues.set(p.key, FIXED_HUES[p.kind]!);
+  const order = (p: MixPlan) => FAMILY_ORDER.indexOf(p.param as StyleFamily);
+  spread(plan.filter((p) => p.kind === 'genre').sort((a, b) => order(a) - order(b)), GENRE_HUES);
+  spread(plan.filter((p) => p.kind === 'decade').sort((a, b) => Number(a.param) - Number(b.param)), DECADE_HUES);
+  return hues;
+}
+
 /** Make one mix; null when there aren't enough songs for it. `period` and `variant` seed the randomness. */
 export function generateMix(plan: MixPlan, ctx: MixContext, period: string, variant = 0): GeneratedMix | null {
   const rng = new Rng(hash32(`${plan.key}|${period}|${variant}`));
@@ -78,7 +102,7 @@ export function generateMix(plan: MixPlan, ctx: MixContext, period: string, vari
     title: made.title,
     subtitle: made.subtitle,
     description: made.description,
-    hue: made.hue,
+    ...(made.hue === undefined ? {} : { hue: made.hue }),
     trackIds: made.songs.map((s) => s.track.id),
     recordingIds: made.songs.map((s) => s.track.recordingId),
   };
@@ -88,7 +112,7 @@ interface Made {
   title: string;
   subtitle: string;
   description: string;
-  hue: number;
+  hue?: number;
   songs: Song[];
 }
 
@@ -286,7 +310,6 @@ function blast(ctx: MixContext, rng: Rng): Made | null {
     title: 'Blast from the past',
     subtitle: `Not heard for ${daysLabel(settings.blastDays)}`,
     description: `Songs you ${source}: ${artistsLine(songs)}.`,
-    hue: 42,
     songs: flow(songs, rng),
   };
 }
@@ -305,7 +328,6 @@ function deepcuts(ctx: MixContext, rng: Rng): Made | null {
     title: 'Deep cuts',
     subtitle: 'The other songs of artists you love',
     description: `Songs you’ve barely played, by the artists you play most: ${artistsLine(songs)}.`,
-    hue: 300,
     songs: flow(songs, rng),
   };
 }
@@ -328,7 +350,6 @@ function fresh(ctx: MixContext, rng: Rng): Made | null {
     title: 'Fresh arrivals',
     subtitle: 'New in your library',
     description: `A few songs from each album added in the last 30 days that you haven’t played yet: ${artistsLine(songs)}.`,
-    hue: 128,
     songs: flow(songs.slice(0, ctx.settings.length), rng),
   };
 }
@@ -344,7 +365,6 @@ function decade(ctx: MixContext, rng: Rng, param?: string): Made | null {
     title: `The ${decadeName(from)}`,
     subtitle: `Your ${decadeName(from)}, ${from}–${from + 9}`,
     description: `Songs from ${from} to ${from + 9} in your library, leaning towards what you play: ${artistsLine(songs)}.`,
-    hue: DECADE_HUES[(from / 10) % DECADE_HUES.length] ?? 45,
     songs: flow(songs, rng),
   };
 }
@@ -362,7 +382,6 @@ function genre(ctx: MixContext, rng: Rng, param?: string): Made | null {
     title: `${label} mix`,
     subtitle: `Your ${info.label}`,
     description: `${label} from your library, favourites and songs you haven’t heard mixed together: ${artistsLine(songs)}.`,
-    hue: info.hue,
     songs: smooth(songs, rng),
   };
 }
@@ -376,7 +395,6 @@ function energy(ctx: MixContext, rng: Rng): Made | null {
     title: 'Energy boost',
     subtitle: 'Loud, fast, building up',
     description: `Your most intense songs — loud, busy, a strong beat — building as it goes: ${artistsLine(songs)}.`,
-    hue: 8,
     songs: blendOrder([...songs].sort((a, b) => a.energy! - b.energy!), energyStep(MIDDLE_ENERGY)),
   };
 }
@@ -393,7 +411,6 @@ function winddown(ctx: MixContext, rng: Rng): Made | null {
     title: 'Wind down',
     subtitle: 'Calm, soft, slowing down',
     description: `Quiet, gentle songs, settling as it goes: ${artistsLine(songs)}.`,
-    hue: 228,
     songs: blendOrder([...songs].sort((a, b) => (b.energy ?? CALM_ENERGY) - (a.energy ?? CALM_ENERGY)), energyStep(CALM_ENERGY)),
   };
 }
@@ -407,7 +424,6 @@ function focus(ctx: MixContext, rng: Rng): Made | null {
     title: 'Deep focus',
     subtitle: 'Steady, mostly instrumental',
     description: `Steady, mostly instrumental music to work or read to: ${artistsLine(songs)}.`,
-    hue: 196,
     songs: smooth(songs, rng),
   };
 }
@@ -433,7 +449,6 @@ function onthisday(ctx: MixContext, rng: Rng): Made | null {
     title: 'On this day',
     subtitle: years.length ? `Released this week, ${Math.min(...years)}–${Math.max(...years)}` : 'Released this week',
     description: `Songs from albums released this week in years past, oldest first: ${artistsLine(picked)}.`,
-    hue: 88,
     songs: picked,
   };
 }
@@ -691,4 +706,3 @@ function daysLabel(days: number): string {
   return 'a month';
 }
 
-const DECADE_HUES = [20, 45, 75, 140, 190, 230, 270, 310, 345, 0];

@@ -7,7 +7,7 @@ import { hash32, Rng } from '../cover/random.ts';
 import { similarRecordings } from '../discover/listenbrainz.ts';
 import type { Library, LibraryView } from '../library/library.ts';
 import type { Playlists } from '../playlists.ts';
-import { blendOrder, choose, generateMix, luckySeed, planMixes, spread, tempoAndKey, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
+import { blendOrder, choose, generateMix, luckySeed, planHues, planMixes, spread, tempoAndKey, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
 import type { History } from './history.ts';
 import { MIXES_KEY, readMixSettings } from './settings.ts';
 import { buildTaste, familySimilarity, toSong, type Song, type Taste } from './taste.ts';
@@ -129,6 +129,7 @@ export class Mixes {
     await this.ready(account, tz, now);
     const local = localTime(now, tz);
     const plan = this.storedPlan(account)?.plan ?? [];
+    const hues = planHues(plan);
     const rows = this.rows(account);
     const out: MixSummary[] = [];
     for (const p of plan) {
@@ -136,7 +137,7 @@ export class Mixes {
       const mix = row && (JSON.parse(row.data) as Stored).mix;
       if (!row || !mix) continue;
       const tracks = await this.tracksOf(mix, this.view(account));
-      if (tracks.length) out.push(summary(mix, tracks, row, now, local));
+      if (tracks.length) out.push(summary(mix, tracks, row, now, local, hues));
     }
     return out;
   }
@@ -148,7 +149,7 @@ export class Mixes {
     const mix = row && (JSON.parse(row.data) as Stored).mix;
     if (!row || !mix) throw new MixError('This mix isn’t available right now', 404);
     const tracks = await this.tracksOf(mix, this.view(account));
-    return { ...summary(mix, tracks, row, now, localTime(now, tz)), tracks };
+    return { ...summary(mix, tracks, row, now, localTime(now, tz), planHues(this.storedPlan(account)?.plan ?? [])), tracks };
   }
 
   /** Draw the mix again for the same hour, day or week ("New mix"). */
@@ -460,7 +461,7 @@ function periodOf(kind: MixKind, local: LocalTime): string {
 const settingsHash = (s: MixSettings) =>
   hash32(JSON.stringify([s.enabled, s.length, s.adventurous, s.blastDays, s.genreMixes, s.decadeMixes]));
 
-function summary(mix: GeneratedMix, tracks: Track[], row: Row, now: Date, local: LocalTime): MixSummary {
+function summary(mix: GeneratedMix, tracks: Track[], row: Row, now: Date, local: LocalTime, hues: Map<string, number>): MixSummary {
   const covers: string[] = [];
   const albums = new Set<number>();
   for (const t of tracks) {
@@ -478,7 +479,8 @@ function summary(mix: GeneratedMix, tracks: Track[], row: Row, now: Date, local:
     trackCount: tracks.length,
     duration: tracks.reduce((s, t) => s + t.duration, 0),
     covers,
-    hue: mix.hue,
+    // Mixes made before hues came from the plan have one stored.
+    hue: hues.get(mix.key) ?? mix.hue ?? 45,
     generatedAt: row.generated_at,
     refreshesAt: nextBoundary(now, local, CADENCE[mix.kind]).toISOString(),
   };

@@ -2,7 +2,7 @@ import { blendScore, type Camelot } from '@playarr/mix';
 import type { MixSettings, Track } from '@playarr/shared';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../cover/random.ts';
-import { blendable, blendOrder, generateMix, planMixes, type MixContext } from './generators.ts';
+import { blendable, blendOrder, generateMix, planHues, planMixes, type MixContext, type MixPlan } from './generators.ts';
 import type { Play } from './history.ts';
 import { MIX_DEFAULTS } from './settings.ts';
 import { buildTaste, hourProfile, toSong, type Song } from './taste.ts';
@@ -111,6 +111,31 @@ describe('mixes', () => {
     expect(keys).not.toContain('genre-jazz'); // only one genre mix asked for, and techno is what's played
     expect(keys).toContain('decade-1990');
     expect(keys).not.toContain('onthisday');
+  });
+
+  it('gives each kind of mix its own stretch of colours, genres and decades spread evenly over theirs', () => {
+    const plan: MixPlan[] = [
+      { key: 'vibes', kind: 'vibes' },
+      { key: 'energy', kind: 'energy' },
+      { key: 'blast', kind: 'blast' },
+      { key: 'genre-rock', kind: 'genre', param: 'rock' },
+      { key: 'genre-electronic', kind: 'genre', param: 'electronic' },
+      { key: 'decade-2000', kind: 'decade', param: '2000' },
+      { key: 'decade-1970', kind: 'decade', param: '1970' },
+    ];
+    expect(Object.fromEntries(planHues(plan))).toEqual({
+      energy: 14,
+      blast: 32,
+      // In the families' order (electronic before rock), a quarter and three quarters into 110–225.
+      'genre-electronic': 139,
+      'genre-rock': 196,
+      // Oldest first, over 240–320.
+      'decade-1970': 260,
+      'decade-2000': 300,
+    });
+    // One genre alone sits mid-stretch, whichever it is; Vibes keeps a hue of its own.
+    expect(planHues([{ key: 'genre-jazz', kind: 'genre', param: 'jazz' }]).get('genre-jazz')).toBe(168);
+    expect(generateMix({ key: 'genre-rock', kind: 'genre', param: 'rock' }, context(library([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 5, { tags: ['rock'] })), 'p')!.hue).toBeUndefined();
   });
 
   it('is the same for the same period, different for another, and leaves out mixes with too few songs', () => {
