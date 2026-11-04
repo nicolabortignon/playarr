@@ -1,4 +1,5 @@
 import PlayarrPlayer
+import PlayarrUI
 import UIKit
 
 /// The app's side of downloads on the background session: the session is made at launch, so a relaunch for finished
@@ -9,6 +10,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
   func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     _ = URLSessionTransport.background
     return true
+  }
+
+  /// On an iPhone the tab pages stay upright and only Now Playing turns sideways (`OrientationPolicy`).
+  func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+    OrientationPolicy.mask
   }
 
   func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {

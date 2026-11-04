@@ -70,6 +70,10 @@ public final class AppearanceSettings {
   public var formatBadges: Bool { didSet { defaults.set(formatBadges, forKey: Key.formatBadges) } }
   /// "Stats for nerds": the overlay itself comes in phase 5.
   public var statsForNerds: Bool { didSet { defaults.set(statsForNerds, forKey: Key.statsForNerds) } }
+  /// iPhone: turning the phone on its side with a song queued opens Now Playing.
+  public var turnToOpen: Bool { didSet { defaults.set(turnToOpen, forKey: Key.turnToOpen) } }
+  /// iPhone: the screen stays on while Now Playing is sideways and the phone is charging (a phone in a stand).
+  public var keepScreenOnSideways: Bool { didSet { defaults.set(keepScreenOnSideways, forKey: Key.keepScreenOnSideways) } }
 
   @ObservationIgnored private let defaults: UserDefaults
 
@@ -78,6 +82,8 @@ public final class AppearanceSettings {
     static let motion = "appearance.motion"
     static let formatBadges = "appearance.formatBadges"
     static let statsForNerds = "appearance.statsForNerds"
+    static let turnToOpen = "appearance.turnToOpen"
+    static let keepScreenOnSideways = "appearance.keepScreenOnSideways"
   }
 
   public init(defaults: UserDefaults = .standard) {
@@ -86,6 +92,8 @@ public final class AppearanceSettings {
     motion = defaults.string(forKey: Key.motion).flatMap(Motion.init) ?? .system
     formatBadges = defaults.object(forKey: Key.formatBadges) as? Bool ?? true
     statsForNerds = defaults.object(forKey: Key.statsForNerds) as? Bool ?? false
+    turnToOpen = defaults.object(forKey: Key.turnToOpen) as? Bool ?? true
+    keepScreenOnSideways = defaults.object(forKey: Key.keepScreenOnSideways) as? Bool ?? true
   }
 
   /// Whether to keep animations to a minimum, given the device's own setting.

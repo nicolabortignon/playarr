@@ -59,6 +59,18 @@ struct AppShell: View {
         Task { await model.refreshAccount() }
       }
     }
+    #if os(iOS)
+      // Only Now Playing turns sideways on a phone; closing it there turns the window back upright.
+      .onChange(of: router.nowPlaying, initial: true) { _, open in OrientationPolicy.update(nowPlaying: open) }
+      // Turning the phone on its side with a song queued opens Now Playing, straight into the sleeve.
+      .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+        guard UIDevice.current.userInterfaceIdiom == .phone, UIDevice.current.orientation.isLandscape, model.appearance.turnToOpen,
+          !router.nowPlaying, session.player.queue.currentTrack != nil, OrientationPolicy.nothingPresented
+        else { return }
+        router.nowPlaying = true
+      }
+      .onAppear { UIDevice.current.beginGeneratingDeviceOrientationNotifications() }
+    #endif
     // The account's rights changed (may request): Request buttons follow before the next health check.
     .onChange(of: model.store.activeAccount?.account) { _, account in
       if let account, account.id == session.account.id { session.discover.update(account) }

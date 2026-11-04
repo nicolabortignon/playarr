@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+  import UIKit
+#endif
 
 /// Settings → Appearance, for this device (apps/web/src/components/AppearancePanel.tsx); read-only when an admin has
 /// locked it for this account.
@@ -43,6 +46,20 @@ struct AppearancePanel: View {
           Text("The FLAC, MP3 and Hi-Res labels in the player, Now Playing, the queue and on albums.")
         }
       }
+      #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+          Section("Held sideways") {
+            Toggle(isOn: $appearance.turnToOpen) {
+              Text("Turn to open Now Playing")
+              Text("Turning the phone on its side with a song queued opens Now Playing, with the cover beside the songs.")
+            }
+            Toggle(isOn: $appearance.keepScreenOnSideways) {
+              Text("Keep the screen on while charging")
+              Text("While Now Playing is sideways and the phone charges, as in a stand on a desk or in the car.")
+            }
+          }
+        }
+      #endif
       Section("For the curious") {
         Toggle(isOn: $appearance.statsForNerds) {
           Text("Stats for nerds")
