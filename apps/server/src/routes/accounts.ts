@@ -14,6 +14,7 @@ const accountInput = z.object({
   role: z.enum(['admin', 'member']),
   canRequest: z.boolean(),
   sources: z.array(z.number().int().positive()).max(100).nullable(),
+  locked: z.array(z.enum(['playback', 'appearance'])).max(2).optional(),
 });
 const accountPatch = accountInput.partial();
 

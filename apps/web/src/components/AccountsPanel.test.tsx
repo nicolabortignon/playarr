@@ -50,10 +50,11 @@ describe('AccountsPanel', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'App Review' } });
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'reviewer' } });
     fireEvent.click(screen.getByLabelText('Can request albums')); // on by default for new accounts: off
+    fireEvent.click(screen.getByLabelText('Appearance')); // may change Playback on their devices, not Appearance
     fireEvent.click(screen.getByLabelText('Only these sources'));
     fireEvent.click(await screen.findByLabelText('Creative Commons'));
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ username: 'reviewer', name: 'App Review', role: 'member', canRequest: false, sources: [2] }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ username: 'reviewer', name: 'App Review', role: 'member', canRequest: false, sources: [2], locked: ['appearance'] }));
     expect(await screen.findByText('ABCD2345')).toBeTruthy();
     expect((screen.getByLabelText('Setup link') as HTMLInputElement).value).toBe('http://nas:4000/redeem?code=ABCD2345');
   });

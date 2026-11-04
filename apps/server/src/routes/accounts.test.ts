@@ -74,6 +74,16 @@ describe('account routes', () => {
     ]);
   });
 
+  it('lets only an admin lock what a member may change on their devices', async () => {
+    const { app, sam, admin, member, as } = await setup();
+    const locked = await app.inject({ method: 'PATCH', url: `/api/accounts/${sam.id}`, headers: as(admin), payload: { locked: ['playback'] } });
+    expect((locked.json() as Account).locked).toEqual(['playback']);
+    const me = await app.inject({ method: 'PATCH', url: `/api/accounts/${sam.id}`, headers: as(member), payload: { locked: [] } });
+    expect(me.statusCode).toBe(403);
+    const unknown = await app.inject({ method: 'PATCH', url: `/api/accounts/${sam.id}`, headers: as(admin), payload: { locked: ['volume'] } });
+    expect(unknown.statusCode).toBe(400);
+  });
+
   it('lets members change their own name, and nothing else', async () => {
     const { app, sam, member, as } = await setup();
     expect((await app.inject({ method: 'PATCH', url: `/api/accounts/${sam.id}`, headers: as(member), payload: { name: 'Samantha' } })).json()).toMatchObject({ name: 'Samantha' });

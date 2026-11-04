@@ -5,13 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePrefs } from '../lib/prefs';
 import { PlaybackPanel } from './PlaybackPanel';
 
-function view() {
+/** `me`: who's signed in, as /api/auth/me answers (by default nobody in particular, nothing locked). */
+function view(me: object = {}) {
   const asked: string[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
       asked.push(url);
-      return new Response('{}', { headers: { 'content-type': 'application/json' } });
+      return new Response(JSON.stringify(url === '/api/auth/me' ? me : {}), { headers: { 'content-type': 'application/json' } });
     }),
   );
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -53,7 +54,16 @@ describe('PlaybackPanel transitions', () => {
     usePrefs.setState({ transitions: 'dj' });
     const { asked } = view();
     expect(screen.getByRole('link', { name: 'Settings → Analysis' }).getAttribute('href')).toBe('/settings/analysis');
-    expect(asked).toEqual([]);
+    // Only who's signed in (whether an admin has locked Playback), nothing about the analysis.
+    expect(asked).toEqual(['/api/auth/me']);
+  });
+
+  it('is read-only when an admin has locked Playback for this account', async () => {
+    view({ id: 2, username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null, hasPassword: true, locked: ['playback'] });
+    expect(await screen.findByText('Only an admin can change Playback for your account.')).toBeTruthy();
+    expect((screen.getByRole('switch', { name: /Keep playing when the queue ends/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(transitions().getByRole('radio', { name: 'DJ mix' }));
+    expect(usePrefs.getState().transitions).toBe('off');
   });
 
   it('offers DJ mix a fade length, for songs it can’t mix on the beat', () => {

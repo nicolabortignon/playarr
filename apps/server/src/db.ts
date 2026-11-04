@@ -268,6 +268,8 @@ const MIGRATIONS: Migration[] = [
    UPDATE catalog_albums SET added_at = MAX(IFNULL(added_at, ''), (SELECT added_at FROM late_songs WHERE album_id = catalog_albums.id))
    WHERE id IN (SELECT album_id FROM late_songs);
    DROP TABLE late_songs;`,
+  // The device settings (Playback, Appearance) an admin has stopped an account from changing, comma-separated.
+  `ALTER TABLE accounts ADD COLUMN locked TEXT NOT NULL DEFAULT '';`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

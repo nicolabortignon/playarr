@@ -876,6 +876,9 @@ export interface ListeningStats {
 export type AccountRole = 'admin' | 'member';
 
 /** Someone who signs in to this server: their history, mixes, favorites and playlists are their own. */
+/** Settings kept on each device that an admin can stop an account from changing. */
+export type DeviceSetting = 'playback' | 'appearance';
+
 export interface Account {
   id: number;
   username: string;
@@ -884,6 +887,9 @@ export interface Account {
   canRequest: boolean;
   sources: number[] | null; // null = every source
   hasPassword: boolean; // false until set up
+  /** The device settings an admin has stopped this account from changing (never an admin's own). Missing from
+   *  servers older than this field: nothing locked. */
+  locked?: DeviceSetting[];
 }
 
 /** An account as Settings → Accounts lists it for admins: with how many songs it has played (skips aside) and

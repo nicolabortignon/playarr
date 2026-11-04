@@ -38,7 +38,7 @@ describe('auth routes', () => {
     const res = await post('/api/auth/setup', owner);
     expect(res.statusCode).toBe(200);
     const body = res.json() as SignInResponse;
-    expect(body.account).toEqual({ id: 1, username: 'nicola', name: 'Nicola', role: 'admin', canRequest: true, sources: null, hasPassword: true });
+    expect(body.account).toEqual({ id: 1, username: 'nicola', name: 'Nicola', role: 'admin', canRequest: true, sources: null, hasPassword: true, locked: [] });
     expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(accounts.setupMode()).toBe(false);
     expect((await post('/api/auth/setup', owner)).statusCode).toBe(409);

@@ -1,4 +1,4 @@
-import type { Account, AccountRole, ListedAccount } from '@playarr/shared';
+import type { Account, AccountRole, DeviceSetting, ListedAccount } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
 import { listenBrainzKey } from '../listenbrainz/scrobbler.ts';
 import { hashPassword, verifyPassword } from './password.ts';
@@ -20,6 +20,8 @@ export interface AccountInput {
   canRequest: boolean;
   /** null: every source. */
   sources: number[] | null;
+  /** The device settings this account may not change (ignored for admins). */
+  locked?: DeviceSetting[];
 }
 
 interface Row {
@@ -30,9 +32,11 @@ interface Row {
   can_request: number;
   all_sources: number;
   password_hash: string | null;
+  locked: string;
 }
 
-const COLUMNS = 'id, username, name, role, can_request, all_sources, password_hash';
+const COLUMNS = 'id, username, name, role, can_request, all_sources, password_hash, locked';
+const DEVICE_SETTINGS: readonly DeviceSetting[] = ['playback', 'appearance'];
 export const MIN_PASSWORD = 8;
 
 /** Throws unless the password is long enough (and not absurdly long). */
@@ -106,8 +110,8 @@ export class Accounts {
     const sources = this.checkSources(input.sources);
     return this.transaction(() => {
       const { lastInsertRowid } = this.db
-        .prepare('INSERT INTO accounts (username, name, role, can_request, all_sources, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(username, name, input.role, input.canRequest ? 1 : 0, sources === null ? 1 : 0, new Date().toISOString());
+        .prepare('INSERT INTO accounts (username, name, role, can_request, all_sources, locked, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(username, name, input.role, input.canRequest ? 1 : 0, sources === null ? 1 : 0, lockedColumn(input.locked), new Date().toISOString());
       const id = Number(lastInsertRowid);
       this.setSources(id, sources);
       return this.get(id)!;
@@ -123,8 +127,11 @@ export class Accounts {
     if (row.role === 'admin' && role !== 'admin' && this.admins() === 1) throw new AccountError('There has to be an admin', 409);
     const canRequest = patch.canRequest === undefined ? row.can_request : patch.canRequest ? 1 : 0;
     const sources = patch.sources === undefined ? undefined : this.checkSources(patch.sources);
+    const locked = patch.locked === undefined ? row.locked : lockedColumn(patch.locked);
     return this.transaction(() => {
-      this.db.prepare('UPDATE accounts SET username = ?, name = ?, role = ?, can_request = ? WHERE id = ?').run(username, name, role, canRequest, id);
+      this.db
+        .prepare('UPDATE accounts SET username = ?, name = ?, role = ?, can_request = ?, locked = ? WHERE id = ?')
+        .run(username, name, role, canRequest, locked, id);
       if (sources !== undefined) {
         this.db.prepare('UPDATE accounts SET all_sources = ? WHERE id = ?').run(sources === null ? 1 : 0, id);
         this.setSources(id, sources);
@@ -212,6 +219,8 @@ export class Accounts {
       canRequest: !!row.can_request,
       sources,
       hasPassword: row.password_hash !== null,
+      // An admin may change everything, whatever was ticked while they were a member.
+      locked: row.role === 'admin' ? [] : DEVICE_SETTINGS.filter((setting) => row.locked.split(',').includes(setting)),
     };
   }
 
@@ -232,4 +241,9 @@ function cleanName(name: string): string {
   const clean = name.trim().replace(/\s+/g, ' ').slice(0, 40);
   if (!clean) throw new AccountError('An account needs a name');
   return clean;
+}
+
+/** The locked settings as stored: known names, each once, in a fixed order, comma-separated. */
+function lockedColumn(locked: readonly DeviceSetting[] | undefined): string {
+  return DEVICE_SETTINGS.filter((setting) => locked?.includes(setting)).join(',');
 }

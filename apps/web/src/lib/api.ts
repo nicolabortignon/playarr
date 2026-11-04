@@ -14,6 +14,7 @@ import type {
   ArtistMatch,
   CoverLayout,
   CreatedAccount,
+  DeviceSetting,
   DiscoverArtist,
   DiscoverArtistDetail,
   DiscoverResults,
@@ -80,6 +81,8 @@ export interface AccountInput {
   role: AccountRole;
   canRequest: boolean;
   sources: number[] | null;
+  /** The device settings this account may not change (ignored for admins). */
+  locked?: DeviceSetting[];
 }
 
 /** Where a 401 sends the page: to sign in, then back. Replaceable in tests. */

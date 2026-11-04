@@ -14,7 +14,7 @@ const member: AccountInput = { username: 'sam', name: 'Sam', role: 'member', can
 describe('Accounts', () => {
   it('starts with the owner, an admin without a password: setup mode', () => {
     const { accounts } = setup();
-    expect(accounts.list()).toEqual([{ id: 1, username: 'home', name: 'Home', role: 'admin', canRequest: true, sources: null, hasPassword: false }]);
+    expect(accounts.list()).toEqual([{ id: 1, username: 'home', name: 'Home', role: 'admin', canRequest: true, sources: null, hasPassword: false, locked: [] }]);
     expect(accounts.owner().id).toBe(1);
     expect(accounts.ids()).toEqual([1]);
     expect(accounts.setupMode()).toBe(true);
@@ -24,7 +24,7 @@ describe('Accounts', () => {
     const { accounts, store } = setup();
     const cc = store.addSource('folder', 'Creative Commons');
     const sam = accounts.create({ ...member, username: ' Sam ', name: '  Sam   Smith ', sources: [cc] });
-    expect(sam).toEqual({ id: 2, username: 'sam', name: 'Sam Smith', role: 'member', canRequest: false, sources: [cc], hasPassword: false });
+    expect(sam).toEqual({ id: 2, username: 'sam', name: 'Sam Smith', role: 'member', canRequest: false, sources: [cc], hasPassword: false, locked: [] });
     expect(() => accounts.create({ ...member, username: 'SAM' })).toThrow('That username is taken');
     expect(() => accounts.create({ ...member, username: 'no spaces' })).toThrow(/username/);
     expect(() => accounts.create({ ...member, username: 'zoe', name: ' ' })).toThrow('An account needs a name');
@@ -44,6 +44,18 @@ describe('Accounts', () => {
     accounts.remove(1);
     expect(accounts.list().map((a) => a.id)).toEqual([zoe.id]);
     expect(accounts.owner().id).toBe(zoe.id);
+  });
+
+  it('locks the device settings an admin picks, never for an admin', () => {
+    const { accounts } = setup();
+    const sam = accounts.create({ ...member, username: 'sam', locked: ['appearance', 'playback', 'playback'] });
+    expect(sam.locked).toEqual(['playback', 'appearance']);
+    expect(accounts.update(sam.id, { name: 'Sam' }).locked).toEqual(['playback', 'appearance']);
+    expect(accounts.update(sam.id, { locked: ['appearance'] }).locked).toEqual(['appearance']);
+    // Made an admin, nothing is locked; made a member again, the ticks are back.
+    expect(accounts.update(sam.id, { role: 'admin' }).locked).toEqual([]);
+    expect(accounts.update(sam.id, { role: 'member' }).locked).toEqual(['appearance']);
+    expect(accounts.update(sam.id, { locked: [] }).locked).toEqual([]);
   });
 
   it('checks passwords, and leaves setup mode once one is set', async () => {

@@ -4,6 +4,7 @@ import type {
   AlbumSort,
   AvailabilityState,
   CoverLayout,
+  DeviceSetting,
   FavoriteTrack,
   FolderBrowseRequest,
   ListenBrainzInfo,
@@ -784,6 +785,9 @@ export const useMe = () => useQuery({ queryKey: ['me'], queryFn: api.me, retry: 
 
 /** Signed in as a member: the server's settings are shown, but only an admin may change them. */
 export const useIsMember = () => useMe().data?.role === 'member';
+
+/** An admin has stopped this account from changing this device setting (Settings → Accounts). */
+export const useLocked = (setting: DeviceSetting) => useMe().data?.locked?.includes(setting) ?? false;
 
 /** Settings → Accounts, for admins. */
 export const useAccountList = (enabled = true) => useQuery({ queryKey: ['accounts'], queryFn: api.accounts, enabled });

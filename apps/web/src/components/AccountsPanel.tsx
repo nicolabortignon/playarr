@@ -1,4 +1,4 @@
-import type { Account, AccountRole, ListedAccount, SetupCode } from '@playarr/shared';
+import type { Account, AccountRole, DeviceSetting, ListedAccount, SetupCode } from '@playarr/shared';
 import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash2, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -100,10 +100,19 @@ function Devices({ accountId }: { accountId: number }) {
   );
 }
 
-/** "sam · member · can request albums · Creative Commons" */
+/** The device settings an admin can stop a member from changing, as the form names them. */
+const DEVICE_SETTINGS: { setting: DeviceSetting; label: string }[] = [
+  { setting: 'playback', label: 'Playback' },
+  { setting: 'appearance', label: 'Appearance' },
+];
+
+/** "sam · member · can request albums · Creative Commons · Playback locked" */
 function summary(a: Account, sourceNames: Map<number, string>): string {
   const library = a.sources === null ? 'every source' : a.sources.length ? a.sources.map((id) => sourceNames.get(id) ?? `source ${id}`).join(', ') : 'no sources';
-  return [a.username, a.role, a.canRequest ? 'can request albums' : '', library, a.hasPassword ? '' : 'not set up yet'].filter(Boolean).join(' · ');
+  const locked = DEVICE_SETTINGS.filter(({ setting }) => a.locked?.includes(setting)).map(({ label }) => label);
+  return [a.username, a.role, a.canRequest ? 'can request albums' : '', library, locked.length ? `${locked.join(' and ')} locked` : '', a.hasPassword ? '' : 'not set up yet']
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /** "1,234 songs played · 3 playlists" */
@@ -220,10 +229,12 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
   const [canRequest, setCanRequest] = useState(account?.canRequest ?? true);
   const [everySource, setEverySource] = useState(account ? account.sources === null : true);
   const [picked, setPicked] = useState<number[]>(account?.sources ?? []);
+  const [locked, setLocked] = useState<DeviceSetting[]>(account?.locked ?? []);
   const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const allow = (setting: DeviceSetting, may: boolean) => setLocked((l) => (may ? l.filter((x) => x !== setting) : [...l, setting]));
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    onSubmit({ username: username.trim(), name: name.trim(), role, canRequest, sources: everySource ? null : picked });
+    onSubmit({ username: username.trim(), name: name.trim(), role, canRequest, sources: everySource ? null : picked, locked });
   };
   const check = 'size-4 accent-[var(--accent)]';
   return (
@@ -251,6 +262,17 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
         <input type="checkbox" checked={canRequest} onChange={(e) => setCanRequest(e.target.checked)} className={check} />
         Can request albums
       </label>
+      {role === 'member' && (
+        <fieldset className="space-y-2">
+          <legend className="mb-1 text-[13px] text-muted">May change on their devices</legend>
+          {DEVICE_SETTINGS.map(({ setting, label }) => (
+            <label key={setting} className="flex items-center gap-2 text-[15px] text-paper">
+              <input type="checkbox" checked={!locked.includes(setting)} onChange={(e) => allow(setting, e.target.checked)} className={check} />
+              {label}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <fieldset className="space-y-2">
         <legend className="mb-1 text-[13px] text-muted">Library</legend>
         <label className="flex items-center gap-2 text-[15px] text-paper">
