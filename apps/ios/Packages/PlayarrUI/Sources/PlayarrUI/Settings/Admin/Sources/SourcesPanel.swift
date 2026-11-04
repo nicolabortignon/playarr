@@ -102,11 +102,33 @@ public struct SourcesPanel: View {
           if !source.enabled { Text("OFF").font(.caption2.monospaced()).foregroundStyle(.secondary) }
         }
         Text(SourceText.details(source)).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+        if let summary = SourceText.albumSummary(source) {
+          Text(summary.map { "\($0.count) \($0.label)" }.joined(separator: " · "))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("\(source.kind == .folder ? "Songs" : "Albums"): \(summary.map { "\($0.count) \($0.label)" }.joined(separator: ", "))")
+        }
         Text(status.text).font(.caption).foregroundStyle(color(status.tone)).lineLimit(2)
-        if source.kind == .folder, source.review > 0, model.canEdit {
-          Button("\(AdminText.plural(source.review, "album")) to review") { sheet = .review(source.id) }
-            .font(.footnote)
-            .buttonStyle(.borderless)
+        if let matches = SourceText.matchSummary(source) {
+          HStack(spacing: 6) {
+            Text(matches.matched)
+            if let notMatched = matches.notMatched {
+              Text("·").accessibilityHidden(true)
+              if model.canEdit {
+                Button(notMatched) { sheet = .review(source.id) }
+                  .buttonStyle(.borderless)
+                  .accessibilityHint("Match them by hand")
+              } else {
+                Text(notMatched)
+              }
+            }
+            if let leftAsTagged = matches.leftAsTagged {
+              Text("·").accessibilityHidden(true)
+              Text(leftAsTagged)
+            }
+          }
+          .font(.footnote)
+          .foregroundStyle(.secondary)
         }
       }
       Spacer(minLength: 0)

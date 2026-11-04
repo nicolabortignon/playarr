@@ -20,6 +20,19 @@ import Testing
     #expect(SourceText.removeTitle(Samples.lidarr()) == "Remove “Lidarr”?")
   }
 
+  @Test func summarisesAlbumsAndMatchesLikeTheWeb() throws {
+    let lidarr = try #require(SourceText.albumSummary(Samples.lidarr()))
+    #expect(lidarr.map(\.label) == ["Complete Albums", "Incomplete Albums", "Unidentified"])
+    #expect(lidarr.map(\.count) == [80, 15, 5])
+    #expect(SourceText.albumSummary(Samples.folder())?.map(\.label) == ["On complete albums", "On incomplete albums", "Unidentified"])
+    #expect(SourceText.matchSummary(Samples.lidarr()) == nil)
+    #expect(SourceText.matchSummary(Samples.folder()) == nil)
+    let folder = try #require(SourceText.matchSummary(Samples.folder(review: 3, matched: 1, ignored: 2)))
+    #expect(folder.matched == "1 song matched")
+    #expect(folder.notMatched == "3 not matched")
+    #expect(folder.leftAsTagged == "2 left as tagged")
+  }
+
   @Test func pollsQuicklyWhileASourceSyncsAndRefreshesTheLibraryAfter() async {
     var libraryChanges = 0
     let model = SourcesModel(api: api, clock: clock) { libraryChanges += 1 }

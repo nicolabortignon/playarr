@@ -25,6 +25,36 @@ enum SourceText {
     return [place, counts].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
   }
 
+  /// How much of its albums a source has (AlbumSummary): Lidarr counts albums; a folder counts its songs, adding
+  /// up to all of them, its songs not matched yet unidentified. Nil without albums.
+  static func albumSummary(_ source: SourceInfo) -> [(count: Int, label: String)]? {
+    guard source.albums > 0 else { return nil }
+    let counters: [(Int, String, String)] =
+      source.kind == .folder
+      ? [
+        (source.songsComplete, "On complete albums", "On complete albums"),
+        (source.songsIncomplete, "On incomplete albums", "On incomplete albums"),
+        (source.songsUnknown, "Unidentified", "Unidentified"),
+      ]
+      : [
+        (source.albumsComplete, "Complete Album", "Complete Albums"),
+        (source.albumsIncomplete, "Incomplete Album", "Incomplete Albums"),
+        (source.albumsUnknown, "Unidentified", "Unidentified"),
+      ]
+    return counters.map { n, one, many in (n, n == 1 ? one : many) }
+  }
+
+  /// How a folder's songs were matched (MatchSummary): "12 songs matched", "3 not matched" (which opens the
+  /// review) and "2 left as tagged". Nil for Lidarr, or a folder with nothing matched yet.
+  static func matchSummary(_ source: SourceInfo) -> (matched: String, notMatched: String?, leftAsTagged: String?)? {
+    guard source.kind == .folder, source.matched > 0 || source.review > 0 || source.ignored > 0 else { return nil }
+    return (
+      "\(AdminText.plural(source.matched, "song")) matched",
+      source.review > 0 ? "\(source.review) not matched" : nil,
+      source.ignored > 0 ? "\(source.ignored) left as tagged" : nil
+    )
+  }
+
   /// The status line under a source, and its colour.
   static func status(_ source: SourceInfo) -> (text: String, tone: Tone) {
     if source.syncing { return ("Syncing…", .accent) }
