@@ -5,6 +5,7 @@ import SwiftUI
 struct SearchView: View {
   @State private var model: SearchModel
   @Environment(AccountSession.self) private var session
+  @FocusState private var searchFocused: Bool
   @Environment(DiscoverContext.self) private var discover: DiscoverContext?
 
   init(session: AccountSession) {
@@ -28,6 +29,14 @@ struct SearchView: View {
     }
     .navigationTitle("Search")
     .searchable(text: $model.text, prompt: "Artists, albums, tracks")
+    .searchFocused($searchFocused)
+    .task(id: session.router.focusSearch) {
+      // "/" on a keyboard: the cursor goes to the field.
+      if session.router.focusSearch {
+        session.router.focusSearch = false
+        searchFocused = true
+      }
+    }
     .overlay(alignment: .top) { if model.isSearching { ProgressView().padding(.top, 4) } }
     .task { await model.loadSuggestions() }
     .onChange(of: session.router.searchQuery, initial: true) { _, query in

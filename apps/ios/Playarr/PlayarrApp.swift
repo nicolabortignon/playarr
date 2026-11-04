@@ -23,6 +23,8 @@ struct PlayarrApp: App {
         root
       #endif
     }
+    // The keyboard's shortcuts, in the iPad's menu bar and the list shown while ⌘ is held.
+    .commands { PlayarrCommands(model: model) }
   }
 
   private var root: some View {

@@ -1,5 +1,8 @@
 import PlayarrPlayer
 import SwiftUI
+#if canImport(UIKit)
+  import UIKit
+#endif
 
 /// Settings → Playback, for this device (apps/web/src/components/PlaybackPanel.tsx); read-only when an admin has locked
 /// it for this account. The engine can fade on a phone, so Crossfade is offered here, unlike the web on an iPhone.
@@ -57,6 +60,9 @@ struct PlaybackPanel: View {
       if let downloads {
         OfflineStorageSection(store: downloads, openDownloads: openDownloads)
       }
+      #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad { KeyboardShortcutsSection() }
+      #endif
     }
     .navigationTitle("Playback")
   }
