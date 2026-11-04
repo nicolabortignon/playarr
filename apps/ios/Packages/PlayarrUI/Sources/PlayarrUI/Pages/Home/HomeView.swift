@@ -62,11 +62,11 @@ struct HomeView: View {
             picking = false
           }
         } label: {
-          // The sparkle turns while the songs are picked.
+          // The sparkles twinkle in turn while the songs are picked.
           Label {
             Text("Feeling lucky")
           } icon: {
-            Image(systemName: "sparkles").symbolEffect(.rotate, options: .repeat(.continuous), isActive: picking)
+            Twinkle(on: picking)
           }
           .padding(.horizontal, 6).padding(.vertical, 6)
         }
