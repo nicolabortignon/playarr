@@ -26,3 +26,24 @@ enum Samples {
     SourcesResponse(sources: list, canEdit: canEdit)
   }
 }
+
+extension Samples {
+  static func candidate(_ id: String, title: String = "Mezzanine", score: Double = 0.92, detailed: Bool = true) -> ReviewCandidate {
+    ReviewCandidate(
+      releaseId: id, releaseGroupId: "rg-\(id)", title: title, artistName: "Massive Attack", year: 1998,
+      date: detailed ? "1998-04-20" : nil, country: detailed ? "GB" : nil, status: "Official", format: detailed ? "CD" : nil,
+      labels: detailed ? [.init(name: "Virgin", catalogNumber: "WBRCD4")] : nil, detailed: detailed, score: score,
+      tracks: [.init(disc: 1, position: 1, title: "Angel", duration: 379), .init(disc: 1, position: 2, title: "Risingson", duration: 298)],
+      matches: ["01 Angel.flac": 0])
+  }
+
+  static func group(_ key: String, album: String? = "Mezzanine", candidates: [ReviewCandidate]) -> ReviewGroup {
+    ReviewGroup(
+      groupKey: key, artistName: "Massive Attack", albumTitle: album,
+      files: [
+        .init(rel: "01 Angel.flac", title: "Angel", trackNumber: 1, discNumber: 1, duration: 380),
+        .init(rel: "02 Risingson.flac", title: "Risingson", trackNumber: 2, discNumber: 1, duration: 299),
+      ],
+      candidates: candidates)
+  }
+}
