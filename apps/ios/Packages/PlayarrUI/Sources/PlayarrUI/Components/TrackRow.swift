@@ -94,8 +94,8 @@ struct MissingTrackRow: View {
       Spacer()
       Text(Format.time(missing.duration)).font(.sans(.footnote).monospacedDigit())
     }
-    .foregroundStyle(.secondary)
-    .opacity(0.5)
+    // Greyed out, as the web's, but still readable (white at 50% passes 4.5:1 on Playarr's dark).
+    .foregroundStyle(Color.white.opacity(0.5))
     .padding(.vertical, 6)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("\(missing.trackNumber). \(missing.title), not in your library")

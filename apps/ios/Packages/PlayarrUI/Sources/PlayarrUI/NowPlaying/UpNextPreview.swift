@@ -22,7 +22,7 @@ struct UpNextPreview: View {
         HStack {
           Kicker(text: "Up next").accessibilityAddTraits(.isHeader)
           Spacer()
-          Button { session.router.showQueue() } label: { Kicker(text: "Queue").frame(minHeight: 44) }
+          Button { session.router.showQueue() } label: { Kicker(text: "Queue").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
             .buttonStyle(.plain)
             .accessibilityLabel("Open queue")
         }

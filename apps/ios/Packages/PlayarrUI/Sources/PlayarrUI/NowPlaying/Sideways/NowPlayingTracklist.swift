@@ -165,7 +165,7 @@ struct NowPlayingTracklist: View {
 
   private func spoken(_ line: Tracklist.Line) -> String {
     let track = line.track
-    let place = line.state == .played ? "played" : line.number == "1" ? "next" : nil
+    let place = line.state == .played ? "played" : line.orderPos == session.player.queue.pos + 1 ? "next" : nil
     let joined = line.joinBefore == .continues ? "joined to the song before" : nil
     return [line.number.isEmpty ? nil : line.number, track.title, line.showsArtist ? track.artistName : nil, Format.time(track.duration), place, joined]
       .compactMap(\.self).joined(separator: ", ")

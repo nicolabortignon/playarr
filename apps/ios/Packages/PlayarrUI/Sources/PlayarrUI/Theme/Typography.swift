@@ -77,7 +77,16 @@ extension Font {
 
   /// Labels and numbers: DM Mono (regular or medium).
   public static func mono(_ style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
-    .custom(Typography.mono, size: Typography.size(style), relativeTo: style).weight(weight)
+    let font = Font.custom(Typography.mono, size: Typography.size(style), relativeTo: style)
+    // Only when asked: the accessibility audit reads a regular font with a weight applied as not fully following
+    // Dynamic Type.
+    return weight == .regular ? font : font.weight(weight)
+  }
+
+  /// Labels at their own size that still grow with Dynamic Type, as `style` does.
+  public static func mono(size: CGFloat, relativeTo style: Font.TextStyle, weight: Font.Weight = .regular) -> Font {
+    let font = Font.custom(Typography.mono, size: size, relativeTo: style)
+    return weight == .regular ? font : font.weight(weight)
   }
 
   public static func mono(size: CGFloat, weight: Font.Weight = .regular) -> Font {

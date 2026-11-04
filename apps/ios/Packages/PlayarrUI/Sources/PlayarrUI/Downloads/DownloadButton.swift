@@ -50,7 +50,7 @@ public struct DownloadButton: View {
         Image(systemName: icon)
         if phase == .notDownloaded { Text("Download") }
       }
-      .font(.mono(size: small ? 10 : 11, weight: .medium))
+      .font(.mono(size: small ? 10 : 11, relativeTo: .caption2, weight: .medium))
       .textCase(.uppercase)
       .tracking(0.8)
       .lineLimit(1)

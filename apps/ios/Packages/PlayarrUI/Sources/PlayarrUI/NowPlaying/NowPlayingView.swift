@@ -122,6 +122,8 @@ struct NowPlayingView: View {
       Color.black
       Cover(path: track.coverUrl, points: 300).scaleEffect(1.5).blur(radius: 90).opacity(0.55).saturation(1.5)
       RadialGradient(colors: [.clear, .black.opacity(0.5), .black.opacity(0.92)], center: .top, startRadius: 0, endRadius: 700)
+      // A dark wash over it all, so words stay readable over a bright cover.
+      Color.black.opacity(0.3)
     }
     .ignoresSafeArea()
   }

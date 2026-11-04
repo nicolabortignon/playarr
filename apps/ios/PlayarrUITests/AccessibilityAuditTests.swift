@@ -8,8 +8,13 @@ final class AccessibilityAuditTests: XCTestCase {
     continueAfterFailure = true
   }
 
+  /// Every check but the two about text size: at the usual size the audit only predicts how text would grow, and
+  /// reported the sidebar's system-drawn rows as not growing; `testTheLargestTextSize` draws the screens at AX5 and
+  /// measures it.
+  static let screenChecks = XCUIAccessibilityAuditType.all.subtracting([.dynamicType, .textClipped])
+
   @MainActor
-  private func audit(_ app: XCUIApplication, _ screen: String, _ types: XCUIAccessibilityAuditType = .all) throws {
+  private func audit(_ app: XCUIApplication, _ screen: String, _ types: XCUIAccessibilityAuditType = screenChecks) throws {
     try XCTContext.runActivity(named: "Audit: \(screen)") { _ in
       try app.performAccessibilityAudit(for: types) { issue in
         let ignored = AuditExceptions.ignores(issue, in: app)
@@ -155,6 +160,16 @@ enum AuditExceptions {
       for bar in [app.tabBars.firstMatch, app.descendants(matching: .any).matching(identifier: "playerBar").firstMatch] where bar.exists {
         if frame.maxY > bar.frame.minY { return true }
       }
+    }
+    // Contrast reported against SwiftUI's internal nodes with no element and no text (over Liquid Glass and the
+    // blurred cover): there's nothing on them to read, and nothing to point a fix at.
+    if issue.auditType == .contrast, issue.element == nil || issue.element?.label.isEmpty == true {
+      return true
+    }
+    // The navigation bar's back button is the system's: at the accessibility sizes iOS shortens it and offers the
+    // large content viewer on a long press.
+    if issue.auditType == .textClipped, let label = issue.element?.label, app.navigationBars.buttons[label].exists {
+      return true
     }
     // The system's search field truncates its own placeholder in the iOS 26 tab bar.
     if issue.auditType == .textClipped, issue.element?.elementType == .searchField {

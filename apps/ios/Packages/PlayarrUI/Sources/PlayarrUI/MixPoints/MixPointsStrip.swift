@@ -80,7 +80,7 @@ struct MixPointsStrip: View {
 
   private func handleView(_ text: String) -> some View {
     Text(text)
-      .font(.mono(size: 10, weight: .medium)).textCase(.uppercase)
+      .font(.mono(size: 10, relativeTo: .caption2, weight: .medium)).textCase(.uppercase)
       .padding(.horizontal, 8).frame(minWidth: 40, minHeight: 24)
       .background(Capsule().fill(.primary))
       .foregroundStyle(.background)

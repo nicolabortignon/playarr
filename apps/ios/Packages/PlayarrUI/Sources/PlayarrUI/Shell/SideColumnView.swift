@@ -30,6 +30,8 @@ struct SideColumnView: View {
         }
       }
     }
+    // Playarr's own dark behind the queue and lyrics, rather than the inspector's glass over the page.
+    .background(Color(red: 0x0F / 255, green: 0x0E / 255, blue: 0x0C / 255))
     .sensoryFeedback(Haptic.dropped, trigger: dropped)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("sideColumn")

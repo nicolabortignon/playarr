@@ -62,7 +62,7 @@ public struct TrackMetadataSheet: View {
         Spacer()
         if c.playing {
           Label("Plays", systemImage: "play.fill")
-            .font(.mono(size: 10)).textCase(.uppercase)
+            .font(.mono(size: 10, relativeTo: .caption2)).textCase(.uppercase)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(.tint.opacity(0.15), in: Capsule()).foregroundStyle(.tint)
         }
@@ -71,7 +71,7 @@ public struct TrackMetadataSheet: View {
       if model.offersRematch(for: c) { rematch(c) }
       if let tags = c.tags {
         DisclosureGroup("Tags in the file") { rows(MetadataFormat.tags(tags)).padding(.top, 6) }
-          .font(.mono(size: 11)).textCase(.uppercase)
+          .font(.mono(size: 11, relativeTo: .caption2)).textCase(.uppercase)
       }
     }
     .padding(12)
@@ -103,7 +103,7 @@ public struct TrackMetadataSheet: View {
 
   private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text(title).font(.mono(size: 11)).textCase(.uppercase).tracking(2).foregroundStyle(.secondary)
+      Text(title).font(.mono(size: 11, relativeTo: .caption2)).textCase(.uppercase).tracking(2).foregroundStyle(.secondary)
         .accessibilityAddTraits(.isHeader)
       content()
     }
@@ -113,7 +113,7 @@ public struct TrackMetadataSheet: View {
     Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {
       ForEach(rows) { row in
         GridRow {
-          Text(row.label).font(.mono(size: 11)).textCase(.uppercase).foregroundStyle(.secondary)
+          Text(row.label).font(.mono(size: 11, relativeTo: .caption2)).textCase(.uppercase).foregroundStyle(.secondary)
           value(row.value).font(.sans(.footnote)).frame(maxWidth: .infinity, alignment: .leading)
         }
       }
@@ -127,13 +127,13 @@ public struct TrackMetadataSheet: View {
     case .musicBrainz(let id, let kind):
       if let url = MetadataFormat.musicBrainzURL(id: id, kind: kind) {
         Link(destination: url) { Label(id, systemImage: "arrow.up.right.square").labelStyle(TrailingIcon()) }
-          .font(.mono(size: 12))
+          .font(.mono(size: 12, relativeTo: .caption))
       } else {
-        Text("\(id) (not on MusicBrainz yet)").font(.mono(size: 12)).foregroundStyle(.secondary)
+        Text("\(id) (not on MusicBrainz yet)").font(.mono(size: 12, relativeTo: .caption)).foregroundStyle(.secondary)
       }
     case .path(let path):
       HStack(alignment: .top, spacing: 8) {
-        Text(path).font(.mono(size: 12)).foregroundStyle(.secondary).textSelection(.enabled)
+        Text(path).font(.mono(size: 12, relativeTo: .caption)).foregroundStyle(.secondary).textSelection(.enabled)
         Button { Pasteboard.copy(path) } label: { Image(systemName: "doc.on.doc") }
           .buttonStyle(.borderless)
           .accessibilityLabel("Copy path")
@@ -141,7 +141,7 @@ public struct TrackMetadataSheet: View {
     case .meter(let percent):
       HStack(spacing: 8) {
         ProgressView(value: Double(percent), total: 100).frame(width: 128)
-        Text("\(percent)").font(.mono(size: 11)).foregroundStyle(.secondary)
+        Text("\(percent)").font(.mono(size: 11, relativeTo: .caption2)).foregroundStyle(.secondary)
       }
       .accessibilityElement(children: .ignore)
       .accessibilityValue("\(percent) percent")

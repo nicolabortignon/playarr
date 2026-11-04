@@ -47,7 +47,7 @@ public struct MixPointsSheet: View {
   @ViewBuilder private func editorView(_ editor: MixPointsEditor) -> some View {
     Text(editor.hint).font(.sans(.subheadline)).foregroundStyle(.secondary)
     VStack(alignment: .leading, spacing: 8) {
-      Text("Energy through the song").font(.mono(size: 11)).textCase(.uppercase).tracking(2).foregroundStyle(.secondary)
+      Text("Energy through the song").font(.mono(size: 11, relativeTo: .caption2)).textCase(.uppercase).tracking(2).foregroundStyle(.secondary)
       MixPointsStrip(
         editor: editor, phrases: model.phrases, bars: model.bars,
         onDrag: { model.drag($0, to: $1) },
@@ -72,7 +72,7 @@ public struct MixPointsSheet: View {
     let beat = editor.bpm > 0
     return VStack(alignment: .leading, spacing: 10) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text(label).font(.mono(size: 11)).textCase(.uppercase).tracking(1.5).foregroundStyle(.secondary)
+        Text(label).font(.mono(size: 11, relativeTo: .caption2)).textCase(.uppercase).tracking(1.5).foregroundStyle(.secondary)
         Text(editor.setByHand(point) ? "Set by hand" : "Detected").font(.sans(.caption2)).foregroundStyle(.secondary)
       }
       Text(Format.time(editor.time(point))).font(.sans(.title2).monospacedDigit())

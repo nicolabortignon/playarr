@@ -14,12 +14,12 @@ struct Pill<Label: View>: View {
 
   var body: some View {
     label
-      .font(.mono(size: small ? 10 : 11, weight: .medium))
+      .font(.mono(size: small ? 10 : 11, relativeTo: .caption2, weight: .medium))
       .textCase(.uppercase)
       .tracking(0.8)
       .lineLimit(1)
       .padding(.horizontal, small ? 10 : 14)
-      .frame(height: small ? 28 : 32)
+      .frame(minHeight: small ? 28 : 32)
       .foregroundStyle(foreground)
       .background {
         ZStack(alignment: .leading) {

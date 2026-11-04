@@ -52,7 +52,8 @@ struct LyricsView: View {
               Text(line.text.isEmpty ? "♪" : line.text)
                 .font(.display(.title2))
                 .multilineTextAlignment(.leading)
-                .foregroundStyle(index == current ? Color.primary : index < current ? Color.primary.opacity(0.35) : Color.primary.opacity(0.55))
+                // Sung lines and those to come are dimmed, but still readable (4.5:1 over the dark backdrop).
+                .foregroundStyle(index == current ? Color.primary : index < current ? Color.primary.opacity(0.5) : Color.primary.opacity(0.7))
             }
             .buttonStyle(.plain)
             .id(index)

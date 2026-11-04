@@ -42,5 +42,7 @@ struct Kicker: View {
       .font(.mono(.caption2))
       .tracking(tracking)
       .foregroundStyle(.muted)
+      // Grows with the text size even where a row is tight (Now Playing's header), wrapping rather than squeezing.
+      .fixedSize(horizontal: false, vertical: true)
   }
 }

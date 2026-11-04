@@ -14,7 +14,7 @@ public struct MusicBrainzIndicator: View {
           Text("MusicBrainz")
           Text(SlowLookupText.queued(status)).foregroundStyle(.secondary)
         }
-        .font(.mono(size: 11))
+        .font(.mono(size: 11, relativeTo: .caption2))
         .foregroundStyle(.secondary)
         .accessibilityElement(children: .combine)
         .accessibilityHint(SlowLookupText.explanation(status))

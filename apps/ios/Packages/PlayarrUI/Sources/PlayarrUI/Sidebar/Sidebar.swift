@@ -68,6 +68,9 @@ struct Sidebar: View {
       }
     }
     .listStyle(.sidebar)
+    // On Playarr's own dark rather than the translucent sidebar over the page, so its words keep their contrast.
+    .scrollContentBackground(.hidden)
+    .background(Color(red: 0x0F / 255, green: 0x0E / 255, blue: 0x0C / 255))
     .navigationTitle("Playarr")
     .sensoryFeedback(Haptic.dropped, trigger: dropped)
     .task {

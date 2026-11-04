@@ -53,26 +53,34 @@ public struct DownloadsView<Cover: View>: View {
       .buttonStyle(.plain)
       .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 4) {
-        Button(d.title) { open(d.href) }
-          .buttonStyle(.plain)
-          .lineLimit(1)
-        Text("\(OfflineWording.rowDetail(d, progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.red.opacity(0.8)))")
-          .font(.sans(.footnote))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
+        // The name and what's on the device, one target to open it (the row also swipes to remove).
+        Button { open(d.href) } label: {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(d.title).essentialLineLimit()
+            Text("\(OfflineWording.rowDetail(d, progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.red.opacity(0.8)))")
+              .font(.sans(.footnote))
+              .foregroundStyle(.muted)
+              .essentialLineLimit()
+          }
+          .frame(minHeight: 44, alignment: .leading)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         if !progress.isComplete {
+          // The words above already say how far along it is.
           ProgressView(value: Double(progress.done), total: Double(max(1, progress.total)))
             .frame(maxWidth: 192)
+            .accessibilityHidden(true)
         }
       }
       Spacer(minLength: 0)
       Button { play(d) } label: {
-        Image(systemName: "play.fill").frame(width: 40, height: 40).background(.tint, in: Circle()).foregroundStyle(.white)
+        Image(systemName: "play.fill").frame(width: 44, height: 44).background(.tint, in: Circle()).foregroundStyle(.white)
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Play \(d.title)")
       Button { store.remove(d.key) } label: {
-        Image(systemName: "trash").frame(width: 40, height: 40)
+        Image(systemName: "trash").frame(width: 44, height: 44).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .foregroundStyle(.secondary)

@@ -10,7 +10,7 @@ import Testing
   }
 
   @Test func brightensSecondaryTextWithMoreContrast() {
-    #expect(Muted.opacity(.standard) == 0.6)
+    #expect(Muted.opacity(.standard) == 0.7)
     #expect(Muted.opacity(.increased) == 0.85)
   }
 
