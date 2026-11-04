@@ -79,7 +79,7 @@ struct AlbumView: View {
           item: DownloadItem(
             key: PinnedDownload.Key.album(album.id), title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl,
             href: "/albums/\(album.id)"),
-          tracks: album.tracks)
+          tracks: album.tracks, small: true)
       }
       Text(album.title).font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
       NavigationLink(value: Route.artist(album.artistId)) {
@@ -99,7 +99,7 @@ struct AlbumView: View {
     .padding(.horizontal, 20)
   }
 
-  /// Play and Shuffle as round icons, ⋯ on the right.
+  /// Play and Shuffle as round icons of one size, ⋯ on the right.
   private func buttons(_ album: AlbumDetail) -> some View {
     HStack(spacing: 12) {
       Button { model.playOrPause() } label: {
@@ -114,8 +114,8 @@ struct AlbumView: View {
       .sensoryFeedback(.selection, trigger: model.isPlaying)
       Button { model.shuffle() } label: {
         Image(systemName: "shuffle")
-          .font(.system(size: 18, weight: .semibold))
-          .frame(width: 48, height: 48)
+          .font(.system(size: 20, weight: .semibold))
+          .frame(width: 56, height: 56)
           .background(theme.accent.color.opacity(0.18), in: Circle())
           .foregroundStyle(theme.accent.color)
       }

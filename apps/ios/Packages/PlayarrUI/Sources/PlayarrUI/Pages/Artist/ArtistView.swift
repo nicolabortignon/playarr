@@ -61,11 +61,11 @@ struct ArtistView: View {
         // The counts beside the buttons on one line, else under them.
         ViewThatFits(in: .horizontal) {
           HStack(spacing: 12) {
-            playButtons
+            playButtons(artist.name)
             counts
           }
           VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) { playButtons }
+            playButtons(artist.name)
             counts
           }
         }
@@ -104,11 +104,12 @@ struct ArtistView: View {
 }
 
 extension ArtistView {
-  @ViewBuilder fileprivate var playButtons: some View {
-    Button { Task { await model.play() } } label: { Label("Play", systemImage: "play.fill").padding(.horizontal, 6) }
-      .buttonStyle(.borderedProminent).tint(theme.accent.color).foregroundStyle(.black)
-    Button { Task { await model.play(shuffle: true) } } label: { Label("Shuffle", systemImage: "shuffle") }
-      .buttonStyle(.bordered)
+  fileprivate func playButtons(_ artist: String) -> some View {
+    PlayShuffleButtons(title: artist) {
+      Task { await model.play() }
+    } shuffle: {
+      Task { await model.play(shuffle: true) }
+    }
   }
 
   @ViewBuilder fileprivate var counts: some View {

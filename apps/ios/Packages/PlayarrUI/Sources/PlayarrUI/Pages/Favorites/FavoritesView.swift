@@ -17,15 +17,12 @@ struct FavoritesView: View {
         } else {
           let tracks = list.map(\.track)
           VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-              Button("Play", systemImage: "play.fill") { session.player.play(tracks, source: FavoritesStore.source) }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .tint(theme.accent.color)
-                .foregroundStyle(.black)
-              Button("Shuffle", systemImage: "shuffle") { session.player.play(tracks, source: FavoritesStore.source, shuffle: true) }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
+            FlowRow {
+              PlayShuffleButtons(title: "Favorites") {
+                session.player.play(tracks, source: FavoritesStore.source)
+              } shuffle: {
+                session.player.play(tracks, source: FavoritesStore.source, shuffle: true)
+              }
               DownloadButton(
                 store: session.player.downloads,
                 item: DownloadItem(key: PinnedDownload.Key.favorites, title: "Favorites", subtitle: "Your favorite songs", href: "/favorites"),

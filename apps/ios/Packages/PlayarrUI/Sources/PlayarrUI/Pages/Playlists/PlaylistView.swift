@@ -101,19 +101,12 @@ struct PlaylistView: View {
       }
       if model.canPickCover { coverNote(CoverNote(playlist.cover)) }
 
-      HStack(spacing: 12) {
-        Button("Play", systemImage: "play.fill") { model.play(shuffle: false) }
-          .buttonStyle(.borderedProminent)
-          .buttonBorderShape(.capsule)
-          .tint(theme.accent.color)
-          .foregroundStyle(.black)
-          .disabled(model.playable.isEmpty)
-          .accessibilityLabel("Play \(playlist.name)")
-        Button("Shuffle", systemImage: "shuffle") { model.play(shuffle: true) }
-          .buttonStyle(.bordered)
-          .buttonBorderShape(.capsule)
-          .disabled(model.playable.isEmpty)
-          .accessibilityLabel("Shuffle \(playlist.name)")
+      FlowRow {
+        PlayShuffleButtons(title: playlist.name, disabled: model.playable.isEmpty) {
+          model.play(shuffle: false)
+        } shuffle: {
+          model.play(shuffle: true)
+        }
         DownloadButton(
           store: model.session.player.downloads,
           item: DownloadItem(

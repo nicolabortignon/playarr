@@ -28,19 +28,12 @@ struct MixView: View {
             TimelineView(.periodic(from: .now, by: 60)) { context in
               Text(model.facts(now: context.date)).font(.mono(.caption)).foregroundStyle(.secondary)
             }
-            HStack(spacing: 12) {
-              Button("Play", systemImage: "play.fill") { model.play(shuffle: false) }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .tint(theme.accent.color)
-                .foregroundStyle(.black)
-                .disabled(mix.tracks.isEmpty)
-                .accessibilityLabel("Play \(mix.title)")
-              Button("Shuffle", systemImage: "shuffle") { model.play(shuffle: true) }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .disabled(mix.tracks.isEmpty)
-                .accessibilityLabel("Shuffle \(mix.title)")
+            FlowRow {
+              PlayShuffleButtons(title: mix.title, disabled: mix.tracks.isEmpty) {
+                model.play(shuffle: false)
+              } shuffle: {
+                model.play(shuffle: true)
+              }
               Button(model.regenerating ? "Mixing…" : "New mix", systemImage: "arrow.clockwise") { Task { await model.regenerate() } }
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)

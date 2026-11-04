@@ -24,11 +24,10 @@ final class ScreenTour: XCTestCase {
     app.launch()
   }
 
-  /// The screen as it is now, saved as `<name>.png`.
+  /// The screen as it is now, saved as `<name>.png`, once animations and images have settled (`after` seconds).
   @MainActor
-  private func shot(_ name: String) {
-    // Let animations and images settle.
-    Thread.sleep(forTimeInterval: 1.2)
+  private func shot(_ name: String, after: TimeInterval = 1.2) {
+    Thread.sleep(forTimeInterval: after)
     guard let folder else { return }
     try? XCUIScreen.main.screenshot().pngRepresentation.write(to: folder.appending(path: "\(name).png"))
   }
@@ -58,6 +57,11 @@ final class ScreenTour: XCTestCase {
 
     if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch) {
       shot("03-album")
+      // Download: the pill draws in to a circle filling as the songs arrive, then a tick.
+      if tap(button(beginningWith: "Download Mezzanine"), timeout: 2) {
+        shot("03b-album-downloading", after: 0.4)
+        shot("03c-album-downloaded", after: 4)
+      }
       app.swipeUp()
       shot("04-album-tracks")
       if tap(app.buttons["Play Mezzanine"]) || tap(app.buttons["Play"].firstMatch) {
@@ -88,6 +92,21 @@ final class ScreenTour: XCTestCase {
       }
     }
     if tap(app.tabBars.buttons["Library"]) { tap(app.tabBars.buttons["Library"], timeout: 1) }
+    if tap(button(beginningWith: "Favorites"), timeout: 2) {
+      shot("17-favorites")
+      app.navigationBars.buttons.firstMatch.tap()
+    }
+    if tap(button(beginningWith: "Made for you"), timeout: 2) {
+      if tap(button(beginningWith: "Your vibes"), timeout: 3) { shot("18-mix") }
+      tap(app.tabBars.buttons["Library"], timeout: 1)
+      tap(app.tabBars.buttons["Library"], timeout: 1)
+    }
+    app.swipeUp()
+    if tap(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "songs")).firstMatch, timeout: 2) {
+      shot("19-playlist")
+      tap(app.tabBars.buttons["Library"], timeout: 1)
+      tap(app.tabBars.buttons["Library"], timeout: 1)
+    }
     if tap(button(beginningWith: "Downloads"), timeout: 2) {
       shot("16-downloads")
       app.navigationBars.buttons.firstMatch.tap()
