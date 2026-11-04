@@ -1,4 +1,4 @@
-import type { Account, AccountRole } from '@playarr/shared';
+import type { Account, AccountRole, ListedAccount } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
 import { listenBrainzKey } from '../listenbrainz/scrobbler.ts';
 import { hashPassword, verifyPassword } from './password.ts';
@@ -53,6 +53,23 @@ export class Accounts {
 
   list(): Account[] {
     return (this.db.prepare(`SELECT ${COLUMNS} FROM accounts ORDER BY id`).all() as unknown as Row[]).map((r) => this.toAccount(r));
+  }
+
+  /** Every account with how many songs it has played (not skipped, as Your listening counts them) and playlists it made. */
+  listed(): ListedAccount[] {
+    const counts = new Map(
+      (
+        this.db
+          .prepare(
+            `SELECT a.id,
+                    (SELECT COUNT(*) FROM plays p WHERE p.account_id = a.id AND p.skipped = 0) AS plays,
+                    (SELECT COUNT(*) FROM playlists l WHERE l.account_id = a.id) AS playlists
+               FROM accounts a`,
+          )
+          .all() as { id: number; plays: number; playlists: number }[]
+      ).map((r) => [r.id, r]),
+    );
+    return this.list().map((a) => ({ ...a, plays: counts.get(a.id)?.plays ?? 0, playlists: counts.get(a.id)?.playlists ?? 0 }));
   }
 
   ids(): number[] {

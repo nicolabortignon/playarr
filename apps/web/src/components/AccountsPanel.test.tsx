@@ -31,7 +31,10 @@ describe('AccountsPanel', () => {
   it('lets an admin add an account and shows its setup code and link', async () => {
     vi.spyOn(api, 'server').mockResolvedValue(SERVER);
     vi.spyOn(api, 'me').mockResolvedValue(NICOLA);
-    vi.spyOn(api, 'accounts').mockResolvedValue([NICOLA, SAM]);
+    vi.spyOn(api, 'accounts').mockResolvedValue([
+      { ...NICOLA, plays: 1234, playlists: 3 },
+      { ...SAM, plays: 1, playlists: 0 },
+    ]);
     vi.spyOn(api, 'sessions').mockResolvedValue([]);
     vi.spyOn(api, 'sources').mockResolvedValue({ sources: [CC], canEdit: true });
     const reviewer: Account = { id: 3, username: 'reviewer', name: 'App Review', role: 'member', canRequest: false, sources: [2], hasPassword: false };
@@ -41,6 +44,8 @@ describe('AccountsPanel', () => {
     });
     view();
     expect(await screen.findByText('Sam')).toBeTruthy();
+    expect(screen.getByText('1,234 songs played · 3 playlists')).toBeTruthy();
+    expect(screen.getByText('1 song played · 0 playlists')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Add account/ }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'App Review' } });
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'reviewer' } });

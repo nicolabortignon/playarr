@@ -886,6 +886,13 @@ export interface Account {
   hasPassword: boolean; // false until set up
 }
 
+/** An account as Settings → Accounts lists it for admins: with how many songs it has played (skips aside) and
+ *  how many playlists it has made. */
+export interface ListedAccount extends Account {
+  plays: number;
+  playlists: number;
+}
+
 /** A device signed in to an account. */
 export interface SessionInfo {
   id: number;

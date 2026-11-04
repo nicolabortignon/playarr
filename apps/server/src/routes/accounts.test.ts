@@ -1,4 +1,4 @@
-import type { Account, CreatedAccount, SessionInfo, SetupCode } from '@playarr/shared';
+import type { Account, CreatedAccount, ListedAccount, SessionInfo, SetupCode } from '@playarr/shared';
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { Accounts } from '../accounts/accounts.ts';
@@ -33,7 +33,7 @@ async function setup({ claimed = true, trustProxy = false, publicUrl = undefined
   const admin = sessions.create(1, 'Mac', 'web').token;
   const member = sessions.create(sam.id, 'iPhone', 'ios').token;
   const as = (token: string) => ({ authorization: `Bearer ${token}`, host: 'nas:4000' });
-  return { accounts, sessions, app, cc, sam, admin, member, as };
+  return { db, accounts, sessions, app, cc, sam, admin, member, as };
 }
 
 describe('account routes', () => {
@@ -55,6 +55,23 @@ describe('account routes', () => {
     expect((await app.inject({ method: 'POST', url: '/api/accounts', headers: as(member), payload: { username: 'x', name: 'X', role: 'admin', canRequest: true, sources: null } })).statusCode).toBe(403);
     const bad = await app.inject({ method: 'POST', url: '/api/accounts', headers: as(admin), payload: { username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null } });
     expect(bad.json()).toEqual({ error: 'That username is taken' });
+  });
+
+  it('lists how many songs each account has played and how many playlists it has made', async () => {
+    const { db, app, sam, admin, as } = await setup();
+    const play = db.prepare(
+      `INSERT INTO plays (recording_id, played_at, hour, weekday, seconds, skipped, account_id) VALUES (?, ?, 20, 1, 200, ?, ?)`,
+    );
+    play.run('rec-1', '2026-11-04T20:00:00Z', 0, sam.id);
+    play.run('rec-2', '2026-11-04T20:04:00Z', 0, sam.id);
+    play.run('rec-3', '2026-11-04T20:08:00Z', 1, sam.id); // skipped: not counted, as in Your listening
+    play.run('rec-1', '2026-11-04T21:00:00Z', 0, 1);
+    db.prepare(`INSERT INTO playlists (name, created_at, updated_at, account_id) VALUES ('Road trip', '2026-11-04', '2026-11-04', ?)`).run(sam.id);
+    const listed = (await app.inject({ url: '/api/accounts', headers: as(admin) })).json() as ListedAccount[];
+    expect(listed.map(({ username, plays, playlists }) => ({ username, plays, playlists }))).toEqual([
+      { username: 'home', plays: 1, playlists: 0 },
+      { username: 'sam', plays: 2, playlists: 1 },
+    ]);
   });
 
   it('lets members change their own name, and nothing else', async () => {

@@ -36,7 +36,7 @@ export function accountRoutes(
     return id;
   };
 
-  app.get('/api/accounts', { onRequest: requireAdmin }, () => accounts.list());
+  app.get('/api/accounts', { onRequest: requireAdmin }, () => accounts.listed());
 
   app.post('/api/accounts', { onRequest: [requireAdmin, ownerFirst] }, (req, reply) =>
     handleAccountErrors(reply, () => {
@@ -58,7 +58,7 @@ export function accountRoutes(
   app.delete<Id>('/api/accounts/:id', { onRequest: requireAdmin }, (req, reply) =>
     handleAccountErrors(reply, () => {
       accounts.remove(Number(req.params.id));
-      return accounts.list();
+      return accounts.listed();
     }),
   );
 

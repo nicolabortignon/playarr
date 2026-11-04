@@ -1,10 +1,11 @@
-import type { Account, AccountRole, SetupCode } from '@playarr/shared';
+import type { Account, AccountRole, ListedAccount, SetupCode } from '@playarr/shared';
 import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash2, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { signOut } from '../lib/accounts';
 import { api, type AccountInput } from '../lib/api';
 import { cn } from '../lib/cn';
+import { plural } from '../lib/format';
 import { useAccountAction, useAccountList, useAccountSessions, useMe, useServerInfo, useSources } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { Dialog } from './Dialog';
@@ -105,6 +106,11 @@ function summary(a: Account, sourceNames: Map<number, string>): string {
   return [a.username, a.role, a.canRequest ? 'can request albums' : '', library, a.hasPassword ? '' : 'not set up yet'].filter(Boolean).join(' · ');
 }
 
+/** "1,234 songs played · 3 playlists" */
+function activity(a: ListedAccount): string {
+  return `${a.plays.toLocaleString('en')} ${a.plays === 1 ? 'song' : 'songs'} played · ${plural(a.playlists, 'playlist')}`;
+}
+
 function Everyone({ me }: { me: Account }) {
   const navigate = useNavigate();
   const { data: accounts, error } = useAccountList();
@@ -146,6 +152,7 @@ function Everyone({ me }: { me: Account }) {
                 {a.id === me.id && <span className="ml-2 text-[13px] text-muted">you</span>}
               </span>
               <span className="block truncate text-[12px] text-muted">{summary(a, sourceNames)}</span>
+              <span className="block truncate text-[12px] text-muted">{activity(a)}</span>
             </span>
             <button type="button" aria-label={`Edit ${a.name}`} onClick={() => setEditing(a)} className={ICON}>
               <Pencil className="size-4" />
