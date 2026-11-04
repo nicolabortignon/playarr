@@ -2,7 +2,8 @@
 // the screenshots in store/screenshots, read and checked against Apple's limits. Also the pure pieces that
 // release.mjs needs to bring App Store Connect in line with them: what changed, which version to edit, which
 // screenshots to upload, and the request bodies. Nothing here talks to Apple; appstore.mjs does.
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -105,4 +106,87 @@ export function fillNotes(template, env) {
   const missing = NOTE_PLACEHOLDERS.filter((name) => template.includes(`{{${name}}}`) && !env[name]);
   if (missing.length) throw new Error(`Set ${missing.join(', ')} (in .env, or the GitHub secrets in CI)`);
   return template.replace(/\{\{(\w+)\}\}/g, (_, name) => env[name]);
+}
+
+/**
+ * Screenshot folders → App Store Connect display types and the sizes Apple accepts (portrait; landscape is the
+ * same sizes turned). iPhone 6.9" ("Dynamic Island, large display") and iPad 13" are what the App Store needs;
+ * the 6.3" set is optional, sent when its folder exists.
+ */
+export const SCREENSHOT_SETS = {
+  'iphone-6.9': { displayType: 'APP_IPHONE_67', simulator: 'iPhone 17 Pro Max', required: true, sizes: [[1320, 2868], [1290, 2796], [1260, 2736]] },
+  'iphone-6.3': { displayType: 'APP_IPHONE_61', simulator: 'iPhone 17 Pro', required: false, sizes: [[1206, 2622], [1179, 2556]] },
+  'ipad-13': { displayType: 'APP_IPAD_PRO_3GEN_129', simulator: 'iPad Pro 13-inch (M5)', required: true, sizes: [[2064, 2752], [2048, 2732]] },
+};
+export const MAX_SCREENSHOTS = 10;
+
+/** Width, height and whether a PNG has transparency (an alpha channel or a tRNS chunk). Throws for non-PNGs. */
+export function pngInfo(buffer) {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (buffer.length < 33 || !buffer.subarray(0, 8).equals(signature) || buffer.toString('latin1', 12, 16) !== 'IHDR') {
+    throw new Error('not a PNG');
+  }
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  const colorType = buffer[25];
+  let alpha = colorType === 4 || colorType === 6;
+  for (let at = 8; at + 8 <= buffer.length; ) {
+    const size = buffer.readUInt32BE(at);
+    const type = buffer.toString('latin1', at + 4, at + 8);
+    if (type === 'tRNS') alpha = true;
+    if (type === 'IDAT' || type === 'IEND') break;
+    at += 12 + size;
+  }
+  return { width, height, alpha };
+}
+
+export const md5 = (buffer) => createHash('md5').update(buffer).digest('hex');
+
+/** The screenshot folders that exist, each with its PNGs in file-name order. */
+export function readScreenshots(dir = join(STORE, 'screenshots')) {
+  const sets = [];
+  for (const [folder, spec] of Object.entries(SCREENSHOT_SETS)) {
+    const path = join(dir, folder);
+    if (!existsSync(path)) continue;
+    const files = readdirSync(path)
+      .filter((name) => name.endsWith('.png'))
+      .sort()
+      .map((name) => {
+        const buffer = readFileSync(join(path, name));
+        let info;
+        try {
+          info = pngInfo(buffer);
+        } catch {
+          info = { width: 0, height: 0, alpha: false, broken: true };
+        }
+        return { name, path: join(path, name), size: buffer.length, md5: md5(buffer), ...info };
+      });
+    sets.push({ folder, ...spec, files });
+  }
+  return sets;
+}
+
+/** Everything wrong with the screenshots, as sentences. */
+export function validateScreenshots(sets) {
+  const problems = [];
+  for (const [folder, spec] of Object.entries(SCREENSHOT_SETS)) {
+    if (spec.required && !sets.some((s) => s.folder === folder && s.files.length)) {
+      problems.push(`screenshots/${folder} has no screenshots (make screenshots takes them on the ${spec.simulator} simulator)`);
+    }
+  }
+  for (const set of sets) {
+    if (set.files.length > MAX_SCREENSHOTS) problems.push(`screenshots/${set.folder} has ${set.files.length} screenshots; Apple takes ${MAX_SCREENSHOTS}`);
+    for (const file of set.files) {
+      const where = `screenshots/${set.folder}/${file.name}`;
+      if (!/^\d\d-[a-z0-9-]+\.png$/.test(file.name)) problems.push(`${where}: name it NN-what-it-shows.png`);
+      if (file.broken) {
+        problems.push(`${where} isn't a PNG`);
+        continue;
+      }
+      const fits = set.sizes.some(([w, h]) => (file.width === w && file.height === h) || (file.width === h && file.height === w));
+      if (!fits) problems.push(`${where} is ${file.width}×${file.height}; ${set.displayType} takes ${set.sizes.map(([w, h]) => `${w}×${h}`).join(', ')} (or turned)`);
+      if (file.alpha) problems.push(`${where} has transparency, which App Store Connect refuses (scripts/flatten-png.swift removes it)`);
+    }
+  }
+  return problems;
 }
