@@ -72,6 +72,13 @@ struct Sidebar: View {
     .scrollContentBackground(.hidden)
     .background(Color(red: 0x0F / 255, green: 0x0E / 255, blue: 0x0C / 255))
     .navigationTitle("Playarr")
+    // ↑ and ↓ are the volume, as on the web, also while the sidebar has the keyboard's focus (where they'd move its
+    // selection). Tab and the pointer still move through it.
+    .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+      guard press.modifiers.isEmpty else { return .ignored }
+      KeyCommandHandler(session: session).perform(press.key == .upArrow ? .volumeUp : .volumeDown)
+      return .handled
+    }
     .sensoryFeedback(Haptic.dropped, trigger: dropped)
     .task {
       // The foot's dots follow the server as the web's do (health is asked again once it's 30 s old).

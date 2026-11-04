@@ -52,6 +52,8 @@ struct PlayPauseButton: View {
         }
       }
       .frame(width: size, height: size)
+      // The whole circle taps, filled or not.
+      .contentShape(Circle())
     }
     .buttonStyle(.plain)
     .disabled(player.queue.pos < 0)
