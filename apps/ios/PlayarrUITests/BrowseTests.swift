@@ -49,12 +49,16 @@ final class BrowseTests: XCTestCase {
   }
 
   @MainActor
-  func testTheQueueClearsWithUndo() {
+  func testTheQueueTogglesEditAndClearsWithUndo() {
     let app = launch()
     app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch.tap()
     app.buttons["Play Mezzanine"].tap()
     app.tabBars.buttons["Queue"].tap()
     XCTAssertTrue(app.buttons["Risingson, Massive Attack, 4:58"].waitForExistence(timeout: 5))
+    app.buttons["Edit"].tap()
+    XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5))
+    app.buttons["Done"].tap()
+    XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5))
     app.buttons["Clear"].tap()
     XCTAssertTrue(app.staticTexts["The queue ends after this track."].waitForExistence(timeout: 5))
     app.buttons["Undo"].tap()

@@ -7,6 +7,9 @@ struct QueueView: View {
   let session: AccountSession
   @Environment(Theme.self) private var theme
   @State private var reordered = 0
+  #if os(iOS)
+    @State private var editMode: EditMode = .inactive
+  #endif
 
   var body: some View {
     let model = QueueModel(session: session)
@@ -29,23 +32,32 @@ struct QueueView: View {
             .onMove { model.move(from: $0, to: $1); reordered += 1 }
             .onDelete { model.remove($0) }
           } header: {
-            HStack {
+            // Edit and Clear as plain words in the header, just under the playing song, rather than in the bar.
+            HStack(spacing: 16) {
               Text(model.header)
               Spacer()
-              if !model.upcoming.isEmpty { Button("Clear") { model.clear() } }
+              if !model.upcoming.isEmpty {
+                #if os(iOS)
+                  Button(editMode.isEditing ? "Done" : "Edit") {
+                    withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                  }
+                #endif
+                Button("Clear") { model.clear() }
+              }
             }
           }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: reordered)
+        #if os(iOS)
+          .environment(\.editMode, $editMode)
+          .onChange(of: model.upcoming.isEmpty) { _, empty in if empty { editMode = .inactive } }
+        #endif
         .toolbar {
           ToolbarItem(placement: .secondaryAction) {
             Button("Save as playlist", systemImage: "text.badge.plus") {
               session.addToPlaylist(AccountSession.queueToSave(session.player.queue))
             }
           }
-          #if os(iOS)
-            ToolbarItem(placement: .primaryAction) { EditButton() }
-          #endif
         }
       } else {
         ContentUnavailableView {
@@ -57,7 +69,9 @@ struct QueueView: View {
         }
       }
     }
-    .navigationTitle("Queue")
+    // No title: the tab bar already says where you are.
+    .navigationTitle("")
+    .inlineTitle()
   }
 
   private func nowPlayingHeader(_ model: QueueModel) -> some View {

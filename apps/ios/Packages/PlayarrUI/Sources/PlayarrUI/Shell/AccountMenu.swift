@@ -19,11 +19,14 @@ struct AccountMenu: ViewModifier {
           Text(initial)
             .font(.sans(.subheadline).weight(.semibold))
             .foregroundStyle(.black)
-            .frame(width: 30, height: 30)
+            .frame(width: 34, height: 34)
             .background(theme.accent.color, in: Circle())
+            .contentShape(Circle())
         }
         .accessibilityLabel("Account and settings")
       }
+      // Just the round initial: without this the bar draws its glass capsule around it.
+      .sharedBackgroundVisibility(.hidden)
     }
   }
 
