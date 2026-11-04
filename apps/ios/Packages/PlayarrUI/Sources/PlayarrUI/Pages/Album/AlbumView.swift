@@ -14,14 +14,20 @@ struct AlbumView: View {
 
   var body: some View {
     ScrollView {
-      // The header starts under the navigation bar, the cover beside the back button, with no empty band above it.
-      Group { content }.padding(.top, ScreenInsets.top)
+      // The album's wash runs from the very top of the screen, behind the status bar and the back button; the cover
+      // starts below the back button, with room above it.
+      Group { content }
+        .padding(.top, Self.coverTop)
+        .background(alignment: .top) { tint }
     }
     .ignoresSafeArea(edges: .top)
     .inlineTitle()
     .task { await model.load() }
     .refreshable { await model.album.refresh() }
   }
+
+  /// Where the cover starts: below the status bar and the navigation bar's back button (44 pt), with a margin.
+  @MainActor private static var coverTop: CGFloat { ScreenInsets.top + 44 + 24 }
 
   @ViewBuilder private var content: some View {
     if let error = model.album.error {
@@ -40,7 +46,6 @@ struct AlbumView: View {
         }
       }
       .padding(.bottom, 24)
-      .background(alignment: .top) { tint }
     } else {
       VStack(spacing: 16) {
         Skeleton().frame(width: 260)
@@ -57,8 +62,7 @@ struct AlbumView: View {
         stops: [.init(color: tint.color.opacity(0.32), location: 0), .init(color: tint.color.opacity(0.08), location: 0.55), .init(color: .clear, location: 1)],
         startPoint: .top, endPoint: .bottom
       )
-      .frame(height: 520)
-      .ignoresSafeArea()
+      .frame(height: 520 + Self.coverTop)
     }
   }
 
