@@ -144,7 +144,7 @@ function ScrollIndicator({ target }: { target: RefObject<HTMLDivElement | null> 
       onPointerMove={move}
       onPointerUp={release}
       onPointerCancel={release}
-      className="group/line invisible mx-auto mt-1 w-[90%] cursor-pointer touch-pan-y py-2 select-none"
+      className="group/line invisible mx-auto mt-1 w-[90%] cursor-grab touch-pan-y py-2 select-none active:cursor-grabbing"
     >
       <div className="relative h-px bg-paper/[0.04] transition-colors group-hover/line:bg-paper/[0.07]">
         <div ref={thumb} className="absolute top-0 left-0 h-px bg-paper/20 transition-[width,background-color] duration-300 group-hover/line:bg-paper/35" />

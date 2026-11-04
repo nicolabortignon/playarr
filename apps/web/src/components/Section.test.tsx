@@ -42,7 +42,7 @@ function shelf() {
     </Shelf>,
   );
   const row = container.querySelector<HTMLDivElement>('.snap-x')!;
-  const track = container.querySelector<HTMLDivElement>('.cursor-pointer')!;
+  const track = container.querySelector<HTMLDivElement>('.cursor-grab')!;
   const line = track.firstElementChild as HTMLElement;
   const marker = line.firstElementChild as HTMLElement;
   Object.defineProperties(row, { clientWidth: { value: 400 }, scrollWidth: { value: 1600 } });
