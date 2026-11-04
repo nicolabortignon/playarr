@@ -46,6 +46,8 @@ describe('buildCatalog', () => {
       format: FLAC,
       size: 40_000_000,
       streamUrl: '/stream/9000',
+      // No artwork from Lidarr: the release group's own cover.
+      coverUrl: `/art/remote?url=${encodeURIComponent('https://images.lidarr.audio/cache/https://coverartarchive.org/release-group/rg-1/front-500')}`,
     });
     expect(c.artists.get(7)).toMatchObject({ name: 'Massive Attack', albumCount: 1, trackCount: 2 });
     expect(c.tracks.map((t) => t.id)).toEqual([700, 701]);
@@ -96,16 +98,36 @@ describe('buildCatalog', () => {
     expect(first.coverUrl).toBe(album.coverUrl);
   });
 
-  it('draws no artwork from files whose pictures are another album’s', () => {
+  it('draws a folder album’s cover only from a folder that holds the album, never from one of mixed songs', () => {
     const store = new CatalogStore(freshDb());
-    const folder = store.addSource('folder', 'Music');
-    const sync = mezzanine();
-    sync.copies = sync.copies.map((c) => ({ ...c, preferredId: undefined }));
-    sync.albums = sync.albums.map((a) => ({ ...a, fileArt: false as const }));
-    store.applySync(folder, sync);
-    const album = buildCatalog(store.load()).albums.get(70)!;
-    expect(album.coverUrl).toBeUndefined();
-    expect(album.tracks[0]!.coverUrl).toBeUndefined();
+    const singles = store.addSource('folder', 'One song each');
+    const albums = store.addSource('folder', 'Albums');
+    const album = (key: string, title: string, mbid?: string) => ({ key, artistKey: 'a', title, albumType: 'Album', secondaryTypes: [], genres: [], ...(mbid ? { mbid } : {}) });
+    const track = (key: string, albumKey: string, trackNumber: number) => ({ key, albumKey, recordingId: key, title: key, trackNumber, discNumber: 1, duration: 200, explicit: false });
+    const copy = (ref: string, trackKey: string, path: string) => ({ ref, trackKey, path, size: 1, format: FLAC });
+    const artists = [{ key: 'a', name: 'Coldplay', sortName: 'Coldplay', genres: [] }];
+    // A folder of songs from many albums: Parachutes' song 1, and two others'.
+    store.applySync(singles, {
+      artists,
+      albums: [album('parachutes', 'Parachutes', 'rg-p'), album('x', 'X&Y', 'rg-x'), album('demo', 'Demo')],
+      tracks: [track('yellow', 'parachutes', 1), track('fix', 'x', 1), track('demo1', 'demo', 1)],
+      copies: [copy('y', 'yellow', '/one/Yellow.mp3'), copy('f', 'fix', '/one/Fix You.mp3'), copy('d', 'demo1', '/one/Demo.mp3')],
+    });
+    const cover = (title: string) => [...buildCatalog(store.load()).albums.values()].find((a) => a.title === title)!.coverUrl;
+    // Nothing from that folder: the release group's cover when the album is identified, else none.
+    expect(cover('Parachutes')).toContain(encodeURIComponent('release-group/rg-p/front-500'));
+    expect(cover('Demo')).toBeUndefined();
+    // Parachutes' own folder, with another of its songs: its cover comes from there, whatever song comes first.
+    store.applySync(albums, {
+      artists,
+      albums: [album('parachutes', 'Parachutes', 'rg-p')],
+      tracks: [track('trouble', 'parachutes', 6)],
+      copies: [copy('t', 'trouble', '/albums/Coldplay/Parachutes/06 Trouble.flac')],
+    });
+    const parachutes = [...buildCatalog(store.load()).albums.values()].find((a) => a.title === 'Parachutes')!;
+    const trouble = parachutes.tracks.find((t) => t.title === 'trouble')!;
+    expect(parachutes.tracks[0]!.title).toBe('yellow');
+    expect(parachutes.coverUrl).toBe(`/art/copy/${trouble.fileId}`);
   });
 
   describe('best copy', () => {

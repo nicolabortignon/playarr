@@ -1,4 +1,5 @@
 import type { AlbumDetail, Artist, AudioFormat, LibraryStats, MissingTrack, Track } from '@playarr/shared';
+import { coverArtArchive, remoteArtUrl } from '../discover/art.ts';
 import { formatKey } from '../library/format.ts';
 import { albumKeyFor } from './keys.ts';
 import type { AlbumRow, ArtistRow, CatalogRows, CopyRow } from './store.ts';
@@ -103,6 +104,7 @@ export function buildCatalog(rows: CatalogRows): Catalog {
 
   const artistRows = new Map(rows.artists.map((a) => [a.id, a]));
   const albumRows = new Map(rows.albums.map((a) => [a.id, a]));
+  const folderCover = folderCovers(rows, copiesByTrack, kindOf);
 
   const byAlbum = new Map<number, { tracks: Track[]; added: string[] }>();
   for (const t of rows.tracks) {
@@ -145,11 +147,8 @@ export function buildCatalog(rows: CatalogRows): Catalog {
     const missing = (missingByAlbum.get(albumId) ?? []).sort(
       (a, b) => a.discNumber - b.discNumber || a.trackNumber - b.trackNumber,
     );
-    const first = entry.tracks[0]!;
-    // Folder albums have no artwork URL of their own: draw it from the first song's file, unless its
-    // pictures are another album's (a compilation's).
-    const fallbackCover =
-      row.meta.fileArt !== false && kindOf.get(files.get(first.fileId)!.sourceId) === 'folder' ? `/art/copy/${first.fileId}` : undefined;
+    // No artwork URL of the album's own (Lidarr's): a folder that holds the album, else its MusicBrainz cover.
+    const fallbackCover = folderCover.get(albumId) ?? (row.meta.mbid ? remoteArtUrl(coverArtArchive(row.meta.mbid, 500)) : undefined);
     const detail = toAlbumDetail(row, artist, entry.tracks, entry.added, missing, fallbackCover);
     for (const t of entry.tracks) t.coverUrl ??= detail.coverUrl;
     albums.set(albumId, detail);
@@ -233,6 +232,49 @@ function toArtist(row: ArtistRow, albums: AlbumDetail[]): Artist {
     fanartUrl: m.fanartUrl,
     logoUrl: m.logoUrl,
   };
+}
+
+/** Most of a folder's songs must be one album's for its pictures to be that album's cover. */
+const ALBUM_FOLDER_SHARE = 0.5;
+
+/**
+ * Albums' covers drawn from folder files: from the folder that holds the most of the album's songs, as long as
+ * most of that folder's songs are the album's ("Coldplay/Parachutes/", a single in its own folder). Never from
+ * a folder of songs from many albums (a compilation, a "1 song only" collection, loose songs): its files'
+ * pictures are other albums' covers. Within the folder, the first song's file.
+ */
+function folderCovers(rows: CatalogRows, copiesByTrack: Map<number, CopyRow[]>, kindOf: Map<number, string>): Map<number, string> {
+  const trackRows = new Map(rows.tracks.map((t) => [t.id, t]));
+  // Each folder's songs, by album: folder → album → its songs there, as copies with their tracks.
+  const folders = new Map<string, Map<number, { copy: CopyRow; disc: number; number: number }[]>>();
+  for (const copies of copiesByTrack.values()) {
+    for (const copy of copies) {
+      if (kindOf.get(copy.sourceId) !== 'folder') continue;
+      const track = trackRows.get(copy.trackId);
+      if (!track) continue;
+      const dir = `${copy.sourceId}:${copy.path.slice(0, copy.path.lastIndexOf('/'))}`;
+      const albums = folders.get(dir) ?? new Map();
+      folders.set(dir, albums);
+      const songs = albums.get(track.albumId) ?? [];
+      albums.set(track.albumId, songs);
+      songs.push({ copy, disc: track.meta.discNumber, number: track.meta.trackNumber });
+    }
+  }
+  const best = new Map<number, { songs: { copy: CopyRow; disc: number; number: number }[] }>();
+  for (const albums of folders.values()) {
+    const total = [...albums.values()].reduce((n, songs) => n + songs.length, 0);
+    for (const [albumId, songs] of albums) {
+      if (songs.length / total < ALBUM_FOLDER_SHARE) continue;
+      const current = best.get(albumId);
+      if (!current || songs.length > current.songs.length) best.set(albumId, { songs });
+    }
+  }
+  const covers = new Map<number, string>();
+  for (const [albumId, { songs }] of best) {
+    const first = songs.reduce((a, b) => (b.disc < a.disc || (b.disc === a.disc && b.number < a.number) ? b : a));
+    covers.set(albumId, `/art/copy/${first.copy.id}`);
+  }
+  return covers;
 }
 
 function toAlbumDetail(

@@ -35,8 +35,6 @@ export interface SourceAlbum {
   genres: string[];
   overview?: string;
   coverUrl?: string;
-  /** Folders: false when the files' own pictures are another album's (a compilation's), so none is drawn from them. */
-  fileArt?: false;
   totalTrackCount?: number;
   /** Overrides the sync's rank for this row. */
   metaRank?: number;

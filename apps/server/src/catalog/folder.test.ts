@@ -112,25 +112,7 @@ describe('folderSync', () => {
     // Unidentified, loose songs of their artists, even one the library has on an album (that album may be
     // any compilation it's on): only a match or a review places it.
     expect(sync.albums.map((a) => a.title)).toEqual(['Loose songs', 'Loose songs']);
-    expect(sync.albums.every((a) => a.albumType === 'Loose' && a.fileArt === false && a.releaseDate === undefined)).toBe(true);
-  });
-
-  it('never gives a compilation’s cover to the albums its songs land on', () => {
-    const va = { albumArtist: 'Various Artists', album: '00s Hits - 100 Top Songs' };
-    // Matched song by song (the overlay laid over its tags): the album's own cover, from the Cover Art Archive.
-    const matched = folderSync(
-      [
-        {
-          ...entry('03. Coldplay - Yellow.mp3', { ...va, artist: 'Coldplay', title: 'Yellow', albumArtist: 'Coldplay', album: 'Parachutes', releaseGroupMbid: 'rg-p' }),
-          compilation: true,
-        },
-      ],
-      EMPTY,
-    );
-    expect(matched.albums[0]!.coverUrl).toContain(encodeURIComponent('coverartarchive.org/release-group/rg-p/front-500'));
-    expect(matched.albums[0]!.fileArt).toBeUndefined();
-    // Any other folder album still draws its cover from its files.
-    expect(folderSync([entry('A/Album/01.flac', { title: 'One', album: 'Album', albumArtist: 'A' })], EMPTY).albums[0]).not.toHaveProperty('fileArt');
+    expect(sync.albums.every((a) => a.albumType === 'Loose' && a.releaseDate === undefined)).toBe(true);
   });
 
   it('keeps a song whose own artist is Various Artists, too, under its album', () => {

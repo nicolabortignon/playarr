@@ -3,7 +3,6 @@ import { albumKey as albumNameKey, normalize } from '../library/search.ts';
 import { albumKeyFor, artistKeyFor, songNameKey, trackKeyFor } from './keys.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
 import { isVariousArtists } from './songMatch.ts';
-import { coverArtArchive, remoteArtUrl } from '../discover/art.ts';
 import type { TagInfo } from './tags.ts';
 import type { KnownTrack, NameIndex, SourceAlbum, SourceArtist, SourceSync, SourceTrack } from './types.ts';
 
@@ -82,8 +81,6 @@ export function folderSync(
     let artistName = various ? e.tags.artist! : d.artistName;
     const albumTitle = various ? undefined : d.albumTitle;
     const title = d.title;
-    // Its pictures, embedded or beside it, are the compilation's cover, wrong for any other album.
-    const offCompilation = various || !!e.compilation;
     let artistKey = t.albumArtistMbid
       ? `mb:${t.albumArtistMbid}`
       : (index.artists.get(normalize(artistName))?.key ?? artistKeyFor(undefined, artistName));
@@ -134,10 +131,6 @@ export function folderSync(
     }
     album.releaseDate ??= t.year ? `${t.year}-01-01T00:00:00Z` : undefined;
     for (const g of t.genres) if (album.genres.length < 3 && !album.genres.includes(g)) album.genres.push(g);
-    if (offCompilation) {
-      if (album.mbid) album.coverUrl ??= remoteArtUrl(coverArtArchive(album.mbid, 500));
-      else album.fileArt = false;
-    }
     if (t.trackTotal && (album.totalTrackCount ?? 0) < t.trackTotal) album.totalTrackCount = t.trackTotal;
     const release = albumTitle && t.releaseId ? releases.get(t.releaseId) : undefined;
     if (release) {
