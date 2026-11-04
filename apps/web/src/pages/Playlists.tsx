@@ -55,7 +55,7 @@ export function PlaylistCard({ playlist: p, style, className }: { playlist: Play
           cover={p.cover}
           size={220}
           name={p.name}
-          className="rounded-[4px] shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)] ring-1 ring-paper/5 transition duration-500 ease-out-expo group-hover:-translate-y-1"
+          className="rounded-[4px] shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)] ring-1 ring-paper/5"
         />
         <div className="mt-3 truncate text-[15px] text-paper">{p.name}</div>
         <div className="truncate font-mono text-[12px] text-muted">{plural(p.trackCount, 'song')}{p.mine ? '' : ` · ${p.owner}`}</div>

@@ -175,7 +175,7 @@ export function DiscoverAlbumCard({
             size={200}
             alt={album.title}
             className={cn(
-              'rounded-[4px] ring-1 ring-paper/5 transition duration-500 ease-out-expo group-hover:-translate-y-1',
+              'rounded-[4px] ring-1 ring-paper/5',
               !available && 'saturate-[0.85]',
               highlighted && 'ring-2 ring-accent ring-offset-4 ring-offset-ink-900 saturate-100',
             )}
