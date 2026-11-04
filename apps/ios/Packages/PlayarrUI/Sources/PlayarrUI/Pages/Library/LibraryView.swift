@@ -60,7 +60,18 @@ struct LibraryView: View {
       }
       Section {
       } footer: {
-        MusicBrainzIndicator()
+        VStack(alignment: .leading, spacing: 12) {
+          MusicBrainzIndicator()
+          // As the web's Library ends: where the songs kept as you listen are managed.
+          HStack(spacing: 4) {
+            Text("Songs kept on this device:")
+            NavigationLink(value: Route.settingsPanel(.playback)) { Text("Settings → Playback").foregroundStyle(.tint) }
+              .buttonStyle(.plain)
+          }
+          .font(.sans(.footnote))
+          .foregroundStyle(.muted)
+          .frame(minHeight: 44)
+        }
       }
     }
     .navigationTitle("Library")

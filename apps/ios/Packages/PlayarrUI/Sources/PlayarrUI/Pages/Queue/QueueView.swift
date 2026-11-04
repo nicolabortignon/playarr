@@ -108,6 +108,8 @@ struct QueueView: View {
           .accessibilityHint("Opens the album")
         FormatBadge(format: track.format)
       }
+      Spacer(minLength: 8)
+      FavoriteButton(track: track, size: .row)
     }
   }
 
@@ -125,7 +127,7 @@ struct QueueView: View {
             Text(track.artistName).font(.sans(.footnote)).foregroundStyle(.muted).essentialLineLimit()
           }
           Spacer(minLength: 8)
-          Text(Format.time(track.duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.muted)
+          SongLength(track: track)
         }
         .contentShape(Rectangle())
       }
@@ -134,6 +136,7 @@ struct QueueView: View {
       .accessibilityLabel("\(track.title), \(track.artistName), \(Format.time(track.duration))")
       .accessibilityHint("Plays from this song")
       .accessibilityActions { upNextItems(song, offset: offset, model: model) }
+      FavoriteButton(track: track, size: .row)
       Menu {
         upNextItems(song, offset: offset, model: model)
       } label: {
@@ -152,6 +155,7 @@ struct QueueView: View {
   private func upNextItems(_ song: QueueModel.Upcoming, offset: Int, model: QueueModel) -> some View {
     let track = song.track
     if offset > 0 { Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.playNext(song) } }
+    Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
     Button("Go to album", systemImage: "square.stack") { session.router.open(.album(track.albumId)) }
     Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(track.artistId)) }
     Button("Remove from queue", systemImage: "xmark", role: .destructive) { model.remove([offset]) }

@@ -1,8 +1,7 @@
 import PlayarrAPI
 import SwiftUI
 
-/// Made for you: every mix (apps/web/src/pages/Mixes.tsx). "Tune your mixes" (Settings → Mixes) comes with phase 9's
-/// panel.
+/// Made for you: every mix, and where to tune them (apps/web/src/pages/Mixes.tsx).
 struct MixesView: View {
   let session: AccountSession
 
@@ -32,6 +31,13 @@ struct MixesView: View {
       }
     }
     .navigationTitle("Made for you")
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button { session.router.open(.settingsPanel(.mixes)) } label: {
+          Label("Tune your mixes", systemImage: "slider.horizontal.3")
+        }
+      }
+    }
     .task { await store.poll() }
     .refreshable { await store.load() }
   }

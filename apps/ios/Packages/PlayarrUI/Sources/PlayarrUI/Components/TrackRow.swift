@@ -30,7 +30,7 @@ struct TrackRow: View {
           }
           OfflineMark(store: session.player.downloads, fileId: track.fileId)
           Spacer(minLength: 8)
-          Text(Format.time(track.duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.muted)
+          SongLength(track: track)
         }
         .contentShape(Rectangle())
       }

@@ -29,7 +29,7 @@ struct PlaylistItemRow: View {
           }
           Spacer(minLength: 8)
           if let track = item.track {
-            Text(Format.time(track.duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
+            SongLength(track: track)
           }
         }
         .contentShape(Rectangle())

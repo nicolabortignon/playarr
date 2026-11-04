@@ -36,6 +36,13 @@ struct UpNextPreview: View {
   }
 
   private func row(_ track: Track, at orderPos: Int) -> some View {
+    HStack(spacing: 4) {
+      jump(track, at: orderPos)
+      FavoriteButton(track: track, size: .row)
+    }
+  }
+
+  private func jump(_ track: Track, at orderPos: Int) -> some View {
     Button { session.player.jump(to: orderPos) } label: {
       HStack(spacing: 12) {
         Cover(path: track.coverUrl, points: 36, label: track.albumTitle, corner: 3).frame(width: 36, height: 36)
@@ -44,7 +51,7 @@ struct UpNextPreview: View {
           Text(track.artistName).font(.caption).foregroundStyle(.muted).essentialLineLimit()
         }
         Spacer(minLength: 8)
-        Text(Format.time(track.duration)).font(.caption.monospacedDigit()).foregroundStyle(.muted)
+        SongLength(track: track, font: .caption.monospacedDigit())
       }
       .frame(minHeight: 44)
       .contentShape(Rectangle())

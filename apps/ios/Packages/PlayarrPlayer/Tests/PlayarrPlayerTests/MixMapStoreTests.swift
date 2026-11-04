@@ -32,6 +32,15 @@ struct MixMapStoreTests {
   /// Lets the polls' tasks run.
   func settle() async { for _ in 0..<20 { await Task.yield() } }
 
+  @Test func rowsThatAppearTogetherAreAskedForTogether() async throws {
+    let maps = store()
+    for n in 1...3 { maps.want(song(n)) }
+    maps.want(song(1))
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(server.asked.withLock { $0 } == [["rec-1", "rec-2", "rec-3"]])
+    #expect(maps.map("rec-3")?.bpm == 120)
+  }
+
   @Test func thePlayerAsksAgainForASongAfterAMinute() async {
     let maps = store()
     await maps.load([song(1), song(2), song(1), nil])

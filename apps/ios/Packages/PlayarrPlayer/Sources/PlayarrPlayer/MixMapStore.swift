@@ -20,6 +20,8 @@ public final class MixMapStore {
   @ObservationIgnored private var watched: [String] = []
   @ObservationIgnored private var fetches = 0
   @ObservationIgnored private var poll: ScheduledAction?
+  @ObservationIgnored private var wanted: [Track] = []
+  @ObservationIgnored private var gathering: Task<Void, Never>?
   @ObservationIgnored private let scheduler: any Scheduling
   @ObservationIgnored private let fetch: @Sendable ([String]) async throws -> [String: MixMapEntry]
 
@@ -38,6 +40,21 @@ public final class MixMapStore {
       seen.insert($0).inserted && !asking.contains($0) && now.timeIntervalSince(askedAt[$0] ?? .distantPast) > Self.fresh
     }
     await ask(ids, at: now)
+  }
+
+  /// A song a list shows its tempo for: asked together with the others that appear in the same moment (a list's rows
+  /// appear one by one), through `load`.
+  public func want(_ track: Track) {
+    wanted.append(track)
+    guard gathering == nil else { return }
+    gathering = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(50))
+      guard let self else { return }
+      let tracks = wanted
+      wanted = []
+      gathering = nil
+      await load(tracks)
+    }
   }
 
   /// The songs on screen (Now Playing's next transition, Stats for nerds): asked now unless fresh, then every 30 s while

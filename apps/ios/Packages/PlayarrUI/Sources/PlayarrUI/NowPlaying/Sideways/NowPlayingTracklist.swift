@@ -91,8 +91,11 @@ struct NowPlayingTracklist: View {
       if line.state == .playing {
         openLine(line)
       } else {
-        closedLine(line)
-          .opacity(staged ? 0.25 : line.state == .played ? 0.5 : 1)
+        HStack(spacing: 4) {
+          closedLine(line)
+          FavoriteButton(track: line.track, size: .row)
+        }
+        .opacity(staged ? 0.25 : line.state == .played ? 0.5 : 1)
       }
     }
     .contextMenu { if line.state != .playing { menu(line) } }
@@ -147,7 +150,7 @@ struct NowPlayingTracklist: View {
         }
         OfflineMark(store: session.player.downloads, fileId: track.fileId)
         Spacer(minLength: 8)
-        Text(Format.time(track.duration)).font(.mono(.footnote)).foregroundStyle(.muted)
+        SongLength(track: track, font: .mono(.footnote))
       }
       .frame(minHeight: 44)
       .contentShape(Rectangle())

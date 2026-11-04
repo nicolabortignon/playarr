@@ -129,6 +129,7 @@ struct AlbumView: View {
       Menu {
         Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { session.actions.playNext(album.tracks) }
         Button("Add to queue", systemImage: "text.append") { session.actions.addToQueue(album.tracks) }
+        Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist(album.tracks) }
         Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(album.artistId)) }
       } label: {
         Image(systemName: "ellipsis").frame(width: 44, height: 44)
