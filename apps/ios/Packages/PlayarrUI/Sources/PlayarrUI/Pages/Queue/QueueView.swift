@@ -103,6 +103,8 @@ struct QueueView: View {
         // A button of its own (not merged into the row), so VoiceOver can open the album.
         Button("\(track.artistName) · \(track.albumTitle)") { session.router.open(.album(track.albumId)) }
           .font(.sans(.subheadline)).foregroundStyle(.muted).essentialLineLimit().buttonStyle(.plain)
+          .frame(minHeight: 44, alignment: .leading)
+          .contentShape(Rectangle())
           .accessibilityHint("Opens the album")
         FormatBadge(format: track.format)
       }

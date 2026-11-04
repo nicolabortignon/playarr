@@ -90,7 +90,7 @@ struct LyricsCredit: View {
       if source == .lrclib, let site = URL(string: "https://lrclib.net") {
         HStack(spacing: 4) {
           Text("LYRICS FROM")
-          Link("LRCLIB", destination: site)
+          Link("LRCLIB", destination: site).frame(minHeight: 44).contentShape(Rectangle())
         }
       } else {
         Text("LYRICS FROM THE FILE")

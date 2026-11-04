@@ -93,7 +93,7 @@ struct NowPlayingView: View {
 
   private func header(_ model: NowPlayingModel, track: Track) -> some View {
     HStack {
-      Button { session.router.nowPlaying = false } label: { Image(systemName: "chevron.down").font(.title2).frame(width: 44, height: 44) }
+      Button { session.router.nowPlaying = false } label: { Image(systemName: "chevron.down").font(.title2).frame(width: 44, height: 44).contentShape(Rectangle()) }
         .accessibilityLabel("Close now playing")
         .keyboardShortcut(.cancelAction)
       Spacer()
@@ -101,11 +101,13 @@ struct NowPlayingView: View {
         Kicker(text: "Playing from").accessibilityHidden(true)
         Button(model.playingFrom ?? "") { if let route = model.playingFromRoute { session.router.go(route) } }
           .font(.sans(.footnote)).essentialLineLimit()
+          .frame(minHeight: 44)
+          .contentShape(Rectangle())
           .accessibilityLabel("Playing from \(model.playingFrom ?? "")")
       }
       Spacer()
       SleepTimerMenu(player: session.player)
-      Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44) }
+      Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
         .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
         .accessibilityLabel("Lyrics")
         .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
@@ -118,7 +120,7 @@ struct NowPlayingView: View {
         TrackLibraryMenuItems(track: track)
         Button("Open queue", systemImage: "list.bullet") { session.router.showQueue() }
       } label: {
-        Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44)
+        Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle())
       }
       .accessibilityLabel("More")
     }
