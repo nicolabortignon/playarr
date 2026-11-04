@@ -7,6 +7,7 @@
 #                    (TESTERS="a@example.com b@example.com" adds those App Store Connect users to it)
 #   make beta        test, then archive, upload and hand the build to TestFlight (beta-upload skips the tests)
 #   make device      build and install on a paired iPhone (DEVICE="name or UDID" picks one)
+#   make screens     screenshots of the main screens on the demo library, saved in build/screens/ (its own simulator)
 #   make models      regenerate PlayarrAPI's Swift models from the shared TypeScript types (models-check: up to date?)
 #   make clean      remove build output and the generated project
 #
@@ -32,7 +33,7 @@ XCODEBUILD = xcodebuild -project Playarr.xcodeproj -scheme Playarr -derivedDataP
 # The repo's .env has ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and IOS_BUNDLE_ID; CI sets them itself.
 NODE = node --env-file-if-exists=../../.env
 
-.PHONY: bootstrap tools project build test test-scripts test-packages test-app models models-check setup crashes beta beta-upload device clean
+.PHONY: bootstrap tools project build test test-scripts test-packages test-app screens models models-check setup crashes beta beta-upload device clean
 
 bootstrap: project
 
@@ -66,6 +67,18 @@ test-packages:
 
 test-app: project
 	$(XCODEBUILD) test
+
+# The ScreenTour UI test, on a simulator of its own (parallel UI tests on a shared one break each other): its screenshots
+# land in build/screens/ (SCREENS_DIR reaches the test runner through xcodebuild's TEST_RUNNER_ prefix).
+SCREENS_SIMULATOR := Playarr Screens
+screens: project
+	@set -e; xcrun simctl list devices available | grep -qE '^ +$(SCREENS_SIMULATOR) [(]' || xcrun simctl create "$(SCREENS_SIMULATOR)" "iPhone 17 Pro" >/dev/null
+	rm -rf build/screens
+	TEST_RUNNER_SCREENS_DIR=$(CURDIR)/build/screens $(MAKE) --no-print-directory SIMULATOR="$(SCREENS_SIMULATOR)" screens-run
+	@echo "Screenshots in $(CURDIR)/build/screens"
+
+screens-run:
+	$(XCODEBUILD) test -only-testing:PlayarrUITests/ScreenTour
 
 # Swift models from the shared TypeScript types (committed).
 models:

@@ -51,6 +51,7 @@ Package dependencies: `PlayarrUI → PlayarrPlayer → PlayarrAPI`, and `Playarr
 | `pnpm ios:setup` | One-time and idempotent: register the bundle id and capabilities via the API |
 | `pnpm ios:beta` | Test, archive, upload, wait for processing, distribute to the internal TestFlight group |
 | `pnpm ios:crashes` | Crash reports testers sent from TestFlight not looked at yet; each log saved in `apps/ios/build/crashes/` |
+| `pnpm ios:screens` | Screenshots of the main screens on the demo library (`ScreenTour` UI test, simulator "Playarr Screens"), saved in `apps/ios/build/screens/` |
 | `pnpm ios:release` | App Store version, text, screenshots, submit for review |
 | `pnpm ios:device` | Build and install on a paired iPhone with `xcrun devicectl` |
 
