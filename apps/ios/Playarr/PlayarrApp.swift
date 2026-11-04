@@ -1,3 +1,4 @@
+import AppIntents
 import Foundation
 import PlayarrUI
 import SwiftUI
@@ -5,10 +6,14 @@ import SwiftUI
 @main
 struct PlayarrApp: App {
   @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  @State private var model = PlayarrApp.makeModel()
+  @State private var model: AppModel
 
   init() {
     Typography.register()
+    let model = PlayarrApp.makeModel()
+    _model = State(initialValue: model)
+    // The Shortcuts actions and Siri find the app's model through this (`@Dependency`), even when they start it.
+    AppDependencyManager.shared.add(dependency: model)
   }
 
   var body: some Scene {
@@ -39,12 +44,31 @@ struct PlayarrApp: App {
   /// UI tests launch with `-UITests` (no servers, nothing kept between runs; a dev server's session when the test hands
   /// one over in PLAYARR_UITEST_SERVER and PLAYARR_UITEST_TOKEN), plus `-UITestsDemo` to start signed in
   /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request.
+  /// With the demo, `-UITestsOffline` makes the server unreachable, `-UITestsLongQueue` queues 5,000 songs, and
+  /// `-UITestsRestore` brings back where the last run was (otherwise each run starts on Home).
   /// `-UITestsDownloads` (Debug builds) opens Library → Downloads on made-up downloads (`DownloadsDemoView`).
   static func makeModel() -> AppModel {
     let arguments = ProcessInfo.processInfo.arguments
-    if arguments.contains("-UITestsRequests") { return .demo(requests: true) }
-    if arguments.contains("-UITestsDemo") { return .demo() }
-    if arguments.contains("-UITests") { return .empty() }
+    if arguments.contains("-UITestsRequests") {
+      let model = AppModel.demo(requests: true)
+      model.restoresPlace = arguments.contains("-UITestsRestore")
+      return model
+    }
+    if arguments.contains("-UITestsDemo") {
+      // -UITestsOffline: a server that can't be reached. -UITestsLongQueue: 5,000 songs queued, paused.
+      let model = AppModel.demo(api: arguments.contains("-UITestsOffline") ? OfflineAPI() : nil)
+      model.restoresPlace = arguments.contains("-UITestsRestore")
+      if arguments.contains("-UITestsLongQueue"), let player = model.session?.player {
+        player.play(Demo.manyTracks(5000))
+        player.setPlaying(false)
+      }
+      return model
+    }
+    if arguments.contains("-UITests") {
+      let model = AppModel.empty()
+      model.restoresPlace = arguments.contains("-UITestsRestore")
+      return model
+    }
     return .live()
   }
 }

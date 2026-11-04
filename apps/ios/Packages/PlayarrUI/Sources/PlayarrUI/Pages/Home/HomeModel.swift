@@ -97,14 +97,9 @@ final class HomeModel {
   /// Feeling lucky: 15 songs the server puts together now, starting from one that suits the hour; new at every press.
   func feelingLucky() async {
     do {
-      let lucky = try await session.api.send(API.Mixes.lucky())
-      guard !lucky.tracks.isEmpty else {
-        session.toasts.push("Nothing to play yet: add some music to the library first.")
-        return
-      }
-      session.player.play(lucky.tracks, source: PlaySource(label: "Feeling lucky · \(lucky.subtitle)", href: "/"))
+      try await QuickPlay(session: session).feelingLucky()
     } catch {
-      session.toasts.push(error.localizedDescription, tone: .error)
+      session.toasts.push(error.localizedDescription, tone: error == .emptyLibrary ? .info : .error)
     }
   }
 
