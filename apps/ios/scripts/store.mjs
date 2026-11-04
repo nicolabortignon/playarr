@@ -190,3 +190,142 @@ export function validateScreenshots(sets) {
   }
   return problems;
 }
+
+const normal = (value) => (value === undefined || value === '' ? null : typeof value === 'string' ? value.replace(/\r\n/g, '\n').trim() : value);
+
+/** The attributes of `desired` that differ from `current` (missing, empty and null count as the same). */
+export function changes(current, desired) {
+  const changed = {};
+  for (const [key, value] of Object.entries(desired)) {
+    if (normal(current?.[key]) !== normal(value)) changed[key] = value;
+  }
+  return changed;
+}
+
+/** "description, keywords" for the log: names only, so a password or a long text is never printed. */
+export const names = (attributes) => Object.keys(attributes).join(', ');
+
+/** Versions as numbers: compareVersions('1.10.0', '1.9') > 0. */
+export function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return Math.sign(d);
+  }
+  return 0;
+}
+
+export const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+const EDITABLE = ['PREPARE_FOR_SUBMISSION', 'DEVELOPER_REJECTED', 'REJECTED', 'METADATA_REJECTED', 'INVALID_BINARY'];
+const stateOf = (version) => version.attributes.appVersionState ?? version.attributes.appStoreState;
+
+/**
+ * Which App Store version to work on for `wanted`: `use` it (it exists and can be edited), `rename` the one
+ * version that can be edited (App Store Connect keeps one at a time, e.g. the "1.0" it makes with the app
+ * record), `create` it, or `locked` (it's in review, approved or live: nothing to change).
+ */
+export function pickVersion(versions, wanted) {
+  const same = versions.find((v) => v.attributes.versionString === wanted);
+  if (same) return EDITABLE.includes(stateOf(same)) ? { action: 'use', version: same } : { action: 'locked', version: same, state: stateOf(same) };
+  const newer = versions.find((v) => !EDITABLE.includes(stateOf(v)) && compareVersions(v.attributes.versionString, wanted) > 0);
+  if (newer) throw new Error(`Version ${newer.attributes.versionString} is already on the App Store; ${wanted} would go backwards.`);
+  const editable = versions.find((v) => EDITABLE.includes(stateOf(v)));
+  return editable ? { action: 'rename', version: editable } : { action: 'create' };
+}
+
+/** The app info that can be edited (there are two while a version is live: the live one and the next). */
+export const editableAppInfo = (infos) => infos.find((i) => ['PREPARE_FOR_SUBMISSION', 'DEVELOPER_REJECTED', 'REJECTED', 'READY_FOR_REVIEW'].includes(i.attributes.state)) ?? null;
+
+/**
+ * Which screenshots to keep, delete and upload so the set holds exactly the local files, in their order.
+ * A screenshot is the same when its checksum (MD5 of the file) matches; failed uploads are replaced.
+ */
+export function screenshotPlan(local, remote) {
+  const usable = remote.filter((r) => r.attributes.assetDeliveryState?.state !== 'FAILED');
+  const taken = new Set();
+  const keep = [];
+  const upload = [];
+  for (const file of local) {
+    const match = usable.find((r) => !taken.has(r.id) && r.attributes.sourceFileChecksum === file.md5);
+    if (match) {
+      taken.add(match.id);
+      keep.push({ file, id: match.id });
+    } else upload.push(file);
+  }
+  const remove = remote.filter((r) => !taken.has(r.id)).map((r) => r.id);
+  const inOrder = remote.map((r) => r.id).join() === keep.map((k) => k.id).join();
+  return { keep, upload, remove, unchanged: !upload.length && !remove.length && inOrder };
+}
+
+/** The upload operations App Store Connect hands out for a reserved file, with the bytes each one sends. */
+export function uploadParts(buffer, operations) {
+  return operations.map((op) => ({
+    method: op.method,
+    url: op.url,
+    headers: Object.fromEntries((op.requestHeaders ?? []).map((h) => [h.name, h.value])),
+    body: buffer.subarray(op.offset, op.offset + op.length),
+  }));
+}
+
+/** What to do about the review submission: wait for the one in review, use a draft, or create one. */
+export function pickSubmission(submissions) {
+  const active = submissions.find((s) => ['WAITING_FOR_REVIEW', 'IN_REVIEW', 'CANCELING', 'COMPLETING'].includes(s.attributes.state));
+  if (active) return { action: 'wait', submission: active };
+  const draft = submissions.find((s) => ['READY_FOR_REVIEW', 'UNRESOLVED_ISSUES'].includes(s.attributes.state));
+  return draft ? { action: 'use', submission: draft } : { action: 'create' };
+}
+
+export const rel = (type, id) => ({ data: { type, id } });
+
+/** The review details: who Apple calls, the demo account, and the notes. */
+export function reviewDetailAttributes(env, notes) {
+  const missing = ['REVIEW_USERNAME', 'REVIEW_PASSWORD', 'REVIEW_CONTACT_FIRST_NAME', 'REVIEW_CONTACT_LAST_NAME', 'REVIEW_CONTACT_EMAIL', 'REVIEW_CONTACT_PHONE'].filter((n) => !env[n]);
+  if (missing.length) throw new Error(`Set ${missing.join(', ')} (in .env, or the GitHub secrets in CI)`);
+  return {
+    contactFirstName: env.REVIEW_CONTACT_FIRST_NAME,
+    contactLastName: env.REVIEW_CONTACT_LAST_NAME,
+    contactEmail: env.REVIEW_CONTACT_EMAIL,
+    contactPhone: env.REVIEW_CONTACT_PHONE,
+    demoAccountRequired: true,
+    demoAccountName: env.REVIEW_USERNAME,
+    demoAccountPassword: env.REVIEW_PASSWORD,
+    notes,
+  };
+}
+
+/** A price schedule that makes the app free everywhere, from the base territory's free price point. */
+export function freePriceSchedule(appId, freePricePointId, baseTerritory = 'USA') {
+  return {
+    data: {
+      type: 'appPriceSchedules',
+      relationships: {
+        app: rel('apps', appId),
+        baseTerritory: rel('territories', baseTerritory),
+        manualPrices: { data: [{ type: 'appPrices', id: '${free}' }] },
+      },
+    },
+    included: [{ type: 'appPrices', id: '${free}', attributes: { startDate: null }, relationships: { appPricePoint: rel('appPricePoints', freePricePointId) } }],
+  };
+}
+
+/** Availability in every territory given, and in new ones as Apple adds them when `inNew`. */
+export function availability(appId, territoryIds, inNew) {
+  const local = (t) => `\${${t}}`;
+  return {
+    data: {
+      type: 'appAvailabilities',
+      attributes: { availableInNewTerritories: inNew },
+      relationships: {
+        app: rel('apps', appId),
+        territoryAvailabilities: { data: territoryIds.map((t) => ({ type: 'territoryAvailabilities', id: local(t) })) },
+      },
+    },
+    included: territoryIds.map((t) => ({
+      type: 'territoryAvailabilities',
+      id: local(t),
+      attributes: { available: true, releaseDate: null, preOrderEnabled: false },
+      relationships: { territory: rel('territories', t) },
+    })),
+  };
+}
