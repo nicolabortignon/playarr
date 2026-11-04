@@ -27,13 +27,21 @@ struct HomeView: View {
       }
       .padding(.vertical, 16)
     }
-    .navigationTitle("Playarr")
+    // No title in the bar, scrolled or not: the page greets you instead. (Hiding the bar outright kept the app from
+    // ever settling, the tab bar and the bar's safe area chasing each other.)
+    .navigationTitle("")
+    .inlineTitle()
     .task { await model.load() }
     .refreshable { await model.refresh() }
   }
 
   private var intro: some View {
     VStack(alignment: .leading, spacing: 20) {
+      Text("Hi, \(greetingName).")
+        .font(.display(.largeTitle))
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
+        .accessibilityAddTraits(.isHeader)
       Text(model.libraryLine ?? "Loading library")
         .font(.sans(.callout))
         .foregroundStyle(.secondary)
@@ -53,6 +61,12 @@ struct HomeView: View {
       }
     }
     .padding(.horizontal, 20)
+  }
+
+  /// The account's name, else its username.
+  private var greetingName: String {
+    let name = session.account.name.trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? session.account.username : name
   }
 
   private var mixes: some View {
