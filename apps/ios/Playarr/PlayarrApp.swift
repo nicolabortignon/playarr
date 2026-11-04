@@ -27,6 +27,8 @@ struct PlayarrApp: App {
 
   private var root: some View {
     RootView(model: model)
+      // No scroll bars anywhere: every page, list and sheet below inherits this.
+      .scrollIndicators(.hidden)
       .onOpenURL { model.open($0) }
   }
 

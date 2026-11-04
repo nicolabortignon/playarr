@@ -126,7 +126,7 @@ final class ScreenTour: XCTestCase {
       // Back to Library's root (the tab remembers the artist page).
       tap(app.tabBars.buttons["Library"], timeout: 1)
     }
-    if tap(button(beginningWith: "Settings")) {
+    if tap(app.buttons["Account and settings"].firstMatch), tap(app.buttons["Settings"]) {
       shot("14-settings")
       if tap(app.buttons["Appearance"]) { shot("15-appearance") }
     }
