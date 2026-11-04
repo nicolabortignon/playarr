@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, verify } from 'node:crypto';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { crashLogText, explain, token, unseenCrashes } from './asc.mjs';
+import { ascOrNull, crashLogText, explain, token, unseenCrashes } from './asc.mjs';
 
 test('token is an ES256 JWT for App Store Connect that lasts 10 minutes', () => {
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -35,4 +38,31 @@ test('unseenCrashes lists the reports not looked at yet, oldest first', () => {
 
 test('crashLogText takes the log out of its API answer', () => {
   assert.equal(crashLogText({ data: { type: 'betaCrashLogs', attributes: { logText: 'Incident Identifier: X\n' } } }), 'Incident Identifier: X\n');
+});
+
+test('ascOrNull answers null for a 404 straight away, without retrying', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'playarr-home-'));
+  mkdirSync(join(home, '.appstoreconnect', 'private_keys'), { recursive: true });
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  writeFileSync(join(home, '.appstoreconnect', 'private_keys', 'AuthKey_TESTKEY.p8'), privateKey.export({ type: 'pkcs8', format: 'pem' }));
+  Object.assign(process.env, { HOME: home, ASC_KEY_ID: 'TESTKEY', ASC_ISSUER_ID: 'issuer', APPLE_TEAM_ID: 'TEAM', IOS_BUNDLE_ID: 'me.example.app' });
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    calls.push([init.method, url]);
+    return new Response(JSON.stringify({ errors: [{ detail: "There is no resource of type 'appAvailabilities'" }] }), { status: 404 });
+  });
+  assert.equal(await ascOrNull('/v1/apps/1/appAvailabilityV2'), null);
+  assert.deepEqual(calls, [['GET', 'https://api.appstoreconnect.apple.com/v1/apps/1/appAvailabilityV2']]);
+});
+
+test('explain lists what a refused submission is missing, and points at App Privacy', () => {
+  const body = {
+    errors: [{
+      status: '409', code: 'ENTITY_ERROR', detail: 'The request entity is not valid.',
+      meta: { associatedErrors: { '/v1/apps/1': [{ detail: 'You must provide App Privacy information (data usage) before submitting.' }], '/v1/appStoreVersions/2': [{ detail: 'Screenshots are missing.' }] } },
+    }],
+  };
+  const message = explain(409, body);
+  assert.match(message, /App Store Connect → Playarr → App Privacy/);
+  assert.ok(message.endsWith('The request entity is not valid. You must provide App Privacy information (data usage) before submitting. Screenshots are missing.'));
 });

@@ -44,7 +44,9 @@ export function token({ keyId, issuerId, key, now = Date.now() }) {
 
 /** What went wrong, in words, from a failed response. */
 export function explain(status, body) {
-  const said = (body?.errors ?? []).map((e) => e.detail ?? e.title).filter(Boolean).join(' ');
+  // A refused submission lists what's missing in meta.associatedErrors, keyed by the resource it's about.
+  const details = (e) => [e.detail ?? e.title, ...Object.values(e.meta?.associatedErrors ?? {}).flat().map((a) => a.detail ?? a.title)];
+  const said = (body?.errors ?? []).flatMap(details).filter(Boolean).join(' ');
   if (status === 401) return `App Store Connect refused the key (401). Check ASC_KEY_ID and ASC_ISSUER_ID in .env, and that the key isn't revoked. ${said}`.trim();
   if (status === 403 && /agreement/i.test(said)) {
     return (
@@ -54,6 +56,9 @@ export function explain(status, body) {
     );
   }
   if (status === 403) return `The key isn't allowed to do this (403); it needs the Admin role. Apple says: ${said}`;
+  if (status === 409 && /privacy|data (usage|collection)/i.test(said)) {
+    return `App Store Connect refuses (409) until App Privacy is published, which only its website can do: App Store Connect → Playarr → App Privacy (see the phase 11 plan). Apple says: ${said}`;
+  }
   return `App Store Connect answered ${status}. ${said}`.trim();
 }
 
@@ -63,8 +68,9 @@ let signingKey;
  * Apple's API has bad minutes, so a GET that fails with a 5xx, a 429 or no answer is tried four more times,
  * 2, 4, 8 and 16 s apart. So is a GET answered 404: a replica that lags behind sometimes says a group it
  * just listed doesn't exist. Changes aren't retried: a failed one may have happened anyway.
+ * With `orNull`, a 404 answers null at once: for things that may well not exist yet (ascOrNull).
  */
-export async function asc(method, path, body) {
+export async function asc(method, path, body, { orNull = false } = {}) {
   const cfg = config();
   signingKey ??= createPrivateKey(readFileSync(cfg.keyPath));
   for (let attempt = 0; ; attempt++) {
@@ -73,17 +79,22 @@ export async function asc(method, path, body) {
       headers: { Authorization: `Bearer ${token({ ...cfg, key: signingKey })}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     }).catch((err) => err);
-    const failed = res instanceof Error || res.status === 404 || res.status === 429 || res.status >= 500;
+    const failed = res instanceof Error || (res.status === 404 && !orNull) || res.status === 429 || res.status >= 500;
     if (failed && method === 'GET' && attempt < 4) {
       await new Promise((resolve) => setTimeout(resolve, 2000 * 2 ** attempt));
       continue;
     }
     if (res instanceof Error) throw new Error(`${method} ${path}: no answer from App Store Connect (${res.cause?.code ?? res.message})`);
+    if (orNull && res.status === 404) return null;
     const json = res.status === 204 ? null : await res.json().catch(() => null);
     if (!res.ok) throw Object.assign(new Error(`${method} ${path}: ${explain(res.status, json)}`), { status: res.status });
     return json;
   }
 }
+
+/** GET something that may not exist yet (an app's availability, its prices): null for a 404, with no retries. */
+export const ascOrNull = (path) => asc('GET', path, undefined, { orNull: true });
+
 
 const q = encodeURIComponent;
 
