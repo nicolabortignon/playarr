@@ -69,6 +69,16 @@ final class ScreenTour: XCTestCase {
       }
     }
 
+    // Home's listening button: playing, the cover alone with a pause sign; tapped, paused, Resume and the title.
+    if tap(app.tabBars.buttons["Home"]) {
+      app.swipeDown()
+      shot("05b-home-playing")
+      if tap(button(beginningWith: "Pause"), timeout: 2) {
+        shot("05c-home-paused")
+        tap(button(beginningWith: "Resume"), timeout: 2)
+      }
+    }
+
     if tap(app.buttons["Open now playing"]) {
       shot("06-now-playing")
       if tap(app.buttons["Lyrics"]) {

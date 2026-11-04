@@ -49,27 +49,7 @@ struct HomeView: View {
         .foregroundStyle(.black)
         .fixedSize()
         .accessibilityLabel("Shuffle all")
-        if let track = model.resumable {
-          Button { model.resume() } label: {
-            HStack(spacing: 10) {
-              // The play sign on the album's cover, so the button stays narrow.
-              Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true)
-                .frame(width: 36, height: 36)
-                .overlay {
-                  Circle().fill(.black.opacity(0.45))
-                  Image(systemName: "play.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                }
-              VStack(alignment: .leading, spacing: 0) {
-                Kicker(text: "Resume")
-                Text(track.title).font(.sans(.subheadline)).lineLimit(1)
-              }
-            }
-            .padding(.trailing, 8)
-          }
-          .buttonStyle(.bordered)
-          .buttonBorderShape(.capsule)
-          .accessibilityLabel("Resume \(track.title)")
-        }
+        if let track = model.listening { ListeningButton(track: track, playing: model.isPlaying) { model.togglePlay() } }
       }
     }
     .padding(.horizontal, 20)
@@ -168,3 +148,44 @@ struct HomeView: View {
     }
   }
 }
+
+/// The listening session, beside Shuffle all: paused, "Resume" and the song's title beside its cover with a play sign;
+/// playing, just the cover, round, with a pause sign. It draws in and out between the two (apps/web/src/pages/Home.tsx
+/// ResumeButton, which hides while playing).
+private struct ListeningButton: View {
+  let track: Track
+  let playing: Bool
+  let toggle: () -> Void
+
+  var body: some View {
+    Button(action: toggle) {
+      HStack(spacing: 10) {
+        Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true)
+          .frame(width: 36, height: 36)
+          .overlay {
+            Circle().fill(.black.opacity(0.45))
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+              .font(.system(size: 13, weight: .bold))
+              .foregroundStyle(.white)
+              .contentTransition(.symbolEffect(.replace))
+          }
+        if !playing {
+          VStack(alignment: .leading, spacing: 0) {
+            Kicker(text: "Resume")
+            Text(track.title).font(.sans(.subheadline)).lineLimit(1)
+          }
+          .transition(.opacity.combined(with: .move(edge: .leading)))
+        }
+      }
+      .padding(5)
+      .padding(.trailing, playing ? 0 : 11)
+      .background(Capsule().fill(.tint.opacity(0.16)))
+      .clipShape(Capsule())
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .animation(.snappy(duration: 0.35), value: playing)
+    .accessibilityLabel(playing ? "Pause \(track.title)" : "Resume \(track.title)")
+  }
+}
+

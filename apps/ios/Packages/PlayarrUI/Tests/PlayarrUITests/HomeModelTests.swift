@@ -60,15 +60,20 @@ import Testing
     #expect(session.player.queue.source == PlaySource(label: "Your whole library", href: "/albums"))
   }
 
-  @Test func offersToResumeAPausedSong() {
+  @Test func offersTheSongOfTheSessionToPauseAndResume() {
     let session = demoSession()
     let model = HomeModel(session: session)
-    #expect(model.resumable == nil)
+    #expect(model.listening == nil)
     session.player.play(Demo.mezzanineTracks)
     session.player.setPlaying(false)
-    #expect(model.resumable?.title == "Angel")
-    model.resume()
-    #expect(model.resumable == nil)
+    #expect(model.listening?.title == "Angel")
+    #expect(!model.isPlaying)
+    // Playing, it stays: drawn in to its cover with a pause sign.
+    model.togglePlay()
+    #expect(model.listening?.title == "Angel")
+    #expect(model.isPlaying)
+    model.togglePlay()
+    #expect(!model.isPlaying)
   }
 
   @Test func rollsTheDiceForOtherAlbums() async {

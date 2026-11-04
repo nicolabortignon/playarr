@@ -98,12 +98,12 @@ final class HomeModel {
     }
   }
 
-  /// The song to resume, when one is paused.
-  var resumable: Track? {
-    session.player.queue.playing ? nil : session.player.queue.currentTrack
-  }
+  /// The song of the listening session, paused (to resume) or playing (to pause from here).
+  var listening: Track? { session.player.queue.currentTrack }
 
-  func resume() { session.player.setPlaying(true) }
+  var isPlaying: Bool { session.player.queue.playing }
+
+  func togglePlay() { session.player.setPlaying(!isPlaying) }
 
   static func rediscover(seed: Int, session: AccountSession) -> Query<[Album]> {
     let api = session.api
