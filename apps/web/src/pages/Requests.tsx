@@ -6,7 +6,7 @@ import { Cover } from '../components/Cover';
 import { RequestButton } from '../components/Discover';
 import { ErrorState, Skeleton } from '../components/Section';
 import { api } from '../lib/api';
-import { useRequests } from '../lib/queries';
+import { useRequests, useRequestsEnabled } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { PageTitle } from './Albums';
 
@@ -59,6 +59,8 @@ export function RequestsPage() {
 
 function RequestRow({ request: r }: { request: AlbumRequest }) {
   const client = useQueryClient();
+  // Removing needs the same permission as requesting: the server refuses it otherwise.
+  const canRemove = useRequestsEnabled();
   const { state, progress, message, albumId } = r.availability;
   const remove = async () => {
     await api.removeRequest(r.mbid).catch((err: Error) => toast(err.message, 'error'));
@@ -92,15 +94,17 @@ function RequestRow({ request: r }: { request: AlbumRequest }) {
         <div className="flex min-w-0 flex-1 items-center gap-4">{body}</div>
       )}
       <RequestButton album={{ mbid: r.mbid, artistName: r.artistName, albumTitle: r.title }} availability={r.availability} size="sm" />
-      <button
-        type="button"
-        aria-label={`Remove ${r.title} from this list`}
-        title="Remove from this list (doesn’t change Lidarr)"
-        onClick={remove}
-        className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper md:opacity-0 md:group-hover:opacity-100"
-      >
-        <X className="size-4" />
-      </button>
+      {canRemove && (
+        <button
+          type="button"
+          aria-label={`Remove ${r.title} from this list`}
+          title="Remove from this list (doesn’t change Lidarr)"
+          onClick={remove}
+          className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper md:opacity-0 md:group-hover:opacity-100"
+        >
+          <X className="size-4" />
+        </button>
+      )}
     </li>
   );
 }
