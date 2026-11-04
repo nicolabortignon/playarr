@@ -4,32 +4,53 @@ import { Link } from 'react-router';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { Cover } from './Cover';
+import { orbitLayout, type OrbitCircle } from '../lib/mixOrbit';
 
 /**
- * A mix's cover, drawn here rather than on the server: up to four of its album covers under a wash
- * of the mix's colour, with its name. Cheap to make, and each mix keeps a recognisable colour.
+ * A mix's cover, drawn here rather than on the server: a wash of the mix's colour, one of its album covers as a big
+ * circle off the top right with a thin ring round it, up to three more as small circles on the ring (tinted towards
+ * the mix's colour), and its name. Where the circles go comes from the mix's key (lib/mixOrbit.ts), so a mix keeps its
+ * look as its songs change, and looks the same in the app.
  */
-export function MixCover({ mix, size, className }: { mix: Pick<MixSummary, 'title' | 'covers' | 'hue'>; size: number; className?: string }) {
+export function MixCover({ mix, size, className }: { mix: Pick<MixSummary, 'key' | 'title' | 'covers' | 'hue'>; size: number; className?: string }) {
   const { hue, covers } = mix;
-  const grid = covers.length >= 4 ? covers.slice(0, 4) : covers.slice(0, 1);
+  const layout = orbitLayout(mix.key, covers.length);
+  const place = (c: OrbitCircle): CSSProperties => ({
+    left: `${(c.x - c.d / 2) * 100}%`,
+    top: `${(c.y - c.d / 2) * 100}%`,
+    width: `${c.d * 100}%`,
+    height: `${c.d * 100}%`,
+  });
+  const ring = { x: layout.hero.x, y: layout.hero.y, d: layout.ring * 2 };
   return (
     <div
       className={cn('@container relative aspect-square overflow-hidden', className)}
-      style={{ background: `oklch(0.32 0.09 ${hue})` }}
+      style={{
+        background: `linear-gradient(165deg, oklch(0.5 0.15 ${hue}) 0%, oklch(0.34 0.11 ${hue}) 45%, oklch(0.18 0.06 ${hue}) 100%)`,
+      }}
     >
-      {grid.length > 0 && (
-        <div className={cn('absolute inset-0 grid saturate-[0.85]', grid.length === 4 && 'grid-cols-2')}>
-          {grid.map((src) => (
-            <Cover key={src} src={src} size={grid.length === 4 ? size / 2 : size} alt="" className="rounded-none" />
-          ))}
+      <div className="absolute rounded-full border border-paper/15" style={place(ring)} />
+      {covers.length === 0 ? (
+        // Nothing to show yet: a record's grooves round the label, in the mix's colour.
+        <div
+          className="absolute rounded-full"
+          style={{
+            ...place(layout.hero),
+            background: `radial-gradient(circle closest-side, oklch(0.72 0.14 ${hue}) 0 33%, transparent 34%), repeating-radial-gradient(circle closest-side, oklch(0.17 0.04 ${hue}) 0 6%, oklch(0.24 0.05 ${hue}) 6% 7%)`,
+          }}
+        />
+      ) : (
+        <div className="absolute overflow-hidden rounded-full shadow-[0_18px_40px_-12px_rgb(0_0_0/0.7)] ring-1 ring-paper/10" style={place(layout.hero)}>
+          <Cover src={covers[0]!} size={Math.round(size * layout.hero.d)} alt="" className="size-full rounded-none saturate-[0.9]" />
         </div>
       )}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: `linear-gradient(165deg, oklch(0.62 0.17 ${hue} / 0.35) 0%, oklch(0.42 0.14 ${hue} / 0.72) 45%, oklch(0.2 0.07 ${hue} / 0.95) 100%)`,
-        }}
-      />
+      {layout.satellites.map((c, i) => (
+        <div key={i} className="absolute isolate overflow-hidden rounded-full shadow-[0_8px_20px_-8px_rgb(0_0_0/0.7)] ring-1 ring-paper/10" style={place(c)}>
+          <Cover src={covers[i + 1]!} size={Math.round(size * c.d)} alt="" className="size-full rounded-none saturate-[0.6]" />
+          <div className="absolute inset-0 mix-blend-color" style={{ background: `oklch(0.62 0.14 ${hue})`, opacity: 0.5 }} />
+        </div>
+      ))}
+      {layout.dot && <div className="absolute rounded-full" style={{ ...place(layout.dot), background: `oklch(0.78 0.13 ${hue})` }} />}
       <div className="absolute inset-x-0 bottom-0 p-[7cqi]">
         <div className="font-mono text-[4.6cqi] tracking-[0.2em] text-paper/75 uppercase">Made for you</div>
         <div className="mt-[1.5cqi] font-display text-[12.5cqi] leading-[0.95] text-balance text-paper drop-shadow-[0_2px_12px_rgb(0_0_0/0.4)]">
