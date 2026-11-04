@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { exportOptions, whatsNew } from './release.mjs';
+import { exportOptions, uploadNeeded, whatsNew } from './release.mjs';
 
 test('whatsNew lists the commit subjects, without merges', () => {
   assert.equal(
@@ -29,4 +29,11 @@ test('exportOptions signs for the App Store and writes an .ipa, keeping our buil
     assert.ok(plist.includes(`<key>${key}</key><string>${value}</string>`), `${key} = ${value}`);
   }
   assert.ok(plist.includes('<key>manageAppVersionAndBuildNumber</key><false/>'));
+});
+
+test('uploadNeeded uploads a newer build only: one already there, or older than the last, is nothing to do', () => {
+  assert.equal(uploadNeeded(519, 518), true);
+  assert.equal(uploadNeeded(518, 518), false);
+  // A run queued behind a newer build (uploaded from this Mac, or by a later run) skips rather than fails.
+  assert.equal(uploadNeeded(515, 518), false);
 });

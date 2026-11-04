@@ -37,6 +37,12 @@ export function whatsNew(subjects) {
   return more ? `${shown.join('\n')}\n…and ${more} more` : shown.join('\n');
 }
 
+/**
+ * Whether this build goes up: only when it's newer than the last on App Store Connect. One already there, or older
+ * (a CI run queued behind a build uploaded from a Mac, or by a later run), is nothing to do rather than a failure.
+ */
+export const uploadNeeded = (build, lastBuild) => build > lastBuild;
+
 // TestFlight works with no registered device: a dev-signed archive would need one, so the archive is unsigned,
 // the export signs it with Apple's cloud-managed distribution certificate through the key, and altool uploads
 // the .ipa. (`destination upload` would need Xcode's ITunesSoftwareService, which Claude's sandbox can't reach.)
@@ -47,8 +53,13 @@ async function beta() {
   const app = (await findApp(cfg.bundleId)) ?? fail(`No app record for ${cfg.bundleId} in App Store Connect: create it first (see the phase 0 plan).`);
   const { data: [last] } = await asc('GET', `/v1/builds?filter[app]=${app.id}&sort=-uploadedDate&limit=1&fields[builds]=version`);
   const lastBuild = Number(last?.attributes.version ?? 0);
-  if (build === lastBuild) return console.log(`✓ Build ${build} is already on App Store Connect: nothing to upload.`);
-  if (build < lastBuild) fail(`Build ${build} is older than ${lastBuild}, the last one on App Store Connect. Pull, then try again.`);
+  if (!uploadNeeded(build, lastBuild)) {
+    return console.log(
+      build === lastBuild
+        ? `✓ Build ${build} is already on App Store Connect: nothing to upload.`
+        : `✓ Build ${lastBuild}, newer than this one (${build}), is already on App Store Connect: nothing to upload.`,
+    );
+  }
   if (sh('git', ['status', '--porcelain'])) console.warn('! Uncommitted changes go into this build, but not into its number.');
 
   step(`Archiving Playarr ${version} (${build}), unsigned`);
