@@ -45,12 +45,14 @@ extension API {
 
 /// PATCH /api/accounts/:id: only the fields set are changed. `sources: .some(nil)` gives every source.
 public struct AccountPatch: Encodable, Sendable, Equatable {
+    public var username: String?
     public var name: String?
     public var role: AccountRole?
     public var canRequest: Bool?
     public var sources: [Int]??
 
-    public init(name: String? = nil, role: AccountRole? = nil, canRequest: Bool? = nil, sources: [Int]?? = nil) {
+    public init(username: String? = nil, name: String? = nil, role: AccountRole? = nil, canRequest: Bool? = nil, sources: [Int]?? = nil) {
+        self.username = username
         self.name = name
         self.role = role
         self.canRequest = canRequest
