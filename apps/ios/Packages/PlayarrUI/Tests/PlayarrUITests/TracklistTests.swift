@@ -46,6 +46,15 @@ import Testing
     #expect(lines.allSatisfy { !$0.showsArtist && !$0.showsAlbum })
   }
 
+  @Test func songsRadioAddsAfterAnAlbumAreNumberedByPlaceWithTheirArtistAndAlbum() {
+    let tracks = Demo.mezzanineTracks + [Demo.dummyTracks[2]]  // Glory Box, disc 2 of another album
+    let tracklist = list(queue(tracks, pos: 2, from: "/albums/70"))
+    let lines = tracklist.range.compactMap(tracklist.line(at:))
+    #expect(lines.map(\.number) == ["2", "4", "1"])  // Mezzanine is one disc; the radio song by its place
+    #expect(lines.map(\.showsArtist) == [false, false, true])
+    #expect(lines.map(\.showsAlbum) == [false, false, true])
+  }
+
   @Test func numbersAMixFromTheSongPlayingAndNamesItsArtistsAndAlbums() {
     let mix = [Demo.mezzanineTracks[0], Demo.dummyTracks[0], Demo.protectionTracks[0]]
     let tracklist = list(queue(mix, pos: 0, from: "/mixes/vibes"), .crossfade)

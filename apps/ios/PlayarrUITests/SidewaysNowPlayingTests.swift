@@ -31,6 +31,7 @@ final class SidewaysNowPlayingTests: XCTestCase {
     // The album's own numbers, and a tap plays from that song.
     app.buttons["4, Inertia Creeps, 5:56"].tap()
     XCTAssertTrue(app.element("Now playing: Inertia Creeps, Massive Attack").waitForExistence(timeout: 5))
+    keepScreenshot("sleeve")
 
     // Upright again: Now Playing stays open, as a column.
     XCUIDevice.shared.orientation = .portrait
@@ -42,5 +43,15 @@ final class SidewaysNowPlayingTests: XCTestCase {
     // Closed, with a song queued: turning the phone opens it again.
     XCUIDevice.shared.orientation = .landscapeRight
     XCTAssertTrue(app.element("nowPlaying.tracklist").waitForExistence(timeout: 10))
+  }
+
+  /// The sleeve as drawn, kept in the result bundle to look at (`xcresulttool export attachments`).
+  @MainActor
+  private func keepScreenshot(_ name: String) {
+    RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    attachment.name = name
+    attachment.lifetime = .keepAlways
+    add(attachment)
   }
 }

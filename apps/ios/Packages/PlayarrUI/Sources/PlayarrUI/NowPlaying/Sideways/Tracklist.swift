@@ -68,7 +68,23 @@ public struct Tracklist: Equatable, Sendable {
     return href.hasPrefix("/albums/") || href.hasPrefix("/artists/")
   }
 
-  private var multiDisc: Bool { queue.queue.contains { $0.discNumber > 1 } }
+  /// The album played in order, by its id: songs radio adds after it are numbered by their place, not their record's.
+  private var sourceAlbumId: Int? { albumInOrder ? sourceId : nil }
+
+  /// The album's or artist's id in the source's address ("/albums/70" → 70).
+  private var sourceId: Int? {
+    queue.source.flatMap { Int($0.href.split(separator: "/").dropFirst().first?.prefix { $0.isNumber } ?? "") }
+  }
+
+  /// A song radio added after the album or artist the queue came from.
+  private func fromElsewhere(_ track: Track) -> Bool {
+    guard let href = queue.source?.href, let id = sourceId else { return false }
+    if href.hasPrefix("/albums/") { return track.albumId != id }
+    if href.hasPrefix("/artists/") { return track.artistId != id }
+    return false
+  }
+
+  private var multiDisc: Bool { queue.queue.contains { $0.albumId == sourceAlbumId && $0.discNumber > 1 } }
 
   private func song(at orderPos: Int) -> Track? {
     guard orderPos >= 0, orderPos < queue.order.count else { return nil }
@@ -82,12 +98,13 @@ public struct Tracklist: Equatable, Sendable {
     let above = song(at: orderPos - 1)
     return Line(
       orderPos: orderPos, track: track, state: state, number: number(track, at: orderPos, state: state),
-      showsArtist: !sourceIsOneArtist, showsAlbum: !albumInOrder && above?.albumId != track.albumId,
+      showsArtist: !sourceIsOneArtist || fromElsewhere(track),
+      showsAlbum: (!albumInOrder || fromElsewhere(track)) && above?.albumId != track.albumId,
       joinBefore: orderPos > range.lowerBound ? join(above, track, at: orderPos) : .none)
   }
 
   private func number(_ track: Track, at orderPos: Int, state: State) -> String {
-    if albumInOrder {
+    if let album = sourceAlbumId, track.albumId == album {
       return multiDisc ? "\(track.discNumber)-\(track.trackNumber < 10 ? "0" : "")\(track.trackNumber)" : "\(track.trackNumber)"
     }
     return state == .upcoming ? "\(orderPos - queue.pos)" : ""
