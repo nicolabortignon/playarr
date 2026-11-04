@@ -15,7 +15,7 @@ struct AppShell: View {
       ForEach(AppTab.allCases, id: \.self) { tab in
         Tab(tab.title, systemImage: tab.systemImage, value: tab, role: tab == .search ? .search : nil) {
           NavigationStack(path: Binding(get: { router.paths[tab] ?? [] }, set: { router.paths[tab] = $0 })) {
-            root(tab).routeDestinations(session)
+            root(tab).accountMenu().routeDestinations(session)
           }
         }
       }

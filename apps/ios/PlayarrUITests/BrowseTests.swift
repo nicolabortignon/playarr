@@ -77,7 +77,7 @@ final class BrowseTests: XCTestCase {
   @MainActor
   func testAppearanceChangesTheAccent() {
     let app = launch()
-    app.tabBars.buttons["Library"].tap()
+    app.buttons["Account and settings"].firstMatch.tap()
     app.buttons["Settings"].tap()
     app.buttons["Appearance"].tap()
     app.buttons["Violet"].tap()

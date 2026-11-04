@@ -7,7 +7,6 @@ import SwiftUI
 struct LibraryView: View {
   @State private var health: Query<HealthStatus>
   let session: AccountSession
-  @Environment(AppModel.self) private var app
   @Environment(DiscoverContext.self) private var discover: DiscoverContext?
   @Environment(Theme.self) private var theme
 
@@ -31,8 +30,6 @@ struct LibraryView: View {
         if let count = discover?.requests.requests?.count, count > 0 {
           row("Requests", "arrow.down.circle", .requests, detail: String(count)).accessibilityIdentifier("library-requests")
         }
-        // Phase 9 finds Settings by this identifier.
-        row("Settings", "gearshape", .settings).accessibilityIdentifier("settings")
       }
       Section {
         Button { session.addToPlaylist([]) } label: {
@@ -67,11 +64,6 @@ struct LibraryView: View {
       }
     }
     .navigationTitle("Library")
-    .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        Button("Accounts", systemImage: "person.crop.circle") { app.showingAccounts = true }
-      }
-    }
     .task {
       await health.load()
       await session.favorites.load()
