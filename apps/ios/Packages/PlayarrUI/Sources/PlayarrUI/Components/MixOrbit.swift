@@ -1,4 +1,5 @@
 import Foundation
+import PlayarrAPI
 
 /// Where a mix cover's circles go ("orbit"): one album cover as a big circle bleeding off the top right, a thin ring
 /// round it, and up to three small covers on the ring, tinted towards the mix's colour. Everything is in fractions of
@@ -111,5 +112,33 @@ enum MixOrbit {
       }
     }
     return Layout(hero: hero, ring: round(ring), satellites: satellites, dot: dot)
+  }
+
+  /// Vibes, Discovery and On Repeat change with what's played: their wash runs between the colours of their first two
+  /// covers.
+  static func toneFromCovers(_ kind: MixKind) -> Bool {
+    kind == .vibes || kind == .discovery || kind == .repeat
+  }
+
+  struct WashStop: Equatable {
+    /// Where along the gradient (0–1), and the colour there as OKLCH.
+    var at: Double
+    var l: Double
+    var c: Double
+    var h: Double
+  }
+
+  /// Lightness and chroma down the wash, the same for every mix so none stands out on a shelf.
+  static let washSteps: [(at: Double, l: Double, c: Double)] = [(0, 0.5, 0.15), (0.225, 0.42, 0.13), (0.45, 0.34, 0.11), (0.725, 0.26, 0.085), (1, 0.18, 0.06)]
+
+  /// A mix cover's wash, top to bottom: from hue `from` to hue `to` the short way round the wheel (one hue when they're
+  /// the same), as the web works it out.
+  static func wash(from: Double, to: Double? = nil) -> [WashStop] {
+    let to = to ?? from
+    let turn = ((to - from).truncatingRemainder(dividingBy: 360) + 540).truncatingRemainder(dividingBy: 360) - 180
+    return washSteps.map { step in
+      let h = ((from + turn * step.at).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360)
+      return WashStop(at: step.at, l: step.l, c: step.c, h: round(h))
+    }
   }
 }

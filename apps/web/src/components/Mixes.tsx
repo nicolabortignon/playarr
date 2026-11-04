@@ -1,20 +1,28 @@
 import type { MixSummary } from '@playarr/shared';
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router';
+import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
+import { accentHue, knownAccentHue } from '../lib/color';
 import { plural } from '../lib/format';
 import { Cover } from './Cover';
-import { orbitLayout, type OrbitCircle } from '../lib/mixOrbit';
+import { orbitLayout, toneFromCovers, washStops, type OrbitCircle, type WashStop } from '../lib/mixOrbit';
 
 /**
- * A mix's cover, drawn here rather than on the server: a wash of the mix's colour, one of its album covers as a big
+ * A mix's cover, drawn here rather than on the server: a wash of the mix's colour (for Vibes, Discovery and On Repeat,
+ * running between the colours of its first two covers, faded in once they're read), one of its album covers as a big
  * circle off the top right with a thin ring round it, up to three more as small circles on the ring (tinted towards
  * the mix's colour), and its name. Where the circles go comes from the mix's key (lib/mixOrbit.ts), so a mix keeps its
  * look as its songs change, and looks the same in the app.
  */
-export function MixCover({ mix, size, className }: { mix: Pick<MixSummary, 'key' | 'title' | 'covers' | 'hue'>; size: number; className?: string }) {
-  const { hue, covers } = mix;
+export function MixCover({ mix, size, className }: { mix: Pick<MixSummary, 'key' | 'kind' | 'title' | 'covers' | 'hue'>; size: number; className?: string }) {
+  const { covers } = mix;
   const layout = orbitLayout(mix.key, covers.length);
+  const base = washStops(mix.hue);
+  const tones = useCoverTones(mix);
+  const toned = tones && washStops(tones.from, tones.to);
+  // The small circles, the dot and the record take the middle of the wash.
+  const hue = (toned ?? base)[2]!.h;
   const place = (c: OrbitCircle): CSSProperties => ({
     left: `${(c.x - c.d / 2) * 100}%`,
     top: `${(c.y - c.d / 2) * 100}%`,
@@ -25,10 +33,9 @@ export function MixCover({ mix, size, className }: { mix: Pick<MixSummary, 'key'
   return (
     <div
       className={cn('@container relative aspect-square overflow-hidden', className)}
-      style={{
-        background: `linear-gradient(165deg, oklch(0.5 0.15 ${hue}) 0%, oklch(0.34 0.11 ${hue}) 45%, oklch(0.18 0.06 ${hue}) 100%)`,
-      }}
+      style={{ background: gradient(base) }}
     >
+      <div className="absolute inset-0 transition-opacity duration-700" style={{ background: gradient(toned ?? base), opacity: toned ? 1 : 0 }} />
       <div className="absolute rounded-full border border-paper/15" style={place(ring)} />
       {covers.length === 0 ? (
         // Nothing to show yet: a record's grooves round the label, in the mix's colour.
@@ -59,6 +66,31 @@ export function MixCover({ mix, size, className }: { mix: Pick<MixSummary, 'key'
       </div>
     </div>
   );
+}
+
+/** The web's `linear-gradient(165deg, …)` of a wash: mostly down, a little to the right. */
+const gradient = (stops: WashStop[]) => `linear-gradient(165deg, ${stops.map((s) => `oklch(${s.l} ${s.c} ${s.h}) ${s.at * 100}%`).join(', ')})`;
+
+/**
+ * For the mixes whose wash comes from their covers: the colours of the first two (the first's alone when the second
+ * has none), null until they're read, or when neither has a colour to give.
+ */
+function useCoverTones(mix: Pick<MixSummary, 'kind' | 'covers'>): { from: number; to: number } | null {
+  const urls = toneFromCovers(mix.kind) ? mix.covers.slice(0, 2).map((u) => sized(u, 96)!) : [];
+  const key = urls.join(' ');
+  const [read, setRead] = useState(() => ({ key, hues: urls.map(knownAccentHue) }));
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    void Promise.all(key.split(' ').map(accentHue)).then((hues) => !cancelled && setRead({ key, hues }));
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+  if (!key || read.key !== key) return null;
+  const [first, second] = read.hues;
+  const from = first ?? second;
+  return from == null ? null : { from, to: second ?? from };
 }
 
 /** A mix on Home: its cover (with its name) and a line about it. */

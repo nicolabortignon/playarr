@@ -37,6 +37,12 @@ public final class Theme {
     if following == path { coverAccent = color }
   }
 
+  /// `accent(of:images:)` when the cover has been read already, without waiting: .some(nil) when it has no colour,
+  /// nil when it hasn't been read.
+  public func knownAccent(of path: String) -> RGB?? {
+    known[path]
+  }
+
   /// The colour of a cover (nil when it has none), read once per cover.
   public func accent(of path: String?, images: ImageCache?) async -> RGB? {
     guard let path else { return nil }

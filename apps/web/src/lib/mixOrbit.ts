@@ -104,3 +104,32 @@ export function orbitLayout(key: string, covers: number): OrbitLayout {
   }
   return { hero, ring: round(RING), satellites, dot };
 }
+
+/** Vibes, Discovery and On Repeat change with what's played: their wash runs between the colours of their first two covers. */
+export const toneFromCovers = (kind: string) => kind === 'vibes' || kind === 'discovery' || kind === 'repeat';
+
+export interface WashStop {
+  /** Where along the gradient (0–1), and the colour there as OKLCH. */
+  at: number;
+  l: number;
+  c: number;
+  h: number;
+}
+
+/** Lightness and chroma down the wash, the same for every mix so none stands out on a shelf. */
+const WASH = [
+  { at: 0, l: 0.5, c: 0.15 },
+  { at: 0.225, l: 0.42, c: 0.13 },
+  { at: 0.45, l: 0.34, c: 0.11 },
+  { at: 0.725, l: 0.26, c: 0.085 },
+  { at: 1, l: 0.18, c: 0.06 },
+];
+
+/**
+ * A mix cover's wash, top to bottom: from hue `from` to hue `to` the short way round the wheel (one hue when they're
+ * the same), its stops worked out here so it blends alike on the web and in the app.
+ */
+export function washStops(from: number, to = from): WashStop[] {
+  const turn = ((((to - from) % 360) + 540) % 360) - 180;
+  return WASH.map((s) => ({ ...s, h: round((((from + turn * s.at) % 360) + 360) % 360) }));
+}

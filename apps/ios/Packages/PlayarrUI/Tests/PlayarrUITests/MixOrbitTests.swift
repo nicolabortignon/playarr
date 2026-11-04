@@ -1,3 +1,4 @@
+import PlayarrAPI
 import Testing
 @testable import PlayarrUI
 
@@ -43,5 +44,23 @@ import Testing
     #expect(three > 450)
     #expect(!MixOrbit.fits(C(x: 0.3, y: 0.8, d: 0.2)))
     #expect(!MixOrbit.fits(C(x: 1.08, y: 0.4, d: 0.12)))
+  }
+
+  // Also expected by the web's mixOrbit.test.ts.
+  @Test func runsAWashBetweenTwoHuesTheShortWayRoundAtTheSameLightnessAsAnyOtherMix() {
+    #expect(MixOrbit.wash(from: 350, to: 30).map(\.h) == [350, 359, 8, 19, 30])
+    #expect(MixOrbit.wash(from: 10, to: 300).map(\.h) == [10, 354.25, 338.5, 319.25, 300])
+    #expect(
+      MixOrbit.wash(from: 200) == [
+        .init(at: 0, l: 0.5, c: 0.15, h: 200), .init(at: 0.225, l: 0.42, c: 0.13, h: 200), .init(at: 0.45, l: 0.34, c: 0.11, h: 200),
+        .init(at: 0.725, l: 0.26, c: 0.085, h: 200), .init(at: 1, l: 0.18, c: 0.06, h: 200),
+      ])
+    #expect(MixKind.allCases.filter(MixOrbit.toneFromCovers) == [.vibes, .discovery, .repeat])
+  }
+
+  @Test func placesColoursOnTheOKLCHWheelAsTheWebDoes() {
+    #expect(abs(OKLCH.hue(of: RGB(r: 1, g: 0, b: 0)) - 29.23) < 0.01)
+    #expect(abs(OKLCH.hue(of: RGB(r: 0, g: 1, b: 0)) - 142.5) < 0.1)
+    #expect(abs(OKLCH.hue(of: RGB(r: 0, g: 0, b: 1)) - 264.05) < 0.01)
   }
 }

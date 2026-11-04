@@ -52,6 +52,43 @@ export async function extractAccent(url: string): Promise<string | null> {
   return color;
 }
 
+/** The OKLCH hue (degrees) of the accent a cover gives, read once per cover; null when it has no colour to give. */
+export async function accentHue(url: string): Promise<number | null> {
+  const color = await extractAccent(url);
+  return color ? hslHue(color) : null;
+}
+
+/** `accentHue` when the cover has been read already, without waiting; undefined when it hasn't. */
+export function knownAccentHue(url: string): number | null | undefined {
+  if (!cache.has(url)) return undefined;
+  const color = cache.get(url);
+  return color ? hslHue(color) : null;
+}
+
+/** The OKLCH hue of one of `extractAccent`'s `hsl(h s% l%)` colours. */
+function hslHue(color: string): number | null {
+  const m = color.match(/^hsl\((\d+) (\d+)% (\d+)%\)$/);
+  if (!m) return null;
+  const s = Number(m[2]) / 100;
+  const l = Number(m[3]) / 100;
+  const k = (n: number) => (n + Number(m[1]) / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  return oklchHue(f(0), f(8), f(4));
+}
+
+/** The OKLCH hue (degrees) of an sRGB colour, channels 0–1. */
+export function oklchHue(r: number, g: number, b: number): number {
+  const lin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const [R, G, B] = [lin(r), lin(g), lin(b)];
+  const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+  const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+  const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const Bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return ((Math.atan2(Bb, A) * 180) / Math.PI + 360) % 360;
+}
+
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   r /= 255;
   g /= 255;

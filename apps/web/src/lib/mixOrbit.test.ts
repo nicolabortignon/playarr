@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apart, fits, hash32, orbitLayout, random } from './mixOrbit';
+import { apart, fits, hash32, orbitLayout, random, toneFromCovers, washStops } from './mixOrbit';
 
 describe('orbitLayout', () => {
   // The same numbers are expected by the app's MixOrbitTests: the two must draw a mix alike.
@@ -43,4 +43,17 @@ describe('orbitLayout', () => {
     expect(fits({ x: 1.08, y: 0.4, d: 0.12 })).toBe(false); // nearly all off the cover
   });
 
+  // Also expected by MixOrbitTests.
+  it('runs a wash between two hues the short way round, at the same lightness as any other mix', () => {
+    expect(washStops(350, 30).map((s) => s.h)).toEqual([350, 359, 8, 19, 30]);
+    expect(washStops(10, 300).map((s) => s.h)).toEqual([10, 354.25, 338.5, 319.25, 300]);
+    expect(washStops(200)).toEqual([
+      { at: 0, l: 0.5, c: 0.15, h: 200 },
+      { at: 0.225, l: 0.42, c: 0.13, h: 200 },
+      { at: 0.45, l: 0.34, c: 0.11, h: 200 },
+      { at: 0.725, l: 0.26, c: 0.085, h: 200 },
+      { at: 1, l: 0.18, c: 0.06, h: 200 },
+    ]);
+    expect(['vibes', 'discovery', 'repeat', 'genre', 'decade', 'energy'].filter(toneFromCovers)).toEqual(['vibes', 'discovery', 'repeat']);
+  });
 });
