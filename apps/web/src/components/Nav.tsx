@@ -1,5 +1,5 @@
 import { ArrowDownToLine, Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, Settings, Sparkles, type LucideIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import { cn } from '../lib/cn';
 import { activeRequestCount, usePlaylists, useRequests } from '../lib/queries';
@@ -39,73 +39,81 @@ export function Wordmark({ className }: { className?: string }) {
   );
 }
 
-/** The link a path belongs to ("/albums/12" → Albums), for the bar that stands in for the links once they scroll away. */
+/** The link a path belongs to ("/albums/12" → Albums): the one left showing when the links fold. */
 export function activeLink(pathname: string, links: NavItem[] = LINKS): NavItem | undefined {
   return links.find(({ to }) => (to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`)));
 }
 
 /**
- * The desktop sidebar: the links, Requests while there are some, and your playlists, all in one column that scrolls,
- * with Settings kept at the foot. Once the links have scrolled out of sight, a bar at the top keeps the one you're on,
- * so the playlists get the room; back at the top, the links are all there again.
+ * The desktop sidebar: the wordmark, the links, Requests while there are some, and your playlists, all in one column
+ * that scrolls, with Settings kept at the foot. As soon as the playlists scroll, the links fold up to the one you're on, held at the
+ * top, so the playlists get the room; back at the top, they all open again.
  */
 export function Sidebar() {
   const { data: requests } = useRequests();
   const active = activeRequestCount(requests);
   const { pathname } = useLocation();
   const current = activeLink(pathname);
+  const onRequests = pathname === '/requests' || pathname.startsWith('/requests/');
   const nav = useRef<HTMLElement>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  // While folded: the room left under the playlists so the column still scrolls (see onScroll).
+  const [spare, setSpare] = useState<number>();
+  const folded = spare !== undefined;
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const column = e.currentTarget;
+    if (column.scrollTop <= 0) return setSpare(undefined);
     const links = nav.current;
-    // At the very top the links are always open, however short they lay out.
-    if (links) setCollapsed(e.currentTarget.scrollTop > Math.max(1, links.offsetTop + links.offsetHeight - 8));
+    if (folded || !links) return;
+    // Folding takes the links' height out from above the playlists. A list that overflows by less would stop
+    // scrolling, with no way back up to open them again: room at the foot keeps it scrolling from where it is.
+    const kept = links.querySelector<HTMLElement>('[aria-current="page"]')?.offsetHeight ?? 0;
+    const overflow = column.scrollHeight - column.clientHeight;
+    setSpare(Math.max(0, links.offsetHeight - kept - overflow + column.scrollTop));
   };
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-ink-900/80 px-4 pt-6 pb-[calc(88px+1rem)] backdrop-blur-xl md:flex">
-      <div className="px-3">
-        <Wordmark />
-      </div>
-      <div onScroll={onScroll} className="scrollbar-none relative -mx-1 mt-8 min-h-0 flex-1 overflow-y-auto px-1">
-        {/* The links folded to the one you're on, over the playlists, while the links are scrolled away. */}
-        <div className="sticky top-0 z-10 h-0">
-          {current && (
-            <div
-              aria-hidden={!collapsed}
-              className={cn(
-                'absolute inset-x-0 top-0 bg-ink-900 pb-2 transition duration-300 ease-out-expo',
-                collapsed ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0',
-              )}
-            >
-              <SidebarLink item={current} tabIndex={collapsed ? 0 : -1} />
-            </div>
-          )}
+      {/* No scroll anchoring: the links folding above the playlists mustn't scroll the column back to the top. */}
+      <div onScroll={onScroll} className="scrollbar-none -mx-1 min-h-0 flex-1 overflow-y-auto px-1 [overflow-anchor:none]">
+        {/* The wordmark scrolls away with the rest: the playlists get its room too. */}
+        <div className="mb-8 px-3">
+          <Wordmark />
         </div>
-        <nav ref={nav} className="flex flex-col gap-0.5" aria-label="Main">
+        <nav
+          ref={nav}
+          className={cn('flex flex-col', folded && 'sticky top-0 z-10 bg-ink-900 pb-2')}
+          aria-label="Main"
+          data-folded={folded}
+        >
           {LINKS.map((item) => (
-            <SidebarLink key={item.to} item={item} />
+            <Fold key={item.to} open={!folded || item === current}>
+              <SidebarLink item={item} />
+            </Fold>
           ))}
           {(requests?.length ?? 0) > 0 && (
-            <NavLink
-              to="/requests"
-              className={({ isActive }) =>
-                cn(
-                  'relative mt-4 flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
-                  isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
-                )
-              }
-            >
-              <Download className="size-[18px]" strokeWidth={1.75} />
-              Requests
-              {active > 0 && (
-                <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10px] leading-5 text-accent-ink">
-                  {active}
-                </span>
-              )}
-            </NavLink>
+            <Fold open={!folded || onRequests}>
+              <NavLink
+                to="/requests"
+                className={({ isActive }) =>
+                  cn(
+                    'relative flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
+                    !folded && 'mt-4',
+                    isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
+                  )
+                }
+              >
+                <Download className="size-[18px]" strokeWidth={1.75} />
+                Requests
+                {active > 0 && (
+                  <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10px] leading-5 text-accent-ink">
+                    {active}
+                  </span>
+                )}
+              </NavLink>
+            </Fold>
           )}
         </nav>
         <SidebarPlaylists />
+        {!!spare && <div style={{ height: spare }} aria-hidden />}
       </div>
 
       <div className="mt-3 border-t border-line px-3 pt-3">
@@ -126,12 +134,26 @@ export function Sidebar() {
   );
 }
 
-function SidebarLink({ item: { to, label, icon: Icon }, tabIndex }: { item: NavItem; tabIndex?: number }) {
+/** One of the links, which shuts to nothing (out of reach of the keyboard too) while the links are folded. */
+function Fold({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div
+      inert={!open}
+      className={cn(
+        'grid transition-[grid-template-rows,opacity] duration-300 ease-out-expo',
+        open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+      )}
+    >
+      <div className="min-h-0 overflow-hidden pb-0.5">{children}</div>
+    </div>
+  );
+}
+
+function SidebarLink({ item: { to, label, icon: Icon } }: { item: NavItem }) {
   return (
     <NavLink
       to={to}
       end={to === '/'}
-      tabIndex={tabIndex}
       className={({ isActive }) =>
         cn(
           'group relative flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',

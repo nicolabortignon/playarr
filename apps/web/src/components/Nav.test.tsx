@@ -39,18 +39,44 @@ describe('sidebar', () => {
     expect(screen.queryByText('Streaming')).toBeNull();
   });
 
-  it('folds the links to the one you are on once they scroll away, and opens them again at the top', async () => {
+  it('folds the links to the one you are on as the playlists scroll, and opens them again at the top', async () => {
     renderSidebar('/albums');
     await screen.findByRole('link', { name: 'Late night' });
-    const scroller = screen.getByRole('navigation', { name: 'Main' }).parentElement!;
-    const folded = () => screen.getAllByRole('link', { name: 'Albums', hidden: true }).find((a) => a.closest('[aria-hidden]'))!.closest('[aria-hidden]')!;
-    expect(folded().getAttribute('aria-hidden')).toBe('true');
-    // jsdom lays nothing out: the links end at 0, so any scroll is past them.
-    scroller.scrollTop = 200;
-    fireEvent.scroll(scroller);
-    expect(folded().getAttribute('aria-hidden')).toBe('false');
-    scroller.scrollTop = 0;
-    fireEvent.scroll(scroller);
-    expect(folded().getAttribute('aria-hidden')).toBe('true');
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    const column = nav.parentElement!;
+    // jsdom lays nothing out: a column with far more playlists than room.
+    Object.defineProperty(column, 'scrollHeight', { value: 2000 });
+    Object.defineProperty(column, 'clientHeight', { value: 600 });
+    const shut = (label: string) => !!screen.getByRole('link', { name: label, hidden: true }).closest('[inert]');
+    expect(shut('Home')).toBe(false);
+    column.scrollTop = 30;
+    fireEvent.scroll(column);
+    expect(nav.dataset.folded).toBe('true');
+    expect(shut('Home')).toBe(true);
+    expect(shut('Queue')).toBe(true);
+    expect(shut('Albums')).toBe(false);
+    column.scrollTop = 0;
+    fireEvent.scroll(column);
+    expect(nav.dataset.folded).toBe('false');
+    expect(shut('Home')).toBe(false);
+  });
+
+  it('folds a list that only just overflows, keeping room under it to scroll back up', async () => {
+    renderSidebar('/albums');
+    await screen.findByRole('link', { name: 'Late night' });
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    const column = nav.parentElement!;
+    Object.defineProperty(column, 'scrollHeight', { value: 700 });
+    Object.defineProperty(column, 'clientHeight', { value: 600 });
+    Object.defineProperty(nav, 'offsetHeight', { value: 360 });
+    column.scrollTop = 30;
+    fireEvent.scroll(column);
+    expect(nav.dataset.folded).toBe('true');
+    // 360 of links out, 100 of overflow, 30 scrolled: 290 under the playlists keeps the column where it was.
+    expect((column.lastElementChild as HTMLElement).style.height).toBe('290px');
+    column.scrollTop = 0;
+    fireEvent.scroll(column);
+    expect(nav.dataset.folded).toBe('false');
+    expect((column.lastElementChild as HTMLElement).style.height).toBe('');
   });
 });
