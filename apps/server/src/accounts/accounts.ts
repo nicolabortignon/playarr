@@ -98,6 +98,16 @@ export class Accounts {
     return this.toAccount(row);
   }
 
+  /**
+   * Refuses to take away the last password: with none, the server is back in setup mode, where every request is the
+   * owner's, from anywhere.
+   */
+  private keepAPassword(id: number) {
+    const others = this.db.prepare('SELECT 1 FROM accounts WHERE password_hash IS NOT NULL AND id != ? LIMIT 1').get(id);
+    const own = this.db.prepare('SELECT 1 FROM accounts WHERE password_hash IS NOT NULL AND id = ?').get(id);
+    if (own && !others) throw new AccountError('This is the only account with a password: give another account one first', 409);
+  }
+
   /** Setup mode: no account has a password yet, so nobody signs in and the home network decides. */
   setupMode(): boolean {
     this.passwords ??= !!this.db.prepare('SELECT 1 FROM accounts WHERE password_hash IS NOT NULL LIMIT 1').get();
@@ -145,6 +155,7 @@ export class Accounts {
     const row = this.row(id);
     if (!row) throw new AccountError('No such account', 404);
     if (row.role === 'admin' && this.admins() === 1) throw new AccountError('There has to be an admin', 409);
+    this.keepAPassword(id);
     this.transaction(() => {
       // Playlist songs go with their playlists, sessions, setup codes and sources with the account (foreign keys).
       for (const table of ['plays', 'mixes', 'favorites', 'playlists']) this.db.prepare(`DELETE FROM ${table} WHERE account_id = ?`).run(id);
@@ -163,6 +174,7 @@ export class Accounts {
   }
 
   clearPassword(id: number) {
+    this.keepAPassword(id);
     this.db.prepare('UPDATE accounts SET password_hash = NULL WHERE id = ?').run(id);
     this.passwords = null;
   }

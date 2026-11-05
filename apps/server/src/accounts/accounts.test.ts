@@ -67,9 +67,15 @@ describe('Accounts', () => {
     expect(await accounts.verify(' HOME ', 'correct horse')).toMatchObject({ id: 1 });
     expect(await accounts.verify('home', 'wrong horse')).toBeNull();
     expect(await accounts.verify('nobody', 'correct horse')).toBeNull();
+    // The only password can't be taken away: setup mode lets every request in as the owner.
+    expect(() => accounts.clearPassword(1)).toThrow('only account with a password');
+    expect(accounts.setupMode()).toBe(false);
+    const sam = accounts.create({ username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null });
+    await accounts.setPassword(sam.id, 'another horse');
     accounts.clearPassword(1);
-    expect(accounts.setupMode()).toBe(true);
+    expect(accounts.setupMode()).toBe(false);
     expect(await accounts.verify('home', 'correct horse')).toBeNull();
+    expect(() => accounts.remove(sam.id)).toThrow('only account with a password');
   });
 
   it('removes an account with its history, mixes, favorites, playlists, ListenBrainz link and sessions', () => {
