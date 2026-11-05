@@ -6,7 +6,9 @@ Agreed 2026-11-05 from the iOS, server, web and product reviews. First of four p
 
 Already done: the last password can no longer be reset or removed, which reopened the server in setup mode to anyone (`accounts.ts` `keepAPassword`, 2026-11-05).
 
-## 1. The web app survives a deploy and a page error — S
+## 1. The web app survives a deploy and a page error — S — done 2026-11-05
+
+*Done: `PageError`/`AppError` in `apps/web/src/routes.tsx`, `lib/staleBuild.ts`, the `vite:preloadError` listener in `main.tsx`, and `apps/server/src/webApp.ts` answering missing files with 404.*
 
 After a deploy, a tab on the old build that opens a lazy page asks for a chunk that's gone; the server answers any GET it doesn't know with `index.html` (`apps/server/src/index.ts` not-found handler), the import fails, and with no error element the router's error screen replaces `AppShell`, unmounting `<AudioEngine/>`: the app goes blank and the music stops. Any render error does the same.
 
