@@ -23,6 +23,8 @@ final class ScreenTour: XCTestCase {
   private func launch(_ arguments: [String]) {
     app = XCUIApplication()
     app.launchArguments = arguments
+    // The demo albums' real covers, downloaded by `make screens` (scripts/screens-covers.mjs).
+    if let covers = ProcessInfo.processInfo.environment["PLAYARR_DEMO_COVERS"] { app.launchEnvironment["PLAYARR_DEMO_COVERS"] = covers }
     app.launch()
   }
 

@@ -82,7 +82,11 @@ SCREENS_ROOT := $(abspath $(CURDIR)/../../screenshots)
 # name|device type[|runtime]: the iPhone Duo runs only on its own iOS 27 runtime.
 SCREENS_DEVICES := "iphone|iPhone 17 Pro" "ipad|iPad Pro 13-inch (M5)" "duo|iPhone Duo|com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4"
 SCREENS ?= iphone ipad duo
+# The demo albums' real covers for these screenshots only, downloaded once (scripts/screens-covers.mjs): the app and
+# the App Store screenshots keep the demo's drawn ones.
+SCREENS_COVERS := $(CURDIR)/build/screens-covers
 screens: project
+	@$(NODE) scripts/screens-covers.mjs "$(SCREENS_COVERS)"
 	@set -e; for pair in $(SCREENS_DEVICES); do \
 	  name=$${pair%%|*}; rest=$${pair#*|}; type=$${rest%%|*}; runtime=$$([ "$$rest" != "$$type" ] && echo "$${rest#*|}" || true); \
 	  case " $(SCREENS) " in *" $$name "*) ;; *) continue ;; esac; \
@@ -90,7 +94,8 @@ screens: project
 	  xcrun simctl list devices available | grep -qF "    $$sim (" || xcrun simctl create "$$sim" "$$type" $$runtime >/dev/null; \
 	  rm -rf "$(SCREENS_ROOT)/$$name" "$(SCREENS_ROOT)/$$name-sideways"; \
 	  echo "▸ $$name on $$type"; \
-	  TEST_RUNNER_SCREENS_DIR="$(SCREENS_ROOT)/$$name" $(MAKE) --no-print-directory SIMULATOR="$$sim" screens-run; \
+	  TEST_RUNNER_SCREENS_DIR="$(SCREENS_ROOT)/$$name" TEST_RUNNER_PLAYARR_DEMO_COVERS="$(SCREENS_COVERS)" \
+	    $(MAKE) --no-print-directory SIMULATOR="$$sim" screens-run; \
 	done
 	@echo "Screenshots in $(SCREENS_ROOT)"
 

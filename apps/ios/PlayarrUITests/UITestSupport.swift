@@ -5,6 +5,8 @@ extension XCUIApplication {
   static func demo(_ extra: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = ["-UITests", "-UITestsDemo"] + extra
+    // `make screens` only: the demo albums' real covers, downloaded to this Mac (scripts/screens-covers.mjs).
+    if let covers = ProcessInfo.processInfo.environment["PLAYARR_DEMO_COVERS"] { app.launchEnvironment["PLAYARR_DEMO_COVERS"] = covers }
     return app
   }
 

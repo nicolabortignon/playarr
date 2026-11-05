@@ -11,9 +11,17 @@ struct UnderTheRail: ViewModifier {
       Color.clear
         .ignoresSafeArea()
         .onGeometryChange(for: Bool.self) { $0.size.height > $0.size.width && $0.safeAreaInsets.trailing > 0 } action: { rail = $0 }
-      content.ignoresSafeArea(.container, edges: rail ? .trailing : [])
+      content
+        .ignoresSafeArea(.container, edges: rail ? .trailing : [])
+        .environment(\.underTheRail, rail)
     }
   }
+}
+
+extension EnvironmentValues {
+  /// The page runs under the iPhone Duo's column of status and buttons (`UnderTheRail`): a page with buttons of its
+  /// own at the top hands them to the bar, which iOS stacks in that column.
+  @Entry var underTheRail = false
 }
 
 extension View {

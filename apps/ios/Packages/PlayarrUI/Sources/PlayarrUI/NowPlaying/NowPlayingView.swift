@@ -13,6 +13,9 @@ struct NowPlayingView: View {
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+  /// On the iPhone Duo's cover screen: the sleep timer, lyrics and ⋯ stand in its column under the time, as the bar
+  /// buttons of other pages do.
+  @Environment(\.underTheRail) private var underTheRail
   #if os(iOS)
     @Environment(\.verticalSizeClass) private var verticalSizeClass
   #endif
@@ -88,6 +91,14 @@ struct NowPlayingView: View {
       }
     }
     .offset(y: drag)
+    .toolbar {
+      if underTheRail, let track = player.queue.currentTrack {
+        ToolbarItemGroup(placement: .primaryAction) { trailingButtons(track) }
+      }
+    }
+    #if os(iOS)
+      .toolbarVisibility(underTheRail ? .visible : .hidden, for: .navigationBar)
+    #endif
     .tracksFold($fold)
     .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { wider = $0 }
     .preferredColorScheme(.dark)
@@ -173,17 +184,23 @@ struct NowPlayingView: View {
       .layoutPriority(1)
       HStack(spacing: 0) {
         Spacer(minLength: 0)
-        SleepTimerMenu(player: session.player)
-        Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
-          .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
-          .accessibilityLabel("Lyrics")
-          .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
-          .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
-        moreMenu(track)
+        if !underTheRail { trailingButtons(track) }
       }
       .frame(maxWidth: .infinity)
     }
     .buttonStyle(.plain)
+  }
+
+  /// The sleep timer, lyrics and ⋯: at the right of the top row, or in the bar on the Duo's cover screen.
+  @ViewBuilder
+  private func trailingButtons(_ track: Track) -> some View {
+    SleepTimerMenu(player: session.player)
+    Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
+      .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
+      .accessibilityLabel("Lyrics")
+      .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
+      .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
+    moreMenu(track)
   }
 
   /// ⋯: the song playing's menu.

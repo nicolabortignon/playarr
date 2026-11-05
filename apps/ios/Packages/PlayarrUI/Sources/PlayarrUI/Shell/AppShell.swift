@@ -14,15 +14,18 @@ struct AppShell: View {
     // The phone's tabs, or the iPad's sidebar and player bar, as wide as the window is.
     AdaptiveShell(session: session)
     .nowPlayingCover(isPresented: $router.nowPlaying) {
-      NowPlayingView(session: session)
-        .underTheRail()
-        // Show metadata and Edit mix points from Now Playing's menu open over it.
-        .trackSheets(player: session.player, active: router.nowPlaying)
-        .addToPlaylistSheet(session, active: router.nowPlaying)
-        .environment(session).environment(session.discover).environment(model.theme).environment(model.appearance)
-        .environment(\.reducesMotion, model.appearance.reduceMotion(system: systemReduceMotion))
-        .overlay(alignment: .top) { ToastsView().environment(model.toasts).environment(model.theme) }
-        .overlay { stats }
+      // In a stack for its bar, which only the iPhone Duo's cover screen shows (its buttons in the column on the right).
+      NavigationStack {
+        NowPlayingView(session: session)
+          .underTheRail()
+      }
+      // Show metadata and Edit mix points from Now Playing's menu open over it.
+      .trackSheets(player: session.player, active: router.nowPlaying)
+      .addToPlaylistSheet(session, active: router.nowPlaying)
+      .environment(session).environment(session.discover).environment(model.theme).environment(model.appearance)
+      .environment(\.reducesMotion, model.appearance.reduceMotion(system: systemReduceMotion))
+      .overlay(alignment: .top) { ToastsView().environment(model.toasts).environment(model.theme) }
+      .overlay { stats }
     }
     .overlay(alignment: .top) { ToastsView() }
     .overlay { stats }
