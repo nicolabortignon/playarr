@@ -1,8 +1,9 @@
 import CoreGraphics
 
 /// How Now Playing is arranged (docs/plans/2026-11-04-ios-now-playing-landscape.md): upright, as a phone held
-/// normally; sideways, a phone on its side (the cover on the left, the tracklist on the right, "the sleeve"); or
-/// wide, the iPad's desktop layout (the cover beside the song with Up next).
+/// normally; sideways, a phone on its side ("the sleeve": the record on the left, the cover with the deck under it for
+/// the left thumb, and the tracklist on the right, the full height, for the right); or wide, the iPad's desktop layout
+/// (the cover beside the song with Up next).
 public enum NowPlayingLayout: Equatable, Sendable {
   case upright, sideways, wide
 
@@ -14,11 +15,17 @@ public enum NowPlayingLayout: Equatable, Sendable {
     return compactHeight ? .sideways : .upright
   }
 
-  /// The sleeve's cover: a square as tall as the window allows, but never so wide that the tracklist gets less than
-  /// 300 points (and 36% of the width at the accessibility sizes).
-  public static func coverSide(width: CGFloat, height: CGFloat, accessibilitySize: Bool = false) -> CGFloat {
-    let byHeight = height - 32
-    let byWidth = width * (accessibilitySize ? 0.36 : 0.46)
+  /// The deck under the sleeve's cover (the seek bar, then shuffle, previous, play or pause, next and repeat): the room
+  /// it takes, so the cover is as large as what's left.
+  public static let deckWidth: CGFloat = 264
+  public static let deckHeight: CGFloat = 108
+
+  /// The record's column: as wide as the cover can be once the deck under it has its height (`deck`: 0 in the stage,
+  /// where the deck is gone and the cover grows), at least as wide as the deck, at most 42% of the width (36% at the
+  /// accessibility sizes), and never so wide that the tracklist gets less than 300 points.
+  public static func recordWidth(width: CGFloat, height: CGFloat, deck: CGFloat, accessibilitySize: Bool = false) -> CGFloat {
+    let byHeight = max(height - deck - 16, deck > 0 ? deckWidth : 0)
+    let byWidth = width * (accessibilitySize ? 0.36 : 0.42)
     let leavesTracklist = width - 28 - 300
     return max(0, min(byHeight, byWidth, leavesTracklist))
   }

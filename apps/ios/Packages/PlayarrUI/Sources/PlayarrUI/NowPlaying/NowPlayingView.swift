@@ -150,19 +150,24 @@ struct NowPlayingView: View {
         .accessibilityLabel("Lyrics")
         .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
         .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
-      Menu {
-        Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
-        Button("Start radio", systemImage: "dot.radiowaves.left.and.right") { Task { await session.actions.startRadio(track) } }
-        Button("Go to album", systemImage: "square.stack") { session.actions.goToAlbum(track) }
-        Button("Go to artist", systemImage: "music.mic") { session.actions.goToArtist(track) }
-        TrackLibraryMenuItems(track: track)
-        Button("Open queue", systemImage: "list.bullet") { session.router.showQueue() }
-      } label: {
-        Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle())
-      }
-      .accessibilityLabel("More")
+      moreMenu(track)
     }
     .buttonStyle(.plain)
+  }
+
+  /// ⋯: the song playing's menu.
+  private func moreMenu(_ track: Track) -> some View {
+    Menu {
+      Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
+      Button("Start radio", systemImage: "dot.radiowaves.left.and.right") { Task { await session.actions.startRadio(track) } }
+      Button("Go to album", systemImage: "square.stack") { session.actions.goToAlbum(track) }
+      Button("Go to artist", systemImage: "music.mic") { session.actions.goToArtist(track) }
+      TrackLibraryMenuItems(track: track)
+      Button("Open queue", systemImage: "list.bullet") { session.router.showQueue() }
+    } label: {
+      Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle())
+    }
+    .accessibilityLabel("More")
   }
 
   private func cover(_ track: Track, playing: Bool) -> some View {
@@ -195,26 +200,34 @@ struct NowPlayingView: View {
 
   // MARK: Sideways
 
-  /// The sleeve, opened: the cover on the left, the tracklist (or the lyrics) with its deck on the right.
+  /// The sleeve, opened. Held in two hands, each thumb has its side: on the left the record, the cover with the deck
+  /// under it (seek, shuffle, previous, play, next, repeat), everything done to the song; on the right the back of the
+  /// sleeve, one line of header (close, playing from, sleep timer, lyrics, more) over the tracklist or the lyrics,
+  /// which get the full height. In the stage the deck and header fade and the cover grows into the deck's room.
   private func sleeve(_ model: NowPlayingModel, track: Track) -> some View {
     let player = session.player
     let tracklist = Tracklist(queue: player.queue, transitions: player.settings.transitions, crossfade: player.settings.crossfade, autoplay: player.settings.autoplay)
     return GeometryReader { geometry in
-      let side = NowPlayingLayout.coverSide(width: geometry.size.width, height: geometry.size.height, accessibilitySize: typeSize.isAccessibilitySize)
+      let record = NowPlayingLayout.recordWidth(
+        width: geometry.size.width, height: geometry.size.height, deck: staged ? 0 : NowPlayingLayout.deckHeight,
+        accessibilitySize: typeSize.isAccessibilitySize)
       HStack(spacing: 28) {
-        sleeveCover(track, side: side)
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
+          sleeveCover(track, side: record)
           if !staged {
-            header(model, track: track, tail: tracklist.left(elapsed: player.time))
+            NowPlayingDeck(player: player).transition(.opacity)
+          }
+        }
+        .frame(width: record)
+        VStack(spacing: 4) {
+          if !staged {
+            sleeveHeader(model, track: track, tail: tracklist.left(elapsed: player.time))
               .transition(.opacity)
           }
           if session.router.lyrics {
             LyricsView(trackId: track.id, session: session).id(track.id)
           } else {
             NowPlayingTracklist(session: session, staged: staged)
-          }
-          if !staged {
-            NowPlayingDeck(player: player).transition(.opacity)
           }
         }
         .frame(maxWidth: .infinity)
@@ -235,14 +248,44 @@ struct NowPlayingView: View {
     .onChange(of: voiceOver) { _, on in if on { wake() } }
   }
 
-  /// The cover, as big as the window allows: swipe down to close, left or right for the next or previous song, tap
-  /// for the stage.
+  /// The back's one line: close, where the songs come from with the time left, the sleep timer, lyrics and more.
+  private func sleeveHeader(_ model: NowPlayingModel, track: Track, tail: String?) -> some View {
+    HStack(spacing: 4) {
+      Button { session.router.nowPlaying = false } label: { Image(systemName: "chevron.down").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
+        .accessibilityLabel("Close now playing")
+        .keyboardShortcut(.cancelAction)
+      Button { if let route = model.playingFromRoute { session.router.go(route) } } label: {
+        VStack(alignment: .leading, spacing: 1) {
+          Kicker(text: "Playing from")
+          // "Mezzanine · 3 songs · 17 min left": the time left after the name, quieter.
+          Text("\(model.playingFrom ?? "")\(Text(tail.map { " · \($0)" } ?? "").foregroundStyle(.muted))")
+            .font(.sans(.subheadline)).lineLimit(1)
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+      }
+      .accessibilityLabel("Playing from \(model.playingFrom ?? "")")
+      .accessibilityValue(tail ?? "")
+      Spacer(minLength: 8)
+      SleepTimerMenu(player: session.player)
+      Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
+        .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
+        .accessibilityLabel("Lyrics")
+        .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
+        .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
+      moreMenu(track)
+    }
+    .buttonStyle(.plain)
+  }
+
+  /// The cover, as big as the record's column allows above the deck: swipe down to close, left or right for the next
+  /// or previous song, tap for the stage.
   private func sleeveCover(_ track: Track, side: CGFloat) -> some View {
     let player = session.player
     return cover(track, playing: player.queue.playing)
-      .frame(width: side, height: side)
+      .aspectRatio(1, contentMode: .fit)
+      .frame(maxWidth: side, maxHeight: .infinity)
       .offset(x: swipe)
-      .frame(maxHeight: .infinity)
       .onTapGesture { staged ? wake() : setStaged(true) }
       .gesture(
         DragGesture()

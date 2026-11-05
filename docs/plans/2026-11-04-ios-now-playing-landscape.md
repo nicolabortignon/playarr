@@ -37,20 +37,25 @@ Everything else stays as upright Now Playing has it: the cover blown up and blur
 
 **When.** The sideways layout is for a compact-height window: an iPhone in landscape (`verticalSizeClass == .compact`). The iPad keeps phase 10's wide layout, and an iPhone upright keeps today's. One decision function, `NowPlayingLayout.choose(verticalSizeClass:horizontalSizeClass:size:)` → `.upright`, `.sideways` or `.wide`, tested like phase 10's `ShellLayout.choose`.
 
-**The cover column.** A square as tall as the window allows: `side = min(height − vertical insets − 32, width × 0.46)`, vertically centred, on the leading side after the safe area (the Dynamic Island swaps sides when the phone turns the other way; the cover follows the leading edge, never the island). It keeps upright's shadow and its press-in when paused (scale 0.86).
+**Revised 2026-11-05: left thumb plays, right thumb browses.** The first version put the deck under the tracklist, which left it two lines on an iPhone 17 Pro. Held in two hands, each thumb rests on one side, so the sleeve now splits by job:
 
-**The sleeve column.** Everything right of a 28-point gutter, at least 300 points wide. If the window would leave less, the cover gives way first. From top to bottom:
+**The record (left column).** The cover with the deck under it: everything done *to the song*. The column is `NowPlayingLayout.recordWidth`: as wide as the cover can be once the deck has its 108 points of height, at least the deck's 264 points, at most 42% of the width (36% at the accessibility sizes), and never so wide that the tracklist gets less than 300 points. The cover fits the height left above the deck; it keeps upright's shadow and its press-in when paused, and its swipes (down to close, sideways for next and previous) and tap (the stage).
 
-1. **Header (44 pt):** close (chevron down), then "PLAYING FROM" as a kicker over the source in Gloock with a mono tail ("7 songs · 38 min left", counting from the song playing), then the sleep timer, lyrics and ⋯ as upright has them.
-2. **Tracklist:** fills what's left, and scrolls.
-3. **Deck (about 96 pt):** the seek bar with both times, then shuffle, previous, play/pause (56 pt, down from upright's 72), next and repeat. It's drawn on a Liquid Glass panel (`glassEffect`) so the tracklist can scroll under it, and it stays clear of the home indicator.
+- **Deck:** the seek bar with both times, then shuffle, previous, play/pause (52 pt), next and repeat, on the backdrop (no glass panel: nothing scrolls under it now).
 
-| Phone (points, landscape) | Window | Cover | Sleeve column | Tracklist height |
+**The back (right column).** Everything right of a 28-point gutter, the full height:
+
+1. **Header (one line, 44 pt):** close, then "PLAYING FROM" as a kicker over the source with the time left after it, quieter ("Mezzanine · 3 songs · 17 min left"), then the sleep timer, lyrics and ⋯.
+2. **Tracklist or lyrics:** everything that's left, scrolling.
+
+**The stage** fades the deck and header; the cover grows into the deck's room (the column widens to its 42%).
+
+| Phone (points, landscape) | Window | Record column (cover ≈) | Back column | Tracklist height |
 |---|---|---|---|---|
-| iPhone 17 Pro | 874 × 402 | 350 | ≈ 410 | ≈ 230 (the open line + 3 lines) |
-| iPhone 17 Pro Max | 956 × 440 | 388 | ≈ 440 | ≈ 268 |
-| iPhone 17e / 16e | 844 × 390 | 338 | ≈ 395 | ≈ 218 |
-| iPhone SE (3rd gen) | 667 × 375 | 300 (width-bound) | ≈ 300 | ≈ 205 |
+| iPhone 17 Pro | 874 × 402 | 264 (257) | ≈ 426 | ≈ 315 (the open line + 5 lines) |
+| iPhone 17 Pro Max | 956 × 440 | 279 (279) | ≈ 493 | ≈ 355 |
+| iPhone 17e / 16e | 844 × 390 | 264 (245) | ≈ 396 | ≈ 305 |
+| iPhone SE (3rd gen) | 667 × 375 | 264 (251) | ≈ 343 | ≈ 311 |
 
 ## The tracklist
 

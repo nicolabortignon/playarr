@@ -12,11 +12,15 @@ import Testing
     #expect(NowPlayingLayout.choose(split: true, compactHeight: false, accessibilitySize: true) == .upright)
   }
 
-  @Test func givesTheCoverWhatTheTracklistCanSpare() {
-    #expect(NowPlayingLayout.coverSide(width: 874, height: 402) == 370)  // iPhone 17 Pro: as tall as it can be
-    #expect(abs(NowPlayingLayout.coverSide(width: 667, height: 375) - 306.82) < 0.01)  // iPhone SE: bound by width
-    #expect(abs(NowPlayingLayout.coverSide(width: 874, height: 402, accessibilitySize: true) - 314.64) < 0.01)
-    #expect(NowPlayingLayout.coverSide(width: 500, height: 300) == 172)  // the tracklist keeps its 300 points
+  @Test func givesTheRecordWhatTheTracklistCanSpare() {
+    let deck = NowPlayingLayout.deckHeight
+    // iPhone 17 Pro sideways, inside its margins: the deck's width, the cover as tall as the rest.
+    #expect(NowPlayingLayout.recordWidth(width: 718, height: 365, deck: deck) == NowPlayingLayout.deckWidth)
+    // In the stage the deck is gone and the cover grows, as far as 42% of the width.
+    #expect(abs(NowPlayingLayout.recordWidth(width: 718, height: 365, deck: 0) - 301.56) < 0.01)
+    #expect(abs(NowPlayingLayout.recordWidth(width: 718, height: 365, deck: 0, accessibilitySize: true) - 258.48) < 0.01)
+    // A narrow window: the tracklist keeps its 300 points.
+    #expect(NowPlayingLayout.recordWidth(width: 500, height: 300, deck: deck) == 172)
   }
 }
 

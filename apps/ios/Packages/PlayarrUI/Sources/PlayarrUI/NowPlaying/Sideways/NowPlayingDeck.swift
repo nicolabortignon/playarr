@@ -1,19 +1,17 @@
 import PlayarrPlayer
 import SwiftUI
 
-/// The deck at the foot of the sideways tracklist: the seek bar with both times, then shuffle, previous, play or
-/// pause, next and repeat, on a glass panel the tracklist scrolls under.
+/// The deck under the sleeve's cover, for the left thumb: the seek bar with both times, then shuffle, previous, play or
+/// pause, next and repeat, as wide as the cover (`NowPlayingLayout.deckWidth` at least).
 struct NowPlayingDeck: View {
   let player: Player
 
   var body: some View {
-    VStack(spacing: 2) {
+    VStack(spacing: 4) {
       SeekBar(player: player)
-      PlayerBarTransport(player: player, playSize: 56, spacing: 20)
+      PlayerBarTransport(player: player, playSize: 52, spacing: 6)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 8)
-    .glassEffect(in: RoundedRectangle(cornerRadius: 24))
+    .frame(minWidth: NowPlayingLayout.deckWidth, maxWidth: .infinity)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("nowPlaying.deck")
   }
