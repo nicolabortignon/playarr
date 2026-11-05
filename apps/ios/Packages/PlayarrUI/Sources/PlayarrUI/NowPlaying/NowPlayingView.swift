@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Now Playing, over everything (apps/web/src/components/NowPlaying.tsx): swipe down to close, "Playing from", the
 /// sleep timer, lyrics, the ⋯ menu, the cover (or lyrics), the song, the seek bar and the transport. On an iPad, the
-/// cover beside the song with Up next; on a phone held sideways, the sleeve: the cover on the left, the tracklist
-/// and its deck on the right (docs/plans/2026-11-04-ios-now-playing-landscape.md).
+/// cover beside the song with Up next; on a phone held sideways, the sleeve: the cover with its deck on the left,
+/// the tracklist on the right (docs/ios/layouts.md).
 struct NowPlayingView: View {
   let session: AccountSession
   @Environment(Theme.self) private var theme

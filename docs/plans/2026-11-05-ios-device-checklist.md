@@ -34,4 +34,35 @@ The simulator can't check the items below. Their code is in the TestFlight build
 ## Both
 
 - [ ] **Buttons.** Play, Shuffle, Feeling lucky, Try again, New mix and the rest look like the Request button: DM Mono, upper case, in a capsule.
-- [ ] **Offline** (the phase 7 list in `2026-11-04-ios-status.md`): downloads, airplane mode, keep-ahead, out of space.
+
+## Offline (iPhone)
+
+How downloads and offline play work is in [docs/ios/offline.md](../ios/offline.md). Install with `corepack pnpm ios:device` or TestFlight.
+
+- [ ] **Download an album on Wi-Fi.** The button's ring fills, songs get the offline mark one by one, and Library → Downloads shows its progress and size, then the song count.
+- [ ] **Lock the phone mid-download** for a few minutes. Unlocking shows it went on (iOS may slow it; it doesn't stop).
+- [ ] **Kill the app mid-download** (swipe it away in the switcher) and reopen. The download goes on from where it was, not from the start of the song (the server log shows `Range: bytes=…`).
+- [ ] **Mobile data** (Wi-Fi off). A new download waits; with "Allow downloads on mobile data" on, it starts; off again, the song under way stops and waits for Wi-Fi.
+- [ ] **Airplane mode, play the album through.** Every song plays, levelled (no jumps between a quiet and a loud track). With DJ mix and a downloaded playlist, the transitions play as online. The lock-screen controls work.
+- [ ] **Airplane mode, a queue with songs not kept.** They're skipped with "Offline: skipped songs that aren’t on this device"; with nothing kept after the current song, it stops at the end.
+- [ ] **Airplane mode, browse.** Library → the downloaded album, playlist, mix and Favorites open from the cache, and Play plays them.
+- [ ] **Play reports.** Play a few songs in airplane mode, then turn it off: Your listening on the web shows them.
+- [ ] **Keep-ahead.** On Wi-Fi, play a queue for a minute, then airplane mode: the next 3 songs play. On mobile data: the next 1.
+- [ ] **Low Data Mode.** Nothing is fetched ahead; a download you start still goes (with mobile data allowed).
+- [ ] **Room.** Downloading something larger than the free space says "Not enough space on this device" with the sizes; a download that runs out says "This device is out of space for downloads: remove some in Library → Downloads", and the failed count shows on its row.
+- [ ] **Remove.** Remove on a row, and "Remove all" in On this device, free the space (Settings → General → iPhone Storage → Playarr goes down).
+- [ ] **Accounts.** Switching account shows its own downloads (none); switching back, they're there. Signing out of an account with downloads asks first; "Sign out and remove downloads" frees the space.
+- [ ] **Backups.** Settings → [name] → iCloud → Manage Storage → Backups → this iPhone: Playarr's size is small (the audio is excluded).
+
+## Server settings (iPhone, signed in to the real server as the owner)
+
+- [ ] Settings shows the six server panels. The real library's sources are listed in their order, with the right counts and "Synced" times.
+- [ ] Drag a source to another place and back. The web's Settings → Sources follows each time.
+- [ ] Rescan a folder source: "Syncing…", then "Synced", without leaving the screen. Lock and unlock the phone during the sync: the panel picks up where it was.
+- [ ] "N albums to review" (if any): decide one album, then leave the sheet. Its count went down by one.
+- [ ] Organize files on a writable folder, if there is one: move one file, then undo it.
+- [ ] Mixes: toggle one kind off. Home no longer shows it after a refresh. Toggle it back on.
+- [ ] Analysis: the numbers match the web's.
+- [ ] Accounts: add an account and share its setup link by Messages to yourself. The link opens the web's redeem page (or the app through `playarr://`). Remove the account afterwards.
+- [ ] On mobile data (away from home, over HTTPS): Sources and Accounts still load and change things.
+- [ ] Larger text (two steps up): no panel cuts off a button.

@@ -61,7 +61,7 @@ export const uploadNeeded = (build, lastBuild) => build > lastBuild;
 // the .ipa. (`destination upload` would need Xcode's ITunesSoftwareService, which Claude's sandbox can't reach.)
 async function beta() {
   const cfg = config();
-  const app = (await findApp(cfg.bundleId)) ?? fail(`No app record for ${cfg.bundleId} in App Store Connect: create it first (see the phase 0 plan).`);
+  const app = (await findApp(cfg.bundleId)) ?? fail(`No app record for ${cfg.bundleId} in App Store Connect: create it first (see docs/ios/release.md).`);
   const { build, version, lastBuild, fresh } = await uploadBuild(cfg, app);
   if (!fresh) return;
 

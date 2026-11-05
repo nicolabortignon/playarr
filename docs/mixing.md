@@ -1,13 +1,35 @@
 # How Playarr mixes songs
 
-This is the whole DJ-mix pipeline, from measuring a song to the moment the next one takes over. It covers what each step decides, the numbers it decides with, and why. The code lives in `packages/mix` (analysis, planner, renderer), `apps/server/src/analysis` and `apps/server/src/transitions` (running them), and `apps/web/src/player` (playing the result).
+This is the whole DJ-mix pipeline, from measuring a song to the moment the next one takes over. It covers what each step decides, the numbers it decides with, and why. The code lives in `packages/mix` (analysis, planner, renderer), `apps/server/src/analysis` and `apps/server/src/transitions` (running them), `apps/web/src/player` (playing the result in a browser) and `apps/ios/Packages/PlayarrPlayer` (playing it in the iOS app, section 4.1).
+
+With DJ mix on (Settings → Playback → Transitions: Off, Crossfade or DJ mix), songs flow into each other the way a DJ would mix them: a long beatmatched blend, a quick mix, a fade or straight on, decided per pair. Each queue has a mix mode, set in Now Playing: Auto, Party (longer blends) or No mixing.
 
 It runs in four stages:
 
 1. **Analysis**: once per song, on the server. It produces a *mix map*: tempo, beat grid, bars, phrases, key, intro, outro, how steady the beat is phrase by phrase, and where the sound starts and ends.
 2. **Planning**: for each pair of songs, from the two mix maps. It produces a *plan*: the style, where each song is cut, how fast B plays, and the gain and EQ curves. The planner is pure and deterministic, so the server and the browser always agree on a plan.
 3. **Rendering**: on the server, in the background. It turns the plan and the two songs' audio into a transition file.
-4. **Playback**: in the browser. The player plays A, then the transition file, then B, and joins each file to the next without a gap.
+4. **Playback**: in the browser or the iOS app. The player plays A, then the transition file, then B, and joins each file to the next without a gap.
+
+### Why transitions are rendered on the server
+
+The obvious design is to mix live on the device: decode both songs and blend them with Web Audio. It doesn't work where it matters most. A locked iPhone suspends Web Audio, so music played through it stops, and a plain `<audio>` element can't be started at an exact moment. So each transition is rendered by the server into an ordinary audio file that plays between A and B. Ordinary files keep playing with the screen locked, on every device.
+
+That shapes the rest:
+
+- **The phone sees two songs.** The transition is never a queue item nor a lock-screen track. The lock screen, Media Session, seek bar and history show A, then B, switching once (at `switchAt`, the bass swap in a long blend).
+- **One planner for everyone.** The planner is pure and deterministic, in `packages/mix`, so the server that renders a plan, the desktop browser that mixes a skip live and the iOS app's port of the skip planner (`SkipPlanner.swift`) all agree.
+- **Lossless, sample-exact files.** Transitions are FLAC (WAV where the server has no FLAC encoder): lossless, cut to the sample, and played by every browser, iOS included. Each file starts with 3 s of A as it is and ends with 3 s of B as it is, so the player can change files where both hold the same sound.
+- **Cheap on a NAS.** Only the upcoming transition is rendered, one at a time, in the background, and the results are cached up to a size cap.
+- **Web Audio only on desktop.** Desktop browsers do use it, to line joins up on the sound and to mix skips live (section 4). Phones and tablets stay on plain `<audio>` elements.
+- **Never worse than before.** No mix map, a failed render, mixing off or an album in order: the songs play as they would without DJ mix, or on a cut on the beat (section 4).
+
+Choices that were weighed and still hold:
+
+- **WSOLA, not a phase vocoder,** for B's time-stretch: a phase vocoder smears kicks (3.2).
+- **A look-ahead limiter, not soft clipping,** for two loud songs together: clipping distorts, and a limiter that recovers between kicks pumps (3.2).
+- **Beat This! beside the onset comb, not the comb alone.** The comb alone often locked onto the off-beat and found bars right about half the time. The model is run with onnxruntime-web's WebAssembly build rather than onnxruntime-node, so the server's Alpine image stays; it runs in its own worker thread that stops after two idle minutes, as it holds about a gigabyte while loaded (1.1).
+- **No transition track in the queue,** and **your own queue is never reordered** to blend: only radio and generated mixes are ([mixes.md](mixes.md)).
 
 ---
 
@@ -122,7 +144,7 @@ The best key becomes a **Camelot code**, with a confidence. On the Camelot wheel
 
 ### 1.6 Loudness
 
-Measured separately by *loudness analysis*: EBU R128 (ITU-R BS.1770) loudness and peak, in Playarr's own code, from ffmpeg's decode of the whole song in stereo at 44.1 kHz. With Even volume on, every song is streamed at −14 LUFS: loud songs turned down (at most 20 dB), quiet ones up (at most 12 dB, and only as far as the peak stays under −1 dBFS). Transitions are rendered at the same levels (see 3.3).
+Measured separately by *loudness analysis*: EBU R128 (ITU-R BS.1770) loudness and peak, in Playarr's own code, from ffmpeg's decode of the whole song in stereo at 44.1 kHz. With Even volume on, every song is streamed at −14 LUFS ([server/streaming-and-art.md](server/streaming-and-art.md)): loud songs turned down (at most 20 dB), quiet ones up (at most 12 dB, and only as far as the peak stays under −1 dBFS). Transitions are rendered at the same levels (see 3.3).
 
 ### 1.7 Hand-set cues
 
@@ -227,7 +249,7 @@ How it sounds depends on the tempo gap:
 
 ### 2.6 Skips (`skipPlan`)
 
-When the listener presses Next on a desktop browser and no server transition starts within 3 s, the live mixer (section 4) leaves A as soon as possible, mid-song if need be. The server never plans skips. Outros, keys and the same-album rule don't count, but No mixing still does.
+When the listener presses Next on a desktop browser or in the iOS app and no server transition starts within 3 s, the player leaves A as soon as possible, mid-song if need be (the live mixer in section 4, the iOS engine in 4.1). The server never plans skips; the iOS app has its own port of `skipPlan` (`SkipPlanner.swift`). Outros, keys and the same-album rule don't count, but No mixing still does.
 
 - **Both beats sure** → a quick mix landing on A's next bar line with a 4-beat lead-in, or 2 beats if that lands a bar sooner. The cut comes under 6 beats after the press.
 - **Otherwise** → a 2.5 s crossfade, or straight if B starts cold.
@@ -269,12 +291,12 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 
 ---
 
-## 4. Playing it (`apps/web/src/player`)
+## 4. Playing it (`apps/web/src/player`; the iOS app in 4.1)
 
 - **The handoffs.** No browser starts a file at an exact moment, so each takeover is done **in step**, and only where the two files hold the same sound:
   1. 3 s before `aStart`, the player starts the transition file (its lead is A as it is) silenced, while A's own file plays on. At the transition's end, it starts B's own file (or its remainder) silenced, while the transition's tail (B as it is) plays on.
   2. The new file plays slightly faster or slower until both are at the same moment. It goes by the median of the last 5 measurements, every 4 ms, because an element's reported time jitters by a millisecond or so. It asks for 1 ms, loosening to 5 ms as the shared sound runs out.
-  3. Then it takes over: a 15 ms equal-gain fade where the element's volume can be set (two copies of one sound, so the level holds), or an instant switch where it can't (older iPhones fix it in hardware). A join lined up on the sound (below) cross-fades over 20 ms instead.
+  3. Then it takes over: a 15 ms equal-gain fade where the element's volume can be set (two copies of one sound, so the level holds), or an instant switch where it can't (older iPhones fix it in hardware). A join lined up on the sound (below) cross-fades over 80 ms instead.
 
   **On desktop the changeover is lined up on the sound itself** (`joinGraph.ts`). An element's reported time isn't the sample being heard, so two files that agree to a millisecond by their times can still be a few apart as heard. After the first click or key press (when browsers let Web Audio start), every `<audio>` element plays through one Web Audio graph: element → delay → gain → speakers.
 
@@ -291,16 +313,29 @@ While A plays (after 5 s of it, and 2 s after the queue settles), the player ask
 
   Both changeovers finish before anything changes: before B comes in at `aStart`, and in B's tail after the transition. Before the lead, the switch into the transition had to happen after `aStart`, with B already coming in. A late switch then brought B in with a small step in its level, and the 5 ms allowed between the two copies let a kick's low end partly cancel. Both were heard as a bump.
 - **Giving up.** If the transition isn't ready 20 s before `aStart`, the player gives up on it and the pair plays the usual way. A render that takes too long ends up there.
-- **Fallback: a cut on the beat** (`beatCut`, `mixSequence.ts`). With no transition, DJ mix still joins the songs on the beat: A stops on its last downbeat before its sound ends, no earlier than 20 s before A's end, nor before its outro or hand-set mix-out. B comes in on its first downbeat. If B's intro is longer than 8 bars, B comes in a bar before the intro ends. With unsure bars, beats stand in for downbeats. With no steady beat, the silence between the songs is still cut out (`silenceCut`), except within an album or with mixing off.
+- **Fallback: the plan, or a cut on the beat** (`joinInto` in `AudioEngine.tsx`, `mixSequence.ts`). With no transition file to play, DJ mix goes by the server's plan once it has one: straight on is a cut where the songs' sounds end and start (`straightCut`), and a fade is played by the player itself where the element's volume can be set. Otherwise it joins the songs on the beat (`beatCut`): A stops on its last downbeat before its sound ends, no earlier than 20 s before A's end, nor before its outro or hand-set mix-out. B comes in on its first downbeat. If B's intro is longer than 8 bars, B comes in a bar before the intro ends. With unsure bars, beats stand in for downbeats. With no steady beat, the silence between the songs is still cut out (`silenceCut`), except within an album or with mixing off.
 - **Live mix on desktop** (`liveMix.ts`). When the listener skips and no server transition starts within 3 s, a desktop browser (as above) can mix one itself. It fetches and decodes both songs around the mix, plans the skip (2.6) and renders it in a worker: a quick mix, or a short crossfade with no sure beat. It plays it through Web Audio, at the songs' even-volume levels. It has 1.5 s to do so, otherwise the song switches straight away. Files over 60 MB and songs over 15 minutes aren't mixed live.
 - **What the listener sees.** Lock screen, seek bar and history only ever show the two songs. The transition's time maps to A's until `switchAt`, then to B's (following B's stretched clock).
 - **Downloads** keep their transitions for offline listening.
+
+### 4.1 Playing it on iOS (`apps/ios/Packages/PlayarrPlayer`)
+
+The iOS app asks for the same server transitions as the web, rule for rule (`TransitionPlanner.swift`: after 5 s of A and 2 s after the pair settles, polls every 3 s then 10 s, "unavailable" asked again after a minute, given up 20 s before the mix point). A ready file is downloaded whole before it's needed (`TransitionCoordinator.swift`). Its native engine plays everything on one sample clock (two decks and a third player node for transition files; see [ios/audio-engine.md](ios/audio-engine.md)), so it needs none of the browser's catching up: every join is scheduled at an exact sample, with the screen locked too.
+
+How the next song joins is decided by `DJJoin.decide` and handed to the engine as an `EngineItem` with a `Join`:
+
+- **`.transition`**: a downloaded server file (`TransitionJoin`). It is placed on A's timeline to the sample, A is cut inside the file's 3 s lead (where both hold the same sound), and B's own audio starts on the sample after the transition. After an MP3, B goes on from the server's FLAC remainder (`EngineItem.Continuation`).
+- **`.mix`**: a fade or quick mix the server planned but hasn't rendered in time, or a press of Next planned on the phone (`SkipPlanner`). The engine mixes it itself from the plan: each deck's gain curve, low shelf and high-pass are applied to its PCM as blocks are scheduled (`DeckAutomation.swift`, after the song's own even-volume gain). B's rate is followed by resampling, as a DJ's pitch fader does (`VarispeedSource.swift`, cubic interpolation, ending exactly on B's sample at `bResume`): its pitch moves with it, which is why only quick mixes stretched by at most 2% are played this way. A long blend's stretch of up to 8% over half a minute would be heard as pitch, so it needs the server's file.
+- **`.cut`**: the server's straight on, a cut on the beat or a silence cut, as on the web (`MixSequence.swift`).
+- **`.crossfade`**: gapless, or the listener's crossfade when DJ mix is off.
+
+A join that can't be placed in time is missed, and the next song follows gapless from its start.
 
 ---
 
 ## 5. Choosing songs that blend (`blend.ts`)
 
-Mixes and radio order songs so neighbours blend well. `blendScore(a, b)` is the product of three parts, each 0–1:
+Mixes and radio order songs so neighbours blend well ([mixes.md](mixes.md) says how each uses it). `blendScore(a, b)` is the product of three parts, each 0–1:
 
 - **Tempo closeness.** 1 at the same tempo, 0.8 at the planner's 8% limit, then halving every 3% further apart (never below 0.1). The score is trusted less for unsure beats, and half as much when a beat wanders where songs are mixed (`edgesStable`, else `gridStable`).
 - **Key compatibility.** 1 for compatible keys, 0.8 for two steps, 0.6 for a clash, weighted by key confidence.

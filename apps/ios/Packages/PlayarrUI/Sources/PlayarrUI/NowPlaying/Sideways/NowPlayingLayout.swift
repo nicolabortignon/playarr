@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// How Now Playing is arranged (docs/plans/2026-11-04-ios-now-playing-landscape.md): upright, as a phone held
+/// How Now Playing is arranged (docs/ios/layouts.md): upright, as a phone held
 /// normally; sideways, a phone on its side ("the sleeve": the record on the left, the cover with the deck under it for
 /// the left thumb, and the tracklist on the right, the full height, for the right); or wide, the iPad's desktop layout
 /// (the cover beside the song with Up next).

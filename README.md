@@ -40,12 +40,12 @@ A pnpm monorepo, all TypeScript, plus the native iOS app in Swift:
 |---|---|
 | `apps/server` | Fastify 5 server. Keeps a snapshot of the Lidarr library, refreshed every 10 minutes. Streams audio with HTTP range support, serves resized artwork, and stores favorites, playlists and song analysis in SQLite (`node:sqlite`). In production it also serves the built web app, so everything runs as one process on one port. |
 | `apps/web` | React 19 app built with Vite 8, Tailwind 4, React Router 7, TanStack Query and Zustand. Installable as a PWA, with its own service worker that can play songs saved on the device. |
-| `apps/ios` | The native iPhone and iPad app in SwiftUI, being built in phases ([design](docs/plans/2026-11-03-ios-app-design.md)). Outside the pnpm workspace: XcodeGen generates the Xcode project from `project.yml`, a Makefile has every entry point, and two Node scripts talk to App Store Connect. |
+| `apps/ios` | The native iPhone and iPad app in SwiftUI, being built in phases ([docs](docs/ios/README.md)). Outside the pnpm workspace: XcodeGen generates the Xcode project from `project.yml`, a Makefile has every entry point, and two Node scripts talk to App Store Connect. |
 | `packages/shared` | Types shared by both sides, plus the byte-range parser used by the server and the service worker. |
 | `packages/mix` | DJ transitions, with no dependencies: finding beats, bars, key and mix points in a song, planning how two songs join, and rendering the mix. Used by the server and the web app alike. |
 | `docker/` | Dockerfile for a single image containing the server, the web app, ffmpeg, fpcalc and rclone; the compose stack, `update.sh` and the updater container that keep a server up to date. |
 | `scripts/` | The version bump run on every commit, `pnpm sim` (iOS Simulator) and the Beat This! model export. |
-| `docs/` | [mixing.md](docs/mixing.md) (how DJ mix works) and the design and implementation plans. |
+| `docs/` | How each part works ([index](docs/README.md); [mixing.md](docs/mixing.md) explains DJ mix), the decisions log, and plans for work in progress. |
 
 ## Key design points
 
@@ -153,8 +153,8 @@ From a development machine with the SSH settings in `.env`, `pnpm deploy:nas` do
 
 Playarr asks everyone to sign in once its owner has set a password (open Playarr on the home network, by its IP or local name: Settings → Accounts → Set up the owner's account). Until then it works as before, open to anyone who can reach it, so claim it before exposing it. Reach it from outside over HTTPS through a reverse proxy; the session cookie is marked Secure when the proxy says the visit is HTTPS. Planned next:
 
-- The native iOS app (docs/plans/2026-11-03-ios-app-design.md)
+- The native iOS app on the App Store ([docs/ios](docs/ios/README.md))
 - ffmpeg transcoding for formats browsers can't play, and for mobile data (even volume's levelled streams are uncompressed WAV for now)
 - ReplayGain tags (levelling uses Playarr's own loudness measurement for now) and EQ
 
-See [PLAN.md](PLAN.md) for the full architecture, roadmap and design decisions.
+See [docs/README.md](docs/README.md) for the architecture and how each part works, [docs/decisions.md](docs/decisions.md) for the design decisions, and [docs/plans/open-items.md](docs/plans/open-items.md) for what's still open.

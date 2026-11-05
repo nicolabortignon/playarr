@@ -20,7 +20,7 @@ export const GROUP = 'Household';
 /** The settings from the environment, checked; exits with a clear message when one is missing. */
 export function config(env = process.env) {
   const missing = ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'APPLE_TEAM_ID', 'IOS_BUNDLE_ID'].filter((name) => !env[name]);
-  if (missing.length) fail(`Set ${missing.join(', ')} in the repo's .env (see docs/plans/2026-11-03-ios-conventions.md)`);
+  if (missing.length) fail(`Set ${missing.join(', ')} in the repo's .env (see docs/ios/conventions.md)`);
   const keyPath = join(homedir(), '.appstoreconnect', 'private_keys', `AuthKey_${env.ASC_KEY_ID}.p8`);
   if (!existsSync(keyPath)) fail(`No App Store Connect key at ${keyPath}`);
   return { keyId: env.ASC_KEY_ID, issuerId: env.ASC_ISSUER_ID, teamId: env.APPLE_TEAM_ID, bundleId: env.IOS_BUNDLE_ID, keyPath };
@@ -142,7 +142,7 @@ async function setup(testers) {
 
   const app = await findApp(bundleId);
   if (!app) {
-    console.log(`… No app record yet. Create it in App Store Connect (plan: docs/plans/2026-11-03-ios-phase0-pipeline.md), then run this again.`);
+    console.log(`… No app record yet. Create it in App Store Connect (see docs/ios/release.md), then run this again.`);
     return;
   }
   let group = await findGroup(app.id);

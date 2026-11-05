@@ -1,7 +1,7 @@
 import PlayarrAPI
 import PlayarrPlayer
 
-/// The sleeve's tracklist (docs/plans/2026-11-04-ios-now-playing-landscape.md): the song before the one playing, the
+/// The sleeve's tracklist (docs/ios/layouts.md): the song before the one playing, the
 /// song playing, then the rest of the queue in play order, read like the back of a record. Lines are worked out on
 /// demand (`line(at:)`), so a queue of thousands costs only the lines on screen.
 public struct Tracklist: Equatable, Sendable {

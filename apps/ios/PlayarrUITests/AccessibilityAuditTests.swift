@@ -152,7 +152,7 @@ final class AccessibilityAuditTests: XCTestCase {
 }
 
 /// Issues the audit reports that aren't the app's to fix. Each says what, where and why; add one only after
-/// trying to fix the view (Task 25), never to get a run green.
+/// trying to fix the view, never to get a run green.
 enum AuditExceptions {
   @MainActor
   static func ignores(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication) -> Bool {

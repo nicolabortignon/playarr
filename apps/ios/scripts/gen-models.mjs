@@ -4,7 +4,7 @@
 // ts-json-schema-generator reads the shared TypeScript types into JSON Schema; the emitter below turns
 // that schema into Swift. The output is committed; `--check` fails when it is out of date (CI).
 //
-// Rules (docs/plans/2026-11-03-ios-phase2-api-sign-in.md, Task 2):
+// Rules (docs/ios/README.md):
 // - interface / object type → struct (Codable, Hashable, Sendable; Identifiable when it has `id`).
 // - optional property → `T?`; `T | null` → `T?`; optional and nullable → `T??` (nil leaves it out,
 //   .some(nil) sends null, as patch bodies need).
