@@ -1,13 +1,18 @@
-import { PCM_COOKIE, WAV_FALLBACKS, type WavFallback } from '@playarr/shared';
+import { WAV_FALLBACKS, wavFallbackOf, type Track, type WavFallback } from '@playarr/shared';
+
+let unplayable: Set<WavFallback> | undefined;
+
+/** The lossless formats this browser can't play (Chrome and Firefox: Apple Lossless, AIFF). */
+export function unplayableFormats(audio: Pick<HTMLAudioElement, 'canPlayType'> = document.createElement('audio')): Set<WavFallback> {
+  unplayable ??= new Set((Object.keys(WAV_FALLBACKS) as WavFallback[]).filter((format) => !audio.canPlayType(WAV_FALLBACKS[format])));
+  return unplayable;
+}
 
 /**
- * Tells the server which lossless formats this browser can't play (Chrome and Firefox: Apple Lossless, AIFF), so it
- * streams songs in those to it as WAV. In a cookie: <audio>, and the offline cache's fetches, send it with every
- * request for a song.
+ * Where to fetch a song this browser can play: the file itself, or for a format it can't, the server's WAV of it
+ * (lossless, seekable). Its own address, so a copy of the file kept on the device never stands in for it.
  */
-export function declareUnplayableFormats(audio: Pick<HTMLAudioElement, 'canPlayType'> = document.createElement('audio')) {
-  const unplayable = (Object.keys(WAV_FALLBACKS) as WavFallback[]).filter((format) => !audio.canPlayType(WAV_FALLBACKS[format]));
-  document.cookie = unplayable.length
-    ? `${PCM_COOKIE}=${unplayable.join('.')}; path=/; max-age=31536000; samesite=lax`
-    : `${PCM_COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; samesite=lax`;
+export function playableUrl(track: Pick<Track, 'streamUrl'> & { format?: Track['format'] }): string {
+  const fallback = track.format && wavFallbackOf(track.format);
+  return fallback && unplayableFormats().has(fallback) ? `${track.streamUrl}/lossless.wav` : track.streamUrl;
 }

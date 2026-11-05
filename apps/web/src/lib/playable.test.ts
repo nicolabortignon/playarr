@@ -1,19 +1,27 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { declareUnplayableFormats } from './playable';
+import type { Track } from '@playarr/shared';
+import { describe, expect, it, vi } from 'vitest';
 
-afterEach(() => (document.cookie = 'playarr_pcm=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'));
+const track = (codec: string, container: string) => ({ streamUrl: '/stream/7', format: { codec, container, lossless: true } }) as Track;
 
-describe('declareUnplayableFormats', () => {
-  it('lists the lossless formats the browser can’t play', () => {
-    declareUnplayableFormats({ canPlayType: (type: string) => (type === 'audio/aiff' ? '' : 'maybe') });
-    expect(document.cookie).toContain('playarr_pcm=AIFF');
-    declareUnplayableFormats({ canPlayType: () => '' });
-    expect(document.cookie).toContain('playarr_pcm=ALAC.AIFF');
+async function inBrowser(canPlayType: (type: string) => CanPlayTypeResult) {
+  vi.resetModules();
+  const { playableUrl, unplayableFormats } = await import('./playable');
+  unplayableFormats({ canPlayType });
+  return playableUrl;
+}
+
+describe('playableUrl', () => {
+  it('asks for the WAV of a song in a lossless format the browser can’t play', async () => {
+    const playableUrl = await inBrowser(() => '');
+    expect(playableUrl(track('ALAC', 'm4a'))).toBe('/stream/7/lossless.wav');
+    expect(playableUrl(track('PCM', 'aiff'))).toBe('/stream/7/lossless.wav');
+    expect(playableUrl(track('FLAC', 'flac'))).toBe('/stream/7');
+    expect(playableUrl({ streamUrl: '/transitions/abc.flac' })).toBe('/transitions/abc.flac');
   });
 
-  it('clears the list in a browser that plays them all', () => {
-    declareUnplayableFormats({ canPlayType: () => '' });
-    declareUnplayableFormats({ canPlayType: () => 'probably' });
-    expect(document.cookie).not.toContain('playarr_pcm');
+  it('keeps the file itself in a browser that plays it', async () => {
+    const playableUrl = await inBrowser((type) => (type.includes('alac') ? 'maybe' : ''));
+    expect(playableUrl(track('ALAC', 'm4a'))).toBe('/stream/7');
+    expect(playableUrl(track('PCM', 'aiff'))).toBe('/stream/7/lossless.wav');
   });
 });

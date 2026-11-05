@@ -1,7 +1,6 @@
-import { parseRange, PCM_COOKIE, wavFallbackOf } from '@playarr/shared';
+import { parseRange, wavFallbackOf } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Readable } from 'node:stream';
-import { readCookie } from '../accounts/auth.ts';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import { LOUDNESS_RATE } from '../analysis/loudness.ts';
 import { FileAccessError, type FileResolver } from '../catalog/files.ts';
@@ -99,39 +98,7 @@ export function streamRoutes(
     handler: async (req, reply) => {
       const opened = await open(req, reply);
       if (!opened) return reply;
-      const { file, media, path, size, mtimeMs } = opened;
-
-      // Apple Lossless or AIFF, to a browser that said it can't play it: the song as a WAV, still lossless.
-      const fallback = wavFallbackOf(file.format);
-      if (fallback) {
-        reply.header('Vary', 'Cookie');
-        const decode = media.pcmStream?.bind(media);
-        if (decode && readCookie(req.headers.cookie, PCM_COOKIE)?.split('.').includes(fallback)) {
-          let length: Awaited<ReturnType<typeof wavLength>>;
-          try {
-            length = await wavLength(media, path, size, mtimeMs);
-          } catch (err) {
-            req.log.warn({ err, path }, 'could not read the length of a song to stream as WAV');
-          }
-          if (length) {
-            const { frames, sampleRate } = length;
-            const shape: PcmShape = { sampleRate, channels: length.channels === 1 ? 1 : 2, bits: length.bits > 16 ? 24 : 16 };
-            const exactSeek = seeksInexactly(file.format);
-            return sendWav(req, reply, {
-              frames,
-              shape,
-              etag: `"wav-${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}"`,
-              decode: (from, count) =>
-                decode(path, {
-                  ...shape,
-                  priority: 'normal',
-                  maxSeconds: count / sampleRate + 1,
-                  ...(from > 0 ? { startSeconds: from / sampleRate, ...(exactSeek ? { exactSeek } : {}) } : {}),
-                }),
-            });
-          }
-        }
-      }
+      const { media, path, size, mtimeMs } = opened;
 
       const etag = `"${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}"`;
       reply
@@ -157,6 +124,43 @@ export function streamRoutes(
       // (The response's close event: the request's fires once its body has been read.)
       reply.raw.once('close', () => stream.destroy());
       return reply.send(stream);
+    },
+  });
+
+  // Apple Lossless and AIFF for browsers that can't play them (Chrome, Firefox): the song as a WAV at its own rate
+  // and depth, still lossless. Its own address, so a copy of the file kept on the device never stands in for it.
+  app.route<{ Params: { fileId: string } }>({
+    method: ['GET', 'HEAD'],
+    url: '/stream/:fileId/lossless.wav',
+    handler: async (req, reply) => {
+      const opened = await open(req, reply);
+      if (!opened) return reply;
+      const { file, media, path, size, mtimeMs } = opened;
+      const decode = media.pcmStream?.bind(media);
+      if (!wavFallbackOf(file.format) || !decode) return reply.code(404).send({ error: 'This song plays as it is' });
+      let length: Awaited<ReturnType<typeof wavLength>>;
+      try {
+        length = await wavLength(media, path, size, mtimeMs);
+      } catch (err) {
+        req.log.warn({ err, path }, 'could not read the length of a song to stream as WAV');
+        return reply.code(502).send({ error: `Cannot read audio file: ${(err as Error).message}` });
+      }
+      if (!length) return reply.code(422).send({ error: 'This song’s length can’t be read' });
+      const { frames, sampleRate } = length;
+      const shape: PcmShape = { sampleRate, channels: length.channels === 1 ? 1 : 2, bits: length.bits > 16 ? 24 : 16 };
+      const exactSeek = seeksInexactly(file.format);
+      return sendWav(req, reply, {
+        frames,
+        shape,
+        etag: `"wav-${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}"`,
+        decode: (from, count) =>
+          decode(path, {
+            ...shape,
+            priority: 'normal',
+            maxSeconds: count / sampleRate + 1,
+            ...(from > 0 ? { startSeconds: from / sampleRate, ...(exactSeek ? { exactSeek } : {}) } : {}),
+          }),
+      });
     },
   });
 

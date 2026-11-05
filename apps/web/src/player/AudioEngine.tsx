@@ -3,6 +3,7 @@ import type { Track } from '@playarr/shared';
 import { useEffect, useRef } from 'react';
 import { sized } from '../lib/api';
 import { extractAccent } from '../lib/color';
+import { playableUrl } from '../lib/playable';
 import { setFaviconAccent } from '../lib/favicon';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
@@ -291,7 +292,7 @@ export function AudioEngine() {
     // on iPhones too, and up as well as down); else its own file.
     const db = streamGain(t, usePlayer.getState());
     setLevelled(deck, t, db);
-    deck.src = db === undefined ? t.streamUrl : levelledUrl(t, db);
+    deck.src = db === undefined ? playableUrl(t) : levelledUrl(t, db);
   }
 
   /** Marks the gain an element plays its song at (its levelled stream's), or that it plays it at its own volume. */

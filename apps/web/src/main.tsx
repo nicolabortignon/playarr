@@ -10,14 +10,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 import { watchForUpdates } from './lib/appUpdate';
-import { declareUnplayableFormats } from './lib/playable';
 import { persistOptions, queryClient } from './lib/queryClient';
 import { routes } from './routes';
 
 const router = createBrowserRouter(routes);
 watchForUpdates();
-// Before the first song is asked for.
-declareUnplayableFormats();
 
 const app = <RouterProvider router={router} />;
 

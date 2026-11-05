@@ -83,16 +83,14 @@ describe('levelled stream', () => {
   });
 });
 
-describe('Apple Lossless and AIFF to a browser that can’t play them', () => {
-  const declined = { cookie: 'playarr_session=abc; playarr_pcm=ALAC.AIFF' };
+describe('Apple Lossless and AIFF as WAV, for browsers that can’t play them', () => {
   const WAV_BYTES = 44 + 2 * 96_000 * 6;
 
-  it('serves the song as a WAV at its own rate and depth, for a browser that says it can’t play it', async () => {
+  it('serves the song as a WAV at its own rate and depth', async () => {
     const { app, decodes } = setup({ codec: 'ALAC', container: 'm4a' });
-    const res = await app.inject({ url: '/stream/7', headers: declined });
+    const res = await app.inject({ url: '/stream/7/lossless.wav' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('audio/wav');
-    expect(res.headers.vary).toBe('Cookie');
     expect(Number(res.headers['content-length'])).toBe(WAV_BYTES);
     expect(res.rawPayload.length).toBe(WAV_BYTES);
     const header = res.rawPayload;
@@ -103,7 +101,7 @@ describe('Apple Lossless and AIFF to a browser that can’t play them', () => {
   it('seeks by decoding from the sample a range starts at', async () => {
     const { app, decodes } = setup({ codec: 'ALAC', container: 'm4a' });
     const start = 44 + 96_000 * 6; // one second in
-    const res = await app.inject({ url: '/stream/7', headers: { ...declined, range: `bytes=${start}-` } });
+    const res = await app.inject({ url: '/stream/7/lossless.wav', headers: { range: `bytes=${start}-` } });
     expect(res.statusCode).toBe(206);
     expect(res.headers['content-range']).toBe(`bytes ${start}-${WAV_BYTES - 1}/${WAV_BYTES}`);
     expect(decodes[0]).toMatchObject({ startSeconds: 1 });
@@ -111,25 +109,20 @@ describe('Apple Lossless and AIFF to a browser that can’t play them', () => {
 
   it('reads a file’s length once, not on every range', async () => {
     const { app, pcmLength } = setup({ codec: 'ALAC', container: 'm4a' });
-    await app.inject({ url: '/stream/7', headers: declined });
-    await app.inject({ url: '/stream/7', headers: { ...declined, range: 'bytes=100-' } });
+    await app.inject({ url: '/stream/7/lossless.wav' });
+    await app.inject({ url: '/stream/7/lossless.wav', headers: { range: 'bytes=100-' } });
     expect(pcmLength).toHaveBeenCalledTimes(1);
   });
 
   it('tells AIFF by its container', async () => {
     const { app } = setup({ codec: 'PCM', container: 'aiff' });
-    expect((await app.inject({ url: '/stream/7', headers: declined })).headers['content-type']).toBe('audio/wav');
+    expect((await app.inject({ url: '/stream/7/lossless.wav' })).headers['content-type']).toBe('audio/wav');
   });
 
-  it('serves the file itself to a browser that plays it, and every other format as it is', async () => {
-    const alac = setup({ codec: 'ALAC', container: 'm4a' });
-    const own = await alac.app.inject({ url: '/stream/7' });
-    expect(own.headers['content-type']).not.toBe('audio/wav');
-    expect(own.headers.vary).toBe('Cookie');
-    expect(own.payload).toBe('the file itself');
+  it('leaves every other format, and the file itself, as they are', async () => {
     const flac = setup({ codec: 'FLAC' });
-    const res = await flac.app.inject({ url: '/stream/7', headers: declined });
-    expect(res.payload).toBe('the file itself');
-    expect(res.headers.vary).toBeUndefined();
+    expect((await flac.app.inject({ url: '/stream/7/lossless.wav' })).statusCode).toBe(404);
+    const alac = setup({ codec: 'ALAC', container: 'm4a' });
+    expect((await alac.app.inject({ url: '/stream/7' })).payload).toBe('the file itself');
   });
 });

@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { TransitionAnswer } from '../lib/api';
 import { AUDIO_CACHE } from '../lib/cacheNames';
+import { playableUrl } from '../lib/playable';
 
 const MB = 1024 ** 2;
 const GB = 1024 ** 3;
@@ -80,6 +81,13 @@ export const useOffline = create<OfflineState>()(
 );
 
 export const useIsKept = (fileId: number) => useOffline((s) => fileId in s.songs);
+
+/**
+ * Kept on this device as this browser plays it. An Apple Lossless file kept before Chrome was given its WAV isn't:
+ * it's fetched again, as the WAV.
+ */
+export const keptAsPlayed = (track: Pick<Track, 'fileId' | 'streamUrl' | 'format'>, songs: Record<number, Pick<KeptSong, 'url'>>) =>
+  songs[track.fileId]?.url === playableUrl(track);
 
 export const keptBytes = (songs: Record<number, KeptSong>) => Object.values(songs).reduce((sum, s) => sum + s.bytes, 0);
 
@@ -182,7 +190,8 @@ export async function keepSong(
   // A download only needs room on the device; other kept songs go first if it's short.
   const room = pinned ? await roomOnDevice(rest, track.size, protect) : evictions(rest, track.size, await effectiveLimit(), protect);
   if (!room) return false;
-  const res = await fetch(track.streamUrl, { signal });
+  const url = playableUrl(track);
+  const res = await fetch(url, { signal });
   if (res.status !== 200 || !res.body) {
     void res.body?.cancel();
     throw new Error(`HTTP ${res.status}`);
@@ -210,15 +219,18 @@ export async function keepSong(
   );
   const cache = await caches.open(AUDIO_CACHE);
   try {
-    await cache.put(track.streamUrl, new Response(counted, { headers: res.headers }));
+    await cache.put(url, new Response(counted, { headers: res.headers }));
   } finally {
     useOffline.setState({ active: null });
   }
   if (generation !== started || (expected && loaded !== expected)) {
-    await cache.delete(track.streamUrl);
+    await cache.delete(url);
     return false;
   }
-  useOffline.setState((s) => ({ songs: { ...s.songs, [track.fileId]: { url: track.streamUrl, bytes: loaded, usedAt: Date.now() } } }));
+  // The copy it replaces, kept as this browser can't play it.
+  const before = useOffline.getState().songs[track.fileId]?.url;
+  if (before && before !== url) await cache.delete(before);
+  useOffline.setState((s) => ({ songs: { ...s.songs, [track.fileId]: { url, bytes: loaded, usedAt: Date.now() } } }));
   void askToPersist();
   return true;
 }

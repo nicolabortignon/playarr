@@ -2,6 +2,7 @@ import { EXCERPT_MARGIN, RENDER_RATE, type MixMap, type MixMode, type Transition
 import type { Track } from '@playarr/shared';
 import { api } from '../lib/api';
 import { AUDIO_CACHE } from '../lib/cacheNames';
+import { playableUrl } from '../lib/playable';
 import { canSetVolume, continues, isDesktop } from './decks';
 import type { LiveMixReply, LiveMixRequest, SongAudio } from './liveMix.worker';
 import { useOffline } from './offline';
@@ -181,14 +182,15 @@ function startBytes(track: Track, seconds: number): number | undefined {
 
 /** The song's file, or its first `bytes`: from this device if it's kept here, else from the server. */
 async function songBytes(track: Track, bytes: number | undefined, signal: AbortSignal): Promise<ArrayBuffer> {
+  const url = playableUrl(track);
   if (track.fileId in useOffline.getState().songs && typeof caches !== 'undefined') {
-    const kept = await caches.match(track.streamUrl, { cacheName: AUDIO_CACHE });
+    const kept = await caches.match(url, { cacheName: AUDIO_CACHE });
     if (kept) {
       const file = await kept.arrayBuffer();
       return bytes === undefined ? file : file.slice(0, bytes);
     }
   }
-  const res = await fetch(track.streamUrl, { signal, headers: bytes === undefined ? {} : { Range: `bytes=0-${bytes - 1}` } });
+  const res = await fetch(url, { signal, headers: bytes === undefined ? {} : { Range: `bytes=0-${bytes - 1}` } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.arrayBuffer();
 }

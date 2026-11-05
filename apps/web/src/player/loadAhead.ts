@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { sized } from '../lib/api';
 import { preloadImage } from '../lib/prefetch';
 import { useUI } from '../lib/ui';
-import { canKeepOffline, keepSong, reconcileOffline, touchSong, useOffline, workerReady } from './offline';
+import { canKeepOffline, keepSong, keptAsPlayed, reconcileOffline, touchSong, useOffline, workerReady } from './offline';
 import { currentTrack, usePlayer, type RepeatMode } from './store';
 
 /** Upcoming songs to have on the device on a good connection. */
@@ -69,7 +69,7 @@ async function pump() {
   if (job) return;
   for (;;) {
     const { songs } = useOffline.getState();
-    const next = plan.find((t) => !(t.fileId in songs) && !skipped.has(t.fileId));
+    const next = plan.find((t) => !keptAsPlayed(t, songs) && !skipped.has(t.fileId));
     if (!next) return;
     const abort = new AbortController();
     job = { fileId: next.fileId, abort };

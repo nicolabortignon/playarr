@@ -10,6 +10,7 @@ import {
   downloadProgress,
   evictions,
   keepSong,
+  keptAsPlayed,
   offlineTransition,
   removeDownload,
   setOfflineLimit,
@@ -89,7 +90,7 @@ describe('keeping songs', () => {
     store = fake.store;
     vi.stubGlobal('caches', fake.caches);
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-      const size = Number(url.split('/').pop()) * 100;
+      const size = Number(url.match(/\/stream\/(\d+)/)?.[1]) * 100;
       const body = new ReadableStream<Uint8Array>({
         start(c) {
           init?.signal?.addEventListener('abort', () => c.error(new DOMException('Aborted', 'AbortError')));
@@ -115,6 +116,16 @@ describe('keeping songs', () => {
     expect(store.get('/stream/4')?.byteLength).toBe(400);
     expect(useOffline.getState().songs[4]).toMatchObject({ url: '/stream/4', bytes: 400 });
     expect(useOffline.getState().active).toBeNull();
+  });
+
+  it('fetches again, as its WAV, an Apple Lossless song kept as the file this browser can’t play', async () => {
+    const alac = { ...track(4, 400), format: { codec: 'ALAC', container: 'm4a', lossless: true } } as Track;
+    store.set('/stream/4', new ArrayBuffer(400));
+    useOffline.setState({ songs: { 4: { url: '/stream/4', bytes: 400, usedAt: 1 } } });
+    expect(keptAsPlayed(alac, useOffline.getState().songs)).toBe(false);
+    expect(await keep(alac)).toBe(true);
+    expect([...store.keys()]).toEqual(['/stream/4/lossless.wav']);
+    expect(keptAsPlayed(alac, useOffline.getState().songs)).toBe(true);
   });
 
   it('makes room by dropping the song played longest ago', async () => {
@@ -180,8 +191,9 @@ describe('downloads', () => {
   it('fetches downloads in the order they were added, skipping what failed', () => {
     const pins = { b: { addedAt: 2, tracks: [track(8)] }, a: { addedAt: 1, tracks: [track(1), track(2)] } };
     expect(nextToDownload(pins, {}, {})?.fileId).toBe(1);
-    expect(nextToDownload(pins, { 1: {} }, { 2: 'no room' })?.fileId).toBe(8);
-    expect(nextToDownload(pins, { 1: {}, 2: {}, 8: {} }, {})).toBeUndefined();
+    const kept = (...ids: number[]) => Object.fromEntries(ids.map((id) => [id, { url: `/stream/${id}` }]));
+    expect(nextToDownload(pins, kept(1), { 2: 'no room' })?.fileId).toBe(8);
+    expect(nextToDownload(pins, kept(1, 2, 8), {})).toBeUndefined();
   });
 });
 

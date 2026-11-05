@@ -10,6 +10,7 @@ import {
   type Download,
   keepSong,
   keepTransition,
+  keptAsPlayed,
   type KeptTransition,
   offlineTransition,
   pinnedFiles,
@@ -48,9 +49,9 @@ let running = false;
 let warnedFull = false;
 
 /** The next song of a download to fetch: downloads in the order they were added, songs in order. */
-export function nextToDownload(pins: Record<string, { addedAt: number; tracks: Track[] }>, songs: Record<number, unknown>, failed: Record<number, string>) {
+export function nextToDownload(pins: Record<string, { addedAt: number; tracks: Track[] }>, songs: Record<number, { url: string }>, failed: Record<number, string>) {
   for (const d of Object.values(pins).sort((a, b) => a.addedAt - b.addedAt)) {
-    const t = d.tracks.find((t) => !(t.fileId in songs) && !(t.fileId in failed));
+    const t = d.tracks.find((t) => !keptAsPlayed(t, songs) && !(t.fileId in failed));
     if (t) return t;
   }
   return undefined;
