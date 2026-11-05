@@ -184,10 +184,17 @@ final class ScreenTour: XCTestCase {
     try XCTSkipUnless(onIPad, "The iPad's tour")
     XCUIDevice.shared.orientation = .landscapeLeft
     defer { XCUIDevice.shared.orientation = .portrait }
-    launch(["-UITests", "-UITestsDemo"])
+    // Enough playlists that the sidebar scrolls, to see its links fold to the one you're on.
+    launch(["-UITests", "-UITestsDemo", "-UITestsManyPlaylists"])
     _ = app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
     shot("01-home")
     let sidebar = { (item: String) in self.app.descendants(matching: .any)["sidebar.\(item)"].firstMatch }
+    if sidebar("favorites").waitForExistence(timeout: 3) {
+      sidebar("favorites").swipeUp(velocity: .slow)
+      shot("01b-sidebar-scrolled")
+      sidebar("newPlaylist").swipeDown(velocity: .fast)
+      app.descendants(matching: .any)["sidebar.playlist.1000"].firstMatch.swipeDown(velocity: .fast)
+    }
     if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch) {
       shot("02-album")
       if tap(app.buttons["Play Mezzanine"]) {

@@ -8,7 +8,7 @@ import Synchronization
 final class DemoState: Sendable {
   private struct Library {
     var favorites = [Demo.favorite]
-    var playlists = [Demo.lateNight]
+    var playlists = [Demo.lateNight] + (ProcessInfo.processInfo.arguments.contains("-UITestsManyPlaylists") ? Demo.morePlaylists : [])
     var nextPlaylist = 2
     var nextItem = 100
   }

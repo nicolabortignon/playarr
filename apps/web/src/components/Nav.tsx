@@ -1,8 +1,8 @@
 import { ArrowDownToLine, Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, Settings, Sparkles, type LucideIcon } from 'lucide-react';
-import { NavLink } from 'react-router';
+import { useRef, useState } from 'react';
+import { NavLink, useLocation } from 'react-router';
 import { cn } from '../lib/cn';
-import { formatDuration, formatWait } from '../lib/format';
-import { activeRequestCount, useHealth, useMusicBrainzStatus, usePlaylists, useRequests } from '../lib/queries';
+import { activeRequestCount, usePlaylists, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
 
 type NavItem = { to: string; label: string; icon: LucideIcon };
@@ -39,67 +39,76 @@ export function Wordmark({ className }: { className?: string }) {
   );
 }
 
+/** The link a path belongs to ("/albums/12" → Albums), for the bar that stands in for the links once they scroll away. */
+export function activeLink(pathname: string, links: NavItem[] = LINKS): NavItem | undefined {
+  return links.find(({ to }) => (to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`)));
+}
+
+/**
+ * The desktop sidebar: the links, Requests while there are some, and your playlists, all in one column that scrolls,
+ * with Settings kept at the foot. Once the links have scrolled out of sight, a bar at the top keeps the one you're on,
+ * so the playlists get the room; back at the top, the links are all there again.
+ */
 export function Sidebar() {
-  const { data: health } = useHealth();
   const { data: requests } = useRequests();
   const active = activeRequestCount(requests);
-  const lib = health?.library;
+  const { pathname } = useLocation();
+  const current = activeLink(pathname);
+  const nav = useRef<HTMLElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const links = nav.current;
+    // At the very top the links are always open, however short they lay out.
+    if (links) setCollapsed(e.currentTarget.scrollTop > Math.max(1, links.offsetTop + links.offsetHeight - 8));
+  };
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-ink-900/80 px-4 pt-6 pb-[calc(88px+1.5rem)] backdrop-blur-xl md:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-ink-900/80 px-4 pt-6 pb-[calc(88px+1rem)] backdrop-blur-xl md:flex">
       <div className="px-3">
         <Wordmark />
       </div>
-      <nav className="mt-10 flex flex-col gap-0.5" aria-label="Main">
-        {LINKS.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              cn(
-                'group relative flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
-                isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <span
-                  className={cn(
-                    'absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-accent transition-transform duration-300 ease-out-expo',
-                    isActive ? 'scale-y-100' : 'scale-y-0',
-                  )}
-                />
-                <Icon className="size-[18px]" strokeWidth={isActive ? 2.25 : 1.75} />
-                {label}
-              </>
-            )}
-          </NavLink>
-        ))}
-        {(requests?.length ?? 0) > 0 && (
-          <NavLink
-            to="/requests"
-            className={({ isActive }) =>
-              cn(
-                'relative mt-4 flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
-                isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
-              )
-            }
-          >
-            <Download className="size-[18px]" strokeWidth={1.75} />
-            Requests
-            {active > 0 && (
-              <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10px] leading-5 text-accent-ink">
-                {active}
-              </span>
-            )}
-          </NavLink>
-        )}
-      </nav>
+      <div onScroll={onScroll} className="scrollbar-none relative -mx-1 mt-8 min-h-0 flex-1 overflow-y-auto px-1">
+        {/* The links folded to the one you're on, over the playlists, while the links are scrolled away. */}
+        <div className="sticky top-0 z-10 h-0">
+          {current && (
+            <div
+              aria-hidden={!collapsed}
+              className={cn(
+                'absolute inset-x-0 top-0 bg-ink-900 pb-2 transition duration-300 ease-out-expo',
+                collapsed ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-2 opacity-0',
+              )}
+            >
+              <SidebarLink item={current} tabIndex={collapsed ? 0 : -1} />
+            </div>
+          )}
+        </div>
+        <nav ref={nav} className="flex flex-col gap-0.5" aria-label="Main">
+          {LINKS.map((item) => (
+            <SidebarLink key={item.to} item={item} />
+          ))}
+          {(requests?.length ?? 0) > 0 && (
+            <NavLink
+              to="/requests"
+              className={({ isActive }) =>
+                cn(
+                  'relative mt-4 flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
+                  isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
+                )
+              }
+            >
+              <Download className="size-[18px]" strokeWidth={1.75} />
+              Requests
+              {active > 0 && (
+                <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10px] leading-5 text-accent-ink">
+                  {active}
+                </span>
+              )}
+            </NavLink>
+          )}
+        </nav>
+        <SidebarPlaylists />
+      </div>
 
-      <SidebarPlaylists />
-
-      <div className="mt-auto space-y-3 px-3">
+      <div className="mt-3 border-t border-line px-3 pt-3">
         <NavLink
           to="/settings"
           className={({ isActive }) =>
@@ -112,33 +121,37 @@ export function Sidebar() {
           <Settings className="size-[17px]" strokeWidth={1.75} />
           Settings
         </NavLink>
-        {lib && (
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-line pt-4 font-mono text-[11px] text-muted">
-            <div>
-              <dt className="tracking-[0.15em] uppercase opacity-60">Tracks</dt>
-              <dd className="text-paper-dim">{lib.tracks}</dd>
-            </div>
-            <div>
-              <dt className="tracking-[0.15em] uppercase opacity-60">Albums</dt>
-              <dd className="text-paper-dim">{lib.albums}</dd>
-            </div>
-            <div>
-              <dt className="tracking-[0.15em] uppercase opacity-60">Runtime</dt>
-              <dd className="text-paper-dim">{formatDuration(lib.durationSeconds)}</dd>
-            </div>
-            <div>
-              <dt className="tracking-[0.15em] uppercase opacity-60">Size</dt>
-              <dd className="text-paper-dim">{(lib.sizeBytes / 1e9).toFixed(1)} GB</dd>
-            </div>
-          </dl>
-        )}
-        <ConnectionStatus />
-        <p className="font-mono text-[11px] text-muted/60" title={`Playarr ${__APP_VERSION__}${__APP_REVISION__ ? `, commit ${__APP_REVISION__}` : ''}`}>
-          v{__APP_VERSION__}
-          {__APP_REVISION__ && <span className="text-muted/40"> · {__APP_REVISION__}</span>}
-        </p>
       </div>
     </aside>
+  );
+}
+
+function SidebarLink({ item: { to, label, icon: Icon }, tabIndex }: { item: NavItem; tabIndex?: number }) {
+  return (
+    <NavLink
+      to={to}
+      end={to === '/'}
+      tabIndex={tabIndex}
+      className={({ isActive }) =>
+        cn(
+          'group relative flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
+          isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
+        )
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <span
+            className={cn(
+              'absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-accent transition-transform duration-300 ease-out-expo',
+              isActive ? 'scale-y-100' : 'scale-y-0',
+            )}
+          />
+          <Icon className="size-[18px]" strokeWidth={isActive ? 2.25 : 1.75} />
+          {label}
+        </>
+      )}
+    </NavLink>
   );
 }
 
@@ -146,7 +159,7 @@ function SidebarPlaylists() {
   const { data: playlists } = usePlaylists();
   const openPicker = useUI((s) => s.openPlaylistPicker);
   return (
-    <div className="mt-6 flex min-h-0 flex-1 flex-col">
+    <div className="mt-6 flex flex-col">
       <div className="flex items-center justify-between px-3 pb-2">
         <NavLink
           to="/playlists"
@@ -167,69 +180,21 @@ function SidebarPlaylists() {
           <Plus className="size-4" />
         </button>
       </div>
-      <div className="scrollbar-none -mx-1 min-h-0 flex-1 overflow-y-auto px-1">
-        {playlists?.map((p) => (
-          <NavLink
-            key={p.id}
-            to={`/playlists/${p.id}`}
-            className={({ isActive }) =>
-              cn(
-                'block truncate rounded-md px-3 py-1.5 text-[14px] transition-colors',
-                isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
-              )
-            }
-          >
-            {p.name}
-          </NavLink>
-        ))}
-        {playlists?.length === 0 && <p className="px-3 text-[13px] text-muted">No playlists yet.</p>}
-      </div>
-    </div>
-  );
-}
-
-function ConnectionStatus() {
-  const { data, isError } = useHealth();
-  const { data: mb } = useMusicBrainzStatus();
-  const items = [
-    ...(data?.lidarr
-      ? [
-          {
-            label: 'Lidarr',
-            ok: !isError && data.lidarr.ok,
-            detail: data.lidarr.ok ? `v${data.lidarr.version}` : data.lidarr.error,
-          },
-        ]
-      : []),
-    { label: 'Streaming', ok: !isError && data?.media.ok, detail: data?.media.ok ? data.media.source : data?.media.error },
-  ];
-  return (
-    <div className="flex flex-col gap-1.5 font-mono text-[11px] text-muted">
-      {items.map((i) => (
-        <div key={i.label} className="flex items-center gap-2" title={i.detail}>
-          <span
-            className={cn(
-              'size-1.5 rounded-full',
-              data === undefined && !isError ? 'bg-muted' : i.ok ? 'bg-emerald-400 shadow-[0_0_8px_rgb(52_211_153/0.6)]' : 'bg-red-400',
-            )}
-          />
-          {i.label}
-          {!i.ok && data && <span className="truncate text-red-300/80">offline</span>}
-        </div>
-      ))}
-      {/* Only while lookups wait: MusicBrainz answers about once a second. */}
-      {mb && mb.queued > 0 && (
-        <div
-          className="flex items-center gap-2"
-          title={`About ${formatWait(mb.etaSeconds)} of MusicBrainz lookups waiting (it answers about once a second)${
-            mb.background ? `; ${mb.background} of them identifying your folder music` : ''
-          }`}
+      {playlists?.map((p) => (
+        <NavLink
+          key={p.id}
+          to={`/playlists/${p.id}`}
+          className={({ isActive }) =>
+            cn(
+              'block truncate rounded-md px-3 py-1.5 text-[14px] transition-colors',
+              isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
+            )
+          }
         >
-          <span className="size-1.5 animate-pulse rounded-full bg-accent" />
-          MusicBrainz
-          <span className="truncate text-paper-dim/70">{mb.queued} queued</span>
-        </div>
-      )}
+          {p.name}
+        </NavLink>
+      ))}
+      {playlists?.length === 0 && <p className="px-3 text-[13px] text-muted">No playlists yet.</p>}
     </div>
   );
 }

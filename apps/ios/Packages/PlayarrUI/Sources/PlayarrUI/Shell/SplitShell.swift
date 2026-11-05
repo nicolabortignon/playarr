@@ -5,11 +5,14 @@ import SwiftUI
 struct SplitShell: View {
   let session: AccountSession
   @State private var columns = NavigationSplitViewVisibility.all
+  /// Where the player bar is, in the window: the sidebar runs the full height of the window, under the bar, so it
+  /// keeps Settings clear of it.
+  @State private var bar = CGRect.zero
 
   var body: some View {
     let router = session.router
     NavigationSplitView(columnVisibility: $columns) {
-      Sidebar(session: session)
+      Sidebar(session: session, bar: bar)
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
     } detail: {
       NavigationStack(path: Binding(get: { router.detail }, set: { router.detail = $0 })) {
@@ -25,6 +28,7 @@ struct SplitShell: View {
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       PlayerBar(session: session)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bar = $0 }
     }
   }
 

@@ -40,11 +40,10 @@ final class IPadLayoutTests: XCTestCase {
     app.launch()
     XCTAssertTrue(app.element("sidebar.home").waitForExistence(timeout: 10))
     XCTAssertFalse(app.tabBars.firstMatch.exists)
-    for item in ["home", "search", "mixes", "artists", "albums", "favorites", "downloads", "queue", "settings", "newPlaylist", "footer"] {
+    for item in ["home", "search", "mixes", "artists", "albums", "favorites", "downloads", "queue", "settings", "newPlaylist"] {
       XCTAssertTrue(app.element("sidebar.\(item)").exists, "sidebar.\(item)")
     }
     XCTAssertTrue(app.element("sidebar.playlist.1").exists)  // the demo's "Late night"
-    XCTAssertTrue(app.staticTexts["TRACKS"].exists)
     XCTAssertTrue(app.element("playerBar").exists)
     XCTAssertTrue(app.staticTexts["NOTHING PLAYING"].exists)
 

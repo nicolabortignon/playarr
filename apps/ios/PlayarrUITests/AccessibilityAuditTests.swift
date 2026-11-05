@@ -119,7 +119,11 @@ final class AccessibilityAuditTests: XCTestCase {
     let types: XCUIAccessibilityAuditType = [.dynamicType, .textClipped]
     if isPad {
       XCUIDevice.shared.orientation = .landscapeLeft
-      XCTAssertTrue(app.element("sidebar.albums").waitForExistence(timeout: 10))
+      XCTAssertTrue(app.element("sidebar.home").waitForExistence(timeout: 10))
+      // The rows are so tall at AX5 that Albums starts below the fold of the sidebar.
+      for _ in 0..<4 where !app.element("sidebar.albums").isHittable {
+        app.element("sidebar.search").swipeUp(velocity: .slow)
+      }
       app.element("sidebar.albums").tap()
     } else {
       XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 10))
@@ -194,6 +198,13 @@ enum AuditExceptions {
     // The navigation bar's back button is the system's: at the accessibility sizes iOS shortens it and offers the
     // large content viewer on a long press.
     if issue.auditType == .textClipped, let label = issue.element?.label, app.navigationBars.buttons[label].exists {
+      return true
+    }
+    // The iPad sidebar scrolls between its title and Settings: at AX5 a row is always half out of sight at one edge,
+    // reported as clipped with no element. The same screen passes with the sidebar hidden.
+    if issue.auditType == .textClipped, issue.element == nil,
+      app.descendants(matching: .any).matching(identifier: "sidebar.settings").firstMatch.isHittable
+    {
       return true
     }
     // The system's search field truncates its own placeholder in the iOS 26 tab bar.

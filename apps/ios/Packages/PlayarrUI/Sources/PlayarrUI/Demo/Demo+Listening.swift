@@ -31,3 +31,17 @@ extension Demo {
       firstSong: .init(track: mezzanineTracks[0], at: when), years: [2026])
   }
 }
+
+extension Demo {
+  /// `-UITestsManyPlaylists`: two dozen more playlists like Late night, enough that the iPad's sidebar scrolls.
+  static let morePlaylists: [PlaylistDetail] = [
+    "Sunday morning", "Rainy commute", "Deep focus", "Kitchen dancing", "Long drive", "Bristol sound", "After hours",
+    "Slow burn", "Headphones only", "Night bus", "First coffee", "Vinyl Fridays", "Low light", "Stormy", "Backyard",
+    "Road trip", "Study hall", "Dub plates", "Late summer", "Quiet storm", "Basement", "Neon", "Cool down", "Encore",
+  ].enumerated().map { index, name in
+    var playlist = lateNight
+    playlist.id = 1000 + index
+    playlist.name = name
+    return playlist
+  }
+}
