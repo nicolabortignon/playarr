@@ -18,8 +18,11 @@ struct AccountMenu: ViewModifier {
         } label: {
           // The initial as a symbol, a picture rather than text: bar buttons don't grow with the text size (a long press
           // shows the large content viewer instead), and the button's label says what it is.
+          // Fitted to its frame: drawn at a font size, the circle spills past it, and the menu opening and closing
+          // clips the button to its frame's rounded square.
           Image(systemName: initialSymbol)
-            .font(.system(size: 34))
+            .resizable()
+            .scaledToFit()
             .symbolRenderingMode(.palette)
             .foregroundStyle(.black, theme.accent.color)
             .frame(width: 34, height: 34)

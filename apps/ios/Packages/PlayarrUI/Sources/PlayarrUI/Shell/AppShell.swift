@@ -15,6 +15,7 @@ struct AppShell: View {
     AdaptiveShell(session: session)
     .nowPlayingCover(isPresented: $router.nowPlaying) {
       NowPlayingView(session: session)
+        .underTheRail()
         // Show metadata and Edit mix points from Now Playing's menu open over it.
         .trackSheets(player: session.player, active: router.nowPlaying)
         .addToPlaylistSheet(session, active: router.nowPlaying)

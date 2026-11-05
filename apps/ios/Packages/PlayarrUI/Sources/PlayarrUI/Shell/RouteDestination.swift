@@ -40,6 +40,6 @@ struct RouteDestination: View {
 extension View {
   /// Every page a tab's stack can show.
   func routeDestinations(_ session: AccountSession) -> some View {
-    navigationDestination(for: Route.self) { RouteDestination(route: $0, session: session) }
+    navigationDestination(for: Route.self) { RouteDestination(route: $0, session: session).underTheRail() }
   }
 }

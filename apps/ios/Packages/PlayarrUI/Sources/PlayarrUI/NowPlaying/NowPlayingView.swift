@@ -9,6 +9,7 @@ import SwiftUI
 struct NowPlayingView: View {
   let session: AccountSession
   @Environment(Theme.self) private var theme
+  @Environment(\.railWidth) private var railWidth
   @Environment(AppearanceSettings.self) private var appearance
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @Environment(\.dynamicTypeSize) private var typeSize
@@ -176,6 +177,8 @@ struct NowPlayingView: View {
       moreMenu(track)
     }
     .buttonStyle(.plain)
+    // Clear of the Duo's column of status, which blurs what's under it.
+    .padding(.trailing, railWidth)
   }
 
   /// ⋯: the song playing's menu.
