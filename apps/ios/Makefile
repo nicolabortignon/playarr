@@ -13,7 +13,7 @@
 #   make release     test, then put MARKETING_VERSION on the App Store and submit it for review
 #                    (release-submit skips the tests); VERSION=1.1.0 sets and commits a new version first,
 #                    DRY_RUN=1 changes nothing and prints what would change (and skips the tests)
-#   make screens     screenshots of the main screens on the demo library, saved in build/screens/ (its own simulator)
+#   make screens     screenshots of the main views on the demo library, per device, in screenshots/ at the repo root
 #   make models      regenerate PlayarrAPI's Swift models from the shared TypeScript types (models-check: up to date?)
 #   make clean      remove build output and the generated project
 #
@@ -75,14 +75,23 @@ test-packages:
 test-app: project
 	$(XCODEBUILD) test $(foreach t,$(ONLY),-only-testing:PlayarrUITests/$(t))
 
-# The ScreenTour UI test, on a simulator of its own (parallel UI tests on a shared one break each other): its screenshots
-# land in build/screens/ (SCREENS_DIR reaches the test runner through xcodebuild's TEST_RUNNER_ prefix).
-SCREENS_SIMULATOR := Playarr Screens
+# The ScreenTour UI test on simulators of its own (parallel UI tests on a shared one break each other): the main views
+# of each device, upright and (iPhone) sideways, in screenshots/<device>/ at the repo root, replaced on every run
+# (SCREENS_DIR reaches the test runner through xcodebuild's TEST_RUNNER_ prefix). SCREENS="ipad" takes one device.
+SCREENS_ROOT := $(abspath $(CURDIR)/../../screenshots)
+SCREENS_DEVICES := "iphone|iPhone 17 Pro" "ipad|iPad Pro 13-inch (M5)"
+SCREENS ?= iphone ipad
 screens: project
-	@set -e; xcrun simctl list devices available | grep -qE '^ +$(SCREENS_SIMULATOR) [(]' || xcrun simctl create "$(SCREENS_SIMULATOR)" "iPhone 17 Pro" >/dev/null
-	rm -rf build/screens
-	TEST_RUNNER_SCREENS_DIR=$(CURDIR)/build/screens $(MAKE) --no-print-directory SIMULATOR="$(SCREENS_SIMULATOR)" screens-run
-	@echo "Screenshots in $(CURDIR)/build/screens"
+	@set -e; for pair in $(SCREENS_DEVICES); do \
+	  name=$${pair%%|*}; type=$${pair#*|}; \
+	  case " $(SCREENS) " in *" $$name "*) ;; *) continue ;; esac; \
+	  sim="Playarr Screens $$name"; \
+	  xcrun simctl list devices available | grep -qF "    $$sim (" || xcrun simctl create "$$sim" "$$type" >/dev/null; \
+	  rm -rf "$(SCREENS_ROOT)/$$name" "$(SCREENS_ROOT)/$$name-sideways"; \
+	  echo "▸ $$name on $$type"; \
+	  TEST_RUNNER_SCREENS_DIR="$(SCREENS_ROOT)/$$name" $(MAKE) --no-print-directory SIMULATOR="$$sim" screens-run; \
+	done
+	@echo "Screenshots in $(SCREENS_ROOT)"
 
 screens-run:
 	$(XCODEBUILD) test -only-testing:PlayarrUITests/ScreenTour

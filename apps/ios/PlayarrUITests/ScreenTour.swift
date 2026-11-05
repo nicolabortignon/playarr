@@ -1,12 +1,14 @@
 import XCTest
 
-/// Screenshots of the app's main screens against the demo library, to look at rather than to assert: `pnpm ios:screens`
-/// runs only this class and saves them as PNGs in apps/ios/build/screens/ (the folder comes in as SCREENS_DIR, set for
-/// the test runner with xcodebuild's TEST_RUNNER_ prefix). A step whose button isn't there is skipped, not failed, so
-/// one moved button doesn't cost the rest of the tour. In the normal test run it does nothing.
+/// Screenshots of the app's main views against the demo library, to look at rather than to assert: `pnpm ios:screens`
+/// runs only this class on each device's own simulator and saves PNGs in screenshots/<device>/ at the repo root, the
+/// iPhone's sideways views in screenshots/iphone-sideways/ (the folder comes in as SCREENS_DIR, set for the test runner
+/// with xcodebuild's TEST_RUNNER_ prefix). A step whose button isn't there is skipped, not failed, so one moved button
+/// doesn't cost the rest of the tour. In the normal test run it does nothing.
 final class ScreenTour: XCTestCase {
   private var folder: URL?
   private var app: XCUIApplication!
+  private var onIPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
   override func setUpWithError() throws {
     continueAfterFailure = true
@@ -47,7 +49,8 @@ final class ScreenTour: XCTestCase {
   }
 
   @MainActor
-  func testTheMainScreens() {
+  func testTheMainScreens() throws {
+    try XCTSkipIf(onIPad, "The iPad has its own tour")
     launch(["-UITests", "-UITestsDemo"])
     _ = app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
     shot("01-home")
@@ -142,4 +145,73 @@ final class ScreenTour: XCTestCase {
     }
   }
 
+  /// The iPhone held sideways: Home, the gatefold pages, the artist, Library, Search and Now Playing's sleeve.
+  @MainActor
+  func testTheMainScreensSideways() throws {
+    try XCTSkipIf(onIPad, "The iPad has its own tour")
+    guard let upright = folder else { return }
+    folder = upright.deletingLastPathComponent().appending(path: upright.lastPathComponent + "-sideways")
+    try FileManager.default.createDirectory(at: folder!, withIntermediateDirectories: true)
+    defer { XCUIDevice.shared.orientation = .portrait }
+    launch(["-UITests", "-UITestsDemo"])
+    _ = app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
+    // The playlist first, opened upright where Library shows it, then turned.
+    if tap(app.tabBars.buttons["Library"]), tap(button(beginningWith: "Late night"), timeout: 3) {
+      XCUIDevice.shared.orientation = .landscapeLeft
+      shot("06-playlist", after: 2)
+      XCUIDevice.shared.orientation = .portrait
+      tap(app.tabBars.buttons["Library"], timeout: 1)
+    }
+    XCUIDevice.shared.orientation = .landscapeLeft
+    shot("05-library", after: 2)
+    if tap(app.tabBars.buttons["Home"]) { shot("01-home") }
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch) {
+      shot("02-album")
+      if tap(app.buttons["Play Mezzanine"]), tap(app.buttons["Massive Attack"].firstMatch, timeout: 2) { shot("03-artist") }
+    }
+    if tap(app.buttons["Open now playing"].firstMatch) {
+      shot("04-now-playing", after: 2)
+      if tap(app.buttons["Lyrics"]) { shot("04b-lyrics") }
+      tap(app.buttons["Close now playing"], timeout: 2)
+    }
+    if tap(app.tabBars.buttons["Search"]) { shot("07-search") }
+  }
+
+  /// The iPad, sideways as it's mostly held: Home, an album, the artist, the albums, Now Playing, the queue and lyrics
+  /// columns, a playlist, Settings and Search.
+  @MainActor
+  func testTheMainScreensOnIPad() throws {
+    try XCTSkipUnless(onIPad, "The iPad's tour")
+    XCUIDevice.shared.orientation = .landscapeLeft
+    defer { XCUIDevice.shared.orientation = .portrait }
+    launch(["-UITests", "-UITestsDemo"])
+    _ = app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
+    shot("01-home")
+    let sidebar = { (item: String) in self.app.descendants(matching: .any)["sidebar.\(item)"].firstMatch }
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch) {
+      shot("02-album")
+      if tap(app.buttons["Play Mezzanine"]) {
+        shot("03-album-playing")
+        if tap(app.descendants(matching: .any)["playerBar.queue"].firstMatch) { shot("04-queue-column") }
+        if tap(app.descendants(matching: .any)["playerBar.lyrics"].firstMatch) { shot("05-lyrics-column") }
+        tap(app.descendants(matching: .any)["playerBar.lyrics"].firstMatch, timeout: 1)
+      }
+      if tap(app.buttons["Massive Attack"].firstMatch, timeout: 2) { shot("06-artist") }
+    }
+    if tap(app.buttons["Open now playing"].firstMatch) {
+      shot("07-now-playing", after: 2)
+      tap(app.buttons["Close now playing"], timeout: 2)
+    }
+    if tap(sidebar("albums")) { shot("08-albums") }
+    if tap(sidebar("playlist.1"), timeout: 2) { shot("09-playlist") }
+    if tap(sidebar("settings")) { shot("10-settings") }
+    if tap(sidebar("search")) {
+      let field = app.searchFields.firstMatch
+      if field.waitForExistence(timeout: 5) {
+        field.tap()
+        field.typeText("mass")
+        shot("11-search")
+      }
+    }
+  }
 }

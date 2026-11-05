@@ -30,3 +30,6 @@ xcuserdata/
 
 # App Store Connect API keys: never commit one, even copied into the repo by hand
 *.p8
+
+# The latest screenshots of each device's main views (pnpm ios:screens)
+/screenshots/
