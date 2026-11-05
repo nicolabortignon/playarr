@@ -10,11 +10,18 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 import { watchForUpdates } from './lib/appUpdate';
+import { forgetStaleBuildReload, reloadIntoNewBuild } from './lib/staleBuild';
 import { persistOptions, queryClient } from './lib/queryClient';
 import { routes } from './routes';
 
 const router = createBrowserRouter(routes);
 watchForUpdates();
+// A page's file from a replaced build failed to preload: reload into the new build when that interrupts nothing,
+// else let the page's error offer it (PageError).
+window.addEventListener('vite:preloadError', (event) => {
+  if (reloadIntoNewBuild()) event.preventDefault();
+});
+forgetStaleBuildReload();
 
 const app = <RouterProvider router={router} />;
 

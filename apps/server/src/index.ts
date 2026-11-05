@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import fastifyStatic from '@fastify/static';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
 import { Analyzer } from './analysis/analyzer.ts';
@@ -57,6 +56,7 @@ import { History } from './mixes/history.ts';
 import { Mixes } from './mixes/mixes.ts';
 import { mixRoutes } from './routes/mixes.ts';
 import { readMixSettings } from './mixes/settings.ts';
+import { serveWebApp } from './webApp.ts';
 
 const config = loadConfig();
 const app = Fastify({
@@ -221,15 +221,7 @@ statusRoutes(app, {
 const webDist = config.WEB_DIST
   ? resolve(config.WEB_DIST)
   : fileURLToPath(new URL('../../web/dist', import.meta.url));
-if (existsSync(webDist)) {
-  await app.register(fastifyStatic, { root: webDist, wildcard: false });
-  app.setNotFoundHandler((req, reply) => {
-    const isApi = /^\/(api|stream|art|transitions)\//.test(req.url);
-    return isApi || req.method !== 'GET'
-      ? reply.code(404).send({ error: 'Not found' })
-      : reply.sendFile('index.html');
-  });
-}
+if (existsSync(webDist)) await serveWebApp(app, webDist);
 
 const shutdown = async () => {
   library.stop();
