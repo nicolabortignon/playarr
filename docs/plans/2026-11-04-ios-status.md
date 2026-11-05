@@ -61,6 +61,8 @@ Where phase 7 differs from its plan:
 
 ## Phase 10 and sideways Now Playing: what's left
 
+The full list of what needs a real device is `2026-11-05-ios-device-checklist.md`.
+
 The code and UI tests are in, and both simulators pass the accessibility audits. These need a real iPad or iPhone (plan Task 26 has the full list):
 - Escape closes Now Playing with a hardware keyboard. The simulator doesn't deliver it.
 - Coming back where you were after iOS closes the app in the background. `testComesBackWhereItWas` only runs with `PLAYARR_RESTORE=1`, because XCTest's terminate on the simulator doesn't keep `@SceneStorage`.

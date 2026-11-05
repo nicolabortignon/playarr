@@ -19,6 +19,21 @@ final class IPadLayoutTests: XCTestCase {
     XCTAssertTrue(app.buttons["Pause Mezzanine"].waitForExistence(timeout: 5))
   }
 
+  /// Escape closes Now Playing with a hardware keyboard. The simulator doesn't deliver Escape to the full-screen cover,
+  /// so this runs only with PLAYARR_DEVICE_CHECKS=1 (TEST_RUNNER_PLAYARR_DEVICE_CHECKS=1), on a device.
+  @MainActor
+  func testEscapeClosesNowPlaying() throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["PLAYARR_DEVICE_CHECKS"] == "1", "On a device: the simulator doesn't deliver Escape")
+    let app = XCUIApplication.demo()
+    app.launch()
+    XCTAssertTrue(app.element("sidebar.home").waitForExistence(timeout: 10))
+    playMezzanine(app)
+    app.buttons["Open now playing"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["Close now playing"].waitForExistence(timeout: 5))
+    app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+    XCTAssertTrue(app.buttons["Close now playing"].waitForNonExistence(timeout: 5))
+  }
+
   @MainActor
   func testSidebarPlayerBarAndTheQueueAndLyricsColumn() {
     let app = XCUIApplication.demo()

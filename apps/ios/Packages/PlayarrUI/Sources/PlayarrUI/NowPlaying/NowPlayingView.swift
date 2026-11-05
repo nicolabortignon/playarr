@@ -22,6 +22,8 @@ struct NowPlayingView: View {
   /// Sideways and left alone while playing: the controls fade and the song playing takes the stage.
   @State private var staged = false
   @State private var touched = Date()
+  /// Now Playing holds the hardware keyboard's focus, so Escape reaches it (`onKeyPress`).
+  @FocusState private var holdsKeyboard: Bool
 
   /// How long sideways Now Playing waits, untouched while playing, before the stage.
   static let stageAfter: Duration = .seconds(12)
@@ -82,6 +84,16 @@ struct NowPlayingView: View {
     .accessibilityLabel("Now playing")
     .accessibilityIdentifier("nowPlaying")
     .accessibilityAction(.escape) { router.nowPlaying = false }
+    // Escape closes it with a hardware keyboard. The close button's `.cancelAction` shortcut should do it already, but
+    // the simulator never delivered Escape to the full-screen cover; this catches the key itself (to confirm on a device).
+    .focusable()
+    .focusEffectDisabled()
+    .focused($holdsKeyboard)
+    .onAppear { holdsKeyboard = true }
+    .onKeyPress(.escape) {
+      router.nowPlaying = false
+      return .handled
+    }
     .onChange(of: player.queue.currentTrack == nil) { _, empty in if empty { router.nowPlaying = false } }
     #if os(iOS)
       // Sideways and charging: a phone in a stand keeps its screen on (Settings → Appearance).
