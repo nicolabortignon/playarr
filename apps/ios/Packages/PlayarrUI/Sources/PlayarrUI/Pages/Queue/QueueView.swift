@@ -5,6 +5,9 @@ import SwiftUI
 /// The Queue tab (apps/web/src/pages/Queue.tsx).
 struct QueueView: View {
   let session: AccountSession
+  /// In the iPad's side column: Up next's rows leave out the heart (it's in their ⋯ menu) and put the length after
+  /// the artist, so the titles keep their room.
+  var narrow = false
   @Environment(Theme.self) private var theme
   @State private var reordered = 0
   @Environment(\.reducesMotion) private var reducesMotion
@@ -124,10 +127,11 @@ struct QueueView: View {
               Text(track.title).essentialLineLimit()
               OfflineMark(store: session.player.downloads, fileId: track.fileId)
             }
-            Text(track.artistName).font(.sans(.footnote)).foregroundStyle(.muted).essentialLineLimit()
+            Text(narrow ? "\(track.artistName) · \(Format.time(track.duration))" : track.artistName)
+              .font(.sans(.footnote)).foregroundStyle(.muted).essentialLineLimit()
           }
           Spacer(minLength: 8)
-          SongLength(track: track)
+          if !narrow { SongLength(track: track) }
         }
         .contentShape(Rectangle())
       }
@@ -136,7 +140,7 @@ struct QueueView: View {
       .accessibilityLabel("\(track.title), \(track.artistName), \(Format.time(track.duration))")
       .accessibilityHint("Plays from this song")
       .accessibilityActions { upNextItems(song, offset: offset, model: model) }
-      FavoriteButton(track: track, size: .row)
+      if !narrow { FavoriteButton(track: track, size: .row) }
       Menu {
         upNextItems(song, offset: offset, model: model)
       } label: {
@@ -156,6 +160,10 @@ struct QueueView: View {
     let track = song.track
     if offset > 0 { Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.playNext(song) } }
     Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
+    if narrow {
+      let favorite = session.isFavorite(track)
+      Button(favorite ? "Remove from Favorites" : "Add to Favorites", systemImage: favorite ? "heart.slash" : "heart") { session.toggleFavorite(track) }
+    }
     Button("Go to album", systemImage: "square.stack") { session.router.open(.album(track.albumId)) }
     Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(track.artistId)) }
     Button("Remove from queue", systemImage: "xmark", role: .destructive) { model.remove([offset]) }

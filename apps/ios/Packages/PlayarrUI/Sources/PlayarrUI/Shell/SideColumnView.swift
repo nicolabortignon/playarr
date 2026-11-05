@@ -16,7 +16,7 @@ struct SideColumnView: View {
       .padding(12)
       switch router.column ?? .queue {
       case .queue:
-        NavigationStack { QueueView(session: session) }
+        NavigationStack { QueueView(session: session, narrow: true) }
           .dropDestination(for: TrackDrag.self) { drops, _ in
             session.actions.addToQueue(TrackDrag.tracks(drops))
             dropped += 1
