@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Play (filled with the accent) and Shuffle side by side, the same size: an artist's, a playlist's, a mix's and
-/// Favorites' pages. Both labels take at least the width "Shuffle" needs, growing with Dynamic Type.
+/// Play (filled with the accent) and Shuffle (outlined) side by side, the same size, drawn as the Request button is
+/// (`.pill`): an artist's, a playlist's, a mix's and Favorites' pages. Both take at least the width "Shuffle" needs,
+/// growing with Dynamic Type.
 struct PlayShuffleButtons: View {
   /// What's played, for VoiceOver: "Play Mezzanine".
   let title: String
@@ -9,22 +10,18 @@ struct PlayShuffleButtons: View {
   let play: () -> Void
   let shuffle: () -> Void
 
-  @Environment(Theme.self) private var theme
-  @ScaledMetric(relativeTo: .body) private var labelWidth: CGFloat = 88
+  @ScaledMetric(relativeTo: .caption2) private var labelWidth: CGFloat = 76
 
   var body: some View {
     HStack(spacing: 12) {
       Button(action: play) { Label("Play", systemImage: "play.fill").frame(minWidth: labelWidth) }
-        .buttonStyle(.borderedProminent)
-        .tint(theme.accent.color)
-        .foregroundStyle(.black)
+        .buttonStyle(.pill())
         .accessibilityLabel("Play \(title)")
       Button(action: shuffle) { Label("Shuffle", systemImage: "shuffle").frame(minWidth: labelWidth) }
-        .buttonStyle(.bordered)
+        .buttonStyle(.pill(.outlined))
         .accessibilityLabel("Shuffle \(title)")
     }
     .labelStyle(.titleAndIcon)
-    .buttonBorderShape(.capsule)
     .fixedSize()
     .disabled(disabled)
   }

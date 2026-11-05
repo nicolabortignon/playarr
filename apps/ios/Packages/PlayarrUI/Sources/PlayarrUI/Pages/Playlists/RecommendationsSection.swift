@@ -33,8 +33,7 @@ struct RecommendationsSection: View {
             ForEach(model.owned, id: \.recordingId) { recommendation in
               row(recommendation) {
                 Button("Add", systemImage: "plus") { Task { await model.add(recommendation) } }
-                  .buttonStyle(.bordered)
-                  .controlSize(.small)
+                  .buttonStyle(.pill(.outlined, small: true))
                   .accessibilityLabel("Add \(recommendation.title) to playlist")
               }
             }

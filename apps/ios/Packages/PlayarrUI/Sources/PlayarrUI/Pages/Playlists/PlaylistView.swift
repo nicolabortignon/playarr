@@ -103,8 +103,8 @@ struct PlaylistView: View {
         TextField("Add a description", text: $details, axis: .vertical).lineLimit(2...4)
         HStack {
           Button("Save") { Task { if await model.save(name: name, description: details) { editing = false } } }
-            .buttonStyle(.borderedProminent)
-          Button("Cancel") { editing = false }.buttonStyle(.bordered)
+            .buttonStyle(.pill())
+          Button("Cancel") { editing = false }.buttonStyle(.pill(.quiet))
         }
       } else {
         Text(playlist.name).font(.display(.largeTitle)).onTapGesture(perform: startEditing)

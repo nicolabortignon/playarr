@@ -62,8 +62,7 @@ struct MixView: View {
           model.play(shuffle: true)
         }
         Button(model.regenerating ? "Mixing…" : "New mix", systemImage: "arrow.clockwise") { Task { await model.regenerate() } }
-          .buttonStyle(.bordered)
-          .buttonBorderShape(.capsule)
+          .buttonStyle(.pill(.outlined))
           .disabled(model.regenerating)
         DownloadButton(
           store: session.player.downloads,

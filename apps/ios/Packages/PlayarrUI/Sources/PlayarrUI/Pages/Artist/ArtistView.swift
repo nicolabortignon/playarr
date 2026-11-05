@@ -72,7 +72,6 @@ struct ArtistView: View {
             counts
           }
         }
-        .buttonBorderShape(.capsule)
       }
       .padding(20)
     }

@@ -76,12 +76,8 @@ struct HomeView: View {
           } icon: {
             Twinkle(on: picking)
           }
-          .padding(.horizontal, 6).padding(.vertical, 6)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .tint(theme.accent.color)
-        .foregroundStyle(.black)
+        .buttonStyle(.pill())
         .fixedSize()
         .disabled(picking)
         .accessibilityLabel("Feeling lucky")

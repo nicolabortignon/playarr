@@ -25,7 +25,7 @@ struct AddToPlaylistSheet: View {
               .onSubmit(create)
               .accessibilityIdentifier("playlist.name")
             Button("Create", action: create)
-              .buttonStyle(.borderedProminent)
+              .buttonStyle(.pill())
               .disabled(!model.canCreate)
               .accessibilityIdentifier("playlist.create")
           }

@@ -60,3 +60,33 @@ struct Pill<Label: View>: View {
     }
   }
 }
+
+/// Any button drawn as a `Pill`, the Request button's look, so the app's buttons share one face: `.buttonStyle(.pill())`
+/// filled with the accent (Play, Try again), `.pill(.outlined)` beside it (Shuffle, New mix), `.pill(.quiet)` for
+/// the lesser choice (Cancel). The pill is 32 points tall (28 small); the finger gets at least 44.
+struct PillButtonStyle: ButtonStyle {
+  var tone: PillTone = .filled
+  var small = false
+
+  func makeBody(configuration: Configuration) -> some View {
+    PillButtonBody(configuration: configuration, tone: tone, small: small)
+  }
+}
+
+private struct PillButtonBody: View {
+  let configuration: ButtonStyleConfiguration
+  let tone: PillTone
+  let small: Bool
+  @Environment(\.isEnabled) private var isEnabled
+
+  var body: some View {
+    Pill(style: tone, small: small) { configuration.label }
+      .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+      .frame(minHeight: 44)
+      .contentShape(Rectangle())
+  }
+}
+
+extension ButtonStyle where Self == PillButtonStyle {
+  static func pill(_ tone: PillTone = .filled, small: Bool = false) -> PillButtonStyle { PillButtonStyle(tone: tone, small: small) }
+}

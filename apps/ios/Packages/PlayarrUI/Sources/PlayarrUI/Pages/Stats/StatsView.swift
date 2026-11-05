@@ -21,9 +21,7 @@ struct StatsView: View {
           HStack(spacing: 8) {
             ForEach(model.periods, id: \.self) { period in
               Button(period.label) { Task { await model.select(period.range) } }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .tint(period.range == model.range ? theme.accent.color : .secondary)
+                .buttonStyle(.pill(period.range == model.range ? .filled : .quiet))
                 .accessibilityAddTraits(period.range == model.range ? .isSelected : [])
             }
           }
@@ -93,10 +91,7 @@ struct StatsView: View {
     }
     section("Top songs") {
       Button("Play them", systemImage: "play.fill") { model.playTop(all: true) }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .tint(theme.accent.color)
-        .foregroundStyle(.black)
+        .buttonStyle(.pill())
       ForEach(Array(stats.topTracks.enumerated()), id: \.element.track.id) { index, item in
         Button { model.playTop(from: index, all: false) } label: {
           HStack(spacing: 14) {
