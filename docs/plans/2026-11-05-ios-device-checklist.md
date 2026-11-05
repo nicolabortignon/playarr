@@ -24,6 +24,13 @@ The simulator can't check the items below. Their code is in the TestFlight build
 - [ ] **Coming back where you were.** Open an album and Now Playing, go Home, and use other apps until iOS closes Playarr in the background. Playarr comes back on that album. A force-quit opens on Home. With `TEST_RUNNER_PLAYARR_RESTORE=1`, `testComesBackWhereItWas` checks this.
 - [ ] **VoiceOver.** The rotor's Headings jump between sections. A song row reads its title, artist and time, and offers its actions. The sidebar says which item is selected.
 
+## iPhone Duo
+
+- [ ] **Folded.** The app fits the cover screen. The tabs sit on the system's rail at the right, and the mini player floats at the foot of the page.
+- [ ] **Open flat.** Now Playing shows two pages: the cover on the left, and the song, controls and Up next on the right. The crease runs between them, not through the words.
+- [ ] **Propped up like a small laptop** (part open, the crease across the screen). Now Playing puts the cover or lyrics on the standing half, and the song, controls and Up next on the half lying flat.
+- [ ] **Opening and closing while it plays.** Now Playing moves between those layouts as the hinge moves, without stopping the music.
+
 ## Both
 
 - [ ] **Buttons.** Play, Shuffle, Feeling lucky, Try again, New mix and the rest look like the Request button: DM Mono, upper case, in a capsule.
