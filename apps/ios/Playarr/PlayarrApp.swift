@@ -44,8 +44,9 @@ struct PlayarrApp: App {
   /// UI tests launch with `-UITests` (no servers, nothing kept between runs; a dev server's session when the test hands
   /// one over in PLAYARR_UITEST_SERVER and PLAYARR_UITEST_TOKEN), plus `-UITestsDemo` to start signed in
   /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request.
-  /// With the demo, `-UITestsOffline` makes the server unreachable, `-UITestsLongQueue` queues 5,000 songs, and
-  /// `-UITestsRestore` brings back where the last run was (otherwise each run starts on Home).
+  /// With the demo, `-UITestsOffline` makes the server unreachable, `-UITestsLongQueue` queues 5,000 songs,
+  /// `-UITestsTurnToOpen` turns on Settings → Appearance → Turn to open, and `-UITestsRestore` brings back where the
+  /// last run was (otherwise each run starts on Home).
   /// `-UITestsDownloads` (Debug builds) opens Library → Downloads on made-up downloads (`DownloadsDemoView`).
   static func makeModel() -> AppModel {
     let arguments = ProcessInfo.processInfo.arguments
@@ -58,6 +59,7 @@ struct PlayarrApp: App {
       // -UITestsOffline: a server that can't be reached. -UITestsLongQueue: 5,000 songs queued, paused.
       let model = AppModel.demo(api: arguments.contains("-UITestsOffline") ? OfflineAPI() : nil)
       model.restoresPlace = arguments.contains("-UITestsRestore")
+      model.appearance.turnToOpen = arguments.contains("-UITestsTurnToOpen")
       if arguments.contains("-UITestsLongQueue"), let player = model.session?.player {
         player.play(Demo.manyTracks(5000))
         player.setPlaying(false)

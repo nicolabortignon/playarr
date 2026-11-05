@@ -9,6 +9,7 @@ struct HomeView: View {
   @State private var picking = false
   @Environment(Theme.self) private var theme
   @Environment(AccountSession.self) private var session
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
 
   init(session: AccountSession) {
     _model = State(initialValue: HomeModel(session: session))
@@ -42,17 +43,24 @@ struct HomeView: View {
     }
   }
 
+  /// The greeting, the library in a line, Feeling lucky and Resume: a column upright; held sideways, one row with the
+  /// buttons on the right, so the shelves start on the first screen.
   private var intro: some View {
-    VStack(alignment: .leading, spacing: 20) {
-      Text("Hi, \(greetingName).")
-        .font(.display(.largeTitle))
-        .lineLimit(1)
-        .minimumScaleFactor(0.6)
-        .accessibilityAddTraits(.isHeader)
-      Text(model.libraryLine ?? "Loading library")
-        .font(.sans(.callout))
-        .foregroundStyle(.secondary)
-        .redacted(reason: model.libraryLine == nil ? .placeholder : [])
+    let sideways = GatefoldRule.applies(verticalSizeClass)
+    let layout = sideways ? AnyLayout(HStackLayout(alignment: .bottom, spacing: 24)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
+    return layout {
+      VStack(alignment: .leading, spacing: sideways ? 8 : 20) {
+        Text("Hi, \(greetingName).")
+          .font(.display(.largeTitle))
+          .lineLimit(1)
+          .minimumScaleFactor(0.6)
+          .accessibilityAddTraits(.isHeader)
+        Text(model.libraryLine ?? "Loading library")
+          .font(.sans(.callout))
+          .foregroundStyle(.secondary)
+          .redacted(reason: model.libraryLine == nil ? .placeholder : [])
+      }
+      if sideways { Spacer(minLength: 0) }
       // Side by side on one line: a long song title is cut short rather than pushing Resume onto the next.
       HStack(spacing: 12) {
         Button {

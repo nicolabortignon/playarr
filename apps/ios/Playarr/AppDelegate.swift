@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     return true
   }
 
-  /// On an iPhone the tab pages stay upright and only Now Playing turns sideways (`OrientationPolicy`).
+  /// Every screen turns; an iPhone not upside down (`OrientationPolicy`).
   func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
     OrientationPolicy.mask
   }

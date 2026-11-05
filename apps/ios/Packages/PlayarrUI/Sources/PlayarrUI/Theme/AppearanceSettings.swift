@@ -92,7 +92,7 @@ public final class AppearanceSettings {
     motion = defaults.string(forKey: Key.motion).flatMap(Motion.init) ?? .system
     formatBadges = defaults.object(forKey: Key.formatBadges) as? Bool ?? true
     statsForNerds = defaults.object(forKey: Key.statsForNerds) as? Bool ?? false
-    turnToOpen = defaults.object(forKey: Key.turnToOpen) as? Bool ?? true
+    turnToOpen = defaults.object(forKey: Key.turnToOpen) as? Bool ?? false
     keepScreenOnSideways = defaults.object(forKey: Key.keepScreenOnSideways) as? Bool ?? true
   }
 

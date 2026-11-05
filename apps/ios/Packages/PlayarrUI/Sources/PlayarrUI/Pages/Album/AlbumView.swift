@@ -7,20 +7,33 @@ struct AlbumView: View {
   @State private var model: AlbumModel
   @Environment(AccountSession.self) private var session
   @Environment(Theme.self) private var theme
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
 
   init(id: Int, session: AccountSession, theme: Theme) {
     _model = State(initialValue: AlbumModel(id: id, session: session, theme: theme))
   }
 
   var body: some View {
-    ScrollView {
-      // The album's wash runs from the very top of the screen, behind the status bar and the back button; the cover
-      // starts below the back button, with room above it.
-      Group { content }
-        .padding(.top, Self.coverTop)
-        .background(alignment: .top) { tint }
+    Group {
+      if GatefoldRule.applies(verticalSizeClass), let album = model.album.value {
+        // Sideways: the cover stays on the left, the rest scrolls beside it, all on the album's wash.
+        Gatefold { side in
+          Cover(path: album.coverUrl, points: side, label: album.title).shadow(color: .black.opacity(0.6), radius: 24, y: 16)
+        } page: {
+          ScrollView { content(cover: false).padding(.top, 16) }
+        }
+        .background(alignment: .top) { tint.ignoresSafeArea() }
+      } else {
+        ScrollView {
+          // The album's wash runs from the very top of the screen, behind the status bar and the back button; the
+          // cover starts below the back button, with room above it.
+          content(cover: true)
+            .padding(.top, Self.coverTop)
+            .background(alignment: .top) { tint }
+        }
+        .ignoresSafeArea(edges: .top)
+      }
     }
-    .ignoresSafeArea(edges: .top)
     .inlineTitle()
     .task { await model.load() }
     .refreshable { await model.album.refresh() }
@@ -29,12 +42,12 @@ struct AlbumView: View {
   /// Where the cover starts: below the status bar and the navigation bar's back button (44 pt), with a margin.
   @MainActor private static var coverTop: CGFloat { ScreenInsets.top + 44 + 24 }
 
-  @ViewBuilder private var content: some View {
+  @ViewBuilder private func content(cover: Bool) -> some View {
     if let error = model.album.error {
       ErrorState(message: error) { await model.album.refresh() }
     } else if let album = model.album.value {
       VStack(alignment: .leading, spacing: 24) {
-        header(album)
+        header(album, cover: cover)
         buttons(album)
         songs
         if let overview = album.overview { linerNotes(overview) }
@@ -66,13 +79,16 @@ struct AlbumView: View {
     }
   }
 
-  private func header(_ album: AlbumDetail) -> some View {
+  /// The cover (unless it's beside the page), the kicker with the album's buttons, the title, artist and details.
+  private func header(_ album: AlbumDetail, cover: Bool) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      Cover(path: album.coverUrl, points: 280, label: album.title)
-        .frame(maxWidth: 280)
-        .frame(maxWidth: .infinity)
-        .shadow(color: .black.opacity(0.6), radius: 24, y: 16)
-        .padding(.bottom, 8)
+      if cover {
+        Cover(path: album.coverUrl, points: 280, label: album.title)
+          .frame(maxWidth: 280)
+          .frame(maxWidth: .infinity)
+          .shadow(color: .black.opacity(0.6), radius: 24, y: 16)
+          .padding(.bottom, 8)
+      }
       // The kicker's line, with the album's own buttons on the right (the empty space under the cover).
       HStack(spacing: 10) {
         if let kicker = model.kicker { Kicker(text: kicker) }

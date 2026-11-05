@@ -5,6 +5,7 @@ import SwiftUI
 struct ArtistView: View {
   @State private var model: ArtistModel
   @Environment(Theme.self) private var theme
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
 
   init(id: Int, session: AccountSession) {
     _model = State(initialValue: ArtistModel(id: id, session: session))
@@ -44,14 +45,17 @@ struct ArtistView: View {
     .refreshable { await model.artist.refresh() }
   }
 
+  /// The photo's band: lower on an iPhone held sideways, so the albums start on the first screen.
+  private var heroHeight: CGFloat { GatefoldRule.applies(verticalSizeClass) ? 240 : 380 }
+
   private func hero(_ artist: ArtistDetail) -> some View {
     ZStack(alignment: .bottomLeading) {
       if let fanart = artist.fanartUrl {
-        Cover(path: fanart, points: 600).aspectRatio(contentMode: .fill).frame(height: 380).clipped()
+        Cover(path: fanart, points: 600).aspectRatio(contentMode: .fill).frame(height: heroHeight).clipped()
       } else {
         // No wide photo: the square one as a soft, blurred backdrop.
         Cover(path: artist.imageUrl, points: 240, label: artist.name)
-          .aspectRatio(contentMode: .fill).frame(height: 380).clipped().blur(radius: 40).opacity(0.6).saturation(1.5)
+          .aspectRatio(contentMode: .fill).frame(height: heroHeight).clipped().blur(radius: 40).opacity(0.6).saturation(1.5)
       }
       LinearGradient(colors: [.clear, .black.opacity(0.45), .black], startPoint: .top, endPoint: .bottom)
       VStack(alignment: .leading, spacing: 12) {
@@ -72,7 +76,7 @@ struct ArtistView: View {
       }
       .padding(20)
     }
-    .frame(height: 380)
+    .frame(height: heroHeight)
   }
 
   @ViewBuilder private var similar: some View {

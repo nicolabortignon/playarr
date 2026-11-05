@@ -51,7 +51,7 @@ struct AppearancePanel: View {
           Section("Held sideways") {
             Toggle(isOn: $appearance.turnToOpen) {
               Text("Turn to open Now Playing")
-              Text("Turning the phone on its side with a song queued opens Now Playing, with the cover beside the songs.")
+              Text("Turning the phone on its side with a song queued opens Now Playing, with the cover beside the songs, rather than turning the page you’re on.")
             }
             Toggle(isOn: $appearance.keepScreenOnSideways) {
               Text("Keep the screen on while charging")

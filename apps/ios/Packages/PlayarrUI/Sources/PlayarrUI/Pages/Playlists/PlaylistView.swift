@@ -14,6 +14,7 @@ struct PlaylistView: View {
   @State private var details = ""
   @State private var pickingCover = false
   @State private var confirmingDelete = false
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
 
   init(id: Int, session: AccountSession) {
     _model = State(initialValue: PlaylistModel(id: id, session: session))
@@ -33,24 +34,14 @@ struct PlaylistView: View {
   }
 
   private func page(_ playlist: PlaylistDetail) -> some View {
-    List {
-      Section { header(playlist) }
-        .listRowSeparator(.hidden)
-      Section {
-        if model.items.isEmpty {
-          Text("This playlist is empty. Use Add to playlist… from any song’s ⋯ menu, an album, the queue or Now Playing.")
-            .foregroundStyle(.secondary)
-        }
-        ForEach(model.items, id: \.itemId) { item in
-          PlaylistItemRow(item: item, actions: model.actions(for: item), onTap: { model.play(from: item) }) { perform($0, on: item) }
-        }
-        .onMove(perform: model.mine ? { source, destination in Task { await model.move(fromOffsets: source, toOffset: destination) } } : nil)
-      }
-      if model.mine, !model.items.isEmpty {
-        RecommendationsSection(playlist: model)
+    Group {
+      if GatefoldRule.applies(verticalSizeClass) {
+        // Sideways: the cover stays on the left, the songs scroll beside it.
+        Gatefold { _ in cover(playlist) } page: { list(playlist, cover: false) }
+      } else {
+        list(playlist, cover: true)
       }
     }
-    .listStyle(.plain)
     .navigationTitle(playlist.name)
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
@@ -68,17 +59,43 @@ struct PlaylistView: View {
     }
   }
 
-  @ViewBuilder private func header(_ playlist: PlaylistDetail) -> some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Button { pickingCover = true } label: {
-        PlaylistCover(cover: playlist.cover, points: 256, name: playlist.name)
-          .frame(maxWidth: 256)
-          .shadow(color: .black.opacity(0.8), radius: 30, y: 20)
+  private func list(_ playlist: PlaylistDetail, cover: Bool) -> some View {
+    List {
+      Section { header(playlist, cover: cover) }
+        .listRowSeparator(.hidden)
+      Section {
+        if model.items.isEmpty {
+          Text("This playlist is empty. Use Add to playlist… from any song’s ⋯ menu, an album, the queue or Now Playing.")
+            .foregroundStyle(.secondary)
+        }
+        ForEach(model.items, id: \.itemId) { item in
+          PlaylistItemRow(item: item, actions: model.actions(for: item), onTap: { model.play(from: item) }) { perform($0, on: item) }
+        }
+        .onMove(perform: model.mine ? { source, destination in Task { await model.move(fromOffsets: source, toOffset: destination) } } : nil)
       }
-      .buttonStyle(.plain)
-      .disabled(!model.canPickCover)
-      .accessibilityLabel("New cover")
-      .frame(maxWidth: .infinity)
+      if model.mine, !model.items.isEmpty {
+        RecommendationsSection(playlist: model)
+      }
+    }
+    .listStyle(.plain)
+  }
+
+  /// The cover, which opens the cover picker on your own playlists.
+  private func cover(_ playlist: PlaylistDetail) -> some View {
+    Button { pickingCover = true } label: {
+      PlaylistCover(cover: playlist.cover, points: 256, name: playlist.name)
+        .shadow(color: .black.opacity(0.8), radius: 30, y: 20)
+    }
+    .buttonStyle(.plain)
+    .disabled(!model.canPickCover)
+    .accessibilityLabel("New cover")
+  }
+
+  @ViewBuilder private func header(_ playlist: PlaylistDetail, cover showsCover: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      if showsCover {
+        cover(playlist).frame(maxWidth: 256).frame(maxWidth: .infinity)
+      }
 
       Kicker(text: "Playlist")
       if editing {

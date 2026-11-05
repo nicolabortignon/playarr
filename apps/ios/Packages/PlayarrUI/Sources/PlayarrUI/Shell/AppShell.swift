@@ -60,9 +60,8 @@ struct AppShell: View {
       }
     }
     #if os(iOS)
-      // Only Now Playing turns sideways on a phone; closing it there turns the window back upright.
-      .onChange(of: router.nowPlaying, initial: true) { _, open in OrientationPolicy.update(nowPlaying: open) }
-      // Turning the phone on its side with a song queued opens Now Playing, straight into the sleeve.
+      // Settings → Appearance → Turn to open: turning the phone on its side with a song queued opens Now Playing,
+      // straight into the sleeve (off by default, since every page turns too).
       .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
         guard UIDevice.current.userInterfaceIdiom == .phone, UIDevice.current.orientation.isLandscape, model.appearance.turnToOpen,
           !router.nowPlaying, session.player.queue.currentTrack != nil, OrientationPolicy.nothingPresented

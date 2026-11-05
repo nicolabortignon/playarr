@@ -8,6 +8,7 @@ struct MixView: View {
   let session: AccountSession
   @State private var model: MixModel
   @Environment(Theme.self) private var theme
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
 
   init(key: String, session: AccountSession) {
     self.session = session
@@ -17,51 +18,15 @@ struct MixView: View {
   var body: some View {
     Group {
       if let mix = model.mix {
-        ScrollView {
-          VStack(alignment: .leading, spacing: 16) {
-            MixCover(mix: Self.summary(mix), width: 256)
-              .shadow(color: .black.opacity(0.8), radius: 30, y: 20)
-              .frame(maxWidth: .infinity)
-            Kicker(text: "Made for you")
-            Text(mix.title).font(.display(.largeTitle))
-            Text(mix.description).foregroundStyle(.secondary)
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-              Text(model.facts(now: context.date)).font(.mono(.caption)).foregroundStyle(.secondary)
-            }
-            FlowRow {
-              PlayShuffleButtons(title: mix.title, disabled: mix.tracks.isEmpty) {
-                model.play(shuffle: false)
-              } shuffle: {
-                model.play(shuffle: true)
-              }
-              Button(model.regenerating ? "Mixing…" : "New mix", systemImage: "arrow.clockwise") { Task { await model.regenerate() } }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .disabled(model.regenerating)
-              DownloadButton(
-                store: session.player.downloads,
-                item: DownloadItem(
-                  key: PinnedDownload.Key.mix(mix.key), title: mix.title, subtitle: "Mix", coverUrl: mix.covers.first, href: "/mixes/\(mix.key)"),
-                tracks: mix.tracks)
-              Menu {
-                Button("Save as playlist", systemImage: "bookmark") {
-                  // Opens the new playlist, so it's clear what was made and where it lives.
-                  Task { if let playlist = await model.save() { session.router.open(.playlist(playlist.id)) } }
-                }
-                Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.queue(next: true) }
-                Button("Add to queue", systemImage: "text.append") { model.queue(next: false) }
-              } label: {
-                Image(systemName: "ellipsis").frame(width: 44, height: 44)
-              }
-              .accessibilityLabel("Mix actions")
-            }
-            LazyVStack(spacing: 0) {
-              ForEach(Array(mix.tracks.enumerated()), id: \.element.id) { index, track in
-                TrackRow(track: track, style: .mixed) { session.player.play(mix.tracks, startAt: index, source: model.source) }
-              }
-            }
+        if GatefoldRule.applies(verticalSizeClass) {
+          // Sideways: the cover stays on the left, the rest scrolls beside it.
+          Gatefold { side in
+            MixCover(mix: Self.summary(mix), width: side).shadow(color: .black.opacity(0.8), radius: 30, y: 20)
+          } page: {
+            ScrollView { details(mix, cover: false) }
           }
-          .padding(20)
+        } else {
+          ScrollView { details(mix, cover: true) }
         }
       } else if let error = model.error {
         ErrorState(message: error) { await model.load() }
@@ -74,6 +39,56 @@ struct MixView: View {
       .navigationBarTitleDisplayMode(.inline)
     #endif
     .task { await model.poll() }
+  }
+
+  /// The cover (unless it's beside the page), why these songs, the buttons and the songs.
+  private func details(_ mix: MixDetail, cover: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 16) {
+      if cover {
+        MixCover(mix: Self.summary(mix), width: 256)
+          .shadow(color: .black.opacity(0.8), radius: 30, y: 20)
+          .frame(maxWidth: .infinity)
+      }
+      Kicker(text: "Made for you")
+      Text(mix.title).font(.display(.largeTitle))
+      Text(mix.description).foregroundStyle(.secondary)
+      TimelineView(.periodic(from: .now, by: 60)) { context in
+        Text(model.facts(now: context.date)).font(.mono(.caption)).foregroundStyle(.secondary)
+      }
+      FlowRow {
+        PlayShuffleButtons(title: mix.title, disabled: mix.tracks.isEmpty) {
+          model.play(shuffle: false)
+        } shuffle: {
+          model.play(shuffle: true)
+        }
+        Button(model.regenerating ? "Mixing…" : "New mix", systemImage: "arrow.clockwise") { Task { await model.regenerate() } }
+          .buttonStyle(.bordered)
+          .buttonBorderShape(.capsule)
+          .disabled(model.regenerating)
+        DownloadButton(
+          store: session.player.downloads,
+          item: DownloadItem(
+            key: PinnedDownload.Key.mix(mix.key), title: mix.title, subtitle: "Mix", coverUrl: mix.covers.first, href: "/mixes/\(mix.key)"),
+          tracks: mix.tracks)
+        Menu {
+          Button("Save as playlist", systemImage: "bookmark") {
+            // Opens the new playlist, so it's clear what was made and where it lives.
+            Task { if let playlist = await model.save() { session.router.open(.playlist(playlist.id)) } }
+          }
+          Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.queue(next: true) }
+          Button("Add to queue", systemImage: "text.append") { model.queue(next: false) }
+        } label: {
+          Image(systemName: "ellipsis").frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("Mix actions")
+      }
+      LazyVStack(spacing: 0) {
+        ForEach(Array(mix.tracks.enumerated()), id: \.element.id) { index, track in
+          TrackRow(track: track, style: .mixed) { session.player.play(mix.tracks, startAt: index, source: model.source) }
+        }
+      }
+    }
+    .padding(20)
   }
 
   /// The mix as its cover draws it.
