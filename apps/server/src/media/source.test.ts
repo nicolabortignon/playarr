@@ -57,6 +57,11 @@ describe('ffmpegPcmArgs', () => {
     expect(indexOfRun(args, ['-ac', '1'])).toBeGreaterThan(input);
   });
 
+  it('decodes to 24-bit samples when asked, for a hi-res file streamed as it is', () => {
+    const args = ffmpegPcmArgs('/music/a.m4a', { sampleRate: 96000, maxSeconds: 30, channels: 2, bits: 24 });
+    expect(args.slice(-8)).toEqual(['-vn', '-ac', '2', '-ar', '96000', '-f', 's24le', '-']);
+  });
+
   it('passes the path as one argument right after -i, whatever it contains', () => {
     const path = "/music/it's -ss 5; rm -rf.flac";
     const args = ffmpegPcmArgs(path, { sampleRate: 11025, maxSeconds: 10 });
@@ -73,6 +78,7 @@ describe('ffmpegPcmArgs', () => {
     ['NaN startSeconds', { sampleRate: 44100, maxSeconds: 30, startSeconds: NaN }],
     ['negative startSeconds', { sampleRate: 44100, maxSeconds: 30, startSeconds: -1 }],
     ['three channels', { sampleRate: 44100, maxSeconds: 30, channels: 3 as 1 }],
+    ['32-bit samples', { sampleRate: 44100, maxSeconds: 30, bits: 32 as 16 }],
     ['startSeconds with fromEnd', { sampleRate: 44100, maxSeconds: 30, startSeconds: 10, fromEnd: true }],
     ['NaN gain', { sampleRate: 44100, maxSeconds: 30, gainDb: NaN }],
     ['a gain no song needs', { sampleRate: 44100, maxSeconds: 30, gainDb: 40 }],

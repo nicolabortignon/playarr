@@ -1,9 +1,11 @@
 import type { AudioFormat } from '@playarr/shared';
 import { tokenizer as rangeTokenizer, type IRangeRequestClient } from '@tokenizer/range';
 import { parseFile, parseFromTokenizer, type IAudioMetadata } from 'music-metadata';
+import { open } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { mimeForPath } from '../library/format.ts';
 import type { MediaSource } from '../media/index.ts';
+import { readAlacInfo, type ReadBytes } from './mp4.ts';
 
 /** What a folder file says about itself. Stored as JSON in folder_files. */
 export interface TagInfo {
@@ -53,7 +55,24 @@ const LOSSLESS = new Set(['FLAC', 'ALAC', 'PCM', 'WAV', 'AIFF', 'WAVPACK']);
 
 /** Tags and format of an audio file; null if it isn't readable audio. */
 export async function readTags(path: string): Promise<TagInfo | null> {
-  return toTagInfo(await parseFile(path, { skipCovers: true }), path);
+  const tags = toTagInfo(await parseFile(path, { skipCovers: true }), path);
+  if (tags?.format.codec !== 'ALAC') return tags;
+  const file = await open(path);
+  try {
+    const read: ReadBytes = async (start, end) => {
+      const { buffer, bytesRead } = await file.read(Buffer.alloc(end - start + 1), 0, end - start + 1, start);
+      return buffer.subarray(0, bytesRead);
+    };
+    return await withAlacFormat(tags, read, (await file.stat()).size);
+  } finally {
+    await file.close();
+  }
+}
+
+/** An Apple Lossless file's rate, depth and channels from its own config, over music-metadata's (see mp4.ts). */
+async function withAlacFormat(tags: TagInfo, read: ReadBytes, size: number): Promise<TagInfo> {
+  const alac = await readAlacInfo(read, size).catch(() => null);
+  return alac ? { ...tags, format: { ...tags.format, sampleRate: alac.sampleRate, bits: alac.bits, channels: alac.channels } } : tags;
 }
 
 /** A range-request client over a MediaSource, so music-metadata can read any part of a remote file. */
@@ -63,10 +82,7 @@ function rangeClient(media: MediaSource, path: string, size: number): IRangeRequ
     getHeadInfo: async () => info,
     async getResponse(_method, range) {
       const start = range?.[0] ?? 0;
-      const end = Math.min(range?.[1] ?? size - 1, size - 1);
-      const chunks: Buffer[] = [];
-      for await (const chunk of await media.open(path, { start, end })) chunks.push(chunk as Buffer);
-      const data = Buffer.concat(chunks);
+      const data = await rangeReader(media, path)(start, Math.min(range?.[1] ?? size - 1, size - 1));
       return {
         ...info,
         contentRange: { firstBytePosition: start, lastBytePosition: start + data.length - 1, instanceLength: size },
@@ -77,6 +93,15 @@ function rangeClient(media: MediaSource, path: string, size: number): IRangeRequ
   };
 }
 
+/** Byte ranges of a file through a MediaSource. */
+function rangeReader(media: MediaSource, path: string): ReadBytes {
+  return async (start, end) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of await media.open(path, { start, end })) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
+  };
+}
+
 async function parseRemote(media: MediaSource, path: string, size: number, skipCovers: boolean): Promise<IAudioMetadata> {
   const tok = await rangeTokenizer(rangeClient(media, path, size), { minimumChunkSize: 64 * 1024 });
   return parseFromTokenizer(tok, { skipCovers, duration: false });
@@ -84,7 +109,23 @@ async function parseRemote(media: MediaSource, path: string, size: number, skipC
 
 /** Tags of a file read through byte ranges (SSH, SFTP). */
 export async function readTagsFrom(media: MediaSource, path: string, size: number): Promise<TagInfo | null> {
-  return toTagInfo(await parseRemote(media, path, size, true), path);
+  const tags = toTagInfo(await parseRemote(media, path, size, true), path);
+  return tags?.format.codec === 'ALAC' ? withAlacFormat(tags, rangeReader(media, path), size) : tags;
+}
+
+/**
+ * How long a file is to the sample, and its sample rate, channels and bit depth, from its header (an MP4's sample
+ * tables, an AIFF's frame count): what a WAV of it holds. The library keeps durations to the second only.
+ */
+export async function pcmLengthFrom(
+  media: MediaSource,
+  path: string,
+  size: number,
+): Promise<{ frames: number; sampleRate: number; channels: number; bits: number } | null> {
+  const { format: f } = await parseRemote(media, path, size, true);
+  if (codecName(f.codec, '') === 'ALAC') return readAlacInfo(rangeReader(media, path), size);
+  if (!f.duration || !f.sampleRate) return null;
+  return { frames: Math.round(f.duration * f.sampleRate), sampleRate: f.sampleRate, channels: f.numberOfChannels ?? 2, bits: f.bitsPerSample ?? 16 };
 }
 
 /** Lyrics kept in a file's tags: timed lines (milliseconds) or the text, which may itself be LRC. */

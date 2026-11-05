@@ -1,24 +1,70 @@
-import { parseRange } from '@playarr/shared';
+import { parseRange, PCM_COOKIE, wavFallbackOf } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { Readable } from 'node:stream';
+import { readCookie } from '../accounts/auth.ts';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import { LOUDNESS_RATE } from '../analysis/loudness.ts';
 import { FileAccessError, type FileResolver } from '../catalog/files.ts';
 import type { FileRecord } from '../catalog/build.ts';
+import { pcmLengthFrom } from '../catalog/tags.ts';
 import type { Library } from '../library/library.ts';
 import { libraryOf } from '../accounts/rights.ts';
 import { mimeForPath } from '../library/format.ts';
 import { MediaUnavailableError, type MediaSource } from '../media/index.ts';
 import { seeksInexactly } from '../media/source.ts';
-import { WAV_HEADER_BYTES, wavRange } from '../media/levelled.ts';
+import { bytesPerFrame, LEVELLED, WAV_HEADER_BYTES, wavRange, type PcmShape } from '../media/levelled.ts';
 
 /** The most a levelled stream turns a song up or down (dB): the levels route never asks for more. */
 const MAX_GAIN_DB = 20;
+/** Files whose exact length is remembered (see wavLength): a few hundred bytes each. */
+const LENGTHS_KEPT = 2000;
 
 export function streamRoutes(
   app: FastifyInstance,
-  deps: { library: Pick<Library, 'file'> & Partial<Pick<Library, 'view'>>; files: FileResolver; loudness?: Pick<Analyzer, 'loudnessOfFile' | 'remeasureLoudness'> },
+  deps: {
+    library: Pick<Library, 'file'> & Partial<Pick<Library, 'view'>>;
+    files: FileResolver;
+    loudness?: Pick<Analyzer, 'loudnessOfFile' | 'remeasureLoudness'>;
+    /** A file's exact length and format, from its header (tests stand in their own). */
+    pcmLength?: typeof pcmLengthFrom;
+  },
 ) {
   const { library } = deps;
+  const pcmLength = deps.pcmLength ?? pcmLengthFrom;
+  const lengths = new Map<string, Awaited<ReturnType<typeof pcmLengthFrom>>>();
+
+  /** A file's exact length, read from its header once per version of the file. */
+  async function wavLength(media: MediaSource, path: string, size: number, mtimeMs: number) {
+    const key = `${path}\0${size}\0${mtimeMs}`;
+    if (!lengths.has(key)) {
+      if (lengths.size >= LENGTHS_KEPT) lengths.delete(lengths.keys().next().value!);
+      lengths.set(key, await pcmLength(media, path, size));
+    }
+    return lengths.get(key);
+  }
+
+  /**
+   * A WAV file `frames` long, made as it's asked for (see media/levelled.ts): its length is known before a byte is
+   * decoded, so a range from anywhere in it is decoded from that very sample, and a player seeks in it as in a file.
+   */
+  function sendWav(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    wav: { frames: number; shape: PcmShape; etag: string; decode: (from: number, count: number) => Readable },
+  ) {
+    const total = WAV_HEADER_BYTES + wav.frames * bytesPerFrame(wav.shape);
+    reply.header('Accept-Ranges', 'bytes').header('Content-Type', 'audio/wav').header('ETag', wav.etag).header('Cache-Control', 'private, max-age=86400');
+    if (req.headers['if-none-match'] === wav.etag) return reply.code(304).send();
+    const range = parseRange(req.headers.range, total);
+    if (range === null) return reply.code(416).header('Content-Range', `bytes */${total}`).send();
+    if (range) reply.code(206).header('Content-Range', `bytes ${range.start}-${range.end}/${total}`);
+    reply.header('Content-Length', range ? range.end - range.start + 1 : total);
+    if (req.method === 'HEAD') return reply.send();
+    const stream = wavRange({ frames: wav.frames, start: range?.start ?? 0, end: range?.end ?? total - 1, decode: wav.decode, shape: wav.shape });
+    // Stop decoding as soon as the player drops the connection (seek, skip).
+    reply.raw.once('close', () => stream.destroy());
+    return reply.send(stream);
+  }
 
   /** The library file asked for, where it lives, and its size and time; or the error already sent. */
   async function open(req: FastifyRequest<{ Params: { fileId: string } }>, reply: FastifyReply) {
@@ -53,7 +99,39 @@ export function streamRoutes(
     handler: async (req, reply) => {
       const opened = await open(req, reply);
       if (!opened) return reply;
-      const { media, path, size, mtimeMs } = opened;
+      const { file, media, path, size, mtimeMs } = opened;
+
+      // Apple Lossless or AIFF, to a browser that said it can't play it: the song as a WAV, still lossless.
+      const fallback = wavFallbackOf(file.format);
+      if (fallback) {
+        reply.header('Vary', 'Cookie');
+        const decode = media.pcmStream?.bind(media);
+        if (decode && readCookie(req.headers.cookie, PCM_COOKIE)?.split('.').includes(fallback)) {
+          let length: Awaited<ReturnType<typeof wavLength>>;
+          try {
+            length = await wavLength(media, path, size, mtimeMs);
+          } catch (err) {
+            req.log.warn({ err, path }, 'could not read the length of a song to stream as WAV');
+          }
+          if (length) {
+            const { frames, sampleRate } = length;
+            const shape: PcmShape = { sampleRate, channels: length.channels === 1 ? 1 : 2, bits: length.bits > 16 ? 24 : 16 };
+            const exactSeek = seeksInexactly(file.format);
+            return sendWav(req, reply, {
+              frames,
+              shape,
+              etag: `"wav-${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}"`,
+              decode: (from, count) =>
+                decode(path, {
+                  ...shape,
+                  priority: 'normal',
+                  maxSeconds: count / sampleRate + 1,
+                  ...(from > 0 ? { startSeconds: from / sampleRate, ...(exactSeek ? { exactSeek } : {}) } : {}),
+                }),
+            });
+          }
+        }
+      }
 
       const etag = `"${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}"`;
       reply
@@ -103,22 +181,12 @@ export function streamRoutes(
       const decode = media.pcmStream?.bind(media);
       if (!decode) return reply.code(404).send({ error: 'This source can’t level songs' });
 
-      const total = WAV_HEADER_BYTES + measured.samples * 4;
-      const etag = `"lv-${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}-${gain}"`;
-      reply.header('Accept-Ranges', 'bytes').header('Content-Type', 'audio/wav').header('ETag', etag).header('Cache-Control', 'private, max-age=86400');
-      if (req.headers['if-none-match'] === etag) return reply.code(304).send();
-      const range = parseRange(req.headers.range, total);
-      if (range === null) return reply.code(416).header('Content-Range', `bytes */${total}`).send();
-      if (range) reply.code(206).header('Content-Range', `bytes ${range.start}-${range.end}/${total}`);
-      reply.header('Content-Length', range ? range.end - range.start + 1 : total);
-      if (req.method === 'HEAD') return reply.send();
-
       // From the sample asked for: exactly (by decoding from the start) where a seek would only land near it.
       const exactSeek = seeksInexactly(file.format);
-      const stream = wavRange({
+      return sendWav(req, reply, {
         frames: measured.samples,
-        start: range?.start ?? 0,
-        end: range?.end ?? total - 1,
+        shape: LEVELLED,
+        etag: `"lv-${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}-${gain}"`,
         decode: (from, count) =>
           decode(path, {
             sampleRate: LOUDNESS_RATE,
@@ -129,9 +197,6 @@ export function streamRoutes(
             ...(from > 0 ? { startSeconds: from / LOUDNESS_RATE, ...(exactSeek ? { exactSeek } : {}) } : {}),
           }),
       });
-      // Stop decoding as soon as the player drops the connection (seek, skip).
-      reply.raw.once('close', () => stream.destroy());
-      return reply.send(stream);
     },
   });
 }

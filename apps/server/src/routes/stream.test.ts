@@ -11,25 +11,30 @@ import { streamRoutes } from './stream.ts';
 const SAMPLES = 2 * LOUDNESS_RATE; // a two-second song
 const MEASURED: SongLoudness = { recordingId: 'rec', fileId: 7, lufs: -9, peak: -0.2, samples: SAMPLES, size: 1000, mtimeMs: 42 };
 
-function setup(opts: { measured?: SongLoudness; codec?: string; stat?: { size: number; mtimeMs: number } } = {}) {
+function setup(opts: { measured?: SongLoudness; codec?: string; container?: string; stat?: { size: number; mtimeMs: number } } = {}) {
   const decodes: PcmStreamOptions[] = [];
   const media = {
     kind: 'local',
+    open: async () => Readable.from([Buffer.from('the file itself')]),
     stat: async () => opts.stat ?? { size: 1000, mtimeMs: 42 },
     pcmStream: vi.fn((_path: string, o: PcmStreamOptions) => {
       decodes.push(o);
       // What's left of the song from where the decode starts, all 1s.
-      const from = Math.round((o.startSeconds ?? 0) * LOUDNESS_RATE);
-      return Readable.from([Buffer.alloc((SAMPLES - from) * 4, 1)]);
+      const rate = o.sampleRate;
+      const from = Math.round((o.startSeconds ?? 0) * rate);
+      return Readable.from([Buffer.alloc((2 * rate - from) * ((o.channels ?? 1) * (o.bits ?? 16)) / 8, 1)]);
     }),
   } as unknown as MediaSource;
   const codec = opts.codec ?? 'FLAC';
-  const library = { file: async (id: number) => (id === 7 ? { id: 7, sourceId: 1, path: '/music/a', size: 1000, format: { codec, container: codec.toLowerCase() } } : undefined) } as unknown as Library;
+  const container = opts.container ?? codec.toLowerCase();
+  const library = { file: async (id: number) => (id === 7 ? { id: 7, sourceId: 1, path: '/music/a', size: 1000, format: { codec, container } } : undefined) } as unknown as Library;
   const files = { resolve: () => ({ media, path: '/music/a' }) } as unknown as FileResolver;
   const loudness = { loudnessOfFile: vi.fn((id: number) => (id === 7 ? opts.measured ?? MEASURED : undefined)), remeasureLoudness: vi.fn() };
+  // A two-second hi-res song: 24-bit stereo at 96 kHz.
+  const pcmLength = vi.fn(async () => ({ frames: 2 * 96_000, sampleRate: 96_000, channels: 2, bits: 24 }));
   const app = Fastify();
-  streamRoutes(app, { library, files, loudness });
-  return { app, decodes, loudness };
+  streamRoutes(app, { library, files, loudness, pcmLength });
+  return { app, decodes, loudness, pcmLength };
 }
 
 describe('levelled stream', () => {
@@ -75,5 +80,56 @@ describe('levelled stream', () => {
     expect((await app.inject({ url: '/stream/7/levelled.wav?gain=1' })).statusCode).toBe(404);
     expect(loudness.remeasureLoudness).toHaveBeenCalledWith('rec');
     expect(decodes).toEqual([]);
+  });
+});
+
+describe('Apple Lossless and AIFF to a browser that can’t play them', () => {
+  const declined = { cookie: 'playarr_session=abc; playarr_pcm=ALAC.AIFF' };
+  const WAV_BYTES = 44 + 2 * 96_000 * 6;
+
+  it('serves the song as a WAV at its own rate and depth, for a browser that says it can’t play it', async () => {
+    const { app, decodes } = setup({ codec: 'ALAC', container: 'm4a' });
+    const res = await app.inject({ url: '/stream/7', headers: declined });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('audio/wav');
+    expect(res.headers.vary).toBe('Cookie');
+    expect(Number(res.headers['content-length'])).toBe(WAV_BYTES);
+    expect(res.rawPayload.length).toBe(WAV_BYTES);
+    const header = res.rawPayload;
+    expect([header.readUInt16LE(22), header.readUInt32LE(24), header.readUInt16LE(34)]).toEqual([2, 96_000, 24]);
+    expect(decodes).toEqual([expect.objectContaining({ sampleRate: 96_000, channels: 2, bits: 24, priority: 'normal' })]);
+  });
+
+  it('seeks by decoding from the sample a range starts at', async () => {
+    const { app, decodes } = setup({ codec: 'ALAC', container: 'm4a' });
+    const start = 44 + 96_000 * 6; // one second in
+    const res = await app.inject({ url: '/stream/7', headers: { ...declined, range: `bytes=${start}-` } });
+    expect(res.statusCode).toBe(206);
+    expect(res.headers['content-range']).toBe(`bytes ${start}-${WAV_BYTES - 1}/${WAV_BYTES}`);
+    expect(decodes[0]).toMatchObject({ startSeconds: 1 });
+  });
+
+  it('reads a file’s length once, not on every range', async () => {
+    const { app, pcmLength } = setup({ codec: 'ALAC', container: 'm4a' });
+    await app.inject({ url: '/stream/7', headers: declined });
+    await app.inject({ url: '/stream/7', headers: { ...declined, range: 'bytes=100-' } });
+    expect(pcmLength).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells AIFF by its container', async () => {
+    const { app } = setup({ codec: 'PCM', container: 'aiff' });
+    expect((await app.inject({ url: '/stream/7', headers: declined })).headers['content-type']).toBe('audio/wav');
+  });
+
+  it('serves the file itself to a browser that plays it, and every other format as it is', async () => {
+    const alac = setup({ codec: 'ALAC', container: 'm4a' });
+    const own = await alac.app.inject({ url: '/stream/7' });
+    expect(own.headers['content-type']).not.toBe('audio/wav');
+    expect(own.headers.vary).toBe('Cookie');
+    expect(own.payload).toBe('the file itself');
+    const flac = setup({ codec: 'FLAC' });
+    const res = await flac.app.inject({ url: '/stream/7', headers: declined });
+    expect(res.payload).toBe('the file itself');
+    expect(res.headers.vary).toBeUndefined();
   });
 });

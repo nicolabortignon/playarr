@@ -48,6 +48,8 @@ export interface PcmOptions {
   exactSeek?: boolean;
   /** 1 for analysis (the default, smallest), 2 when rendering audio people will hear. */
   channels?: 1 | 2;
+  /** 16-bit samples (the default), or 24 to keep a hi-res file's own depth. */
+  bits?: 16 | 24;
   /** Turn the audio up or down by this many dB as it's decoded (even volume). */
   gainDb?: number;
   signal?: AbortSignal;
@@ -84,7 +86,7 @@ function seconds(value: number): string {
  * Refuse anything but sane numbers. These end up on an ffmpeg command line (over SSH too, where
  * they're shell-quoted along with everything else), so a NaN or a negative must never get through.
  */
-function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels, gainDb }: PcmOptions): void {
+function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels, bits, gainDb }: PcmOptions): void {
   if (!Number.isInteger(sampleRate) || sampleRate <= 0) throw new RangeError(`Invalid sample rate: ${sampleRate}`);
   if (!Number.isFinite(maxSeconds) || maxSeconds <= 0) throw new RangeError(`Invalid maxSeconds: ${maxSeconds}`);
   if (startSeconds !== undefined && (!Number.isFinite(startSeconds) || startSeconds < 0)) {
@@ -93,11 +95,12 @@ function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactS
   if (startSeconds !== undefined && fromEnd) throw new RangeError('startSeconds and fromEnd cannot be combined');
   if (exactSeek && fromEnd) throw new RangeError('exactSeek and fromEnd cannot be combined');
   if (channels !== undefined && channels !== 1 && channels !== 2) throw new RangeError(`Invalid channels: ${channels}`);
+  if (bits !== undefined && bits !== 16 && bits !== 24) throw new RangeError(`Invalid bits: ${bits}`);
   if (gainDb !== undefined && !(Number.isFinite(gainDb) && Math.abs(gainDb) <= MAX_GAIN_DB)) throw new RangeError(`Invalid gain: ${gainDb}`);
 }
 
 /**
- * ffmpeg arguments that decode `path` to s16le PCM on stdout.
+ * ffmpeg arguments that decode `path` to s16le PCM on stdout (s24le with `bits: 24`).
  *
  * Seeking (`-ss` / `-sseof`) goes before `-i` so ffmpeg jumps in the container instead of
  * decoding and throwing away everything before; for audio it still decodes accurately from
@@ -108,7 +111,7 @@ function checkPcmOptions({ sampleRate, maxSeconds, startSeconds, fromEnd, exactS
  */
 export function ffmpegPcmArgs(path: string, opts: PcmOptions): string[] {
   checkPcmOptions(opts);
-  const { sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels = 1, gainDb } = opts;
+  const { sampleRate, maxSeconds, startSeconds, fromEnd, exactSeek, channels = 1, bits = 16, gainDb } = opts;
   const seek = startSeconds !== undefined ? ['-ss', seconds(startSeconds)] : fromEnd ? ['-sseof', `-${seconds(maxSeconds)}`] : [];
   const length = ['-t', seconds(maxSeconds)];
   const input = ['-i', path];
@@ -116,7 +119,7 @@ export function ffmpegPcmArgs(path: string, opts: PcmOptions): string[] {
     ...['-hide_banner', '-loglevel', 'error', '-nostdin'],
     ...(exactSeek ? [...input, ...seek, ...length] : [...seek, ...length, ...input]),
     ...(gainDb ? ['-af', `volume=${Number(gainDb.toFixed(2))}dB`] : []),
-    ...['-vn', '-ac', String(channels), '-ar', String(sampleRate), '-f', 's16le', '-'],
+    ...['-vn', '-ac', String(channels), '-ar', String(sampleRate), '-f', `s${bits}le`, '-'],
   ];
 }
 

@@ -10,11 +10,22 @@ import { PassThrough, type Readable } from 'node:stream';
 import { LOUDNESS_RATE } from '../analysis/loudness.ts';
 
 export const WAV_HEADER_BYTES = 44;
-const CHANNELS = 2;
-const BYTES_PER_FRAME = CHANNELS * 2;
 
-/** The header of a WAV file holding `dataBytes` of 16-bit stereo PCM at LOUDNESS_RATE. */
-export function wavHeader(dataBytes: number): Buffer {
+/** The PCM in a WAV file. */
+export interface PcmShape {
+  sampleRate: number;
+  channels: 1 | 2;
+  bits: 16 | 24;
+}
+
+/** A levelled song's: 16-bit stereo at LOUDNESS_RATE. */
+export const LEVELLED: PcmShape = { sampleRate: LOUDNESS_RATE, channels: 2, bits: 16 };
+
+export const bytesPerFrame = ({ channels, bits }: PcmShape) => (channels * bits) / 8;
+
+/** The header of a WAV file holding `dataBytes` of PCM shaped as given. */
+export function wavHeader(dataBytes: number, shape: PcmShape = LEVELLED): Buffer {
+  const frame = bytesPerFrame(shape);
   const h = Buffer.alloc(WAV_HEADER_BYTES);
   h.write('RIFF', 0, 'ascii');
   h.writeUInt32LE(36 + dataBytes, 4);
@@ -22,11 +33,11 @@ export function wavHeader(dataBytes: number): Buffer {
   h.write('fmt ', 12, 'ascii');
   h.writeUInt32LE(16, 16); // the format chunk's size
   h.writeUInt16LE(1, 20); // PCM
-  h.writeUInt16LE(CHANNELS, 22);
-  h.writeUInt32LE(LOUDNESS_RATE, 24);
-  h.writeUInt32LE(LOUDNESS_RATE * BYTES_PER_FRAME, 28);
-  h.writeUInt16LE(BYTES_PER_FRAME, 32);
-  h.writeUInt16LE(16, 34);
+  h.writeUInt16LE(shape.channels, 22);
+  h.writeUInt32LE(shape.sampleRate, 24);
+  h.writeUInt32LE(shape.sampleRate * frame, 28);
+  h.writeUInt16LE(frame, 32);
+  h.writeUInt16LE(shape.bits, 34);
   h.write('data', 36, 'ascii');
   h.writeUInt32LE(dataBytes, 40);
   return h;
@@ -42,19 +53,23 @@ export function wavRange(opts: {
   start: number;
   end: number;
   decode: (from: number, count: number) => Readable;
+  /** The PCM `decode` hands on: a levelled song's unless said. */
+  shape?: PcmShape;
 }): Readable {
-  const dataBytes = opts.frames * BYTES_PER_FRAME;
+  const shape = opts.shape ?? LEVELLED;
+  const frameBytes = bytesPerFrame(shape);
+  const dataBytes = opts.frames * frameBytes;
   const { start, end } = opts;
   let source: Readable | undefined;
   async function* body() {
-    if (start < WAV_HEADER_BYTES) yield wavHeader(dataBytes).subarray(start, Math.min(end + 1, WAV_HEADER_BYTES));
+    if (start < WAV_HEADER_BYTES) yield wavHeader(dataBytes, shape).subarray(start, Math.min(end + 1, WAV_HEADER_BYTES));
     if (end < WAV_HEADER_BYTES) return;
     const dataStart = Math.max(0, start - WAV_HEADER_BYTES);
     const dataEnd = end - WAV_HEADER_BYTES;
-    const from = Math.floor(dataStart / BYTES_PER_FRAME);
-    let skip = dataStart - from * BYTES_PER_FRAME;
+    const from = Math.floor(dataStart / frameBytes);
+    let skip = dataStart - from * frameBytes;
     let left = dataEnd - dataStart + 1;
-    source = opts.decode(from, Math.ceil((dataEnd + 1) / BYTES_PER_FRAME) - from);
+    source = opts.decode(from, Math.ceil((dataEnd + 1) / frameBytes) - from);
     for await (const chunk of source) {
       let piece = chunk as Buffer;
       if (skip) {

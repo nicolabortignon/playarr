@@ -343,6 +343,7 @@ export interface Recommendations {
   seedCount: number;
 }
 
+export * from './playable.ts';
 export * from './range.ts';
 
 // ── Settings: catalog sources ───────────────────────────────────────────────
