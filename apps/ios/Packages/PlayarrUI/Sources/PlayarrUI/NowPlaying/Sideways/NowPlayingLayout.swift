@@ -6,11 +6,25 @@ import CoreGraphics
 /// (the cover beside the song with Up next).
 public enum NowPlayingLayout: Equatable, Sendable {
   case upright, sideways, wide
+  /// An iPhone Duo open with the crease down the middle (flat, or held like a book): two pages, the cover on the left
+  /// one, the song, its controls and Up next on the right, so the crease falls between them.
+  case pages
+  /// An iPhone Duo propped up part-open like a small laptop, the crease across the middle: the cover (or lyrics) on
+  /// the half that stands, the song, its controls and Up next on the half that lies flat, under the thumbs.
+  case desk
 
   /// `split`: the window has the iPad's sidebar layout. `compactHeight`: the window's vertical size class is compact
   /// (an iPhone in landscape). At the accessibility text sizes the iPad keeps one column; a phone on its side keeps
-  /// the sleeve, with a narrower cover.
-  public static func choose(split: Bool, compactHeight: Bool, accessibilitySize: Bool) -> NowPlayingLayout {
+  /// the sleeve, with a narrower cover. `fold`: an iPhone Duo's hinge, whose crease comes first; `wider`: the window is
+  /// wider than tall (the crease then runs down it).
+  public static func choose(
+    split: Bool, compactHeight: Bool, accessibilitySize: Bool, fold: Fold = .none, wider: Bool = false
+  ) -> NowPlayingLayout {
+    switch fold {
+    case .flat where wider, .half where wider: return .pages
+    case .half: return .desk
+    default: break
+    }
     if split { return accessibilitySize ? .upright : .wide }
     return compactHeight ? .sideways : .upright
   }

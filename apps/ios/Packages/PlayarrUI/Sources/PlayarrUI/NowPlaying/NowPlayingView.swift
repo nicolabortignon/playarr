@@ -22,6 +22,9 @@ struct NowPlayingView: View {
   /// Sideways and left alone while playing: the controls fade and the song playing takes the stage.
   @State private var staged = false
   @State private var touched = Date()
+  /// An iPhone Duo's hinge, and whether the window is wider than tall: together they say where the crease runs.
+  @State private var fold: Fold = .none
+  @State private var wider = false
   /// Now Playing holds the hardware keyboard's focus, so Escape reaches it (`onKeyPress`).
   @FocusState private var holdsKeyboard: Bool
 
@@ -34,7 +37,9 @@ struct NowPlayingView: View {
     #else
       let compactHeight = false
     #endif
-    return NowPlayingLayout.choose(split: session.router.layout == .split, compactHeight: compactHeight, accessibilitySize: typeSize.isAccessibilitySize)
+    return NowPlayingLayout.choose(
+      split: session.router.layout == .split, compactHeight: compactHeight, accessibilitySize: typeSize.isAccessibilitySize,
+      fold: fold, wider: wider)
   }
 
   var body: some View {
@@ -46,6 +51,10 @@ struct NowPlayingView: View {
         backdrop(track)
         if layout == .sideways {
           sleeve(model, track: track)
+        } else if layout == .pages {
+          pages(model, track: track)
+        } else if layout == .desk {
+          desk(model, track: track)
         } else {
           VStack(spacing: 24) {
             header(model, track: track)
@@ -79,6 +88,8 @@ struct NowPlayingView: View {
       }
     }
     .offset(y: drag)
+    .tracksFold($fold)
+    .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height } action: { wider = $0 }
     .preferredColorScheme(.dark)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Now playing")
@@ -207,6 +218,59 @@ struct NowPlayingView: View {
       }
       Spacer()
       FavoriteButton(track: track)
+    }
+  }
+
+  // MARK: iPhone Duo
+
+  /// Open with the crease down the middle: two pages, the cover centred on the left one, the song, its controls and Up
+  /// next on the right, a margin either side of the crease.
+  private func pages(_ model: NowPlayingModel, track: Track) -> some View {
+    HStack(spacing: 0) {
+      artwork(track)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      VStack(spacing: 20) {
+        header(model, track: track)
+          .contentShape(Rectangle())
+          .gesture(closeGesture)
+        song(track)
+        SeekBar(player: session.player)
+        Transport(player: session.player)
+        TransitionLine(player: session.player)
+        UpNextPreview(session: session)
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 32)
+      .padding(.vertical, 12)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+  }
+
+  /// Propped up part-open like a small laptop: the cover (or lyrics) on the half that stands, the song, its controls
+  /// and Up next on the half that lies flat.
+  private func desk(_ model: NowPlayingModel, track: Track) -> some View {
+    VStack(spacing: 0) {
+      VStack(spacing: 8) {
+        header(model, track: track)
+          .contentShape(Rectangle())
+          .gesture(closeGesture)
+        artwork(track)
+      }
+      .padding(.horizontal, 24)
+      .padding(.bottom, 24)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      VStack(spacing: 16) {
+        song(track)
+        SeekBar(player: session.player)
+        Transport(player: session.player)
+        UpNextPreview(session: session)
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 24)
+      .padding(.top, 24)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 

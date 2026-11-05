@@ -79,14 +79,15 @@ test-app: project
 # of each device, upright and (iPhone) sideways, in screenshots/<device>/ at the repo root, replaced on every run
 # (SCREENS_DIR reaches the test runner through xcodebuild's TEST_RUNNER_ prefix). SCREENS="ipad" takes one device.
 SCREENS_ROOT := $(abspath $(CURDIR)/../../screenshots)
-SCREENS_DEVICES := "iphone|iPhone 17 Pro" "ipad|iPad Pro 13-inch (M5)"
-SCREENS ?= iphone ipad
+# name|device type[|runtime]: the iPhone Duo runs only on its own iOS 27 runtime.
+SCREENS_DEVICES := "iphone|iPhone 17 Pro" "ipad|iPad Pro 13-inch (M5)" "duo|iPhone Duo|com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4"
+SCREENS ?= iphone ipad duo
 screens: project
 	@set -e; for pair in $(SCREENS_DEVICES); do \
-	  name=$${pair%%|*}; type=$${pair#*|}; \
+	  name=$${pair%%|*}; rest=$${pair#*|}; type=$${rest%%|*}; runtime=$$([ "$$rest" != "$$type" ] && echo "$${rest#*|}" || true); \
 	  case " $(SCREENS) " in *" $$name "*) ;; *) continue ;; esac; \
 	  sim="Playarr Screens $$name"; \
-	  xcrun simctl list devices available | grep -qF "    $$sim (" || xcrun simctl create "$$sim" "$$type" >/dev/null; \
+	  xcrun simctl list devices available | grep -qF "    $$sim (" || xcrun simctl create "$$sim" "$$type" $$runtime >/dev/null; \
 	  rm -rf "$(SCREENS_ROOT)/$$name" "$(SCREENS_ROOT)/$$name-sideways"; \
 	  echo "▸ $$name on $$type"; \
 	  TEST_RUNNER_SCREENS_DIR="$(SCREENS_ROOT)/$$name" $(MAKE) --no-print-directory SIMULATOR="$$sim" screens-run; \

@@ -12,6 +12,17 @@ import Testing
     #expect(NowPlayingLayout.choose(split: true, compactHeight: false, accessibilitySize: true) == .upright)
   }
 
+  @Test func followsAnIPhoneDuosCrease() {
+    // Open, the crease down the middle: two pages, flat or held like a book.
+    #expect(NowPlayingLayout.choose(split: true, compactHeight: false, accessibilitySize: false, fold: .flat, wider: true) == .pages)
+    #expect(NowPlayingLayout.choose(split: false, compactHeight: false, accessibilitySize: false, fold: .half, wider: true) == .pages)
+    // Propped up like a laptop, the crease across: the cover above it, the controls below.
+    #expect(NowPlayingLayout.choose(split: false, compactHeight: false, accessibilitySize: false, fold: .half, wider: false) == .desk)
+    // Open flat but turned upright, or shut: the usual layouts.
+    #expect(NowPlayingLayout.choose(split: false, compactHeight: false, accessibilitySize: false, fold: .flat, wider: false) == .upright)
+    #expect(NowPlayingLayout.choose(split: false, compactHeight: false, accessibilitySize: false, fold: .none, wider: false) == .upright)
+  }
+
   @Test func givesTheRecordWhatTheTracklistCanSpare() {
     let deck = NowPlayingLayout.deckHeight
     // iPhone 17 Pro sideways, inside its margins: the deck's width, the cover as tall as the rest.

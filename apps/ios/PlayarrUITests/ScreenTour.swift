@@ -1,10 +1,10 @@
 import XCTest
 
 /// Screenshots of the app's main views against the demo library, to look at rather than to assert: `pnpm ios:screens`
-/// runs only this class on each device's own simulator and saves PNGs in screenshots/<device>/ at the repo root, the
-/// iPhone's sideways views in screenshots/iphone-sideways/ (the folder comes in as SCREENS_DIR, set for the test runner
-/// with xcodebuild's TEST_RUNNER_ prefix). A step whose button isn't there is skipped, not failed, so one moved button
-/// doesn't cost the rest of the tour. In the normal test run it does nothing.
+/// runs only this class on each device's own simulator (iPhone, iPad, iPhone Duo) and saves PNGs in screenshots/<device>/
+/// at the repo root, the iPhone's sideways views in screenshots/iphone-sideways/ (the folder comes in as SCREENS_DIR, set
+/// for the test runner with xcodebuild's TEST_RUNNER_ prefix). A step whose button isn't there is skipped, not failed, so
+/// one moved button doesn't cost the rest of the tour. In the normal test run it does nothing.
 final class ScreenTour: XCTestCase {
   private var folder: URL?
   private var app: XCUIApplication!
@@ -212,6 +212,23 @@ final class ScreenTour: XCTestCase {
         field.typeText("mass")
         shot("11-search")
       }
+    }
+  }
+
+  /// Now Playing as an iPhone Duo held part-open or open lays it out, the fold forced (`-UITestsFold`: the simulator
+  /// can't open the hinge): propped up like a laptop on the Duo's cover screen, and as two pages on the iPad sideways,
+  /// the nearest window to the Duo open.
+  @MainActor
+  func testNowPlayingFolded() throws {
+    let pad = onIPad
+    try XCTSkipUnless(pad || folder?.lastPathComponent == "duo", "On the iPhone Duo and the iPad")
+    if pad { XCUIDevice.shared.orientation = .landscapeLeft }
+    defer { XCUIDevice.shared.orientation = .portrait }
+    launch(["-UITests", "-UITestsDemo", "-UITestsFold", pad ? "flat" : "half"])
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"]),
+      tap(app.buttons["Open now playing"].firstMatch)
+    {
+      shot(pad ? "12-now-playing-duo-open" : "09-now-playing-duo-propped", after: 2)
     }
   }
 }
