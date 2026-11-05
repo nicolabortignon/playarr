@@ -9,7 +9,6 @@ import SwiftUI
 struct NowPlayingView: View {
   let session: AccountSession
   @Environment(Theme.self) private var theme
-  @Environment(\.railWidth) private var railWidth
   @Environment(AppearanceSettings.self) private var appearance
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @Environment(\.dynamicTypeSize) private var typeSize
@@ -153,11 +152,15 @@ struct NowPlayingView: View {
   }
 
   private func header(_ model: NowPlayingModel, track: Track, tail: String? = nil) -> some View {
-    HStack {
-      Button { session.router.nowPlaying = false } label: { Image(systemName: "chevron.down").font(.title2).frame(width: 44, height: 44).contentShape(Rectangle()) }
-        .accessibilityLabel("Close now playing")
-        .keyboardShortcut(.cancelAction)
-      Spacer()
+    // Sides of one width, so "Playing from" is in the middle: one button on the left, three on the right.
+    HStack(spacing: 8) {
+      HStack(spacing: 0) {
+        Button { session.router.nowPlaying = false } label: { Image(systemName: "chevron.down").font(.title2).frame(width: 44, height: 44).contentShape(Rectangle()) }
+          .accessibilityLabel("Close now playing")
+          .keyboardShortcut(.cancelAction)
+        Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity)
       VStack(spacing: 2) {
         Kicker(text: "Playing from").accessibilityHidden(true)
         Button(model.playingFrom ?? "") { if let route = model.playingFromRoute { session.router.go(route) } }
@@ -167,18 +170,20 @@ struct NowPlayingView: View {
           .accessibilityLabel("Playing from \(model.playingFrom ?? "")")
         if let tail { Text(tail).font(.mono(.caption2)).foregroundStyle(.muted) }
       }
-      Spacer()
-      SleepTimerMenu(player: session.player)
-      Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
-        .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
-        .accessibilityLabel("Lyrics")
-        .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
-        .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
-      moreMenu(track)
+      .layoutPriority(1)
+      HStack(spacing: 0) {
+        Spacer(minLength: 0)
+        SleepTimerMenu(player: session.player)
+        Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
+          .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
+          .accessibilityLabel("Lyrics")
+          .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
+          .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
+        moreMenu(track)
+      }
+      .frame(maxWidth: .infinity)
     }
     .buttonStyle(.plain)
-    // Clear of the Duo's column of status, which blurs what's under it.
-    .padding(.trailing, railWidth)
   }
 
   /// ⋯: the song playing's menu.

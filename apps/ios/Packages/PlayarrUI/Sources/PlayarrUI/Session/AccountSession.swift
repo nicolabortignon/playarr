@@ -103,7 +103,7 @@ public final class AccountSession {
     if !offline { player.start() }
     return AccountSession(
       key: record.key, account: record.account, serverName: Demo.server.name, api: api, client: nil, player: player,
-      queries: QueryCache(directory: nil), images: ImageCache(directory: folder.appending(path: "images"), media: MediaURLs(baseURL: Demo.baseURL, token: nil)),
+      queries: QueryCache(directory: nil), images: ImageCache(directory: folder.appending(path: "images"), media: MediaURLs(baseURL: Demo.baseURL, token: nil), session: DemoArt.session),
       toasts: model.toasts)
   }
 
