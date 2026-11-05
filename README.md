@@ -12,51 +12,53 @@ Lidarr is great at collecting music, but it can't play any of it. Playarr is the
 
 ## What you get
 
-### A player for every screen
+### <img src="docs/images/icons/smartphone.svg" width="22" height="22" alt=""> A player for every screen
 
 - **Any browser, any device.** Desktop or phone, with nothing to install. On a phone, add it to the home screen and it behaves like an app, with lock-screen controls.
 - **A native iPhone and iPad app**, on its way to the App Store.
 - **The things you'd expect.** Gapless albums, crossfades, a sleep timer, synced lyrics, keyboard shortcuts, and colours that follow the album art.
-- **Offline listening.** Download albums, playlists, mixes or your favourites. The next few songs in the queue are always saved ahead, so a patchy connection doesn't interrupt the music.
+- <img src="docs/images/icons/download.svg" width="16" height="16" alt=""> **Offline listening.** Download albums, playlists, mixes or your favourites. The next few songs in the queue are always saved ahead, so a patchy connection doesn't interrupt the music.
 
-### Songs that flow like a DJ set
+### <img src="docs/images/icons/blend.svg" width="22" height="22" alt=""> Songs that flow like a DJ set
 
 Turn on **DJ mix** and Playarr blends each song into the next, on the beat, the way a DJ would. Songs with a matching tempo and key get a long, smooth blend. Songs that don't match get a quick, clean mix. Albums played in order are left alone. It works on a locked iPhone too, and in **Party** mode the blends get longer and come more often. If a song's beat lands in the wrong place, you can fix its mix points by hand.
 
-### Every song at the same volume
+### <img src="docs/images/icons/volume.svg" width="22" height="22" alt=""> Every song at the same volume
 
 **Even volume** levels every song to the same loudness, so a quiet 70s record and a loud modern single sit side by side without you reaching for the volume. Albums played in order keep their own dynamics.
 
-### Made for you
+### <img src="docs/images/icons/sparkles.svg" width="22" height="22" alt=""> Made for you
 
+- <img src="docs/images/icons/lucky.svg" width="16" height="16" alt=""> **Feeling lucky.** One press on Home and Playarr puts together 15 songs that suit the hour. Press again for a new set.
+- <img src="docs/images/icons/dices.svg" width="16" height="16" alt=""> **Rediscover.** Twelve albums pulled at random from your library, reshuffled with a tap.
 - **Twelve mixes on Home**, built from what you actually listen to: Discovery Weekly, On Repeat, Vibes of the hour, Blast from the past, Deep cuts, Fresh arrivals, genre and decade mixes, Energy boost, Deep focus, Wind down and On this day.
-- **Radio.** When the queue runs out, similar songs from your library keep playing.
-- **Your listening stats.** Top artists, songs and albums, when you listen most, and a year in review.
+- <img src="docs/images/icons/radio.svg" width="16" height="16" alt=""> **Radio.** When the queue runs out, similar songs from your library keep playing.
+- <img src="docs/images/icons/stats.svg" width="16" height="16" alt=""> **Your listening stats.** Top artists, songs and albums, when you listen most, and a year in review.
 - **ListenBrainz**, if you'd like your plays scrobbled there.
-- **Playlist covers** drawn from how the songs in each playlist actually sound.
+- <img src="docs/images/icons/palette.svg" width="16" height="16" alt=""> **Playlist covers** drawn from how the songs in each playlist actually sound.
 
-### Find and request music, without opening Lidarr
+### <img src="docs/images/icons/search.svg" width="22" height="22" alt=""> Find and request music, without opening Lidarr
 
 - **Search for a song, not a release.** Type "bohemian rhapsody" and Playarr finds the original song, works out which album it's on, and offers to request that album.
 - **See what you already have.** Search results show what's already in the library, ready to play.
-- **Request in one tap.** Playarr asks Lidarr for just that album, not the artist's whole discography, and shows the download's progress until it's ready to play.
+- <img src="docs/images/icons/request.svg" width="16" height="16" alt=""> **Request in one tap.** Playarr asks Lidarr for just that album, not the artist's whole discography, and shows the download's progress until it's ready to play.
 - **Discover from your playlists.** "Songs like these" under each playlist suggests similar music to add or request.
 
 Nobody needs a Lidarr account or to know about quality profiles. Lidarr stays an admin tool, and Playarr is where people find and ask for music.
 
-### Everyone gets their own
+### <img src="docs/images/icons/users.svg" width="22" height="22" alt=""> Everyone gets their own
 
 - **One account per person**, each with its own favourites, playlists, history and mixes. A playlist can be shared with everyone on the server.
 - **You decide who hears what.** Admins choose which music each person can hear and whether they may request albums.
 - **Easy invites.** Hand someone a one-time setup code and they choose their own password.
 
-### Your music, wherever it lives
+### <img src="docs/images/icons/library.svg" width="22" height="22" alt=""> Your music, wherever it lives
 
 - **Many sources.** Lidarr's library, folders on the server, another computer over SSH, or a network share on a NAS, Windows PC or Mac.
 - **Messy folders welcome.** Untagged albums are identified automatically, by name or by their sound. Compilations are split up so each song joins the album it first came out on. Anything Playarr isn't sure about waits for you to confirm.
 - **Optional tidying.** Playarr can propose moving files into neat Artist / Album / Track folders. You choose which moves to apply, and every change can be undone. It never touches your files on its own.
 
-### Private by design
+### <img src="docs/images/icons/lock.svg" width="22" height="22" alt=""> Private by design
 
 Your music, your accounts and your listening history all stay on your server. Your apps only ever talk to Playarr, and your Lidarr key never leaves the server.
 
