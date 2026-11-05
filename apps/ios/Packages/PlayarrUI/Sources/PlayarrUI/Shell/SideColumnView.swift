@@ -24,7 +24,7 @@ struct SideColumnView: View {
           }
       case .lyrics:
         if let track = session.player.queue.currentTrack {
-          LyricsView(trackId: track.id, session: session).id(track.id)
+          LyricsView(trackId: track.id, session: session, centred: true).id(track.id)
         } else {
           ContentUnavailableView("Nothing playing", systemImage: "quote.bubble")
         }

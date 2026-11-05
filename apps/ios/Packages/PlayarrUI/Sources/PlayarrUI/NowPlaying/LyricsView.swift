@@ -1,16 +1,24 @@
 import PlayarrAPI
 import SwiftUI
 
-/// Now Playing → Lyrics (apps/web/src/components/LyricsView.tsx).
+/// Now Playing → Lyrics (apps/web/src/components/LyricsView.tsx), left-aligned as there. `centred`: in the iPad's
+/// narrow side column, where everything else is centred, the lines are too, with a margin either side.
 struct LyricsView: View {
+  var centred = false
   @State private var model: LyricsModel
   @Environment(AccountSession.self) private var session
   @Environment(AppearanceSettings.self) private var appearance
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
 
-  init(trackId: Int, session: AccountSession) {
+  init(trackId: Int, session: AccountSession, centred: Bool = false) {
+    self.centred = centred
     _model = State(initialValue: LyricsModel(trackId: trackId, session: session))
   }
+
+  private var alignment: HorizontalAlignment { centred ? .center : .leading }
+  private var textAlignment: TextAlignment { centred ? .center : .leading }
+  private var frameAlignment: Alignment { centred ? .center : .leading }
+  private var margin: CGFloat { centred ? 20 : 0 }
 
   var body: some View {
     Group {
@@ -27,12 +35,13 @@ struct LyricsView: View {
       case .instrumental: notice("Instrumental")
       case .plain(let text, let source):
         ScrollView {
-          VStack(alignment: .leading, spacing: 24) {
-            Text(text).font(.display(.title2))
+          VStack(alignment: alignment, spacing: 24) {
+            Text(text).font(.display(.title2)).multilineTextAlignment(textAlignment)
             LyricsCredit(source: source)
           }
-          .frame(maxWidth: .infinity, alignment: .leading)
+          .frame(maxWidth: .infinity, alignment: frameAlignment)
           .padding(.vertical, 24)
+          .padding(.horizontal, margin)
         }
       case .synced(let lines, let source):
         synced(lines, source: source)
@@ -46,12 +55,12 @@ struct LyricsView: View {
     let current = LyricsModel.lineAt(times, time: session.player.time)
     return ScrollViewReader { proxy in
       ScrollView {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: alignment, spacing: 14) {
           ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
             Button { model.seek(to: line) } label: {
               Text(line.text.isEmpty ? "♪" : line.text)
                 .font(.display(.title2))
-                .multilineTextAlignment(.leading)
+                .multilineTextAlignment(textAlignment)
                 // Sung lines and those to come are dimmed, but still readable (4.5:1 over the dark backdrop).
                 .foregroundStyle(index == current ? Color.primary : index < current ? Color.primary.opacity(0.5) : Color.primary.opacity(0.7))
             }
@@ -62,8 +71,9 @@ struct LyricsView: View {
           }
           LyricsCredit(source: source).padding(.top, 24)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: frameAlignment)
         .padding(.vertical, 120)
+        .padding(.horizontal, margin)
       }
       .scrollIndicators(.hidden)
       .onScrollPhaseChange { _, phase in
