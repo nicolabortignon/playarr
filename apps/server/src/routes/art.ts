@@ -194,7 +194,8 @@ export function artRoutes(
   });
 
   // Artwork drawn from a folder file (embedded picture or an image beside it), wherever the folder is.
-  app.get<{ Params: { id: string }; Querystring: { size?: string } }>('/art/copy/:id', async (req, reply) => {
+  // `?embedded=1`: only the picture in the file (see catalog/build.ts folderCovers).
+  app.get<{ Params: { id: string }; Querystring: { size?: string; embedded?: string } }>('/art/copy/:id', async (req, reply) => {
     const id = Number(req.params.id);
     const file = Number.isInteger(id) ? await libraryOf(deps.library, req).file(id) : undefined;
     if (!file) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'Unknown file' });
@@ -208,7 +209,8 @@ export function artRoutes(
     if (!fs) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
     const requested = Number(req.query.size);
     const size = requested > 0 ? (SIZES.find((s) => s >= requested) ?? SIZES.at(-1)) : undefined;
-    const key = createHash('sha1').update(`copy/${id}/${file.size}/${size ?? 'orig'}`).digest('hex');
+    const embeddedOnly = req.query.embedded === '1';
+    const key = createHash('sha1').update(`copy/${id}/${file.size}/${size ?? 'orig'}${embeddedOnly ? '/embedded' : ''}`).digest('hex');
     const cached = join(dir, key);
     try {
       const body = await readFile(cached);
@@ -217,7 +219,7 @@ export function artRoutes(
     } catch {
       // cache miss
     }
-    const original = await copyCover(fs, path, file.size).catch(() => null);
+    const original = await copyCover(fs, path, file.size, embeddedOnly).catch(() => null);
     if (!original) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
     const out = size
       ? {

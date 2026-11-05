@@ -98,7 +98,7 @@ describe('buildCatalog', () => {
     expect(first.coverUrl).toBe(album.coverUrl);
   });
 
-  it('draws a folder album’s cover only from a folder that holds the album, never from one of mixed songs', () => {
+  it('draws a folder album’s cover from a folder that holds the album; from a folder of mixed songs, only a song’s own picture', () => {
     const store = new CatalogStore(freshDb());
     const singles = store.addSource('folder', 'One song each');
     const albums = store.addSource('folder', 'Albums');
@@ -114,9 +114,11 @@ describe('buildCatalog', () => {
       copies: [copy('y', 'yellow', '/one/Yellow.mp3'), copy('f', 'fix', '/one/Fix You.mp3'), copy('d', 'demo1', '/one/Demo.mp3')],
     });
     const cover = (title: string) => [...buildCatalog(store.load()).albums.values()].find((a) => a.title === title)!.coverUrl;
-    // Nothing from that folder: the release group's cover when the album is identified, else none.
+    // Nothing from that folder's images: the release group's cover when the album is identified, else the picture
+    // in its own song, if it has one.
     expect(cover('Parachutes')).toContain(encodeURIComponent('release-group/rg-p/front-500'));
-    expect(cover('Demo')).toBeUndefined();
+    const demo = [...buildCatalog(store.load()).albums.values()].find((a) => a.title === 'Demo')!;
+    expect(cover('Demo')).toBe(`/art/copy/${demo.tracks[0]!.fileId}?embedded=1`);
     // Parachutes' own folder, with another of its songs: its cover comes from there, whatever song comes first.
     store.applySync(albums, {
       artists,

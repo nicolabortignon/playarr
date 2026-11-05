@@ -28,6 +28,15 @@ describe('copyCover', () => {
     expect(await cover(join(t.dir, '01.flac'))).toEqual({ body: Buffer.from([2]), mime: 'image/png' });
   });
 
+  it('leaves the images beside the file alone when asked for its own picture only', async () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    const path = join(t.dir, '01.flac');
+    writeFileSync(path, flacBytes());
+    writeFileSync(join(t.dir, 'cover.jpg'), Buffer.from([0xff, 0xd8, 0xff]));
+    expect(await copyCover(new LocalFolderFs(), path, statSync(path).size, true)).toBeNull();
+  });
+
   it('returns null when there is no artwork', async () => {
     const t = tempDir();
     cleanup = t.cleanup;

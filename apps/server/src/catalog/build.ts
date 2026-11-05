@@ -104,7 +104,7 @@ export function buildCatalog(rows: CatalogRows): Catalog {
 
   const artistRows = new Map(rows.artists.map((a) => [a.id, a]));
   const albumRows = new Map(rows.albums.map((a) => [a.id, a]));
-  const folderCover = folderCovers(rows, copiesByTrack, kindOf);
+  const { folderCover, embeddedCover } = folderCovers(rows, copiesByTrack, kindOf);
 
   const byAlbum = new Map<number, { tracks: Track[]; added: string[] }>();
   for (const t of rows.tracks) {
@@ -147,8 +147,10 @@ export function buildCatalog(rows: CatalogRows): Catalog {
     const missing = (missingByAlbum.get(albumId) ?? []).sort(
       (a, b) => a.discNumber - b.discNumber || a.trackNumber - b.trackNumber,
     );
-    // No artwork URL of the album's own (Lidarr's): a folder that holds the album, else its MusicBrainz cover.
-    const fallbackCover = folderCover.get(albumId) ?? (row.meta.mbid ? remoteArtUrl(coverArtArchive(row.meta.mbid, 500)) : undefined);
+    // No artwork URL of the album's own (Lidarr's): a folder that holds the album, else its MusicBrainz cover, else
+    // the picture in one of its songs.
+    const fallbackCover =
+      folderCover.get(albumId) ?? (row.meta.mbid ? remoteArtUrl(coverArtArchive(row.meta.mbid, 500)) : undefined) ?? embeddedCover.get(albumId);
     const detail = toAlbumDetail(row, artist, entry.tracks, entry.added, missing, fallbackCover);
     for (const t of entry.tracks) t.coverUrl ??= detail.coverUrl;
     albums.set(albumId, detail);
@@ -241,9 +243,15 @@ const ALBUM_FOLDER_SHARE = 0.5;
  * Albums' covers drawn from folder files: from the folder that holds the most of the album's songs, as long as
  * most of that folder's songs are the album's ("Coldplay/Parachutes/", a single in its own folder). Never from
  * a folder of songs from many albums (a compilation, a "1 song only" collection, loose songs): its files'
- * pictures are other albums' covers. Within the folder, the first song's file.
+ * pictures are other albums' covers. Within the folder, the first song's file. `embeddedCover` has, for every album
+ * with songs in folders, the picture embedded in its first song alone: a song's own picture is its album's wherever
+ * it's kept.
  */
-function folderCovers(rows: CatalogRows, copiesByTrack: Map<number, CopyRow[]>, kindOf: Map<number, string>): Map<number, string> {
+function folderCovers(
+  rows: CatalogRows,
+  copiesByTrack: Map<number, CopyRow[]>,
+  kindOf: Map<number, string>,
+): { folderCover: Map<number, string>; embeddedCover: Map<number, string> } {
   const trackRows = new Map(rows.tracks.map((t) => [t.id, t]));
   // Each folder's songs, by album: folder → album → its songs there, as copies with their tracks.
   const folders = new Map<string, Map<number, { copy: CopyRow; disc: number; number: number }[]>>();
@@ -269,12 +277,15 @@ function folderCovers(rows: CatalogRows, copiesByTrack: Map<number, CopyRow[]>, 
       if (!current || songs.length > current.songs.length) best.set(albumId, { songs });
     }
   }
-  const covers = new Map<number, string>();
-  for (const [albumId, { songs }] of best) {
-    const first = songs.reduce((a, b) => (b.disc < a.disc || (b.disc === a.disc && b.number < a.number) ? b : a));
-    covers.set(albumId, `/art/copy/${first.copy.id}`);
-  }
-  return covers;
+  const firstOf = (songs: { copy: CopyRow; disc: number; number: number }[]) =>
+    songs.reduce((a, b) => (b.disc < a.disc || (b.disc === a.disc && b.number < a.number) ? b : a));
+  const folderCover = new Map<number, string>();
+  for (const [albumId, { songs }] of best) folderCover.set(albumId, `/art/copy/${firstOf(songs).copy.id}`);
+  const everySong = new Map<number, { copy: CopyRow; disc: number; number: number }[]>();
+  for (const albums of folders.values()) for (const [albumId, songs] of albums) everySong.set(albumId, [...(everySong.get(albumId) ?? []), ...songs]);
+  const embeddedCover = new Map<number, string>();
+  for (const [albumId, songs] of everySong) embeddedCover.set(albumId, `/art/copy/${firstOf(songs).copy.id}?embedded=1`);
+  return { folderCover, embeddedCover };
 }
 
 function toAlbumDetail(
