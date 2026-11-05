@@ -1,5 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile, rename } from 'node:fs/promises';
+import type { DatabaseSync } from 'node:sqlite';
 import type { AlbumRef, AlbumRequest, Availability, RequestSettings } from '@playarr/shared';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
 import type { LidarrAlbum, LidarrCommand, LidarrLookupAlbum, LidarrQueueItem } from '../lidarr/types.ts';
@@ -18,7 +18,33 @@ interface StoredRequest {
   coverUrl?: string;
   requestedAt: string;
   commandId?: number;
+  /** The account that asked first. */
+  requestedBy?: number;
 }
+
+interface RequestRow {
+  mbid: string;
+  keys: string;
+  lidarr_album_id: number;
+  title: string;
+  artist_name: string;
+  cover_url: string | null;
+  requested_at: string;
+  command_id: number | null;
+  requested_by: number | null;
+}
+
+const fromRow = (r: RequestRow): StoredRequest => ({
+  mbid: r.mbid,
+  keys: JSON.parse(r.keys) as string[],
+  lidarrAlbumId: r.lidarr_album_id,
+  title: r.title,
+  artistName: r.artist_name,
+  ...(r.cover_url ? { coverUrl: r.cover_url } : {}),
+  requestedAt: r.requested_at,
+  ...(r.command_id !== null ? { commandId: r.command_id } : {}),
+  ...(r.requested_by !== null ? { requestedBy: r.requested_by } : {}),
+});
 
 export interface RequestDefaults {
   rootFolderPath?: string;
@@ -54,23 +80,64 @@ export class Requests {
     private readonly lidarr: LidarrClient,
     private readonly mb: MusicBrainz,
     private readonly library: Library,
-    private readonly file: string,
+    /** Requests are kept in the database; `legacyFile` is the cache folder's requests.json of before, imported once. */
+    private readonly storage: { db: DatabaseSync; legacyFile?: string },
     /** Settings → Requests, read on every request so changes apply at once. */
     private readonly settings: () => RequestSettings,
     /** .env values: used when nothing is chosen in Settings. */
     private readonly env: RequestDefaults = {},
   ) {
-    this.loaded = readFile(file, 'utf8')
-      .then((raw) => {
-        for (const r of JSON.parse(raw) as StoredRequest[]) this.requests.set(r.mbid, { ...r, keys: r.keys ?? [] });
-      })
-      .catch(() => {});
+    this.loaded = this.load();
   }
 
-  private async save() {
-    await mkdir(dirname(this.file), { recursive: true });
-    await writeFile(`${this.file}.tmp`, JSON.stringify([...this.requests.values()], null, 2));
-    await rename(`${this.file}.tmp`, this.file);
+  private async load() {
+    if (this.storage.legacyFile) await this.importLegacy(this.storage.legacyFile);
+    for (const row of this.storage.db.prepare('SELECT * FROM album_requests').all() as unknown as RequestRow[]) {
+      this.requests.set(row.mbid, fromRow(row));
+    }
+  }
+
+  /** The cache folder's requests.json of before: moved into the database, then renamed out of the way. */
+  private async importLegacy(file: string) {
+    let list: StoredRequest[];
+    try {
+      list = JSON.parse(await readFile(file, 'utf8')) as StoredRequest[];
+    } catch {
+      return; // none (or unreadable: left where it is, to look at)
+    }
+    const { db } = this.storage;
+    db.exec('BEGIN');
+    try {
+      for (const r of list) this.save({ ...r, keys: r.keys ?? [] });
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+    await rename(file, `${file}.imported`);
+  }
+
+  /** One request, written at once. Who asked stays the first account that did. */
+  private save(r: StoredRequest) {
+    this.storage.db
+      .prepare(
+        `INSERT INTO album_requests (mbid, keys, lidarr_album_id, title, artist_name, cover_url, requested_at, command_id, requested_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (mbid) DO UPDATE SET keys = excluded.keys, lidarr_album_id = excluded.lidarr_album_id, title = excluded.title,
+           artist_name = excluded.artist_name, cover_url = excluded.cover_url, requested_at = excluded.requested_at,
+           command_id = excluded.command_id, requested_by = IFNULL(album_requests.requested_by, excluded.requested_by)`,
+      )
+      .run(
+        r.mbid,
+        JSON.stringify(r.keys),
+        r.lidarrAlbumId,
+        r.title,
+        r.artistName,
+        r.coverUrl ?? null,
+        r.requestedAt,
+        r.commandId ?? null,
+        r.requestedBy ?? null,
+      );
   }
 
   /**
@@ -91,7 +158,7 @@ export class Requests {
     };
   }
 
-  async request(ref: AlbumRef): Promise<AlbumRequest> {
+  async request(ref: AlbumRef, requestedBy?: number): Promise<AlbumRequest> {
     await this.loaded;
     if (!this.lidarr.configured) {
       throw new RequestError('Requests need a Lidarr source. Add one in Settings → Sources.', 409);
@@ -136,10 +203,11 @@ export class Requests {
       coverUrl: remoteArtUrl(cover) ?? remoteArtUrl(coverArtArchive(mbid, 500)),
       requestedAt: new Date().toISOString(),
       commandId: command?.id,
+      requestedBy: this.requests.get(mbid)?.requestedBy ?? requestedBy,
     };
+    this.save(stored);
     this.requests.set(mbid, stored);
     this.statusCache = null;
-    await this.save();
     this.library.refreshSoon();
     const availability: Availability = command
       ? { state: 'searching', message: 'Searching indexers…' }
@@ -244,7 +312,7 @@ export class Requests {
     await this.loaded;
     this.requests.delete(mbid);
     this.filesSeen.delete(mbid);
-    await this.save();
+    this.storage.db.prepare('DELETE FROM album_requests WHERE mbid = ?').run(mbid);
   }
 
   /** Availability for an album known only by name (e.g. a Deezer song's album). */

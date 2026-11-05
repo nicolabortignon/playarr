@@ -1,7 +1,8 @@
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RequestSettings } from '@playarr/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { tempDir } from '../catalog/testFixtures.ts';
+import { freshDb, tempDir } from '../catalog/testFixtures.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { LidarrLookupAlbum } from '../lidarr/types.ts';
 import type { Library, LidarrAlbumRef } from '../library/library.ts';
@@ -41,9 +42,13 @@ function fakeLidarr() {
 const cleanups: (() => void)[] = [];
 afterEach(() => cleanups.splice(0).forEach((c) => c()));
 
-function setup(settings: Partial<RequestSettings> = {}, env: RequestDefaults = {}, mb: Partial<MusicBrainz> = {}) {
-  const t = tempDir();
-  cleanups.push(t.cleanup);
+function setup(
+  settings: Partial<RequestSettings> = {},
+  env: RequestDefaults = {},
+  mb: Partial<MusicBrainz> = {},
+  db = freshDb(),
+  legacyFile?: string,
+) {
   const lidarr = fakeLidarr();
   const library = {
     albumByMbid: vi.fn(async (): Promise<LidarrAlbumRef | undefined> => undefined),
@@ -56,17 +61,43 @@ function setup(settings: Partial<RequestSettings> = {}, env: RequestDefaults = {
     lidarr as unknown as LidarrClient,
     mb as MusicBrainz,
     library as unknown as Library,
-    join(t.dir, 'requests.json'),
+    { db, legacyFile },
     () => current,
     env,
   );
-  return { requests, lidarr, current, library };
+  return { requests, lidarr, current, library, db };
 }
 
 const ref = { mbid: MBID, artistName: '', albumTitle: '' };
 const addedArtist = (lidarr: ReturnType<typeof fakeLidarr>) => lidarr.addAlbum.mock.calls[0]![0].artist;
 
 describe('Requests', () => {
+  it('keeps requests in the database, with who asked first, across restarts', async () => {
+    const db = freshDb();
+    db.prepare("INSERT INTO accounts (id, username, name, role, created_at) VALUES (2, 'sam', 'Sam', 'member', '2026-11-05')").run();
+    const first = setup({}, {}, {}, db);
+    await first.requests.request(ref, 2);
+    await first.requests.request(ref, 1);
+    const again = setup({}, {}, {}, db);
+    expect(await again.requests.list()).toHaveLength(1);
+    expect(db.prepare('SELECT requested_by FROM album_requests').get()).toEqual({ requested_by: 2 });
+    await again.requests.remove(MBID);
+    expect(await setup({}, {}, {}, db).requests.list()).toEqual([]);
+  });
+
+  it('moves the cache folder’s requests.json of before into the database, once', async () => {
+    const t = tempDir();
+    cleanups.push(t.cleanup);
+    const file = join(t.dir, 'requests.json');
+    const old = { mbid: MBID, keys: ['a|b'], lidarrAlbumId: 7, title: 'Mezzanine', artistName: 'Massive Attack', requestedAt: '2026-11-01T00:00:00.000Z' };
+    writeFileSync(file, JSON.stringify([old]));
+    const db = freshDb();
+    expect(await setup({}, {}, {}, db, file).requests.list()).toMatchObject([{ mbid: MBID, title: 'Mezzanine' }]);
+    expect(existsSync(file)).toBe(false);
+    expect(existsSync(`${file}.imported`)).toBe(true);
+    expect(await setup({}, {}, {}, db, file).requests.list()).toHaveLength(1);
+  });
+
   it('refuses requests when they are turned off, without asking Lidarr', async () => {
     const { requests, lidarr } = setup({ enabled: false });
     await expect(requests.request(ref)).rejects.toMatchObject({ status: 403, message: 'Requests are turned off in Settings' });

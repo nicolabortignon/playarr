@@ -75,7 +75,7 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
       return reply.code(400).send({ error: 'Provide mbid, or artistName and albumTitle' });
     }
     try {
-      return await requests.request({ mbid, releaseMbid, artistName: artistName ?? '', albumTitle: albumTitle ?? '' });
+      return await requests.request({ mbid, releaseMbid, artistName: artistName ?? '', albumTitle: albumTitle ?? '' }, req.auth?.account.id);
     } catch (err) {
       req.log.warn({ err, mbid, artistName, albumTitle }, 'album request failed');
       return fail(reply, err);

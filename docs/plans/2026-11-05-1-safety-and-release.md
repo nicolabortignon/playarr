@@ -51,7 +51,9 @@ A push changes the server within 15 minutes; App Store copies of the app lag by 
 - `.github/workflows/ios-contracts.yml` on changes to `packages/**`, `apps/server/**` or `apps/ios/**`: `gen-models.mjs --check`, re-record the contract fixtures, run `ContractTests`.
 - A written rule for when to raise `minAppVersion`, in `docs/ios/release.md`.
 
-## 6. Requests are user data — S
+## 6. Requests are user data — S — done 2026-11-05
+
+*Done: the `album_requests` table (`apps/server/src/db.ts`), written as each request changes, with `requested_by`; the old `requests.json` is imported once (`discover/requests.ts`).*
 
 Album requests live in `CACHE_DIR/requests.json`, the folder the compose file calls safe to delete; two saves at once share one `.tmp` name; a parse error on load silently empties the list (`apps/server/src/discover/requests.ts`).
 

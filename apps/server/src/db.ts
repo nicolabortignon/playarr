@@ -270,6 +270,19 @@ const MIGRATIONS: Migration[] = [
    DROP TABLE late_songs;`,
   // The device settings (Playback, Appearance) an admin has stopped an account from changing, comma-separated.
   `ALTER TABLE accounts ADD COLUMN locked TEXT NOT NULL DEFAULT '';`,
+  // Album requests, with who asked (kept until now in the cache folder's requests.json, which Requests imports
+  // once). keys: JSON albumKey()s the album is known by.
+  `CREATE TABLE album_requests (
+     mbid            TEXT PRIMARY KEY,
+     keys            TEXT NOT NULL,
+     lidarr_album_id INTEGER NOT NULL,
+     title           TEXT NOT NULL,
+     artist_name     TEXT NOT NULL,
+     cover_url       TEXT,
+     requested_at    TEXT NOT NULL,
+     command_id      INTEGER,
+     requested_by    INTEGER REFERENCES accounts (id) ON DELETE SET NULL
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

@@ -167,7 +167,7 @@ const scrobbler = new Scrobbler(db, store, library, { log: app.log, accounts: ()
 scrobbler.start();
 // Settings → Requests, read fresh each time so a change applies at once; .env values are the fallback.
 const requestSettings = () => readRequestSettings(store);
-const requests = new Requests(lidarr, musicbrainz, library, resolve(config.CACHE_DIR, 'requests.json'), requestSettings, {
+const requests = new Requests(lidarr, musicbrainz, library, { db, legacyFile: resolve(config.CACHE_DIR, 'requests.json') }, requestSettings, {
   rootFolderPath: config.LIDARR_ROOT_FOLDER,
   qualityProfileId: config.LIDARR_QUALITY_PROFILE_ID,
   metadataProfileId: config.LIDARR_METADATA_PROFILE_ID,
