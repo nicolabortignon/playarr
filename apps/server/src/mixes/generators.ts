@@ -381,7 +381,7 @@ function genre(ctx: MixContext, rng: Rng, param?: string): Made | null {
   return {
     title: `${label} mix`,
     subtitle: `Your ${info.label}`,
-    description: `${label} from your library, favourites and songs you haven’t heard mixed together: ${artistsLine(songs)}.`,
+    description: `${label} from your library, favorites and songs you haven’t heard mixed together: ${artistsLine(songs)}.`,
     songs: smooth(songs, rng),
   };
 }

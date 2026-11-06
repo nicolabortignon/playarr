@@ -49,7 +49,7 @@ export interface AudioFeatures extends SoundFeatures {
 export function atSampleRate(samples: Float32Array, rate: number): Float32Array {
   if (rate === SAMPLE_RATE) return samples;
   if (rate === 2 * SAMPLE_RATE) return halveRate(samples);
-  throw new RangeError(`Audio at ${rate} Hz can't be analysed (${SAMPLE_RATE} or ${2 * SAMPLE_RATE} Hz only)`);
+  throw new RangeError(`Audio at ${rate} Hz can't be analyzed (${SAMPLE_RATE} or ${2 * SAMPLE_RATE} Hz only)`);
 }
 
 export function pcmToFloat(buf: Buffer): Float32Array {
