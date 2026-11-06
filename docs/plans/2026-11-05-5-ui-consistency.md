@@ -177,6 +177,7 @@ The standard:
   - Web: no hex, `rgb(`, `red-`/`emerald-` or `text-[Npx]` outside `index.css` and a short allow-list.
   - iOS: no `Color(red:`, `.system(size:` or literal `cornerRadius` outside `Theme/`.
 - **Done when** each tour runs from one command, and the check fails a page that adds a raw color.
+- *Tour done 2026-11-06: `pnpm web:screens` (scripts/web-screens/, docs/web.md §12): 51 phone and 44 tablet screens in about 6 minutes. The check is `scripts/check-design.mjs`, report-only until the sweeps land.*
 
 ## Order
 

@@ -185,4 +185,17 @@ Device settings live in `usePrefs` and `useOffline`; server-wide ones go through
 - `pnpm -C apps/web exec vitest run src/<file>` runs one file. `pnpm typecheck` checks the app and the service worker.
 - **iOS Safari**: `pnpm sim` (`scripts/ios-sim/`) boots an iOS Simulator (default iPhone 17 Pro) and drives Safari through its Web Inspector socket, so it needs only Xcode. Commands: `boot [--show]`, `open <path>`, `click`, `fill`, `wait`, `eval`, `console [--errors]`, `shot` (to `/tmp/playarr-sim.png`), `shutdown`. It opens the NAS deployment unless `PLAYARR_URL` says otherwise. Taps are JavaScript clicks, not touches. Over plain HTTP, iOS Safari has no service worker, so offline features can't be tested there.
 
+## 12. Screens
+
+`pnpm web:screens` screenshots every page, the web's `pnpm ios:screens`. It builds the app and starts the repo's server on a free port, with an empty data folder and a generated library: 20 real albums' track lists from MusicBrainz and covers from the Cover Art Archive, as silent MP3s with full tags. It claims and seeds the server (two accounts, an invite, five playlists, four weeks of plays), then walks the steps in `scripts/web-screens/steps.json` in Safari on two simulators of its own:
+
+- "Playarr Web iPhone", an iPhone 17 Pro: the phone layout, into `screenshots/web/phone/`;
+- "Playarr Web iPad", an iPad Pro 13-inch upright: the desktop layout at 1032 px, into `screenshots/web/tablet/`.
+
+Each run replaces the screens (`screenshots/` is gitignored). A full run takes about 6 minutes.
+
+- `pnpm web:screens tablet` (or `SCREENS=tablet`) takes one device. `--shots album,queue` takes only those shots, where `album` also takes `album-2`, `album-playing`…, and walks only the pages they need. `--no-build` serves the last build.
+- It needs Xcode's simulators; it makes the two when they're missing, on the newest iOS. The first run needs musicbrainz.org and coverartarchive.org. The library is kept in `.cache/web-screens/`, with the build and the server's log.
+- Widths over 1032 px need a desktop browser. Headless Chrome would do, but it can't start inside Claude's sandbox.
+
 The native iOS app is separate: see [ios/README.md](ios/README.md).
