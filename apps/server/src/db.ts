@@ -283,6 +283,17 @@ const MIGRATIONS: Migration[] = [
      command_id      INTEGER,
      requested_by    INTEGER REFERENCES accounts (id) ON DELETE SET NULL
    );`,
+  // Each album cover's colors (#rrggbb), read once from the image (library/coverColorStore.ts): the color it reads as
+  // from afar, and its accent (NULL when it has no color to give). Keyed by what identifies the image, so a new picture
+  // is read again: album/<Lidarr album id>/<Lidarr's version> or copy/<file id>/<file size>[/embedded]. color NULL:
+  // no picture, or one that can't be decoded. version: the algorithm's, so covers are read again when it changes.
+  `CREATE TABLE cover_colors (
+     key     TEXT PRIMARY KEY,
+     color   TEXT,
+     accent  TEXT,
+     version INTEGER NOT NULL,
+     read_at TEXT NOT NULL
+   );`,
 ];
 
 export function openDatabase(dataDir: string): DatabaseSync {

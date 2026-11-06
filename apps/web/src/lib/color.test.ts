@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { legibleLightness, oklchHue } from './color';
+import { accentOf, legibleLightness, oklchHue } from './color';
+
+/** A 32×32 cover's RGBA pixels: `count` of them in `color`, the rest in `rest`. */
+const pixels = (color: [number, number, number], count = 1024, rest: [number, number, number] = [0, 0, 0]) =>
+  Array.from({ length: 1024 }, (_, i) => [...(i < count ? color : rest), 255]).flat();
+
+describe('accentOf', () => {
+  it('gives a blue cover its blue, lightened until it can be read', () => {
+    expect(accentOf(pixels([0, 0, 255]))).toBe('hsl(240 90% 70%)');
+  });
+
+  it('gives a gray cover no accent, rather than a dusty red', () => {
+    expect(accentOf(pixels([128, 128, 128]))).toBeNull();
+  });
+
+  it('lets a quarter of color win over gray', () => {
+    expect(accentOf(pixels([0, 160, 160], 256, [128, 128, 128]))).toBe('hsl(180 90% 56%)');
+  });
+});
 
 describe('oklchHue', () => {
   it('places sRGB colours on the OKLCH wheel the mix covers are drawn with', () => {

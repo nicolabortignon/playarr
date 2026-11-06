@@ -23,12 +23,13 @@ import { Requests } from './discover/requests.ts';
 import { Favorites } from './favorites.ts';
 import { Playlists } from './playlists.ts';
 import { LidarrClient } from './lidarr/client.ts';
+import { CoverColorStore } from './library/coverColorStore.ts';
 import { Library } from './library/library.ts';
 import { createMediaSource } from './media/index.ts';
 import { hasRclone } from './media/rclone.ts';
 import { apiRoutes } from './routes/api.ts';
 import { metadataRoutes } from './routes/metadata.ts';
-import { artRoutes, LocalArt, trimArtCache } from './routes/art.ts';
+import { artRoutes, coverReader, LocalArt, trimArtCache } from './routes/art.ts';
 import { levelRoutes } from './routes/levels.ts';
 import { mixMapRoutes } from './routes/mixMaps.ts';
 import { transitionRoutes } from './routes/transitions.ts';
@@ -86,10 +87,17 @@ const folders = new FolderAccess(store, {
 sources.useFolderAccess(folders);
 sources.seedFromEnv({ url: config.LIDARR_URL, apiKey: config.LIDARR_API_KEY });
 sources.active(); // configure the Lidarr client before anything uses it
-const library = new Library(store, () => sources.active(), {
-  info: (m) => app.log.info(m),
-  error: (m) => app.log.error(m),
-});
+// Each album cover's colors (what it reads as from afar, its accent), read once and kept: albums and songs carry them.
+const coverColors = new CoverColorStore(db, { log: app.log });
+const library = new Library(
+  store,
+  () => sources.active(),
+  {
+    info: (m) => app.log.info(m),
+    error: (m) => app.log.error(m),
+  },
+  coverColors,
+);
 // One MusicBrainz queue (~1 request/s) shared by matching and Discover.
 const musicbrainz = new MusicBrainz(`Playarr/0.1.0 ( ${config.MUSICBRAINZ_CONTACT} )`);
 // Identifies untagged folder music in the background after each scan.
@@ -113,11 +121,12 @@ sources.useMatcher(matcher);
 // Moves folder files into Artist/Album/NN Title on request (Settings → Sources → Organize files).
 const organizer = new Organizer(store);
 const art = new LocalArt(lidarr, resolve(config.CACHE_DIR, 'art'));
-// Keep every cover cached locally so browsing never waits on Lidarr.
-library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log));
 const media = createMediaSource(config);
 // Lidarr's files through MEDIA_SOURCE + PATH_MAP; folder sources through their own filesystem.
 const files = new FileResolver(store, { media, pathMap: config.pathMap }, folders);
+// Keep every cover cached locally so browsing never waits on Lidarr; then read the colors of covers that have none.
+const readCover = coverReader({ art, cacheDir: resolve(config.CACHE_DIR), files, folders });
+library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log).finally(() => coverColors.fill(lib.coverImages(), readCover)));
 const favorites = new Favorites(db);
 // One DSP worker for the whole server: analysis and transition rendering take turns on it.
 const dsp = new DspThread();
@@ -184,7 +193,7 @@ const info = () => serverInfo({ store, name: config.SERVER_NAME, setupMode: () =
 serverRoutes(app, { info });
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });
-artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders });
+artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders, colors: coverColors });
 streamRoutes(app, { library, files, loudness: analyzer });
 levelRoutes(app, { analyzer, library });
 // New cue points make new plans: the transitions made from the old ones are deleted.

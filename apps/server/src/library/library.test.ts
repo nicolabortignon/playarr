@@ -1,11 +1,14 @@
+import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
 import { CatalogStore } from '../catalog/store.ts';
 import { twoSources } from '../accounts/testAccess.ts';
 import { CC_REC, freshDb, mezzanine, MP3 } from '../catalog/testFixtures.ts';
 import type { CatalogSource, SourceSync } from '../catalog/types.ts';
+import { CoverColorStore } from './coverColorStore.ts';
 import { Library, stripAlbum } from './library.ts';
 
 const log = { info: () => {}, error: () => {} };
+const png = (color: string) => sharp({ create: { width: 64, height: 64, channels: 3, background: color } }).png().toBuffer();
 const ok: CatalogSource = { kind: 'lidarr', sync: async () => mezzanine() };
 const broken: CatalogSource = {
   kind: 'folder',
@@ -172,6 +175,41 @@ describe('library views', () => {
     expect(await view.allTracks()).not.toBe(first);
     expect(view.version).toBe(library.version);
     expect(view.sources).toEqual([cc]);
+  });
+
+  it('gives albums and their songs their cover’s colors: in lists, songs and views', async () => {
+    const colors = new CoverColorStore(freshDb());
+    await colors.offer('album/70/0', await png('#0000ff'));
+    const { library, lidarr } = await twoSources(colors);
+    const blue = { coverColor: '#0000ff', coverAccent: '#6e6ef7' };
+    const album = (await library.album(70))!;
+    expect(album).toMatchObject(blue);
+    expect(album.tracks.map((t) => t.id)).toEqual([700, 701]);
+    for (const track of album.tracks) expect(track).toMatchObject(blue);
+    expect((await library.albums()).find((a) => a.id === 70)).toMatchObject(blue);
+    expect(await library.track(701)).toMatchObject(blue);
+    expect(await library.view([lidarr]).album(70)).toMatchObject(blue);
+    // The folder album's cover hasn't been read yet.
+    const unread = (await library.album(80))!;
+    expect(unread.coverUrl).toBe('/art/copy/9100');
+    expect(unread).not.toHaveProperty('coverColor');
+  });
+
+  it('colors albums as their covers are read, in the library and the views already built', async () => {
+    const colors = new CoverColorStore(freshDb());
+    const { library, cc } = await twoSources(colors);
+    const view = library.view([cc]);
+    expect(await view.album(80)).not.toHaveProperty('coverColor');
+    await colors.offer('copy/9100/5000000', await png('#808080'));
+    expect(await library.album(80)).toMatchObject({ coverColor: '#808080' });
+    expect(await view.track(800)).toMatchObject({ coverColor: '#808080' });
+    // A gray cover has no accent to give: answers leave it out.
+    expect(JSON.parse(JSON.stringify(await view.album(80)))).not.toHaveProperty('coverAccent');
+  });
+
+  it('lists the covers whose colors can be read, once each, newest albums first', async () => {
+    const { library } = await twoSources();
+    expect(library.coverImages().map((image) => image.key)).toEqual(['copy/9100/5000000', 'album/70/0']);
   });
 
   it('plays the best copy the view’s sources have', async () => {

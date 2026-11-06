@@ -3,11 +3,7 @@ import { sized } from './api';
 
 const cache = new Map<string, string | null>();
 
-/**
- * Pick a vivid, legible accent color from an image (same-origin, so canvas is readable).
- * Buckets pixels by hue, weights by saturation, then clamps lightness for dark UI, raising it where the color is too
- * dark to read (`legibleLightness`).
- */
+/** Pick a vivid, legible accent color from an image (same-origin, so canvas is readable), as `accentOf` picks it. */
 export async function extractAccent(url: string): Promise<string | null> {
   if (cache.has(url)) return cache.get(url)!;
   const img = new Image();
@@ -27,13 +23,26 @@ export async function extractAccent(url: string): Promise<string | null> {
   if (!ctx) return null;
   ctx.drawImage(img, 0, 0, size, size);
   const { data } = ctx.getImageData(0, 0, size, size);
+  const color = accentOf(data);
+  cache.set(url, color);
+  return color;
+}
 
+/**
+ * The accent of a cover's RGBA pixels (drawn at 32×32), as `hsl(h s% l%)`; null when it has no color to give. Buckets
+ * pixels by hue, weights by saturation, then clamps lightness for dark UI, raising it where the color is too dark to
+ * read (`legibleLightness`). The server picks albums' `coverAccent` the same way
+ * (apps/server/src/library/coverColors.ts), and iOS its accent (AccentColor.swift): keep the three in step.
+ */
+export function accentOf(data: ArrayLike<number>): string | null {
   const buckets = Array.from({ length: 12 }, () => ({ w: 0, h: 0, s: 0, l: 0 }));
-  for (let i = 0; i < data.length; i += 4) {
+  for (let i = 0; i + 2 < data.length; i += 4) {
     const [h, s, l] = rgbToHsl(data[i]!, data[i + 1]!, data[i + 2]!);
     // Favor saturated mid-tones; ignore near-black/near-white pixels.
     const weight = s * s * (1 - Math.abs(l - 0.5) * 2) + 0.001;
     if (l < 0.08 || l > 0.95) continue;
+    // A gray pixel has no hue to vote for (rgbToHsl calls it red), or a gray cover would get a dusty red accent.
+    if (s === 0) continue;
     const b = buckets[Math.floor(h * 12) % 12]!;
     b.w += weight;
     b.h += h * weight;
@@ -41,16 +50,11 @@ export async function extractAccent(url: string): Promise<string | null> {
     b.l += l * weight;
   }
   const best = buckets.reduce((a, b) => (b.w > a.w ? b : a));
-  if (best.w < 0.5) {
-    cache.set(url, null);
-    return null;
-  }
+  if (best.w < 0.5) return null;
   const h = Math.round((best.h / best.w) * 360);
   const s = Math.round(Math.min(0.9, Math.max(0.45, best.s / best.w)) * 100);
   const l = legibleLightness(h, s, Math.round(Math.min(0.68, Math.max(0.56, best.l / best.w)) * 100));
-  const color = `hsl(${h} ${s}% ${l}%)`;
-  cache.set(url, color);
-  return color;
+  return `hsl(${h} ${s}% ${l}%)`;
 }
 
 /** The OKLCH hue (degrees) of the accent a cover gives, read once per cover; null when it has no colour to give. */

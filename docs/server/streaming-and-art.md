@@ -1,6 +1,6 @@
 # Streaming and artwork
 
-How the server sends songs, transition files, pictures and lyrics to the players. The code lives in `apps/server/src/routes/stream.ts`, `routes/levels.ts`, `routes/transitions.ts`, `routes/art.ts` and `routes/lyrics.ts`, with `media/levelled.ts` (WAV streams), `analysis/loudness.ts` (loudness), `catalog/files.ts` (where a file's bytes are), `catalog/build.ts` and `catalog/folderArt.ts` (which picture an album gets), `discover/art.ts` (remote images) and `lyrics/lyrics.ts`.
+How the server sends songs, transition files, pictures and lyrics to the players. The code lives in `apps/server/src/routes/stream.ts`, `routes/levels.ts`, `routes/transitions.ts`, `routes/art.ts` and `routes/lyrics.ts`, with `media/levelled.ts` (WAV streams), `analysis/loudness.ts` (loudness), `catalog/files.ts` (where a file's bytes are), `catalog/build.ts` and `catalog/folderArt.ts` (which picture an album gets), `library/coverColors.ts` and `library/coverColorStore.ts` (covers' colors), `discover/art.ts` (remote images) and `lyrics/lyrics.ts`.
 
 Every route here answers only for songs the account may hear, through its view of the catalog ([accounts-and-access.md](accounts-and-access.md#each-accounts-catalog)). None of them needs Playarr's own header (an `<audio>` or `<img>` element can't send one); once the server is set up, they need a session like every other route.
 
@@ -93,6 +93,22 @@ Songs take their album's cover. An artist's photo is Lidarr's poster, else the c
 `?size=` snaps up to one of 96, 160, 240, 320, 480, 640, 960 or 1200 px, which bounds the variants kept. A sized image is resized with sharp (covers and posters cropped square, never enlarged) and encoded as WebP at quality 82; without `size`, the original is sent. Each variant is saved under `CACHE_DIR/art`, keyed by a hash of what it is (for Lidarr art, including its version), and the folder is trimmed to `ART_CACHE_MB` (default 2048), least recently used first, 5 minutes after start and then every 6 hours.
 
 Browser caching: Lidarr art with `?v=` is `public, max-age=31536000, immutable` (a new picture in Lidarr brings a new `v`); without it, one day. Folder pictures get one day, remote ones 30 days. Errors are `no-store`, so a missing picture doesn't stick.
+
+### Cover colors
+
+Albums and songs carry two colors of their cover, as `#rrggbb`, so the apps can fill a cover's space while it loads and color the page and the player without decoding the picture:
+
+- **`coverColor`**: what the cover reads as from afar (the idea of Apple Music's artwork `bgColor`). Its pixels are sorted into boxes 32 levels of red, green and blue wide; the box whose neighborhood (itself and the boxes around it) holds the most pixels wins, and the color is that neighborhood's average: the cover's largest area of one color, not its most vivid. Every cover that has been read has one, gray ones included.
+- **`coverAccent`**: the vivid accent the apps pick, ported from the web's `accentOf` (`apps/web/src/lib/color.ts`; iOS's `AccentColor.extract` is the same; the three name each other, keep them in step): 12 hue buckets weighted by saturation and mid-lightness, near black and near white left out, and pixels with no saturation at all too (counted as red, they gave gray and black-and-white covers a dusty red); the heaviest bucket's average with saturation clamped to 45–90 % and lightness to 56–68 %, then lightened until its relative luminance reaches 0.2. Absent when the cover has no color to give.
+
+`library/coverColors.ts` reads both from the picture cropped square (as the routes crop covers) at 32×32, as the web draws it on a canvas; transparent parts count as black. Only covers the library serves itself are read: Lidarr's (`/art/album/:id/cover`) and folder files' pictures (`/art/copy/:id`). Remote covers (an album's MusicBrainz cover through `/art/remote`) have no colors.
+
+`library/coverColorStore.ts` keeps them in the `cover_colors` table, keyed by what identifies the picture, so a new picture is read again: `album/<Lidarr album id>/<v>` for Lidarr's covers (Lidarr gives a changed picture a new `v`), `copy/<file id>/<file size>[/embedded]` for folder pictures (re-tagging a file changes its size; the art cache keys them the same way). Each row has the version of the algorithm that read it: when `COVER_COLORS_VERSION` goes up, covers are read again, and keep their old colors until then. The Library gives albums and their songs the colors as it builds the catalog, and the moment a cover is read, in its snapshot and every account's view.
+
+Nothing waits for them; a cover not read yet just has no colors. They're read:
+
+- **in the background** after each library refresh, once `LocalArt.warm` is done: covers without colors, newest albums first, two at a time. Lidarr's are read only from originals already on disk (never asking Lidarr), folder pictures from a variant in the art cache when a page had one drawn, else from the file. A file with no picture is looked at again after a day. A source whose covers fail five times in a row (a NAS that's away) is left until the next refresh. What's read is kept, so after a restart the fill goes on where it stopped.
+- **from the art routes**: an album cover they have in hand (an original fetched, or a variant served from the cache) is handed over after the answer, and read one at a time, at most 16 waiting.
 
 ---
 

@@ -9,6 +9,7 @@ import { copyCover } from '../catalog/folderArt.ts';
 import type { FolderFs } from '../catalog/folderFs.ts';
 import { fetchRemoteImage, isAllowedRemote } from '../discover/art.ts';
 import { libraryOf, sourcesOf } from '../accounts/rights.ts';
+import { copyCoverKey, lidarrCoverKey, type CoverColorStore, type CoverReader } from '../library/coverColorStore.ts';
 import type { Library } from '../library/library.ts';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
 
@@ -55,6 +56,17 @@ export class LocalArt {
     return createHash('sha1').update(`orig/${kind}/${id}/${type}/${version}`).digest('hex');
   }
 
+  /** The original if it's on disk already, without asking Lidarr; null if it isn't. */
+  async onDisk(art: ArtKey): Promise<{ body: Buffer; mime: string } | null> {
+    const file = join(this.dir, LocalArt.cacheKey(art));
+    try {
+      const [body, mime] = await Promise.all([readFile(file), readFile(`${file}.mime`, 'utf8')]);
+      return { body, mime };
+    } catch {
+      return null;
+    }
+  }
+
   original(art: ArtKey): Promise<{ body: Buffer; mime: string }> {
     const { kind, id, type } = art;
     const key = LocalArt.cacheKey(art);
@@ -62,12 +74,8 @@ export class LocalArt {
     if (job) return job;
     job = (async () => {
       const file = join(this.dir, key);
-      try {
-        const [body, mime] = await Promise.all([readFile(file), readFile(`${file}.mime`, 'utf8')]);
-        return { body, mime };
-      } catch {
-        // not cached yet
-      }
+      const kept = await this.onDisk(art);
+      if (kept) return kept;
       const spec = TYPES[`${kind}/${type}`]!;
       const res = await this.lidarr.mediaCover(kind, id, spec.file);
       const body = Buffer.from(await res.arrayBuffer());
@@ -126,7 +134,10 @@ export class LocalArt {
   }
 }
 
-/** Serves Lidarr artwork (resized to WebP, cached), folder files' artwork and allowlisted remote artwork. */
+/**
+ * Serves Lidarr artwork (resized to WebP, cached), folder files' artwork and allowlisted remote artwork. Album covers
+ * in hand (an original fetched, or a variant from the cache) go to `colors` to be read, after the answer's on its way.
+ */
 export function artRoutes(
   app: FastifyInstance,
   deps: {
@@ -135,13 +146,16 @@ export function artRoutes(
     library: Pick<Library, 'file' | 'hasArtwork'> & Partial<Pick<Library, 'view'>>;
     files: FileResolver;
     folders: { get(sourceId: number): FolderFs | undefined };
+    colors?: Pick<CoverColorStore, 'offer'>;
   },
 ) {
   const dir = join(deps.cacheDir, 'art');
   const inflight = new Map<string, Promise<{ body: Buffer; mime: string }>>();
+  const offerCover = (key: string, image: Buffer) => void deps.colors?.offer(key, image);
 
   async function produce(key: ArtKey, size?: number) {
     const original = await deps.art.original(key);
+    if (key.kind === 'album' && key.type === 'cover') offerCover(lidarrCoverKey(key.id, key.version), original.body);
     if (!size) return original;
     const spec = TYPES[`${key.kind}/${key.type}`]!;
     const body = await sharp(original.body)
@@ -210,17 +224,19 @@ export function artRoutes(
     const requested = Number(req.query.size);
     const size = requested > 0 ? (SIZES.find((s) => s >= requested) ?? SIZES.at(-1)) : undefined;
     const embeddedOnly = req.query.embedded === '1';
-    const key = createHash('sha1').update(`copy/${id}/${file.size}/${size ?? 'orig'}${embeddedOnly ? '/embedded' : ''}`).digest('hex');
-    const cached = join(dir, key);
+    const colorKey = copyCoverKey(file.id, file.size, embeddedOnly);
+    const cached = join(dir, copyArtFile(file.id, file.size, size, embeddedOnly));
     try {
       const body = await readFile(cached);
       const mime = (await readFile(`${cached}.mime`, 'utf8').catch(() => null)) ?? 'image/webp';
+      offerCover(colorKey, body);
       return reply.header('Cache-Control', 'public, max-age=86400').type(mime).send(body);
     } catch {
       // cache miss
     }
     const original = await copyCover(fs, path, file.size, embeddedOnly).catch(() => null);
     if (!original) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
+    offerCover(colorKey, original.body);
     const out = size
       ? {
           body: await sharp(original.body).resize(size, size, { fit: 'cover', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer(),
@@ -257,6 +273,7 @@ export function artRoutes(
       try {
         const cached = await readFile(file);
         const mime = (await readFile(`${file}.mime`, 'utf8').catch(() => null)) ?? 'image/webp';
+        if (kind === 'album' && type === 'cover') offerCover(lidarrCoverKey(id, version), cached);
         return reply.header('Cache-Control', cacheOk).type(mime).send(cached);
       } catch {
         // cache miss
@@ -281,6 +298,48 @@ export function artRoutes(
       }
     },
   );
+}
+
+/** The art cache's name for a folder file's picture at a size (undefined: as it is). */
+function copyArtFile(fileId: number, fileSize: number, size: number | undefined, embedded: boolean): string {
+  return createHash('sha1').update(`copy/${fileId}/${fileSize}/${size ?? 'orig'}${embedded ? '/embedded' : ''}`).digest('hex');
+}
+
+/**
+ * Reads album covers for CoverColorStore's background fill, asking as little as it can: Lidarr's original only if
+ * it's on disk (`LocalArt.warm` fetches them; a cover not there yet waits for a later fill); a folder file's picture
+ * from the art cache when a page had it drawn, else from the file, wherever its folder is.
+ */
+export function coverReader(deps: {
+  art: Pick<LocalArt, 'onDisk'>;
+  cacheDir: string;
+  files: Pick<FileResolver, 'resolve'>;
+  folders: { get(sourceId: number): FolderFs | undefined };
+}): CoverReader {
+  const dir = join(deps.cacheDir, 'art');
+  return async (image) => {
+    if (image.kind === 'lidarr') {
+      return (await deps.art.onDisk({ kind: 'album', id: image.albumId, type: 'cover', version: image.version }))?.body;
+    }
+    const { file, embedded } = image;
+    for (const size of [...SIZES, undefined]) {
+      const body = await readFile(join(dir, copyArtFile(file.id, file.size, size, embedded))).catch(() => null);
+      if (body) return body;
+    }
+    let path: string;
+    try {
+      path = deps.files.resolve(file).path;
+    } catch {
+      return undefined; // its source was removed, or the file isn't in its folder: no cover to read
+    }
+    const fs = deps.folders.get(file.sourceId);
+    if (!fs) return undefined;
+    const picture = await copyCover(fs, path, file.size, embedded);
+    if (picture) return picture.body;
+    // copyCover can't tell a file without a picture from a folder that's away: only a file that's there has none.
+    if (!(await fs.stat(path).catch(() => null))) throw new Error('The file can’t be reached');
+    return null;
+  };
 }
 
 /**

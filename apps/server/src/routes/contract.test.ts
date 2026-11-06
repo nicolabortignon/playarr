@@ -21,6 +21,7 @@ import type {
   Track,
 } from '@playarr/shared';
 import Fastify, { type FastifyInstance } from 'fastify';
+import sharp from 'sharp';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import { CatalogStore } from '../catalog/store.ts';
@@ -32,6 +33,7 @@ import type { Recommendations as RecommendationService } from '../discover/recom
 import type { Requests } from '../discover/requests.ts';
 import { Favorites } from '../favorites.ts';
 import { LidarrClient } from '../lidarr/client.ts';
+import { CoverColorStore } from '../library/coverColorStore.ts';
 import { Library } from '../library/library.ts';
 import type { MediaSource } from '../media/index.ts';
 import { History } from '../mixes/history.ts';
@@ -57,14 +59,20 @@ const ALBUM_MBID = 'a9a3d3bd-0c1c-3a6c-8b3f-4b1e3b1f5b7e';
 const cleanups: (() => void)[] = [];
 afterEach(() => cleanups.splice(0).forEach((cleanup) => cleanup()));
 
-/** The test catalog (Mezzanine, two songs) with MusicBrainz recording ids, as the routes require. */
+/**
+ * The test catalog (Mezzanine, two songs) with MusicBrainz recording ids, as the routes require, and Lidarr's cover,
+ * whose colors have been read.
+ */
 async function catalog() {
   const db = freshDb();
   const store = new CatalogStore(db);
   const sourceId = store.addSource('lidarr', 'Lidarr');
   const sync = mezzanine();
   sync.tracks = sync.tracks.map((t) => ({ ...t, recordingId: t.recordingId === 'rec-1' ? ANGEL : RISINGSON }));
-  const library = new Library(store, () => [{ id: sourceId, source: { kind: 'lidarr', sync: async () => sync } }], { info: () => {}, error: () => {} });
+  sync.albums = sync.albums.map((a) => ({ ...a, coverUrl: '/art/album/70/cover?v=1' }));
+  const colors = new CoverColorStore(db);
+  await colors.offer('album/70/1', await sharp({ create: { width: 64, height: 64, channels: 3, background: '#2a4b8d' } }).png().toBuffer());
+  const library = new Library(store, () => [{ id: sourceId, source: { kind: 'lidarr', sync: async () => sync } }], { info: () => {}, error: () => {} }, colors);
   await library.refresh();
   const tracks = (await library.allTracks()).sort((a, b) => a.id - b.id);
   return { db, store, library, tracks };
@@ -148,6 +156,12 @@ describe('contract fixtures', () => {
     const random = await app.inject({ method: 'GET', url: '/api/tracks/random' });
     expect(random.json()).toHaveLength(2);
     recordFixture('tracks-random', random, (tracks: Track[]) => tracks.sort((a, b) => a.id - b.id));
+    // Albums, in lists too, and their songs carry the colors read from the cover.
+    const cover = { coverColor: '#2a4b8d', coverAccent: '#527bcb' };
+    const album = (await app.inject({ method: 'GET', url: '/api/albums/70' })).json();
+    expect(album).toMatchObject({ ...cover, tracks: [cover, cover] });
+    expect((await app.inject({ method: 'GET', url: '/api/albums' })).json()).toMatchObject([cover]);
+    expect(random.json()).toMatchObject([cover, cover]);
   });
 
   it('favorites and playlists', async () => {

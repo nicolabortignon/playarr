@@ -34,6 +34,8 @@ Every route the Playarr server answers, grouped by what it's for, with who may c
 | `POST /api/library/refresh` | full rescan of every source | admin |
 | `GET /api/musicbrainz/status` | MusicBrainz queue status and files waiting for matching | signed in |
 
+Albums and songs, wherever they're answered, carry their cover's colors once the server has read it: `coverColor` (what it reads as from afar, for the space a loading cover takes) and `coverAccent` (the accent the apps would pick from it), as `#rrggbb`. See [streaming-and-art.md](streaming-and-art.md#cover-colors).
+
 ### Audio and artwork
 
 | method and path | purpose | who |
@@ -75,7 +77,7 @@ Details in [discover-and-requests.md](discover-and-requests.md).
 | method and path | purpose | who |
 |---|---|---|
 | `POST /api/plays` | songs heard on a device (accepted but not kept when history is off) | signed in |
-| `GET /api/plays/recent-albums`, `/api/stats?range=` | Jump back in; listening stats and year in review | signed in |
+| `GET /api/plays/recent-albums`, `/api/stats?range=` | Jump back in; listening stats (with the longest streak and the one going on) and year in review | signed in |
 | `GET /api/mixes`, `/api/mixes/:key`; `POST /api/mixes/:key/regenerate\|save` | the account's mixes; make one again, save it as a playlist | signed in |
 | `POST /api/radio`, `/api/lucky` | songs like these seeds; a Feeling Lucky set | signed in |
 

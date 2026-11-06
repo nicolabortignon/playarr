@@ -2,7 +2,7 @@ import type { Account } from '@playarr/shared';
 import type { FastifyInstance } from 'fastify';
 import { CatalogStore } from '../catalog/store.ts';
 import { creativeCommons, freshDb, mezzanine } from '../catalog/testFixtures.ts';
-import { Library } from '../library/library.ts';
+import { Library, type CoverColorSource } from '../library/library.ts';
 
 /** Tests: requests on an app set up with actAs act as the account whose id this header names. */
 export const TEST_ACCOUNT_HEADER = 'x-test-account';
@@ -29,9 +29,10 @@ export const asAccount = (id: number) => ({ [TEST_ACCOUNT_HEADER]: String(id), '
 
 /**
  * A library of two sources: Lidarr with Mezzanine (album 70, songs 700 and 701, files 9000 and 9001,
- * cover /art/album/70/cover) and a folder of Creative Commons music (one song, CC_REC).
+ * cover /art/album/70/cover) and a folder of Creative Commons music (album 80, one song, CC_REC, file 9100,
+ * cover /art/copy/9100), with the cover colors of `colors` if given.
  */
-export async function twoSources() {
+export async function twoSources(colors?: CoverColorSource) {
   const db = freshDb();
   const store = new CatalogStore(db);
   const lidarr = store.addSource('lidarr', 'Lidarr');
@@ -45,6 +46,7 @@ export async function twoSources() {
       { id: cc, source: { kind: 'folder', sync: async () => creativeCommons() } },
     ],
     { info: () => {}, error: () => {} },
+    colors,
   );
   await library.refresh();
   return { db, store, library, lidarr, cc };

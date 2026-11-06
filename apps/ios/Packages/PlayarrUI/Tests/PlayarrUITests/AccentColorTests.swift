@@ -27,13 +27,17 @@ import UniformTypeIdentifiers
     #expect(AccentColor.HSL(h: 240, s: 90, l: 69).rgb.luminance < 0.2)
   }
 
+  @Test func aGrayCoverGivesNoAccentRatherThanADustyRed() {
+    #expect(AccentColor.extract(rgba: pixels((128, 128, 128))) == nil)
+  }
+
   @Test func ignoresNearBlackAndNearWhite() {
     #expect(AccentColor.extract(rgba: pixels((0, 0, 0))) == nil)
     #expect(AccentColor.extract(rgba: pixels((250, 250, 250))) == nil)
   }
 
-  @Test func theMostColourfulHueWinsOverMoreGrey() {
-    // A quarter of the cover is teal; the rest is mid grey (weight 0.001 per pixel).
+  @Test func theMostColorfulHueWinsOverMoreGray() {
+    // A quarter of the cover is teal; the rest is mid gray, which has no hue to vote for.
     let mixed = pixels((0, 160, 160), count: 256, rest: (128, 128, 128))
     #expect(AccentColor.extract(rgba: mixed)?.h == 180)
   }

@@ -46,9 +46,12 @@ public enum AccentColor {
     var buckets = [(w: Double, h: Double, s: Double, l: Double)](repeating: (0, 0, 0, 0), count: 12)
     for i in stride(from: 0, to: rgba.count - 3, by: 4) {
       let (h, s, l) = hsl(rgba[i], rgba[i + 1], rgba[i + 2])
-      // Favour saturated mid-tones; ignore near-black and near-white pixels.
+      // Favor saturated mid-tones; ignore near-black and near-white pixels.
       let weight = s * s * (1 - abs(l - 0.5) * 2) + 0.001
       if l < 0.08 || l > 0.95 { continue }
+      // A gray pixel has no hue to vote for (`hsl` calls it red), or a gray cover would get a dusty red accent. As the
+      // web's `accentOf` and the server's `coverAccent`.
+      if s == 0 { continue }
       let b = Int((h * 12).rounded(.down)) % 12
       buckets[b].w += weight
       buckets[b].h += h * weight

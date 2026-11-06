@@ -2,12 +2,20 @@ import type { Album, AlbumDetail, AlbumSort, Artist, ArtistDetail, LibraryStats,
 import { buildCatalog, type Catalog, type FileRecord, type LidarrAlbumRef } from '../catalog/build.ts';
 import type { CatalogRows, CatalogStore } from '../catalog/store.ts';
 import type { CatalogSource } from '../catalog/types.ts';
+import { coverImage, type CoverImage } from './coverColorStore.ts';
+import type { CoverColors } from './coverColors.ts';
 import { albumKey, normalize, primaryArtist, scoreMatch, scoreNearMatch } from './search.ts';
 
 export type { FileRecord, LidarrAlbumRef };
 
 /** The sources a view shows (Settings → Accounts), or null for every source. */
 export type SourceFilter = readonly number[] | null;
+
+/** Albums' cover colors by image key (`coverImage`), and word of each cover read (CoverColorStore). */
+export interface CoverColorSource {
+  get(key: string): CoverColors | undefined;
+  onRead(listener: (key: string, colors: CoverColors | undefined) => void): void;
+}
 
 export interface Snapshot extends Catalog {
   albumIdByKey: Map<string, number>;
@@ -16,6 +24,8 @@ export interface Snapshot extends Catalog {
   trackByName: Map<string, Track>;
   /** `album/<id>` and `artist/<id>` of every /art/… URL the snapshot's albums and artists use. */
   artwork: Set<string>;
+  /** The albums whose cover each image is (by `coverImage` key), to color them when it's read. */
+  albumsByCover: Map<string, AlbumDetail[]>;
 }
 
 /**
@@ -32,6 +42,27 @@ export abstract class LibraryView {
   protected abstract ready(): Promise<Snapshot>;
   /** The snapshot, if there is one yet, without waiting. */
   protected abstract current(): Snapshot | null;
+  /** The snapshot built so far, without building one (even if it's out of date). */
+  protected abstract existing(): Snapshot | null;
+
+  /** Every album cover whose colors can be read, once each, newest albums first (for CoverColorStore's fill). */
+  coverImages(): CoverImage[] {
+    const snap = this.current();
+    if (!snap) return [];
+    const images = new Map<string, CoverImage>();
+    const added = (album: AlbumDetail) => album.addedAt ?? '';
+    // ISO dates sort as plain strings, much faster than localeCompare over a big library.
+    for (const album of [...snap.albums.values()].sort((a, b) => (added(a) < added(b) ? 1 : added(a) > added(b) ? -1 : 0))) {
+      const image = coverImage(album.coverUrl, snap.files);
+      if (image && !images.has(image.key)) images.set(image.key, image);
+    }
+    return [...images.values()];
+  }
+
+  /** A cover was just read: the albums it's the cover of, and their songs, take its colors at once. */
+  colorCover(key: string, colors: CoverColors | undefined) {
+    for (const album of this.existing()?.albumsByCover.get(key) ?? []) paint(album, colors);
+  }
 
   /** Every artwork URL the library references (for cache warming). */
   artworkUrls(): string[] {
@@ -219,8 +250,11 @@ export class Library extends LibraryView {
     /** The sources to sync, read on every refresh (Settings can change them). */
     private readonly syncSources: () => { id: number; source: CatalogSource }[],
     private readonly log: { info: (msg: string) => void; error: (msg: string) => void },
+    /** Albums' and songs' cover colors; without it they have none. */
+    private readonly colors?: CoverColorSource,
   ) {
     super();
+    colors?.onRead((key, found) => this.colorCover(key, found));
   }
 
   /** The library as an account with these sources sees it; the whole library for null. */
@@ -230,13 +264,23 @@ export class Library extends LibraryView {
     const key = ids.join(',');
     let view = this.views.get(key);
     if (!view) {
-      view = new SourceView(ids, { version: () => this.version, rows: () => this.rows, ready: () => this.ready() });
+      view = new SourceView(ids, { version: () => this.version, rows: () => this.rows, ready: () => this.ready(), colors: this.colors });
       this.views.set(key, view);
     }
     return view;
   }
 
+  /** Colors the library's albums and every view's. */
+  override colorCover(key: string, colors: CoverColors | undefined) {
+    super.colorCover(key, colors);
+    for (const view of this.views.values()) view.colorCover(key, colors);
+  }
+
   protected current(): Snapshot | null {
+    return this.snapshot;
+  }
+
+  protected existing(): Snapshot | null {
     return this.snapshot;
   }
 
@@ -247,7 +291,7 @@ export class Library extends LibraryView {
 
   private setSnapshot(rows: CatalogRows) {
     this.rows = rows;
-    this.snapshot = toSnapshot(buildCatalog(rows));
+    this.snapshot = toSnapshot(buildCatalog(rows), this.colors);
     this.version++;
   }
 
@@ -376,7 +420,12 @@ class SourceView extends LibraryView {
 
   constructor(
     readonly sources: readonly number[],
-    private readonly library: { version: () => number; rows: () => CatalogRows | null; ready: () => Promise<unknown> },
+    private readonly library: {
+      version: () => number;
+      rows: () => CatalogRows | null;
+      ready: () => Promise<unknown>;
+      colors?: CoverColorSource;
+    },
   ) {
     super();
   }
@@ -391,9 +440,14 @@ class SourceView extends LibraryView {
     const version = this.library.version();
     if (this.built?.version !== version) {
       const keep = new Set(this.sources);
-      this.built = { version, snap: toSnapshot(buildCatalog({ ...rows, sources: rows.sources.filter((s) => keep.has(s.id)) })) };
+      const catalog = buildCatalog({ ...rows, sources: rows.sources.filter((s) => keep.has(s.id)) });
+      this.built = { version, snap: toSnapshot(catalog, this.library.colors) };
     }
     return this.built.snap;
+  }
+
+  protected existing(): Snapshot | null {
+    return this.built?.snap ?? null;
   }
 
   protected async ready(): Promise<Snapshot> {
@@ -402,7 +456,17 @@ class SourceView extends LibraryView {
   }
 }
 
-function toSnapshot(catalog: Catalog): Snapshot {
+function toSnapshot(catalog: Catalog, colors?: CoverColorSource): Snapshot {
+  const albumsByCover = new Map<string, AlbumDetail[]>();
+  for (const album of catalog.albums.values()) {
+    const key = coverImage(album.coverUrl, catalog.files)?.key;
+    if (!key) continue;
+    const albums = albumsByCover.get(key);
+    if (albums) albums.push(album);
+    else albumsByCover.set(key, [album]);
+    const found = colors?.get(key);
+    if (found) paint(album, found);
+  }
   return {
     ...catalog,
     albumIdByKey: new Map([...catalog.albums.values()].map((a) => [albumKey(a.artistName, a.title), a.id])),
@@ -410,7 +474,16 @@ function toSnapshot(catalog: Catalog): Snapshot {
     trackByRecording: indexByRecording(catalog.tracks),
     trackByName: indexByName(catalog.tracks),
     artwork: artworkKeys(catalog),
+    albumsByCover,
   };
+}
+
+/** Give an album and its songs its cover's colors, or take them away (undefined: they're then left out of answers). */
+function paint(album: AlbumDetail, colors: CoverColors | undefined) {
+  for (const item of [album, ...album.tracks]) {
+    item.coverColor = colors?.color;
+    item.coverAccent = colors?.accent;
+  }
 }
 
 const ART_URL = /^\/art\/(artist|album)\/(\d+)\//;

@@ -29,6 +29,20 @@ export function longestStreak(days: string[]): number {
   return best;
 }
 
+/**
+ * Days in a row among these dates ("2026-11-01") that end `today` or the day before: until something is played
+ * today, yesterday's streak still stands. 0 when neither day is among them.
+ */
+export function currentStreak(days: string[], today: string): number {
+  const played = new Set(days);
+  const day = (t: number) => new Date(t).toISOString().slice(0, 10);
+  let t = Date.parse(`${today}T00:00:00Z`);
+  if (!played.has(today)) t -= DAY;
+  let run = 0;
+  for (; played.has(day(t)); t -= DAY) run++;
+  return run;
+}
+
 /** Listening stats from the history (skipped songs don't count). */
 export async function listeningStats(
   db: DatabaseSync,
@@ -125,6 +139,8 @@ export async function listeningStats(
     days: days.length,
     newArtists,
     longestStreak: longestStreak(days),
+    // Days are the plays' UTC dates, so today is too. A period that ended (a past year) has no streak going.
+    currentStreak: to > new Date(now).toISOString() ? currentStreak(days, new Date(now).toISOString().slice(0, 10)) : 0,
     topArtists,
     topAlbums,
     topTracks,

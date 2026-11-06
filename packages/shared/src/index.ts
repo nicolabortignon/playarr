@@ -39,6 +39,17 @@ export interface Album {
   trackCount: number; // tracks with files
   totalTrackCount: number;
   coverUrl?: string;
+  /**
+   * The cover's dominant color, `#rrggbb`: what it reads as from afar, for the space a loading cover takes. Present
+   * once the server has read the cover, even a gray one. Not for remote covers (`/art/remote`).
+   */
+  coverColor?: string;
+  /**
+   * The vivid accent the cover gives, `#rrggbb`, picked as the web's `extractAccent` picks it (lifted until it's
+   * legible on the dark app). Absent when the cover has no color to give (a gray or black-and-white one), or hasn't been
+   * read yet (no `coverColor`).
+   */
+  coverAccent?: string;
   addedAt?: string; // when the album first entered the library
   format?: AudioFormat; // most common format among its tracks
   /** MusicBrainz release group, when known: what a request for the rest of the album asks Lidarr for. */
@@ -69,6 +80,10 @@ export interface Track {
   size: number; // bytes
   streamUrl: string;
   coverUrl?: string;
+  /** The album cover's dominant color, as `Album.coverColor`. */
+  coverColor?: string;
+  /** The album cover's accent, as `Album.coverAccent`: the player can change color with the song before its cover loads. */
+  coverAccent?: string;
 }
 
 export interface ArtistDetail extends Artist {
@@ -865,6 +880,13 @@ export interface ListeningStats {
   newArtists: number;
   /** Most days in a row with something played. */
   longestStreak: number;
+  /**
+   * Days in a row with something played up to today, or up to yesterday until something is played today (a streak
+   * isn't broken before the day's first song). Days as `longestStreak` counts them, within the period; 0 for a past
+   * year, or when nothing was played yesterday or today. A new record when it's above 1 and equals `longestStreak`.
+   * Absent from servers before it (read as 0).
+   */
+  currentStreak?: number;
   topArtists: { artist: Artist; plays: number; minutes: number }[];
   topAlbums: { album: Album; plays: number; minutes: number }[];
   topTracks: { track: Track; plays: number }[];
