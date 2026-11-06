@@ -2,7 +2,7 @@ import type { CuePoints, MixMap } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { api } from '../lib/api';
 
-/** Asked again after this long: a song without a map may have been analysed since, and cue points edited. */
+/** Asked again after this long: a song without a map may have been analyzed since, and cue points edited. */
 const FRESH_MS = 60_000;
 
 type SongMap = MixMap & { cues?: CuePoints };

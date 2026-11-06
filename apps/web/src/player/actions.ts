@@ -116,7 +116,25 @@ export function playUpcoming(position: number) {
   s.jumpTo(s.pos + 1 + position);
 }
 
+/**
+ * Remove from queue: the song leaves Up next at once, with Undo, which puts it back before the song that came after it
+ * (while it's still the same queue).
+ */
 export function removeUpcoming(position: number) {
   const s = usePlayer.getState();
+  const next = upcoming();
+  const queueIndex = next[position];
+  if (queueIndex === undefined) return;
+  const track = s.queue[queueIndex]!;
+  const followedBy = next[position + 1];
   s.removeAt(s.pos + 1 + position);
+  toastWithUndo(`Removed “${track.title}” from the queue`, () => {
+    const now = usePlayer.getState();
+    const coming = upcoming();
+    // A new queue reuses the places; and the song may be back already.
+    if (now.queue[queueIndex] !== track || coming.includes(queueIndex)) return;
+    const at = followedBy === undefined ? -1 : coming.indexOf(followedBy);
+    coming.splice(at < 0 ? coming.length : at, 0, queueIndex);
+    now.setUpcoming(coming);
+  });
 }

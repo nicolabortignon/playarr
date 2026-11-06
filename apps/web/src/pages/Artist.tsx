@@ -1,4 +1,5 @@
 import type { Album, ArtistDetail } from '@playarr/shared';
+import { Disc3 } from 'lucide-react';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 import { ActionRow, usePlayState } from '../components/ActionRow';
@@ -8,7 +9,8 @@ import { Cover } from '../components/Cover';
 import { DetailHeader, joinMeta } from '../components/DetailHeader';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { queueItems } from '../components/menus';
-import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
+import { BackButton, SectionHeader } from '../components/Section';
+import { CardSkeleton, EmptyState, ErrorState, InlineError, Skeleton } from '../components/States';
 import { SimilarArtists } from '../components/SimilarArtists';
 import { SlowLookup } from '../components/SlowLookup';
 import { artistHero } from '../lib/api';
@@ -24,8 +26,8 @@ function groupAlbums(albums: Album[]) {
   const groups: { title: string; albums: Album[] }[] = [
     { title: 'Albums', albums: [] },
     { title: 'Soundtracks', albums: [] },
-    { title: 'EPs & Singles', albums: [] },
-    { title: 'Live & Compilations', albums: [] },
+    { title: 'EPs & singles', albums: [] },
+    { title: 'Live & compilations', albums: [] },
     { title: 'Loose songs', albums: [] },
   ];
   for (const a of albums) {
@@ -69,7 +71,7 @@ function NotInLibrary({ artistMbid, owned }: { artistMbid: string; owned: Album[
         <SectionHeader title="Not in your library" />
         <div className={GRID}>
           {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} className="aspect-square" />
+            <CardSkeleton key={i} />
           ))}
         </div>
         <SlowLookup active what="the rest of this artist’s albums" className="mt-4" />
@@ -78,12 +80,11 @@ function NotInLibrary({ artistMbid, owned }: { artistMbid: string; owned: Album[
   }
   if (error || data?.discographyError) {
     return (
-      <section className="mb-14 max-w-md">
+      <section className="mb-14">
         <SectionHeader title="Not in your library" />
-        <p className="text-sm text-paper-dim">Couldn’t load the rest of this artist’s albums from MusicBrainz right now.</p>
-        <Button size="small" className="mt-4" onClick={() => void refetch()} pending={isFetching} pendingLabel="Trying again…">
-          Try again
-        </Button>
+        <InlineError error={data?.discographyError ?? error} onRetry={() => void refetch()} retrying={isFetching}>
+          Couldn’t load the rest of this artist’s albums from MusicBrainz
+        </InlineError>
       </section>
     );
   }
@@ -200,6 +201,7 @@ export function ArtistPage() {
       )}
 
       <div className={cn('px-5 md:px-10', photo ? 'pt-6 md:pt-10' : 'pt-10 md:pt-14')}>
+        {!artist.albums.length && <EmptyState icon={Disc3} title={`Nothing by ${artist.name} here yet.`} className="pt-0 md:pt-0" />}
         {groupAlbums(artist.albums).map((g) => (
           <section key={g.title} className="mb-14">
             <SectionHeader title={g.title} kicker={plural(g.albums.length, 'release')} />

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn';
-import { Skeleton } from './Section';
+import { Skeleton } from './States';
 
 /**
  * The box the cover gets. On a phone it sits above the text, centered, small enough that the action row shows on the

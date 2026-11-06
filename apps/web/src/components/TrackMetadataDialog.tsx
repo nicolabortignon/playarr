@@ -1,26 +1,26 @@
-import type { AudioFormat, FileTags, TrackCopyMetadata, TrackMetadata } from '@playarr/shared';
+import type { FileTags, TrackCopyMetadata, TrackMetadata } from '@playarr/shared';
 import { Check, Copy, ExternalLink, Play, RefreshCw } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { cn } from '../lib/cn';
-import { formatTime } from '../lib/format';
+import { formatDetails, formatTime } from '../lib/format';
 import { useRematchFile, useTrackMetadata } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
 import { Button } from './Button';
 import { Dialog } from './Dialog';
 import { SlowLookup } from './SlowLookup';
+import { InlineError } from './States';
 
 /** Track menu → Show metadata: everything Playarr knows about a song, and where each file of it is. */
 export function TrackMetadataDialog() {
   const id = useUI((s) => s.metadataTrackId);
   const close = useUI((s) => s.closeMetadata);
-  const { data, error, isPending } = useTrackMetadata(id);
+  const { data, error, isPending, isFetching, refetch } = useTrackMetadata(id);
   return (
     <Dialog open={id !== null} onClose={close} title="Song metadata" wide>
       {error ? (
-        <p role="alert" className="p-5 text-[15px] text-danger">
-          Couldn’t load this song’s metadata: {(error as Error).message}
-        </p>
+        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} className="p-5">
+          Couldn’t load this song’s metadata
+        </InlineError>
       ) : isPending || !data ? (
         <div className="space-y-3 p-5" aria-busy="true" aria-label="Loading metadata">
           <div className="h-8 w-2/3 animate-pulse rounded bg-paper/5" />
@@ -96,8 +96,8 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
         <Section title="Sound">
           <Rows
             rows={[
-              ['Tempo', m.analysis.bpm ? `${Math.round(m.analysis.bpm)} BPM` : 'Not analysed yet'],
-              ['Beat', m.analysis.pulse !== undefined ? <Meter key="p" value={m.analysis.pulse} /> : 'Not analysed yet'],
+              ['Tempo', m.analysis.bpm ? `${Math.round(m.analysis.bpm)} BPM` : 'Not analyzed yet'],
+              ['Beat', m.analysis.pulse !== undefined ? <Meter key="p" value={m.analysis.pulse} /> : 'Not analyzed yet'],
               ['Loudness', <Meter key="l" value={m.analysis.loudness} />],
               ['Dynamics', <Meter key="d" value={m.analysis.dynamics} />],
               ['Brightness', <Meter key="b" value={m.analysis.brightness} />],
@@ -127,7 +127,7 @@ function CopyCard({ copy: c, rematch }: { copy: TrackCopyMetadata; rematch: bool
         rows={[
           ['Path', c.path ? <PathValue key="p" path={c.path} /> : undefined],
           ['Read from', c.readPath ? <PathValue key="r" path={c.readPath} /> : undefined],
-          ['Format', describeFormat(c.format)],
+          ['Format', formatDetails(c.format)],
           ['Size', formatSize(c.size)],
           ['Added', c.addedAt ? new Date(c.addedAt).toLocaleString() : undefined],
           ['Identified', c.match ? describeMatch(c.match) : undefined],
@@ -187,10 +187,14 @@ function RematchButton({ copy: c }: { copy: TrackCopyMetadata }) {
         {lidarr ? 'Refresh in Lidarr' : 'Match again on MusicBrainz'}
       </Button>
       {!lidarr && <SlowLookup active={rematch.isPending} what="this album" />}
-      {outcome && (
-        <p role="status" className={cn('text-[13px]', outcome.error ? 'text-danger' : 'text-paper-dim')}>
-          {outcome.text}
-        </p>
+      {outcome?.error ? (
+        <InlineError error={outcome.text} />
+      ) : (
+        outcome && (
+          <p role="status" className="type-small text-paper-dim">
+            {outcome.text}
+          </p>
+        )
       )}
     </div>
   );
@@ -270,16 +274,6 @@ function Rows({ rows }: { rows: [string, ReactNode | undefined][] }) {
         ))}
     </dl>
   );
-}
-
-/** "FLAC · 24-bit / 96 kHz · 2 ch", "MP3 · 320 kbps". */
-export function describeFormat(f: AudioFormat): string {
-  const parts = [f.codec];
-  if (f.bits || f.sampleRate) parts.push([f.bits && `${f.bits}-bit`, f.sampleRate && `${f.sampleRate / 1000} kHz`].filter(Boolean).join(' / '));
-  if (f.bitrate) parts.push(`${Math.round(f.bitrate)} kbps`);
-  if (f.channels) parts.push(f.channels === 1 ? 'mono' : f.channels === 2 ? 'stereo' : `${f.channels} ch`);
-  parts.push(f.lossless ? 'lossless' : 'lossy');
-  return parts.join(' · ');
 }
 
 function formatSize(bytes: number): string {

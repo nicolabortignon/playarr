@@ -1,6 +1,6 @@
 import type { Account, ServerInfo, SourceInfo } from '@playarr/shared';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
@@ -73,7 +73,11 @@ describe('AccountsPanel', () => {
     expect(await screen.findByText('Safari on iPhone')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Add account/ })).toBeNull();
     expect(accounts).not.toHaveBeenCalled();
+    // Signing a device out asks first, naming it.
     fireEvent.click(screen.getByRole('button', { name: 'Sign out Playarr on iPad' }));
+    const ask = await screen.findByRole('dialog', { name: 'Sign out Playarr on iPad?' });
+    expect(end).not.toHaveBeenCalled();
+    fireEvent.click(within(ask).getByRole('button', { name: 'Sign out' }));
     await waitFor(() => expect(end).toHaveBeenCalledWith(2, 8));
     fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Samantha' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

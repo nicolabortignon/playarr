@@ -163,7 +163,7 @@ describe('Stats for nerds', () => {
     await expectRow('Gains', 'track −5.0 dB · album −6.0 dB');
     await expectRow('Applied', '−6.0 dB in the stream (album gain)');
     await expectRow('Heard at', '≈ −15.0 LUFS');
-    await expectRow('Stream', 'levelled WAV at −6.0 dB');
+    await expectRow('Stream', 'leveled WAV at −6.0 dB');
   });
 
   it('shows the playback, the file and the sound', async () => {
@@ -222,7 +222,7 @@ describe('Stats for nerds', () => {
     useLevels.setState({ levels: {}, loaded: {} });
     vi.mocked(api.mixMaps).mockResolvedValue({});
     view();
-    await expectRow('Tempo', 'not analysed yet');
+    await expectRow('Tempo', 'not analyzed yet');
     await expectRow('Measured', 'not measured yet');
     await expectRow('Stream', 'its own file');
   });

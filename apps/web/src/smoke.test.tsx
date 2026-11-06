@@ -162,10 +162,10 @@ describe('Playarr web against live server', () => {
     await fetch(`/api/favorites/${song.recordingId}`, { method: 'DELETE' });
 
     renderAt('/albums/8');
-    const heart = await screen.findByRole('button', { name: `Add “${song.title}” to favorites` });
+    const heart = await screen.findByRole('button', { name: `Add “${song.title}” to Favorites` });
     await act(async () => fireEvent.click(heart));
     // Optimistic: flips immediately, then the server confirms.
-    await screen.findByRole('button', { name: `Remove “${song.title}” from favorites` });
+    await screen.findByRole('button', { name: `Remove “${song.title}” from Favorites` });
     await waitFor(async () => {
       const favs = (await (await fetch('/api/favorites')).json()) as { recordingId: string }[];
       expect(favs.some((f) => f.recordingId === song.recordingId)).toBe(true);
@@ -174,7 +174,7 @@ describe('Playarr web against live server', () => {
 
     renderAt('/favorites');
     expect((await screen.findAllByText(song.title)).length).toBeGreaterThan(0);
-    const unheart = screen.getByRole('button', { name: `Remove “${song.title}” from favorites` });
+    const unheart = screen.getByRole('button', { name: `Remove “${song.title}” from Favorites` });
     await act(async () => fireEvent.click(unheart));
     await waitFor(async () => {
       const favs = (await (await fetch('/api/favorites')).json()) as { recordingId: string }[];
@@ -196,7 +196,7 @@ describe('Playarr web against live server', () => {
 
     renderAt('/');
     const current = queue[1]!;
-    await screen.findAllByRole('button', { name: `Add “${current.title}” to favorites` });
+    await screen.findAllByRole('button', { name: `Add “${current.title}” to Favorites` });
     expect(errors.join('\n')).toBe('');
   });
 

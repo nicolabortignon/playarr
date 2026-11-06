@@ -8,6 +8,7 @@ import { toast } from '../lib/toast';
 import { Button } from './Button';
 import { Choice } from './Choice';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
+import { InlineError } from './States';
 
 const INTERVALS: readonly { value: UpdateInterval; label: string }[] = [
   { value: 15, label: '15 minutes' },
@@ -27,7 +28,7 @@ let toldAboutUpdate = false;
 
 /** Settings → Updates: rebuild Playarr from GitHub main, on a schedule or now. For everyone (Docker setup only). */
 export function UpdatesPanel() {
-  const { data, error } = useUpdates();
+  const { data, error, refetch, isFetching } = useUpdates();
   const save = useSaveUpdates();
   const check = useCheckForUpdates();
   useReloadAfterUpdate(data?.status?.deployed);
@@ -35,7 +36,7 @@ export function UpdatesPanel() {
   if (error instanceof ApiError && error.status === 403) {
     return <AwayNotice />;
   }
-  if (error && !data) return <p className="text-sm text-danger">{error.message}</p>;
+  if (error && !data) return <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} />;
   if (!data) return <div aria-busy="true" aria-label="Loading" className="h-40 max-w-prose animate-pulse rounded-lg bg-paper/5" />;
 
   const busy = data.requested || data.status?.state === 'checking';
@@ -81,7 +82,7 @@ export function UpdatesPanel() {
               icon={<RotateCw />}
               onClick={() => check.mutate()}
               pending={busy || check.isPending}
-              pendingLabel={busy ? 'Checking…' : undefined}
+              pendingLabel="Checking…"
               className="mt-4"
             >
               Check now

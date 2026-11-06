@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { Wordmark } from '../components/Nav';
+import { InlineError } from '../components/States';
 import { TextField } from '../components/TextField';
 import { deviceName, signedIn, switchTo, useAccounts } from '../lib/accounts';
 import type { SignInResponse } from '@playarr/shared';
@@ -76,12 +77,7 @@ function PublicAddress({ publicUrl }: { publicUrl: string | undefined }) {
   );
 }
 
-const Problem = ({ error }: { error: string | null }) =>
-  error ? (
-    <p role="alert" className="text-sm text-danger">
-      {error}
-    </p>
-  ) : null;
+const Problem = ({ error }: { error: string | null }) => (error ? <InlineError error={error} /> : null);
 
 /** Sign in: or continue as an account already signed in on this device. `?add=1` adds another. */
 export function SignInPage() {
@@ -236,7 +232,7 @@ export function SetupPage() {
   return (
     <AuthLayout title="Set up Playarr" subtitle={server?.name}>
       <p className="mb-6 text-[15px] text-paper-dim">
-        You’re the owner: your listening so far stays yours, and you can add an account for everyone else afterwards.
+        You’re the owner: your listening so far stays yours, and you can add an account for everyone else afterward.
       </p>
       <form onSubmit={submit} className="space-y-4">
         <TextField label="Your name" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />

@@ -1,5 +1,5 @@
 import { Navigate, Link, useSearchParams } from 'react-router';
-import { Skeleton } from '../components/Section';
+import { Skeleton } from '../components/States';
 import { SlowLookup } from '../components/SlowLookup';
 import { albumHref, artistHref } from '../lib/links';
 import { useArtistLookup } from '../lib/queries';

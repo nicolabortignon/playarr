@@ -1,12 +1,18 @@
 import type { Track } from '@playarr/shared';
 import { ArrowDownToLine, CircleCheck } from 'lucide-react';
 import { useEffect } from 'react';
-import { toast } from '../lib/toast';
-import { addDownload, canKeepOffline, downloadProgress, removeDownload, useOffline, type Download } from '../player/offline';
+import { toast, toastWithUndo } from '../lib/toast';
+import { addDownload, canKeepOffline, downloadProgress, removeDownload, restoreDownload, useOffline, type Download } from '../player/offline';
 import { IconButton } from './Button';
 
 const R = 9;
 const CIRCUMFERENCE = 2 * Math.PI * R;
+
+/** Take a download off this device at once, with Undo (the button here, the Downloads page). */
+export function removeDownloadWithUndo(download: Download) {
+  void removeDownload(download.key);
+  toastWithUndo(`Removed “${download.title}” from this device`, () => restoreDownload(download));
+}
 
 /**
  * Download an album, playlist, mix or Favorites to this device, to play without a connection: the action row's
@@ -29,11 +35,10 @@ export function DownloadButton({ item, tracks, className }: { item: Omit<Downloa
       return;
     }
     if (pin) {
-      void removeDownload(item.key);
-      toast(`${item.title} removed from this device`);
+      removeDownloadWithUndo(pin);
     } else {
       addDownload({ ...item, tracks: songs });
-      toast(`Downloading ${item.title}`);
+      toast(`Downloading “${item.title}”`);
     }
   };
 

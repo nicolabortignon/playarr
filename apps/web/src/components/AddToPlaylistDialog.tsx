@@ -74,7 +74,7 @@ function Picker() {
               maxLength={100}
               className="min-w-0 flex-1"
             />
-            <Button type="submit" variant="primary" disabled={!name.trim()} pending={create.isPending}>
+            <Button type="submit" variant="primary" disabled={!name.trim()} pending={create.isPending} pendingLabel="Creating…">
               Create
             </Button>
           </form>

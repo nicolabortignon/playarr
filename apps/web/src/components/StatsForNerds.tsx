@@ -5,10 +5,10 @@ import { motion, useDragControls } from 'motion/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '../lib/cn';
-import { formatTime } from '../lib/format';
+import { formatDetails, formatTime } from '../lib/format';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { useMixMaps, useTrackMetadata } from '../lib/queries';
-import { useToasts } from '../lib/toast';
+import { toastWithUndo } from '../lib/toast';
 import { soundingNow, type Sounding } from '../player/AudioEngine';
 import { canSetVolume, levelDb, upNext, type QueueState } from '../player/decks';
 import { useJoins, type JoinReport } from '../player/joins';
@@ -17,7 +17,6 @@ import { useOffline } from '../player/offline';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 import { useTransition, type UpcomingResult } from '../player/transitions';
 import { beatGrid, heardHeight } from './EnergyStrip';
-import { describeFormat } from './TrackMetadataDialog';
 
 /** How often the panel follows the song while it plays: often enough for the beat counter… */
 const TICK_MS = 100;
@@ -96,10 +95,7 @@ function Overlay({ track }: { track: Track }) {
 
   const turnOff = () => {
     usePrefs.getState().setStatsForNerds(false);
-    useToasts.getState().push('Stats for nerds is off: it’s in Settings → Appearance.', 'info', {
-      label: 'Undo',
-      run: () => usePrefs.getState().setStatsForNerds(true),
-    });
+    toastWithUndo('Stats for nerds is off: it’s in Settings → Appearance.', () => usePrefs.getState().setStatsForNerds(true));
   };
   const summary = [
     map && map.bpm > 0 ? `${map.bpm.toFixed(1)} BPM` : undefined,
@@ -226,7 +222,7 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
         <Row label="Stream" value={streamOf(sound, loadedDb, kept)} />
         <Row label="Element" value={element && elementState(element)} />
         <Row label="URL" value={element?.currentSrc && <span className="break-all">{shortUrl(element.currentSrc)}</span>} />
-        <Row label="Format" value={track.format && describeFormat(track.format)} />
+        <Row label="Format" value={track.format && formatDetails(track.format)} />
         <Row
           label="Transitions"
           value={prefs.transitions === 'dj' ? `DJ mix · ${mixMode}` : prefs.transitions === 'crossfade' ? `crossfade ${crossfadeSeconds(prefs)} s` : 'gapless'}
@@ -259,7 +255,7 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
             <Row label="Drift" value={map.phraseDrift && driftOf(map.phraseDrift, grid)} />
           </>
         ) : (
-          <Row label="Tempo" value={map ? 'no steady beat' : 'not analysed yet'} />
+          <Row label="Tempo" value={map ? 'no steady beat' : 'not analyzed yet'} />
         )}
         {map?.key && <Row label="Key" value={`${map.key.camelot} · ${keyName(map.key.camelot) ?? '?'} · ${pct(map.key.confidence)} sure`} />}
       </Group>
@@ -340,7 +336,7 @@ function streamOf(sound: Sounding | undefined, loadedDb: number | null | undefin
   if (sound?.transition) return 'DJ transition, made on the server';
   const offset = Number(sound?.element?.dataset.offset ?? 0);
   if (offset > 0) return `the rest after the transition, from ${at(offset)}`;
-  if (typeof loadedDb === 'number') return `levelled WAV at ${dB(loadedDb)}`;
+  if (typeof loadedDb === 'number') return `leveled WAV at ${dB(loadedDb)}`;
   return kept ? 'its own file, kept on this device' : 'its own file';
 }
 

@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { useUI } from '../lib/ui';
-import { describeFormat, primaryCopy, TrackMetadataDialog } from './TrackMetadataDialog';
+import { primaryCopy, TrackMetadataDialog } from './TrackMetadataDialog';
 
 const FLAC = { codec: 'FLAC', container: 'flac', bits: 24, sampleRate: 96000, channels: 2, lossless: true };
 
@@ -121,10 +121,5 @@ describe('TrackMetadataDialog', () => {
     expect(await screen.findByText('Lidarr is refreshing this artist.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /match again on musicbrainz/i }));
     await waitFor(() => expect(useUI.getState().metadataTrackId).toBe(701));
-  });
-
-  it('describes formats', () => {
-    expect(describeFormat(FLAC)).toBe('FLAC · 24-bit / 96 kHz · stereo · lossless');
-    expect(describeFormat({ codec: 'MP3', container: 'mp3', bitrate: 320, lossless: false })).toBe('MP3 · 320 kbps · lossy');
   });
 });

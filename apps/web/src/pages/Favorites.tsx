@@ -2,7 +2,7 @@ import { Heart } from 'lucide-react';
 import { ActionRow, usePlayState } from '../components/ActionRow';
 import { DetailHeader, joinMeta } from '../components/DetailHeader';
 import { queueItems } from '../components/menus';
-import { ErrorState, Skeleton } from '../components/Section';
+import { EmptyState, ErrorState, SongRowsSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
 import { cn } from '../lib/cn';
 import { formatDuration, plural } from '../lib/format';
@@ -41,21 +41,9 @@ export function FavoritesPage() {
         )}
       </DetailHeader>
       {error && <ErrorState error={error} onRetry={() => void refetch()} />}
-      {isPending && (
-        <div className="mt-6 space-y-3 md:mt-8">
-          {Array.from({ length: 6 }, (_, i) => (
-            <Skeleton key={i} className="h-14" />
-          ))}
-        </div>
-      )}
+      {isPending && <SongRowsSkeleton className="mt-6 -mx-3 md:mt-8" />}
       {favorites && favorites.length === 0 && (
-        <div className="mt-12 max-w-md">
-          <p className="font-display text-3xl text-paper">Nothing hearted yet.</p>
-          <p className="mt-2 text-sm text-muted">
-            Tap the heart next to any song: in an album, the queue, the player or Now Playing. It shows up here, on every
-            device.
-          </p>
-        </div>
+        <EmptyState icon={Heart} title="Songs you heart land here." action={{ label: 'Find something to love', to: '/' }} />
       )}
       {favorites && favorites.length > 0 && (
         <div className="mt-6 -mx-3 md:mt-8">

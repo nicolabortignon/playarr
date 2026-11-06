@@ -1,11 +1,12 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Disc3 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/DetailHeader';
 import { DiscoverAlbumCard } from '../components/Discover';
-import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
+import { BackButton, SectionHeader } from '../components/Section';
+import { CardSkeleton, EmptyState, ErrorState, InlineError } from '../components/States';
 import { SimilarArtists } from '../components/SimilarArtists';
 import { SlowLookup } from '../components/SlowLookup';
 import { cn } from '../lib/cn';
@@ -29,7 +30,7 @@ export function DiscoverArtistPage() {
         <SlowLookup active what="this artist’s albums" className="mt-6" />
         <div className={cn(GRID, 'mt-12')}>
           {Array.from({ length: 8 }, (_, i) => (
-            <Skeleton key={i} className="aspect-square" />
+            <CardSkeleton key={i} />
           ))}
         </div>
       </div>
@@ -92,15 +93,11 @@ export function DiscoverArtistPage() {
             </section>
           ))}
         {artist.discographyError ? (
-          <div className="max-w-md">
-            <p className="text-sm text-paper-dim">Couldn’t load the discography from MusicBrainz right now.</p>
-            <p className="mt-1 font-mono text-[11px] text-muted">{artist.discographyError}</p>
-            <Button size="small" className="mt-4" onClick={() => void refetch()} pending={isFetching} pendingLabel="Trying again…">
-              Try again
-            </Button>
-          </div>
+          <InlineError error={artist.discographyError} onRetry={() => void refetch()} retrying={isFetching}>
+            Couldn’t load the discography from MusicBrainz
+          </InlineError>
         ) : (
-          !artist.albums.length && <p className="text-muted">MusicBrainz lists no albums or EPs for this artist.</p>
+          !artist.albums.length && <EmptyState icon={Disc3} title={`MusicBrainz lists no albums or EPs by ${artist.name}.`} className="pt-0 md:pt-0" />
         )}
         <div className="mt-14">
           <SimilarArtists mbid={artist.mbid} />

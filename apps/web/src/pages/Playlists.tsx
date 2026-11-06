@@ -1,5 +1,5 @@
 import type { PlaylistSummary } from '@playarr/shared';
-import { Play, Plus } from 'lucide-react';
+import { ListMusic, Play, Plus } from 'lucide-react';
 import { useRef, type CSSProperties } from 'react';
 import { Link } from 'react-router';
 import { useCardMenu, type CardMenuAt } from '../components/Cards';
@@ -7,7 +7,7 @@ import { ContextMenu } from '../components/Menu';
 import { usePlaylistMenu } from '../components/menus';
 import { PageHeader } from '../components/PageHeader';
 import { PlaylistCover } from '../components/PlaylistCover';
-import { ErrorState, Skeleton } from '../components/Section';
+import { CardSkeleton, EmptyState, ErrorState } from '../components/States';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { usePlaylists } from '../lib/queries';
@@ -21,24 +21,32 @@ export function PlaylistsPage() {
 
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
-      <PageHeader title="Playlists" count={playlists?.length} />
+      <PageHeader title="Playlists" count={playlists?.length || undefined} />
       {error && <ErrorState error={error} onRetry={() => void refetch()} />}
-      <div className={GRID}>
-        <button
-          type="button"
-          onClick={() => openPicker([])}
-          className="group flex aspect-square animate-rise flex-col items-center justify-center gap-3 rounded-cover border border-dashed border-paper/20 text-paper-dim transition hover:border-accent hover:text-paper"
-        >
-          <span className="grid size-12 place-items-center rounded-full bg-accent text-accent-ink transition group-hover:scale-105">
-            <Plus className="size-6" />
-          </span>
-          New playlist
-        </button>
-        {isPending && Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="aspect-square" />)}
-        {playlists?.map((p, i) => (
-          <PlaylistCard key={p.id} playlist={p} style={{ animationDelay: `${(i + 1) * 35}ms` }} />
-        ))}
-      </div>
+      {playlists && !playlists.length ? (
+        <EmptyState
+          icon={ListMusic}
+          title="Make a playlist for a mood, a trip or a friend."
+          action={{ label: 'New playlist', icon: <Plus />, onClick: () => openPicker([]) }}
+        />
+      ) : (
+        <div className={GRID}>
+          <button
+            type="button"
+            onClick={() => openPicker([])}
+            className="group flex aspect-square animate-rise flex-col items-center justify-center gap-3 rounded-cover border border-dashed border-paper/20 text-paper-dim transition hover:border-accent hover:text-paper"
+          >
+            <span className="grid size-12 place-items-center rounded-full bg-accent text-accent-ink transition group-hover:scale-105">
+              <Plus className="size-6" />
+            </span>
+            New playlist
+          </button>
+          {isPending && Array.from({ length: 11 }, (_, i) => <CardSkeleton key={i} />)}
+          {playlists?.map((p, i) => (
+            <PlaylistCard key={p.id} playlist={p} style={{ animationDelay: `${(i + 1) * 35}ms` }} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

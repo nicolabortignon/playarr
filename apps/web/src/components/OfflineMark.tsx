@@ -1,14 +1,17 @@
 import { CircleArrowDown } from 'lucide-react';
 import { cn } from '../lib/cn';
-import { useIsKept, useOffline } from '../player/offline';
+import { isDownloaded, useIsDownloaded, useOffline } from '../player/offline';
 
 const R = 5.5;
 const CIRCUMFERENCE = 2 * Math.PI * R;
 
-/** Shows that a song is on this device, or how far along its download is. */
+/**
+ * Shows that a song you downloaded (with its album, playlist, mix or Favorites) is on this device, or how far along it
+ * is. Songs only loaded ahead as you listen get nothing: the mark means you can count on it being there.
+ */
 export function OfflineMark({ fileId, className }: { fileId: number; className?: string }) {
-  const kept = useIsKept(fileId);
-  const progress = useOffline((s) => (s.active?.fileId === fileId ? s.active.loaded / s.active.total : null));
+  const kept = useIsDownloaded(fileId);
+  const progress = useOffline((s) => (s.active?.fileId === fileId && isDownloaded(fileId, s) ? s.active.loaded / s.active.total : null));
 
   if (progress !== null) {
     const pct = Math.round(progress * 100);

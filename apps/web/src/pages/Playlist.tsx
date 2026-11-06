@@ -1,5 +1,5 @@
 import type { PlaylistItem } from '@playarr/shared';
-import { Lock, Palette, Pencil, Trash2, Users, X } from 'lucide-react';
+import { ListMusic, ListPlus, Lock, Palette, Pencil, Trash2, Users, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -7,17 +7,19 @@ import { ActionRow, usePlayState } from '../components/ActionRow';
 import { Button, IconButton } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/DetailHeader';
-import { Dialog } from '../components/Dialog';
+import { ConfirmDialog } from '../components/Dialog';
 import { CoverPicker } from '../components/CoverPicker';
 import type { MenuItem } from '../components/Menu';
 import { moveItems, usePlaylistMenu } from '../components/menus';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { PlaylistRecommendations } from '../components/PlaylistRecommendations';
-import { BackButton, ErrorState } from '../components/Section';
+import { BackButton } from '../components/Section';
+import { EmptyState, ErrorState, SongRowsSkeleton } from '../components/States';
 import { ListRow, SongRow, type RowReorder } from '../components/SongRow';
 import { cn } from '../lib/cn';
 import { formatDuration, plural } from '../lib/format';
-import { usePlaylist, usePlaylistMutations, useTempos } from '../lib/queries';
+import { restorePlaylistItem, setPlaylistShared, usePlaylist, usePlaylistMutations, useTempos } from '../lib/queries';
+import { toast, toastWithUndo } from '../lib/toast';
 import { usePlayer } from '../player/store';
 
 export function PlaylistPage() {
@@ -44,7 +46,7 @@ export function PlaylistPage() {
             { label: 'Rename', icon: Pencil, onSelect: () => setEditing(true) },
             ...(items.length ? [{ label: 'New cover…', icon: Palette, onSelect: () => setPickingCover(true) }] : []),
             playlist?.shared
-              ? { label: 'Stop sharing', icon: Lock, onSelect: () => mutations.update.mutate({ id, shared: false }) }
+              ? { label: 'Stop sharing', icon: Lock, onSelect: () => stopSharing() }
               : { label: 'Share with everyone', icon: Users, onSelect: () => mutations.update.mutate({ id, shared: true }) },
             { label: 'Delete playlist', icon: Trash2, onSelect: () => setConfirmDelete(true) },
           ]
@@ -57,11 +59,40 @@ export function PlaylistPage() {
     if (playlist) setItems(playlist.items);
   }, [playlist]);
 
+  /** Stop sharing: at once, with Undo. */
+  const stopSharing = () => {
+    const name = playlist?.name ?? '';
+    mutations.update.mutate(
+      { id, shared: false },
+      { onSuccess: () => toastWithUndo(`Stopped sharing “${name}”`, () => void setPlaylistShared(id, true)) },
+    );
+  };
+  /**
+   * Remove from playlist: at once, with Undo, which puts the song back where it was. A song no longer in the library
+   * can't be added again, so its removal has no Undo.
+   */
+  const removeItem = (item: PlaylistItem, index: number) => {
+    const name = playlist?.name ?? '';
+    const after = items[index - 1]?.itemId;
+    setItems((list) => list.filter((i) => i.itemId !== item.itemId));
+    mutations.remove.mutate(
+      { id, itemId: item.itemId },
+      {
+        onSuccess: () => {
+          const message = `Removed “${item.title}” from “${name}”`;
+          if (item.track) toastWithUndo(message, () => void restorePlaylistItem(id, item.recordingId, { after, index }));
+          else toast(message);
+        },
+      },
+    );
+  };
+
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !playlist) {
     return (
       <div className="px-5 pt-6 md:px-10 md:pt-14">
         <DetailHeaderSkeleton />
+        <SongRowsSkeleton className="mt-6 -mx-3 max-w-5xl md:mt-8" />
       </div>
     );
   }
@@ -181,10 +212,16 @@ export function PlaylistPage() {
       )}
 
       {items.length === 0 ? (
-        <p className="mt-12 max-w-md text-sm text-muted">
-          This playlist is empty. Use <span className="text-paper-dim">Add to playlist…</span> from any song’s ⋯ menu, an
-          album, the queue or Now Playing.
-        </p>
+        mine ? (
+          <EmptyState
+            icon={ListPlus}
+            title="This playlist is waiting for its first song."
+            hint="Choose Add to playlist… in any song’s ⋯ menu, or on an album, the queue or Now Playing."
+            action={{ label: 'Find songs', to: '/search' }}
+          />
+        ) : (
+          <EmptyState icon={ListMusic} title="Nothing in this playlist yet." />
+        )
       ) : (
         <Reorder.Group axis="y" values={items} onReorder={setItems} as="ol" className="mt-6 -mx-3 max-w-5xl md:mt-8">
           {items.map((item, i) => (
@@ -199,7 +236,7 @@ export function PlaylistPage() {
                 mine
                   ? [
                       ...moveItems(i, items.length, move),
-                      { label: 'Remove from playlist', icon: X, onSelect: () => mutations.remove.mutate({ id, itemId: item.itemId }) },
+                      { label: 'Remove from playlist', icon: X, onSelect: () => removeItem(item, i) },
                     ]
                   : []
               }
@@ -213,28 +250,20 @@ export function PlaylistPage() {
 
       <CoverPicker playlist={playlist} open={pickingCover} onClose={() => setPickingCover(false)} />
 
-      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete playlist?">
-        <div className="p-5">
-          <p className="text-sm text-paper-dim">
-            “{playlist.name}” will be deleted. The songs stay in your library. This can’t be undone.
-          </p>
-          <div className="mt-6 flex justify-end gap-2">
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button
-              variant="danger"
-              pending={mutations.destroy.isPending}
-              pendingLabel="Deleting…"
-              onClick={() =>
-                mutations.destroy.mutate(id, {
-                  onSuccess: () => navigate('/playlists', { replace: true }),
-                })
-              }
-            >
-              Delete
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title={`Delete “${playlist.name}”?`}
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        pending={mutations.destroy.isPending}
+        onConfirm={() => mutations.destroy.mutate(id, { onSuccess: () => navigate('/playlists', { replace: true }) })}
+      >
+        <p>
+          The playlist goes for good{playlist.shared ? ', for everyone it’s shared with' : ''}.
+          {items.length === 1 ? ' Its song stays in your library.' : items.length > 1 ? ` Its ${items.length} songs stay in your library.` : ''}
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

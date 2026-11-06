@@ -74,7 +74,7 @@ describe('Mini player', () => {
     expect(open.tagName).toBe('BUTTON');
     expect(open.querySelector('button')).toBeNull();
     expect(open.textContent).toContain('Song 1');
-    for (const name of ['Add “Song 1” to favorites', 'Pause', 'Next']) {
+    for (const name of ['Add “Song 1” to Favorites', 'Pause', 'Next']) {
       const control = screen.getByRole('button', { name });
       expect(open.contains(control)).toBe(false);
     }

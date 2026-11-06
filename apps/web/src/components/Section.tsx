@@ -1,10 +1,10 @@
-import { ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useRef, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
 import { nearestEdge, scrollForPoint } from '../lib/shelfScroll';
 import { KeepMounted } from '../lib/viewport';
-import { Button, IconButton } from './Button';
+import { IconButton } from './Button';
 
 export function SectionHeader({ title, kicker, to, action }: { title: string; kicker?: string; to?: string; action?: ReactNode }) {
   return (
@@ -16,7 +16,7 @@ export function SectionHeader({ title, kicker, to, action }: { title: string; ki
       <div className="flex items-center gap-1">
         {action}
         {to && (
-          <Link to={to} className="rounded-full px-3 py-1.5 font-mono text-[11px] tracking-[0.15em] text-muted uppercase transition hover:text-paper">
+          <Link to={to} className="rounded-full px-3 py-1.5 type-kicker text-muted transition hover:text-paper">
             See all
           </Link>
         )}
@@ -153,28 +153,6 @@ function ScrollIndicator({ target }: { target: RefObject<HTMLDivElement | null> 
     >
       <div className="relative h-px bg-paper/[0.04] transition-colors group-hover/line:bg-paper/[0.07]">
         <div ref={thumb} className="absolute top-0 left-0 h-px bg-paper/20 transition-[width,background-color] duration-300 group-hover/line:bg-paper/35" />
-      </div>
-    </div>
-  );
-}
-
-export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded bg-ink-800', className)} />;
-}
-
-/** A page that couldn't load: what went wrong, a retry where there's one, and a way home. */
-export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  return (
-    <div className="mx-auto mt-24 max-w-md px-5 text-center" role="alert">
-      <div className="font-display text-3xl text-paper">Something skipped.</div>
-      <p className="mt-3 text-sm text-muted">{error instanceof Error ? error.message : 'Unknown error'}</p>
-      <div className="mt-6 flex justify-center gap-3">
-        {onRetry && (
-          <Button variant="primary" icon={<RotateCw />} onClick={onRetry}>
-            Try again
-          </Button>
-        )}
-        <Button to="/">Back home</Button>
       </div>
     </div>
   );

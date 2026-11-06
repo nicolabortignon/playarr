@@ -35,6 +35,7 @@ Pages are in `src/pages`, shared pieces in `src/components`. Pages build their c
 - `ActionRow`: Play, Shuffle, the page's own action, Download and ⋯ on album, playlist, mix, Favorites and artist pages. While what the page started is playing (the album's songs, or a queue whose "Playing from" is the page), Play says Pause and Resume, keeping the width of its widest word. The row never wraps: CSS container queries (`row-step-*` in `index.css`) drop Shuffle's words, then the action's, as it narrows. It isn't a scroll container, which would clip Play's glow;
 - `PageHeader`: the header of a tab or library list (Albums, Artists, Playlists, Made for you, Downloads, Queue, Library, Requests, Settings, Your listening): the title with its count beside it, the page's own controls on the right (they go under the title when there's no room), an optional kicker above and a sentence under it;
 - `DetailHeader`: the header of everything you can play (an album, a playlist, a mix, Favorites, an artist, a MusicBrainz artist), in one order: cover, kicker, title, one meta line (`joinMeta` puts the dots between its parts), then the action row. On a phone the cover sits above the text at `min(64vw, 256px)`, so Play shows on the first screen; an artist's picture is a smaller circle. A playlist's or mix's cover leaves its name off there (`titled={false}`), since the title is beside it. `DetailHeaderSkeleton` has its shape while the page loads;
+- `FormatBadge`: a format in a few words (`formatBadge`, `lib/format.ts`): the codec alone when it's ordinary (lossy at 256 kbps or more, lossless at CD quality: "MP3", "FLAC"), else with what sets it apart ("MP3 · 128 kbps", "FLAC · 24/96"), Hi-Res in the accent; its title has everything (`formatDetails`). In the player bar, Now Playing, the queue and on albums;
 - `NameAndNumbers`: a name and the numbers about it (Stats' rankings, the queue's rows on a phone, Downloads) on one line when both fit, else the numbers go under the name, which is only cut short once they have a line of their own;
 - `AccountMenu`: the account's initial in a circle of the accent, beside Home's greeting ("Hi, Alex."), opening Account and Settings;
 - `SongRow` (`components/SongRow.tsx`): a song in every list (an album, a playlist, the queue, Now Playing's Up next, Favorites, mixes, search, Your listening's top songs). Its number on its album's page, else its cover; title in `type-body`, the artist and album (linked) in `type-small`; then the time (`type-meta`, after the tempo when it's measured), ♥ and ⋯, in that order. The song playing has the accent and an equalizer; pressing it pauses or resumes. `compact` is Now Playing's denser Up next, `numbers` another number in the time's place (Your listening's plays), `stackOnPhones` the phone layout of the queue and Your listening (no ♥, the length or that number under the title). It's built on `ListRow`, the one row (also Downloads, songs beyond the library, a playlist's suggestions): the title is the row's own button or link, stretched over the row by its `::after`, so the row presses as one while the handle, links, ♥ and ⋯ sit above it as buttons of their own. Every row of a list is one height (60 with a thumbnail; 52 with a number, 60 on touch screens), a missing song's included;
@@ -45,6 +46,15 @@ Pages are in `src/pages`, shared pieces in `src/components`. Pages build their c
 Controls drawn smaller than 44 px take that much to tap on touch screens through the `tap-target` utility in `index.css`.
 
 **Add to playlist** (`components/AddToPlaylistDialog.tsx`) lists the account's own playlists with a tick on those that already hold the songs, a dash on those holding some (`POST /api/playlists/holding`), and adds to every playlist chosen at once. **Play next and Add to queue** confirm with a toast naming the song ("“Teardrop” plays next", "3 songs play next", "Added “Teardrop” to the queue"); its Undo takes them back out of the queue. An Undo toast goes after 6 s, but not while it's pointed at or focused (`toastWithUndo`, `lib/toast.ts`).
+
+**Taking things back.** Taking something out of a list happens at once, with an Undo toast: Remove from queue (Undo puts the song back before the one that followed it), Remove from playlist (the song goes back after the one before it; the server adds it again and moves it, so a song no longer in the library, which can't be added, has no Undo), Stop sharing, removing a download (Undo puts it back as it was; songs that made room meanwhile download again) and removing a request. A request's removal waits for its Undo to pass before the server forgets it (`toastWithUndo`'s `done`), as asking Lidarr again couldn't bring back an album that has arrived. Losing something for good asks first in a `ConfirmDialog` (`components/Dialog.tsx`) that names what goes, with Cancel focused and a danger button: deleting a playlist, removing an account or a source, signing a device out, a new setup code (the old one, and the password, stop working), clearing the listening history, and Remove all on this device ("Remove 312 songs from this device?").
+
+**Empty, loading and error** (`components/States.tsx`), one way each:
+
+- `EmptyState`: a list with nothing in it: an icon, one line in the app's voice ("Songs you heart land here."), sometimes a quieter second line, and the action that fills the page as a large primary button (a link, a button, or `'lucky'` for Feeling lucky). On Albums and Artists (Settings → Sources for an admin), an artist without albums, Playlists, Favorites, Downloads (and why it can't download over plain HTTP), Queue, Requests (what's possible on this server: Lidarr missing or requests off, for an admin with where to change it), Made for you, Search's "Not in your crates.", Your listening and an empty playlist;
+- `CardSkeleton` (`CardSkeletons` for a grid's first screen) and `SongRowsSkeleton`: placeholders the size of the real card or row, its text lines included, in the same grid or list, so nothing moves when the page arrives; detail pages add rows under `DetailHeaderSkeleton`;
+- `ErrorState`: a page that couldn't load: "Something skipped.", what went wrong, Try again and Back home;
+- `InlineError`: part of a page, a panel or a dialog that couldn't load or save: a danger icon, what happened and why, and Try again when there's a retry ("Trying again…").
 
 Long grids show a screenful at a time (`lib/useIncremental.ts`: 48 items, then 48 more as the end comes within 1500 px). Covers load four at a time, on-screen ones first (`lib/imageQueue.ts`).
 
@@ -62,7 +72,7 @@ Both share Now Playing, Stats for nerds, the Add to playlist, metadata and mix-p
 - Space: play or pause;
 - ←/→: seek 10 s; Shift+←/→: previous or next song;
 - ↑/↓: volume;
-- M: mute; S: shuffle; L: favourite the song playing;
+- M: mute; S: shuffle; L: add the song playing to Favorites, or take it out;
 - `/`: Search.
 
 In a list, Tab reaches each song as a button: Enter or Space plays it, the menu key (or Shift+F10) opens its menu, and its ♥, ⋯ and drag handle are buttons of their own. On a playlist's or the queue's handle, ↑ and ↓ move the song, as dragging does (and Move up and Move down in its menu). The mini player is an "Open now playing" button beside its ♥, Play and Next. A playlist's owner renames it from the pencil beside its title, or from ⋯ → Rename.
@@ -115,10 +125,10 @@ Plain elements keep playing on a locked iPhone, which is why the player uses the
 - **Gapless and crossfade.** The next deck starts 30 ms early to cover its start-up time. With Crossfade, songs overlap by the chosen length (3, 6, 9 or 12 s), capped at a third of either song. Songs of an album played in order never fade (`player/decks.ts`). Devices that fix the volume in hardware (iPhone, iPad: `canSetVolume()`) get gapless playback but no fades. Settings shows Crossfade as unavailable there; DJ mix still works, as its transitions are mixed on the server.
 - **Web Audio on desktop only.** `isDesktop()` requires a fine pointer, no phone or tablet user agent, and no touch Mac (an iPad asking for desktop pages). Only there are the elements routed through a Web Audio graph (`player/joinGraph.ts`). That lines up joins between files on the sound itself and lets skips be mixed live (`player/liveMix.ts`). Elsewhere, files take over in step by their reported times. iOS suspends Web Audio when the screen locks, which would silence the players.
 - **DJ transitions**: `player/transitions.ts` asks the server for the current pair once a song has played 5 s, and the engine plays A, the transition, then B. All of it is in [mixing.md](mixing.md).
-- **Even volume.** With the setting on and the song's loudness measured, a deck plays the server's levelled stream, `/stream/:id/levelled.wav?gain=<dB>` (`player/levels.ts`). It's turned up as well as down, which works on iPhones too, where element volume is ignored. Within an album played in order, the album's level applies. A song kept on the device, or whose levelled stream fails, plays its own file at its own volume.
+- **Even volume.** With the setting on and the song's loudness measured, a deck plays the server's leveled stream, `/stream/:id/levelled.wav?gain=<dB>` (`player/levels.ts`). It's turned up as well as down, which works on iPhones too, where element volume is ignored. Within an album played in order, the album's level applies. A song kept on the device, or whose leveled stream fails, plays its own file at its own volume.
 - **Formats a browser can't play** (Apple Lossless or AIFF in Chrome and Firefox) are fetched from `/stream/:id/lossless.wav` instead (`lib/playable.ts`). MP3, AAC and FLAC play natively everywhere. There's no transcoding yet, so anything else a browser can't play (Ogg or Opus on an older Safari, say) fails to play ([open items](plans/open-items.md)).
 - **Media Session**: title, artist, album and cover (256 and 512 px), plus play, pause, stop, next, previous, seek back and forward, and seek-to, for lock screens and OS controls.
-- **Accent and title**: the tab title follows the song. The accent colour and favicon come from the cover (`lib/color.ts`) unless Appearance fixes a colour.
+- **Accent and title**: the tab title follows the song. The accent color and favicon come from the cover (`lib/color.ts`) unless Appearance fixes a color.
 - **Play reports** (`player/playTracker.ts`). A song counts as a play after 30 s heard, or half of a shorter song; seeks don't count. A song left after 3 s counts as a skip. Reports go to `/api/plays` with `keepalive`, one request at a time. Unsent ones wait in `localStorage` (at most 300). "Count what this device plays" turns them off.
 - Also here: autoplay radio when the queue ends (`player/radio.ts`), the sleep timer (`player/sleep.ts`), and up to three retries of a stream that breaks off.
 
@@ -163,7 +173,7 @@ Plain elements keep playing on a locked iPhone, which is why the player uses the
 
 With DJ mix on, the transitions between a download's songs are fetched too, once both songs are kept. While the server renders one, the app asks again every 3 s, then every 10 s after five asks, and gives up after 10 minutes. The songs then mix offline.
 
-A small ⤓ after a title marks songs on the device, and a ring shows the song downloading.
+A small ⤓ after a title marks the songs of a download (`OfflineMark`, `useIsDownloaded`), and a ring shows one downloading. Songs only loaded ahead get no mark: the mark means the song will be there offline.
 
 ## 9. Prefetching
 
@@ -185,7 +195,7 @@ That fetches the page's data, its header image, and for an album, its artist too
 | Playback | This device: transitions, crossfade, even volume, autoplay, counting plays, songs kept on the device, the shortcuts |
 | Accounts | Server-wide: who signs in and what each account may hear and change |
 | Your listening | Your account's stats and ListenBrainz |
-| Mixes, Analysis, Requests, Updates | Server-wide ("These settings apply to everyone") |
+| Made for you, Analysis, Requests, Updates | Server-wide ("These settings apply to everyone") |
 | Appearance | This device: accent, motion, format badges |
 
 Device settings live in `usePrefs` and `useOffline`; server-wide ones go through `/api/settings/*` (see [server/api.md](server/api.md)).

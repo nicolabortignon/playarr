@@ -25,9 +25,9 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
   return (
     <button
       type="button"
-      aria-label={favorite ? `Remove “${track.title}” from favorites` : `Add “${track.title}” to favorites`}
+      aria-label={favorite ? `Remove “${track.title}” from Favorites` : `Add “${track.title}” to Favorites`}
       aria-pressed={favorite}
-      title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+      title={favorite ? 'Remove from Favorites' : 'Add to Favorites'}
       onClick={(e) => {
         e.stopPropagation();
         if (!favorite) setPopping(true);

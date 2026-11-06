@@ -79,29 +79,29 @@ export function PlaybackPanel() {
         <div className="divide-y divide-line">
           <Switch
             label="Even out the volume"
-            description="Every song plays as loud as the next (−14 LUFS, as streaming services do): loud ones turned down, quiet ones up as far as they can go. An album played in order keeps its own quiet and loud songs. Songs are levelled once Settings → Analysis has measured their loudness."
+            description="Every song plays as loud as the next (−14 LUFS, as streaming services do): loud ones turned down, quiet ones up as far as they can go. An album played in order keeps its own quiet and loud songs. Songs are leveled once Settings → Analysis has measured their loudness."
             checked={levelVolume}
             onChange={setLevelVolume}
             disabled={locked}
           />
           <div className="py-3">
-            <div className="mb-3 text-[15px] text-paper">Transitions</div>
+            <div className="mb-3 type-body text-paper">Transitions</div>
             <Choice label="Transitions" options={transitionOptions} value={shown} onChange={setTransitions} disabled={locked} />
             {shown === 'crossfade' && (
               <>
-                <p className="mt-3 mb-3 text-[13px] text-muted">Fades each song into the next. Never between songs of an album played in order.</p>
+                <p className="mt-3 mb-3 type-small text-muted">Fades each song into the next. Never between songs of an album played in order.</p>
                 <Choice label="Crossfade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} disabled={locked} />
               </>
             )}
             {shown === 'dj' && (
               <>
-                <p className="mt-3 mb-3 text-[13px] text-muted">
+                <p className="mt-3 mb-3 type-small text-muted">
                   Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on. Songs that can’t be
                   mixed on the beat fade into each other for this long:
                 </p>
                 <Choice label="Fade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} disabled={locked} />
-                <p className="mt-3 text-[13px] text-muted">
-                  How many songs are ready for DJ mix, and analysing the rest now:{' '}
+                <p className="mt-3 type-small text-muted">
+                  How many songs are ready for DJ mix, and analyzing the rest now:{' '}
                   <Link to="/settings/analysis" className="text-paper-dim underline underline-offset-2 hover:text-paper">
                     Settings → Analysis
                   </Link>

@@ -142,6 +142,7 @@ The standard:
 - **Badges say what they mean:** "MP3 8" becomes "MP3 · 8 kbps", and the bitrate hides when it's ordinary.
 - **Color means action:** "Signed in as Demo" at the top of iOS Settings is accent-colored like a button but does nothing.
 - **Done when** the word list is in `docs/design.md`, and a sweep of both apps and the server's texts matches it.
+- *Web and server done 2026-11-06: the word list is in `docs/design.md` (Words), and the web matches it: songs everywhere, "Search music", Favorites, Made for you (a playlist's "New mix" became "Other suggestions"), pending ellipses, Try again, Remove and Delete, American spelling, and badges that hide ordinary details ("MP3", "MP3 · 8 kbps", "FLAC · 24/96"). iOS to do.*
 
 ## 8. Empty, loading and error: one way each — S–M
 
@@ -161,6 +162,7 @@ The standard:
   - skeletons shaped and spaced like the page they stand for;
   - one `ErrorState`: what happened, Try again, Back home.
 - **Done when** every list page has all three states, checked in the tours.
+- *Web done 2026-11-06: `components/States.tsx` has `EmptyState` (icon, one line, the action that fills the page, or Feeling lucky), `ErrorState` (Something skipped., Try again, Back home), `InlineError` for part of a page, and skeletons shaped like cards and song rows; every list page uses them (`docs/design.md`, Empty, loading and error). iOS to do.*
 
 ## 9. Overlays behave alike — S
 

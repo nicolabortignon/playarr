@@ -58,6 +58,7 @@ function ActionToast({
   dismiss: () => void;
 }) {
   const hold = useToasts((s) => s.hold);
+  const act = useToasts((s) => s.act);
   const timed = !!toast.timeout;
   return (
     <motion.div
@@ -71,14 +72,7 @@ function ActionToast({
     >
       <span>{toast.message}</span>
       <span className="ml-auto flex shrink-0 gap-1">
-        <Button
-          variant="primary"
-          size="small"
-          onClick={() => {
-            dismiss();
-            action.run();
-          }}
-        >
+        <Button variant="primary" size="small" onClick={() => act(toast.id)}>
           {action.label}
         </Button>
         {!timed && (

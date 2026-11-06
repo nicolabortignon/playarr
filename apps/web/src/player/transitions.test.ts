@@ -509,7 +509,7 @@ describe('errors', () => {
     expect(transition).toHaveBeenLastCalledWith(1, 2, 'auto', 5, { fromFileId: 101, toFileId: 102 }, HOW);
   });
 
-  it('asks once more a minute after “unavailable” (the song may have been analysed since), then keeps it', async () => {
+  it('asks once more a minute after “unavailable” (the song may have been analyzed since), then keeps it', async () => {
     transition.mockResolvedValue(unavailable);
     renderHook(() => useUpcomingTransition());
     await playTo(5);

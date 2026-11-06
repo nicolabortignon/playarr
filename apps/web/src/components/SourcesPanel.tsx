@@ -23,15 +23,16 @@ import { plural, formatWait } from '../lib/format';
 import { useFolderAccess, useFolderListing, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
 import { Button, IconButton } from './Button';
 import { Choice } from './Choice';
-import { Dialog } from './Dialog';
+import { ConfirmDialog, Dialog } from './Dialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { ReviewDialog } from './ReviewDialog';
 import { AwayNotice } from './SettingsControls';
+import { InlineError } from './States';
 import { TextField } from './TextField';
 
 /** Settings → Sources: where the library comes from, in priority order. */
 export function SourcesPanel() {
-  const { data, error } = useSources();
+  const { data, error, refetch, isFetching } = useSources();
   const actions = useSourceActions();
   const [order, setOrder] = useState<SourceInfo[]>([]);
   const [editing, setEditing] = useState<SourceInfo | 'new' | null>(null);
@@ -42,7 +43,7 @@ export function SourcesPanel() {
     if (data) setOrder(data.sources);
   }, [data]);
 
-  if (error) return <p className="text-sm text-danger">{(error as Error).message}</p>;
+  if (error && !data) return <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} />;
   if (!data) return <div className="h-24 animate-pulse rounded-lg bg-paper/5" />;
 
   const { canEdit } = data;
@@ -114,11 +115,7 @@ function SourceRow({
 }) {
   const controls = useDragControls();
   const actions = useSourceActions();
-  const remove = () => {
-    if (window.confirm(`Remove “${s.name}”? Its songs leave your library; favorites and playlists keep them, greyed out.`)) {
-      actions.remove.mutate(s.id);
-    }
-  };
+  const [removing, setRemoving] = useState(false);
   const remote = s.kind === 'folder' && !!s.settings?.access && s.settings.access !== 'local';
   const where = !remote
     ? (s.settings?.url ?? s.settings?.path)
@@ -178,11 +175,25 @@ function SourceRow({
           <IconButton label="Edit" title="Edit" onClick={onEdit}>
             <Pencil className="size-4" />
           </IconButton>
-          <IconButton label="Remove" title="Remove" onClick={remove}>
+          <IconButton label="Remove" title="Remove" onClick={() => setRemoving(true)}>
             <Trash2 className="size-4" />
           </IconButton>
         </div>
       )}
+      <ConfirmDialog
+        open={removing}
+        onClose={() => setRemoving(false)}
+        title={`Remove “${s.name}”?`}
+        confirmLabel="Remove"
+        pendingLabel="Removing…"
+        pending={actions.remove.isPending}
+        onConfirm={() => actions.remove.mutate(s.id, { onSettled: () => setRemoving(false) })}
+      >
+        <p>
+          {s.songs === 1 ? 'Its song leaves' : `Its ${plural(s.songs, 'song')} leave`} your library; playlists and Favorites keep them in their place,
+          grayed out. The files themselves aren’t touched, and adding the source again brings them back.
+        </p>
+      </ConfirmDialog>
     </Reorder.Item>
   );
 }
@@ -201,8 +212,8 @@ export function AlbumSummary({ source: s }: { source: SourceInfo }) {
           [s.songsUnknown, 'Unidentified', 'Unidentified'],
         ] as const)
       : ([
-          [s.albumsComplete, 'Complete Album', 'Complete Albums'],
-          [s.albumsIncomplete, 'Incomplete Album', 'Incomplete Albums'],
+          [s.albumsComplete, 'Complete album', 'Complete albums'],
+          [s.albumsIncomplete, 'Incomplete album', 'Incomplete albums'],
           [s.albumsUnknown, 'Unidentified', 'Unidentified'],
         ] as const);
   return (
@@ -277,7 +288,7 @@ function MatchingSection() {
     <section className="mt-12 max-w-prose">
       <h2 className="mb-2 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Identifying songs</h2>
       <p className="mb-4 text-sm text-muted">
-        Playarr matches folder albums on MusicBrainz by their names, track titles and lengths. For songs whose names don’t help,
+        Playarr matches folder albums on MusicBrainz by their names, song titles and lengths. For songs whose names don’t help,
         it can identify them by their sound with AcoustID. A free key comes from{' '}
         <a href="https://acoustid.org/new-application" target="_blank" rel="noreferrer" className="text-accent hover:underline">
           acoustid.org
@@ -311,7 +322,7 @@ function MatchingSection() {
             spellCheck={false}
             className="min-w-0 flex-1"
           />
-          <Button type="submit" variant="primary" disabled={!key} pending={save.isPending}>
+          <Button type="submit" variant="primary" disabled={!key} pending={save.isPending} pendingLabel="Saving…">
             Save
           </Button>
         </form>
@@ -569,7 +580,7 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
         value={access}
         onChange={chooseAccess}
       />
-      {smb && smbOff && <p className="text-[13px] text-danger">{SMB_OFF}.</p>}
+      {smb && smbOff && <InlineError error={`${SMB_OFF}.`} />}
       {remote && (
         <div className="space-y-4">
           <div className="flex gap-3">
@@ -717,7 +728,7 @@ function FolderBrowser({
   rootLabel?: string;
 }) {
   const [at, setAt] = useState<string | undefined>(value);
-  const { data, error, isFetching } = useFolderListing({ ...request, path: at });
+  const { data, error, isFetching, refetch } = useFolderListing({ ...request, path: at });
   const remote = !!request.connection && request.connection.access !== 'local';
   // On this server, "up" from a root goes back to the list of roots; on another machine, "/" is the top.
   const canGoUp = data && data.path !== null && (data.parent !== null || !remote);
@@ -765,7 +776,7 @@ function FolderBrowser({
           </li>
         )}
       </ul>
-      {error && <p className="px-3 py-2 text-[13px] text-danger">{(error as Error).message}</p>}
+      {error && <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} className="px-3 py-2" />}
       {data?.path && !(rootLabel && data.path === '/') && (
         <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2">
           <span className="text-[12px] text-muted">

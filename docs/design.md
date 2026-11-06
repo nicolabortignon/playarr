@@ -58,13 +58,27 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 ## Rows, menus and toasts
 
-- **A song row:** [drag handle] · number or cover · title (`type-body`) over subtitle (`type-small`) · time (`type-meta`) · ♥ · ⋯. Every row in a list is the same height (52 with a number, 60 on touch or with a cover); missing songs are greyed in their place. The song playing has an accent title and the equalizer. With a mouse, ♥ and ⋯ show on hover or focus; on touch they always show. On a phone, the queue and Your listening drop the ♥ and put the numbers under the title.
+- **A song row:** [drag handle] · number or cover · title (`type-body`) over subtitle (`type-small`) · time (`type-meta`) · ♥ · ⋯. Every row in a list is the same height (52 with a number, 60 on touch or with a cover); missing songs are grayed in their place. The song playing has an accent title and the equalizer. With a mouse, ♥ and ⋯ show on hover or focus; on touch they always show. On a phone, the queue and Your listening drop the ♥ and put the numbers under the title.
 - **Accessible names:** a row's own button is "Play {title}" (or "Pause {title}" for the song playing); its ⋯ is "More for {title}".
 - **One song menu**, in every list: Play next · Add to queue · Add to playlist… · Start radio · Go to album · Go to artist · Show metadata, then after a line the place's own actions: Move up, Move down, then Remove last. Albums and playlists have one menu each too; a card's menu starts with Play and Shuffle.
 - **How a menu opens:** ⋯, a right-click, a half-second press on touch, or the menu key. With a mouse, links keep the browser's own menu. Escape closes only the menu.
-- **Toasts:** what happened, naming the song in curly quotes ("“Teardrop” plays next", "3 songs play next"), with Undo where it can be taken back. A toast with Undo stays 6 seconds, longer while it's hovered or focused.
+- **Toasts:** what happened, naming the song in curly quotes ("“Teardrop” plays next", "3 songs play next"), with Undo where it can be taken back. A toast with Undo stays 6 seconds, longer while it's hovered or focused. At most three show at once, and a repeat replaces the one before it.
 - **Add to playlist** ticks the playlists that already hold all the songs (a dash for some), and adds to several at once.
 - **Cards:** one width on every shelf (web `SHELF_CARD`). An artist is a circle with the name below: their photo, else their best album cover, else a vinyl monogram.
+- **The "on this device" mark** is for songs the listener downloaded (with an album, a playlist, a mix or Favorites). Songs only loaded ahead as you listen get no mark: the mark means you can count on it being there.
+
+### Taking things back
+
+- **Taking something out of a list** happens at once, with Undo in the toast: "Removed “Teardrop” from “Late night”", "Removed “X” from the queue", "Removed “X” from Requests", "Removed “X” from this device", "Stopped sharing “X”".
+- **When the server can't undo it** (a request forgotten can't be asked for again once the album has arrived), the item hides at once and the removal waits until the Undo has gone.
+- **Losing something for good asks first**, in a dialog: the question names what goes ("Delete “Late night”?", "Remove 312 songs from this device?", "Remove Sam?"), the words under it say what goes and what stays, Cancel has the focus, and the button is the danger verb ("Delete", "Remove", "Sign out").
+
+## Empty, loading and error
+
+- **Empty:** an icon in a ring, one line in the display face in the app's voice ("Songs you heart land here.", "Not in your crates."), a quieter line only where the first can't say it all, and the one action that fills the page as a large primary button. Where nothing else fills it, that's Feeling lucky.
+- **Loading:** skeletons shaped like what they stand for, in the real grid or rows, as many as fill the first screen; never a spinner on its own for a page.
+- **Error:** a whole page that couldn't load says "Something skipped." with the reason, Try again and Back home. A part of a page (a panel, a section, a dialog) says what happened and why in its place, with a small Try again.
+- **What isn't possible here** says why and who can change it, never a button that leads nowhere. Requests without Lidarr: an admin reads "Requests need a Lidarr source." with Add Lidarr; everyone else "Requests aren’t set up on this server." and that an admin can add one. Requests turned off, or an account that can't request, read the same way.
 
 ## Controls
 
@@ -121,13 +135,14 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 
 ## Words
 
-- **Songs, not tracks**, in every count and heading: "3 songs · 17 min", "Show all 12 songs".
-- **Favorites** is the noun: "Favorites", "Add to Favorites". "Songs you love" can stay as flavor in a kicker.
-- **Made for you** is the place for mixes (the nav, Home's shelf, Settings); one of them is a **mix** ("New mix").
-- **Pending verbs** end with an ellipsis: "Requesting…", "Looking up…".
-- **Retry** is always "Try again".
-- **Remove** takes something out of a list; **Delete** destroys it.
+- **Songs, not tracks**, in every count and heading: "3 songs · 17 min", "Show all 12 songs", "Cleared 12 songs from the queue". "Track" stays only where it's the tag's own name (the track number in Track details, ReplayGain's "track gain").
+- **Search** fields say "Search music".
+- **Favorites** is the noun: "Favorites", "Add “X” to Favorites", "Remove “X” from Favorites". "Songs you love" can stay as flavor in a kicker.
+- **Made for you** is the place for mixes (the nav, Home's shelf, Settings); one of them is a **mix** ("New mix"), and "mix" means nothing else (a playlist's other suggestions are "Other suggestions").
+- **Pending verbs** end with an ellipsis: "Saving…", "Adding…", "Deleting…", "Trying again…". Statuses aren't pending verbs and have none: a request is "Searching", "Importing".
+- **Retry** is always "Try again". "Reload" is only for loading a new version of the app.
+- **Remove** takes something out of a list (the queue, a playlist, Requests, this device, Favorites); **Delete** destroys it (a playlist). Removing an account is "Remove", and its dialog says the history goes with it.
 - **Actions** are sentence case ("Play", "Shuffle", "Feeling lucky"). Mono capitals are for choices (Albums' sort, Stats' ranges) and kickers.
-- **Spelling:** American (decided 2026-11-06): color, favorite, analyzed, leveled, organize.
-- **Badges** say what they mean: "MP3 · 320 kbps", and an ordinary bitrate isn't shown.
+- **Spelling:** American (decided 2026-11-06): color, favorite, gray, analyzed, leveled, organize, neighbors.
+- **Badges** say only what's worth saying: "MP3", "FLAC", and the details when they're out of the ordinary ("MP3 · 128 kbps", "FLAC · 24/96"). Ordinary is 256 kbps or more, or CD quality (16-bit at 44.1 or 48 kHz). The full details are in the badge's title.
 - **Accent means action:** text in the accent can be tapped.

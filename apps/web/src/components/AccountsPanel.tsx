@@ -1,4 +1,4 @@
-import type { Account, AccountRole, DeviceSetting, ListedAccount, SetupCode } from '@playarr/shared';
+import type { Account, AccountRole, DeviceSetting, ListedAccount, SessionInfo, SetupCode } from '@playarr/shared';
 import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash2, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
@@ -8,7 +8,8 @@ import { plural } from '../lib/format';
 import { useAccountAction, useAccountList, useAccountSessions, useMe, useServerInfo, useSources } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { Button, IconButton } from './Button';
-import { Dialog } from './Dialog';
+import { ConfirmDialog, Dialog } from './Dialog';
+import { InlineError } from './States';
 import { SettingsSection } from './SettingsControls';
 import { TextField } from './TextField';
 const LOADING = <div aria-busy="true" className="h-40 max-w-prose animate-pulse rounded-lg bg-paper/5" />;
@@ -20,7 +21,7 @@ export function AccountsPanel() {
   if (!server) return LOADING;
   if (server.setup) return <ClaimServer />;
   if (isPending) return LOADING;
-  if (!me) return <p className="text-sm text-danger">{error?.message ?? 'Sign in to see your account.'}</p>;
+  if (!me) return <InlineError error={error ?? 'Sign in to see your account.'} />;
   return (
     <div>
       <You me={me} />
@@ -52,11 +53,11 @@ function You({ me }: { me: Account }) {
     <SettingsSection title="You" description={`Signed in as ${me.username}${me.role === 'admin' ? ', an admin' : ''}.`}>
       <form onSubmit={save} className="flex max-w-md items-center gap-2">
         <TextField label="Your name" hideLabel value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className="min-w-0 flex-1" />
-        <Button type="submit" variant="primary" disabled={!name.trim() || name.trim() === me.name} pending={rename.isPending}>
+        <Button type="submit" variant="primary" disabled={!name.trim() || name.trim() === me.name} pending={rename.isPending} pendingLabel="Saving…">
           Save
         </Button>
       </form>
-      <h3 className="mt-6 mb-1 text-[13px] text-muted">Signed in on</h3>
+      <h3 className="mt-6 mb-1 type-small text-muted">Signed in on</h3>
       <Devices accountId={me.id} />
       <Button icon={<LogOut />} onClick={() => void signOut().then(() => navigate('/sign-in', { replace: true }))} className="mt-5">
         Sign out on this device
@@ -65,31 +66,45 @@ function You({ me }: { me: Account }) {
   );
 }
 
-/** An account's signed-in devices, each but this one signed out with a tap. */
+/** An account's signed-in devices, each but this one signed out after asking. */
 function Devices({ accountId }: { accountId: number }) {
   const { data: sessions } = useAccountSessions(accountId);
-  const end = useAccountAction((sessionId: number) => api.endSession(accountId, sessionId));
+  const [ending, setEnding] = useState<SessionInfo | null>(null);
+  const end = useAccountAction((sessionId: number) => api.endSession(accountId, sessionId), () => setEnding(null));
   if (!sessions) return <div aria-busy="true" className="h-16 animate-pulse rounded-lg bg-paper/5" />;
   if (!sessions.length) return <p className="text-sm text-muted">No devices are signed in.</p>;
   return (
-    <ul className="divide-y divide-line">
-      {sessions.map((s) => (
-        <li key={s.id} className="flex items-center gap-3 py-2">
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[15px] text-paper">
-              {s.device}
-              {s.current && <span className="ml-2 text-[13px] text-muted">this device</span>}
+    <>
+      <ConfirmDialog
+        open={!!ending}
+        onClose={() => setEnding(null)}
+        title={`Sign out ${ending?.device ?? ''}?`}
+        confirmLabel="Sign out"
+        pendingLabel="Signing out…"
+        pending={end.isPending}
+        onConfirm={() => ending && end.mutate(ending.id)}
+      >
+        <p>It stops listening at once, and needs the password to sign in again.</p>
+      </ConfirmDialog>
+      <ul className="divide-y divide-line">
+        {sessions.map((s) => (
+          <li key={s.id} className="flex items-center gap-3 py-2">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate type-body text-paper">
+                {s.device}
+                {s.current && <span className="ml-2 type-small text-muted">this device</span>}
+              </span>
+              <span className="block text-[12px] text-muted">Last used {new Date(s.lastSeenAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
             </span>
-            <span className="block text-[12px] text-muted">Last used {new Date(s.lastSeenAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-          </span>
-          {!s.current && (
-            <IconButton label={`Sign out ${s.device}`} onClick={() => end.mutate(s.id)}>
-              <LogOut className="size-4" />
-            </IconButton>
-          )}
-        </li>
-      ))}
-    </ul>
+            {!s.current && (
+              <IconButton label={`Sign out ${s.device}`} onClick={() => setEnding(s)}>
+                <LogOut className="size-4" />
+              </IconButton>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -108,6 +123,14 @@ function summary(a: Account, sourceNames: Map<number, string>): string {
     .join(' · ');
 }
 
+/** What removing an account takes with it, by name and number. */
+function removedSummary(a: Account & Partial<Pick<ListedAccount, 'plays' | 'playlists'>>, self: boolean): string {
+  const whose = self ? 'Your' : 'Their';
+  const history = a.plays ? `listening history (${a.plays.toLocaleString('en')} ${a.plays === 1 ? 'song' : 'songs'} played)` : 'listening history';
+  const playlists = a.playlists ? `${plural(a.playlists, 'playlist')}` : 'playlists';
+  return `${whose} ${history}, mixes, Favorites and ${playlists} are deleted for good, and every device ${self ? 'you’re' : 'they’re'} signed in on is signed out.`;
+}
+
 /** "1,234 songs played · 3 playlists" */
 function activity(a: ListedAccount): string {
   return `${a.plays.toLocaleString('en')} ${a.plays === 1 ? 'song' : 'songs'} played · ${plural(a.playlists, 'playlist')}`;
@@ -122,12 +145,19 @@ function Everyone({ me }: { me: Account }) {
   const [devices, setDevices] = useState<Account | null>(null);
   const [removing, setRemoving] = useState<Account | null>(null);
   const [code, setCode] = useState<{ account: Account; setup: SetupCode } | null>(null);
+  const [resetting, setResetting] = useState<Account | null>(null);
   const create = useAccountAction((input: AccountInput) => api.createAccount(input), (created) => {
     setAdding(false);
     setCode(created);
   });
   const update = useAccountAction(({ id, input }: { id: number; input: AccountInput }) => api.updateAccount(id, input), () => setEditing(null));
-  const reset = useAccountAction((a: Account) => api.resetAccount(a.id).then((setup) => ({ account: a, setup })), setCode);
+  const reset = useAccountAction(
+    (a: Account) => api.resetAccount(a.id).then((setup) => ({ account: a, setup })),
+    (made) => {
+      setResetting(null);
+      setCode(made);
+    },
+  );
   const remove = useAccountAction(
     (a: Account) => api.deleteAccount(a.id),
     () => {
@@ -136,7 +166,7 @@ function Everyone({ me }: { me: Account }) {
     },
   );
 
-  if (error) return <p className="mt-12 text-sm text-danger">{error.message}</p>;
+  if (error) return <InlineError className="mt-12" error={error} />;
   if (!accounts) return LOADING;
   const sourceNames = new Map((sourceList?.sources ?? []).map((s) => [s.id, s.name]));
 
@@ -149,9 +179,9 @@ function Everyone({ me }: { me: Account }) {
         {accounts.map((a) => (
           <li key={a.id} className="flex items-center gap-1 py-2">
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[15px] text-paper">
+              <span className="block truncate type-body text-paper">
                 {a.name}
-                {a.id === me.id && <span className="ml-2 text-[13px] text-muted">you</span>}
+                {a.id === me.id && <span className="ml-2 type-small text-muted">you</span>}
               </span>
               <span className="block truncate text-[12px] text-muted">{summary(a, sourceNames)}</span>
               <span className="block truncate text-[12px] text-muted">{activity(a)}</span>
@@ -162,7 +192,7 @@ function Everyone({ me }: { me: Account }) {
             <IconButton label={`Devices of ${a.name}`} onClick={() => setDevices(a)}>
               <Smartphone className="size-4" />
             </IconButton>
-            <IconButton label={`New setup code for ${a.name}`} onClick={() => reset.mutate(a)}>
+            <IconButton label={`New setup code for ${a.name}`} onClick={() => setResetting(a)}>
               <KeyRound className="size-4" />
             </IconButton>
             <IconButton label={`Remove ${a.name}`} onClick={() => setRemoving(a)}>
@@ -191,17 +221,35 @@ function Everyone({ me }: { me: Account }) {
       <Dialog open={!!code} onClose={() => setCode(null)} title={`Setup code for ${code?.account.name ?? ''}`}>
         {code && <SetupCodeView setup={code.setup} />}
       </Dialog>
-      <Dialog open={!!removing} onClose={() => setRemoving(null)} title={`Remove ${removing?.name ?? ''}?`}>
-        <div className="space-y-5 p-5">
-          <p className="text-[15px] text-paper-dim">Their listening history, mixes, favorites and playlists are deleted, and every device they’re signed in on is signed out.</p>
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setRemoving(null)}>Cancel</Button>
-            <Button variant="danger" pending={remove.isPending} pendingLabel="Removing…" onClick={() => removing && remove.mutate(removing)}>
-              Remove
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      <ConfirmDialog
+        open={!!resetting}
+        onClose={() => setResetting(null)}
+        title={`New setup code for ${resetting?.name ?? ''}?`}
+        confirmLabel="Make a new code"
+        pendingLabel="Making one…"
+        pending={reset.isPending}
+        onConfirm={() => resetting && reset.mutate(resetting)}
+      >
+        {resetting?.hasPassword ? (
+          <p>
+            {resetting.id === me.id ? 'Your' : `${resetting.name}’s`} password stops working, and every device {resetting.id === me.id ? 'you’re' : 'they’re'}{' '}
+            signed in on is signed out, until a new password is chosen with the new code.
+          </p>
+        ) : (
+          <p>The code {resetting?.name} was given before stops working.</p>
+        )}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        title={`Remove ${removing?.name ?? ''}?`}
+        confirmLabel="Remove"
+        pendingLabel="Removing…"
+        pending={remove.isPending}
+        onConfirm={() => removing && remove.mutate(removing)}
+      >
+        {removing && <p>{removedSummary(accounts.find((a) => a.id === removing.id) ?? removing, removing.id === me.id)}</p>}
+      </ConfirmDialog>
     </SettingsSection>
   );
 }
@@ -237,25 +285,25 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
         spellCheck={false}
       />
       <fieldset className="space-y-2">
-        <legend className="mb-1 text-[13px] text-muted">Role</legend>
-        <label className="flex items-center gap-2 text-[15px] text-paper">
+        <legend className="mb-1 type-small text-muted">Role</legend>
+        <label className="flex items-center gap-2 type-body text-paper">
           <input type="radio" name="role" checked={role === 'member'} onChange={() => setRole('member')} className={check} />
           Member: listens
         </label>
-        <label className="flex items-center gap-2 text-[15px] text-paper">
+        <label className="flex items-center gap-2 type-body text-paper">
           <input type="radio" name="role" checked={role === 'admin'} onChange={() => setRole('admin')} className={check} />
           Admin: also changes settings, sources and accounts
         </label>
       </fieldset>
-      <label className="flex items-center gap-2 text-[15px] text-paper">
+      <label className="flex items-center gap-2 type-body text-paper">
         <input type="checkbox" checked={canRequest} onChange={(e) => setCanRequest(e.target.checked)} className={check} />
         Can request albums
       </label>
       {role === 'member' && (
         <fieldset className="space-y-2">
-          <legend className="mb-1 text-[13px] text-muted">May change on their devices</legend>
+          <legend className="mb-1 type-small text-muted">May change on their devices</legend>
           {DEVICE_SETTINGS.map(({ setting, label }) => (
-            <label key={setting} className="flex items-center gap-2 text-[15px] text-paper">
+            <label key={setting} className="flex items-center gap-2 type-body text-paper">
               <input type="checkbox" checked={!locked.includes(setting)} onChange={(e) => allow(setting, e.target.checked)} className={check} />
               {label}
             </label>
@@ -263,19 +311,19 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
         </fieldset>
       )}
       <fieldset className="space-y-2">
-        <legend className="mb-1 text-[13px] text-muted">Library</legend>
-        <label className="flex items-center gap-2 text-[15px] text-paper">
+        <legend className="mb-1 type-small text-muted">Library</legend>
+        <label className="flex items-center gap-2 type-body text-paper">
           <input type="radio" name="library" checked={everySource} onChange={() => setEverySource(true)} className={check} />
           Every source
         </label>
-        <label className="flex items-center gap-2 text-[15px] text-paper">
+        <label className="flex items-center gap-2 type-body text-paper">
           <input type="radio" name="library" checked={!everySource} onChange={() => setEverySource(false)} className={check} />
           Only these sources
         </label>
         {!everySource && (
           <div className="ml-6 space-y-2">
             {(sourceList?.sources ?? []).map((s) => (
-              <label key={s.id} className="flex items-center gap-2 text-[15px] text-paper">
+              <label key={s.id} className="flex items-center gap-2 type-body text-paper">
                 <input type="checkbox" checked={picked.includes(s.id)} onChange={() => toggle(s.id)} className={check} />
                 {s.name}
               </label>
@@ -284,7 +332,7 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
         )}
       </fieldset>
       <div className="flex justify-end">
-        <Button type="submit" variant="primary" disabled={!name.trim() || !username.trim()} pending={busy}>
+        <Button type="submit" variant="primary" disabled={!name.trim() || !username.trim()} pending={busy} pendingLabel={account ? 'Saving…' : 'Adding…'}>
           {submitLabel}
         </Button>
       </div>
@@ -301,7 +349,7 @@ function SetupCodeView({ setup }: { setup: SetupCode }) {
     );
   return (
     <div className="space-y-4 p-5">
-      <p className="text-[15px] text-paper-dim">
+      <p className="type-body text-paper-dim">
         Give them this code or link: they choose their own password with it. It works once, until{' '}
         {new Date(setup.expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}.
       </p>

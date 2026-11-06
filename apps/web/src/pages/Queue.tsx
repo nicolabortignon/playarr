@@ -1,5 +1,5 @@
 import type { Track } from '@playarr/shared';
-import { ListPlus } from 'lucide-react';
+import { ListMusic, ListPlus } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
@@ -14,10 +14,11 @@ import { upNextMenu } from '../components/menus';
 import { OfflineMark } from '../components/OfflineMark';
 import { PageHeader } from '../components/PageHeader';
 import { SongRow, SongTime } from '../components/SongRow';
+import { EmptyState } from '../components/States';
 import { TransitionView } from '../components/TransitionView';
 import { formatDuration, plural } from '../lib/format';
 import { useTempos } from '../lib/queries';
-import { toast } from '../lib/toast';
+import { toastWithUndo } from '../lib/toast';
 import { useUI } from '../lib/ui';
 import { moveUpcoming, playUpcoming } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -37,9 +38,7 @@ export function QueuePage() {
     return (
       <div className="px-5 pt-8 md:px-10 md:pt-14">
         <PageHeader title="Queue" />
-        <p className="text-muted">
-          Nothing queued. Pick an <Link to="/albums" className="text-accent hover:underline">album</Link> to start listening.
-        </p>
+        <EmptyState icon={ListMusic} title="Nothing queued yet." action="lucky" />
       </div>
     );
   }
@@ -115,12 +114,9 @@ function clearWithUndo(ids: number[]) {
   const { clearUpcoming, setUpcoming } = usePlayer.getState();
   const current = usePlayer.getState().order[usePlayer.getState().pos];
   clearUpcoming();
-  toast(`Cleared ${plural(ids.length, 'song')}`, 'info', {
-    label: 'Undo',
-    run: () => {
-      const s = usePlayer.getState();
-      if (s.order[s.pos] === current) setUpcoming([...ids, ...s.order.slice(s.pos + 1)]);
-    },
+  toastWithUndo(`Cleared ${plural(ids.length, 'song')} from the queue`, () => {
+    const s = usePlayer.getState();
+    if (s.order[s.pos] === current) setUpcoming([...ids, ...s.order.slice(s.pos + 1)]);
   });
 }
 

@@ -9,12 +9,13 @@ import { Button } from './Button';
 import { Cover } from './Cover';
 import { RequestButton } from './Discover';
 import { InlineLink } from './InlineLink';
-import { SectionHeader, Skeleton } from './Section';
+import { SectionHeader } from './Section';
+import { InlineError, SongRowsSkeleton } from './States';
 import { ListRow } from './SongRow';
 
 const MISSING_PREVIEW = 8;
 
-/** "Songs like these" under a playlist: ListenBrainz neighbours, split into owned (add) and missing (request). */
+/** "Songs like these" under a playlist: ListenBrainz neighbors, split into owned (add) and missing (request). */
 export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: number; enabled: boolean }) {
   const [variant, setVariant] = useState(0);
   const [added, setAdded] = useState<Set<string>>(new Set());
@@ -28,7 +29,7 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
   const owned = data?.owned.filter((r) => !added.has(r.recordingId)) ?? [];
   const missing = data?.missing ?? [];
   const shownMissing = showAll ? missing : missing.slice(0, MISSING_PREVIEW);
-  const newMix = () => {
+  const others = () => {
     setVariant((v) => v + 1);
     setShowAll(false);
   };
@@ -39,32 +40,23 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
         kicker="From ListenBrainz"
         title="Songs like these"
         action={
-          <Button size="small" icon={<Dices className={cn(isFetching && 'animate-spin')} />} onClick={newMix} disabled={isFetching}>
-            New mix
+          <Button size="small" icon={<Dices className={cn(isFetching && 'animate-spin')} />} onClick={others} disabled={isFetching}>
+            Other suggestions
           </Button>
         }
       />
 
-      {isPending && (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }, (_, i) => (
-            <Skeleton key={i} className="h-14" />
-          ))}
-        </div>
-      )}
+      {isPending && <SongRowsSkeleton count={5} className="-mx-3" />}
 
       {error && !data && (
-        <p className="text-sm text-muted">
-          Couldn’t reach ListenBrainz. {(error as Error).message}{' '}
-          <button type="button" onClick={() => void refetch()} className="text-accent hover:underline">
-            Try again
-          </button>
-        </p>
+        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching}>
+          Couldn’t reach ListenBrainz
+        </InlineError>
       )}
 
       {data && !owned.length && !missing.length && (
         <p className="max-w-md text-sm text-muted">
-          ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try a new mix or add a few more songs.
+          ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try other suggestions, or add a few more songs.
         </p>
       )}
 

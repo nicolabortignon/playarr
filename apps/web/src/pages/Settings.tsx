@@ -16,7 +16,7 @@ const PANELS = [
   { id: 'playback', label: 'Playback', scope: 'These settings are for this device.', Panel: PlaybackPanel },
   { id: 'accounts', label: 'Accounts', scope: 'Who signs in to this server, and what each account may hear and change.', Panel: AccountsPanel },
   { id: 'listening', label: 'Your listening', scope: undefined, Panel: ListeningStatsView },
-  { id: 'mixes', label: 'Mixes', scope: 'These settings apply to everyone.', Panel: MixesPanel },
+  { id: 'mixes', label: 'Made for you', scope: 'These settings apply to everyone.', Panel: MixesPanel },
   { id: 'analysis', label: 'Analysis', scope: 'These settings apply to everyone.', Panel: AnalysisPanel },
   { id: 'requests', label: 'Requests', scope: 'These settings apply to everyone.', Panel: RequestsPanel },
   { id: 'appearance', label: 'Appearance', scope: 'These settings are for this device.', Panel: AppearancePanel },

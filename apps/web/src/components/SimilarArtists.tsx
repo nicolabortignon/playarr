@@ -1,6 +1,7 @@
 import { useSimilarArtists } from '../lib/queries';
 import { DiscoverArtistCard } from './Cards';
-import { SectionHeader, SHELF_CARD, Shelf, Skeleton } from './Section';
+import { SectionHeader, SHELF_CARD, Shelf } from './Section';
+import { CardSkeleton, InlineError } from './States';
 
 const stagger = (i: number) => ({ animationDelay: `${Math.min(i, 8) * 40}ms` });
 
@@ -9,7 +10,7 @@ const stagger = (i: number) => ({ animationDelay: `${Math.min(i, 8) * 40}ms` });
  * library (opening their page), then the others (opening their discography, to request albums).
  */
 export function SimilarArtists({ mbid }: { mbid: string }) {
-  const { data, error, isPending } = useSimilarArtists(mbid);
+  const { data, error, isPending, isFetching, refetch } = useSimilarArtists(mbid);
 
   if (isPending) {
     return (
@@ -17,7 +18,7 @@ export function SimilarArtists({ mbid }: { mbid: string }) {
         <SectionHeader kicker="From ListenBrainz" title="Similar artists" />
         <Shelf>
           {Array.from({ length: 6 }, (_, i) => (
-            <Skeleton key={i} className={`aspect-square rounded-full ${SHELF_CARD}`} />
+            <CardSkeleton key={i} round className={SHELF_CARD} />
           ))}
         </Shelf>
       </section>
@@ -27,7 +28,9 @@ export function SimilarArtists({ mbid }: { mbid: string }) {
     return (
       <section className="mb-14">
         <SectionHeader kicker="From ListenBrainz" title="Similar artists" />
-        <p className="text-sm text-muted">Couldn’t reach ListenBrainz for similar artists right now.</p>
+        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching}>
+          Couldn’t reach ListenBrainz for similar artists
+        </InlineError>
       </section>
     );
   }

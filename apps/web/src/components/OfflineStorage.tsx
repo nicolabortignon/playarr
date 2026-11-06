@@ -1,9 +1,11 @@
 import { HardDriveDownload } from 'lucide-react';
+import { useState } from 'react';
 import { formatBytes, plural } from '../lib/format';
 import { Link } from 'react-router';
 import { canKeepOffline, clearOffline, keptBytes, OFFLINE_LIMITS, setOfflineLimit, splitKept, useOffline, useWorkerReady } from '../player/offline';
 import { Button } from './Button';
 import { Choice } from './Choice';
+import { ConfirmDialog } from './Dialog';
 import { SettingsSection } from './SettingsControls';
 
 const LIMIT_OPTIONS = OFFLINE_LIMITS.map((value) => ({ value, label: value ? formatBytes(value) : 'Off' }));
@@ -18,6 +20,9 @@ export function OfflineStorage({ className }: { className?: string }) {
   const used = keptBytes(rest);
   const downloads = Object.keys(pins).length;
   const ready = useWorkerReady();
+  const [confirming, setConfirming] = useState(false);
+  // Songs only: transitions kept with downloads have ids below zero.
+  const allSongs = Object.keys(songs).filter((id) => Number(id) > 0).length;
 
   return (
     <SettingsSection title="On this device" className={className}>
@@ -36,7 +41,7 @@ export function OfflineStorage({ className }: { className?: string }) {
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-[17px] text-paper">{limit ? plural(count, 'song') : 'Off'}</span>
                 {limit > 0 && (
-                  <span className="font-mono text-[12px] text-muted tabular">
+                  <span className="type-meta text-muted">
                     {formatBytes(used)} of {formatBytes(limit)}
                   </span>
                 )}
@@ -71,7 +76,7 @@ export function OfflineStorage({ className }: { className?: string }) {
           )}
 
           <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
-            <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Keep up to</span>
+            <span className="type-kicker text-muted">Keep up to</span>
             <Choice
               label="Space for songs on this device"
               options={LIMIT_OPTIONS}
@@ -79,13 +84,36 @@ export function OfflineStorage({ className }: { className?: string }) {
               onChange={(value) => void setOfflineLimit(value)}
             />
             {(count > 0 || downloads > 0) && (
-              <Button variant="ghost" size="small" className="ml-auto" onClick={() => void clearOffline()}>
+              <Button variant="ghost" size="small" className="ml-auto" onClick={() => setConfirming(true)}>
                 Remove all
               </Button>
             )}
           </div>
+          <ConfirmDialog
+            open={confirming}
+            onClose={() => setConfirming(false)}
+            title={`Remove ${plural(allSongs, 'song')} from this device?`}
+            confirmLabel="Remove all"
+            onConfirm={() => {
+              setConfirming(false);
+              void clearOffline();
+            }}
+          >
+            <p>{whatGoes(downloads, keptBytes(inDownloads), count, used)}</p>
+            <p>Nothing leaves your library: anything can be downloaded again.</p>
+          </ConfirmDialog>
         </>
       )}
     </SettingsSection>
   );
+}
+
+/** "2 downloads (1.2 GB) and 40 songs saved as you listened (310 MB) leave this device." */
+function whatGoes(downloads: number, downloadBytes: number, saved: number, savedBytes: number): string {
+  const parts = [
+    ...(downloads ? [`${plural(downloads, 'download')} (${formatBytes(downloadBytes)})`] : []),
+    ...(saved ? [`${plural(saved, 'song')} saved as you listened (${formatBytes(savedBytes)})`] : []),
+  ];
+  const one = parts.length === 1 && (downloads || saved) === 1;
+  return `${parts.join(' and ')} ${one ? 'leaves' : 'leave'} this device.`;
 }

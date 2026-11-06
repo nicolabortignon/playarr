@@ -4,6 +4,7 @@ import { useAnalysisProgress, useIsMember, useMixSettings, useRunAnalysis, useSa
 import { Button } from './Button';
 import { Dialog } from './Dialog';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
+import { InlineError } from './States';
 
 /** 5678 → "5,678": the rest of the panel is in English, so its numbers are too. */
 const count = (n: number) => n.toLocaleString('en');
@@ -11,11 +12,11 @@ const songs = (n: number) => `${count(n)} ${n === 1 ? 'song' : 'songs'}`;
 
 const AUDIO_OFF = 'Audio analysis is off on this server (set ANALYSIS=on in its .env).';
 
-/** What's under way: the songs being analysed and waiting, for each queue. */
+/** What's under way: the songs being analyzed and waiting, for each queue. */
 function queueText(p: AnalysisProgress): string | null {
   const working = p.working + p.loudnessWorking;
   const parts = [
-    working > 0 ? `analysing ${songs(working)}` : '',
+    working > 0 ? `analyzing ${songs(working)}` : '',
     p.waiting > 0 ? `${count(p.waiting)} waiting for beat or sound analysis` : '',
     p.loudnessWaiting > 0 ? `${count(p.loudnessWaiting)} waiting for loudness analysis` : '',
     p.tagsWaiting > 0 ? `${count(p.tagsWaiting)} waiting for a tag lookup` : '',
@@ -29,8 +30,8 @@ function beatsText(p: AnalysisProgress): string {
   if (ready >= p.songs) {
     return p.songs === 1 ? `The library’s one song is ready for DJ mix${withoutModel}.` : `All ${songs(p.songs)} are ready for DJ mix${withoutModel}.`;
   }
-  const failures = failed > 0 ? ` · ${count(failed)} couldn’t be analysed` : '';
-  const rest = p.libraryScan ? '' : ' Others are analysed as they come up to play.';
+  const failures = failed > 0 ? ` · ${count(failed)} couldn’t be analyzed` : '';
+  const rest = p.libraryScan ? '' : ' Others are analyzed as they come up to play.';
   return `Ready for DJ mix: ${count(ready)} of ${songs(p.songs)}${withoutModel}${failures}.${rest}`;
 }
 
@@ -80,7 +81,7 @@ function Analysis({
   failed: number;
   of: number;
   canRun: boolean;
-  /** "Analyse", "Look up". */
+  /** "Analyze", "Look up". */
   verb: string;
   meter: string;
   /** Doing the entire collection again: its button, and what the question before it says. */
@@ -92,7 +93,7 @@ function Analysis({
   const allowed = canRun && !away && of > 0;
   return (
     <div>
-      <p className="text-[13px] text-paper-dim">{text}</p>
+      <p className="type-small text-paper-dim">{text}</p>
       {canRun && of > 0 && done < of && (
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-paper/10" role="meter" aria-label={meter} aria-valuenow={done} aria-valuemax={of}>
           <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(done / of) * 100}%` }} />
@@ -142,7 +143,7 @@ function AskFirst({
       </Button>
       <Dialog open={asking} onClose={() => setAsking(false)} title={question}>
         <div className="space-y-5 p-5">
-          <p className="text-[15px] text-paper-dim">{explain}</p>
+          <p className="type-body text-paper-dim">{explain}</p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setAsking(false)}>Cancel</Button>
             <Button variant="primary" disabled={busy} onClick={() => onConfirm(() => setAsking(false))}>
@@ -161,8 +162,8 @@ function EverythingAgain({ audio }: { audio: boolean }) {
   return (
     <div className="mt-3">
       <AskFirst
-        label="Reanalyse everything"
-        question="Reanalyse every song with every analysis?"
+        label="Reanalyze everything"
+        question="Reanalyze every song with every analysis?"
         explain={
           audio
             ? 'Beat, sound and loudness analysis and a tag lookup for every song, from scratch, at low priority. Each song keeps what it has until its turn. On a small server this takes many hours: beat analysis alone can take a minute a song.'
@@ -192,11 +193,11 @@ function Loading() {
  * genre and decade mixes.
  */
 export function AnalysisPanel() {
-  const { data: p, error } = useAnalysisProgress();
+  const { data: p, error, refetch, isFetching } = useAnalysisProgress();
   const settings = useMixSettings();
   const save = useSaveMixSettings();
   const member = useIsMember();
-  if (error && !p) return <p className="text-sm text-danger">{error.message}</p>;
+  if (error && !p) return <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} />;
   if (!p) return <Loading />;
 
   // Away from home before setup the settings answer 403; a member gets them but may not change them.
@@ -206,10 +207,10 @@ export function AnalysisPanel() {
   if (settings.data && !away) {
     switchRow = (
       <Switch
-        label="Analyse every song in the library"
+        label="Analyze every song in the library"
         description={
           p.enabled
-            ? 'At low priority: beat, sound and loudness analysis and a tag lookup, once for each song. Off, songs are analysed as they come up to play. Takes a while on a big library: beat analysis can take a minute a song on a small server.'
+            ? 'At low priority: beat, sound and loudness analysis and a tag lookup, once for each song. Off, songs are analyzed as they come up to play. Takes a while on a big library: beat analysis can take a minute a song on a small server.'
             : `Tags are still looked up as songs come up. ${AUDIO_OFF}`
         }
         checked={settings.data.analyzeLibrary && p.enabled}
@@ -224,7 +225,7 @@ export function AnalysisPanel() {
       {away && <AwayNotice>Analyses can be started by an admin.</AwayNotice>}
       <SettingsSection title="In the background">
         {switchRow && <div className="divide-y divide-line">{switchRow}</div>}
-        <p className="mt-2 text-[13px] text-paper-dim">{queue ?? 'Nothing is being analysed right now.'}</p>
+        <p className="mt-2 type-small text-paper-dim">{queue ?? 'Nothing is being analyzed right now.'}</p>
         {!away && p.songs > 0 && <EverythingAgain audio={p.enabled} />}
       </SettingsSection>
 
@@ -239,10 +240,10 @@ export function AnalysisPanel() {
           failed={p.beats.failed}
           of={p.songs}
           canRun={p.enabled}
-          verb="Analyse"
+          verb="Analyze"
           meter="Songs ready for DJ mix"
           again={{
-            label: 'Reanalyse the entire collection',
+            label: 'Reanalyze the entire collection',
             explain:
               'Beat analysis for every song, from scratch, at low priority. Each song mixes as it does now until its turn. On a small server this takes many hours: up to a minute a song.',
           }}
@@ -261,10 +262,10 @@ export function AnalysisPanel() {
           failed={p.sound.failed}
           of={p.songs}
           canRun={p.enabled}
-          verb="Analyse"
+          verb="Analyze"
           meter="Songs measured for their sound"
           again={{
-            label: 'Reanalyse the entire collection',
+            label: 'Reanalyze the entire collection',
             explain: 'Sound analysis for every song, from scratch, at low priority. Each song keeps what it has until its turn.',
           }}
           away={away}
@@ -282,10 +283,10 @@ export function AnalysisPanel() {
           failed={p.loudness.failed}
           of={p.songs}
           canRun={p.enabled}
-          verb="Analyse"
+          verb="Analyze"
           meter="Songs measured for their loudness"
           again={{
-            label: 'Reanalyse the entire collection',
+            label: 'Reanalyze the entire collection',
             explain: 'Loudness analysis for every song, from scratch, a second or two a song. Each song keeps its level until its turn.',
           }}
           away={away}

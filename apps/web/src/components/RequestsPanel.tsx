@@ -1,12 +1,12 @@
 import type { RequestSettingsInfo, RequestSettingsPatch } from '@playarr/shared';
-import { ChevronDown, RotateCw, TriangleAlert } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { Link } from 'react-router';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { useRequestSettings, useSaveRequestSettings } from '../lib/queries';
 import { cn } from '../lib/cn';
-import { Button } from './Button';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
+import { InlineError } from './States';
 import { fieldClass, TextField } from './TextField';
 
 const DEFAULT_LABEL = 'Lidarr’s default';
@@ -20,12 +20,12 @@ export function RequestsPanel() {
   if (error instanceof ApiError && error.status === 403) {
     return <AwayNotice />;
   }
-  if (error && !data) return <p className="text-sm text-danger">{error.message}</p>;
+  if (error && !data) return <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} />;
   if (!data) return <PanelSkeleton />;
 
   if (!data.lidarr) {
     return (
-      <p className="max-w-prose text-[15px] text-paper-dim">
+      <p className="max-w-prose type-body text-paper-dim">
         Requests need a Lidarr source. You can add one in{' '}
         <Link to="/settings/sources" className="text-accent hover:underline">
           Sources
@@ -77,15 +77,9 @@ function Destination({
 }) {
   if (!info.options) {
     return (
-      <div className="rounded-lg border border-line px-4 py-3">
-        <p className="flex items-start gap-2 text-sm text-danger">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-          <span>Couldn’t get the choices from Lidarr{info.error ? `: ${info.error}` : '.'}</span>
-        </p>
-        <Button size="small" icon={<RotateCw />} onClick={retry} pending={retrying} pendingLabel="Trying again…" className="mt-3">
-          Try again
-        </Button>
-      </div>
+      <InlineError error={info.error} onRetry={retry} retrying={retrying}>
+        Couldn’t get the choices from Lidarr
+      </InlineError>
     );
   }
   const { rootFolders, qualityProfiles, metadataProfiles } = info.options;
@@ -112,7 +106,7 @@ function Destination({
         options={metadataProfiles.map((p) => ({ value: p.id, label: p.name }))}
         onChange={(v) => onChange({ metadataProfileId: v ?? null })}
       />
-      <p className="text-[13px] text-muted">
+      <p className="type-small text-muted">
         {DEFAULT_LABEL} is the root folder’s own setting, or the value in Playarr’s .env file when there is one.
       </p>
     </div>

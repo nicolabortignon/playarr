@@ -124,4 +124,21 @@ describe('Queue', () => {
     act(() => useToasts.getState().toasts[0]!.action!.run());
     expect(upcomingTitles()).toEqual(['Song 2', 'Song 3', 'Song 4']);
   });
+  it('removes a song at once, and Undo puts it back in its place', () => {
+    renderQueue();
+    openMenu('Song 3');
+    choose('Remove from queue');
+    expect(upcomingTitles()).toEqual(['Song 2', 'Song 4']);
+    const [toast] = useToasts.getState().toasts;
+    expect(toast!.message).toBe('Removed “Song 3” from the queue');
+    act(() => useToasts.getState().act(toast!.id));
+    expect(upcomingTitles()).toEqual(['Song 2', 'Song 3', 'Song 4']);
+  });
+
+  it('offers Feeling lucky when nothing is queued', () => {
+    usePlayer.setState({ queue: [], order: [], pos: -1 });
+    renderQueue();
+    expect(screen.getByText('Nothing queued yet.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Feeling lucky' })).toBeTruthy();
+  });
 });

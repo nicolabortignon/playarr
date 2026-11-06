@@ -80,7 +80,19 @@ export const useOffline = create<OfflineState>()(
   }),
 );
 
-export const useIsKept = (fileId: number) => useOffline((s) => fileId in s.songs);
+/** pinnedFiles() for the downloads as they are, worked out once per change rather than once per song row. */
+const pinnedCache = new WeakMap<Record<string, Download>, Set<number>>();
+const pinnedNow = (pins: Record<string, Download>) => {
+  let set = pinnedCache.get(pins);
+  if (!set) pinnedCache.set(pins, (set = pinnedFiles(pins)));
+  return set;
+};
+
+/** A song of a download (an album, playlist, mix or Favorites downloaded): not one only loaded ahead as you listen. */
+export const isDownloaded = (fileId: number, s: Pick<OfflineState, 'pins'>) => pinnedNow(s.pins).has(fileId);
+
+/** Downloaded and on this device: what the "on this device" mark means. */
+export const useIsDownloaded = (fileId: number) => useOffline((s) => fileId in s.songs && isDownloaded(fileId, s));
 
 /**
  * Kept on this device as this browser plays it. An Apple Lossless file kept before Chrome was given its WAV isn't:
@@ -289,6 +301,14 @@ export async function removeDownload(key: string) {
   });
   if (removed) await dropUnpinned(transitionFileIds(removed));
   await fitLimit();
+}
+
+/**
+ * Put back a download just removed (its Undo): as it was, in its place in the list. Songs that made room for others
+ * meanwhile download again.
+ */
+export function restoreDownload(download: Download) {
+  useOffline.setState((s) => ({ pins: { ...s.pins, [download.key]: download } }));
 }
 
 /**

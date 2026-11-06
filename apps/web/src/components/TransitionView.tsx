@@ -55,8 +55,8 @@ function styleName(plan: TransitionPlan): string {
  * name things like mix maps). Anything not known here gets a plain catch-all.
  */
 function plainReason(reason: string): string {
-  if (reason.startsWith('No mix map yet for the song playing')) return 'This song hasn’t been analysed yet';
-  if (reason.startsWith('No mix map yet for the next song')) return 'The next song hasn’t been analysed yet';
+  if (reason.startsWith('No mix map yet for the song playing')) return 'This song hasn’t been analyzed yet';
+  if (reason.startsWith('No mix map yet for the next song')) return 'The next song hasn’t been analyzed yet';
   if (reason === 'Mixed transitions need audio analysis') return 'Mixing needs audio analysis, which is off on this server';
   if (reason.startsWith('The transition couldn’t be')) return 'The mix couldn’t be made';
   return 'There’s no mix for these two songs';

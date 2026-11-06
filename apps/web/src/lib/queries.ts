@@ -42,7 +42,7 @@ export const useMusicBrainzStatus = (enabled = true) =>
     refetchInterval: (q) => (q.state.data?.queued ? 1500 : 15_000),
   });
 
-/** How far each analysis has got over the library: polled while songs are waiting or being analysed, then left alone. */
+/** How far each analysis has got over the library: polled while songs are waiting or being analyzed, then left alone. */
 export const useAnalysisProgress = (enabled = true) =>
   useQuery({
     queryKey: ['analysis-progress'],
@@ -54,7 +54,7 @@ export const useAnalysisProgress = (enabled = true) =>
     },
   });
 
-/** Settings → Analysis → Analyse all songs now (or again): the progress then polls while they're analysed. */
+/** Settings → Analysis → Analyze all songs now (or again): the progress then polls while they're analyzed. */
 export function useRunAnalysis() {
   const client = useQueryClient();
   return useMutation({
@@ -62,11 +62,11 @@ export function useRunAnalysis() {
     mutationFn: ({ kind, again = false }: { kind: AnalysisKind | 'all'; again?: boolean }) => api.runAnalysis(kind, again),
     onSuccess: ({ queued }, { kind, again }) => {
       const songs = `${queued.toLocaleString('en')} ${queued === 1 ? 'song' : 'songs'}`;
-      const doing = kind === 'tags' ? 'Looking up' : 'Analysing';
+      const doing = kind === 'tags' ? 'Looking up' : 'Analyzing';
       toast(
         queued
           ? `${doing} ${songs}${again ? ' again' : ''} in the background`
-          : `Every song is already ${kind === 'tags' ? 'looked up' : 'analysed'} or waiting its turn`,
+          : `Every song is already ${kind === 'tags' ? 'looked up' : 'analyzed'} or waiting its turn`,
       );
       void client.invalidateQueries({ queryKey: ['analysis-progress'] });
     },
@@ -226,7 +226,7 @@ export function useToggleFavorite() {
     },
     onError: (err, _vars, ctx) => {
       client.setQueryData(['favorites'], ctx?.previous);
-      toast(`Couldn't update favorites: ${(err as Error).message}`, 'error');
+      toast(`Couldn’t update Favorites: ${(err as Error).message}`, 'error');
     },
     onSettled: () => client.invalidateQueries({ queryKey: ['favorites'] }),
   });
@@ -327,10 +327,20 @@ export function usePlaylistMutations() {
       onSuccess: settle,
       onError,
     }),
+    /** Remove from playlist: gone from the list at once (back if the server says no); the page offers Undo. */
     remove: useMutation({
       mutationFn: ({ id, itemId }: { id: number; itemId: number }) => api.removeFromPlaylist(id, itemId),
+      onMutate: async ({ id, itemId }) => {
+        await client.cancelQueries({ queryKey: ['playlist', id] });
+        const previous = client.getQueryData<PlaylistDetail>(['playlist', id]);
+        if (previous) client.setQueryData(['playlist', id], { ...previous, items: previous.items.filter((i) => i.itemId !== itemId) });
+        return { previous };
+      },
       onSuccess: settle,
-      onError,
+      onError: (err: Error, { id }, ctx) => {
+        if (ctx?.previous) client.setQueryData(['playlist', id], ctx.previous);
+        onError(err);
+      },
     }),
     reorder: useMutation({
       mutationFn: ({ id, itemIds }: { id: number; itemIds: number[] }) => api.reorderPlaylist(id, itemIds),
@@ -358,6 +368,40 @@ export function usePlaylistMutations() {
       onError,
     }),
   };
+}
+
+/** A playlist the server changed: its page and the lists that show it. */
+function playlistChanged(p: PlaylistDetail) {
+  queryClient.setQueryData(['playlist', p.id], p);
+  void queryClient.invalidateQueries({ queryKey: ['playlists'] });
+  void queryClient.invalidateQueries({ queryKey: ['playlists-holding'] });
+}
+
+/**
+ * Undo for Remove from playlist: the song goes back where it was, after the item that came before it (or at its old
+ * place, if that one's gone too). The server adds songs at the end, so it's added, then moved. Plain functions rather
+ * than hooks: an Undo may come after its page has closed.
+ */
+export async function restorePlaylistItem(id: number, recordingId: string, { after, index }: { after?: number; index: number }) {
+  try {
+    const added = await api.addToPlaylist(id, [recordingId]);
+    const ids = added.items.map((i) => i.itemId);
+    const back = ids.pop()!;
+    const at = after === undefined ? 0 : ids.indexOf(after) + 1 || Math.min(index, ids.length);
+    ids.splice(at, 0, back);
+    playlistChanged(at === ids.length - 1 ? added : await api.reorderPlaylist(id, ids));
+  } catch (err) {
+    toast((err as Error).message, 'error');
+  }
+}
+
+/** Share a playlist with everyone on the server, or stop: Stop sharing's Undo. */
+export async function setPlaylistShared(id: number, shared: boolean) {
+  try {
+    playlistChanged(await api.updatePlaylist(id, { shared }));
+  } catch (err) {
+    toast((err as Error).message, 'error');
+  }
 }
 
 /** Sources for Settings. Polls while they sync, and refreshes everything once a sync finishes. */
@@ -522,7 +566,7 @@ export const useLyrics = (trackId: number, enabled = true) =>
 /**
  * The mix maps (tempo, key, energy) of these songs, by recording id. A song not measured yet is
  * missing and gets measured on the server meanwhile, so it's asked for again a minute later (a few
- * times: a server that can't analyse audio never has them).
+ * times: a server that can't analyze audio never has them).
  */
 export const useMixMaps = (recordingIds: string[], enabled = true) => useQuery(mixMapsQuery(recordingIds, enabled));
 

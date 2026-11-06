@@ -6,7 +6,8 @@ import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/Deta
 import { RequestButton, useRestRequest } from '../components/Discover';
 import { FormatBadge } from '../components/FormatBadge';
 import { useAlbumMenu } from '../components/menus';
-import { BackButton, ErrorState, SectionHeader, SHELF_CARD, Shelf, Skeleton } from '../components/Section';
+import { BackButton, SectionHeader, SHELF_CARD, Shelf } from '../components/Section';
+import { ErrorState, SongRowsSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
 import { useCoverAccent } from '../lib/color';
 import { formatDuration, plural, releaseKind } from '../lib/format';
@@ -119,11 +120,7 @@ function AlbumSkeleton() {
   return (
     <div className="px-5 pt-6 md:px-10 md:pt-14">
       <DetailHeaderSkeleton />
-      <div className="mt-8 space-y-3 md:mt-10">
-        {Array.from({ length: 8 }, (_, i) => (
-          <Skeleton key={i} className="h-10" />
-        ))}
-      </div>
+      <SongRowsSkeleton lead="number" className="mt-8 -mx-3 max-w-5xl md:mt-10" />
     </div>
   );
 }

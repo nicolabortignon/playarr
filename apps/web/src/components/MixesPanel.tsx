@@ -6,10 +6,11 @@ import { ApiError } from '../lib/api';
 import { plural } from '../lib/format';
 import { useClearHistory, useIsMember, useMixSettings, useSaveMixSettings } from '../lib/queries';
 import { Button } from './Button';
-import { Dialog } from './Dialog';
+import { ConfirmDialog } from './Dialog';
 import { ListenBrainzSection } from './ListenBrainzSection';
 import { Choice } from './Choice';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
+import { InlineError } from './States';
 
 /** Every kind of mix, as Settings names and explains it. */
 const KINDS: { kind: MixKind; label: string; description: string }[] = [
@@ -46,21 +47,21 @@ function TimeZone({ current, onChange }: { current?: string; onChange?: (tz: str
   const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
     <div>
-      <div className="mb-1.5 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Time zone</div>
+      <div className="mb-1.5 type-kicker text-muted">Time zone</div>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-[15px] text-paper">{current ?? 'The server’s'}</span>
+        <span className="type-body text-paper">{current ?? 'The server’s'}</span>
         {onChange && here && here !== current && (
           <Button onClick={() => onChange(here)}>Use this device’s ({here})</Button>
         )}
       </div>
-      <p className="mt-1 text-[13px] text-muted">When hours, days and Mondays begin for everyone’s mixes.</p>
+      <p className="mt-1 type-small text-muted">When hours, days and Mondays begin for everyone’s mixes.</p>
     </div>
   );
 }
 
 /** Settings → Mixes: which mixes Home shows and how they're made, and the listening history behind them. */
 export function MixesPanel() {
-  const { data, error } = useMixSettings();
+  const { data, error, refetch, isFetching } = useMixSettings();
   const save = useSaveMixSettings();
   const clear = useClearHistory();
   const [confirmClear, setConfirmClear] = useState(false);
@@ -71,7 +72,7 @@ export function MixesPanel() {
   if (error instanceof ApiError && error.status === 403) {
     return <AwayNotice />;
   }
-  if (error && !data) return <p className="text-sm text-danger">{error.message}</p>;
+  if (error && !data) return <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} />;
   if (!data) {
     return (
       <div aria-busy="true" aria-label="Loading" className="max-w-prose space-y-3">
@@ -162,19 +163,20 @@ export function MixesPanel() {
         </p>
       </SettingsSection>
 
-      <Dialog open={confirmClear} onClose={() => setConfirmClear(false)} title="Clear listening history?">
-        <div className="space-y-5 p-5">
-          <p className="text-[15px] text-paper-dim">
-            Every song played is forgotten, and the mixes start learning again from scratch. Favorites and playlists stay.
-          </p>
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setConfirmClear(false)}>Cancel</Button>
-            <Button variant="danger" pending={clear.isPending} onClick={() => clear.mutate(undefined, { onSettled: () => setConfirmClear(false) })}>
-              Clear history
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmClear}
+        onClose={() => setConfirmClear(false)}
+        title="Clear listening history?"
+        confirmLabel="Clear history"
+        pendingLabel="Clearing…"
+        pending={clear.isPending}
+        onConfirm={() => clear.mutate(undefined, { onSettled: () => setConfirmClear(false) })}
+      >
+        <p>
+          {data.history.plays > 1 ? `All ${plural(data.history.plays, 'song')} played are` : 'Every song played is'} forgotten for good, and the mixes
+          start learning again from scratch. Favorites and playlists stay.
+        </p>
+      </ConfirmDialog>
     </div>
   );
 }

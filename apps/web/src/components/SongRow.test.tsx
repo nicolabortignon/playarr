@@ -77,7 +77,7 @@ describe('Song rows', () => {
     // The links to the artist and the album are their own, and so are the heart and ⋯.
     expect(within(li).getByRole('link', { name: 'Massive Attack' }).getAttribute('href')).toBe('/artists/20');
     expect(within(li).getByRole('link', { name: 'Mezzanine' }).getAttribute('href')).toBe('/albums/10');
-    expect(within(li).getByRole('button', { name: 'Add “Song 1” to favorites' })).toBeTruthy();
+    expect(within(li).getByRole('button', { name: 'Add “Song 1” to Favorites' })).toBeTruthy();
     expect(within(li).getByRole('button', { name: 'More for Song 1' })).toBeTruthy();
   });
 
@@ -85,7 +85,7 @@ describe('Song rows', () => {
     list();
     const li = row('Song 1');
     const time = within(li).getByText('4:05');
-    const heart = within(li).getByRole('button', { name: 'Add “Song 1” to favorites' });
+    const heart = within(li).getByRole('button', { name: 'Add “Song 1” to Favorites' });
     const more = within(li).getByRole('button', { name: 'More for Song 1' });
     expect(time.compareDocumentPosition(heart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(heart.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

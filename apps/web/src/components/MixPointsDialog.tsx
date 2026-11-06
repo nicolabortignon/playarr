@@ -16,6 +16,7 @@ import { refreshUpcomingTransition } from '../player/transitions';
 import { BarTicks, beatGrid, EnergyNumbers, PhraseColumns, PhraseReadout, phrasesAndBars } from './EnergyStrip';
 import { Button } from './Button';
 import { Dialog } from './Dialog';
+import { InlineError } from './States';
 import type { MenuItem } from './Menu';
 
 /** Hand-set points: null is the detected point (nothing set by hand). */
@@ -134,13 +135,13 @@ export function MixPointsDialog() {
 }
 
 function Loader({ song, onSaved }: { song: Track; onSaved: () => void }) {
-  const { data, error, isPending } = useMixMaps([song.recordingId]);
+  const { data, error, isPending, isFetching, refetch } = useMixMaps([song.recordingId]);
   const map = data?.[song.recordingId];
   if (error) {
     return (
-      <p role="alert" className="p-5 text-[15px] text-danger">
-        Couldn’t load this song’s mix points: {(error as Error).message}
-      </p>
+      <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} className="p-5">
+        Couldn’t load this song’s mix points
+      </InlineError>
     );
   }
   if (isPending) {
@@ -156,7 +157,7 @@ function Loader({ song, onSaved }: { song: Track; onSaved: () => void }) {
       <div className="space-y-2 p-5">
         <SongTitle song={song} />
         <p className="text-sm text-paper-dim">
-          This song hasn’t been analysed yet, so there are no mix points to move. Playarr measures songs in the background: try again later.
+          This song hasn’t been analyzed yet, so there are no mix points to move. Playarr measures songs in the background: try again later.
         </p>
       </div>
     );
@@ -264,9 +265,7 @@ function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: Cu
       </div>
 
       {save.error && (
-        <p role="alert" className="text-[14px] text-danger">
-          Couldn’t save the mix points: {(save.error as Error).message}
-        </p>
+        <InlineError error={save.error}>Couldn’t save the mix points</InlineError>
       )}
 
       <div className="flex items-center justify-between gap-3">

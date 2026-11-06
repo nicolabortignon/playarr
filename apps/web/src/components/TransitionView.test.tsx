@@ -106,7 +106,7 @@ describe('TransitionView line', () => {
   });
 
   it('says straight on when the mix is unavailable or not ready in time (what plays then)', async () => {
-    setResult({ status: 'unavailable', reason: 'Not analysed yet' });
+    setResult({ status: 'unavailable', reason: 'Not analyzed yet' });
     const { unmount } = view();
     expect(await line('Next: straight on, 124 to 126 BPM, 8A to 9A')).toBeTruthy();
     unmount();
@@ -192,7 +192,7 @@ describe('TransitionView sheet', () => {
     view();
     fireEvent.click(await line('Next: straight on, 124 to 126 BPM, 8A to 9A'));
     const sheet = within(screen.getByRole('dialog', { name: 'Next transition' }));
-    expect(sheet.getByText('The next song hasn’t been analysed yet, so the next song follows straight on.')).toBeTruthy();
+    expect(sheet.getByText('The next song hasn’t been analyzed yet, so the next song follows straight on.')).toBeTruthy();
   });
 
   it('falls back to a plain reason it doesn’t know', async () => {

@@ -56,12 +56,12 @@ describe('AlbumSummary', () => {
 
   it('counts Lidarr’s albums complete, incomplete and unidentified, each on its own', () => {
     render(<AlbumSummary source={folder({ kind: 'lidarr', albumsComplete: 10, albumsIncomplete: 918, albumsUnknown: 511 })} />);
-    expect(counters()).toEqual(['10Complete Albums', '918Incomplete Albums', '511Unidentified']);
+    expect(counters()).toEqual(['10Complete albums', '918Incomplete albums', '511Unidentified']);
   });
 
   it('shows every counter, at none too, and one album in the singular', () => {
     render(<AlbumSummary source={folder({ kind: 'lidarr', albumsComplete: 1 })} />);
-    expect(counters()).toEqual(['1Complete Album', '0Incomplete Albums', '0Unidentified']);
+    expect(counters()).toEqual(['1Complete album', '0Incomplete albums', '0Unidentified']);
   });
 
   it('counts a folder’s songs, adding up to all of them, the unidentified as many as not matched', () => {

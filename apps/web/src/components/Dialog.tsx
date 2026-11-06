@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn';
-import { IconButton } from './Button';
+import { Button, IconButton } from './Button';
 
 /** What a dialog focuses as it opens: the first field, slider or button, skipping Close and options not chosen. */
 const FIRST_FOCUS = [
@@ -85,5 +85,48 @@ export function Dialog({
       )}
     </AnimatePresence>,
     document.body,
+  );
+}
+
+/**
+ * Before losing something for good (docs/design.md, Rows, menus and toasts): the question and the words under it name
+ * what goes, Cancel (focused first) keeps it, and the danger button goes ahead. Taking something out of a list doesn't
+ * ask: it happens at once, with Undo.
+ */
+export function ConfirmDialog({
+  open,
+  onClose,
+  title,
+  children,
+  confirmLabel,
+  pendingLabel,
+  pending,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** The question, naming what goes: "Delete “Late night”?", "Remove 312 songs from this device?". */
+  title: string;
+  /** What happens, and what doesn't. */
+  children: ReactNode;
+  /** The verb that goes ahead: "Delete", "Remove", "Sign out". */
+  confirmLabel: string;
+  /** While it's under way: "Deleting…". */
+  pendingLabel?: string;
+  pending?: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onClose={onClose} title={title}>
+      <div className="space-y-6 p-5">
+        <div className="space-y-3 type-body text-paper-dim">{children}</div>
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="danger" pending={pending} pendingLabel={pendingLabel} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }

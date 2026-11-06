@@ -1,12 +1,14 @@
-import { Play, Trash2 } from 'lucide-react';
+import { ArrowDownToLine, Disc3, Lock, Play, X } from 'lucide-react';
 import { IconButton } from '../components/Button';
 import { Cover } from '../components/Cover';
+import { removeDownloadWithUndo } from '../components/DownloadButton';
 import { NameAndNumbers } from '../components/NameAndNumbers';
 import { PageHeader } from '../components/PageHeader';
 import { ListRow } from '../components/SongRow';
+import { EmptyState } from '../components/States';
 import { formatBytes, plural } from '../lib/format';
 import { useDownloadState } from '../player/downloads';
-import { canKeepOffline, downloadProgress, removeDownload, useOffline, type Download } from '../player/offline';
+import { canKeepOffline, downloadProgress, useOffline, type Download } from '../player/offline';
 import { usePlayer } from '../player/store';
 
 /** Library → Downloads: albums, playlists and mixes on this device, playable without a connection. */
@@ -17,15 +19,18 @@ export function DownloadsPage() {
     <div className="px-5 pt-8 pb-16 md:px-10 md:pt-14">
       <PageHeader title="Downloads" count={downloads.length || undefined} />
       {!canKeepOffline ? (
-        <p className="max-w-md type-body text-paper-dim">
-          Browsers only let Playarr keep music on a device over a secure connection. Open Playarr over HTTPS (for example through a reverse proxy with a
-          certificate) to download albums and playlists.
-        </p>
+        <EmptyState
+          icon={Lock}
+          title="Downloads need a secure connection."
+          hint="Browsers only let Playarr keep music on a device over HTTPS. Open it through a reverse proxy with a certificate, for example."
+        />
       ) : !downloads.length ? (
-        <p className="max-w-md type-body text-paper-dim">
-          Nothing downloaded yet. Tap the download button on an album, playlist, mix or Favorites to keep it on this device and play it without a
-          connection.
-        </p>
+        <EmptyState
+          icon={ArrowDownToLine}
+          title="Take your music with you."
+          hint="Download an album, playlist or mix and it plays here, with or without a connection."
+          action={{ label: 'Browse albums', icon: <Disc3 />, to: '/albums' }}
+        />
       ) : (
         <ul className="-mx-3 max-w-3xl">
           {downloads.map((d) => (
@@ -37,7 +42,7 @@ export function DownloadsPage() {
   );
 }
 
-/** A download in the list's one row: the row opens its page, Play plays it, the bin takes it off the device. */
+/** A download in the list's one row: the row opens its page, Play plays it, × takes it off the device (with Undo). */
 function Row({ download: d }: { download: Download }) {
   const progress = useOffline((s) => downloadProgress(d, s.songs));
   const failed = useDownloadState((s) => d.tracks.filter((t) => t.fileId in s.failed).length);
@@ -70,8 +75,8 @@ function Row({ download: d }: { download: Download }) {
           >
             <Play className="size-4 fill-current" />
           </button>
-          <IconButton label={`Remove ${d.title} from this device`} onClick={() => void removeDownload(d.key)} className="relative z-10">
-            <Trash2 className="size-4" />
+          <IconButton label={`Remove ${d.title} from this device`} title="Remove from this device" onClick={() => removeDownloadWithUndo(d)} className="relative z-10">
+            <X className="size-4" />
           </IconButton>
         </>
       }

@@ -1,10 +1,11 @@
-import { Search as SearchIcon, X } from 'lucide-react';
+import { Search as SearchIcon, SearchX, X } from 'lucide-react';
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Button, IconButton } from '../components/Button';
 import { AlbumCard, ArtistAvatar, ArtistCard, DiscoverArtistCard } from '../components/Cards';
 import { DiscoverAlbumCard, DiscoverTrackRow, RequestsPill } from '../components/Discover';
-import { SectionHeader, SHELF_CARD, Shelf, Skeleton } from '../components/Section';
+import { SectionHeader, SHELF_CARD, Shelf } from '../components/Section';
+import { EmptyState, InlineError, SongRowsSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
 import { activeRequestCount, useArtists, useDiscover, useHasLidarr, usePlaylists, useRequests, useSearch } from '../lib/queries';
 import { useDebounced } from '../lib/useDebounced';
@@ -26,6 +27,10 @@ export function SearchPage() {
   useEffect(() => {
     input.current?.focus();
   }, []);
+  const clear = () => {
+    setParams({}, { replace: true });
+    input.current?.focus();
+  };
 
   const empty = data && !data.artists.length && !data.albums.length && !data.tracks.length && !playlistHits.length;
   const top = data?.artists[0] ?? null;
@@ -40,21 +45,14 @@ export function SearchPage() {
             type="search"
             value={q}
             onChange={(e) => setParams(e.target.value ? { q: e.target.value } : {}, { replace: true })}
-            placeholder="Artists, albums, tracks"
-            aria-label="Search your library"
+            placeholder="Search music"
+            aria-label="Search music"
             autoComplete="off"
             spellCheck={false}
             className="h-16 w-full border-b border-line bg-transparent pr-10 pl-10 font-display text-3xl text-paper placeholder:text-ink-600 focus:border-accent focus:outline-none md:h-20 md:pl-14 md:text-5xl [&::-webkit-search-cancel-button]:hidden"
           />
           {q && (
-            <IconButton
-              label="Clear search"
-              onClick={() => {
-                setParams({}, { replace: true });
-                input.current?.focus();
-              }}
-              className="absolute right-0"
-            >
+            <IconButton label="Clear search" onClick={clear} className="absolute right-0">
               <X className="size-5" />
             </IconButton>
           )}
@@ -74,12 +72,14 @@ export function SearchPage() {
       {!deferred && <BrowseArtists />}
 
       {empty && (
-        <div className="mt-10">
-          <div className="font-display text-3xl text-paper">Not in your crates.</div>
-          <p className="mt-2 text-sm text-muted">
-            Nothing in your library matches “{deferred}”.{hasLidarr ? ' Here’s what’s out there:' : ''}
-          </p>
-        </div>
+        <EmptyState
+          icon={SearchX}
+          title="Not in your crates."
+          hint={`Nothing in your library matches “${deferred}”.${hasLidarr ? ' Here’s what’s out there:' : ''}`}
+          // Without Lidarr there's nothing further down: back to the artists to try.
+          action={hasLidarr ? undefined : { label: 'Clear search', icon: <X />, onClick: clear }}
+          className="py-10 md:py-12"
+        />
       )}
 
       {data && !empty && deferred && (
@@ -102,13 +102,13 @@ export function SearchPage() {
             )}
             {data.tracks.length > 0 && (
               <section className={top ? '' : 'lg:col-span-2'}>
-                <SectionHeader title="Tracks" />
+                <SectionHeader title="Songs" />
                 <div className="-mx-3">
                   <TrackList tracks={allTracks ? data.tracks : data.tracks.slice(0, 6)} variant="mixed" />
                 </div>
                 {!allTracks && data.tracks.length > 6 && (
                   <Button variant="ghost" size="small" onClick={() => setAllTracks(true)} className="mt-2">
-                    Show all {data.tracks.length} tracks
+                    Show all {data.tracks.length} songs
                   </Button>
                 )}
               </section>
@@ -164,7 +164,7 @@ export function SearchPage() {
 /** Music that isn't in the library: search Lidarr/MusicBrainz/Deezer and request albums. */
 function DiscoverSection({ q }: { q: string }) {
   const debounced = useDebounced(q, 450);
-  const { data, isFetching, error } = useDiscover(debounced);
+  const { data, isFetching, error, refetch } = useDiscover(debounced);
   // Albums already in the library appear in the results above.
   const albums = data?.albums.filter((a) => a.availability.state !== 'available') ?? [];
   const artists = data?.artists.filter((a) => !a.artistId) ?? [];
@@ -182,19 +182,17 @@ function DiscoverSection({ q }: { q: string }) {
             {isFetching && <span className="size-2 animate-pulse rounded-full bg-accent" aria-label="Searching" />}
           </h2>
         </div>
-        <p className="max-w-sm text-[13px] text-muted">
+        <p className="max-w-sm type-small text-muted">
           Request an album and Lidarr will search your indexers for it. It shows up here when it’s ready.
         </p>
       </div>
 
-      {loading && (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} className="h-14" />
-          ))}
-        </div>
+      {loading && <SongRowsSkeleton count={4} className="-mx-3 max-w-4xl" />}
+      {error && !data && (
+        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching}>
+          Couldn’t search beyond your library
+        </InlineError>
       )}
-      {error && !data && <p className="text-sm text-danger">{(error as Error).message}</p>}
       {nothing && <p className="text-sm text-muted">Nothing found for “{debounced}”.</p>}
 
       <div className="space-y-12">

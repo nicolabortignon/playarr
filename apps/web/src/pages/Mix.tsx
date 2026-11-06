@@ -5,7 +5,8 @@ import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/Deta
 import { DIVIDER } from '../components/Menu';
 import { queueItems } from '../components/menus';
 import { MixCover } from '../components/Mixes';
-import { BackButton, ErrorState } from '../components/Section';
+import { BackButton } from '../components/Section';
+import { ErrorState, SongRowsSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, plural } from '../lib/format';
 import { useMix, useRegenerateMix, useSaveMix } from '../lib/queries';
@@ -29,6 +30,7 @@ export function MixPage() {
     return (
       <div className="px-5 pt-6 md:px-10 md:pt-14">
         <DetailHeaderSkeleton />
+        <SongRowsSkeleton className="mt-6 -mx-3 max-w-5xl md:mt-8" />
       </div>
     );
   }

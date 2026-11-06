@@ -66,6 +66,7 @@ function Picker({ playlist, onClose }: { playlist: PlaylistDetail; onClose: () =
           variant="primary"
           icon={<Check />}
           pending={setCover.isPending}
+          pendingLabel="Saving…"
           onClick={() => setCover.mutate({ id: playlist.id, layout: chosen, variant }, { onSuccess: onClose })}
         >
           Use this

@@ -1,11 +1,12 @@
 import type { AlbumSort } from '@playarr/shared';
+import { Disc3, FolderPlus, type LucideIcon } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import type { CSSProperties } from 'react';
 import { AlbumCard } from '../components/Cards';
 import { Choice } from '../components/Choice';
 import { PageHeader } from '../components/PageHeader';
-import { ErrorState, Skeleton } from '../components/Section';
-import { useAlbums } from '../lib/queries';
+import { CardSkeletons, EmptyState, ErrorState } from '../components/States';
+import { useAlbums, useIsMember } from '../lib/queries';
 import { useIncremental } from '../lib/useIncremental';
 
 const SORTS: { value: AlbumSort; label: string }[] = [
@@ -39,7 +40,7 @@ export function AlbumsPage() {
     <div className="px-5 pt-8 md:px-10 md:pt-14">
       <PageHeader
         title="Albums"
-        count={data?.length}
+        count={data?.length || undefined}
         actions={
           <Choice
             label="Sort albums"
@@ -53,16 +54,34 @@ export function AlbumsPage() {
       />
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
+      ) : data && !data.length ? (
+        <EmptyLibrary icon={Disc3} title="Your crates are empty." />
       ) : (
         <>
           <div className={GRID}>
-            {isPending
-              ? Array.from({ length: 12 }, (_, i) => <Skeleton key={i} className="aspect-square" />)
-              : visible.map((a, i) => <AlbumCard key={a.id} album={a} {...gridItem(i, { lift: true })} />)}
+            {isPending ? <CardSkeletons /> : visible.map((a, i) => <AlbumCard key={a.id} album={a} {...gridItem(i, { lift: true })} />)}
           </div>
           {more && <div ref={sentinel} aria-hidden className="h-px" />}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Albums or Artists with nothing in the library yet: where music comes from. An admin is offered Settings → Sources;
+ * anyone else, that an admin adds it.
+ */
+export function EmptyLibrary({ icon, title }: { icon: LucideIcon; title: string }) {
+  const member = useIsMember();
+  return member ? (
+    <EmptyState icon={icon} title={title} hint="Music shows up here once an admin adds some to the library." />
+  ) : (
+    <EmptyState
+      icon={icon}
+      title={title}
+      hint="Add Lidarr or a folder of music, and it shows up here."
+      action={{ label: 'Add music', icon: <FolderPlus />, to: '/settings/sources' }}
+    />
   );
 }

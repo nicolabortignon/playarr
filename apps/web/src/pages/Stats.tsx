@@ -1,5 +1,5 @@
 import type { ListeningStats, StatsRange } from '@playarr/shared';
-import { Play } from 'lucide-react';
+import { ChartColumn, Play } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { AlbumCard, ArtistAvatar } from '../components/Cards';
@@ -7,7 +7,7 @@ import { ColumnChart } from '../components/ColumnChart';
 import { InlineLink } from '../components/InlineLink';
 import { NameAndNumbers } from '../components/NameAndNumbers';
 import { PageHeader } from '../components/PageHeader';
-import { ErrorState, Skeleton } from '../components/Section';
+import { EmptyState, ErrorState, Skeleton } from '../components/States';
 import { SongRow } from '../components/SongRow';
 import { Choice } from '../components/Choice';
 import { cn } from '../lib/cn';
@@ -71,14 +71,14 @@ export function ListeningStatsView() {
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : isPending ? (
-        <div className="space-y-6">
-          <Skeleton className="h-24 max-w-md" />
-          <Skeleton className="h-64" />
-        </div>
+        <ReportSkeleton />
       ) : !data.plays ? (
-        <p className="max-w-md type-body text-paper-dim">
-          Nothing played in this period yet. Songs count once heard for 30 seconds, from every device that counts its plays (Settings → Playback).
-        </p>
+        <EmptyState
+          icon={ChartColumn}
+          title="Nothing played in this period yet."
+          hint="A song counts once it’s heard for 30 seconds, on every device that counts its plays."
+          action="lucky"
+        />
       ) : (
         <Report stats={data} />
       )}
@@ -232,6 +232,38 @@ function Report({ stats }: { stats: ListeningStats }) {
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+/** The report's first screen while it loads: the minutes, the line under them, the four tiles, then the top artists. */
+function ReportSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading your listening" className="space-y-14">
+      <section>
+        <Skeleton className="h-[60px] w-64 max-w-full md:h-[72px]" />
+        <Skeleton className="mt-4 h-4 w-80 max-w-full" />
+        <div className="mt-8 grid max-w-3xl grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i}>
+              <Skeleton className="h-3.5 w-24" />
+              <Skeleton className="mt-2 h-[30px] w-20" />
+            </div>
+          ))}
+        </div>
+      </section>
+      <section>
+        <Skeleton className="mb-5 h-7 w-40" />
+        <div className="grid gap-x-8 gap-y-1 md:grid-cols-2">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="flex items-center gap-4 px-2 py-2">
+              <Skeleton className="h-3 w-6" />
+              <Skeleton className="size-12 shrink-0 rounded-full" />
+              <Skeleton className="h-4 w-1/2" />
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

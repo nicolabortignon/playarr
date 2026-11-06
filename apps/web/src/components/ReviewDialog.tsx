@@ -9,6 +9,7 @@ import { useReview, useReviewAction } from '../lib/queries';
 import { Button } from './Button';
 import { Dialog } from './Dialog';
 import { SlowLookup } from './SlowLookup';
+import { InlineError } from './States';
 import { fieldClass, TextField } from './TextField';
 
 /** What happened to the last album the user decided on, shown above the next one. */
@@ -52,12 +53,9 @@ export function ReviewDialog({ sourceId, onClose }: { sourceId: number | null; o
     <Dialog open={sourceId !== null} onClose={onClose} title="Review matches" wide>
       <SavedNote saved={saved} />
       {error && !groups ? (
-        <div className="space-y-3 p-5" role="alert">
-          <p className="text-[15px] text-danger">Couldn’t load the albums to review: {(error as Error).message}</p>
-          <Button variant="primary" onClick={() => void refetch()} pending={isFetching}>
-            Try again
-          </Button>
-        </div>
+        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} className="p-5">
+          Couldn’t load the albums to review
+        </InlineError>
       ) : !groups ? (
         <div className="space-y-3 p-5" aria-busy="true" aria-label="Loading albums to review">
           <div className="h-12 animate-pulse rounded-lg bg-paper/5" />
@@ -377,7 +375,7 @@ function CandidateDetails({ candidate: c }: { candidate: ReviewCandidate }) {
     ['Format', c.format],
     ['Type', c.type],
     ['Status', c.status],
-    ['Tracks', String(c.tracks.length)],
+    ['Songs', String(c.tracks.length)],
     ['Barcode', c.barcode],
   ];
   return (

@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useLocation, useNavigate, useRouteError } from 'react-router';
 import { isStaleBuild, reloadIntoNewBuild } from '../lib/staleBuild';
 import { Button } from './Button';
-import { ErrorState } from './Section';
+import { ErrorState } from './States';
 
 /**
  * A page that failed, in place of the page: the shell, the player bar and the music carry on. A page whose file

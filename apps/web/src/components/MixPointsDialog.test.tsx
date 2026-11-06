@@ -267,10 +267,10 @@ describe('MixPointsDialog', () => {
     expect(valueOf(mixIn)).toBe(14);
   });
 
-  it('explains when the song hasn’t been analysed', async () => {
+  it('explains when the song hasn’t been analyzed', async () => {
     vi.mocked(api.mixMaps).mockResolvedValue({});
     dialog();
-    expect(await screen.findByText(/hasn’t been analysed yet/)).toBeTruthy();
+    expect(await screen.findByText(/hasn’t been analyzed yet/)).toBeTruthy();
     expect(screen.queryByRole('slider')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
   });
