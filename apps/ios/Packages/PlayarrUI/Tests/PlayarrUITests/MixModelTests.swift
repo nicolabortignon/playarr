@@ -56,7 +56,7 @@ import Testing
     #expect(session.player.queue.shuffle)
     #expect(session.player.queue.source == PlaySource(label: "Your vibes", href: "/mixes/vibes"))
     mix.queue(next: false)
-    #expect(session.toasts.toasts.map(\.message) == ["Added 2 tracks to queue"])
+    #expect(session.toasts.toasts.map(\.message) == ["Added 2 songs to the queue"])
   }
 
   @Test func playPausesTheMixOnlyWhileItsTheQueue() async {

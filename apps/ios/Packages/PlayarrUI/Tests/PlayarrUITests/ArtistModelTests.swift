@@ -64,7 +64,7 @@ import Testing
     let massive = Array(repeating: "Massive Attack", count: 5)
     #expect(session.player.queue.upcoming(20).map(\.artistName) == massive + ["Portishead", "Portishead"] + massive)
     #expect(session.player.queue.currentTrack?.title == "Mysterons")
-    #expect(session.toasts.toasts.map(\.message) == ["Playing 5 tracks next", "Added 5 tracks to queue"])
+    #expect(session.toasts.toasts.map(\.message) == ["5 songs play next", "Added 5 songs to the queue"])
   }
 
   @Test func playPausesAndResumesTheArtistsSongs() async {

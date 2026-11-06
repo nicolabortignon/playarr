@@ -158,6 +158,8 @@ struct NowPlayingTracklist: View {
     .buttonStyle(.plain)
     .accessibilityLabel(spoken(line))
     .accessibilityHint("Plays from this song")
+    // The long press's menu, Move up and Move down included, one swipe away.
+    .accessibilityActions { menu(line, divided: false) }
   }
 
   /// "Massive Attack · Blue Lines": the artist when the source isn't theirs, the album when it changes.
@@ -195,32 +197,21 @@ struct NowPlayingTracklist: View {
     }
   }
 
-  @ViewBuilder
-  private func menu(_ line: Tracklist.Line) -> some View {
-    let track = line.track
-    if line.state == .upcoming, line.orderPos > session.player.queue.pos + 1 {
-      Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { playNext(line) }
-    }
-    Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
-    Button("Go to album", systemImage: "square.stack") { session.actions.goToAlbum(track) }
-    Button("Go to artist", systemImage: "music.mic") { session.actions.goToArtist(track) }
-    if line.state == .upcoming {
-      Button("Remove from queue", systemImage: "xmark", role: .destructive) { remove(line) }
-    }
+  /// The one song menu: a song to come has Up next's (Play next moves it up; Move up, Move down and Remove from queue
+  /// after a line), the song before the one playing the plain one.
+  private func menu(_ line: Tracklist.Line, divided: Bool = true) -> some View {
+    let queue = session.player.queue
+    let place =
+      line.state == .upcoming
+      ? SongMenu.upNext(offset(line), of: max(0, queue.order.count - queue.pos - 1), session: session) : SongMenu.Place()
+    return MenuButtons(groups: SongMenu.groups(line.track, place: place, session: session), divided: divided)
   }
 
   /// Where the line sits in the queue model's Up next.
   private func offset(_ line: Tracklist.Line) -> Int { line.orderPos - session.player.queue.pos - 1 }
 
+  /// Swiped away: out of the queue, with Undo.
   private func remove(_ line: Tracklist.Line) {
-    QueueModel(session: session).remove([offset(line)])
-  }
-
-  private func playNext(_ line: Tracklist.Line) {
-    let model = QueueModel(session: session)
-    let upcoming = model.upcoming
-    let at = offset(line)
-    guard upcoming.indices.contains(at) else { return }
-    model.playNext(upcoming[at])
+    QueueModel(session: session).remove(offset(line))
   }
 }

@@ -3,11 +3,13 @@ import PlayarrPlayer
 import SwiftUI
 
 /// A song's length in a list, after its tempo as Playarr measured it ("130.3  5:56"), as the web's song lists show
-/// (apps/web/src/components/Tempo.tsx). The tempo shows at regular width only: on a phone the title needs the room, as
-/// the web's narrow queue hides the column. A song not measured yet shows its length alone.
+/// (apps/web/src/components/Tempo.tsx), in the meta role and `.muted` (`.paperDim` over art). The tempo shows at regular
+/// width only: on a phone the title needs the room, as the web's narrow queue hides the column. A song not measured yet
+/// shows its length alone.
 struct SongLength: View {
   let track: Track
-  var font: Font = .sans(.footnote).monospacedDigit()
+  var font: Font = Font.mono(.caption).monospacedDigit()
+  var overArt = false
 
   @Environment(AccountSession.self) private var session
   @Environment(\.horizontalSizeClass) private var sizeClass
@@ -22,7 +24,7 @@ struct SongLength: View {
       Text(Format.time(track.duration))
     }
     .font(font)
-    .foregroundStyle(.paperDim)
+    .foregroundStyle(overArt ? AnyShapeStyle(.paperDim) : AnyShapeStyle(.muted))
     .task(id: sizeClass == .regular ? track.recordingId : nil) {
       if sizeClass == .regular { maps.want(track) }
     }

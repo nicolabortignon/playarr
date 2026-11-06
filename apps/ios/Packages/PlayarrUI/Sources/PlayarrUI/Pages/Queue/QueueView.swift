@@ -34,7 +34,7 @@ struct QueueView: View {
               Text("The queue ends after this song.").foregroundStyle(.paperDim)
             }
             ForEach(Array(upcoming.enumerated()), id: \.element.id) { offset, song in
-              upNextRow(song, offset: offset, model: model)
+              upNextRow(song, offset: offset, count: upcoming.count, model: model)
             }
             .onMove { model.move(from: $0, to: $1); reordered += 1 }
             .onDelete { model.remove($0) }
@@ -90,7 +90,7 @@ struct QueueView: View {
   }
 
   /// Up next's rows on a phone and in the side column leave out the heart (it's in their ⋯ menu) and put the length
-  /// under the title, after the artist, so the titles keep their room.
+  /// under the title, after the artist, so the titles keep their room (`SongRow.stacked`).
   private var compactRows: Bool { narrow || sizeClass == .compact }
 
   private func nowPlayingHeader(_ model: QueueModel) -> some View {
@@ -129,62 +129,14 @@ struct QueueView: View {
     }
   }
 
-  private func upNextRow(_ song: QueueModel.Upcoming, offset: Int, model: QueueModel) -> some View {
-    let track = song.track
-    let compact = compactRows
-    return HStack(spacing: 12) {
-      Button { model.play(offset) } label: {
-        AdaptiveStack(spacing: 12) {
-          Cover(path: track.coverUrl, points: 44, label: track.albumTitle).frame(width: 44, height: 44)
-          VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-              Text(track.title).essentialLineLimit()
-              OfflineMark(store: session.player.downloads, fileId: track.fileId)
-            }
-            if compact {
-              // The length after the artist, or under them when both don't fit.
-              NameAndNumbers(name: Text(track.artistName), numbers: Text(Format.time(track.duration)).monospacedDigit())
-                .font(.sans(.footnote)).foregroundStyle(.paperDim)
-            } else {
-              Text(track.artistName).font(.sans(.footnote)).foregroundStyle(.paperDim).essentialLineLimit()
-            }
-          }
-          Spacer(minLength: 8)
-          if !compact { SongLength(track: track) }
-        }
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .pointerHover()
-      .accessibilityLabel("\(track.title), \(track.artistName), \(Format.time(track.duration))")
-      .accessibilityHint("Plays from this song")
-      .accessibilityActions { upNextItems(song, offset: offset, model: model) }
-      if !compact { FavoriteButton(track: track, size: .row) }
-      Menu {
-        upNextItems(song, offset: offset, model: model)
-      } label: {
-        Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(.paperDim)
-      .pointerHover()
-      .accessibilityLabel("More for \(track.title)")
+  /// A song of Up next: the one song row, the artist under the title (on a phone with the length, the heart in its
+  /// menu), with Move up, Move down and Remove from queue after a line, in its menu and as VoiceOver's actions.
+  private func upNextRow(_ song: QueueModel.Upcoming, offset: Int, count: Int, model: QueueModel) -> some View {
+    SongRow(
+      track: song.track, subtitle: [song.track.artistName], markCurrent: false, stacked: compactRows, drags: false,
+      place: SongMenu.upNext(offset, of: count, session: session), hint: "Plays from this song"
+    ) {
+      model.play(offset)
     }
-    .contextMenu { upNextItems(song, offset: offset, model: model) }
-  }
-
-  /// A song in Up next: its ⋯ menu, its long-press (or secondary-click) menu and its VoiceOver actions.
-  @ViewBuilder
-  private func upNextItems(_ song: QueueModel.Upcoming, offset: Int, model: QueueModel) -> some View {
-    let track = song.track
-    if offset > 0 { Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.playNext(song) } }
-    Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
-    if compactRows {
-      let favorite = session.isFavorite(track)
-      Button(favorite ? "Remove from Favorites" : "Add to Favorites", systemImage: favorite ? "heart.slash" : "heart") { session.toggleFavorite(track) }
-    }
-    Button("Go to album", systemImage: "square.stack") { session.router.open(.album(track.albumId)) }
-    Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(track.artistId)) }
-    Button("Remove from queue", systemImage: "xmark", role: .destructive) { model.remove([offset]) }
   }
 }

@@ -41,55 +41,66 @@ public struct DownloadsView<Cover: View>: View {
     .pageHeader("Downloads", count: downloads.isEmpty ? nil : Format.plural(downloads.count, "download"))
   }
 
+  /// A download in the list's one row (docs/design.md, "Rows"): the cover, name and what's on the device open its page,
+  /// Play plays it, × takes it off the device. How far along it is runs along the row's foot, so a download in progress
+  /// is no taller than one that's done.
   private func row(_ d: PinnedDownload) -> some View {
     let progress = store.progress(of: d.key) ?? DownloadProgress(done: 0, total: d.tracks.count, bytes: 0)
     let failed = store.failedCount(of: d.key)
-    return HStack(spacing: 14) {
+    return HStack(spacing: 12) {
+      // One target to open it (the row also swipes to remove).
       Button { open(d.href) } label: {
-        cover(d.coverUrl)
-          .frame(width: 56, height: 56)
-          .clipShape(RoundedRectangle(cornerRadius: 4))
-      }
-      .buttonStyle(.plain)
-      .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 4) {
-        // The name and what's on the device, one target to open it (the row also swipes to remove).
-        Button { open(d.href) } label: {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(d.title).essentialLineLimit()
+        HStack(spacing: 12) {
+          cover(d.coverUrl)
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.cover))
+          VStack(alignment: .leading, spacing: 2) {
+            Text(d.title).typeRole(.body).foregroundStyle(.paper).essentialLineLimit()
             // How far along it is goes under what it is when both don't fit, rather than being cut off.
             NameAndNumbers(
               name: d.subtitle.map { Text($0) },
               numbers: Text("\(OfflineWording.progress(progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.danger.opacity(0.8)))"),
               label: OfflineWording.rowDetail(d, progress) + OfflineWording.failures(failed)
             )
-            .font(.sans(.footnote))
+            .typeRole(.small)
             .foregroundStyle(.paperDim)
           }
-          .frame(minHeight: 44, alignment: .leading)
-          .contentShape(Rectangle())
+          Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        if !progress.isComplete {
-          // The words above already say how far along it is.
-          ProgressView(value: Double(progress.done), total: Double(max(1, progress.total)))
-            .frame(maxWidth: 192)
-            .accessibilityHidden(true)
-        }
+        // Room above and below the words once the numbers wrap, so the progress bar runs under them; as tall as a
+        // song's row otherwise.
+        .padding(.vertical, 8)
+        .frame(minHeight: SongRow.height)
+        .contentShape(Rectangle())
       }
-      Spacer(minLength: 0)
+      .buttonStyle(.plain)
       Button { play(d) } label: {
-        Image(systemName: "play.fill").frame(width: 44, height: 44).background(.tint, in: Circle()).foregroundStyle(.white)
+        Image(systemName: "play.fill")
+          .frame(width: 40, height: 40)
+          .background(.tint, in: Circle())
+          .foregroundStyle(.black)
+          .frame(width: 44, height: 44)
+          .contentShape(Circle())
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Play \(d.title)")
       Button { store.remove(d.key) } label: {
-        Image(systemName: "trash").frame(width: 44, height: 44).contentShape(Rectangle())
+        Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .foregroundStyle(.secondary)
+      .foregroundStyle(.paperDim)
       .accessibilityLabel("Remove \(d.title) from this device")
     }
+    .overlay(alignment: .bottom) {
+      if !progress.isComplete {
+        // The words above already say how far along it is.
+        ProgressView(value: Double(progress.done), total: Double(max(1, progress.total)))
+          .progressViewStyle(.linear)
+          .padding(.bottom, 2)
+          .accessibilityHidden(true)
+      }
+    }
+    .listRowInsets(.vertical, 0)
     .swipeActions {
       Button("Remove", role: .destructive) { store.remove(d.key) }
     }

@@ -45,6 +45,31 @@ import Testing
     #expect(toasts.toasts.map(\.message) == ["Added “Angel” to “Road trip”", "Added 2 songs to “Road trip”"])
   }
 
+  @Test func addsToSeveralAtOnceAndNamesThem() async {
+    api.on(.post, "/api/playlists/5/items", Listening.playlist(5, "Road trip", items: [Listening.three[0]]))
+    api.on(.post, "/api/playlists/6/items", Listening.playlist(6, "Late night", items: [Listening.three[0]]))
+    api.on(.post, "/api/playlists/7/items", Listening.playlist(7, "Sunday", items: [Listening.three[0]]))
+    api.on(.get, "/api/playlists", json: "[]")
+    let store = store()
+    #expect(await store.add([Listening.angel], to: [6, 5]).map(\.id) == [6, 5])
+    #expect(await store.add([Listening.angel, Listening.risingson], to: [5, 6, 7]).count == 3)
+    #expect(api.calls(.post, "/api/playlists/7/items").count == 1)
+    #expect(toasts.toasts.map(\.message) == ["Added “Angel” to “Late night” and “Road trip”", "Added 2 songs to 3 playlists"])
+  }
+
+  @Test func saysWhichPlaylistsDidntTakeTheSongs() async {
+    api.on(.post, "/api/playlists/5/items", Listening.playlist(5, "Road trip", items: [Listening.three[0]]))
+    api.fail(.post, "/api/playlists/6/items", status: 403, "Only the playlist's owner can change it")
+    api.fail(.post, "/api/playlists/7/items", status: 403, "Only the playlist's owner can change it")
+    api.on(.get, "/api/playlists", json: "[]")
+    let store = store()
+    #expect(await store.add([Listening.angel], to: [5, 6]).map(\.id) == [5])
+    #expect(toasts.toasts.map(\.message) == ["Added “Angel” to “Road trip”", "Only the playlist's owner can change it"])
+    #expect(await store.add([Listening.angel], to: [6, 7]).isEmpty)
+    #expect(toasts.toasts.last?.message == "Couldn’t add to 2 playlists: Only the playlist's owner can change it")
+    #expect(toasts.toasts.last?.tone == .error)
+  }
+
   @Test func pollsEveryFourSecondsWhileACoverIsDrawn() async {
     let clock = TestClock()
     api.on(.get, "/api/playlists", [Listening.summary(Listening.playlist(pending: true))])

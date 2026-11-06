@@ -49,13 +49,14 @@ struct PlaylistView: View {
     #endif
     .refreshable { await model.load() }
     .sheet(isPresented: $pickingCover) { CoverPickerView(playlist: model, detail: playlist) }
-    .confirmationDialog("Delete playlist?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+    // The question names what goes; the words under it, what goes and what stays (docs/design.md, "Taking things back").
+    .confirmationDialog("Delete “\(playlist.name)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
       Button("Delete", role: .destructive) {
         Task { if await model.delete() { dismiss() } }
       }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text("“\(playlist.name)” will be deleted. The songs stay in your library. This can’t be undone.")
+      Text(Self.deleteMessage(shared: playlist.shared, songs: model.items.count))
     }
   }
 
@@ -68,8 +69,8 @@ struct PlaylistView: View {
           Text("This playlist is empty. Use Add to playlist… from any song’s ⋯ menu, an album, the queue or Now Playing.")
             .foregroundStyle(.secondary)
         }
-        ForEach(model.items, id: \.itemId) { item in
-          PlaylistItemRow(item: item, actions: model.actions(for: item), onTap: { model.play(from: item) }) { perform($0, on: item) }
+        ForEach(Array(model.items.enumerated()), id: \.element.itemId) { index, item in
+          row(item, at: index)
         }
         .onMove(perform: model.mine ? { source, destination in Task { await model.move(fromOffsets: source, toOffset: destination) } } : nil)
       }
@@ -115,7 +116,9 @@ struct PlaylistView: View {
         if editing {
           editFields
         } else {
-          DetailTitle(playlist.name).onTapGesture(perform: startEditing)
+          DetailTitle(playlist.name)
+            .onTapGesture(perform: startEditing)
+            .accessibilityActions { if model.mine { Button("Rename", action: startEditing) } }
         }
       } meta: {
         MetaLine(model.facts, model.sharing)
@@ -131,9 +134,10 @@ struct PlaylistView: View {
             tracks: model.playable),
           moreLabel: "Playlist actions"
         ) {
-          ForEach(model.actions, id: \.self) { action in
-            Button(action.label, systemImage: action.systemImage, role: action == .delete ? .destructive : nil) { perform(action) }
-          }
+          MenuButtons(
+            groups: PlayableMenu.playlist(
+              playlist.id, tracks: model.playable, own: model.ownerActions.map { action in MenuAction(action.kind) { perform(action) } },
+              session: model.session))
         }
       }
       // What it's about: after the row, so Play comes first on a phone.
@@ -168,8 +172,6 @@ struct PlaylistView: View {
   private func perform(_ action: PlaylistAction) {
     switch action {
     case .rename: startEditing()
-    case .playNext: model.queue(next: true)
-    case .addToQueue: model.queue(next: false)
     case .newCover: pickingCover = true
     case .share: Task { await model.setShared(true) }
     case .stopSharing: Task { await model.setShared(false) }
@@ -177,20 +179,25 @@ struct PlaylistView: View {
     }
   }
 
-  private func perform(_ action: PlaylistRowAction, on item: PlaylistItem) {
-    let session = model.session
-    if action == .remove {
-      Task { await model.remove(item) }
-      return
+  /// Under "Delete “Late night”?": what goes and what stays, as the web's dialog says it.
+  static func deleteMessage(shared: Bool, songs: Int) -> String {
+    let stays = switch songs {
+    case 0: ""
+    case 1: " Its song stays in your library."
+    default: " Its \(songs) songs stay in your library."
     }
-    guard let track = item.track else { return }
-    switch action {
-    case .playNext: session.actions.playNext([track])
-    case .addToQueue: session.actions.addToQueue([track])
-    case .addToPlaylist: session.addToPlaylist([track])
-    case .goToAlbum: session.actions.goToAlbum(track)
-    case .goToArtist: session.actions.goToArtist(track)
-    case .remove: break
+    return "The playlist goes for good\(shared ? ", for everyone it’s shared with" : "")." + stays
+  }
+
+  /// A song of the playlist: the one song row, with its owner's Move up, Move down and Remove after a line. One the
+  /// library no longer has stays in its place, grayed, with only those.
+  @ViewBuilder private func row(_ item: PlaylistItem, at index: Int) -> some View {
+    let own = model.own(at: index)
+    if let track = item.track {
+      // Dragged within the list to reorder, so not onto the sidebar.
+      SongRow(track: track, drags: false, place: SongMenu.Place(own: own)) { model.play(from: item) }
+    } else {
+      MissingSongRow(title: item.title, lead: .cover(album: item.albumTitle), subtitle: [item.artistName, item.albumTitle], own: own)
     }
   }
 }

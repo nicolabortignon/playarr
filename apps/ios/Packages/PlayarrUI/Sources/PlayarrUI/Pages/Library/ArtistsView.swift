@@ -15,11 +15,12 @@ struct ArtistsView: View {
       if let error = artists.error {
         ErrorState(message: error) { await artists.refresh() }
       } else {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 16) {
+        // Circles with the name below, as on every shelf.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16, alignment: .top)], spacing: 24) {
           if let all = artists.value {
             ForEach(all) { ArtistCard(artist: $0) }
           } else {
-            ForEach(0..<8, id: \.self) { _ in Skeleton(aspectRatio: 4 / 5) }
+            ForEach(0..<8, id: \.self) { _ in Circle().fill(Color.secondary.opacity(0.15)).aspectRatio(1, contentMode: .fit).accessibilityHidden(true) }
           }
         }
         .padding(20)

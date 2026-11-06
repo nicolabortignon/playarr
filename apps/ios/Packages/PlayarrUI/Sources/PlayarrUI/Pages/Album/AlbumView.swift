@@ -104,27 +104,25 @@ struct AlbumView: View {
     ) { compact in
       RequestRestButton(album: Album(album), compact: compact)
     } more: {
-      Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { session.actions.playNext(album.tracks) }
-      Button("Add to queue", systemImage: "text.append") { session.actions.addToQueue(album.tracks) }
-      Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist(album.tracks) }
-      Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(album.artistId)) }
+      MenuButtons(groups: PlayableMenu.album(album.id, artistId: album.artistId, tracks: album.tracks, session: session))
     }
   }
 
+  /// The songs by number, missing ones grayed in their place, a heading before each disc when there are several.
   private var songs: some View {
     VStack(alignment: .leading, spacing: 0) {
       ForEach(model.rows) { row in
         switch row {
         case .disc(let number):
           Label("Disc \(number)", systemImage: "opticaldisc")
-            .font(.mono(.caption2))
-            .foregroundStyle(.secondary)
+            .typeRole(.kicker)
+            .foregroundStyle(.muted)
             .padding(.top, 16)
             .accessibilityAddTraits(.isHeader)
         case .track(let track, let index):
-          TrackRow(track: track) { model.tap(track, index: index) }
+          SongRow(track: track, lead: .number, place: SongMenu.Place(inAlbum: true)) { model.play(from: index) }
         case .missing(let missing):
-          MissingTrackRow(missing: missing)
+          MissingSongRow(title: missing.title, lead: .number(missing.trackNumber), duration: missing.duration)
         }
       }
     }

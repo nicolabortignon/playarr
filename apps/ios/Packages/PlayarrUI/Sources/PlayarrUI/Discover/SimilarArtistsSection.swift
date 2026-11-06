@@ -31,7 +31,7 @@ public struct SimilarArtistsSection: View {
       } else {
         VStack(alignment: .leading, spacing: 0) {
           SectionHeader(title: "Similar artists", kicker: SimilarArtistGroups.kicker)
-          Shelf { ForEach(0..<6, id: \.self) { _ in Circle().fill(Color.secondary.opacity(0.15)).frame(width: ShelfCard.artistWidth, height: ShelfCard.artistWidth) } }
+          Shelf { ForEach(0..<6, id: \.self) { _ in Circle().fill(Color.secondary.opacity(0.15)).frame(width: ShelfCard.width, height: ShelfCard.width) } }
         }
       }
     }

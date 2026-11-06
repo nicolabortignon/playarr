@@ -57,6 +57,21 @@ final class ScreenTour: XCTestCase {
     return inBar.exists ? inBar : app.buttons[name].firstMatch
   }
 
+  /// Closes a sheet with its Cancel or, where there's none, with a tap beside it: on the iPhone Duo's cover screen a
+  /// full-height sheet's bar buttons move to the column down the right, where those with only words (Cancel, Use this)
+  /// don't show, and the sheet doesn't follow a drag down. It leaves a thin edge of the page showing on the left.
+  @MainActor
+  private func closeSheet(_ title: String) {
+    if tap(app.buttons["Cancel"].firstMatch, timeout: 2) { return }
+    let bar = app.navigationBars[title].firstMatch
+    guard bar.exists else { return }
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5)).tap()
+    if bar.waitForNonExistence(timeout: 3) { return }
+    // Else Escape, as a hardware keyboard would.
+    app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+    _ = bar.waitForNonExistence(timeout: 3)
+  }
+
   /// Back to the page before, with the bar's back button (in the Duo's column, outside any navigation bar).
   @MainActor
   private func back() {
@@ -83,6 +98,16 @@ final class ScreenTour: XCTestCase {
       }
       app.swipeUp()
       shot("04-album-tracks")
+      // A song's one menu, from its ⋯; then Add to playlist, Late night ticked as it holds the song already.
+      if tap(app.buttons["More for Risingson"].firstMatch, timeout: 2) {
+        shot("04b-song-menu", after: 0.8)
+        if tap(app.buttons["Add to playlist…"], timeout: 2) {
+          shot("04c-add-to-playlist", after: 1.5)
+          closeSheet("Add “Risingson”")
+        }
+      }
+      // Back up to Play: left under the bar, it doesn't take the tap.
+      app.swipeDown()
       if tap(app.buttons["Play Mezzanine"]) || tap(app.buttons["Play"].firstMatch) {
         shot("05-album-playing")
       }
@@ -151,7 +176,7 @@ final class ScreenTour: XCTestCase {
       if tap(app.buttons["New cover"].firstMatch, timeout: 2) {
         app.swipeUp()
         shot("19b-cover-picker", after: 2)
-        tap(app.buttons["Cancel"], timeout: 2)
+        closeSheet("New cover")
       }
       tap(tab("Library"), timeout: 1)
       tap(tab("Library"), timeout: 1)
@@ -174,14 +199,16 @@ final class ScreenTour: XCTestCase {
       if tap(app.buttons["Appearance"]) { shot("15-appearance") }
     }
 
-    // Last: the search field takes the tab bar's place while it's active.
+    // Last: the search field takes the tab bar's place while it's active. On the iPhone Duo's cover screen, where the
+    // tabs are a rail, the field can be there but out of sight: pulled down for, else the page is shot as it is.
     if tap(tab("Search")) {
       let field = app.searchFields.firstMatch
-      if field.waitForExistence(timeout: 5) {
+      if field.waitForExistence(timeout: 5), !field.isHittable { app.swipeDown() }
+      if field.exists, field.isHittable {
         field.tap()
         field.typeText("mass")
-        shot("13-search")
       }
+      shot("13-search")
     }
   }
 
@@ -235,7 +262,8 @@ final class ScreenTour: XCTestCase {
       sidebar("newPlaylist").swipeDown(velocity: .fast)
       app.descendants(matching: .any)["sidebar.playlist.1000"].firstMatch.swipeDown(velocity: .fast)
     }
-    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch) {
+    // Home can take a while to settle after the sidebar's swipes.
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10) {
       shot("02-album")
       if tap(app.buttons["Play Mezzanine"]) {
         shot("03-album-playing")

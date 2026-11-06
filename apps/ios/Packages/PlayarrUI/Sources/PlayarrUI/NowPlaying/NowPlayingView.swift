@@ -203,15 +203,12 @@ struct NowPlayingView: View {
     moreMenu(track)
   }
 
-  /// ⋯: the song playing's menu.
+  /// ⋯: the song playing's menu, the one song menu without Play next and Add to queue, then Open queue.
   private func moreMenu(_ track: Track) -> some View {
     Menu {
-      Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
-      Button("Start radio", systemImage: "dot.radiowaves.left.and.right") { Task { await session.actions.startRadio(track) } }
-      Button("Go to album", systemImage: "square.stack") { session.actions.goToAlbum(track) }
-      Button("Go to artist", systemImage: "music.mic") { session.actions.goToArtist(track) }
-      TrackLibraryMenuItems(track: track)
-      Button("Open queue", systemImage: "list.bullet") { session.router.showQueue() }
+      MenuButtons(
+        groups: SongMenu.groups(
+          track, place: SongMenu.Place(playing: true, own: [MenuAction(.openQueue) { session.router.showQueue() }]), session: session))
     } label: {
       Image(systemName: "ellipsis").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle())
     }

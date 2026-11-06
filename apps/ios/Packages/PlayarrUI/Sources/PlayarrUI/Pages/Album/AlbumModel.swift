@@ -94,13 +94,10 @@ final class AlbumModel {
     session.player.play(album.tracks, source: source, shuffle: true)
   }
 
-  /// A song tapped: pause or resume it if it's the one playing, else play the album from there.
-  func tap(_ track: Track, index: Int) {
-    if session.player.queue.currentTrack?.fileId == track.fileId {
-      session.player.togglePlay()
-    } else if let album = album.value {
-      session.player.play(album.tracks, startAt: index, source: source)
-    }
+  /// A song tapped: the album from there, in order. (Its row pauses or resumes the song playing instead.)
+  func play(from index: Int) {
+    guard let album = album.value else { return }
+    session.player.play(album.tracks, startAt: index, source: source)
   }
 
   /// The album's songs and missing songs in disc and track order, with a header before each disc when there are several.

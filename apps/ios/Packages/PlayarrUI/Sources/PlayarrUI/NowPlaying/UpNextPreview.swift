@@ -3,7 +3,7 @@ import PlayarrPlayer
 import SwiftUI
 
 /// Now Playing's "Up next" on an iPad (apps/web/src/components/NowPlaying.tsx `UpNext`, desktop only): the next four
-/// songs, tap one to play from it, and Queue to see the rest.
+/// songs as song rows (tap one to play from it, ⋯ for its menu), and Queue to see the rest.
 struct UpNextPreview: View {
   static let count = 4
 
@@ -35,30 +35,16 @@ struct UpNextPreview: View {
     }
   }
 
+  /// A song coming up: the one song row, smaller, the artist under the title, with Up next's menu (Play next moves it
+  /// up; Move up, Move down and Remove from queue after a line).
   private func row(_ track: Track, at orderPos: Int) -> some View {
-    HStack(spacing: 4) {
-      jump(track, at: orderPos)
-      FavoriteButton(track: track, size: .row)
+    let queue = session.player.queue
+    let position = orderPos - queue.pos - 1
+    return SongRow(
+      track: track, subtitle: [track.artistName], markCurrent: false, compact: true, overArt: true, drags: false,
+      place: SongMenu.upNext(position, of: queue.order.count - queue.pos - 1, session: session), hint: "Plays from this song"
+    ) {
+      session.player.jump(to: orderPos)
     }
-  }
-
-  private func jump(_ track: Track, at orderPos: Int) -> some View {
-    Button { session.player.jump(to: orderPos) } label: {
-      HStack(spacing: 12) {
-        Cover(path: track.coverUrl, points: 36, label: track.albumTitle, corner: 3).frame(width: 36, height: 36)
-        VStack(alignment: .leading, spacing: 0) {
-          Text(track.title).font(.subheadline).essentialLineLimit()
-          Text(track.artistName).font(.caption).foregroundStyle(.paperDim).essentialLineLimit()
-        }
-        Spacer(minLength: 8)
-        SongLength(track: track, font: .caption.monospacedDigit())
-      }
-      .frame(minHeight: 44)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .pointerHover()
-    .accessibilityLabel("\(track.title), \(track.artistName), \(Format.time(track.duration))")
-    .accessibilityHint("Plays from this song")
   }
 }

@@ -66,16 +66,48 @@ public final class PlaylistsStore {
 
   /// Adds songs at the end of one of your playlists.
   public func add(_ tracks: [Track], to id: Int) async -> PlaylistDetail? {
-    guard !tracks.isEmpty else { return nil }
-    do {
-      let playlist = try await api.send(API.Playlists.addItems(id: id, recordingIds: tracks.map(\.recordingId)))
-      toasts.push("Added \(tracks.count == 1 ? "“\(tracks[0].title)”" : "\(tracks.count) songs") to “\(playlist.name)”")
-      await settled(playlist)
-      return playlist
-    } catch {
-      toasts.push(error.localizedDescription, tone: .error)
-      return nil
+    await add(tracks, to: [id]).first
+  }
+
+  /// Add to playlist's Add: the songs go at the end of every playlist chosen, all at once, with one toast for those that
+  /// took them ("Added “Teardrop” to “Late night” and “Road trip”") and one for any that didn't. The playlists that took
+  /// them, in the order given.
+  public func add(_ tracks: [Track], to ids: [Int]) async -> [PlaylistDetail] {
+    guard !tracks.isEmpty, !ids.isEmpty else { return [] }
+    let recordingIds = tracks.map(\.recordingId)
+    let api = api
+    let results = await withTaskGroup(of: (Int, Result<PlaylistDetail, any Error>).self) { group in
+      for (order, id) in ids.enumerated() {
+        group.addTask {
+          do {
+            return (order, .success(try await api.send(API.Playlists.addItems(id: id, recordingIds: recordingIds))))
+          } catch {
+            return (order, .failure(error))
+          }
+        }
+      }
+      var answers: [(Int, Result<PlaylistDetail, any Error>)] = []
+      for await answer in group { answers.append(answer) }
+      return answers.sorted { $0.0 < $1.0 }.map(\.1)
     }
+    let added = results.compactMap { try? $0.get() }
+    let failed = results.compactMap { result -> (any Error)? in
+      if case .failure(let error) = result { error } else { nil }
+    }
+    if !added.isEmpty {
+      let names = added.count > 2 ? "\(added.count) playlists" : added.map { "“\($0.name)”" }.joined(separator: " and ")
+      toasts.push("Added \(TrackActions.named(tracks)) to \(names)")
+      for playlist in added {
+        queries.set(playlist, for: .playlist(playlist.id))
+        if playlist.cover.pending { pollRound += 1 }
+      }
+      await load()
+    }
+    if let first = failed.first {
+      let reason = first.localizedDescription
+      toasts.push(failed.count == 1 ? reason : "Couldn’t add to \(failed.count) playlists: \(reason)", tone: .error)
+    }
+    return added
   }
 
   /// The server answered a playlist after a change: keep it for its page, and ask for the list again.

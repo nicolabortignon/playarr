@@ -1,28 +1,16 @@
-/// An item of the playlist's ⋯ menu ("Playlist actions"), in the web's order and words.
-public enum PlaylistAction: Hashable, Sendable {
-  case rename, playNext, addToQueue, newCover, share, stopSharing, delete
+/// What a playlist's owner can do to it, after a line in its ⋯ menu ("Playlist actions"), in the web's order and words:
+/// Rename, New cover…, Share with everyone or Stop sharing, Delete playlist.
+enum PlaylistAction: Hashable, Sendable {
+  case rename, newCover, share, stopSharing, delete
 
-  public var label: String {
+  /// The menu item it is (its words and glyph).
+  var kind: MenuAction.Kind {
     switch self {
-    case .rename: "Rename"
-    case .playNext: "Play next"
-    case .addToQueue: "Add to queue"
-    case .newCover: "New cover…"
-    case .share: "Share with everyone"
-    case .stopSharing: "Stop sharing"
-    case .delete: "Delete playlist"
-    }
-  }
-
-  public var systemImage: String {
-    switch self {
-    case .rename: "pencil"
-    case .playNext: "text.line.first.and.arrowtriangle.forward"
-    case .addToQueue: "text.line.last.and.arrowtriangle.forward"
-    case .newCover: "paintpalette"
-    case .share: "person.2"
-    case .stopSharing: "lock"
-    case .delete: "trash"
+    case .rename: .rename
+    case .newCover: .newCover
+    case .share: .share
+    case .stopSharing: .stopSharing
+    case .delete: .delete
     }
   }
 }

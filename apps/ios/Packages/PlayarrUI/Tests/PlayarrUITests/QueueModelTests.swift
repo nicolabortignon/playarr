@@ -24,14 +24,47 @@ import Testing
     #expect(model.upcoming.map(\.track.title) == ["Karmacoma", "Risingson", "Inertia Creeps", "Protection"])
   }
 
-  @Test func removesAndPlaysNext() {
+  @Test func movesASongUpAndDownAPlace() {
     let (_, model) = playing()
+    model.move(1, to: 2)
+    #expect(model.upcoming.map(\.track.title) == ["Risingson", "Protection", "Inertia Creeps", "Karmacoma"])
+    model.move(1, to: 0)
+    #expect(model.upcoming.map(\.track.title) == ["Protection", "Risingson", "Inertia Creeps", "Karmacoma"])
+    // Past either end: nothing moves.
+    model.move(0, to: -1)
+    model.move(3, to: 4)
+    #expect(model.upcoming.map(\.track.title) == ["Protection", "Risingson", "Inertia Creeps", "Karmacoma"])
+  }
+
+  @Test func removesWithUndoPuttingTheSongBackInItsPlace() throws {
+    let (session, model) = playing()
+    model.remove(1)
+    #expect(model.upcoming.map(\.track.title) == ["Risingson", "Protection", "Karmacoma"])
+    let undo = try #require(session.toasts.toasts.last)
+    #expect(undo.message == "Removed “Inertia Creeps” from the queue")
+    // The song after it moved since: the song goes back before it all the same.
+    model.move(1, to: 2)
+    session.toasts.perform(undo)
+    #expect(model.upcoming.map(\.track.title) == ["Risingson", "Karmacoma", "Inertia Creeps", "Protection"])
+  }
+
+  @Test func removesSeveralAtOnceWithoutUndo() {
+    let (session, model) = playing()
     model.remove([0, 2])
     #expect(model.upcoming.map(\.track.title) == ["Inertia Creeps", "Karmacoma"])
-    model.playNext(model.upcoming[1])
-    #expect(model.upcoming.map(\.track.title) == ["Karmacoma", "Inertia Creeps"])
+    #expect(session.toasts.toasts.isEmpty)
     model.play(1)
-    #expect(model.current?.title == "Inertia Creeps")
+    #expect(model.current?.title == "Karmacoma")
+  }
+
+  @Test func playNextMovesASongUpWithUndo() throws {
+    let (session, model) = playing()
+    model.playNext(2)
+    #expect(model.upcoming.map(\.track.title) == ["Protection", "Risingson", "Inertia Creeps", "Karmacoma"])
+    let undo = try #require(session.toasts.toasts.last)
+    #expect(undo.message == "“Protection” plays next")
+    session.toasts.perform(undo)
+    #expect(model.upcoming.map(\.track.title) == ["Risingson", "Inertia Creeps", "Protection", "Karmacoma"])
   }
 
   @Test func clearsWithUndo() throws {
@@ -39,7 +72,7 @@ import Testing
     model.clear()
     #expect(model.upcoming.isEmpty)
     let toast = try #require(session.toasts.toasts.last)
-    #expect(toast.message == "Cleared 4 songs")
+    #expect(toast.message == "Cleared 4 songs from the queue")
     session.toasts.perform(toast)
     #expect(model.upcoming.map(\.track.title) == ["Risingson", "Inertia Creeps", "Protection", "Karmacoma"])
   }

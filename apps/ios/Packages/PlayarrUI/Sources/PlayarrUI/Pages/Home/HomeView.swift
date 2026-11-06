@@ -114,7 +114,7 @@ struct HomeView: View {
     NavigationLink(value: Route.listeningRange(String(review.year))) {
       HStack(spacing: 16) {
         if let top = review.top {
-          Cover(path: top.imageUrl, points: 96, label: top.name).frame(width: 96, height: 96)
+          Cover(path: top.imageUrl, points: 96, label: top.name, circle: true).frame(width: 96, height: 96)
         }
         VStack(alignment: .leading, spacing: 4) {
           Text("YEAR IN REVIEW").font(.mono(.caption2)).tracking(2).foregroundStyle(theme.accent.color)
@@ -136,10 +136,8 @@ struct HomeView: View {
       SectionHeader(title: "Favorites", kicker: "Songs you love", seeAll: .favorites)
       let tracks = model.favoriteTracks
       ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
-        TrackRow(track: track, style: .mixed) {
-          session.player.play(tracks, startAt: index, source: PlaySource(label: "Favorites", href: "/favorites"))
-        }
-        .padding(.horizontal, 20)
+        SongRow(track: track) { session.player.play(tracks, startAt: index, source: FavoritesStore.source) }
+          .padding(.horizontal, 20)
       }
     }
   }
@@ -167,7 +165,7 @@ struct HomeView: View {
   private var artists: some View {
     VStack(alignment: .leading, spacing: 0) {
       SectionHeader(title: "Artists", kicker: "The roster", seeAll: .artists)
-      Shelf { ForEach(model.shelf) { ArtistCard(artist: $0, width: ShelfCard.artistWidth) } }
+      Shelf { ForEach(model.shelf) { ArtistCard(artist: $0, width: ShelfCard.width) } }
     }
   }
 

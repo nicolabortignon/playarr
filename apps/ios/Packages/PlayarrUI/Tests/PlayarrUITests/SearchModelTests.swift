@@ -24,7 +24,7 @@ import Testing
     model.text = "a"
     await model.search()
     #expect(model.tracks.count == 6)
-    #expect(model.showAllLabel == "Show all 14 tracks")
+    #expect(model.showAllLabel == "Show all 14 songs")
     model.showAllTracks = true
     #expect(model.tracks.count == 14)
     #expect(model.showAllLabel == nil)

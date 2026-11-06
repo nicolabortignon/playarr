@@ -26,7 +26,7 @@ final class PlaylistsTests: XCTestCase {
     mezzanine.tap()
   }
 
-  /// A song's ⋯ → Add to playlist… → the playlist.
+  /// A song's ⋯ → Add to playlist… → the playlist, chosen → Add.
   @MainActor
   private func add(_ title: String, to playlist: String, _ app: XCUIApplication) {
     let more = app.buttons["More for \(title)"].firstMatch
@@ -36,7 +36,33 @@ final class PlaylistsTests: XCTestCase {
     let choice = app.buttons[playlist].firstMatch
     XCTAssertTrue(choice.waitForExistence(timeout: 5))
     choice.tap()
+    XCTAssertTrue(choice.isSelected)
+    app.buttons["playlist.add"].tap()
     XCTAssertTrue(app.staticTexts["Added “\(title)” to “\(playlist)”"].waitForExistence(timeout: 5), app.debugDescription)
+  }
+
+  /// Add to playlist ticks the playlists that hold the song already, and adds to several at once.
+  @MainActor
+  func testAddToPlaylistTicksWhatHoldsTheSongAndAddsToSeveral() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-UITests", "-UITestsDemo", "-UITestsManyPlaylists"]
+    app.launch()
+    openMezzanine(app)
+    let more = app.buttons["More for Angel"].firstMatch
+    XCTAssertTrue(more.waitForExistence(timeout: 5))
+    more.tap()
+    app.buttons["Add to playlist…"].tap()
+    // Late night (and every playlist made like it) holds Angel already.
+    let lateNight = app.buttons["Late night"].firstMatch
+    XCTAssertTrue(lateNight.waitForExistence(timeout: 5))
+    expectation(for: NSPredicate(format: "value CONTAINS %@", "already in it"), evaluatedWith: lateNight)
+    waitForExpectations(timeout: 5)
+    app.buttons["Sunday morning"].firstMatch.tap()
+    app.buttons["Deep focus"].firstMatch.tap()
+    let add = app.buttons["playlist.add"]
+    XCTAssertEqual(add.label, "Add to 2 playlists")
+    add.tap()
+    XCTAssertTrue(app.staticTexts["Added “Angel” to “Sunday morning” and “Deep focus”"].waitForExistence(timeout: 5), app.debugDescription)
   }
 
   @MainActor

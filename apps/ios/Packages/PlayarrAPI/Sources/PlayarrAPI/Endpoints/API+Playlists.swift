@@ -19,6 +19,11 @@ extension API {
             Endpoint(.post, "/api/playlists/\(id)/items", body: ["recordingIds": recordingIds])
         }
 
+        /// For Add to playlist's ticks: how many of these songs each of the account's own playlists already holds.
+        public static func holding(recordingIds: [String]) -> Endpoint<PlaylistsHolding> {
+            Endpoint(.post, "/api/playlists/holding", body: ["recordingIds": recordingIds])
+        }
+
         public static func removeItem(id: Int, itemId: Int) -> Endpoint<PlaylistDetail> {
             Endpoint(.delete, "/api/playlists/\(id)/items/\(itemId)")
         }

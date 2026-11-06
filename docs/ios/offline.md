@@ -138,4 +138,4 @@ The query cache (`PlayarrUI/Data/QueryCache.swift`, in `queries/`) keeps the lib
 
   An admin's Playback lock doesn't reach this section.
 - **Library → Downloads** (`DownloadsView`): its row appears while there are downloads. It lists them newest first, each with its cover, progress, size, failures, Play and Remove (or swipe).
-- **The offline mark** (`OfflineMark`) shows a song is on the device, or a ring while it downloads. It's on song rows (`TrackRow`), both kinds of Queue row, and the sideways Now Playing tracklist.
+- **The offline mark** (`OfflineMark`) shows a song is on the device, or a ring while it downloads. It's on song rows (`SongRow`, the queue's included), the song playing at the top of the queue, and the sideways Now Playing tracklist.

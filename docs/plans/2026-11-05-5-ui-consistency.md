@@ -94,7 +94,7 @@ The standard:
 - *Web done 2026-11-06: `PageHeader` on every tab and list page, `DetailHeader` (cover · kicker · title · one meta line · action row) on album, playlist, mix, Favorites, artist and discover artist; a playlist's or mix's own cover drops its name; every kicker is `type-kicker text-muted` (`paper-dim` over art); Home greets the account by name with its avatar.*
 - *iOS done 2026-11-06: `.pageHeader(_:count:)` (the system large title in Gloock, the count under it as the navigation subtitle) on every tab and list page, with sort, filter and Edit in the bar; `DetailHeader` (cover · kicker · title · `MetaLine` · action row) on album, playlist, mix, Favorites, artist and discover artist, the cover beside the words at regular width; the bar shows a detail page's name only once its own title has scrolled under it (`titleInBar`); playlist and mix covers drop their name on their own page; kickers are `.muted`, `.paperDim` over art.*
 
-## 5. Rows and cards — M
+## 5. Rows and cards — M — done 2026-11-06
 
 - **Song rows:**
   - The web has at least five recipes: `TrackList.tsx:84`, `Playlist.tsx:260`, `Queue.tsx:175`, `NowPlaying.tsx:224` and `Downloads.tsx:28`.
@@ -115,6 +115,7 @@ The standard:
   Pick one treatment for everywhere: the artist's best album cover, in a circle, with the name **below** it as on album cards. Keep the vinyl monogram for an artist with no cover at all.
 - **Done when** one song row and one card per platform cover every list and shelf, the trailing order is the same on both apps, and every row in a list is the same height.
 - *Web done 2026-11-06: `SongRow`/`ListRow` (components/SongRow.tsx) in every list, Now Playing's Up next and Downloads, trailing time · ♥ · ⋯ as on iOS, one height per list; one shelf card width (`SHELF_CARD`); artists are circles with the name below everywhere (photo, else best album cover, else vinyl monogram); the player bar's text is 15/13.*
+- *iOS done 2026-11-06: `SongRow` (60 points, 52 in Up next) in every list, Up next and Downloads, with the time, ♥ and ⋯; missing songs grayed in place, the song playing with an accent title and the equalizer; songs from beyond the library in the same shape with Request or Add; one shelf card width (`ShelfCard.width`); artists as circles with the name below everywhere, Home's year in review and Stats included.*
 
 ## 6. Icons — S
 

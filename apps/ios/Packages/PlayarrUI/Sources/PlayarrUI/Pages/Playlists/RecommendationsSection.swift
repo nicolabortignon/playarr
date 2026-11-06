@@ -8,6 +8,7 @@ struct RecommendationsSection: View {
   @State private var model: RecommendationsModel
   @Environment(AccountSession.self) private var session
   @Environment(DiscoverContext.self) private var discover: DiscoverContext?
+  @Environment(\.horizontalSizeClass) private var sizeClass
 
   init(playlist: PlaylistModel) {
     _model = State(initialValue: RecommendationsModel(playlist: playlist))
@@ -72,7 +73,9 @@ struct RecommendationsSection: View {
     .task(id: discover?.generation(.recommendations) ?? 0) { await model.load() }
   }
 
-  /// The cover and title play a song you have; the artist and album open their pages (or the discography).
+  /// The cover and title play a song you have; the artist and album open their pages (or the discography). In the one
+  /// row's shape (docs/design.md, "Rows"; `SongRow`), Add or Request in place of ♥ and ⋯; the song it's like shows at
+  /// regular width only, as on the web's wide pages, so the title keeps its room on a phone.
   private func row(_ recommendation: RecommendedTrack, @ViewBuilder action: () -> some View) -> some View {
     HStack(spacing: 12) {
       Button { model.play(recommendation) } label: {
@@ -83,7 +86,8 @@ struct RecommendationsSection: View {
       .accessibilityLabel(recommendation.track == nil ? recommendation.title : "Play \(recommendation.title)")
       VStack(alignment: .leading, spacing: 2) {
         Button { model.play(recommendation) } label: {
-          Text(recommendation.title).lineLimit(1).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+          Text(recommendation.title).typeRole(.body).foregroundStyle(.paper).essentialLineLimit()
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .disabled(recommendation.track == nil)
@@ -92,20 +96,27 @@ struct RecommendationsSection: View {
         HStack(spacing: 4) {
           Button(recommendation.artistName) { session.router.open(RecommendationsModel.artist(recommendation).route) }
           if !recommendation.albumTitle.isEmpty {
-            Text("·").foregroundStyle(.tertiary)
+            Text("·").foregroundStyle(.muted)
             Button(recommendation.albumTitle) { session.router.open(RecommendationsModel.album(recommendation).route) }
           }
         }
-        .font(.sans(.footnote))
-        .foregroundStyle(.secondary)
+        .typeRole(.small)
+        .foregroundStyle(.paperDim)
         .lineLimit(1)
-        if !recommendation.because.isEmpty {
-          Text("like \(recommendation.because)").font(.sans(.caption)).foregroundStyle(.secondary).lineLimit(1)
-        }
       }
       // Each button takes only its own taps in a list row.
       .buttonStyle(.plain)
+      if sizeClass == .regular, !recommendation.because.isEmpty {
+        HStack(spacing: 6) {
+          Text("like").typeRole(.badge).foregroundStyle(.muted)
+          Text(recommendation.because).typeRole(.small).foregroundStyle(.paperDim).lineLimit(1)
+        }
+        .frame(maxWidth: 220, alignment: .leading)
+        .accessibilityElement(children: .combine)
+      }
       action()
     }
+    .frame(minHeight: SongRow.height)
+    .listRowInsets(.vertical, 0)
   }
 }

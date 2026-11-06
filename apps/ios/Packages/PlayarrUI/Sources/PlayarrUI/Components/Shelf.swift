@@ -15,8 +15,8 @@ struct Shelf<Content: View>: View {
   }
 }
 
-/// How wide shelf cards are: about 42 % of a phone's width, at most 208 points (the web's `w-[42vw] max-w-52`).
+/// How wide every card on a shelf is, albums, playlists, mixes and artists alike (docs/design.md, "Cards"; the web's
+/// `SHELF_CARD`): about 42 % of a phone's width.
 enum ShelfCard {
   static let width: CGFloat = 160
-  static let artistWidth: CGFloat = 150
 }

@@ -125,7 +125,7 @@ final class IPadLayoutTests: XCTestCase {
     let song = app.buttons["2. Sour Times, 4:14"]
     XCTAssertTrue(song.waitForExistence(timeout: 5))
     song.press(forDuration: 0.6, thenDragTo: app.element("sidebar.queue"), withVelocity: .slow, thenHoldForDuration: 0.5)
-    XCTAssertTrue(app.staticTexts["Added 1 track to queue"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Added “Sour Times” to the queue"].waitForExistence(timeout: 5))
   }
 
   @MainActor

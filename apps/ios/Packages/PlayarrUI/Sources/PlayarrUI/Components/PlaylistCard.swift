@@ -1,17 +1,20 @@
 import PlayarrAPI
 import SwiftUI
 
-/// A playlist: its generated cover (drawn by the server; no title on it below 120 points), name and songs.
+/// A playlist: its generated cover (drawn by the server; no title on it below 120 points), name and songs. A long press
+/// opens the playlist's menu, Play and Shuffle first (`PlayableMenu.playlist`).
 struct PlaylistCard: View {
   let playlist: PlaylistSummary
   var width: CGFloat = ShelfCard.width
+
+  @Environment(AccountSession.self) private var session
 
   var body: some View {
     NavigationLink(value: Route.playlist(playlist.id)) {
       VStack(alignment: .leading, spacing: 6) {
         PlaylistCover(cover: playlist.cover, points: width, name: playlist.name)
-        Text(playlist.name).font(.sans(.subheadline)).essentialLineLimit()
-        Text(subtitle).font(.mono(.caption)).foregroundStyle(.paperDim).essentialLineLimit()
+        Text(playlist.name).typeRole(.body).essentialLineLimit()
+        Text(subtitle).typeRole(.meta).foregroundStyle(.muted).essentialLineLimit()
       }
       .frame(width: width)
     }
@@ -19,6 +22,9 @@ struct PlaylistCard: View {
     .pointerHover()
     .accessibilityLabel("\(playlist.name), \(subtitle)")
     .accessibilityAddTraits(.isButton)
+    .contextMenu {
+      if playlist.trackCount > 0 { MenuButtons(groups: PlayableMenu.playlist(playlist.id, card: true, session: session)) }
+    }
   }
 
   /// "12 songs", and whose it is when it isn't yours: "12 songs · Sam".

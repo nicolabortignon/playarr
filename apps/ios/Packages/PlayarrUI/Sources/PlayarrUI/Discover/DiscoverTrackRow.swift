@@ -1,8 +1,9 @@
 import PlayarrAPI
 import SwiftUI
 
-/// A song not in the library: its cover, title, artist and album (each leading on), length, and the Request button
-/// for the album it's on. Opens its album when the album is (partly) here (components/Discover.tsx DiscoverTrackRow).
+/// A song not in the library, in the one row's shape (docs/design.md, "Rows"; `SongRow`): its cover, title over artist
+/// and album (each leading on), length, and the Request button for the album it's on in place of ♥ and ⋯. Opens its
+/// album when the album is (partly) here (components/Discover.tsx DiscoverTrackRow).
 struct DiscoverTrackRow: View {
   let track: DiscoverTrack
 
@@ -18,10 +19,10 @@ struct DiscoverTrackRow: View {
         cover
       }
       VStack(alignment: .leading, spacing: 2) {
-        Text(track.title).lineLimit(1)
+        Text(track.title).typeRole(.body).foregroundStyle(.paper).essentialLineLimit()
         HStack(spacing: 4) {
           NavigationLink(track.artistName, value: DiscoverDestination.artist(id: track.artistId, mbid: track.artistMbid, name: track.artistName).route)
-          Text("·").foregroundStyle(.tertiary)
+          Text("·").foregroundStyle(.muted)
           NavigationLink(
             track.albumTitle,
             value: DiscoverDestination.album(
@@ -30,17 +31,17 @@ struct DiscoverTrackRow: View {
             ).route)
         }
         .buttonStyle(.plain)
-        .font(.sans(.footnote))
-        .foregroundStyle(.secondary)
+        .typeRole(.small)
+        .foregroundStyle(.paperDim)
         .lineLimit(1)
       }
       Spacer(minLength: 8)
       if let duration = track.duration {
-        Text(Format.time(duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
+        Text(Format.time(duration)).font(Font.mono(.caption).monospacedDigit()).foregroundStyle(.muted)
       }
       RequestButton(album: track.album, availability: track.availability)
     }
-    .padding(.vertical, 6)
+    .frame(minHeight: SongRow.height)
   }
 
   private var cover: some View {

@@ -73,10 +73,10 @@ final class SearchModel {
     return showAllTracks ? tracks : Array(tracks.prefix(Self.tracksShown))
   }
 
-  /// "Show all 14 tracks", when there are more than six.
+  /// "Show all 14 songs", when there are more than six.
   var showAllLabel: String? {
     guard !showAllTracks, let count = results?.tracks.count, count > Self.tracksShown else { return nil }
-    return "Show all \(count) tracks"
+    return "Show all \(count) songs"
   }
 
   /// Playlists whose names match what's typed (matched here, as the server's search doesn't look at them).

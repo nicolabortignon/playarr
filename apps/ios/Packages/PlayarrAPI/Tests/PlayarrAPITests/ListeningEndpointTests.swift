@@ -16,6 +16,18 @@ import Testing
     #expect(shared["recordingIds"] as? [String] == ["track:1"])
   }
 
+  @Test func asksWhichPlaylistsHoldTheSongs() throws {
+    let endpoint = API.Playlists.holding(recordingIds: ["rec-1", "rec-2"])
+    #expect(endpoint.method == .post)
+    #expect(endpoint.path == "/api/playlists/holding")
+    #expect(try body(endpoint)["recordingIds"] as? [String] == ["rec-1", "rec-2"])
+    // The server's answer: playlist ids as the object's keys, those holding none left out.
+    let answer = try JSONDecoder().decode(PlaylistsHolding.self, from: Data(#"{"holding":{"5":2,"12":1}}"#.utf8))
+    #expect(answer.count(5) == 2)
+    #expect(answer.count(12) == 1)
+    #expect(answer.count(7) == 0)
+  }
+
   @Test func changesOnlyWhatAPatchSays() throws {
     let stop = try body(API.Playlists.update(id: 5, shared: false))
     #expect(stop.keys.sorted() == ["shared"])

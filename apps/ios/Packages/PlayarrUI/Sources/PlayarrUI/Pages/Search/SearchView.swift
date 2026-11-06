@@ -28,7 +28,7 @@ struct SearchView: View {
       .padding(.vertical, 16)
     }
     .navigationTitle("Search")
-    .searchable(text: $model.text, prompt: "Artists, albums, tracks")
+    .searchable(text: $model.text, prompt: "Search music")
     .searchFocused($searchFocused)
     .task(id: session.router.focusSearch) {
       // "/" on a keyboard: the cursor goes to the field.
@@ -95,10 +95,10 @@ struct SearchView: View {
     }
     if !model.tracks.isEmpty {
       VStack(alignment: .leading, spacing: 0) {
-        SectionHeader(title: "Tracks")
+        SectionHeader(title: "Songs")
         let tracks = model.tracks
         ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
-          TrackRow(track: track, style: .mixed) { session.player.play(tracks, startAt: index) }
+          SongRow(track: track) { session.player.play(tracks, startAt: index) }
             .padding(.horizontal, 20)
         }
         if let label = model.showAllLabel {
@@ -123,7 +123,7 @@ struct SearchView: View {
     if let artists = model.results?.artists, artists.count > 1 {
       VStack(alignment: .leading, spacing: 0) {
         SectionHeader(title: "Artists")
-        Shelf { ForEach(artists) { ArtistCard(artist: $0, width: ShelfCard.artistWidth) } }
+        Shelf { ForEach(artists) { ArtistCard(artist: $0, width: ShelfCard.width) } }
       }
     }
   }

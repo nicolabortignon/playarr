@@ -50,19 +50,18 @@ final class PlaylistModel {
     return playlist.mine ? "Shared with everyone" : "Shared by \(playlist.owner)"
   }
 
-  /// The ⋯ menu ("Playlist actions").
-  var actions: [PlaylistAction] {
-    guard let playlist else { return [] }
-    var actions: [PlaylistAction] = mine ? [.rename] : []
-    if !playable.isEmpty { actions += [.playNext, .addToQueue] }
-    if mine && !items.isEmpty { actions.append(.newCover) }
-    if mine { actions += [playlist.shared ? .stopSharing : .share, .delete] }
-    return actions
+  /// Its owner's part of the ⋯ menu ("Playlist actions"), after Play next, Add to queue and Add to playlist….
+  var ownerActions: [PlaylistAction] {
+    guard let playlist, mine else { return [] }
+    return [.rename] + (items.isEmpty ? [] : [.newCover]) + [playlist.shared ? .stopSharing : .share, .delete]
   }
 
-  /// A song's ⋯ menu.
-  func actions(for item: PlaylistItem) -> [PlaylistRowAction] {
-    (item.track == nil ? [] : [.playNext, .addToQueue, .addToPlaylist, .goToAlbum, .goToArtist]) + (mine ? [.remove] : [])
+  /// A song's own actions, after the song menu's: its owner moves it up or down and removes it.
+  func own(at index: Int) -> [MenuAction] {
+    guard mine, items.indices.contains(index) else { return [] }
+    let item = items[index]
+    return SongMenu.moves(index, of: items.count) { [weak self] from, to in Task { await self?.move(from, to: to) } }
+      + [MenuAction(.remove, title: "Remove from playlist") { [weak self] in Task { await self?.remove(item) } }]
   }
 
   // MARK: Asking the server
@@ -133,10 +132,45 @@ final class PlaylistModel {
     return await change { try await $0.send(API.Playlists.setCover(id: id, layout: layout, variant: variant)) }
   }
 
+  /// Remove from playlist: gone from the list at once (back if the server says no), with Undo, which puts the song back
+  /// where it was. A song no longer in the library can't be added again, so its removal has no Undo.
   func remove(_ item: PlaylistItem) async {
-    guard mine else { return }
+    guard mine, let playlist, let index = items.firstIndex(where: { $0.itemId == item.itemId }) else { return }
+    let after = index > 0 ? items[index - 1].itemId : nil
+    items.remove(at: index)
     let id = id
-    _ = await change { try await $0.send(API.Playlists.removeItem(id: id, itemId: item.itemId)) }
+    guard await change({ try await $0.send(API.Playlists.removeItem(id: id, itemId: item.itemId)) }) else {
+      show(playlist)
+      return
+    }
+    let message = "Removed “\(item.title)” from “\(playlist.name)”"
+    guard item.track != nil else { return session.toasts.push(message) }
+    let session = session
+    session.toasts.undo(message) { [weak self] in
+      Task {
+        // The page may have closed since: the playlist is put right all the same.
+        guard let restored = await Self.restore(item.recordingId, after: after, at: index, in: id, session: session) else { return }
+        self?.show(restored)
+      }
+    }
+  }
+
+  /// Undo for Remove from playlist: the song goes back after the item that came before it (or at its old place, if
+  /// that one's gone too). The server adds songs at the end, so it's added, then moved.
+  static func restore(_ recordingId: String, after: Int?, at index: Int, in id: Int, session: AccountSession) async -> PlaylistDetail? {
+    do {
+      let added = try await session.api.send(API.Playlists.addItems(id: id, recordingIds: [recordingId]))
+      var order = added.items.map(\.itemId)
+      guard let back = order.popLast() else { return added }
+      let at = after.map { order.firstIndex(of: $0).map { $0 + 1 } ?? min(index, order.count) } ?? 0
+      order.insert(back, at: at)
+      let restored = at == order.count - 1 ? added : try await session.api.send(API.Playlists.reorder(id: id, itemIds: order))
+      await session.playlists.settled(restored)
+      return restored
+    } catch {
+      session.toasts.push(error.localizedDescription, tone: .error)
+      return nil
+    }
   }
 
   /// Adds songs ("Songs like these"' Add). True when they were added.
@@ -145,6 +179,12 @@ final class PlaylistModel {
     show(playlist)
     if playlist.cover.pending { pollRound += 1 }
     return true
+  }
+
+  /// Move up and Move down (the menu, VoiceOver): one song one place along, as dragging does, saved at once.
+  func move(_ from: Int, to: Int) async {
+    guard from != to, items.indices.contains(from), items.indices.contains(to) else { return }
+    await move(fromOffsets: [from], toOffset: to > from ? to + 1 : to)
   }
 
   /// A drag ended: the songs move at once, and the new order is sent if it differs from the server's. If the server

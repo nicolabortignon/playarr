@@ -28,9 +28,7 @@ struct FavoritesView: View {
           } else {
             LazyVStack(spacing: 0) {
               ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                TrackRow(track: track, style: .mixed) {
-                  session.player.play(tracks, startAt: index, source: FavoritesStore.source)
-                }
+                SongRow(track: track) { session.player.play(tracks, startAt: index, source: FavoritesStore.source) }
               }
             }
           }
@@ -63,9 +61,7 @@ struct FavoritesView: View {
         tracks: tracks),
       moreLabel: "More for Favorites"
     ) {
-      Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { session.actions.playNext(tracks) }
-      Button("Add to queue", systemImage: "text.append") { session.actions.addToQueue(tracks) }
-      Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist(tracks) }
+      MenuButtons(groups: [PlayableMenu.queueItems(.tracks(tracks), session: session)])
     }
   }
 

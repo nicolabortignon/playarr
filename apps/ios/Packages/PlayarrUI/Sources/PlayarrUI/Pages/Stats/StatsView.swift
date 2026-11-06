@@ -7,6 +7,7 @@ struct StatsView: View {
   let session: AccountSession
   @State private var model: StatsModel
   @Environment(Theme.self) private var theme
+  @Environment(\.horizontalSizeClass) private var sizeClass
 
   init(range: StatsRange?, session: AccountSession) {
     self.session = session
@@ -69,7 +70,7 @@ struct StatsView: View {
     if model.isYear, let top = stats.topArtists.first {
       NavigationLink(value: Route.artist(top.artist.id)) {
         HStack(alignment: .bottom, spacing: 16) {
-          Cover(path: top.artist.imageUrl, points: 120, label: top.artist.name).frame(width: 120, height: 120)
+          Cover(path: top.artist.imageUrl, points: 120, label: top.artist.name, circle: true).frame(width: 120, height: 120)
           VStack(alignment: .leading, spacing: 4) {
             Kicker(text: "Your artist of the year")
             Text(top.artist.name).font(.display(.title))
@@ -101,22 +102,17 @@ struct StatsView: View {
     section("Top songs") {
       Button("Play them", systemImage: "play.fill") { model.playTop(all: true) }
         .buttonStyle(.pill(.primary))
-      ForEach(Array(stats.topTracks.enumerated()), id: \.element.track.id) { index, item in
-        Button { model.playTop(from: index, all: false) } label: {
-          HStack(spacing: 14) {
-            Text("\(index + 1)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
-            Cover(path: item.track.coverUrl, points: 44, label: item.track.albumTitle).frame(width: 44, height: 44)
-            VStack(alignment: .leading, spacing: 2) {
-              Text(item.track.title).font(.sans(.subheadline)).lineLimit(1)
-              NameAndNumbers(name: Text(item.track.artistName), numbers: Text(Format.plural(item.plays, "play")).monospacedDigit())
-                .font(.sans(.footnote))
-                .foregroundStyle(.muted)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+      // The one song row, ranked, its plays in place of its length; on a phone without the heart, the plays under the
+      // title.
+      VStack(spacing: 0) {
+        ForEach(Array(stats.topTracks.enumerated()), id: \.element.track.id) { index, item in
+          SongRow(
+            track: item.track, rank: index + 1, subtitle: [item.track.artistName], numbers: Format.plural(item.plays, "play"),
+            stacked: sizeClass == .compact
+          ) {
+            model.playTop(from: index, all: false)
           }
-          .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
       }
     }
     if !stats.topAlbums.isEmpty {

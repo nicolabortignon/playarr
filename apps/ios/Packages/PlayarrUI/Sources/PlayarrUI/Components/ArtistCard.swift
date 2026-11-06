@@ -1,7 +1,8 @@
 import PlayarrAPI
 import SwiftUI
 
-/// An artist: photo with the name over it and their counts (apps/web/src/components/Cards.tsx).
+/// An artist on a shelf or in a grid (apps/web/src/components/Cards.tsx `ArtistCard`): their picture in a circle, the
+/// name below it as on album cards, and their counts.
 struct ArtistCard: View {
   let artist: Artist
   var width: CGFloat?
@@ -10,30 +11,7 @@ struct ArtistCard: View {
 
   var body: some View {
     NavigationLink(value: Route.artist(artist.id)) {
-      // 4:5, as on the web: the (square) cover fills it, cropped at the sides, so the name sits below its middle.
-      Color.clear
-        .aspectRatio(4 / 5, contentMode: .fit)
-        .overlay {
-          GeometryReader { geometry in
-            let side = geometry.size.height
-            Cover(path: artist.imageUrl, points: (width ?? 170) * 1.25, label: artist.name)
-              .frame(width: side, height: side)
-              .position(x: geometry.size.width / 2, y: side / 2)
-          }
-        }
-        .overlay {
-          LinearGradient(colors: [.clear, .black.opacity(0.2), .black.opacity(0.95)], startPoint: .top, endPoint: .bottom)
-        }
-        .overlay(alignment: .bottomLeading) {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(artist.name).font(.display(.title3)).foregroundStyle(.white).lineLimit(2)
-            // Over the photo: paper-dim, and set a little tighter than a kicker so it fits the card.
-            Text(counts.uppercased()).font(.mono(.caption2)).tracking(0.55).foregroundStyle(.paperDim).lineLimit(1)
-          }
-          .padding(12)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .frame(width: width)
+      ArtistTile(name: artist.name, imageUrl: artist.imageUrl, meta: counts, width: width)
     }
     .buttonStyle(.plain)
     .pointerHover()
@@ -43,4 +21,32 @@ struct ArtistCard: View {
   }
 
   var counts: String { "\(Format.plural(artist.albumCount, "album")) · \(Format.plural(artist.trackCount, "song"))" }
+}
+
+/// How an artist looks on a card, in or out of the library (docs/design.md, "Cards"): their photo, else their best album
+/// cover (the server's pick when there's no photo), else a vinyl monogram of their initials, in a circle; the name below
+/// it, then a line about them ("4 albums · 41 songs", "In your library").
+struct ArtistTile: View {
+  let name: String
+  let imageUrl: String?
+  var meta: String?
+  /// Its width on a shelf; nil fills its grid column.
+  var width: CGFloat?
+
+  var body: some View {
+    VStack(spacing: 6) {
+      Cover(path: imageUrl, points: width ?? 180, label: name, circle: true)
+        .overlay(Circle().strokeBorder(Color.paper.opacity(0.1)))
+        .coverShadow(.shelf)
+      VStack(spacing: 2) {
+        Text(name).typeRole(.body).foregroundStyle(.paper).essentialLineLimit()
+        if let meta { Text(meta).typeRole(.small).foregroundStyle(.paperDim).essentialLineLimit() }
+      }
+      .multilineTextAlignment(.center)
+      .padding(.top, 4)
+    }
+    .frame(width: width)
+    .frame(maxWidth: width == nil ? .infinity : nil)
+    .contentShape(Rectangle())
+  }
 }

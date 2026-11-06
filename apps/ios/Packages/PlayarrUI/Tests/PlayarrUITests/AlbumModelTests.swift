@@ -68,7 +68,7 @@ import Testing
     let session = demoSession()
     let model = AlbumModel(id: 70, session: session)
     await model.load()
-    model.tap(Demo.mezzanineTracks[1], index: 1)
+    model.play(from: 1)
     #expect(session.player.queue.currentTrack?.title == "Risingson")
     #expect(session.player.queue.queue.count == 3)
     model.shuffle()

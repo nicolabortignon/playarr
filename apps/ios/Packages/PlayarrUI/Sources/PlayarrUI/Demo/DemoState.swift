@@ -49,6 +49,16 @@ final class DemoState: Sendable {
         state.playlists.insert(Self.counted(playlist), at: 0)
         return state.playlists[0]
       }
+    case (.post, "playlists", 2) where second == "holding":
+      // How many of the songs each of the account's own playlists holds, each song once (those holding none left out).
+      let wanted = Set(try JSONDecoder().decode(Input.self, from: body ?? Data("{}".utf8)).recordingIds ?? [])
+      return library.withLock { state in
+        let counts = state.playlists.filter(\.mine).compactMap { playlist -> (String, Int)? in
+          let held = Set(playlist.items.map(\.recordingId)).intersection(wanted).count
+          return held > 0 ? (String(playlist.id), held) : nil
+        }
+        return PlaylistsHolding(holding: Dictionary(uniqueKeysWithValues: counts))
+      }
     case (_, "playlists", _):
       guard let id = second.flatMap(Int.init) else { return nil }
       return try playlist(method, id: id, rest: Array(parts.dropFirst(2)), body: body)

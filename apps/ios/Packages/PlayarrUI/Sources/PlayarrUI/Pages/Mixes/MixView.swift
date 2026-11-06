@@ -2,8 +2,8 @@ import PlayarrAPI
 import PlayarrPlayer
 import SwiftUI
 
-/// A mix's page: why these songs, when it changes, the action row (Play, Shuffle, New mix, Download and ⋯: Save as
-/// playlist, Play next, Add to queue) and the songs (apps/web/src/pages/Mix.tsx).
+/// A mix's page: why these songs, when it changes, the action row (Play, Shuffle, New mix, Download and ⋯: Play next,
+/// Add to queue, Add to playlist…, then Save as playlist) and the songs (apps/web/src/pages/Mix.tsx).
 struct MixView: View {
   let session: AccountSession
   @State private var model: MixModel
@@ -57,7 +57,7 @@ struct MixView: View {
       }
       LazyVStack(spacing: 0) {
         ForEach(Array(mix.tracks.enumerated()), id: \.element.id) { index, track in
-          TrackRow(track: track, style: .mixed) { session.player.play(mix.tracks, startAt: index, source: model.source) }
+          SongRow(track: track) { session.player.play(mix.tracks, startAt: index, source: model.source) }
         }
       }
     }
@@ -66,7 +66,7 @@ struct MixView: View {
     .padding(.bottom, 20)
   }
 
-  /// Play, Shuffle, New mix, Download and ⋯ (Save as playlist, Play next, Add to queue).
+  /// Play, Shuffle, New mix, Download and ⋯ (Play next, Add to queue, Add to playlist…, then Save as playlist).
   private func buttons(_ mix: MixDetail) -> some View {
     ActionRow(
       title: mix.title, playState: model.playState, disabled: mix.tracks.isEmpty, play: model.playOrPause,
@@ -80,12 +80,16 @@ struct MixView: View {
     ) { compact in
       newMix(compact: compact)
     } more: {
-      Button("Save as playlist", systemImage: "bookmark") {
-        // Opens the new playlist, so it's clear what was made and where it lives.
-        Task { if let playlist = await model.save() { session.router.open(.playlist(playlist.id)) } }
-      }
-      Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.queue(next: true) }
-      Button("Add to queue", systemImage: "text.append") { model.queue(next: false) }
+      // What everything you can play offers, then the mix's own action.
+      MenuButtons(groups: [
+        PlayableMenu.queueItems(.tracks(mix.tracks), session: session),
+        [
+          MenuAction(.saveAsPlaylist) {
+            // Opens the new playlist, so it's clear what was made and where it lives.
+            Task { if let playlist = await model.save() { session.router.open(.playlist(playlist.id)) } }
+          }
+        ],
+      ])
     }
   }
 

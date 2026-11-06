@@ -1,8 +1,9 @@
 import PlayarrAPI
 import SwiftUI
 
-/// An album in a grid or shelf: its cover, title (in the accent colour while it plays), artist, year, and "3 of 11"
-/// when songs are missing (apps/web/src/components/Cards.tsx). Long press for Play, Shuffle and the queue.
+/// An album in a grid or shelf: its cover, title (in the accent color while it plays), artist, year, and "3 of 11"
+/// when songs are missing (apps/web/src/components/Cards.tsx). A long press opens the album's menu, Play and Shuffle
+/// first (`PlayableMenu.album`).
 struct AlbumCard: View {
   let album: Album
   var width: CGFloat?
@@ -16,8 +17,8 @@ struct AlbumCard: View {
       VStack(alignment: .leading, spacing: 6) {
         Cover(path: album.coverUrl, points: width ?? 180, label: album.title)
           .coverShadow(.shelf)
-        Text(album.title).font(.sans(.subheadline)).essentialLineLimit().foregroundStyle(current ? theme.accent.color : .primary)
-        Text(subtitle).font(.sans(.caption)).essentialLineLimit().foregroundStyle(.paperDim)
+        Text(album.title).typeRole(.body).essentialLineLimit().foregroundStyle(current ? theme.accent.color : .paper)
+        Text(subtitle).typeRole(.small).essentialLineLimit().foregroundStyle(.paperDim)
       }
       .frame(width: width)
       .contentShape(Rectangle())
@@ -26,13 +27,8 @@ struct AlbumCard: View {
     .pointerHover()
     .accessibilityLabel("\(album.title), \(subtitle)")
     .accessibilityAddTraits(current ? [.isButton, .isSelected] : .isButton)
-    .contextMenu {
-      Button("Play", systemImage: "play.fill") { Task { await session.actions.playAlbum(album.id) } }
-      Button("Shuffle", systemImage: "shuffle") { Task { await session.actions.playAlbum(album.id, shuffle: true) } }
-      Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { Task { await session.actions.queueAlbum(album.id, next: true) } }
-      Button("Add to queue", systemImage: "text.append") { Task { await session.actions.queueAlbum(album.id, next: false) } }
-      Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(album.artistId)) }
-    }
+    // The album's one menu, Play and Shuffle first: a card has neither button.
+    .contextMenu { MenuButtons(groups: PlayableMenu.album(album.id, artistId: album.artistId, card: true, session: session)) }
     .prefetch { session.prefetchAlbum(album.id, cover: album.coverUrl) }
   }
 
