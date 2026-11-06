@@ -34,16 +34,13 @@ enum OfflineWording {
     }
   }
 
-  static func started(_ title: String) -> String { "Downloading \(title)" }
-  static func removed(_ title: String) -> String { "\(title) removed from this device" }
+  static func started(_ title: String) -> String { "Downloading “\(title)”" }
+  static func removed(_ title: String) -> String { "Removed “\(title)” from this device" }
   static func noRoomMessage(_ title: String, needed: Int64, free: Int64) -> String {
     "\(title) needs \(ByteCount.format(needed)), and \(ByteCount.format(free)) is free. Remove some downloads in Library → Downloads."
   }
 
   // MARK: Library → Downloads
-
-  static let emptyDownloads =
-    "Nothing downloaded yet. Tap the download button on an album, playlist, mix or Favorites to keep it on this device and play it without a connection."
 
   /// "Massive Attack · 3 of 11 songs · 132 MB", without the failures.
   static func rowDetail(_ d: PinnedDownload, _ progress: DownloadProgress) -> String {
@@ -69,6 +66,25 @@ enum OfflineWording {
   /// "Plus 3 downloads (4.2 GB), kept until you remove them." — the link is the first part.
   static func downloadsLine(count n: Int, bytes: Int64) -> (link: String, rest: String)? {
     n > 0 ? (count(n, "download"), " (\(ByteCount.format(bytes))), kept until you remove them.") : nil
+  }
+
+  /// Remove all: the question names how many songs go, the words what leaves this device and what doesn't
+  /// (OfflineStorage.tsx). `downloads` and their bytes, then the songs saved as you listened and theirs.
+  static func removeAllQuestion(songs: Int, downloads: Int, downloadBytes: Int64, saved: Int, savedBytes: Int64) -> LossQuestion {
+    LossQuestion(
+      title: "Remove \(count(songs, "song")) from this device?",
+      message: whatGoes(downloads: downloads, downloadBytes: downloadBytes, saved: saved, savedBytes: savedBytes)
+        + " Nothing leaves your library: anything can be downloaded again.",
+      verb: "Remove all")
+  }
+
+  /// "2 downloads (1.2 GB) and 40 songs saved as you listened (310 MB) leave this device."
+  static func whatGoes(downloads: Int, downloadBytes: Int64, saved: Int, savedBytes: Int64) -> String {
+    let parts =
+      (downloads > 0 ? ["\(count(downloads, "download")) (\(ByteCount.format(downloadBytes)))"] : [])
+      + (saved > 0 ? ["\(count(saved, "song")) saved as you listened (\(ByteCount.format(savedBytes)))"] : [])
+    let one = parts.count == 1 && (downloads > 0 ? downloads : saved) == 1
+    return "\(parts.joined(separator: " and ")) \(one ? "leaves" : "leave") this device."
   }
 
   // MARK: Signing out

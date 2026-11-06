@@ -42,7 +42,7 @@ public struct RequestsPanel: View {
     Section {
       if let problem = model.optionsProblem {
         InlineMessage(text: problem)
-        Button(model.retrying ? "Retrying…" : "Retry", systemImage: "arrow.clockwise") { Task { await model.retry() } }.disabled(model.retrying)
+        Button(model.retrying ? "Trying again…" : "Try again", systemImage: "arrow.clockwise") { Task { await model.retry() } }.disabled(model.retrying)
       } else {
         Picker("Root folder", selection: Binding(get: { info.rootFolderPath }, set: { value in Task { await model.setRootFolder(value) } })) {
           ForEach(model.rootFolders, id: \.self) { Text($0.label).tag($0.value) }

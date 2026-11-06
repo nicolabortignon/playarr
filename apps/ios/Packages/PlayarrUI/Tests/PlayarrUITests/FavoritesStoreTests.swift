@@ -35,7 +35,7 @@ import Testing
     await favorites.toggle(Listening.risingson)
     #expect(favorites.isFavorite("rec-701"))
     #expect(favorites.tracks?.map(\.title) == ["Risingson"])
-    #expect(toasts.toasts.map(\.message) == ["Couldn't update favorites: Song not found in the library"])
+    #expect(toasts.toasts.map(\.message) == ["Couldn’t update Favorites: Song not found in the library"])
     #expect(toasts.toasts.map(\.tone) == [.error])
   }
 

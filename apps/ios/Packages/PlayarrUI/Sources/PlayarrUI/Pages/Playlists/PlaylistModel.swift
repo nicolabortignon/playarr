@@ -120,10 +120,32 @@ final class PlaylistModel {
     return await change { try await $0.send(API.Playlists.update(id: id, name: name, description: description)) }
   }
 
+  /// Share with everyone, or Stop sharing: at once, with Undo in the toast, which shares it again ("Stopped sharing
+  /// “Late night”"; docs/design.md, "Taking things back").
   func setShared(_ shared: Bool) async {
-    guard mine else { return }
+    guard mine, let name = playlist?.name else { return }
     let id = id
-    _ = await change { try await $0.send(API.Playlists.update(id: id, shared: shared)) }
+    guard await change({ try await $0.send(API.Playlists.update(id: id, shared: shared)) }), !shared else { return }
+    let session = session
+    session.toasts.undo("Stopped sharing “\(name)”") { [weak self] in
+      Task {
+        // The page may have closed since: the playlist is shared again all the same.
+        guard let restored = await Self.share(id, session: session) else { return }
+        self?.show(restored)
+      }
+    }
+  }
+
+  /// Undo for Stop sharing: shared with everyone again.
+  static func share(_ id: Int, session: AccountSession) async -> PlaylistDetail? {
+    do {
+      let shared = try await session.api.send(API.Playlists.update(id: id, shared: true))
+      await session.playlists.settled(shared)
+      return shared
+    } catch {
+      session.toasts.push(error.localizedDescription, tone: .error)
+      return nil
+    }
   }
 
   func setCover(layout: CoverLayout, variant: Int) async -> Bool {

@@ -87,6 +87,10 @@ public struct Album: Codable, Hashable, Sendable, Identifiable {
     public var trackCount: Int
     public var totalTrackCount: Int
     public var coverUrl: String?
+    /// The cover's dominant color, `#rrggbb`: what it reads as from afar, for the space a loading cover takes. Present once the server has read the cover (Lidarr's, a folder file's, or its Cover Art Archive fallback), even a gray one.
+    public var coverColor: String?
+    /// The vivid accent the cover gives, `#rrggbb`, picked as the apps pick theirs (the web's `accentOf`; lifted until it's legible on the dark app). Absent when the cover has no color to give (a gray or black-and-white one), or hasn't been read yet (no `coverColor`).
+    public var coverAccent: String?
     public var addedAt: String?
     public var format: AudioFormat?
     /// MusicBrainz release group, when known: what a request for the rest of the album asks Lidarr for.
@@ -94,7 +98,7 @@ public struct Album: Codable, Hashable, Sendable, Identifiable {
     /// No source knows how many songs the album has (folder files without a track total or a MusicBrainz match), and the songs here don't look like all of it (just one, or numbers with gaps): the rest can be requested.
     public var mayBeIncomplete: Bool?
 
-    public init(id: Int, title: String, artistId: Int, artistName: String, year: Int? = nil, releaseDate: String? = nil, albumType: String, secondaryTypes: [String], genres: [String], duration: Double, trackCount: Int, totalTrackCount: Int, coverUrl: String? = nil, addedAt: String? = nil, format: AudioFormat? = nil, mbid: String? = nil, mayBeIncomplete: Bool? = nil) {
+    public init(id: Int, title: String, artistId: Int, artistName: String, year: Int? = nil, releaseDate: String? = nil, albumType: String, secondaryTypes: [String], genres: [String], duration: Double, trackCount: Int, totalTrackCount: Int, coverUrl: String? = nil, coverColor: String? = nil, coverAccent: String? = nil, addedAt: String? = nil, format: AudioFormat? = nil, mbid: String? = nil, mayBeIncomplete: Bool? = nil) {
         self.id = id
         self.title = title
         self.artistId = artistId
@@ -108,6 +112,8 @@ public struct Album: Codable, Hashable, Sendable, Identifiable {
         self.trackCount = trackCount
         self.totalTrackCount = totalTrackCount
         self.coverUrl = coverUrl
+        self.coverColor = coverColor
+        self.coverAccent = coverAccent
         self.addedAt = addedAt
         self.format = format
         self.mbid = mbid
@@ -129,6 +135,10 @@ public struct AlbumDetail: Codable, Hashable, Sendable, Identifiable {
     public var trackCount: Int
     public var totalTrackCount: Int
     public var coverUrl: String?
+    /// The cover's dominant color, `#rrggbb`: what it reads as from afar, for the space a loading cover takes. Present once the server has read the cover (Lidarr's, a folder file's, or its Cover Art Archive fallback), even a gray one.
+    public var coverColor: String?
+    /// The vivid accent the cover gives, `#rrggbb`, picked as the apps pick theirs (the web's `accentOf`; lifted until it's legible on the dark app). Absent when the cover has no color to give (a gray or black-and-white one), or hasn't been read yet (no `coverColor`).
+    public var coverAccent: String?
     public var addedAt: String?
     public var format: AudioFormat?
     /// MusicBrainz release group, when known: what a request for the rest of the album asks Lidarr for.
@@ -141,7 +151,7 @@ public struct AlbumDetail: Codable, Hashable, Sendable, Identifiable {
     /// Songs on this album that aren't in the library (shown greyed out).
     public var missingTracks: [MissingTrack]
 
-    public init(id: Int, title: String, artistId: Int, artistName: String, year: Int? = nil, releaseDate: String? = nil, albumType: String, secondaryTypes: [String], genres: [String], duration: Double, trackCount: Int, totalTrackCount: Int, coverUrl: String? = nil, addedAt: String? = nil, format: AudioFormat? = nil, mbid: String? = nil, mayBeIncomplete: Bool? = nil, overview: String? = nil, tracks: [Track], discCount: Int, missingTracks: [MissingTrack]) {
+    public init(id: Int, title: String, artistId: Int, artistName: String, year: Int? = nil, releaseDate: String? = nil, albumType: String, secondaryTypes: [String], genres: [String], duration: Double, trackCount: Int, totalTrackCount: Int, coverUrl: String? = nil, coverColor: String? = nil, coverAccent: String? = nil, addedAt: String? = nil, format: AudioFormat? = nil, mbid: String? = nil, mayBeIncomplete: Bool? = nil, overview: String? = nil, tracks: [Track], discCount: Int, missingTracks: [MissingTrack]) {
         self.id = id
         self.title = title
         self.artistId = artistId
@@ -155,6 +165,8 @@ public struct AlbumDetail: Codable, Hashable, Sendable, Identifiable {
         self.trackCount = trackCount
         self.totalTrackCount = totalTrackCount
         self.coverUrl = coverUrl
+        self.coverColor = coverColor
+        self.coverAccent = coverAccent
         self.addedAt = addedAt
         self.format = format
         self.mbid = mbid
@@ -775,9 +787,13 @@ public struct FavoriteTrack: Codable, Hashable, Sendable, Identifiable {
     public var size: Int
     public var streamUrl: String
     public var coverUrl: String?
+    /// The album cover's dominant color, as `Album.coverColor`.
+    public var coverColor: String?
+    /// The album cover's accent, as `Album.coverAccent`: the player can change color with the song before its cover loads.
+    public var coverAccent: String?
     public var favoritedAt: String
 
-    public init(id: Int, recordingId: String, fileId: Int, albumId: Int, artistId: Int, title: String, artistName: String, albumTitle: String, trackNumber: Int, discNumber: Int, duration: Double, explicit: Bool, format: AudioFormat, size: Int, streamUrl: String, coverUrl: String? = nil, favoritedAt: String) {
+    public init(id: Int, recordingId: String, fileId: Int, albumId: Int, artistId: Int, title: String, artistName: String, albumTitle: String, trackNumber: Int, discNumber: Int, duration: Double, explicit: Bool, format: AudioFormat, size: Int, streamUrl: String, coverUrl: String? = nil, coverColor: String? = nil, coverAccent: String? = nil, favoritedAt: String) {
         self.id = id
         self.recordingId = recordingId
         self.fileId = fileId
@@ -794,6 +810,8 @@ public struct FavoriteTrack: Codable, Hashable, Sendable, Identifiable {
         self.size = size
         self.streamUrl = streamUrl
         self.coverUrl = coverUrl
+        self.coverColor = coverColor
+        self.coverAccent = coverAccent
         self.favoritedAt = favoritedAt
     }
 }
@@ -1146,6 +1164,8 @@ public struct ListeningStats: Codable, Hashable, Sendable {
     public var newArtists: Int
     /// Most days in a row with something played.
     public var longestStreak: Int
+    /// Days in a row with something played up to today, or up to yesterday until something is played today (a streak isn't broken before the day's first song). Days as `longestStreak` counts them, within the period; 0 for a past year, or when nothing was played yesterday or today. A new record when it's above 1 and equals `longestStreak`. Absent from servers before it (read as 0).
+    public var currentStreak: Int?
     public var topArtists: [TopArtistsItem]
     public var topAlbums: [TopAlbumsItem]
     public var topTracks: [TopTracksItem]
@@ -1161,7 +1181,7 @@ public struct ListeningStats: Codable, Hashable, Sendable {
     /// Calendar years with history, newest first: each has a year in review.
     public var years: [Int]
 
-    public init(range: StatsRange, from: String? = nil, to: String, minutes: Double, plays: Int, songs: Int, artists: Int, days: Int, newArtists: Int, longestStreak: Int, topArtists: [TopArtistsItem], topAlbums: [TopAlbumsItem], topTracks: [TopTracksItem], topGenres: [TopGenresItem], hours: [Double], weekdays: [Double], months: [Double]? = nil, firstSong: FirstSong? = nil, years: [Int]) {
+    public init(range: StatsRange, from: String? = nil, to: String, minutes: Double, plays: Int, songs: Int, artists: Int, days: Int, newArtists: Int, longestStreak: Int, currentStreak: Int? = nil, topArtists: [TopArtistsItem], topAlbums: [TopAlbumsItem], topTracks: [TopTracksItem], topGenres: [TopGenresItem], hours: [Double], weekdays: [Double], months: [Double]? = nil, firstSong: FirstSong? = nil, years: [Int]) {
         self.range = range
         self.from = from
         self.to = to
@@ -1172,6 +1192,7 @@ public struct ListeningStats: Codable, Hashable, Sendable {
         self.days = days
         self.newArtists = newArtists
         self.longestStreak = longestStreak
+        self.currentStreak = currentStreak
         self.topArtists = topArtists
         self.topAlbums = topAlbums
         self.topTracks = topTracks
@@ -2630,11 +2651,14 @@ public struct SearchResults: Codable, Hashable, Sendable {
     public var artists: [Artist]
     public var albums: [Album]
     public var tracks: [Track]
+    /// Nothing matched as typed: these are a letter or two away ("radiohed" finds Radiohead).
+    public var near: Bool?
 
-    public init(artists: [Artist], albums: [Album], tracks: [Track]) {
+    public init(artists: [Artist], albums: [Album], tracks: [Track], near: Bool? = nil) {
         self.artists = artists
         self.albums = albums
         self.tracks = tracks
+        self.near = near
     }
 }
 
@@ -2912,8 +2936,12 @@ public struct Track: Codable, Hashable, Sendable, Identifiable {
     public var size: Int
     public var streamUrl: String
     public var coverUrl: String?
+    /// The album cover's dominant color, as `Album.coverColor`.
+    public var coverColor: String?
+    /// The album cover's accent, as `Album.coverAccent`: the player can change color with the song before its cover loads.
+    public var coverAccent: String?
 
-    public init(id: Int, recordingId: String, fileId: Int, albumId: Int, artistId: Int, title: String, artistName: String, albumTitle: String, trackNumber: Int, discNumber: Int, duration: Double, explicit: Bool, format: AudioFormat, size: Int, streamUrl: String, coverUrl: String? = nil) {
+    public init(id: Int, recordingId: String, fileId: Int, albumId: Int, artistId: Int, title: String, artistName: String, albumTitle: String, trackNumber: Int, discNumber: Int, duration: Double, explicit: Bool, format: AudioFormat, size: Int, streamUrl: String, coverUrl: String? = nil, coverColor: String? = nil, coverAccent: String? = nil) {
         self.id = id
         self.recordingId = recordingId
         self.fileId = fileId
@@ -2930,6 +2958,8 @@ public struct Track: Codable, Hashable, Sendable, Identifiable {
         self.size = size
         self.streamUrl = streamUrl
         self.coverUrl = coverUrl
+        self.coverColor = coverColor
+        self.coverAccent = coverAccent
     }
 }
 
@@ -3370,5 +3400,39 @@ public struct UpdateSettingsPatch: Codable, Hashable, Sendable {
     public init(enabled: Bool? = nil, intervalMinutes: UpdateInterval? = nil) {
         self.enabled = enabled
         self.intervalMinutes = intervalMinutes
+    }
+}
+
+public enum WavFallback: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case aLAC
+    case aIFF
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [WavFallback] = [.aLAC, .aIFF]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "ALAC": self = .aLAC
+        case "AIFF": self = .aIFF
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .aLAC: "ALAC"
+        case .aIFF: "AIFF"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }

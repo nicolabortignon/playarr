@@ -96,6 +96,58 @@ struct DownloadStoreTests {
     #expect(rig.folder.songFiles().keys.sorted() == rig.store.manifest.songs.keys.sorted())
   }
 
+  @Test func onlyDownloadedSongsCountAsDownloadedNotThoseKeptAsYouListen() async throws {
+    // The "on this device" mark: a download's songs once here, never a song only kept ahead as it played.
+    let rig = StoreRig()
+    try await rig.play(7)
+    #expect(rig.store.isKept(7))
+    #expect(!rig.store.isDownloaded(7))
+    rig.store.add(album([4, 5]))
+    #expect(!rig.store.isDownloaded(4))  // asked for, not here yet
+    await rig.finish(4)
+    #expect(rig.store.isDownloaded(4))
+    // Played, then downloaded: marked once a download has it.
+    rig.store.add(album([7], key: "playlist:2"))
+    #expect(rig.store.isDownloaded(7))
+    // Taken off the device, its songs are only kept as you listen.
+    rig.store.remove("album:1")
+    #expect(rig.store.isKept(4))
+    #expect(!rig.store.isDownloaded(4))
+    // And after a relaunch the same.
+    rig.open()
+    #expect(rig.store.isDownloaded(7))
+    #expect(!rig.store.isDownloaded(4))
+  }
+
+  @Test func undoPutsBackADownloadJustRemovedAsItWas() async throws {
+    let rig = StoreRig()
+    rig.store.add(album([4, 5]))
+    for id in [4, 5] { await rig.finish(id) }
+    let removed = try #require(rig.store.download("album:1"))
+    rig.store.remove("album:1")
+    #expect(rig.store.downloads.isEmpty)
+    rig.store.restore(removed)
+    #expect(rig.store.download("album:1") == removed)
+    #expect(rig.store.isDownloaded(4) && rig.store.isDownloaded(5))
+    #expect(rig.store.progress(of: "album:1") == DownloadProgress(done: 2, total: 2, bytes: 2000))
+    #expect(JSONFile<OfflineManifest>(rig.folder.manifest).read()?.pins["album:1"] == removed)
+  }
+
+  @Test func undoDownloadsAgainWhatMadeRoomMeanwhile() async throws {
+    let rig = StoreRig()
+    rig.settings.offlineLimit = 600
+    rig.store.add(album([4, 5]))
+    for id in [4, 5] { await rig.finish(id, bytes: 500) }
+    let removed = try #require(rig.store.download("album:1"))
+    // Removed, its songs make room within the limit: one of them goes.
+    rig.store.remove("album:1")
+    #expect(rig.store.manifest.songs.count == 1)
+    rig.store.restore(removed)
+    let gone = try #require([4, 5].first { !rig.store.isKept($0) })
+    await rig.finish(gone, bytes: 500)
+    #expect(rig.store.progress(of: "album:1") == DownloadProgress(done: 2, total: 2, bytes: 1000))
+  }
+
   @Test func theSongsPlayingAndFetchedAheadNeverMakeRoom() async throws {
     let rig = StoreRig()
     rig.settings.offlineLimit = 1000

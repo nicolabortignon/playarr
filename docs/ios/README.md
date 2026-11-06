@@ -56,7 +56,7 @@ It reads every exported type from `packages/shared/src/index.ts` and `packages/m
 - `Record<string, T>` becomes `[String: T]`; arrays and tuples become `[T]`.
 - An inline object type becomes a nested struct named after its property, with `Item` added inside arrays and `Value` inside records. A nested name that would hide a top-level type stops the script: rename the property.
 - Any other union, or a shape it can't map, stops the script with the property's name. So does a name exported by both inputs. Anything else (an alias to a primitive or an array) becomes a `typealias`.
-- Swift keywords used as names are escaped with backticks. `parseRange` and `ByteRange` are skipped (exported, but not part of the API).
+- Swift keywords used as names are escaped with backticks. `parseRange`, `ByteRange` and `wavFallbackOf` are skipped (exported, but not part of the API: the script's `SKIP` list).
 - `packages/mix`'s `MIX_MAP_VERSION` is written as `public let mixMapVersion`.
 
 **Contract tests.** The server's route tests record real answers when run with `RECORD_FIXTURES=1` (`apps/server/src/routes/contract.test.ts`, through `apps/server/src/testing/recordFixture.ts`) into `PlayarrAPI/Tests/PlayarrAPITests/Fixtures/`. `ContractTests.swift` decodes each one into its generated type, so a change on either side fails `swift test` until the other follows. A new endpoint adds a recording to `contract.test.ts` and a line to `ContractTests.swift`. No CI job checks that the models or the fixtures are up to date with the TypeScript: run `make models-check` and re-record after changing the shared types or the routes.
@@ -107,7 +107,7 @@ The app was built against an inventory of everything the web app does (every rou
 - Settings: Playback and Appearance per device; Sources, Analysis, Requests and Updates for admins; Accounts and Mixes for everyone;
 - offline downloads, which the web does through its service worker.
 
-What differs on purpose: accounts replace the web's old profiles; user-facing text follows the web's, with "this device" where the web names the browser; keyboard shortcuts only with a hardware keyboard on an iPad.
+What differs on purpose: accounts replace the web's old profiles; user-facing text follows the web's (and [design.md](../design.md)'s Words where the two differ), with "this device" where the web names the browser; keyboard shortcuts only with a hardware keyboard on an iPad.
 
 ## 7. Building and testing
 

@@ -20,11 +20,11 @@ public struct MixPointsSheet: View {
             Text(model.track.artistName).font(.sans(.subheadline)).foregroundStyle(.secondary).lineLimit(1)
           }
           if let error = model.error {
-            Text("Couldn’t load this song’s mix points: \(error)").foregroundStyle(.danger)
+            InlineError("Couldn’t load this song’s mix points", reason: error) { await model.load() }
           } else if let editor = model.editor {
             editorView(editor)
           } else if model.loaded {
-            Text(MixPointsModel.notAnalysed).font(.sans(.subheadline)).foregroundStyle(.secondary)
+            Text(MixPointsModel.notAnalyzed).font(.sans(.subheadline)).foregroundStyle(.secondary)
           } else {
             RoundedRectangle(cornerRadius: 8).fill(.quaternary).frame(height: 96).accessibilityLabel("Loading mix points")
           }
@@ -33,9 +33,9 @@ public struct MixPointsSheet: View {
       }
       .navigationTitle("Edit mix points")
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark", role: .cancel) { dismiss() } }
         ToolbarItem(placement: .confirmationAction) {
-          Button("Save") { Task { if await model.save() { dismiss() } } }
+          Button(model.saving ? "Saving…" : "Save", systemImage: "checkmark", role: .confirm) { Task { if await model.save() { dismiss() } } }
             .disabled(model.editor?.changed != true || model.saving)
         }
       }

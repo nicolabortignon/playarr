@@ -11,6 +11,10 @@ public final class RequestsModel {
   public private(set) var error: String?
   /// Requests on their way to the server, by `AlbumRef.requestKey`.
   public private(set) var pending: [String: PendingRequest] = [:]
+  /// Requests taken off the list whose Undo hasn't gone yet, by MusicBrainz id: hidden, and forgotten by the server only
+  /// once it has. Asking Lidarr again couldn't bring one back (an album that has arrived can't be requested), so the
+  /// removal waits (pages/Requests.tsx `useRemoving`; docs/design.md, "Taking things back").
+  public private(set) var removing: Set<String> = []
 
   @ObservationIgnored private let api: any APISending
   @ObservationIgnored private let clock: any Clock<Duration>
@@ -34,6 +38,9 @@ public final class RequestsModel {
 
   /// "2 requests in progress".
   public var activeCount: Int { RequestPolling.activeCount(requests) }
+
+  /// The list as Requests shows it: without those being taken off it.
+  public var shown: [AlbumRequest]? { requests?.filter { !removing.contains($0.mbid) } }
 
   /// Asks now, then every 10 s or 60 s until `stopPolling()`.
   public func startPolling() {
@@ -112,7 +119,11 @@ public final class RequestsModel {
     }
   }
 
-  /// Takes a request off the list; Lidarr keeps the album wanted.
+  /// Off the list at once, while its Undo lasts (`unhide(_:)` puts it back); `remove(_:)` once it has gone.
+  public func hide(_ request: AlbumRequest) { removing.insert(request.mbid) }
+  public func unhide(_ request: AlbumRequest) { removing.remove(request.mbid) }
+
+  /// Takes a request off the list for good; Lidarr keeps the album wanted.
   public func remove(_ request: AlbumRequest) async {
     do {
       _ = try await api.send(API.Requests.remove(mbid: request.mbid))
@@ -120,6 +131,7 @@ public final class RequestsModel {
       toast(error.localizedDescription, true)
     }
     await refresh()
+    removing.remove(request.mbid)
   }
 
   /// A library album missing songs: what to ask Lidarr for, and how a request for it is doing (RequestRest). Nil

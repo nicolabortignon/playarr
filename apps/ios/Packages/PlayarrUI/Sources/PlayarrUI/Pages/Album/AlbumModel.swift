@@ -4,7 +4,7 @@ import PlayarrAPI
 import PlayarrPlayer
 
 /// An album, as apps/web/src/pages/Album.tsx: header, Play/Pause/Resume, Shuffle, ⋯, the songs with disc headers and
-/// missing songs greyed out in their place, liner notes and more by the artist. "Request the rest" is phase 8.
+/// missing songs grayed out in their place, liner notes and more by the artist. "Request the rest" is phase 8.
 @MainActor @Observable
 final class AlbumModel {
   enum Row: Equatable, Identifiable {
@@ -64,7 +64,7 @@ final class AlbumModel {
   /// The artist's small photo beside their name, when they have one of their own (`ArtistDetail.photo`).
   var artistPhoto: String? { artist?.value?.photo }
 
-  /// "1998 · 3 songs · 17 min": when, how many, how long. Missing songs show greyed in the list, and the action row
+  /// "1998 · 3 songs · 17 min": when, how many, how long. Missing songs show grayed in the list, and the action row
   /// offers the rest, so the line stays short enough for the format badge after it.
   static func facts(_ album: AlbumDetail) -> String {
     MetaLine.join([album.year.map { String($0) }, Format.plural(album.trackCount, "song"), Format.duration(album.duration)])

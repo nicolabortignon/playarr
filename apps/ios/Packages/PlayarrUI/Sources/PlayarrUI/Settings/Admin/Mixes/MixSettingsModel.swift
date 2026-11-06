@@ -21,8 +21,14 @@ public final class MixSettingsModel {
 
   public static let historyIntro =
     "What the mixes learn from: each song heard for 30 seconds, or skipped, and at what time of day. It stays on this server."
-  public static let clearTitle = "Clear listening history?"
-  public static let clearMessage = "Every song played is forgotten, and the mixes start learning again from scratch. Favorites and playlists stay."
+  /// Clearing the listening history: every play goes for good (MixesPanel.tsx).
+  static func clearQuestion(plays: Int) -> LossQuestion {
+    LossQuestion(
+      title: "Clear listening history?",
+      message:
+        "\(plays > 1 ? "All \(AdminText.plural(plays, "song")) played are" : "Every song played is") forgotten for good, and the mixes start learning again from scratch. Favorites and playlists stay.",
+      verb: "Clear history")
+  }
   public static let soundText =
     "Energy boost, Wind down, Deep focus and Vibes of the hour are better once Playarr has measured how songs sound (tempo, loudness, energy); until then they go by genre. Measure every song in Settings → Analysis."
 

@@ -28,6 +28,8 @@ public struct DownloadButton: View {
   let item: DownloadItem
   let tracks: [Track]
   @State private var shortOfRoom: (needed: Int64, free: Int64)?
+  /// Undo for a removal.
+  @Environment(AccountSession.self) private var session: AccountSession?
 
   public init(store: DownloadStore, item: DownloadItem, tracks: [Track]) {
     self.store = store
@@ -95,9 +97,8 @@ public struct DownloadButton: View {
   }
 
   private func toggle() {
-    if store.download(item.key) != nil {
-      store.remove(item.key)
-      store.announce(OfflineWording.removed(item.title), false)
+    if let download = store.download(item.key) {
+      DownloadRemoval.remove(download, from: store, toasts: session?.toasts)
       return
     }
     if case .short(let needed, let free) = store.room(for: songs) {

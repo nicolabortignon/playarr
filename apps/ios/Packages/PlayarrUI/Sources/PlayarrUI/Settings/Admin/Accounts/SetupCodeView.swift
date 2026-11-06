@@ -33,7 +33,7 @@ struct SetupCodeView: View {
     }
     .navigationTitle("Setup code for \(shown.account.name)")
     .navigationBarBackButtonHidden()
-    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) } }
+    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close, action: done) } }
   }
 
   private func copy() {

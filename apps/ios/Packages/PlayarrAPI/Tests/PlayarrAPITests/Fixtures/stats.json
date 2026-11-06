@@ -8,6 +8,7 @@
   "days": 2,
   "newArtists": 1,
   "longestStreak": 2,
+  "currentStreak": 0,
   "topArtists": [
     {
       "artist": {
@@ -20,7 +21,7 @@
         "albumCount": 1,
         "trackCount": 2,
         "mbid": "art-1",
-        "imageUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
+        "imageUrl": "/art/album/70/cover?v=1"
       },
       "plays": 2,
       "minutes": 11
@@ -43,7 +44,7 @@
         "duration": 677,
         "trackCount": 2,
         "totalTrackCount": 11,
-        "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500",
+        "coverUrl": "/art/album/70/cover?v=1",
         "addedAt": "2026-11-03T12:00:00.000Z",
         "mbid": "rg-1",
         "format": {
@@ -52,7 +53,9 @@
           "bits": 16,
           "sampleRate": 44100,
           "lossless": true
-        }
+        },
+        "coverColor": "#2a4b8d",
+        "coverAccent": "#527bcb"
       },
       "plays": 2,
       "minutes": 11
@@ -82,7 +85,9 @@
         },
         "size": 40000000,
         "streamUrl": "/stream/9000",
-        "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
+        "coverUrl": "/art/album/70/cover?v=1",
+        "coverColor": "#2a4b8d",
+        "coverAccent": "#527bcb"
       },
       "plays": 1
     },
@@ -109,7 +114,9 @@
         },
         "size": 30000000,
         "streamUrl": "/stream/9001",
-        "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
+        "coverUrl": "/art/album/70/cover?v=1",
+        "coverColor": "#2a4b8d",
+        "coverAccent": "#527bcb"
       },
       "plays": 1
     }
@@ -178,7 +185,9 @@
       },
       "size": 40000000,
       "streamUrl": "/stream/9000",
-      "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
+      "coverUrl": "/art/album/70/cover?v=1",
+      "coverColor": "#2a4b8d",
+      "coverAccent": "#527bcb"
     },
     "at": "2026-11-03T12:00:00.000Z"
   },

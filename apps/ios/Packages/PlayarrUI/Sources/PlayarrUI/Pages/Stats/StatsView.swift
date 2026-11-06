@@ -6,7 +6,6 @@ import SwiftUI
 struct StatsView: View {
   let session: AccountSession
   @State private var model: StatsModel
-  @Environment(Theme.self) private var theme
   @Environment(\.horizontalSizeClass) private var sizeClass
 
   init(range: StatsRange?, session: AccountSession) {
@@ -33,15 +32,14 @@ struct StatsView: View {
         .padding(.horizontal, -20)
         if let stats = model.stats {
           if stats.plays == 0 {
-            Text(StatsModel.nothingPlayed).foregroundStyle(.secondary)
+            EmptyState(systemImage: "chart.bar", line: PageLines.stats, fill: .lucky)
           } else {
             report(stats).opacity(model.loading ? 0.6 : 1)
           }
         } else if let error = model.error {
           ErrorState(message: error) { await model.load() }
         } else {
-          Skeleton(aspectRatio: nil, height: 96)
-          Skeleton(aspectRatio: nil, height: 240)
+          skeleton
         }
       }
       .padding(20)
@@ -53,7 +51,8 @@ struct StatsView: View {
 
   @ViewBuilder private func report(_ stats: ListeningStats) -> some View {
     VStack(alignment: .leading, spacing: 8) {
-      if model.isYear { Text("YEAR IN REVIEW").font(.mono(.caption2)).tracking(2).foregroundStyle(theme.accent.color) }
+      // A kicker, in the kicker's color: the accent is for what can be tapped.
+      if model.isYear { Kicker(text: "Year in review") }
       // The big numbers are in the display face, without figures of one width: those set "1,792" as "1 , 792".
       HStack(alignment: .firstTextBaseline, spacing: 10) {
         Text(Format.number(Int(stats.minutes.rounded()))).font(.display(size: 60, relativeTo: .largeTitle))
@@ -141,6 +140,30 @@ struct StatsView: View {
           }
         }
       }
+    }
+  }
+
+  /// The report while it loads: the minutes, the line under them, the four figures, then the top artists.
+  private var skeleton: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      TextBar(role: .pageTitle, fraction: 0.5)
+      TextBar(role: .body, fraction: 0.6)
+      Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 16) {
+        GridRow { tileSkeleton; tileSkeleton }
+        GridRow { tileSkeleton; tileSkeleton }
+      }
+      .padding(.top, 12)
+      TextBar(role: .sectionTitle, fraction: 0.4).padding(.top, 24)
+      ListRowsSkeleton(count: 5, cover: 48)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+
+  private var tileSkeleton: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      TextBar(role: .small, fraction: 0.6)
+      TextBar(role: .sectionTitle, fraction: 0.5)
     }
   }
 

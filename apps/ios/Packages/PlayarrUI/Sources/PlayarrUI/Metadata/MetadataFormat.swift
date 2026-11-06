@@ -80,7 +80,7 @@ public enum MetadataFormat {
 
   /// What the song sounds like.
   public static func sound(_ a: TrackMetadata.Analysis) -> [Row] {
-    let notYet = Value.text("Not analysed yet")
+    let notYet = Value.text("Not analyzed yet")
     return rows([
       ("Tempo", a.bpm.map { $0 > 0 ? .text("\(Int(Format.jsRound($0))) BPM") : notYet } ?? notYet),
       ("Beat", a.pulse.map { .meter(meter($0)) } ?? notYet),

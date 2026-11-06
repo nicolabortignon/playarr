@@ -13,7 +13,7 @@ import Testing
   @Test func describesACandidateLikeTheWeb() {
     let gb = Locale(identifier: "en_GB")
     let c = Samples.candidate("r1")
-    #expect(ReviewText.summary(c, locale: gb) == "Massive Attack · 20 Apr 1998 · United Kingdom · Virgin · CD · 2 tracks")
+    #expect(ReviewText.summary(c, locale: gb) == "Massive Attack · 20 Apr 1998 · United Kingdom · Virgin · CD · 2 songs")
     #expect(ReviewText.releaseDate("1998-04", locale: gb) == "Apr 1998")
     #expect(ReviewText.releaseDate("1998", locale: gb) == "1998")
     #expect(ReviewText.countryName("XW") == "Worldwide")
@@ -22,7 +22,7 @@ import Testing
     #expect(ReviewText.matched(group.files[0], in: c) == "1. Angel 6:19")
     #expect(ReviewText.matched(group.files[1], in: c) == nil)
     let loading = ReviewText.details(Samples.candidate("r2", detailed: false), locale: gb)
-    #expect(loading.map(\.label) == ["Artist", "Album", "Released", "First released", "Country", "Label", "Format", "Status", "Tracks"])
+    #expect(loading.map(\.label) == ["Artist", "Album", "Released", "First released", "Country", "Label", "Format", "Status", "Songs"])
     #expect(loading.first { $0.label == "Released" }?.value == nil)
   }
 

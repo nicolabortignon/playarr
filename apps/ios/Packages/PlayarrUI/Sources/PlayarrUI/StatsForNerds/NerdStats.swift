@@ -231,7 +231,7 @@ public enum NerdStats {
       return mix.way == .server ? "DJ transition, made on the server" : "mixed live on this device"
     }
     if let rest = i.continuation, i.time >= rest.from { return "the rest after the transition, from \(NerdFormat.at(rest.from))" }
-    return i.gainDb != 0 ? "its own file, levelled on this device at \(NerdFormat.dB(i.gainDb))" : "its own file"
+    return i.gainDb != 0 ? "its own file, leveled on this device at \(NerdFormat.dB(i.gainDb))" : "its own file"
   }
 
   /// "Song 2 · at 3:12.0 · 9.5 s decoded, 2.5 s scheduled · +2.0 dB".
@@ -252,7 +252,7 @@ public enum NerdStats {
 
   static func rhythm(_ i: Input) -> Group {
     guard let map = i.map, map.bpm > 0 else {
-      var list = [Row(label: "Tempo", value: .text(i.map == nil ? "not analysed yet" : "no steady beat"))]
+      var list = [Row(label: "Tempo", value: .text(i.map == nil ? "not analyzed yet" : "no steady beat"))]
       if let key = i.map?.key { list.append(keyRow(key)) }
       return Group(title: "Rhythm", rows: list)
     }

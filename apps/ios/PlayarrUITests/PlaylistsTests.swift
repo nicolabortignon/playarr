@@ -77,7 +77,8 @@ final class PlaylistsTests: XCTestCase {
     name.typeText("Road trip")
     app.buttons["playlist.create"].tap()
     // A playlist made from nothing opens.
-    XCTAssertTrue(app.staticTexts["This playlist is empty. Use Add to playlist… from any song’s ⋯ menu, an album, the queue or Now Playing."].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["This playlist is waiting for its first song."].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Choose Add to playlist… in any song’s ⋯ menu."].exists)
 
     openMezzanine(app)
     add("Angel", to: "Road trip", app)
@@ -109,14 +110,38 @@ final class PlaylistsTests: XCTestCase {
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Road trip")).firstMatch.exists)
   }
 
+  /// Deleting asks first, naming the playlist, from the row its ⋯ is in (asked from the whole page, an iPhone SE showed
+  /// nothing for an empty playlist).
+  @MainActor
+  func testDeletingAnEmptyPlaylistAsksFirst() {
+    let app = launch()
+    app.tabBars.buttons["Library"].tap()
+    let new = app.buttons["library.newPlaylist"]
+    XCTAssertTrue(new.waitForExistence(timeout: 10))
+    new.tap()
+    let name = app.textFields["playlist.name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5))
+    name.typeText("Empty")
+    app.buttons["playlist.create"].tap()
+    let actions = app.buttons["Playlist actions"]
+    XCTAssertTrue(actions.waitForExistence(timeout: 5))
+    actions.tap()
+    app.buttons["Delete playlist"].tap()
+    XCTAssertTrue(app.staticTexts["Delete “Empty”?"].waitForExistence(timeout: 5), app.debugDescription)
+    XCTAssertTrue(app.staticTexts["The playlist goes for good."].exists)
+    app.buttons["Delete"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["library.newPlaylist"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Empty")).firstMatch.exists)
+  }
+
   @MainActor
   func testAHeartShowsInFavorites() {
     let app = launch()
     openMezzanine(app)
-    let heart = app.buttons["Add “Angel” to favorites"]
+    let heart = app.buttons["Add “Angel” to Favorites"]
     XCTAssertTrue(heart.waitForExistence(timeout: 5))
     heart.tap()
-    XCTAssertTrue(app.buttons["Remove “Angel” from favorites"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Remove “Angel” from Favorites"].waitForExistence(timeout: 5))
     app.tabBars.buttons["Library"].tap()
     app.tabBars.buttons["Library"].tap()
     let favorites = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Favorites")).firstMatch

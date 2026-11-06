@@ -8,6 +8,7 @@ struct TransitionSheet: View {
   let player: Player
   let from: Track
   let to: Track
+  @Environment(\.dismiss) private var dismiss
 
   var body: some View {
     let maps = player.transitions.mixMaps
@@ -56,6 +57,7 @@ struct TransitionSheet: View {
       #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
       #endif
+      .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } } }
     }
   }
 

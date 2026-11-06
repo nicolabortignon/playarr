@@ -109,7 +109,7 @@ public final class NowPlayingBridge {
   public func setLiked(_ liked: Bool) {
     let like = MPRemoteCommandCenter.shared().likeCommand
     like.isActive = liked
-    like.localizedTitle = liked ? "Remove from favorites" : "Add to favorites"
+    like.localizedTitle = liked ? "Remove from Favorites" : "Add to Favorites"
   }
 
   /// Lets go of the remote commands (the next player registers its own).

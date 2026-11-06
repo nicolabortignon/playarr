@@ -154,7 +154,38 @@ import Testing
     api.on(.delete, "/api/accounts/2", [Self.listed(Self.nicola)])
     await model.remove(Self.sam)
     #expect(model.accounts == [Self.nicola])
-    #expect(model.removeTitle(Self.sam) == "Remove Sam?")
+  }
+
+  @Test func asksBeforeLosingSomethingForGoodNamingWhatGoes() async {
+    // As AccountsPanel.tsx's dialogs: the question names what goes, the words what goes and what stays, then the verb.
+    signedIn(as: Self.nicola)
+    let model = AccountsModel(api: api)
+    await model.load()
+    #expect(
+      model.removeQuestion(Self.sam)
+        == LossQuestion(
+          title: "Remove Sam?",
+          message: "Their listening history (1 song played), mixes, Favorites and playlists are deleted for good, and every device they’re signed in on is signed out.",
+          verb: "Remove"))
+    #expect(
+      model.removeQuestion(Self.nicola).message
+        == "Your listening history (1,234 songs played), mixes, Favorites and 3 playlists are deleted for good, and every device you’re signed in on is signed out.")
+    #expect(
+      model.resetQuestion(Self.sam)
+        == LossQuestion(
+          title: "New setup code for Sam?",
+          message: "Sam’s password stops working, and every device they’re signed in on is signed out, until a new password is chosen with the new code.",
+          verb: "Make a new code"))
+    #expect(
+      model.resetQuestion(Self.nicola).message
+        == "Your password stops working, and every device you’re signed in on is signed out, until a new password is chosen with the new code.")
+    var invited = Self.sam
+    invited.hasPassword = false
+    #expect(model.resetQuestion(invited).message == "The code Sam was given before stops working.")
+    #expect(
+      AccountsModel.signOutQuestion(Self.ipad)
+        == LossQuestion(
+          title: "Sign out Playarr on iPad?", message: "It stops listening at once, and needs the password to sign in again.", verb: "Sign out"))
   }
 
   @Test func signsOutHereAfterRemovingYourself() async {

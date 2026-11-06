@@ -20,7 +20,7 @@ struct SourceFormView: View {
         }
       }
       .navigationTitle(source.map { "Edit \($0.name)" } ?? "Add source")
-      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark", role: .cancel) { dismiss() } } }
     }
   }
 

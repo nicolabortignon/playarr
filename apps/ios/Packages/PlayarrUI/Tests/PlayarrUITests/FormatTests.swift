@@ -34,17 +34,38 @@ import Testing
     #expect(Format.jsRound(0.425 * 100) == 43)
   }
 
-  @Test func namesTheFormat() {
+  @Test func namesTheFormatLeavingOutWhatsOrdinary() {
+    // As apps/web/src/lib/format.test.ts: the detail only when it's out of the ordinary (256 kbps or more, CD quality).
     let hiRes = AudioFormat(codec: "FLAC", container: "flac", bits: 24, sampleRate: 88_200, lossless: true)
     let cd = AudioFormat(codec: "FLAC", container: "flac", bits: 16, sampleRate: 44_100, lossless: true)
+    let dvd = AudioFormat(codec: "FLAC", container: "flac", bits: 16, sampleRate: 48_000, lossless: true)
     let mp3 = AudioFormat(codec: "MP3", container: "mp3", bitrate: 320, lossless: false)
-    #expect(Format.badge(hiRes) == "FLAC 24/88.2")
-    #expect(Format.badge(cd) == "FLAC 16/44.1")
-    #expect(Format.badge(mp3) == "MP3 320")
+    #expect(Format.badge(AudioFormat(codec: "FLAC", container: "flac", bits: 24, sampleRate: 96_000, lossless: true)) == "FLAC · 24/96")
+    #expect(Format.badge(hiRes) == "FLAC · 24/88.2")
+    #expect(Format.badge(AudioFormat(codec: "FLAC", container: "flac", bits: 8, sampleRate: 22_050, lossless: true)) == "FLAC · 8/22.1")
+    #expect(Format.badge(cd) == "FLAC")
+    #expect(Format.badge(dvd) == "FLAC")
+    #expect(Format.badge(AudioFormat(codec: "ALAC", container: "m4a", lossless: true)) == "ALAC")
+    #expect(Format.badge(mp3) == "MP3")
+    #expect(Format.badge(AudioFormat(codec: "MP3", container: "mp3", bitrate: 256, lossless: false)) == "MP3")
+    #expect(Format.badge(AudioFormat(codec: "MP3", container: "mp3", bitrate: 128, lossless: false)) == "MP3 · 128 kbps")
+    #expect(Format.badge(AudioFormat(codec: "MP3", container: "mp3", bitrate: 8, lossless: false)) == "MP3 · 8 kbps")
     #expect(Format.badge(AudioFormat(codec: "AAC", container: "m4a", lossless: false)) == "AAC")
+    #expect(Format.badgeParts(AudioFormat(codec: "MP3", container: "mp3", bitrate: 191.6, lossless: false))?.detail == "192 kbps")
+    #expect(Format.badge(nil) == nil)
     #expect(Format.isHiRes(hiRes))
     #expect(!Format.isHiRes(cd))
     #expect(!Format.isHiRes(mp3))
+  }
+
+  @Test func spellsOutEveryDetailOfAFormat() {
+    // A badge's accessibility value (the web's badge title).
+    let hiRes = AudioFormat(codec: "FLAC", container: "flac", bits: 24, sampleRate: 96_000, channels: 2, lossless: true)
+    #expect(Format.details(hiRes) == "FLAC · 24-bit / 96 kHz · stereo · Hi-Res lossless")
+    let cd = AudioFormat(codec: "FLAC", container: "flac", bits: 16, sampleRate: 44_100, lossless: true)
+    #expect(Format.details(cd) == "FLAC · 16-bit / 44.1 kHz · lossless")
+    let mp3 = AudioFormat(codec: "MP3", container: "mp3", sampleRate: 44_100, bitrate: 128, channels: 1, lossless: false)
+    #expect(Format.details(mp3) == "MP3 · 44.1 kHz · 128 kbps · mono · lossy")
   }
 
   @Test func namesAReleaseByItsPrimaryTypeQualifiedOrReplacedByItsFirstSecondaryType() {

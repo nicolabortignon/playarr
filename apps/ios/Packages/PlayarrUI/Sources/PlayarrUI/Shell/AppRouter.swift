@@ -74,6 +74,19 @@ public final class AppRouter {
     searchQuery = query
   }
 
+  /// Back home, from a page that couldn't load: Home at its first page (the page that failed stays where it was, to
+  /// try again from later).
+  public func goHome() {
+    nowPlaying = false
+    switch layout {
+    case .tabs:
+      tab = .home
+      paths[.home] = []
+    case .split:
+      select(sidebar: .home)
+    }
+  }
+
   /// Now Playing → Open queue: the Queue tab on a phone, the queue column on an iPad.
   public func showQueue() {
     nowPlaying = false

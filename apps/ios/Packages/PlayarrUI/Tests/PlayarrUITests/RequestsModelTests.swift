@@ -117,6 +117,29 @@ import Testing
     #expect(log.toasts.isEmpty)
   }
 
+  @Test func hidesARequestAtOnceAndForgetsItOnlyOnceItsUndoHasGone() async {
+    let api = FakeAPI()
+    let mezzanine = albumRequest("rg-1", "Mezzanine", .waiting)
+    let dummy = albumRequest("rg-2", "Dummy", .searching)
+    api.on(.get, "/api/requests", [mezzanine, dummy])
+    let requests = model(api)
+    await requests.refresh()
+    requests.hide(mezzanine)
+    #expect(requests.shown?.map(\.mbid) == ["rg-2"])
+    #expect(api.calls(.delete, "/api/requests/rg-1").isEmpty)
+    // Undo: back as it was, and the server never asked.
+    requests.unhide(mezzanine)
+    #expect(requests.shown?.map(\.mbid) == ["rg-1", "rg-2"])
+    // The Undo gone: forgotten by the server, and off the list for good.
+    requests.hide(mezzanine)
+    api.on(.delete, "/api/requests/rg-1", json: "")
+    api.on(.get, "/api/requests", [dummy])
+    await requests.remove(mezzanine)
+    #expect(api.calls(.delete, "/api/requests/rg-1").count == 1)
+    #expect(requests.removing.isEmpty)
+    #expect(requests.shown?.map(\.mbid) == ["rg-2"])
+  }
+
   @Test func removesARequestFromTheListOnly() async {
     let api = FakeAPI()
     api.on(.delete, "/api/requests/rg-1", json: "")

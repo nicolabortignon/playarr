@@ -14,7 +14,7 @@ public final class MatchingModel {
   @ObservationIgnored private let api: any APISending
 
   public static let intro =
-    "Playarr matches folder albums on MusicBrainz by their names, track titles and lengths. For songs whose names don’t help, it can identify them by their sound with AcoustID. A free key comes from acoustid.org."
+    "Playarr matches folder albums on MusicBrainz by their names, song titles and lengths. For songs whose names don’t help, it can identify them by their sound with AcoustID. A free key comes from acoustid.org."
   public static let noFingerprints = "Fingerprints need fpcalc (Chromaprint) on the server. The Docker image includes it."
   public static let keyPage = URL(string: "https://acoustid.org/new-application")
 

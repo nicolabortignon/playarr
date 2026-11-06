@@ -28,7 +28,9 @@ struct PlaylistView: View {
       } else if let error = model.error {
         ErrorState(message: error) { await model.load() }
       } else {
-        ProgressView()
+        ScrollView {
+          DetailSkeleton().padding(.horizontal, 20).padding(.top, 12)
+        }
       }
     }
     .task(id: model.pollRound) { await model.poll() }
@@ -49,15 +51,6 @@ struct PlaylistView: View {
     #endif
     .refreshable { await model.load() }
     .sheet(isPresented: $pickingCover) { CoverPickerView(playlist: model, detail: playlist) }
-    // The question names what goes; the words under it, what goes and what stays (docs/design.md, "Taking things back").
-    .confirmationDialog("Delete “\(playlist.name)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-      Button("Delete", role: .destructive) {
-        Task { if await model.delete() { dismiss() } }
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text(Self.deleteMessage(shared: playlist.shared, songs: model.items.count))
-    }
   }
 
   private func list(_ playlist: PlaylistDetail, cover: Bool) -> some View {
@@ -66,8 +59,8 @@ struct PlaylistView: View {
         .listRowSeparator(.hidden)
       Section {
         if model.items.isEmpty {
-          Text("This playlist is empty. Use Add to playlist… from any song’s ⋯ menu, an album, the queue or Now Playing.")
-            .foregroundStyle(.secondary)
+          EmptyState(systemImage: "music.note.list", line: PageLines.playlist(mine: model.mine))
+            .listRowSeparator(.hidden)
         }
         ForEach(Array(model.items.enumerated()), id: \.element.itemId) { index, item in
           row(item, at: index)
@@ -139,6 +132,11 @@ struct PlaylistView: View {
               playlist.id, tracks: model.playable, own: model.ownerActions.map { action in MenuAction(action.kind) { perform(action) } },
               session: model.session))
         }
+        // Asked from the row its ⋯ is in, so a phone's popover points there. Attached to the whole page, it pointed
+        // below the header, and an iPhone SE showed nothing at all for an empty playlist.
+        .confirmLoss(Self.deleteQuestion(playlist, songs: model.items.count), isPresented: $confirmingDelete) {
+          Task { if await model.delete() { dismiss() } }
+        }
       }
       // What it's about: after the row, so Play comes first on a phone.
       if !editing, !playlist.description.isEmpty {
@@ -179,7 +177,11 @@ struct PlaylistView: View {
     }
   }
 
-  /// Under "Delete “Late night”?": what goes and what stays, as the web's dialog says it.
+  /// "Delete “Late night”?", and under it what goes and what stays, as the web's dialog says it.
+  static func deleteQuestion(_ playlist: PlaylistDetail, songs: Int) -> LossQuestion {
+    LossQuestion(title: "Delete “\(playlist.name)”?", message: deleteMessage(shared: playlist.shared, songs: songs), verb: "Delete")
+  }
+
   static func deleteMessage(shared: Bool, songs: Int) -> String {
     let stays = switch songs {
     case 0: ""

@@ -38,6 +38,28 @@ import Testing
     #expect(router.focusSearch)
   }
 
+  @Test func backHomeLeavesAPageThatCouldntLoad() {
+    let router = AppRouter()
+    router.select(.library)
+    router.open(.album(70))
+    router.nowPlaying = true
+    router.goHome()
+    #expect(router.tab == .home)
+    #expect(router.paths[.home] == [])
+    #expect(!router.nowPlaying)
+    // The page that failed stays where it was, to try again from later.
+    #expect(router.paths[.library] == [.album(70)])
+    router.open(.artist(7))
+    router.goHome()
+    #expect(router.paths[.home] == [])
+    router.setLayout(.split)
+    router.select(sidebar: .albums)
+    router.open(.album(70))
+    router.goHome()
+    #expect(router.sidebar == .home)
+    #expect(router.detail.isEmpty)
+  }
+
   @Test func keepsThePageWhenTheWindowChangesWidth() {
     let router = AppRouter()
     router.select(.library)

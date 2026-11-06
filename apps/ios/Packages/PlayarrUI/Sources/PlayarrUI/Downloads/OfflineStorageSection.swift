@@ -45,9 +45,12 @@ public struct OfflineStorageSection: View {
       Toggle("Allow downloads on mobile data", isOn: $store.cellularDownloads)
       if kept.count > 0 || downloads > 0 {
         Button("Remove all", role: .destructive) { confirmingRemoveAll = true }
-          .confirmationDialog("Remove all songs and downloads from this device?", isPresented: $confirmingRemoveAll, titleVisibility: .visible) {
-            Button("Remove all", role: .destructive) { store.removeAll() }
-          }
+          .confirmLoss(
+            OfflineWording.removeAllQuestion(
+              songs: store.manifest.songs.count, downloads: downloads, downloadBytes: store.downloadsBytes, saved: kept.count,
+              savedBytes: kept.bytes),
+            isPresented: $confirmingRemoveAll
+          ) { store.removeAll() }
       }
     } header: {
       Text("On this device")

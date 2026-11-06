@@ -2,34 +2,30 @@ import PlayarrAPI
 import SwiftUI
 
 /// Search's "Not in your library" (Search.tsx DiscoverSection): songs, albums and artists from MusicBrainz, Lidarr
-/// and Deezer, each with request controls. Shown under the library results when the server has Lidarr.
-public struct DiscoverSection: View {
+/// and Deezer, each with request controls. Shown under the library results when the server has Lidarr. Search owns
+/// the model and tells it what's typed, so it knows when nothing is out there either.
+struct DiscoverSection: View {
   let query: String
+  let model: DiscoverSearchModel?
 
   @Environment(DiscoverContext.self) private var context: DiscoverContext?
 
   /// `query`: what's typed, trimmed.
-  public init(query: String) {
+  init(query: String, model: DiscoverSearchModel?) {
     self.query = query
+    self.model = model
   }
 
-  public var body: some View {
-    if let context, context.gate.hasLidarr, !query.isEmpty {
-      DiscoverResultsView(context: context, query: query)
+  var body: some View {
+    if let context, context.gate.hasLidarr, !query.isEmpty, let model {
+      DiscoverResultsView(context: context, model: model)
     }
   }
 }
 
 private struct DiscoverResultsView: View {
   let context: DiscoverContext
-  let query: String
-  @State private var model: DiscoverSearchModel
-
-  init(context: DiscoverContext, query: String) {
-    self.context = context
-    self.query = query
-    _model = State(initialValue: DiscoverSearchModel(context: context))
-  }
+  let model: DiscoverSearchModel
 
   var body: some View {
     VStack(alignment: .leading, spacing: 28) {
@@ -45,11 +41,10 @@ private struct DiscoverResultsView: View {
       }
       .padding(.horizontal, 20)
       if model.loading {
-        VStack(spacing: 12) { ForEach(0..<4, id: \.self) { _ in Skeleton(aspectRatio: nil, height: 56) } }
-          .padding(.horizontal, 20)
+        SongRowsSkeleton(count: 4).padding(.horizontal, 20)
       }
       if let error = model.error, model.results == nil {
-        Text(error).font(.sans(.footnote)).foregroundStyle(.danger).padding(.horizontal, 20)
+        InlineError("Couldn’t search beyond your library", reason: error) { await model.reload() }.padding(.horizontal, 20)
       }
       if model.nothing {
         Text("Nothing found for “\(model.answered)”.").font(.sans(.footnote)).foregroundStyle(.secondary).padding(.horizontal, 20)
@@ -73,7 +68,6 @@ private struct DiscoverResultsView: View {
         }
       }
     }
-    .task(id: query) { model.update(query) }
     .onChange(of: context.generation(.discover)) { Task { await model.reload() } }
   }
 }

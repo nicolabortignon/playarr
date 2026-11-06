@@ -9,6 +9,9 @@ public final class DiscoverContext {
   public let api: any APISending
   public private(set) var account: Account
   public private(set) var health: HealthStatus?
+  /// Health couldn't be asked and was never known: what depends on it goes ahead assuming Lidarr, as `RequestGate`
+  /// does meanwhile (the web's `noHealth`).
+  public private(set) var healthFailed = false
   public let requests: RequestsModel
   public let musicBrainz: MusicBrainzStatusModel
   /// Show metadata and Edit mix points.
@@ -71,7 +74,13 @@ public final class DiscoverContext {
   }
 
   public func refreshHealth() async {
-    if let fresh = try? await api.send(API.Server.health()) { health = fresh }
+    do {
+      health = try await api.send(API.Server.health())
+      healthFailed = false
+    } catch is CancellationError {
+    } catch {
+      if health == nil { healthFailed = true }
+    }
   }
 
   public func generation(_ family: CacheFamily) -> Int { generations[family, default: 0] }

@@ -27,11 +27,15 @@ struct ArtistView: View {
               .padding(.horizontal, 20)
               .padding(.top, 12)
           }
+          if model.groups.isEmpty {
+            EmptyState(systemImage: "square.stack", line: PageLines.artist(artist.name))
+          }
           ForEach(model.groups, id: \.title) { group in
             VStack(alignment: .leading, spacing: 0) {
               SectionHeader(title: group.title, kicker: Format.plural(group.albums.count, "release"))
-              LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 24) {
-                ForEach(group.albums) { AlbumCard(album: $0) }
+              LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16, alignment: .top)], spacing: 24) {
+                // Their name would say nothing here: what each is and when ("EP · 2019").
+                ForEach(group.albums) { AlbumCard(album: $0, onArtistPage: true) }
               }
               .padding(.horizontal, 20)
             }
@@ -42,9 +46,16 @@ struct ArtistView: View {
         }
         .padding(.bottom, 24)
       } else {
-        VStack(alignment: .leading, spacing: 16) {
-          Skeleton(aspectRatio: nil, height: heroHeight)
-          Skeleton(aspectRatio: nil, height: 16).frame(width: 180).padding(.horizontal, 20)
+        // The band, then the first albums in their grid.
+        VStack(alignment: .leading, spacing: 32) {
+          Skeleton(aspectRatio: nil, height: heroHeight, corner: 0)
+          VStack(alignment: .leading, spacing: 12) {
+            TextBar(role: .sectionTitle, fraction: 0.4)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16, alignment: .top)], spacing: 24) {
+              CardSkeletons(count: 4)
+            }
+          }
+          .padding(.horizontal, 20)
         }
       }
     }
@@ -96,7 +107,7 @@ struct ArtistView: View {
     if model.similar?.error != nil {
       VStack(alignment: .leading, spacing: 0) {
         SectionHeader(title: "Similar artists", kicker: "From ListenBrainz")
-        Text("Couldn’t reach ListenBrainz for similar artists right now.").font(.sans(.subheadline)).foregroundStyle(.secondary).padding(.horizontal, 20)
+        InlineError(SimilarArtistGroups.failed) { await model.similar?.refresh() }.padding(.horizontal, 20)
       }
     } else if let artists = model.similar?.value {
       // Those in the library first, then the others, whose discography opens to request albums.

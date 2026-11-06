@@ -33,14 +33,9 @@ public struct MixesPanel: View {
         ProgressView()
       }
     }
-    .navigationTitle("Mixes")
+    .navigationTitle(SettingsPanel.mixes.title)
     .task { await model.load() }
     .task { await listenBrainz.poll() }
-    .confirmationDialog(MixSettingsModel.clearTitle, isPresented: $confirmClear, titleVisibility: .visible) {
-      Button("Clear history", role: .destructive) { Task { await model.clearHistory() } }
-    } message: {
-      Text(MixSettingsModel.clearMessage)
-    }
   }
 
   private var kinds: some View {
@@ -98,6 +93,10 @@ public struct MixesPanel: View {
         Button("Clear history", systemImage: "trash") { confirmClear = true }
           .buttonStyle(.bordered)
           .disabled(!model.canClear)
+          // Asked from its button, so a phone's popover points at it.
+          .confirmLoss(MixSettingsModel.clearQuestion(plays: info.history.plays), isPresented: $confirmClear) {
+            Task { await model.clearHistory() }
+          }
       }
     } header: {
       Text("Listening history")

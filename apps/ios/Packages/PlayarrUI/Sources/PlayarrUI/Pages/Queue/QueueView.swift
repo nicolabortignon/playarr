@@ -74,12 +74,9 @@ struct QueueView: View {
           }
         }
       } else {
-        ContentUnavailableView {
-          Label("Nothing queued", systemImage: "list.bullet")
-        } description: {
-          Text("Pick an album to start listening.")
-        } actions: {
-          NavigationLink("Albums", value: Route.albums(.artist))
+        // Scrolls, so the iPad's side column and the larger text sizes reach its buttons.
+        ScrollView {
+          ListeningEmptyState(systemImage: AppTab.queue.systemImage, line: PageLines.queue, luckyFirst: true)
         }
       }
     }

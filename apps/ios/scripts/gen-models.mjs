@@ -25,11 +25,11 @@ const root = resolve(here, '../../..');
 const INPUTS = ['packages/shared/src/index.ts', 'packages/mix/src/types.ts'];
 const OUTPUT = resolve(here, '../Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift');
 /** Exported, but not part of the API. */
-const SKIP = new Set(['parseRange', 'ByteRange']);
+const SKIP = new Set(['parseRange', 'ByteRange', 'wavFallbackOf']);
 /** Numbers that are whole: what the server stores as SQLite integers or counts. */
 const INTEGERS = new Set([
   'albums', 'albumsComplete', 'albumsIncomplete', 'albumsUnknown', 'analyzed', 'artists', 'audioFiles', 'background', 'batchId', 'beatModel', 'bits', 'channels',
-  'days', 'decadeMixes', 'disc', 'discNumber', 'earlier', 'era', 'failed', 'files', 'freeSpace', 'genreMixes',
+  'currentStreak', 'days', 'decadeMixes', 'disc', 'discNumber', 'earlier', 'era', 'failed', 'files', 'freeSpace', 'genreMixes',
   'have', 'hour', 'ignored', 'lastCheck', 'lastUpdate', 'longestStreak', 'loudnessWaiting', 'loudnessWorking', 'matches',
   'matched', 'matching', 'moved', 'newArtists', 'pending', 'plays', 'playlists', 'port', 'position', 'profile', 'queued', 'ready',
   'recorded', 'restored', 'review', 'sampleRate', 'sent', 'size', 'sizeBytes', 'songs', 'songsComplete', 'songsIncomplete', 'songsUnknown', 'sources',

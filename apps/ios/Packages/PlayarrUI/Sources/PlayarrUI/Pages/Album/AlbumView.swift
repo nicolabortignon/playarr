@@ -54,11 +54,7 @@ struct AlbumView: View {
       }
       .padding(.bottom, 24)
     } else {
-      VStack(spacing: 16) {
-        Skeleton().frame(width: 256)
-        ForEach(0..<8, id: \.self) { _ in Skeleton(aspectRatio: nil, height: 36) }
-      }
-      .padding(20)
+      DetailSkeleton().padding(.horizontal, 20)
     }
   }
 

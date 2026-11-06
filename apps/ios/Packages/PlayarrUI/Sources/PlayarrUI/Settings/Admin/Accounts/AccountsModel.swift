@@ -35,10 +35,7 @@ public final class AccountsModel {
   @ObservationIgnored private let accountChanged: @MainActor (Account) -> Void
 
   public static let everyoneIntro =
-    "Each account has its own history, mixes, favorites and playlists, and hears every source or only the ones you pick. Admins change settings, sources and accounts. You never choose anyone’s password: a new or reset account gets a setup code."
-  public static let removeMessage =
-    "Their listening history, mixes, favorites and playlists are deleted, and every device they’re signed in on is signed out."
-  public static let resetMessage = "Their password stops working, every device they’re signed in on is signed out, and they choose a new password with the code."
+    "Each account has its own history, mixes, Favorites and playlists, and hears every source or only the ones you pick. Admins change settings, sources and accounts. You never choose anyone’s password: a new or reset account gets a setup code."
 
   /// `signOutHere` ends this device's session (ServerStore.signOut); `accountChanged` keeps the store's copy of
   /// the signed-in account current (ServerStore.update).
@@ -148,8 +145,35 @@ public final class AccountsModel {
     if removed, account.id == me?.id { await signOutHere() }
   }
 
-  public func removeTitle(_ account: Account) -> String { "Remove \(account.name)?" }
-  public func resetTitle(_ account: Account) -> String { "New setup code for \(account.name)?" }
+  /// Signing a device out: it can sign in again, but only with the password (AccountsPanel.tsx).
+  static func signOutQuestion(_ session: SessionInfo) -> LossQuestion {
+    LossQuestion(
+      title: "Sign out \(session.device)?", message: "It stops listening at once, and needs the password to sign in again.",
+      verb: "Sign out")
+  }
+
+  /// A new setup code: the password (or the code given before) stops working.
+  func resetQuestion(_ account: Account) -> LossQuestion {
+    let yours = account.id == me?.id
+    let message =
+      account.hasPassword
+      ? "\(yours ? "Your" : "\(account.name)’s") password stops working, and every device \(yours ? "you’re" : "they’re") signed in on is signed out, until a new password is chosen with the new code."
+      : "The code \(account.name) was given before stops working."
+    return LossQuestion(title: "New setup code for \(account.name)?", message: message, verb: "Make a new code")
+  }
+
+  /// Removing an account: what goes with it, counted where the list said ("Their listening history (1,234 songs
+  /// played), mixes, Favorites and 3 playlists are deleted for good…").
+  func removeQuestion(_ account: Account) -> LossQuestion {
+    let yours = account.id == me?.id
+    let counts = activity[account.id]
+    let history = counts.map { $0.plays > 0 ? "listening history (\(AdminText.count($0.plays)) \($0.plays == 1 ? "song" : "songs") played)" : nil }
+      ?? nil
+    let playlists = counts.map { $0.playlists > 0 ? AdminText.plural($0.playlists, "playlist") : nil } ?? nil
+    let message =
+      "\(yours ? "Your" : "Their") \(history ?? "listening history"), mixes, Favorites and \(playlists ?? "playlists") are deleted for good, and every device \(yours ? "you’re" : "they’re") signed in on is signed out."
+    return LossQuestion(title: "Remove \(account.name)?", message: message, verb: "Remove")
+  }
 
   /// "sam · member · can request albums · Creative Commons · Playback locked · not set up yet".
   public func summary(_ account: Account) -> String {

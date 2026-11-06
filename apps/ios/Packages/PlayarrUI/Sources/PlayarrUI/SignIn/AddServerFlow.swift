@@ -14,10 +14,13 @@ public struct AddServerFlow: View {
     @State private var path: [AddServerModel.Step] = []
     private let start: Start
     private let onDone: () -> Void
+    /// Shown as a sheet: Cancel, in the sheet's corner, puts it away.
+    private let onCancel: (() -> Void)?
 
-    public init(app: AppModel, start: Start = .address, onDone: @escaping () -> Void = {}) {
+    public init(app: AppModel, start: Start = .address, onCancel: (() -> Void)? = nil, onDone: @escaping () -> Void = {}) {
         _model = State(initialValue: AddServerModel(app: app))
         self.start = start
+        self.onCancel = onCancel
         self.onDone = onDone
     }
 
@@ -25,6 +28,11 @@ public struct AddServerFlow: View {
         NavigationStack(path: $path) {
             root
                 .navigationDestination(for: AddServerModel.Step.self) { step in screen(step) }
+                .toolbar {
+                    if let onCancel {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark", role: .cancel, action: onCancel) }
+                    }
+                }
         }
     }
 

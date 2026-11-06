@@ -16,7 +16,7 @@ struct ReviewView: View {
     NavigationStack {
       content
         .navigationTitle("Review matches")
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } } }
     }
     .task(id: model.pollRound) { await model.poll() }
   }

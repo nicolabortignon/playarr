@@ -2,7 +2,7 @@ import PlayarrAPI
 import SwiftUI
 
 /// Settings → Analysis: the background switch and queue, then one section per analysis with its progress
-/// bar, "Analyse the N left" and "Reanalyse the entire collection" (after asking), and "Reanalyse everything".
+/// bar, "Analyze the N left" and "Reanalyze the entire collection" (after asking), and "Reanalyze everything".
 public struct AnalysisPanel: View {
   @State private var model: AnalysisModel
   @State private var asking: AnalysisModel.Row?
@@ -18,14 +18,14 @@ public struct AnalysisPanel: View {
         Section("In the background") {
           if model.analyzeLibrary != nil {
             Toggle(isOn: Binding(get: { model.analyzeLibraryShown }, set: { on in Task { await model.setAnalyzeLibrary(on) } })) {
-              Text("Analyse every song in the library")
+              Text("Analyze every song in the library")
               Text(AnalysisText.switchDescription(progress))
             }
             .disabled(!progress.enabled)
           }
           Text(model.queueText).font(.footnote).foregroundStyle(.secondary)
           if model.offersEverything {
-            Button("Reanalyse everything") { askingEverything = true }.disabled(model.running)
+            Button("Reanalyze everything") { askingEverything = true }.disabled(model.running)
           }
           if let notice = model.notice { InlineMessage(text: notice, isError: model.failed) }
         }
@@ -63,7 +63,7 @@ public struct AnalysisPanel: View {
     }
     .alert(AnalysisText.everythingTitle, isPresented: $askingEverything) {
       Button("Cancel", role: .cancel) {}
-      Button("Reanalyse everything") { Task { await model.run(nil, again: true) } }
+      Button("Reanalyze everything") { Task { await model.run(nil, again: true) } }
     } message: {
       Text(AnalysisText.everythingExplain(audio: model.progress?.enabled ?? false))
     }

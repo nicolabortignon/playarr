@@ -24,7 +24,7 @@ struct SignInView: View {
                 if let error = model.error { Text(error).foregroundStyle(.danger) }
             }
             Section {
-                Button("Sign in") { Task { if await model.signIn(username: username, password: password) { onDone() } } }
+                Button(model.busy ? "Signing in…" : "Sign in") { Task { if await model.signIn(username: username, password: password) { onDone() } } }
                     .disabled(model.busy || username.isEmpty || password.isEmpty)
                 if let onSetupCode {
                     Button("I have a setup code", action: onSetupCode)

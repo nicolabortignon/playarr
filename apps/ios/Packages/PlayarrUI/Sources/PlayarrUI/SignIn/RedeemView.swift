@@ -27,7 +27,7 @@ struct RedeemView: View {
                     Text(error).foregroundStyle(.danger)
                 }
             }
-            Button("Set password and sign in") { Task { if await model.redeem(code: code, password: password) { onDone() } } }
+            Button(model.busy ? "Signing in…" : "Set password and sign in") { Task { if await model.redeem(code: code, password: password) { onDone() } } }
                 .disabled(model.busy || code.isEmpty || password.isEmpty || password != confirm)
         }
         .navigationTitle("Set your password")

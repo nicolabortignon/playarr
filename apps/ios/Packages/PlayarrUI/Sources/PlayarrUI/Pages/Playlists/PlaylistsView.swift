@@ -11,6 +11,10 @@ struct PlaylistsView: View {
     ScrollView {
       if let error = store.error {
         ErrorState(message: error) { await store.load() }
+      } else if store.playlists?.isEmpty == true {
+        EmptyState(
+          systemImage: "music.note.list", line: PageLines.playlists,
+          fill: .action(EmptyState.Action("New playlist", systemImage: "plus") { session.addToPlaylist([]) }))
       } else {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: ShelfCard.width), spacing: 16, alignment: .top)], alignment: .leading, spacing: 24) {
           Button { session.addToPlaylist([]) } label: {
@@ -26,7 +30,7 @@ struct PlaylistsView: View {
           if let playlists = store.playlists {
             ForEach(playlists) { PlaylistCard(playlist: $0) }
           } else {
-            ForEach(0..<5, id: \.self) { _ in Skeleton().frame(width: ShelfCard.width) }
+            CardSkeletons(count: 11, width: ShelfCard.width)
           }
         }
         .padding(20)

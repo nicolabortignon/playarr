@@ -79,15 +79,6 @@ public struct SourcesPanel: View {
       case .organize(let id): OrganizeView(sourceId: id, api: api, libraryChanged: libraryChanged)
       }
     }
-    .confirmationDialog(removing.map(SourceText.removeTitle) ?? "", isPresented: removingBinding, titleVisibility: .visible, presenting: removing) { source in
-      Button("Remove", role: .destructive) { Task { await model.remove(source) } }
-    } message: { _ in
-      Text(SourceText.removeMessage)
-    }
-  }
-
-  private var removingBinding: Binding<Bool> {
-    Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })
   }
 
   private func row(_ source: SourceInfo) -> some View {
@@ -136,6 +127,10 @@ public struct SourcesPanel: View {
       if source.syncing { ProgressView() }
     }
     .contextMenu { if model.canEdit { actions(source) } }
+    // Asked from its row (Remove is in its menu and its swipe actions), so a phone's popover points at the source.
+    .confirmLoss(Binding(get: { removing?.id == source.id ? removing : nil }, set: { removing = $0 }), question: SourceText.removeQuestion) { source in
+      Task { await model.remove(source) }
+    }
     .swipeActions(edge: .trailing) {
       if model.canEdit {
         Button("Remove", systemImage: "trash", role: .destructive) { removing = source }

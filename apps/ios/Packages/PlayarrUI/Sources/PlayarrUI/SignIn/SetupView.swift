@@ -27,7 +27,7 @@ struct SetupView: View {
                     Text(error).foregroundStyle(.danger)
                 }
             }
-            Button("Claim this server") { Task { if await model.claim(username: username, name: name, password: password) { onDone() } } }
+            Button(model.busy ? "Claiming…" : "Claim this server") { Task { if await model.claim(username: username, name: name, password: password) { onDone() } } }
                 .disabled(model.busy || username.isEmpty || name.isEmpty || password.isEmpty || password != confirm)
         }
         .navigationTitle("Set up \(model.connected?.info.name ?? "Playarr")")

@@ -15,7 +15,7 @@ public enum SettingsPanel: String, Hashable, Sendable, CaseIterable, Codable {
     case .playback: "Playback"
     case .appearance: "Appearance"
     case .sources: "Sources"
-    case .mixes: "Mixes"
+    case .mixes: "Made for you"
     case .analysis: "Analysis"
     case .requests: "Requests"
     case .updates: "Updates"

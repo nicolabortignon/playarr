@@ -129,7 +129,7 @@ The standard:
 - **Done when** the map exists and both apps follow it.
 - *Web done 2026-11-06: the map is in `docs/design.md` (Icons), with sizes by role and one stroke; the web follows it (Requests are binoculars, artists a microphone, the queue a list, storage a drive), on lucide's current names. iOS to align where the map says so.*
 
-## 7. One vocabulary — S
+## 7. One vocabulary — S — done 2026-11-06
 
 - **Songs, not tracks.** "songs" for every count and heading. Today:
   - Search has both "Tracks" and "Songs" headings (`Search.tsx:106`, `:210`) and "Show all N tracks";
@@ -145,9 +145,10 @@ The standard:
 - **Badges say what they mean:** "MP3 8" becomes "MP3 · 8 kbps", and the bitrate hides when it's ordinary.
 - **Color means action:** "Signed in as Demo" at the top of iOS Settings is accent-colored like a button but does nothing.
 - **Done when** the word list is in `docs/design.md`, and a sweep of both apps and the server's texts matches it.
-- *Web and server done 2026-11-06: the word list is in `docs/design.md` (Words), and the web matches it: songs everywhere, "Search music", Favorites, Made for you (a playlist's "New mix" became "Other suggestions"), pending ellipses, Try again, Remove and Delete, American spelling, and badges that hide ordinary details ("MP3", "MP3 · 8 kbps", "FLAC · 24/96"). iOS to do.*
+- *Web and server done 2026-11-06: the word list is in `docs/design.md` (Words), and the web matches it: songs everywhere, "Search music", Favorites, Made for you (a playlist's "New mix" became "Other suggestions"), pending ellipses, Try again, Remove and Delete, American spelling, and badges that hide ordinary details ("MP3", "MP3 · 8 kbps", "FLAC · 24/96").*
+- *iOS done 2026-11-06: the same words (songs, Favorites, Made for you, ellipses, Try again, Remove and Delete, American spelling), the same badges, "Signed in as" no longer in the accent, and album cards on an artist's page saying the kind and year.*
 
-## 8. Empty, loading and error: one way each — S–M
+## 8. Empty, loading and error: one way each — S–M — done 2026-11-06
 
 - **Empty:**
   - The web has three layouts and three voices: a display heading with a heart (`Favorites.tsx:27-33`), a plain paragraph (`Downloads.tsx:23`) and small inline text (`Nav.tsx:219`).
@@ -165,9 +166,10 @@ The standard:
   - skeletons shaped and spaced like the page they stand for;
   - one `ErrorState`: what happened, Try again, Back home.
 - **Done when** every list page has all three states, checked in the tours.
-- *Web done 2026-11-06: `components/States.tsx` has `EmptyState` (icon, one line, the action that fills the page, or Feeling lucky), `ErrorState` (Something skipped., Try again, Back home), `InlineError` for part of a page, and skeletons shaped like cards and song rows; every list page uses them (`docs/design.md`, Empty, loading and error). iOS to do.*
+- *Web done 2026-11-06: `components/States.tsx` has `EmptyState` (icon, one line, the action that fills the page, or Feeling lucky), `ErrorState` (Something skipped., Try again, Back home), `InlineError` for part of a page, and skeletons shaped like cards and song rows; every list page uses them (`docs/design.md`, Empty, loading and error).*
+- *iOS done 2026-11-06: `EmptyState` with The lines word for word (`PageLines`), skeletons for cards, song lists, rows and detail pages, `ErrorState` ("The needle skipped.", Try again, Back home) and `InlineError`.*
 
-## 9. Overlays behave alike — S
+## 9. Overlays behave alike — S — done 2026-11-06
 
 - **Escape:** web Now Playing is its own modal with its own Escape handling (`NowPlaying.tsx:56-75`), while `Dialog.tsx:39` closes on any Escape. A dialog opened over Now Playing may therefore close both.
 - **Dialog padding:** dialog bodies are padded three ways (`AddToPlaylistDialog.tsx:49`, `Playlist.tsx:198`, `TrackMetadataDialog.tsx:51`).
@@ -175,7 +177,8 @@ The standard:
 - **⋯ labels:** every ⋯ on the web is named "More actions" (`Menu.tsx:15`), so a screen reader hears the same name on every row. iOS says "More for {title}"; the web should too.
 - **iOS sheets:** one detent rule (medium and large for pickers), and Cancel or close always in the same corner.
 - **Done when** one overlay stack decides what Escape closes, and the ⋯ labels match.
-- *Web done 2026-11-06: one stack (`lib/overlays.ts`) decides what Escape closes, menu then dialog then Now Playing; dialogs share one padding, a footer kept in view and three widths; a menu's first item takes the focus only when opened from the keyboard; every ⋯ is "More for “…”". iOS sheets to do.*
+- *Web done 2026-11-06: one stack (`lib/overlays.ts`) decides what Escape closes, menu then dialog then Now Playing; dialogs share one padding, a footer kept in view and three widths; a menu's first item takes the focus only when opened from the keyboard; every ⋯ is "More for “…”".*
+- *iOS done 2026-11-06: pickers open at medium and large, close leading and confirm trailing, every bar button with an icon, so on the iPhone Duo's cover screen the cover picker's Use this (and every sheet's Cancel and Done) can be reached.*
 
 ## 10. A web screen tour, and a check that keeps things consistent — S
 

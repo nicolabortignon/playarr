@@ -17,10 +17,11 @@ struct SessionsView: View {
   }
 }
 
-/// Each device with when it was last used; every one but this device signs out with a tap.
+/// Each device with when it was last used; every one but this device signs out, after asking.
 struct SessionRows: View {
   let accountId: Int
   @Bindable var model: AccountsModel
+  @State private var ending: SessionInfo?
 
   var body: some View {
     if let sessions = model.sessions[accountId] {
@@ -38,10 +39,16 @@ struct SessionRows: View {
           }
           Spacer()
           if !session.current {
-            Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { Task { await model.endSession(session, of: accountId) } }
+            Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { ending = session }
               .labelStyle(.iconOnly)
               .buttonStyle(.borderless)
               .accessibilityLabel("Sign out \(session.device)")
+              // Asked from its own button, so on an iPad the question points at the device it's about.
+              .confirmLoss(
+                Binding(get: { ending?.id == session.id ? ending : nil }, set: { ending = $0 }), question: AccountsModel.signOutQuestion
+              ) { session in
+                Task { await model.endSession(session, of: accountId) }
+              }
           }
         }
       }

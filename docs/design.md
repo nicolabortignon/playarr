@@ -55,8 +55,9 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
   - An album's meta line: the artist (linked, with their photo) · year · N songs · length, then the format badge. Missing songs show in the list, not here. Where it doesn't fit on one line, the artist goes on a line of its own and the rest under it; it never wraps around the badge.
   - A playlist's meta line: songs · length · sharing ("Shared with everyone", "Shared by Sam"). Its description comes after the action row.
   - An artist: the kicker is "Artist", the meta line their counts ("2 albums · 5 songs"), and their genres go in About's kicker. An artist with a photo of their own gets a band (taller where it would otherwise go under the bar); one without gets a small circle with their best album cover (or a vinyl monogram), not an empty band.
-  - Release kinds are named "Album", "EP", "Live album", "Live EP", "Compilation", "DJ mix", "Mixtape", "Loose songs" and "Release" (`releaseKind`). Cards on an artist's own page say only the kind and year ("EP · 2019"), without a badge.
+  - Release kinds are named "Album", "EP", "Live album", "Live EP", "Compilation", "DJ mix", "Mixtape", "Loose songs" and "Release" (`releaseKind`). Cards on an artist's own page, in the library or beyond it, say only the kind and year ("Album · 1998", "EP · 2019"), without the artist's name or a badge.
 - **A title appears once per screen.** A playlist's or mix's own cover drops its name on its page; cards keep it. On iOS the bar shows a detail page's name only once the page's own title has scrolled under it.
+- **Sheets on iOS:** pickers open at medium and large heights; close is on the leading side and confirm on the trailing side, each with an icon.
 - **Sheets on the iPhone Duo:** on the cover screen a full-height sheet's bar buttons move into the side column, and buttons with words only are dropped. Every bar button in a sheet has an icon (the system's close and confirm roles, or a symbol), so Cancel, Done and Use this are always there.
 - **Under the iPhone Duo's column** (and any side inset): backgrounds (the album's wash, an artist's photo, a blurred cover) run under it; rows, words and buttons keep clear of it; sideways strips (shelves, Stats' ranges) scroll under it and stop clear of it.
 - **Home greets** the account by name, with its avatar.
@@ -81,12 +82,12 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 - **Taking something out of a list** happens at once, with Undo in the toast: "Removed “Teardrop” from “Late night”", "Removed “X” from the queue", "Removed “X” from Requests", "Removed “X” from this device", "Stopped sharing “X”".
 - **When the server can't undo it** (a request forgotten can't be asked for again once the album has arrived), the item hides at once and the removal waits until the Undo has gone.
-- **Losing something for good asks first**, in a dialog: the question names what goes ("Delete “Late night”?", "Remove 312 songs from this device?", "Remove Sam?"), the words under it say what goes and what stays, Cancel has the focus, and the button is the danger verb ("Delete", "Remove", "Sign out").
+- **Losing something for good asks first**: the question names what goes ("Delete “Late night”?", "Remove 312 songs from this device?", "Remove Sam?"), the words under it say what goes and what stays, and the button is the danger verb ("Delete", "Remove", "Sign out"). On the web it's a dialog with Cancel focused; on iOS 26 a popover from the control that asked (a tap beside it cancels).
 
 ## Empty, loading and error
 
 - **Empty:** an icon in a ring, one line in the display face in the app's voice ("No hearts yet.", "Not in your crates."), a quieter line only where the first can't say it all, and the one action that fills the page as a large primary button. Where nothing else fills it, that's Feeling lucky.
-- **Loading:** skeletons shaped like what they stand for, in the real grid or rows, as many as fill the first screen; never a spinner on its own for a page.
+- **Loading:** skeletons shaped like what they stand for, in the real grid or rows, as many as fill the first screen; never a spinner on its own for a page. iOS Settings' panels, which are system forms, keep the system's spinner.
 - **Error:** a whole page that couldn't load says so in the voice (the table below) with the reason, Try again and Back home. A part of a page (a panel, a section, a dialog) says what happened and why in its place, with a small Try again.
 - **The lines**, the same on both apps (plan 7 §4). The voice is a record shop's: warm, brief, about the music. A second line only where the first can't say it all; the action is what fills the page.
 
@@ -102,14 +103,19 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
   | Albums | Your crates are empty. | Admin: Add Lidarr or a folder of music, and it shows up here. Member: Music shows up here once an admin adds some. | Admin: Add music |
   | Artists | Nobody on the roster yet. | (as Albums) | (as Albums) |
   | An artist | Nothing by {artist} here yet. | | |
-  | Made for you | Your mixes are on their way. | They appear as you listen, and as Playarr learns your library. | |
-  | Stats | No spins in this period yet. | A song counts once it's heard for 30 seconds. | |
-  | Search, nothing at all | Not in your crates. | Nothing in your library matches “{query}”. | What's out there (beyond the library), or Clear search |
-  | Search, near matches | Nothing called “{query}”. Close: | | |
+  | Made for you | Your mixes are on their way. | They appear as you listen, and as Playarr learns your library. | Feeling lucky |
+  | Stats | No spins in this period yet. | A song counts once it's heard for 30 seconds. | Feeling lucky |
+  | Search, nothing in the library | Not in your crates. | Nothing in your library matches “{query}”. Here's what's out there: | (what's beyond the library) |
+  | Search, nothing anywhere | Not in your crates. | Nothing in your library or beyond it matches “{query}”. Check the spelling, try fewer words, or pick an artist you have. | New search · artists to try |
+  | Search, near matches | Nothing called “{query}”. These come close: | | |
+  | Requests, none yet | Ask for an album you don’t have. | Search for it and press Request: it lands in your library once Lidarr finds it. | Search |
+  | Requests without Lidarr | Admin: Requests need a Lidarr source. Member: Requests aren’t set up on this server. | Admin: Add one, and you can ask Lidarr for albums you don’t have, right from Search. Member: They need a Lidarr source, which an admin can add. | Admin: Add Lidarr |
+  | Requests turned off | Admin: Requests are turned off. Member: Requests are turned off on this server. | Admin: Nobody can ask Lidarr for albums until they’re on again. Member: An admin can turn them on. | Admin: Turn them on |
+  | An account that can't request | Your account can’t request albums. | Admin: Allow it for yourself in Settings → Accounts. Member: An admin can allow it. | |
   | A page that failed | The needle skipped. | The reason. | Try again · Back home |
   | A link to nowhere (404) | Side C. This groove is empty. | | Back home |
 
-  The sidebar's empty playlist list stays plain ("No playlists yet."), and a part of a page that failed says what happened, not a line in the voice: clarity first.
+  Jump back in plays the album heard last; where nothing has been heard yet, Feeling lucky takes its place. The sidebar's empty playlist list stays plain ("No playlists yet."), and a part of a page that failed says what happened, not a line in the voice: clarity first.
 - **What isn't possible here** says why and who can change it, never a button that leads nowhere. Requests without Lidarr: an admin reads "Requests need a Lidarr source." with Add Lidarr; everyone else "Requests aren’t set up on this server." and that an admin can add one. Requests turned off, or an account that can't request, read the same way.
 
 ## Controls

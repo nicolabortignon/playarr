@@ -201,6 +201,10 @@ describe('contract fixtures', () => {
     const created = await app.inject({ method: 'POST', url: '/api/playlists', headers: owner, payload: { name: 'Late night', description: 'For the drive home', recordingIds: [ANGEL, RISINGSON] } });
     expect(created.statusCode).toBe(201);
     recordFixture('playlist', created);
+    // Add to playlist's ticks: how many of the songs each of the account's own playlists holds, by playlist id.
+    const holding = await app.inject({ method: 'POST', url: '/api/playlists/holding', headers: owner, payload: { recordingIds: [ANGEL, RISINGSON] } });
+    expect(holding.json()).toEqual({ holding: { [created.json().id]: 2 } });
+    recordFixture('playlists-holding', holding);
     await recordGets(app, [
       ['favorites', '/api/favorites'],
       ['playlists', '/api/playlists'],

@@ -51,10 +51,10 @@ struct AddToPlaylistSheet: View {
         .navigationBarTitleDisplayMode(.inline)
       #endif
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark", role: .cancel) { dismiss() } }
         if !model.choices.isEmpty {
           ToolbarItem(placement: .confirmationAction) {
-            Button(model.addLabel, action: add)
+            Button(model.addLabel, systemImage: "checkmark", role: .confirm, action: add)
               .disabled(!model.canAdd)
               .accessibilityIdentifier("playlist.add")
           }

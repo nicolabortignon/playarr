@@ -96,11 +96,7 @@ final class HomeModel {
 
   /// Feeling lucky: 15 songs the server puts together now, starting from one that suits the hour; new at every press.
   func feelingLucky() async {
-    do {
-      try await QuickPlay(session: session).feelingLucky()
-    } catch {
-      session.toasts.push(error.localizedDescription, tone: error == .emptyLibrary ? .info : .error)
-    }
+    await QuickPlay.feelingLucky(session: session)
   }
 
   /// The song of the listening session, paused (to resume) or playing (to pause from here).

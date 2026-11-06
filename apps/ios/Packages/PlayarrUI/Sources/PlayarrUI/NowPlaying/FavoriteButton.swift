@@ -28,7 +28,7 @@ struct FavoriteButton: View {
     }
     .buttonStyle(.plain)
     .sensoryFeedback(.impact(weight: .light), trigger: popped)
-    .accessibilityLabel(favorite ? "Remove “\(track.title)” from favorites" : "Add “\(track.title)” to favorites")
+    .accessibilityLabel(favorite ? "Remove “\(track.title)” from Favorites" : "Add “\(track.title)” to Favorites")
     .accessibilityAddTraits(favorite ? .isSelected : [])
   }
 }

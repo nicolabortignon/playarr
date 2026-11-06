@@ -67,7 +67,7 @@ import Testing
 
   @Test func measuresTheSound() {
     let rows = MetadataFormat.sound(TrackMetadata.Analysis(bpm: 79.6, loudness: 0.8, dynamics: 1.2, brightness: -0.1, busyness: 0.333, bass: 0.5))
-    #expect(rows.map(\.value) == [.text("80 BPM"), .text("Not analysed yet"), .meter(80), .meter(100), .meter(0), .meter(33), .meter(50)])
+    #expect(rows.map(\.value) == [.text("80 BPM"), .text("Not analyzed yet"), .meter(80), .meter(100), .meter(0), .meter(33), .meter(50)])
   }
 
   @Test func matchesAgainAFolderFileFirst() {

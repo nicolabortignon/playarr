@@ -14,7 +14,7 @@ public struct RootView: View {
             // Text without a font of its own is in the web's (Typography).
             .font(.sans(.body))
             .sheet(item: $model.redeemLink) { link in
-                AddServerFlow(app: model, start: .redeem(link)) { model.redeemLink = nil }
+                AddServerFlow(app: model, start: .redeem(link), onCancel: { model.redeemLink = nil }) { model.redeemLink = nil }
             }
             .task(id: model.store.active) { await model.checkActiveServer() }
             .task(id: model.store.activeAccount) { model.syncSession() }

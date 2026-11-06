@@ -10,8 +10,15 @@ struct SettingsView: View {
   var body: some View {
     List {
       Section {
+        // A row that opens Accounts, drawn as one: the words in the text color, not the accent, which is for actions
+        // (docs/design.md, Words), and a chevron for where it leads.
         Button { app.showingAccounts = true } label: {
-          LabeledContent("Signed in as \(session.account.name)", value: session.serverName)
+          HStack {
+            LabeledContent("Signed in as \(session.account.name)", value: session.serverName)
+            Image(systemName: "chevron.right").font(.sans(.footnote).weight(.semibold)).foregroundStyle(.tertiary)
+              .accessibilityHidden(true)
+          }
+          .foregroundStyle(.paper)
         }
         .accessibilityHint("Switch accounts or add one")
         NavigationLink("Your listening", value: Route.listening)

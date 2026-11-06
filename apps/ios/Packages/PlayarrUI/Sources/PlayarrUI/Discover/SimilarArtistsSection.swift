@@ -9,6 +9,8 @@ public struct SimilarArtistsSection: View {
   @Environment(DiscoverContext.self) private var context: DiscoverContext?
   @State private var artists: [DiscoverArtist]?
   @State private var failed = false
+  /// Bumped by Try again.
+  @State private var attempt = 0
 
   public init(mbid: String) {
     self.mbid = mbid
@@ -19,7 +21,7 @@ public struct SimilarArtistsSection: View {
       if failed {
         VStack(alignment: .leading, spacing: 0) {
           SectionHeader(title: "Similar artists", kicker: SimilarArtistGroups.kicker)
-          Text(SimilarArtistGroups.failed).font(.sans(.subheadline)).foregroundStyle(.secondary).padding(.horizontal, 20)
+          InlineError(SimilarArtistGroups.failed) { attempt += 1 }.padding(.horizontal, 20)
         }
       } else if let artists {
         ForEach(SimilarArtistGroups.make(artists), id: \.title) { group in
@@ -31,11 +33,11 @@ public struct SimilarArtistsSection: View {
       } else {
         VStack(alignment: .leading, spacing: 0) {
           SectionHeader(title: "Similar artists", kicker: SimilarArtistGroups.kicker)
-          Shelf { ForEach(0..<6, id: \.self) { _ in Circle().fill(Color.secondary.opacity(0.15)).frame(width: ShelfCard.width, height: ShelfCard.width) } }
+          Shelf { CardSkeletons(count: 6, round: true, width: ShelfCard.width) }
         }
       }
     }
-    .task(id: mbid) {
+    .task(id: "\(mbid) \(attempt)") {
       do {
         artists = try await context?.similarArtists(mbid)
         failed = false

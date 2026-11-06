@@ -43,16 +43,20 @@ struct CoverPickerView: View {
       .padding(20)
       .navigationTitle("New cover")
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        // Each with an icon: on the iPhone Duo's cover screen a full-height sheet's bar buttons move to the column down
+        // the right, where buttons with words only don't show (docs/design.md, "Headers").
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark", role: .cancel) { dismiss() } }
         ToolbarItem(placement: .secondaryAction) { Button("Shuffle", systemImage: "dice") { picker.shuffle() } }
         ToolbarItem(placement: .confirmationAction) {
-          Button("Use this") {
+          Button("Use this", systemImage: "checkmark", role: .confirm) {
             Task { if await playlist.setCover(layout: picker.chosen, variant: picker.variant) { dismiss() } }
           }
           .disabled(playlist.busy)
         }
       }
     }
+    // A picker: half the screen at first, the rest a drag away.
+    .presentationDetents([.medium, .large])
   }
 }
 

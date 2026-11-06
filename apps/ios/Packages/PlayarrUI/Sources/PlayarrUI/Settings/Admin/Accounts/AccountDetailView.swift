@@ -23,10 +23,18 @@ struct AccountDetailView: View {
         Section("Devices") {
           SessionRows(accountId: account.id, model: model)
         }
+        // Each asked from its own button, so a phone's popover points at it.
         Section {
           Button("New setup code", systemImage: "key") { askingReset = true }
+            .confirmLoss(model.resetQuestion(account), isPresented: $askingReset) { Task { await model.reset(account) } }
           if model.canRemove(account) {
             Button("Remove", systemImage: "trash", role: .destructive) { askingRemove = true }
+              .confirmLoss(model.removeQuestion(account), isPresented: $askingRemove) {
+                Task {
+                  await model.remove(account)
+                  if model.error == nil { dismiss() }
+                }
+              }
           }
         }
       }
@@ -42,22 +50,6 @@ struct AccountDetailView: View {
     }
     .sheet(item: $model.setupShown) { shown in
       NavigationStack { SetupCodeView(shown: shown) { model.setupShown = nil } }
-    }
-    .confirmationDialog(account.map(model.resetTitle) ?? "", isPresented: $askingReset, titleVisibility: .visible) {
-      Button("New setup code", role: .destructive) { if let account { Task { await model.reset(account) } } }
-    } message: {
-      Text(AccountsModel.resetMessage)
-    }
-    .confirmationDialog(account.map(model.removeTitle) ?? "", isPresented: $askingRemove, titleVisibility: .visible) {
-      Button("Remove", role: .destructive) {
-        guard let account else { return }
-        Task {
-          await model.remove(account)
-          if model.error == nil { dismiss() }
-        }
-      }
-    } message: {
-      Text(AccountsModel.removeMessage)
     }
   }
 }

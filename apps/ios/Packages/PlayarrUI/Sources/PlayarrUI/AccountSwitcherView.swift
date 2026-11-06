@@ -44,10 +44,12 @@ struct AccountSwitcherView: View {
             }
             .navigationTitle("Accounts")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } }
             }
+            // A picker: half the screen to start with, as Add to playlist and New cover.
+            .presentationDetents([.medium, .large])
             .sheet(item: $adding) { start in
-                AddServerFlow(app: model, start: start) {
+                AddServerFlow(app: model, start: start, onCancel: { adding = nil }) {
                     adding = nil
                     dismiss()
                 }

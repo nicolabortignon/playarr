@@ -10,7 +10,7 @@ enum AnalysisText {
   static func queue(_ p: AnalysisProgress) -> String? {
     let working = p.working + p.loudnessWorking
     let parts = [
-      working > 0 ? "analysing \(songs(working))" : nil,
+      working > 0 ? "analyzing \(songs(working))" : nil,
       p.waiting > 0 ? "\(AdminText.count(p.waiting)) waiting for beat or sound analysis" : nil,
       p.loudnessWaiting > 0 ? "\(AdminText.count(p.loudnessWaiting)) waiting for loudness analysis" : nil,
       p.tagsWaiting > 0 ? "\(AdminText.count(p.tagsWaiting)) waiting for a tag lookup" : nil,
@@ -24,8 +24,8 @@ enum AnalysisText {
     if ready >= p.songs {
       return p.songs == 1 ? "The library’s one song is ready for DJ mix\(withoutModel)." : "All \(songs(p.songs)) are ready for DJ mix\(withoutModel)."
     }
-    let failures = failed > 0 ? " · \(AdminText.count(failed)) couldn’t be analysed" : ""
-    let rest = p.libraryScan ? "" : " Others are analysed as they come up to play."
+    let failures = failed > 0 ? " · \(AdminText.count(failed)) couldn’t be analyzed" : ""
+    let rest = p.libraryScan ? "" : " Others are analyzed as they come up to play."
     return "Ready for DJ mix: \(AdminText.count(ready)) of \(songs(p.songs))\(withoutModel)\(failures).\(rest)"
   }
 
@@ -55,17 +55,17 @@ enum AnalysisText {
   /// What a run queued, as the web's toast says it.
   static func queued(_ queued: Int, kind: AnalysisKind?, again: Bool) -> String {
     let tags = kind == .tags
-    guard queued > 0 else { return "Every song is already \(tags ? "looked up" : "analysed") or waiting its turn" }
-    return "\(tags ? "Looking up" : "Analysing") \(songs(queued))\(again ? " again" : "") in the background"
+    guard queued > 0 else { return "Every song is already \(tags ? "looked up" : "analyzed") or waiting its turn" }
+    return "\(tags ? "Looking up" : "Analyzing") \(songs(queued))\(again ? " again" : "") in the background"
   }
 
   static func switchDescription(_ p: AnalysisProgress) -> String {
     p.enabled
-      ? "At low priority: beat, sound and loudness analysis and a tag lookup, once for each song. Off, songs are analysed as they come up to play. Takes a while on a big library: beat analysis can take a minute a song on a small server."
+      ? "At low priority: beat, sound and loudness analysis and a tag lookup, once for each song. Off, songs are analyzed as they come up to play. Takes a while on a big library: beat analysis can take a minute a song on a small server."
       : "Tags are still looked up as songs come up. \(audioOff)"
   }
 
-  static let everythingTitle = "Reanalyse every song with every analysis?"
+  static let everythingTitle = "Reanalyze every song with every analysis?"
 
   static func everythingExplain(audio: Bool) -> String {
     audio

@@ -41,8 +41,8 @@ public enum TransitionWords {
 
   /// The server's reasons for having no mix, in the listener's words (they're written for the logs).
   public static func plainReason(_ reason: String) -> String {
-    if reason.hasPrefix("No mix map yet for the song playing") { return "This song hasn’t been analysed yet" }
-    if reason.hasPrefix("No mix map yet for the next song") { return "The next song hasn’t been analysed yet" }
+    if reason.hasPrefix("No mix map yet for the song playing") { return "This song hasn’t been analyzed yet" }
+    if reason.hasPrefix("No mix map yet for the next song") { return "The next song hasn’t been analyzed yet" }
     if reason == "Mixed transitions need audio analysis" { return "Mixing needs audio analysis, which is off on this server" }
     if reason.hasPrefix("The transition couldn’t be") { return "The mix couldn’t be made" }
     return "There’s no mix for these two songs"

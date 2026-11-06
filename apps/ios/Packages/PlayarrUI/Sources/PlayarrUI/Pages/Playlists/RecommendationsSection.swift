@@ -19,14 +19,11 @@ struct RecommendationsSection: View {
       if !model.hidden {
         Section {
           if model.recommendations == nil, model.loading {
-            ProgressView().frame(maxWidth: .infinity)
+            SongRowsSkeleton(count: 3)
           } else if let error = model.error, model.recommendations == nil {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Couldn’t reach ListenBrainz. \(error)").foregroundStyle(.secondary)
-              Button("Try again", systemImage: "arrow.clockwise") { Task { await model.load() } }.buttonStyle(.pill(.secondary))
-            }
+            InlineError("Couldn’t reach ListenBrainz", reason: error) { await model.load() }
           } else if model.empty {
-            Text("ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try a new mix or add a few more songs.")
+            Text("ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try other suggestions, or add a few more songs.")
               .foregroundStyle(.secondary)
           }
           if !model.owned.isEmpty {
@@ -62,7 +59,8 @@ struct RecommendationsSection: View {
               Text("Songs like these").font(.display(.title2)).foregroundStyle(.primary).textCase(nil)
             }
             Spacer()
-            Button("New mix", systemImage: "dice") { Task { await model.newMix() } }
+            // "Mix" means only Made for you's mixes (docs/design.md, Words).
+            Button("Other suggestions", systemImage: "dice") { Task { await model.newMix() } }
               .disabled(model.loading)
               .textCase(nil)
           }

@@ -37,8 +37,8 @@ public final class MixPointsModel {
     self.cuesChanged = cuesChanged
   }
 
-  public static let notAnalysed =
-    "This song hasn’t been analysed yet, so there are no mix points to move. Playarr measures songs in the background: try again later."
+  public static let notAnalyzed =
+    "This song hasn’t been analyzed yet, so there are no mix points to move. Playarr measures songs in the background: try again later."
 
   public func load() async {
     do {

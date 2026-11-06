@@ -69,7 +69,13 @@ enum SourceText {
     return ("Not synced yet", .muted)
   }
 
-  /// The remove question's title and message (the web's window.confirm text, split in two).
-  static func removeTitle(_ source: SourceInfo) -> String { "Remove “\(source.name)”?" }
-  static let removeMessage = "Its songs leave your library; favorites and playlists keep them, greyed out."
+  /// Removing a source: its songs leave the library, but nothing on disk is touched (SourcesPanel.tsx).
+  static func removeQuestion(_ source: SourceInfo) -> LossQuestion {
+    let leave = source.songs == 1 ? "Its song leaves" : "Its \(AdminText.plural(source.songs, "song")) leave"
+    return LossQuestion(
+      title: "Remove “\(source.name)”?",
+      message:
+        "\(leave) your library; playlists and Favorites keep them in their place, grayed out. The files themselves aren’t touched, and adding the source again brings them back.",
+      verb: "Remove")
+  }
 }

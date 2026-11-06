@@ -3,12 +3,15 @@ import PlayarrPlayer
 import SwiftUI
 
 /// Library → Downloads: albums, playlists, mixes and Favorites on this device, playable without a connection
-/// (apps/web/src/pages/Downloads.tsx). Each with its progress, size, Play, Remove and the songs that couldn't download.
+/// (apps/web/src/pages/Downloads.tsx). Each with its progress, size, Play, Remove (with Undo) and the songs that
+/// couldn't download.
 public struct DownloadsView<Cover: View>: View {
   let store: DownloadStore
   let play: (PinnedDownload) -> Void
   let open: (String) -> Void
   let cover: (String?) -> Cover
+  /// Undo for a removal; the UI test page has none.
+  @Environment(AccountSession.self) private var session: AccountSession?
 
   /// `play` plays a download's songs (from its page's source); `open` goes to its page by href; `cover` draws a cover
   /// from its server path (phase 4's artwork view).
@@ -26,10 +29,10 @@ public struct DownloadsView<Cover: View>: View {
     let downloads = store.downloads
     Group {
       if downloads.isEmpty {
-        ContentUnavailableView {
-          Label("Nothing downloaded yet", systemImage: "arrow.down.circle")
-        } description: {
-          Text(OfflineWording.emptyDownloads)
+        ScrollView {
+          EmptyState(
+            systemImage: "arrow.down.circle", line: PageLines.downloads,
+            fill: .action(EmptyState.Action("Browse albums", systemImage: "square.stack") { open("/albums") }))
         }
       } else {
         List(downloads) { d in
@@ -84,7 +87,7 @@ public struct DownloadsView<Cover: View>: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Play \(d.title)")
-      Button { store.remove(d.key) } label: {
+      Button { remove(d) } label: {
         Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
@@ -102,7 +105,12 @@ public struct DownloadsView<Cover: View>: View {
     }
     .listRowInsets(.vertical, 0)
     .swipeActions {
-      Button("Remove", role: .destructive) { store.remove(d.key) }
+      Button("Remove", role: .destructive) { remove(d) }
     }
+  }
+
+  /// Off this device at once, with Undo.
+  private func remove(_ d: PinnedDownload) {
+    DownloadRemoval.remove(d, from: store, toasts: session?.toasts)
   }
 }

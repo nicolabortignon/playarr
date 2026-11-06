@@ -67,9 +67,9 @@ struct AccountFormView: View {
     }
     .navigationTitle(title)
     .toolbar {
-      ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+      ToolbarItem(placement: .cancellationAction) { Button("Cancel", systemImage: "xmark", role: .cancel) { dismiss() } }
       ToolbarItem(placement: .confirmationAction) {
-        Button(submitLabel) {
+        Button(submitLabel, systemImage: "checkmark", role: .confirm) {
           Task {
             guard await submit(form) else { return }
             if let shown = model.setupShown {

@@ -35,7 +35,7 @@ struct TransitionWordsTests {
     #expect(TransitionWords.describe(.gaveUp, mixMode: .auto).why == "The mix wasn’t ready in time, so the next song follows straight on.")
     #expect(TransitionWords.describe(nil, mixMode: .off) == .init(style: "no mixing", why: "Mixing is off for this queue, so the next song follows straight on."))
     let unavailable = TransitionWords.describe(.answer(.unavailable(.init(reason: "No mix map yet for the next song (rec-2)"))), mixMode: .auto)
-    #expect(unavailable.why == "The next song hasn’t been analysed yet, so the next song follows straight on.")
+    #expect(unavailable.why == "The next song hasn’t been analyzed yet, so the next song follows straight on.")
     #expect(TransitionWords.plainReason("Mixed transitions need audio analysis") == "Mixing needs audio analysis, which is off on this server")
     #expect(TransitionWords.plainReason("something for the logs") == "There’s no mix for these two songs")
   }

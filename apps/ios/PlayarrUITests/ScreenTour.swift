@@ -57,12 +57,12 @@ final class ScreenTour: XCTestCase {
     return inBar.exists ? inBar : app.buttons[name].firstMatch
   }
 
-  /// Closes a sheet with its Cancel or, where there's none, with a tap beside it: on the iPhone Duo's cover screen a
-  /// full-height sheet's bar buttons move to the column down the right, where those with only words (Cancel, Use this)
-  /// don't show, and the sheet doesn't follow a drag down. It leaves a thin edge of the page showing on the left.
+  /// Closes a sheet with its Cancel or close (on the iPhone Duo's cover screen a full-height sheet's bar buttons move to the
+  /// column down the right, which shows them by their icons) or, where there's none, with a tap beside it: there the
+  /// sheet doesn't follow a drag down, and leaves a thin edge of the page showing on the left.
   @MainActor
   private func closeSheet(_ title: String) {
-    if tap(app.buttons["Cancel"].firstMatch, timeout: 2) { return }
+    if tap(app.buttons["Cancel"].firstMatch, timeout: 2) || tap(app.buttons["Close"].firstMatch, timeout: 1) { return }
     let bar = app.navigationBars[title].firstMatch
     guard bar.exists else { return }
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5)).tap()
@@ -72,11 +72,12 @@ final class ScreenTour: XCTestCase {
     _ = bar.waitForNonExistence(timeout: 3)
   }
 
-  /// Back to the page before, with the bar's back button (in the Duo's column, outside any navigation bar).
+  /// Back to the page before, with the bar's back button (in the Duo's column, outside any navigation bar); skipped, as
+  /// any step, when there's none (the page didn't open).
   @MainActor
   private func back() {
     let inBar = app.navigationBars.buttons.firstMatch
-    (inBar.exists ? inBar : app.buttons["BackButton"].firstMatch).tap()
+    if inBar.exists { inBar.tap() } else { tap(app.buttons["BackButton"].firstMatch, timeout: 2) }
   }
 
   @MainActor
@@ -88,6 +89,11 @@ final class ScreenTour: XCTestCase {
     app.swipeUp()
     shot("02-home-scrolled")
     app.swipeDown()
+    // The queue before anything plays: its empty state, with Feeling lucky and Jump back in.
+    if tap(tab("Queue"), timeout: 2) {
+      shot("02b-queue-empty")
+      tap(tab("Home"), timeout: 2)
+    }
 
     if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch) {
       shot("03-album")
@@ -105,6 +111,11 @@ final class ScreenTour: XCTestCase {
           shot("04c-add-to-playlist", after: 1.5)
           closeSheet("Add “Risingson”")
         }
+      }
+      // A full-height sheet with only a close: on the Duo's cover screen it's in the column.
+      if tap(app.buttons["More for Risingson"].firstMatch, timeout: 2), tap(app.buttons["Show metadata"], timeout: 2) {
+        shot("04d-metadata", after: 1.5)
+        closeSheet("Song metadata")
       }
       // Back up to Play: left under the bar, it doesn't take the tap.
       app.swipeDown()
@@ -190,6 +201,11 @@ final class ScreenTour: XCTestCase {
       // Back to Library's root (the tab remembers the artist page).
       tap(tab("Library"), timeout: 1)
     }
+    // The accounts, a picker: half the screen, its close in the corner.
+    if tap(app.buttons["Account and settings"].firstMatch), tap(app.buttons["Account"], timeout: 2) {
+      shot("14a-accounts")
+      closeSheet("Accounts")
+    }
     if tap(app.buttons["Account and settings"].firstMatch), tap(app.buttons["Settings"]) {
       shot("14-settings")
       if tap(app.buttons["Playback"]) {
@@ -197,6 +213,23 @@ final class ScreenTour: XCTestCase {
         back()
       }
       if tap(app.buttons["Appearance"]) { shot("15-appearance") }
+    }
+
+    // A playlist of your own with nothing in it yet, and what deleting it asks.
+    if tap(tab("Library")) {
+      tap(tab("Library"), timeout: 1)
+      let name = app.textFields["playlist.name"]
+      if tap(app.buttons["library.newPlaylist"], timeout: 2), name.waitForExistence(timeout: 3) {
+        name.typeText("Road trip")
+        if tap(app.buttons["playlist.create"]) {
+          shot("19c-playlist-empty")
+          if tap(app.buttons["Playlist actions"], timeout: 2), tap(app.buttons["Delete playlist"], timeout: 2) {
+            shot("19d-delete-question", after: 1)
+            // A phone shows the question as a popover without Cancel: a tap beside it puts it away.
+            if !tap(app.buttons["Cancel"].firstMatch, timeout: 1) { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap() }
+          }
+        }
+      }
     }
 
     // Last: the search field takes the tab bar's place while it's active. On the iPhone Duo's cover screen, where the
@@ -209,6 +242,24 @@ final class ScreenTour: XCTestCase {
         field.typeText("mass")
       }
       shot("13-search")
+      // Nothing in the library: what to try, and New search.
+      if field.exists, field.isHittable {
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4) + "zzzz")
+        shot("13b-search-nothing")
+      }
+    }
+  }
+
+  /// A page that couldn't load (`-UITestsOffline`): Home's, and a page's with Back home.
+  @MainActor
+  func testAPageThatCouldntLoad() throws {
+    try XCTSkipIf(onIPad, "The iPad has its own tour")
+    launch(["-UITests", "-UITestsDemo", "-UITestsOffline"])
+    _ = app.staticTexts["The needle skipped."].waitForExistence(timeout: 10)
+    shot("24-error-home")
+    if tap(tab("Library")), tap(button(beginningWith: "Albums")) {
+      _ = app.staticTexts["The needle skipped."].waitForExistence(timeout: 10)
+      shot("25-error-page")
     }
   }
 

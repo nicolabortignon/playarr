@@ -17,7 +17,14 @@ import Testing
     var broken = Samples.folder()
     broken.error = "Folder not found"
     #expect(SourceText.status(broken) == ("Folder not found", .error))
-    #expect(SourceText.removeTitle(Samples.lidarr()) == "Remove “Lidarr”?")
+    #expect(
+      SourceText.removeQuestion(Samples.lidarr())
+        == LossQuestion(
+          title: "Remove “Lidarr”?",
+          message:
+            "Its 1200 songs leave your library; playlists and Favorites keep them in their place, grayed out. The files themselves aren’t touched, and adding the source again brings them back.",
+          verb: "Remove"))
+    #expect(SourceText.removeQuestion(Samples.folder()).message.hasPrefix("Its song leaves your library;"))
   }
 
   @Test func summarisesAlbumsAndMatchesLikeTheWeb() throws {

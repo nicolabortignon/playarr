@@ -1,7 +1,7 @@
 import PlayarrAPI
 import SwiftUI
 
-/// A mix on Home: its cover (a wash of its colour, its album covers as circles, "Made for you" and its title), then a
+/// A mix on Home: its cover (a wash of its color, its album covers as circles, "Made for you" and its title), then a
 /// line about it (apps/web/src/components/Mixes.tsx).
 struct MixCard: View {
   let mix: MixSummary

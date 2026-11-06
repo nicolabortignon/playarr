@@ -29,7 +29,7 @@ struct WelcomeView: View {
                 TextField("Server address", text: $model.address, prompt: Text("https://music.example.com"))
                     .playarrAddressField()
                     .onSubmit(connect)
-                Button("Connect", action: connect)
+                Button(model.busy ? "Connecting…" : "Connect", action: connect)
                     .disabled(model.busy || model.address.trimmingCharacters(in: .whitespaces).isEmpty)
             } header: {
                 Text("Or type its address")

@@ -3,7 +3,7 @@ import Observation
 import PlayarrAPI
 
 /// "Songs like these" under your own playlist: ListenBrainz neighbours, split into songs you have (Add) and songs you
-/// don't (phase 8's Request button). New mix asks for another set (apps/web/src/components/PlaylistRecommendations.tsx).
+/// don't (phase 8's Request button). Other suggestions asks for another set (apps/web/src/components/PlaylistRecommendations.tsx).
 @MainActor @Observable
 final class RecommendationsModel {
   static let missingPreview = 8

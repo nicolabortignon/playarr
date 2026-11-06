@@ -92,6 +92,16 @@ final class SearchModel {
     return results.artists.isEmpty && results.albums.isEmpty && results.tracks.isEmpty && playlistHits.isEmpty
   }
 
+  /// What an empty search says (docs/design.md, The lines): with Lidarr's search still to come, or with results, that
+  /// what's out there follows; with nothing beyond the library either (or no way to look), what to try and New search.
+  static func notFound(_ query: String, asksBeyond: Bool, beyond: DiscoverSearchModel?) -> (line: PageLines.Line, offersNewSearch: Bool) {
+    guard asksBeyond, let beyond else { return (PageLines.search(query), true) }
+    let settled = beyond.answered == query && !beyond.fetching
+    if settled, beyond.results == nil, beyond.error != nil { return (PageLines.search(query), true) }
+    if settled, beyond.nothing { return (PageLines.search(query, nothingAnywhere: true), true) }
+    return (PageLines.search(query, beyond: true), false)
+  }
+
   /// "Try an artist": those with the most music.
   var suggestions: [Artist] {
     let all = artists.value ?? []

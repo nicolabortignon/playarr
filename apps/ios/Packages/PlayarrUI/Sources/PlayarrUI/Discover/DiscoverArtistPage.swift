@@ -48,29 +48,21 @@ private struct DiscographyView: View {
               }
             }
             if let failure = artist.discographyError {
-              VStack(alignment: .leading, spacing: 8) {
-                Text("Couldn’t load the discography from MusicBrainz right now.").font(.sans(.subheadline)).foregroundStyle(.secondary)
-                Text(failure).font(.mono(.caption)).foregroundStyle(.secondary)
-                TryAgainButton(busy: model.loading) { Task { await model.load(again: true) } }
-              }
-              .padding(.horizontal, 20)
+              InlineError("Couldn’t load the discography from MusicBrainz", reason: failure) { await model.load(again: true) }
+                .padding(.horizontal, 20)
             } else if let empty = discography.empty {
               Text(empty).foregroundStyle(.secondary).padding(.horizontal, 20)
             }
             SimilarArtistsSection(mbid: artist.mbid)
             if let overview = artist.overview { about(overview, genres: artist.genres) }
           } else if let error = model.error {
-            VStack(alignment: .leading, spacing: 12) {
-              Text(error).foregroundStyle(.secondary)
-              TryAgainButton(busy: model.loading) { Task { await model.load(again: true) } }
-            }
-            .padding(.horizontal, 20)
+            ErrorState(message: error) { await model.load(again: true) }
           } else {
             VStack(alignment: .leading, spacing: 16) {
-              Skeleton(aspectRatio: nil, height: 14).frame(width: 160)
-              Skeleton(aspectRatio: nil, height: 48).frame(width: 280)
+              TextBar(role: .kicker, fraction: 0.3)
+              TextBar(role: .pageTitle, fraction: 0.7)
               SlowLookup(what: "this artist’s albums")
-              LazyVGrid(columns: columns, spacing: 16) { ForEach(0..<8, id: \.self) { _ in Skeleton() } }
+              LazyVGrid(columns: columns, spacing: 24) { CardSkeletons(count: 8) }
             }
             .padding(.horizontal, 20)
           }

@@ -41,4 +41,24 @@ struct OfflineWordingTests {
     #expect(OfflineWording.downloadsLine(count: 3, bytes: 1536 * mb)?.rest == " (1.5 GB), kept until you remove them.")
     #expect(OfflineWording.downloadsLine(count: 0, bytes: 0) == nil)
   }
+
+  @Test func removeAllNamesWhatLeavesThisDeviceAndWhatDoesnt() {
+    let gb = OfflineLimit.gigabyte
+    #expect(
+      OfflineWording.removeAllQuestion(songs: 62, downloads: 2, downloadBytes: gb, saved: 40, savedBytes: 310 * mb)
+        == LossQuestion(
+          title: "Remove 62 songs from this device?",
+          message:
+            "2 downloads (1 GB) and 40 songs saved as you listened (310 MB) leave this device. Nothing leaves your library: anything can be downloaded again.",
+          verb: "Remove all"))
+    #expect(OfflineWording.removeAllQuestion(songs: 1, downloads: 0, downloadBytes: 0, saved: 1, savedBytes: 9 * mb).title == "Remove 1 song from this device?")
+    #expect(OfflineWording.whatGoes(downloads: 1, downloadBytes: 484 * mb, saved: 0, savedBytes: 0) == "1 download (484 MB) leaves this device.")
+    #expect(OfflineWording.whatGoes(downloads: 0, downloadBytes: 0, saved: 1, savedBytes: 9 * mb) == "1 song saved as you listened (9 MB) leaves this device.")
+    #expect(OfflineWording.whatGoes(downloads: 0, downloadBytes: 0, saved: 3, savedBytes: 30 * mb) == "3 songs saved as you listened (30 MB) leave this device.")
+  }
+
+  @Test func sayingADownloadStartsOrGoesQuotesItsTitle() {
+    #expect(OfflineWording.started("Mezzanine") == "Downloading “Mezzanine”")
+    #expect(OfflineWording.removed("Mezzanine") == "Removed “Mezzanine” from this device")
+  }
 }

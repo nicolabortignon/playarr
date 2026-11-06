@@ -5,8 +5,6 @@ import SwiftUI
 /// Home (apps/web/src/pages/Home.tsx), every section in the web's order.
 struct HomeView: View {
   @State private var model: HomeModel
-  /// Feeling lucky is picking its songs.
-  @State private var picking = false
   @Environment(Theme.self) private var theme
   @Environment(AccountSession.self) private var session
   @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -39,7 +37,10 @@ struct HomeView: View {
     .refreshable { await model.refresh() }
     .overlay {
       if let failure = model.failure {
-        ErrorState(message: failure) { await model.refresh() }.background(.background)
+        // Over the whole page: none of it could load.
+        ErrorState(message: failure, home: false) { await model.refresh() }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(.background)
       }
     }
   }
@@ -65,26 +66,8 @@ struct HomeView: View {
       // Side by side on one line: a long song title is cut short rather than pushing Resume onto the next. At the
       // accessibility sizes, one above the other.
       AdaptiveStack(spacing: 12) {
-        Button {
-          Task {
-            picking = true
-            await model.feelingLucky()
-            picking = false
-          }
-        } label: {
-          // The sparkles twinkle in turn while the songs are picked.
-          Label {
-            Text("Feeling lucky")
-          } icon: {
-            Twinkle(on: picking)
-          }
-        }
-        .buttonStyle(.pill(.primary, size: .large))
-        .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: false)
-        .disabled(picking)
-        .accessibilityLabel("Feeling lucky")
-        .accessibilityHint("Plays 15 songs picked for this hour, new every time")
-        .sensoryFeedback(.success, trigger: picking) { wasPicking, nowPicking in wasPicking && !nowPicking }
+        FeelingLuckyButton()
+          .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: false)
         if let track = model.listening { ListeningButton(track: track, playing: model.isPlaying, player: session.player) { model.togglePlay() } }
       }
     }
@@ -99,12 +82,12 @@ struct HomeView: View {
 
   private var mixes: some View {
     VStack(alignment: .leading, spacing: 0) {
-      SectionHeader(title: "Your mixes", kicker: "Made for you", seeAll: .mixes)
+      SectionHeader(title: "Made for you", kicker: "Your mixes", seeAll: .mixes)
       Shelf {
         if let mixes = session.mixes.mixes {
           ForEach(mixes, id: \.key) { MixCard(mix: $0) }
         } else {
-          ForEach(0..<5, id: \.self) { _ in Skeleton().frame(width: ShelfCard.width) }
+          CardSkeletons(count: 5, width: ShelfCard.width)
         }
       }
     }
@@ -156,7 +139,7 @@ struct HomeView: View {
         if let albums {
           ForEach(albums) { AlbumCard(album: $0, width: ShelfCard.width) }
         } else {
-          ForEach(0..<6, id: \.self) { _ in Skeleton().frame(width: ShelfCard.width) }
+          CardSkeletons(count: 6, width: ShelfCard.width)
         }
       }
     }

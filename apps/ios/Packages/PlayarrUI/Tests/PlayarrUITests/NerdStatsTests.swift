@@ -66,7 +66,7 @@ struct NerdStatsTests {
     #expect(row(groups, "Song", "Ids") == "track 7 · file 9000")
     #expect(row(groups, "Playback", "Position") == "0:18.2 / 6:19.5 · playing")
     #expect(row(groups, "Playback", "Buffer") == "10.0 s ahead")
-    #expect(row(groups, "Playback", "Stream") == "its own file, levelled on this device at −6.0 dB")
+    #expect(row(groups, "Playback", "Stream") == "its own file, leveled on this device at −6.0 dB")
     #expect(row(groups, "Playback", "Deck A") == "Angel · placed at 0:00.0 · 12.3 s decoded, 2.5 s scheduled · −6.0 dB")
     #expect(row(groups, "Playback", "Transitions") == "DJ mix · party")
     #expect(row(groups, "Playback", "Mix in") == "Angel → Teardrop · made on the server · at A’s 3:27.5, sample 154350 · scheduled 2.6 s ahead")

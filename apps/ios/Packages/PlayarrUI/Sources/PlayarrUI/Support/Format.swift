@@ -21,7 +21,7 @@ public enum Format {
     return m > 0 ? "\(h) hr \(m) min" : "\(h) hr"
   }
 
-  /// "1 track", "12 tracks".
+  /// "1 song", "12 songs".
   public static func plural(_ n: Int, _ word: String, _ pluralWord: String? = nil) -> String {
     "\(n) \(n == 1 ? word : pluralWord ?? "\(word)s")"
   }
@@ -34,17 +34,47 @@ public enum Format {
   /// JavaScript's Math.round: halves go up (Swift's `rounded()` takes -2.5 to -3, JavaScript to -2).
   public static func jsRound(_ value: Double) -> Double { (value + 0.5).rounded(.down) }
 
-  /// "FLAC 24/88.2", "MP3 320", "AAC".
-  public static func badge(_ format: AudioFormat?) -> String? {
+  /// Lossy at this bitrate or more sounds as good as lossy gets: its badge leaves the bitrate out.
+  static let ordinaryKbps: Double = 256
+
+  /// What a format badge says (docs/design.md, Words): the codec, and the detail only when it's out of the ordinary.
+  /// "MP3" (256 kbps or more), "MP3" with "128 kbps"; "FLAC" (CD quality: 16-bit at 44.1 or 48 kHz), "FLAC" with
+  /// "24/96" (`formatBadge` in apps/web/src/lib/format.ts). `details(_:)` has the rest.
+  public static func badgeParts(_ format: AudioFormat?) -> (codec: String, detail: String?)? {
     guard let format else { return nil }
     if format.lossless {
-      guard let bits = format.bits, let rate = format.sampleRate else { return format.codec }
+      // CD quality is ordinary; more is Hi-Res, and less is worth knowing too.
+      let ordinary = format.bits == 16 && (format.sampleRate == 44_100 || format.sampleRate == 48_000)
+      guard !ordinary, let bits = format.bits, let rate = format.sampleRate, rate > 0 else { return (format.codec, nil) }
       let khz = Double(rate) / 1000
       let spec = khz == khz.rounded() ? String(Int(khz)) : String(format: "%.1f", khz)
-      return "\(format.codec) \(bits)/\(spec)"
+      return (format.codec, "\(bits)/\(spec)")
     }
-    guard let bitrate = format.bitrate else { return format.codec }
-    return "\(format.codec) \(Int(bitrate))"
+    guard let bitrate = format.bitrate, bitrate > 0, bitrate < ordinaryKbps else { return (format.codec, nil) }
+    return (format.codec, "\(Int(jsRound(bitrate))) kbps")
+  }
+
+  /// A badge's words on one line: "MP3 · 128 kbps", "FLAC · 24/96", "FLAC" (`badgeText`).
+  public static func badge(_ format: AudioFormat?) -> String? {
+    badgeParts(format).map { parts in parts.detail.map { "\(parts.codec) · \($0)" } ?? parts.codec }
+  }
+
+  /// Everything about a format, for a badge's accessibility value and Show metadata: "FLAC · 24-bit / 96 kHz · stereo ·
+  /// Hi-Res lossless" (`formatDetails`).
+  public static func details(_ format: AudioFormat) -> String {
+    var parts = [format.codec]
+    let depth = [format.bits.map { "\($0)-bit" }, format.sampleRate.map { "\(kilohertz($0)) kHz" }].compactMap(\.self)
+    if !depth.isEmpty { parts.append(depth.joined(separator: " / ")) }
+    if let bitrate = format.bitrate, bitrate > 0 { parts.append("\(Int(jsRound(bitrate))) kbps") }
+    if let channels = format.channels { parts.append(channels == 1 ? "mono" : channels == 2 ? "stereo" : "\(channels) ch") }
+    parts.append(isHiRes(format) ? "Hi-Res lossless" : format.lossless ? "lossless" : "lossy")
+    return parts.joined(separator: " · ")
+  }
+
+  /// 44100 → "44.1", 96000 → "96", as JavaScript writes the division.
+  private static func kilohertz(_ rate: Int) -> String {
+    let khz = Double(rate) / 1000
+    return khz == khz.rounded() ? String(Int(khz)) : String(khz)
   }
 
   /// More than CD quality (16-bit/44.1 kHz).

@@ -178,7 +178,32 @@ import Testing
     #expect(model.playState == .playing)
   }
 
+  @Test func stoppingSharingOffersUndoWhichSharesItAgain() async throws {
+    let (model, session) = await model(Listening.playlist(items: three, shared: true))
+    api.on(.patch, "/api/playlists/5", Listening.playlist(items: three, shared: false))
+    await model.setShared(false)
+    #expect(model.sharing == nil)
+    let toast = try #require(session.toasts.toasts.first)
+    #expect(toast.message == "Stopped sharing “Road trip”")
+    #expect(toast.action?.label == "Undo")
+    api.on(.patch, "/api/playlists/5", Listening.playlist(items: three, shared: true))
+    session.toasts.perform(toast)
+    await eventually { model.sharing != nil }
+    #expect(model.sharing == "Shared with everyone")
+    #expect(api.bodies(.patch, "/api/playlists/5") == [#"{"shared":false}"#, #"{"shared":true}"#])
+  }
+
+  @Test func sharingNeedsNoUndo() async {
+    let (model, session) = await model(Listening.playlist(items: three))
+    api.on(.patch, "/api/playlists/5", Listening.playlist(items: three, shared: true))
+    await model.setShared(true)
+    #expect(session.toasts.toasts.isEmpty)
+  }
+
   @Test func askingToDeleteSaysWhatGoesAndWhatStays() {
+    #expect(
+      PlaylistView.deleteQuestion(Listening.playlist(items: three), songs: 3)
+        == LossQuestion(title: "Delete “Road trip”?", message: "The playlist goes for good. Its 3 songs stay in your library.", verb: "Delete"))
     #expect(PlaylistView.deleteMessage(shared: false, songs: 2) == "The playlist goes for good. Its 2 songs stay in your library.")
     #expect(PlaylistView.deleteMessage(shared: false, songs: 1) == "The playlist goes for good. Its song stays in your library.")
     #expect(

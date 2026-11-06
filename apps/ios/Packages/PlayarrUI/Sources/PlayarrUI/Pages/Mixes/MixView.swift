@@ -31,7 +31,9 @@ struct MixView: View {
       } else if let error = model.error {
         ErrorState(message: error) { await model.load() }
       } else {
-        ProgressView()
+        ScrollView {
+          DetailSkeleton().padding(.horizontal, 20).padding(.top, 12)
+        }
       }
     }
     .titleInBar(model.mix?.title ?? "")

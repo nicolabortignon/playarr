@@ -30,9 +30,8 @@ public struct NotInLibrarySection: View {
     if failed || artist?.discographyError != nil {
       VStack(alignment: .leading, spacing: 0) {
         SectionHeader(title: "Not in your library")
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Couldn’t load the rest of this artist’s albums from MusicBrainz right now.").font(.sans(.footnote)).foregroundStyle(.secondary)
-          TryAgainButton(busy: loading) { context?.invalidate([.discoverArtist]) }
+        InlineError("Couldn’t load the rest of this artist’s albums from MusicBrainz", reason: artist?.discographyError) {
+          context?.invalidate([.discoverArtist])
         }
         .padding(.horizontal, 20)
       }
@@ -52,7 +51,7 @@ public struct NotInLibrarySection: View {
       VStack(alignment: .leading, spacing: 0) {
         SectionHeader(title: "Not in your library")
         VStack(alignment: .leading, spacing: 12) {
-          LazyVGrid(columns: columns, spacing: 16) { ForEach(0..<4, id: \.self) { _ in Skeleton() } }
+          LazyVGrid(columns: columns, spacing: 24) { CardSkeletons(count: 4) }
           SlowLookup(what: "the rest of this artist’s albums")
         }
         .padding(.horizontal, 20)

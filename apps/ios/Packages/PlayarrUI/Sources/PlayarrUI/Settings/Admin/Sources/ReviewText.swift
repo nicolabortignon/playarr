@@ -41,7 +41,7 @@ enum ReviewText {
       c.labels?.first(where: { $0.name != nil })?.name,
       c.format,
       c.type,
-      AdminText.plural(c.tracks.count, "track"),
+      AdminText.plural(c.tracks.count, "song"),
       c.status != nil && c.status != "Official" ? c.status : nil,
     ].compactMap { $0 }.joined(separator: " · ")
   }
@@ -68,7 +68,7 @@ enum ReviewText {
       ("Format", c.format),
       ("Type", c.type),
       ("Status", c.status),
-      ("Tracks", String(c.tracks.count)),
+      ("Songs", String(c.tracks.count)),
       ("Barcode", c.barcode),
     ]
     return rows.filter { $0.1 != nil || (!c.detailed && detailRows.contains($0.0)) }.map { (label: $0.0, value: $0.1) }

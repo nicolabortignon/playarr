@@ -71,6 +71,16 @@ import Testing
     #expect(mixesChanged == 1)
   }
 
+  @Test func asksBeforeClearingTheHistorySayingWhatGoesAndWhatStays() {
+    #expect(
+      MixSettingsModel.clearQuestion(plays: 1234)
+        == LossQuestion(
+          title: "Clear listening history?",
+          message: "All 1234 songs played are forgotten for good, and the mixes start learning again from scratch. Favorites and playlists stay.",
+          verb: "Clear history"))
+    #expect(MixSettingsModel.clearQuestion(plays: 1).message.hasPrefix("Every song played is forgotten for good"))
+  }
+
   @Test func connectsListenBrainzAndSaysWhatIsSent() async {
     let lb = ListenBrainzModel(api: api)
     api.on(.get, "/api/settings/listenbrainz", ListenBrainzInfo(connected: false, enabled: false, pending: 0, sent: 0, earlier: 0))

@@ -15,10 +15,10 @@ struct OrganizeView: View {
       content
         .navigationTitle("Organize files")
         .toolbar {
-          ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+          ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } }
           if let plan = model.plan, plan.writable, plan.reason == nil, !plan.moves.isEmpty {
             ToolbarItem(placement: .confirmationAction) {
-              Button(model.applyLabel) { Task { await model.apply() } }.disabled(!model.canApply)
+              Button(model.applyLabel, systemImage: "checkmark", role: .confirm) { Task { await model.apply() } }.disabled(!model.canApply)
             }
           }
         }

@@ -4,7 +4,7 @@ import Testing
 
 @Suite struct AdminPanelTests {
   @Test func showsAdminsEveryServerPanelInTheWebsOrder() {
-    #expect(SettingsPanel.server(for: .admin).map(\.title) == ["Sources", "Accounts", "Mixes", "Analysis", "Requests", "Updates"])
+    #expect(SettingsPanel.server(for: .admin).map(\.title) == ["Sources", "Accounts", "Made for you", "Analysis", "Requests", "Updates"])
   }
 
   @Test func showsMembersOnlyTheirOwnBits() {

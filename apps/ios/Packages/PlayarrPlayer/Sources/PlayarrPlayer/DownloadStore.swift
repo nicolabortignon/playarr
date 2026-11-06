@@ -30,6 +30,9 @@ public final class DownloadStore {
   static let reserve: Int64 = 256 * OfflineLimit.megabyte
 
   public private(set) var manifest: OfflineManifest
+  /// The songs of every download, kept or not yet: what the "on this device" mark goes by (`isDownloaded`). Worked
+  /// out again whenever a download's songs change (`pinsChanged()`).
+  @ObservationIgnored private var pinnedFileIds: Set<Int> = []
   /// The song downloading for a download, for progress rings.
   public private(set) var active: Active?
   /// Songs that didn't download this session, and why: tried again when the network comes back or space is freed.
@@ -96,6 +99,7 @@ public final class DownloadStore {
     saved = JSONFile(folder.manifest)
     manifest = saved.read() ?? OfflineManifest()
     reconcile()
+    pinsChanged()
     transport.setHandler { [weak self] event in Task { @MainActor in self?.handle(event) } }
     watchers.append(
       Task { [weak self, cache] in
@@ -127,6 +131,10 @@ public final class DownloadStore {
   public func failedCount(of key: String) -> Int { manifest.pins[key]?.tracks.filter { failed[$0.fileId] != nil }.count ?? 0 }
   /// The song's whole file is on this device (kept or downloaded): it plays with no connection.
   public func isKept(_ fileId: Int) -> Bool { manifest.songs[fileId] != nil }
+  /// The song is on this device because the listener downloaded it (with an album, a playlist, a mix or Favorites):
+  /// what the "on this device" mark means (docs/design.md, "Rows, menus and toasts"). Songs only kept ahead as you
+  /// listen aren't: nobody can count on them staying.
+  public func isDownloaded(_ fileId: Int) -> Bool { manifest.songs[fileId] != nil && pinnedFileIds.contains(fileId) }
   /// Songs kept as you listen: what Settings → Playback counts against the limit.
   public var keptAsYouListen: (count: Int, bytes: Int64) {
     let rest = OfflineRules.unpinned(manifest.songs, pins: manifest.pins)
@@ -209,6 +217,7 @@ public final class DownloadStore {
     manifest.pins[key] = PinnedDownload(
       key: key, title: title, subtitle: subtitle, coverUrl: coverUrl, href: href, tracks: songs, addedAt: before?.addedAt ?? now(),
       transitions: before?.transitions.filter { pairs.contains($0.key) } ?? [:], levels: before?.levels ?? [:])
+    pinsChanged()
     save()
     dropUnwantedTransitionFiles()
     // Songs come before transitions.
@@ -221,6 +230,7 @@ public final class DownloadStore {
   /// use to downloads, so they go unless another one has them too.
   public func remove(_ key: String) {
     guard manifest.pins.removeValue(forKey: key) != nil else { return }
+    pinsChanged()
     save()
     let pinned = OfflineRules.pinnedSongs(manifest.pins)
     for (id, fileId) in songJobs where !pinned.contains(fileId) { stop(id) }
@@ -230,12 +240,23 @@ public final class DownloadStore {
     retry()
   }
 
+  /// Put back a download just removed (its Undo): as it was, in its place in the list. Songs that made room for others
+  /// meanwhile, and transitions no other download kept, download again (`restoreDownload` in apps/web).
+  public func restore(_ download: PinnedDownload) {
+    manifest.pins[download.key] = download
+    pinsChanged()
+    save()
+    Task { await refreshLevels() }
+    pump()
+  }
+
   /// Remove everything from this device, downloads included.
   public func removeAll() {
     for id in songJobs.keys { stop(id) }
     stopTransitionWork()
     let ids = Set(manifest.songs.keys).union(folder.songFiles().keys)
     manifest = OfflineManifest()
+    pinsChanged()
     save()
     active = nil
     failed = [:]
@@ -668,6 +689,9 @@ public final class DownloadStore {
   }
 
   private func save() { saved.write(manifest) }
+
+  /// A download was added, changed its songs, or went: the songs the "on this device" mark goes by follow.
+  private func pinsChanged() { pinnedFileIds = OfflineRules.pinnedSongs(manifest.pins) }
 
   private func resumeURL(_ id: String) -> URL { folder.resume.appending(path: id.replacingOccurrences(of: "/", with: "_")) }
   private func resumeData(_ id: String) -> Data? { try? Data(contentsOf: resumeURL(id)) }

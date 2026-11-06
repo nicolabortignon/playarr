@@ -32,7 +32,7 @@ struct PlaybackPanel: View {
         Section {
           Toggle(isOn: $settings.levelVolume) {
             Text("Even out the volume")
-            Text("Every song plays as loud as the next (−14 LUFS, as streaming services do): loud ones turned down, quiet ones up as far as they can go. An album played in order keeps its own quiet and loud songs. Songs are levelled once Settings → Analysis has measured their loudness.")
+            Text("Every song plays as loud as the next (−14 LUFS, as streaming services do): loud ones turned down, quiet ones up as far as they can go. An album played in order keeps its own quiet and loud songs. Songs are leveled once Settings → Analysis has measured their loudness.")
           }
           Picker("Transitions", selection: Binding(get: { settings.transitions }, set: { panel.choose($0) })) {
             Text("Off").tag(PlaybackSettings.Transitions.off)

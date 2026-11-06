@@ -16,7 +16,7 @@ public struct TrackMetadataSheet: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 28) {
           if let error = model.error, model.metadata == nil {
-            Text("Couldn’t load this song’s metadata: \(error)").foregroundStyle(.danger)
+            InlineError("Couldn’t load this song’s metadata", reason: error) { await model.load() }
           } else if let m = model.metadata {
             content(m)
           } else {
@@ -32,7 +32,7 @@ public struct TrackMetadataSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
       .navigationTitle("Song metadata")
-      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+      .toolbar { ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } } }
     }
     .task(id: model.trackId) { await model.load() }
   }

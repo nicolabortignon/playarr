@@ -57,7 +57,9 @@
         },
         "size": 40000000,
         "streamUrl": "/stream/9000",
-        "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
+        "coverUrl": "/art/album/70/cover?v=1",
+        "coverColor": "#2a4b8d",
+        "coverAccent": "#527bcb"
       }
     },
     {
@@ -89,7 +91,9 @@
         },
         "size": 30000000,
         "streamUrl": "/stream/9001",
-        "coverUrl": "/art/remote?url=https%3A%2F%2Fimages.lidarr.audio%2Fcache%2Fhttps%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Frg-1%2Ffront-500"
+        "coverUrl": "/art/album/70/cover?v=1",
+        "coverColor": "#2a4b8d",
+        "coverAccent": "#527bcb"
       }
     }
   ]

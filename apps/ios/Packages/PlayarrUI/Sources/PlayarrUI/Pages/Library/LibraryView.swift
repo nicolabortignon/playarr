@@ -42,6 +42,13 @@ struct LibraryView: View {
           }
         }
         .accessibilityIdentifier("library.newPlaylist")
+        if session.playlists.playlists == nil {
+          if let error = session.playlists.error {
+            InlineError("Couldn’t load your playlists", reason: error) { await session.playlists.load() }
+          } else {
+            ListRowsSkeleton(count: 3)
+          }
+        }
         if let playlists = session.playlists.playlists {
           ForEach(playlists) { playlist in
             NavigationLink(value: Route.playlist(playlist.id)) {

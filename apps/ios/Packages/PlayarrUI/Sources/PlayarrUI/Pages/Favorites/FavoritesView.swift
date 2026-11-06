@@ -24,7 +24,7 @@ struct FavoritesView: View {
         }
         if let list = favorites.tracks {
           if list.isEmpty {
-            empty
+            ListeningEmptyState(systemImage: "heart", line: PageLines.favorites)
           } else {
             LazyVStack(spacing: 0) {
               ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
@@ -35,7 +35,7 @@ struct FavoritesView: View {
         } else if let error = favorites.error {
           ErrorState(message: error) { await favorites.load() }
         } else {
-          LazyVStack(spacing: 12) { ForEach(0..<6, id: \.self) { _ in Skeleton(aspectRatio: nil, height: 56) } }
+          SongRowsSkeleton()
         }
       }
       .padding(.horizontal, 20)
@@ -63,16 +63,6 @@ struct FavoritesView: View {
     ) {
       MenuButtons(groups: [PlayableMenu.queueItems(.tracks(tracks), session: session)])
     }
-  }
-
-  private var empty: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Nothing hearted yet.").font(.display(.title))
-      Text("Tap the heart next to any song: in an album, the queue, the player or Now Playing. It shows up here, on every device.")
-        .foregroundStyle(.secondary)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.top, 24)
   }
 }
 

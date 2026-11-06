@@ -17,10 +17,6 @@ final class StatsModel {
     Period(range: "year", label: "12 months"), Period(range: "all", label: "All time"),
   ]
 
-  /// Shown when nothing was played in the period.
-  static let nothingPlayed =
-    "Nothing played in this period yet. Songs count once heard for 30 seconds, from every device that counts its plays (Settings → Playback)."
-
   private(set) var range: StatsRange
   private(set) var stats: ListeningStats?
   private(set) var error: String?

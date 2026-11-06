@@ -2,11 +2,14 @@ import PlayarrAPI
 import SwiftUI
 
 /// An album in a grid or shelf: its cover, title (in the accent color while it plays), artist, year, and "3 of 11"
-/// when songs are missing (apps/web/src/components/Cards.tsx). A long press opens the album's menu, Play and Shuffle
-/// first (`PlayableMenu.album`).
+/// when songs are missing (apps/web/src/components/Cards.tsx). On the artist's own page their name says nothing, so
+/// it says what the album is instead ("EP · 2019"). A long press opens the album's menu, Play and Shuffle first
+/// (`PlayableMenu.album`).
 struct AlbumCard: View {
   let album: Album
   var width: CGFloat?
+  /// On the artist's own page: the release's kind in place of their name.
+  var onArtistPage = false
 
   @Environment(AccountSession.self) private var session
   @Environment(Theme.self) private var theme
@@ -32,9 +35,11 @@ struct AlbumCard: View {
     .prefetch { session.prefetchAlbum(album.id, cover: album.coverUrl) }
   }
 
-  /// "Massive Attack · 1998 · 3 of 11".
-  var subtitle: String {
-    var parts = [album.artistName]
+  /// "Massive Attack · 1998 · 3 of 11", or on the artist's page "Album · 1998 · 3 of 11".
+  var subtitle: String { Self.subtitle(album, onArtistPage: onArtistPage) }
+
+  static func subtitle(_ album: Album, onArtistPage: Bool) -> String {
+    var parts = [onArtistPage ? Format.releaseKind(album.albumType, album.secondaryTypes) : album.artistName]
     if let year = album.year { parts.append(String(year)) }
     if album.trackCount < album.totalTrackCount { parts.append("\(album.trackCount) of \(album.totalTrackCount)") }
     return parts.joined(separator: " · ")

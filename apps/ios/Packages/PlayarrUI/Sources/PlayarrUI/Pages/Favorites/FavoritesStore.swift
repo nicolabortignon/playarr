@@ -67,7 +67,7 @@ public final class FavoritesStore {
     } catch {
       inFlight -= 1
       show(previous)
-      toasts.push("Couldn't update favorites: \(error.localizedDescription)", tone: .error)
+      toasts.push("Couldn’t update Favorites: \(error.localizedDescription)", tone: .error)
     }
     if inFlight == 0 {
       changes += 1

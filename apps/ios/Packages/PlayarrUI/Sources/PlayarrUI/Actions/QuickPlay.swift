@@ -18,7 +18,7 @@ public struct QuickPlay {
     public var errorDescription: String? {
       switch self {
       case .signedOut: "Open Playarr and sign in first."
-      case .noFavorites: "Nothing hearted yet."
+      case .noFavorites: "No hearts yet."
       case .nothingPlaying: "Nothing playing."
       case .emptyLibrary: "Nothing to play yet: add some music to the library first."
       case .server(let message): message

@@ -21,6 +21,23 @@ import Testing
     #expect(!context.gate.canRequest)
   }
 
+  @Test func saysWhenHealthCouldntBeKnown() async {
+    let api = FakeAPI()
+    api.fail(.get, "/api/health", status: 502, "Bad gateway")
+    let context = context(api)
+    await context.refreshHealth()
+    #expect(context.healthFailed)
+    #expect(context.gate.hasLidarr)  // assumed, as before it answered
+    // Known once: a later failure keeps what was known.
+    api.on(.get, "/api/health", health(lidarr: false, requests: false))
+    await context.refreshHealth()
+    #expect(!context.healthFailed)
+    api.fail(.get, "/api/health", status: 502, "Bad gateway")
+    await context.refreshHealth()
+    #expect(!context.healthFailed)
+    #expect(!context.gate.hasLidarr)
+  }
+
   @Test func marksAnswersStaleHereAndInTheApp() {
     var forwarded: [CacheFamily] = []
     let context = context(FakeAPI()) { forwarded += $0 }

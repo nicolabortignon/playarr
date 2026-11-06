@@ -1,8 +1,8 @@
 import PlayarrAPI
 import SwiftUI
 
-/// Albums asked of Lidarr, with live progress (pages/Requests.tsx). Swipe a row to take it off the list (Lidarr
-/// keeps the album wanted).
+/// Albums asked of Lidarr, with live progress (pages/Requests.tsx). Swipe a row to take it off the list, with Undo
+/// (Lidarr keeps the album wanted).
 public struct RequestsPage: View {
   @Environment(DiscoverContext.self) private var context: DiscoverContext?
 
@@ -22,40 +22,71 @@ private struct RequestsList: View {
 
   var body: some View {
     List {
-      Section {
-        Text("Albums you asked Lidarr to find. Progress updates live; finished albums land in your library automatically.")
-          .font(.sans(.footnote)).foregroundStyle(.secondary)
+      // Only where there's a Lidarr to ask: without one, the empty page says why there are no requests.
+      if context.gate.hasLidarr {
+        Section {
+          Text("Albums you asked Lidarr to find. Progress updates live; finished albums land in your library automatically.")
+            .font(.sans(.footnote)).foregroundStyle(.secondary)
+        }
       }
       if let error = requests.error, requests.requests == nil {
-        Text(error).foregroundStyle(.secondary)
-      } else if let list = requests.requests {
+        ErrorState(message: error) { await requests.refresh() }
+          .listRowSeparator(.hidden)
+      } else if let list = requests.shown {
         if list.isEmpty {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("No requests yet. Search for something that isn’t in your library and hit Request.")
-            Button("Search") { session.router.search("") }.buttonStyle(.borderless)
+          if context.health == nil, !context.healthFailed {
+            // What to say depends on what the server allows: wait to know.
+            ListRowsSkeleton(count: 3, cover: 64)
+          } else {
+            empty(NoRequests.of(context.gate, admin: session.account.role == .admin))
+              .listRowSeparator(.hidden)
           }
-          .font(.sans(.footnote)).foregroundStyle(.secondary)
         }
         ForEach(list, id: \.mbid) { request in
           row(request)
             .swipeActions {
               if context.gate.canRequest {
-                Button("Remove", role: .destructive) { Task { await requests.remove(request) } }
+                Button("Remove", role: .destructive) { remove(request) }
               }
             }
             .contextMenu {
               if context.gate.canRequest {
-                Button("Remove from this list", systemImage: "xmark") { Task { await requests.remove(request) } }
+                Button("Remove from this list", systemImage: "xmark") { remove(request) }
               }
             }
         }
       } else {
-        ForEach(0..<3, id: \.self) { _ in Skeleton(aspectRatio: nil, height: 64) }
+        ListRowsSkeleton(count: 3, cover: 64)
       }
     }
-    .pageHeader("Requests", count: requests.requests.map { Format.plural($0.count, "request") })
+    .pageHeader("Requests", count: requests.shown.map { Format.plural($0.count, "request") })
     .refreshable { await requests.refresh() }
     .task { if requests.requests == nil { await requests.refresh() } }
+  }
+
+  /// Off the list at once, with Undo; the server forgets it once the Undo has gone.
+  private func remove(_ request: AlbumRequest) {
+    requests.hide(request)
+    session.toasts.undo("Removed “\(request.title)” from Requests") {
+      requests.unhide(request)
+    } done: {
+      Task { await requests.remove(request) }
+    }
+  }
+
+  /// Nothing requested: how to ask, or why asking isn't possible here and who can change that.
+  private func empty(_ state: NoRequests) -> some View {
+    EmptyState(
+      systemImage: "arrow.down.to.line", line: state.line,
+      fill: state.action.map { action in
+        .action(
+          EmptyState.Action(action.title, systemImage: action.systemImage) {
+            switch action.destination {
+            case .search: session.router.search("")
+            case .settings(let panel): session.router.open(.settingsPanel(panel))
+            }
+          })
+      })
   }
 
   @ViewBuilder private func row(_ request: AlbumRequest) -> some View {

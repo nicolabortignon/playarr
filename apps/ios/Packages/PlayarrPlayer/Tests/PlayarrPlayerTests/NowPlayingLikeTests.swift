@@ -17,9 +17,9 @@ import Testing
     #expect(like.isEnabled)
     bridge.setLiked(true)
     #expect(like.isActive)
-    #expect(like.localizedTitle == "Remove from favorites")
+    #expect(like.localizedTitle == "Remove from Favorites")
     bridge.setLiked(false)
     #expect(!like.isActive)
-    #expect(like.localizedTitle == "Add to favorites")
+    #expect(like.localizedTitle == "Add to Favorites")
   }
 }

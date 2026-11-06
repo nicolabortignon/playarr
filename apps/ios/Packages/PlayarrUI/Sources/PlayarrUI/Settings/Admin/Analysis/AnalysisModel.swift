@@ -4,7 +4,7 @@ import PlayarrAPI
 
 /// Settings → Analysis: how far each analysis (beats, sound, loudness, tags) has got over the library, a
 /// button for the songs each has left, one to do the entire collection again (after asking), and the
-/// "Analyse every song in the library" switch. Polled every 10 s while songs wait or are analysed.
+/// "Analyze every song in the library" switch. Polled every 10 s while songs wait or are analyzed.
 @MainActor @Observable
 public final class AnalysisModel {
   /// One analysis's section.
@@ -17,7 +17,7 @@ public final class AnalysisModel {
     public let of: Int
     /// Shown while not everything is done (and the analysis can run here).
     public let showsBar: Bool
-    /// "Analyse the 1,200 of 5,678 songs left", while some are left.
+    /// "Analyze the 1,200 of 5,678 songs left", while some are left.
     public let leftLabel: String?
     /// The run buttons show (the analysis can run, and there are songs).
     public let canRun: Bool
@@ -31,7 +31,7 @@ public final class AnalysisModel {
 
   public private(set) var progress: AnalysisProgress?
   public private(set) var loadError: String?
-  /// "Analyse every song in the library" (a mix setting); nil until loaded.
+  /// "Analyze every song in the library" (a mix setting); nil until loaded.
   public private(set) var analyzeLibrary: Bool?
   public private(set) var running = false
   public private(set) var notice: String?
@@ -68,7 +68,7 @@ public final class AnalysisModel {
   }
 
   public var queueText: String {
-    progress.flatMap(AnalysisText.queue) ?? "Nothing is being analysed right now."
+    progress.flatMap(AnalysisText.queue) ?? "Nothing is being analyzed right now."
   }
 
   /// The switch is on only when audio analysis is too.
@@ -110,19 +110,19 @@ public final class AnalysisModel {
         .beats, "Beat analysis",
         "Each song’s tempo, beat grid and bars, key, intro and outro, and where its sound starts and ends: what DJ mix needs to join songs on the beat, and the tempo mixes and covers go by. The heaviest analysis: up to a minute a song on a small server.",
         text: audio ? AnalysisText.beats(p) : "DJ mix needs it. \(AnalysisText.audioOff)", done: p.beats.ready, failed: p.beats.failed, of: p.songs,
-        canRun: audio, verb: "Analyse", meter: "Songs ready for DJ mix", again: "Reanalyse the entire collection",
+        canRun: audio, verb: "Analyze", meter: "Songs ready for DJ mix", again: "Reanalyze the entire collection",
         explain: "Beat analysis for every song, from scratch, at low priority. Each song mixes as it does now until its turn. On a small server this takes many hours: up to a minute a song."),
       row(
         .sound, "Sound analysis",
         "What each song feels like: its energy, brightness, bass and how busy it is. For Energy boost, Wind down, Deep focus, Vibes of the hour, radio and playlist covers.",
         text: audio ? AnalysisText.sound(p) : AnalysisText.audioOff, done: p.sound.ready, failed: p.sound.failed, of: p.songs,
-        canRun: audio, verb: "Analyse", meter: "Songs measured for their sound", again: "Reanalyse the entire collection",
+        canRun: audio, verb: "Analyze", meter: "Songs measured for their sound", again: "Reanalyze the entire collection",
         explain: "Sound analysis for every song, from scratch, at low priority. Each song keeps what it has until its turn."),
       row(
         .loudness, "Loudness analysis",
         "How loud each song sounds (EBU R128) and its peak, for Even out the volume in Settings → Playback. A second or two a song.",
         text: audio ? AnalysisText.loudness(p) : "Even volume needs it. \(AnalysisText.audioOff)", done: p.loudness.ready, failed: p.loudness.failed,
-        of: p.songs, canRun: audio, verb: "Analyse", meter: "Songs measured for their loudness", again: "Reanalyse the entire collection",
+        of: p.songs, canRun: audio, verb: "Analyze", meter: "Songs measured for their loudness", again: "Reanalyze the entire collection",
         explain: "Loudness analysis for every song, from scratch, a second or two a song. Each song keeps its level until its turn."),
       row(
         .tags, "Tag lookup",
@@ -133,7 +133,7 @@ public final class AnalysisModel {
     ]
   }
 
-  /// "Reanalyse everything" shows once there are songs.
+  /// "Reanalyze everything" shows once there are songs.
   public var offersEverything: Bool { (progress?.songs ?? 0) > 0 }
 
   private func row(
