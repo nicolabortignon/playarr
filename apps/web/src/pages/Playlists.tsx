@@ -65,7 +65,7 @@ export function PlaylistCard({ playlist: p, style, className }: { playlist: Play
           type="button"
           aria-label={`Play ${p.name}`}
           onClick={() => void playPlaylist(p.id)}
-          className="absolute right-2.5 bottom-[4.25rem] grid size-11 translate-y-2 place-items-center rounded-full bg-accent text-accent-ink opacity-0 shadow-xl shadow-black/40 transition duration-300 ease-out-expo group-hover:translate-y-0 group-hover:opacity-100 hover:scale-105 focus-visible:translate-y-0 focus-visible:opacity-100 max-md:hidden"
+          className="absolute right-2.5 bottom-[4.25rem] grid size-11 translate-y-2 place-items-center rounded-full bg-accent text-accent-ink opacity-0 shadow-xl shadow-black/40 transition duration-300 ease-out-expo group-hover:translate-y-0 group-hover:opacity-100 hover:scale-105 focus-visible:translate-y-0 focus-visible:opacity-100 pointer-coarse:hidden"
         >
           <Play className="ml-0.5 size-5 fill-current" />
         </button>

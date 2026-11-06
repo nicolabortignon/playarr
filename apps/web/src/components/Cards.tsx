@@ -58,7 +58,7 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
                 'pointer-events-auto absolute right-2.5 bottom-2.5 grid size-11 place-items-center rounded-full bg-accent text-accent-ink shadow-xl shadow-black/40 transition duration-300 ease-out-expo hover:scale-105 active:scale-95',
                 playingHere
                   ? 'translate-y-0 opacity-100'
-                  : 'translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100 max-md:hidden',
+                  : 'translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100 pointer-coarse:hidden',
               )}
             >
               {playingHere ? <Pause className="size-5 fill-current" /> : <Play className="ml-0.5 size-5 fill-current" />}

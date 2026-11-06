@@ -269,7 +269,7 @@ function PlaylistRow({
           aria-label={`Drag to reorder ${item.title}`}
           onPointerDown={(e) => controls.start(e)}
           onClick={(e) => e.stopPropagation()}
-          className="grid h-9 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing md:opacity-0 md:group-hover:opacity-100"
+          className="grid h-9 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
         >
           <GripVertical className="size-4" />
         </span>
@@ -296,7 +296,7 @@ function PlaylistRow({
         <Tempo bpm={bpm} />
         {track ? formatTime(track.duration) : ''}
       </span>
-      <div onClick={(e) => e.stopPropagation()} className="md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+      <div onClick={(e) => e.stopPropagation()} className="pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-within:opacity-100">
         <Menu
           items={[
             ...(track

@@ -100,7 +100,7 @@ function RequestRow({ request: r }: { request: AlbumRequest }) {
           aria-label={`Remove ${r.title} from this list`}
           title="Remove from this list (doesn’t change Lidarr)"
           onClick={remove}
-          className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper md:opacity-0 md:group-hover:opacity-100"
+          className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
         >
           <X className="size-4" />
         </button>

@@ -37,7 +37,7 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
         'grid shrink-0 place-items-center rounded-full transition hover:bg-paper/8',
         box,
         favorite ? 'text-accent' : 'text-muted hover:text-paper',
-        reveal && !favorite && 'md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
+        reveal && !favorite && 'pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100',
         className,
       )}
     >

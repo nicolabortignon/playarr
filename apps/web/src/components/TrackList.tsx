@@ -126,7 +126,7 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing, sourc
                 <Tempo bpm={tempos[t.recordingId]} />
                 {formatTime(t.duration)}
               </span>
-              <div onClick={(e) => e.stopPropagation()} className="opacity-100 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+              <div onClick={(e) => e.stopPropagation()} className="transition pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-within:opacity-100">
                 <SongMenu
                   track={t}
                   items={[
