@@ -1,6 +1,6 @@
 import type { Album, Track } from '@playarr/shared';
-import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
 import { reduceMotionNow } from '../lib/motion';
@@ -11,9 +11,9 @@ import { Button } from './Button';
 
 /**
  * Feeling lucky: 15 songs put together now, a new set at every press. While they're picked the sparkles twinkle, and
- * covers flick past where its words were, like a hand flipping through a crate, landing on the first song's (plan 7 §5).
- * On Home, as the action that fills an empty queue, Made for you or Your listening, and in the player bar while nothing
- * plays.
+ * covers come out from behind the button, fanning open clockwise like a hand of cards, the first song's dealt last and
+ * on top; then the others gather under it and the stack slips back behind the button (plan 7 §5). On Home, as the
+ * action that fills an empty queue, Made for you or Your listening, and in the player bar while nothing plays.
  */
 export function LuckyButton({
   variant = 'primary',
@@ -26,8 +26,8 @@ export function LuckyButton({
   className?: string;
 }) {
   const [picking, setPicking] = useState(false);
-  const [flick, setFlick] = useState<Flick | null>(null);
-  // Each press flicks afresh.
+  const [deal, setDeal] = useState<Deal | null>(null);
+  // Each press deals afresh.
   const [presses, setPresses] = useState(0);
   const press = async () => {
     // Still under Reduce Motion: the sparkles say it's picking, and the music starting says what it found.
@@ -35,68 +35,90 @@ export function LuckyButton({
     const atHand = still ? [] : coversAtHand();
     setPicking(true);
     setPresses((n) => n + 1);
-    setFlick(atHand.length ? { passing: atHand } : null);
+    // A place in the fan for each cover at hand, and one for the first song's, dealt once it's known.
+    const cards = atHand.slice(0, IN_HAND);
+    setDeal(cards.length ? { cards, spares: atHand.slice(IN_HAND), slots: cards.length + 1 } : null);
     try {
-      const covers = flickCovers(await feelingLucky());
-      if (still || !covers.length) return setFlick(null);
-      const landing = covers.at(-1)!;
-      // Without covers at hand (nothing loaded yet), a few of the songs it found flick past instead.
-      setFlick((f) => ({ passing: f?.passing ?? covers.slice(0, -1), landing }));
+      const covers = fanCovers(await feelingLucky());
+      const landing = covers.at(-1);
+      // It found nothing (and has said so): the cards out go back.
+      if (!landing) return setDeal(allDealt);
+      // Without covers at hand (nothing loaded yet), a few of the songs it found are dealt instead.
+      setDeal((d) => (d ? withLanding(d, landing) : still ? null : { cards: covers.slice(0, -1), spares: [], slots: covers.length, landing }));
     } catch (err) {
-      setFlick(null);
+      setDeal(allDealt);
       toast((err as Error).message, 'error');
     } finally {
       setPicking(false);
     }
   };
   return (
-    // While the songs are picked the sparkles say so; the button stays lit rather than dimming.
-    <Button
-      variant={variant}
-      size={size}
-      icon={<Twinkle on={picking} small={size !== 'large'} />}
-      onClick={() => void press()}
-      disabled={picking}
-      aria-busy={picking}
-      className={cn('disabled:cursor-progress disabled:opacity-100', className)}
-      labelClassName="relative"
-    >
-      {/* Faded rather than hidden while the covers flick, so it still names the button. */}
-      <span className={cn('transition-opacity duration-150', flick && 'opacity-0')}>Feeling lucky</span>
-      {flick && <CoverFlick key={presses} {...flick} small={size !== 'large'} onDone={() => setFlick(null)} />}
-    </Button>
+    // The fan sits behind the button: one stacking context for the two, the button on top.
+    <span className="relative isolate inline-flex items-center">
+      {deal && <CoverFan key={presses} {...deal} small={size !== 'large'} onDone={() => setDeal(null)} />}
+      <Button
+        variant={variant}
+        size={size}
+        icon={<Twinkle on={picking} small={size !== 'large'} />}
+        onClick={() => void press()}
+        disabled={picking}
+        aria-busy={picking}
+        // While the songs are picked the sparkles say so; the button stays lit rather than dimming.
+        className={cn('z-10 disabled:cursor-progress disabled:opacity-100', className)}
+      >
+        Feeling lucky
+      </Button>
+    </span>
   );
 }
 
-/** A cover Feeling lucky flicks past: its picture, and its color while that loads. */
-export interface FlickCover {
+/** A cover in the fan: its picture, and its color while that loads. */
+export interface FanCover {
   key: string;
   url?: string;
   color?: string;
 }
 
-/** What the button flicks through while it picks, and where it lands once it knows (the first song's cover). */
-interface Flick {
-  passing: FlickCover[];
-  landing?: FlickCover;
+/**
+ * The covers being dealt: those at hand while it picks (with spares), then the first song's once it's known, last and
+ * on top; `slots`, how many in all, so each card's place in the fan is known from the start. `done` once nothing more
+ * is coming (it found nothing, or failed), so the cards out go back.
+ */
+interface Deal {
+  cards: FanCover[];
+  spares: FanCover[];
+  slots: number;
+  landing?: FanCover;
+  done?: boolean;
 }
 
-const coverOf = (t: Pick<Track, 'coverUrl' | 'coverColor' | 'albumId'>): FlickCover => ({
+const allDealt = (deal: Deal | null): Deal | null => deal && { ...deal, done: true };
+
+/** The first song's cover joins the deal; a card at hand showing the same album gives way to a spare. */
+function withLanding(deal: Deal, landing: FanCover): Deal {
+  const twin = deal.cards.findIndex((c) => c.key === landing.key);
+  const spare = deal.spares[0];
+  if (twin < 0 || !spare) return { ...deal, landing };
+  return { ...deal, cards: deal.cards.map((c, i) => (i === twin ? spare : c)), spares: deal.spares.slice(1), landing };
+}
+
+const coverOf = (t: Pick<Track, 'coverUrl' | 'coverColor' | 'albumId'>): FanCover => ({
   key: t.coverUrl ?? `album:${t.albumId}`,
   url: t.coverUrl,
   color: t.coverColor,
 });
 
-/** How many covers at hand to flick through while it picks. */
+/** Covers at hand to look through, and how many of them are dealt before the first song's. */
 const AT_HAND = 8;
+const IN_HAND = 4;
 
 /**
- * Covers at hand to flick through while it picks: albums already loaded (Home's shelves, Albums, Jump back in, kept
- * from the last visit), shuffled; none when nothing is loaded yet.
+ * Covers at hand to deal while it picks: albums already loaded (Home's shelves, Albums, Jump back in, kept from the
+ * last visit), shuffled; none when nothing is loaded yet.
  */
-export function coversAtHand(): FlickCover[] {
+export function coversAtHand(): FanCover[] {
   const lists = [...queryClient.getQueriesData<Album[]>({ queryKey: ['albums'] }), ...queryClient.getQueriesData<Album[]>({ queryKey: ['recent-albums'] })];
-  const covers = new Map<string, FlickCover>();
+  const covers = new Map<string, FanCover>();
   for (const [, albums] of lists) {
     for (const a of Array.isArray(albums) ? albums : []) if (a.coverUrl && !covers.has(a.coverUrl)) covers.set(a.coverUrl, coverOf({ ...a, albumId: a.id }));
   }
@@ -108,59 +130,100 @@ export function coversAtHand(): FlickCover[] {
   return all.slice(0, AT_HAND);
 }
 
-/** The covers to flick past: up to three of the other songs' albums, each once, then the first song's, where it lands. */
-export function flickCovers(tracks: Track[]): FlickCover[] {
+/** The covers to deal from the songs it found: up to three of the others' albums, each once, then the first song's. */
+export function fanCovers(tracks: Track[]): FanCover[] {
   const [first, ...rest] = tracks;
   if (!first) return [];
   const landing = coverOf(first);
-  const passing: FlickCover[] = [];
+  const others: FanCover[] = [];
   for (const t of rest) {
     const c = coverOf(t);
-    if (c.key !== landing.key && !passing.some((p) => p.key === c.key)) passing.push(c);
-    if (passing.length === 3) break;
+    if (c.key !== landing.key && !others.some((o) => o.key === c.key)) others.push(c);
+    if (others.length === 3) break;
   }
-  return [...passing, landing];
+  return [...others, landing];
 }
 
-/** How long each cover shows as they flick past, how many pass at least, and how long the one it lands on stays. */
-const FLICK_MS = 140;
-const MIN_FLICKS = 3;
-const LANDED_MS = 900;
+/**
+ * The fan's timing: between one card and the next as it opens, a card's spring into its place, the fan held open once
+ * the last card is out, and its going back (the others gathering under the last card, then the stack slipping down).
+ */
+const DEAL_MS = 70;
+const OPEN_MS = 450;
+const HOLD_MS = 300;
+const BACK_MS = 460;
+/** Degrees between one card and the next; five cards open to 64. */
+const STEP = 16;
 
 /**
- * The covers flicking past in the button, each tipping forward off the front of the crate to show the next, for as long
- * as it picks (three at least), until it settles on the first song's.
+ * Covers coming out from behind the button, each dealt a little further clockwise than the one before and on top of it,
+ * the first song's last. Each turns about a point near the button's middle, so together they open like a hand of cards.
+ * Once the last is out and has been seen a moment, the others turn on under it, and the stack slips back down behind
+ * the button and is gone.
  */
-function CoverFlick({ passing, landing, small, onDone }: Flick & { small: boolean; onDone: () => void }) {
-  const [step, setStep] = useState(0);
-  const others = landing ? passing.filter((c) => c.key !== landing.key) : passing;
-  const landed = !!landing && step >= Math.min(MIN_FLICKS, others.length);
+function CoverFan({ cards, slots, landing, done, small, onDone }: Deal & { small: boolean; onDone: () => void }) {
+  const all = landing ? [...cards, landing] : cards;
+  const last = all.length - 1;
+  const started = useRef(Date.now());
+  // When each card joined the fan (ms from the press): the first song's may come after its turn has passed.
+  const joined = useRef<number[]>([]);
+  all.forEach((_, i) => (joined.current[i] ??= Date.now() - started.current));
+  const delay = (i: number) => Math.max(0, i * DEAL_MS - joined.current[i]!);
+  const [back, setBack] = useState(false);
   useEffect(() => {
-    if (landing?.url) new Image().src = sized(landing.url, 64)!;
-  }, [landing?.url]);
-  useEffect(() => {
-    const id = landed ? setTimeout(onDone, LANDED_MS) : setTimeout(() => setStep((n) => n + 1), FLICK_MS);
+    if (back) {
+      const id = setTimeout(onDone, BACK_MS);
+      return () => clearTimeout(id);
+    }
+    if (!landing && !done) return;
+    // Back once the last card is open and has been seen a moment.
+    const out = joined.current[last]! + delay(last) + OPEN_MS + HOLD_MS - (Date.now() - started.current);
+    const id = setTimeout(() => setBack(true), Math.max(0, out));
     return () => clearTimeout(id);
-  }, [step, landed]);
-  const c = landed ? landing : others[step % others.length]!;
+  }, [back, landing, done]);
+  const side = small ? 44 : 60;
+  // Half the button's height (regular 40, large 48): nothing of the fan shows below its top edge, so the cards come
+  // out from behind it even where it's see-through (secondary).
+  const edge = small ? 20 : 24;
+  const angle = (i: number) => (i - (slots - 1) / 2) * STEP;
+  const up = -side * 0.95;
+  // Below the edge, out of sight.
+  const down = side / 4;
   return (
     <span
       aria-hidden
-      data-flick={landed ? 'landed' : 'flicking'}
-      className={cn('pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 perspective-near', small ? 'size-7' : 'size-8')}
+      data-fan={back ? 'back' : 'open'}
+      className="pointer-events-none absolute top-1/2 left-1/2"
+      style={{ clipPath: `inset(${-side * 4}px ${-side * 4}px ${edge}px)` }}
     >
-      <AnimatePresence initial={false}>
+      {all.map((c, i) => (
         <motion.span
-          key={landed ? 'landed' : step}
+          key={i}
           data-cover={c.key}
-          initial={{ opacity: 0.5, scale: 0.86 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ rotateX: 80, opacity: 0, transition: { duration: 0.16, ease: 'easeIn' } }}
-          transition={landed ? { type: 'spring', stiffness: 520, damping: 18 } : { duration: 0.1 }}
-          style={{ transformOrigin: '50% 100%', backgroundColor: c.color, backgroundImage: c.url ? `url(${sized(c.url, 64)})` : undefined }}
-          className="absolute inset-0 rounded-cover bg-ink-700 bg-cover bg-center shadow-cover"
+          initial={{ rotate: angle(0), y: down }}
+          animate={
+            back
+              ? { rotate: [null, angle(last), angle(last)], y: [null, up, down], scale: [null, i === last ? 1.05 : 1, 1] }
+              : { rotate: angle(i), y: up }
+          }
+          transition={
+            back
+              ? { duration: BACK_MS / 1000, times: [0, 0.5, 1], ease: ['easeInOut', 'easeIn'] }
+              : { delay: delay(i) / 1000, type: 'spring', stiffness: 380, damping: 24 }
+          }
+          style={{
+            width: side,
+            height: side,
+            left: -side / 2,
+            top: -side / 2,
+            zIndex: i,
+            transformOrigin: '50% 160%',
+            backgroundColor: c.color,
+            backgroundImage: c.url ? `url(${sized(c.url, 96)})` : undefined,
+          }}
+          className="absolute rounded-cover bg-ink-700 bg-cover bg-center shadow-cover"
         />
-      </AnimatePresence>
+      ))}
     </span>
   );
 }
