@@ -4,6 +4,8 @@ Agreed 2026-11-05 from the reviews; fourth of four (after [robustness and scale]
 
 **Goal:** someone who downloads the app without a server understands it in a minute; an invited member goes from the invite to music in under two minutes; the owner's first steps lead to music, not settings; and the household shares requests and playlists like a family, not a set of strangers.
 
+**Where it stands (2026-11-06):** not started; plans 5 to 7, on the apps' design and flows, were taken first.
+
 ## 1. The welcome screen explains itself — S–M
 
 The iOS welcome offers only "Add a server" (`SignIn/WelcomeView.swift`). Add:

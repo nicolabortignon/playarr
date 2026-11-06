@@ -1,10 +1,17 @@
 # Plan 5: One design language
 
-Proposed 2026-11-05 from a review of every screen of both apps (how, below); not agreed yet. Written with [plan 6, UX](2026-11-05-6-ux-flows.md) and [plan 7, delight](2026-11-05-7-delight.md). Sections 3 and 4 change what the App Store screenshots show, so they're worth doing before those are taken (phase 11, Task 12).
+Proposed 2026-11-05 from a review of every screen of both apps (how, below); agreed 2026-11-06 and being built (where it stands, below). Written with [plan 6, UX](2026-11-05-6-ux-flows.md) and [plan 7, delight](2026-11-05-7-delight.md). Sections 3 and 4 change what the App Store screenshots show, so they're worth doing before those are taken (phase 11, Task 12).
 
 **Goal:** the same thing looks, sits and reads the same everywhere, on every page and in both apps. A song row, a Play button, a page header, an empty page or a removal is designed once, written down once and built once per platform. Where iOS and the web differ, the platform is the reason (the tab bar, sheets, SF Symbols), never that the same thing was built twice.
 
 **The rule:** a new screen uses the shared components; when none fits, the component and `docs/design.md` change together. Pages never hold raw colors, sizes or radii.
+
+## Where it stands (2026-11-06)
+
+- **Done on both apps:** 1 the design language written down (`docs/design.md`), 2 buttons and controls, 3 the action row, 4 page headers, 5 rows and cards, 7 one vocabulary, 8 empty, loading and error, 9 overlays.
+- **Done on the web, under way on iOS:**
+  - 6 icons: the rows of `docs/design.md`'s icon map marked "iOS to align" (Downloads, Requests, adding to a playlist, Do it again, and three glyphs still to make one picture).
+  - 10 the check: the web screen tour runs, and the web's check is enforced in its typecheck. iOS still has 22 literal corner radii, 2 `.system(size:)` and 2 `Color(red:)` to move onto Theme's tokens; then the check gets enforced in the iOS build.
 
 ## How the screens were reviewed
 
@@ -117,7 +124,7 @@ The standard:
 - *Web done 2026-11-06: `SongRow`/`ListRow` (components/SongRow.tsx) in every list, Now Playing's Up next and Downloads, trailing time · ♥ · ⋯ as on iOS, one height per list; one shelf card width (`SHELF_CARD`); artists are circles with the name below everywhere (photo, else best album cover, else vinyl monogram); the player bar's text is 15/13.*
 - *iOS done 2026-11-06: `SongRow` (60 points, 52 in Up next) in every list, Up next and Downloads, with the time, ♥ and ⋯; missing songs grayed in place, the song playing with an accent title and the equalizer; songs from beyond the library in the same shape with Request or Add; one shelf card width (`ShelfCard.width`); artists as circles with the name below everywhere, Home's year in review and Stats included.*
 
-## 6. Icons — S
+## 6. Icons — S — web done 2026-11-06, iOS under way
 
 - **One icon per concept:**
   - Requests and Downloads share a download icon on both apps: the web uses `Download` for Requests (`Nav.tsx:104`, `Library.tsx:28`) and for the Request pills (`Discover.tsx:83`); iOS's Library uses `arrow.down.circle` for both.
@@ -180,7 +187,7 @@ The standard:
 - *Web done 2026-11-06: one stack (`lib/overlays.ts`) decides what Escape closes, menu then dialog then Now Playing; dialogs share one padding, a footer kept in view and three widths; a menu's first item takes the focus only when opened from the keyboard; every ⋯ is "More for “…”".*
 - *iOS done 2026-11-06: pickers open at medium and large, close leading and confirm trailing, every bar button with an icon, so on the iPhone Duo's cover screen the cover picker's Use this (and every sheet's Cancel and Done) can be reached.*
 
-## 10. A web screen tour, and a check that keeps things consistent — S
+## 10. A web screen tour, and a check that keeps things consistent — S — web done 2026-11-06, iOS under way
 
 - **`pnpm web:screens`:** the web's `ios:screens`, built from the prototype used for this review:
   - It starts the repo's server on a free port with an empty data folder and the generated library, cached in a gitignored folder.

@@ -4,6 +4,8 @@ Agreed 2026-11-05 from the reviews; second of four (after [safety and release](2
 
 **Goal:** a member on mobile data, away from home, presses play and it plays: quickly, at a sensible size, over HTTPS, and keeps playing through a dead spot. Today every client streams the original file (24-bit FLAC included), the web's even volume streams uncompressed WAV (about 1.4 Mbit/s, on by default), HTTPS is a manual job for the owner, and a blip stops playback for good.
 
+**Where it stands (2026-11-06):** not started; plans 5 to 7, on the apps' design and flows, were taken first.
+
 ## 1. Transcoding and a quality setting — M–L
 
 - Server: `GET /stream/:fileId/aac?kbps=256|128` (and Opus where the client asks for it), encoded as it's asked for with ffmpeg, where the files are, as the WAV routes do (`apps/server/src/routes/stream.ts`, `media/source.ts`). Seeking: a fixed bitrate gives a byte position for a time; decode from that time.

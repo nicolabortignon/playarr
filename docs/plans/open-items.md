@@ -7,7 +7,7 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - App Store launch: the user's decisions, the privacy and support pages, the screenshots, the CI release job, a dry run, the submission. *([2026-11-03-ios-phase11-app-store.md](2026-11-03-ios-phase11-app-store.md))*
 - Checks on a real iPhone, iPad and iPhone Duo: sideways, iPad keyboard, pointer, drag, narrow windows, restoration, VoiceOver, Siri, the Duo's hinge, offline, the server settings panels. *([2026-11-05-ios-device-checklist.md](2026-11-05-ios-device-checklist.md))*
 - iOS offline, in the simulator against the dev server: album download ring and Library → Downloads, a playlist download fetching its transitions, lowering the limit to 512 MB, playing offline with skipped songs, resuming after quitting from the switcher. *(ios-status, phase 7)*
-- A TestFlight build once the device checklist passes. *(ios-status)*
+- Plans 5 to 7 on iOS: plan 5's icons and design check, and plan 6's player (section 5), under way; then plan 7's sections 1 to 7. The web has done its part of all three. *([plan 5](2026-11-05-5-ui-consistency.md), [plan 6](2026-11-05-6-ux-flows.md), [plan 7](2026-11-05-7-delight.md))*
 
 ## Server
 
@@ -29,13 +29,14 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 ## Web
 
 - Filter albums by genre or format. *(PLAN.md roadmap phase 3)*
-- Long-press menus on touch screens, and right-click menus on desktop. *(PLAN.md roadmap phase 3, UX direction)*
 - Swipe left and right on Now Playing for next and previous (dragging down to close is done). *(PLAN.md roadmap phase 4)*
 - iOS standalone PWA quirks: background audio, safe areas, splash screen. *(PLAN.md roadmap phase 4)*
 - Cast and AirPlay through the Remote Playback API. *(PLAN.md roadmap phase 6)*
 - Load-ahead, Cache Storage and downloads have only been tested with unit and smoke tests, never in a real browser. *(PLAN.md decisions log, 2026-10-29)*
 - Phones held sideways could get the iOS app's sleeve layout for Now Playing. *(iOS sideways Now Playing spec)*
 - Optional wrappers: Tauri on desktop, Capacitor on mobile. *(PLAN.md roadmap phase 6)*
+- Feeling lucky's fan of covers is cut short where the button goes as the music starts (the idle player bar, the empty queue's page); keeping it would take a layer above the page. *(found)*
+- On a phone, Feeling lucky asks for its songs only as a finger touches it, so with a slow server the first song's card can still come out after the others; asking when Home opens would cover it, at one request per visit. *(found)*
 
 ## iOS
 
@@ -48,7 +49,9 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - Sideways Now Playing, parts of the spec not built: the tracklist on the iPad and Duo (they still show four songs of Up next), the stage centring the open line with the time left, the header's actions moving into ⋯ at accessibility sizes, Increase Contrast flattening the backdrop, VoiceOver actions on tracklist lines, Undo after swiping a line away. *(sideways Now Playing spec)*
 - `ScreenTour` shots of the stage, lyrics sideways and a DJ-mix join. *(sideways Now Playing spec)*
 - Bold Text: the bundled fonts don't follow it (nothing reads `legibilityWeight`), though phase 10 assumed system fonts would. *(phase 10, found)*
-- Mix colours drawn in Display P3 rather than sRGB (optional; today's washes fit in sRGB). *(phase 6 next steps)*
+- Mix colors drawn in Display P3 rather than sRGB (optional; today's washes fit in sRGB). *(phase 6 next steps)*
+- Once in five iPhone runs of `AccessibilityAuditTests`, Now Playing didn't open from the mini player within 5 seconds; it has passed every run since. *(found)*
+- An album partly here, beyond the library, shows both its cover's "3 OF 5" badge and a "3/5" button. *(found)*
 
 ## Tooling
 

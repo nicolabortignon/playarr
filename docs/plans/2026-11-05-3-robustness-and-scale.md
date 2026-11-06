@@ -4,6 +4,8 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 **Goal:** Playarr holds up on a collector's library (100k tracks) and in daily use: no stalls on the server's event loop or the iPhone's main thread, nothing lost when storage fills or two tabs are open, sessions and connections that can be trusted, and enough logging to diagnose a user's problem.
 
+**Where it stands (2026-11-06):** not started; plans 5 to 7, on the apps' design and flows, were taken first.
+
 ## 1. Big libraries — M
 
 - Measure first: a 100k-track synthetic library (a fixture generator), timing catalog refresh, the albums list, search and memory; the existing stall monitor records event-loop stalls.
