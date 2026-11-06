@@ -1,5 +1,6 @@
 import PlayarrAPI
 import SwiftUI
+import GameController
 import Testing
 @testable import PlayarrUI
 
@@ -105,5 +106,23 @@ final class FakeControls: PlaybackControlling {
   @Test func readsTheShortcutsOut() {
     #expect(KeyboardShortcutsSection.spoken([["Shift", "←"], ["Shift", "→"]]) == "Shift + ← or Shift + →")
     #expect(KeyboardShortcutsSection.rows.count == 8)
+  }
+
+  @Test func listsTheShortcutsOnlyWhileAKeyboardIsAttached() {
+    var attached = false
+    let keyboard = HardwareKeyboard { attached }
+    #expect(!keyboard.attached)
+    #expect(!HardwareKeyboard.showsShortcuts(onPad: true, attached: keyboard.attached))
+    // A keyboard connects: asked again, the list shows.
+    attached = true
+    keyboard.recheck()
+    #expect(HardwareKeyboard.showsShortcuts(onPad: true, attached: keyboard.attached))
+    // Disconnected again (no other keyboard left).
+    attached = false
+    keyboard.recheck()
+    #expect(!keyboard.attached)
+    // Where the shortcuts are menu commands: on an iPad. An iPhone has no menu bar to hold them.
+    #expect(!HardwareKeyboard.showsShortcuts(onPad: false, attached: true))
+    #expect(HardwareKeyboard.changes == [.GCKeyboardDidConnect, .GCKeyboardDidDisconnect])
   }
 }

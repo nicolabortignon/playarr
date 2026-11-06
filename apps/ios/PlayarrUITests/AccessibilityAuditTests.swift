@@ -20,10 +20,17 @@ final class AccessibilityAuditTests: XCTestCase {
     RunLoop.current.run(until: Date().addingTimeInterval(1.5))
     try XCTContext.runActivity(named: "Audit: \(screen)") { _ in
       try app.performAccessibilityAudit(for: types) { issue in
+        // Gone by the time it's looked at (redrawn, or something passing): reported as it was, without asking its gone
+        // element anything, which fails the test with no word of what it was.
+        if let element = issue.element, !element.exists {
+          print("AUDIT [\(screen)] \(issue.compactDescription) {\(issue.detailedDescription)} | element gone")
+          return false
+        }
         let ignored = AuditExceptions.ignores(issue, in: app)
         if !ignored {
           let e = issue.element
-          print("AUDIT [\(screen)] \(issue.compactDescription) {\(issue.detailedDescription)} | type=\(e.map { String($0.elementType.rawValue) } ?? "-") label=\(e?.label ?? "-") id=\(e?.identifier ?? "-") frame=\(e?.frame ?? .zero) measured=\(issue.auditType == .contrast ? e.map { String(format: "%.1f", AuditExceptions.measuredContrast(of: $0)) } ?? "-" : "-")")
+          let keyboard = app.keyboards.firstMatch
+          print("AUDIT [\(screen)] \(issue.compactDescription) {\(issue.detailedDescription)} | type=\(e.map { String($0.elementType.rawValue) } ?? "-") label=\(e?.label ?? "-") id=\(e?.identifier ?? "-") frame=\(e?.frame ?? .zero) measured=\(issue.auditType == .contrast ? e.map { String(format: "%.1f", AuditExceptions.measuredContrast(of: $0)) } ?? "-" : "-")\(keyboard.exists ? " keyboard=\(keyboard.frame)" : "")")
         }
         return ignored
       }
@@ -78,10 +85,31 @@ final class AccessibilityAuditTests: XCTestCase {
     app.navigationBars.buttons.firstMatch.tap()
     app.buttons["Appearance"].tap()
     try audit(app, "Settings → Appearance")
+    app.navigationBars.buttons.firstMatch.tap()
+    // Someone invited who never set up, with Copy invite link and New code under them.
+    app.buttons["settings.accounts"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["Copy Jo’s invite link"].waitForExistence(timeout: 5))
+    try audit(app, "Settings → Accounts, with an invite")
+    app.navigationBars.buttons.firstMatch.tap()
+    // Each source's ⋯.
+    app.buttons["settings.sources"].firstMatch.tap()
+    XCTAssertTrue(app.buttons["More for “Music”"].waitForExistence(timeout: 5))
+    try audit(app, "Settings → Sources")
 
     // Last: the search tab turns the tab bar into its search field.
     app.tabBars.buttons["Search"].tap()
     try audit(app, "Search")
+    // A search made (Return), with what's beyond the library under the results, without Lidarr; then, the field
+    // emptied, the empty page offers it again.
+    let field = app.searchFields.firstMatch
+    field.tap()
+    field.typeText("mass\n")
+    XCTAssertTrue(app.staticTexts["Not in your library"].waitForExistence(timeout: 10))
+    try audit(app, "Search results")
+    field.tap()
+    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4))
+    XCTAssertTrue(app.buttons["Search for “mass”"].waitForExistence(timeout: 5))
+    try audit(app, "Search, with a recent search")
   }
 
   @MainActor
@@ -154,6 +182,9 @@ final class AccessibilityAuditTests: XCTestCase {
 /// Issues the audit reports that aren't the app's to fix. Each says what, where and why; add one only after
 /// trying to fix the view, never to get a run green.
 enum AuditExceptions {
+  /// How far above a bottom bar iOS fades the page into it (the soft scroll edge).
+  static let softEdge: CGFloat = 30
+
   @MainActor
   static func ignores(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication) -> Bool {
     // The tab bar's own labels don't grow with Dynamic Type: iOS shows them in the large content viewer instead
@@ -162,13 +193,16 @@ enum AuditExceptions {
       return true
     }
     // The audit reads colours from a screenshot: text scrolled under the glass of the tab bar, the mini player or the
-    // player bar is blurred into it. The same text passes once it's scrolled into view.
+    // player bar is blurred into it, and just above them iOS fades the page into the bar (its soft scroll edge): the
+    // artist page's "FROM LISTENBRAINZ" kicker, white at 50 % (5.3:1 on its own), measured 114 → 107 of 128 from top
+    // to foot, 4.2:1, in the 30 points over the mini player; the album cards' lines 40 points up are untouched. The
+    // same text passes once it's scrolled into view.
     if issue.auditType == .contrast, let frame = issue.element?.frame {
       let bars =
         [app.tabBars.firstMatch]
         + ["playerBar", "miniPlayer"].map { app.descendants(matching: .any).matching(identifier: $0).firstMatch }
       for bar in bars where bar.exists {
-        if frame.maxY > bar.frame.minY { return true }
+        if frame.maxY > bar.frame.minY - softEdge { return true }
       }
     }
     // Contrast reported against SwiftUI's internal nodes with no element and no text (over Liquid Glass and the
@@ -210,6 +244,18 @@ enum AuditExceptions {
     // The system's search field truncates its own placeholder in the iOS 26 tab bar.
     if issue.auditType == .textClipped, issue.element?.elementType == .searchField {
       return true
+    }
+    // The same field's Clear text button (19 points) is the system's too, drawn inside it.
+    if issue.auditType == .hitRegion, let element = issue.element, element.elementType == .button,
+      app.searchFields.firstMatch.exists, app.searchFields.firstMatch.frame.insetBy(dx: -2, dy: -2).contains(element.frame)
+    {
+      return true
+    }
+    // The keyboard's suggestion bar is the system's: with nothing typed yet, three cells with nothing in them to read,
+    // 44 points tall on top of the keys (outside the keyboard's own frame).
+    if issue.auditType == .sufficientElementDescription, let frame = issue.element?.frame, app.keyboards.firstMatch.exists {
+      let keys = app.keyboards.firstMatch.frame
+      if CGRect(x: keys.minX - 1, y: keys.minY - 50, width: keys.width + 2, height: keys.height + 50).contains(frame) { return true }
     }
     return false
   }

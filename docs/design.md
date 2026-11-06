@@ -17,7 +17,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 | Secondary text | `text-paper-dim` (#b8b0a3) | `.paperDim` (white 70 %, 85 % with Increase Contrast) | the artist under a title, descriptions |
 | Muted | `text-muted` (#857d71) | `.muted` (white 50 %, 65 % with Increase Contrast) | kickers, times, counts, hints |
 | Line | `border-line` (paper at 8 %) | `.line` (white at 8 %) | hairlines, panel borders, unselected choices |
-| Accent | `accent`, with `accent-ink` on it (from the cover playing, lifted to a relative luminance of at least 0.2 so ink on it and it on the page read at 4.5:1) | `theme.accent` (the same) | the one primary action on a screen, the playing song, links |
+| Accent | `accent`, with `accent-ink` on it (from the cover playing, lifted to a relative luminance of at least 0.2 so ink on it and it on the page read at 4.5:1) | `theme.accent` (the same); as text in the system's lists and forms (Settings and the sheets it opens), whose rows are lighter than the page, `theme.listAccent`, lifted further until it reads 4.5:1 on a sheet's row (Playarr's orange already does) | the one primary action on a screen, the playing song, links |
 | Danger | `danger` (#f87171), with `ink-950` on it | `.danger` (system red) | errors, Delete |
 | Success | `success` (#34d399) | `.success` (system green) | downloaded, saved, connected |
 | Warning | `warning` (#fcd34d) | `.warning` (system yellow) | worth a look before going on |
@@ -62,6 +62,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 - **Under the iPhone Duo's column** (and any side inset): backgrounds (the album's wash, an artist's photo, a blurred cover) run under it; rows, words and buttons keep clear of it; sideways strips (shelves, Stats' ranges) scroll under it and stop clear of it.
 - **Home greets** the account by name, with its avatar.
 - **Names never lose to numbers:** a name and its numbers share a line only when both fit; otherwise the numbers go under the name, on up to two lines (web and iOS `NameAndNumbers`). Stats' big numbers are in the display face.
+- **A line of phrases joined by "·"** ("/music · 8 songs · 3 albums") wraps only between them, never inside one (web: each phrase `whitespace-nowrap` or a chip; iOS `Format.wrapsAtDots`).
 
 ## Rows, menus and toasts
 
@@ -86,7 +87,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 ## Empty, loading and error
 
-- **Empty:** an icon in a ring, one line in the display face in the app's voice ("No hearts yet.", "Not in your crates."), a quieter line only where the first can't say it all, and the one action that fills the page as a large primary button, with at most one more beside it, outlined (the queue's Jump back in). Where nothing else fills it, that's Feeling lucky.
+- **Empty:** an icon in a ring, one line in the display face in the app's voice ("No hearts yet.", "Not in your crates."), a quieter line only where the first can't say it all, and the one action that fills the page as a large primary button, with at most one more beside it, outlined (the queue's Jump back in). Where nothing else fills it, that's Feeling lucky. Under a detail header (a playlist with no songs yet) the header takes its smaller cover, so the empty line is on the first screen, down to the iPhone SE.
 - **Loading:** skeletons shaped like what they stand for, in the real grid or rows, as many as fill the first screen; never a spinner on its own for a page. iOS Settings' panels, which are system forms, keep the system's spinner.
 - **Error:** a whole page that couldn't load says so in the voice (the table below) with the reason, Try again and Back home. A part of a page (a panel, a section, a dialog) says what happened and why in its place, with a small Try again.
 - **The lines**, the same on both apps (plan 7 §4). The voice is a record shop's: warm, brief, about the music. A second line only where the first can't say it all; the action is what fills the page.
@@ -126,7 +127,8 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
   - **Ghost:** no outline, `paper-dim` label, a paper-at-5 % fill on hover or press. Lesser actions inside a panel.
   - **Danger:** filled with `danger`, `ink-950` label. Delete, Remove account.
 - **Sizes:** large 48 (a page's action row, Feeling lucky, an empty page's action), regular 40 (dialogs, panels, error states), small 32 (inside a card or a row, such as Request). Icons are 20, 18 and 16. Whatever the visual size, the tap target is at least 44 (on the web on touch screens, through the `tap-target` utility; on iOS always).
-- **States:** disabled at 40 % opacity. Pending says its verb with an ellipsis ("Requesting…"), and is disabled meanwhile.
+- **States:** disabled at 40 % opacity. Pending says its verb with an ellipsis ("Requesting…"), and is disabled meanwhile. On iOS a field's Save in the bar shows only once there's something new to save, and Return saves too: a grayed-out Save there doesn't read (2.3:1).
+- **In a bar,** Edit is in the text color, like the bar's other words (the accent over a page's colors doesn't always read). On the iPad's sidebar the page you're on has its name in the text color over the highlight and its icon in the accent.
 - **Icon buttons** are round and always have an accessible name: 48 in an action row (outlined); otherwise 44 to tap on touch and 36 with a mouse on the web, 44 on iOS (plain).
 - **Choices** are the mono capitals pills (Albums' sort, Stats' ranges, Transitions, Keep up to, Motion). Web: `Choice`. Selected is filled with paper and an ink label; the rest are outlined with `line` and a `muted` label. A row of choices never wraps on a phone; it scrolls sideways. iOS Settings keeps the system's pickers for these, as its forms do (iOS: `.choice(selected:)` on pages, such as Stats' ranges).
 - **Statuses** that do nothing when tapped (Searching, Importing, 42 %, a format) are badges (`type-badge`), not buttons.
@@ -246,9 +248,10 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | Requests, Updates | `Binoculars`, `CircleArrowUp` | none | |
   | Tune your mixes | `SlidersHorizontal` | `slider.horizontal.3` | |
   | Lidarr, a folder, a remote folder | `Server`, `Folder`, `Network` | `server.rack`, `folder`, `network` | |
-  | Sync now | `RefreshCw` | `arrow.clockwise` ("Rescan") | iOS to align: the words, and the glyph as "Do it again" below |
-  | Match again | `ScanSearch` | `arrow.trianglehead.2.clockwise` | iOS to align: `text.magnifyingglass` |
+  | Sync now | `RefreshCw` | `arrow.triangle.2.circlepath` | |
+  | Match again | `ScanSearch` | `text.magnifyingglass` | |
   | Organize files | `FolderTree` | `folder.badge.gearshape` | to align: one picture |
+  | Edit (a source) | `Pencil` | `pencil` | |
   | Fix the names | `PencilLine` | `pencil.line` | |
   | Add account | `UserPlus` | `person.badge.plus` | |
   | New setup code | `KeyRound` | `key` | |
@@ -262,7 +265,8 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   |---|---|---|---|
   | New (playlist, source) | `Plus` | `plus` | |
   | Try again, Reload, Check for updates | `RotateCw` | `arrow.clockwise` | |
-  | Do it again (New mix, Sync now, ask Lidarr again) | `RefreshCw` | `arrow.clockwise` | iOS to align: two arrows round, as `RefreshCw`, apart from Try again's one |
+  | Do it again (New mix, Sync now, ask Lidarr again) | `RefreshCw` | `arrow.triangle.2.circlepath` | iOS to align: New mix and asking Lidarr again still have Try again's `arrow.clockwise` |
+  | A recent search | `RotateCcwClock` | `clock.arrow.circlepath` | |
   | Undo | `Undo2` | `arrow.uturn.backward` | iOS also has it for Jump back in |
   | Error, warning | `CircleAlert`, `TriangleAlert` | `exclamationmark.circle`, `exclamationmark.triangle` | |
   | Done, chosen | `Check` | `checkmark` | |
@@ -275,7 +279,7 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 
 - **Recent searches** (on the empty search page, above what to try): the last eight, newest first, kept per account on the device, each with the history icon, searching again on a tap, and × to remove it; Clear removes them all. Both say so with Undo ("Removed “daft punk” from recent searches", "Cleared recent searches"). A search counts once a result is opened or played, Enter is pressed, or the words sit still for 2.5 s; never one letter, and words that only extend the newest search replace it.
 - **Beyond the library**, under the library's results whenever there's anything: "Not in your library" with a kicker naming where it's from ("Lidarr · MusicBrainz · Deezer"), and Request only where requesting is possible.
-- **Settings:** This device · Your account · Server (members see Your account before Server, with "Only an admin can change these."). Where the page has room (web: the page at least `page-lg`, a 1024 px window), a column of the groups sits beside the open panel, under the Settings title: the groups' names as kickers, each panel's icon and name, the open one lit as the sidebar lights the page you're on, the version at its foot. Every panel is always in view: never a strip that scrolls sideways. The panel's scope is the line above it. Narrower (a phone, a narrow window), the same groups are a list, a line under each saying what it's for and the version at the foot; each panel has a back link to Settings.
+- **Settings:** This device · Your account · Server (members see Your account before Server, with "Only an admin can change these."; a server panel opens read-only for them, saying "Only an admin can change these settings.", and Analysis "Analyses can be started by an admin."). Where the page has room (web: the page at least `page-lg`, a 1024 px window), a column of the groups sits beside the open panel, under the Settings title: the groups' names as kickers, each panel's icon and name, the open one lit as the sidebar lights the page you're on, the version at its foot. Every panel is always in view: never a strip that scrolls sideways. The panel's scope is the line above it. Narrower (a phone, a narrow window), the same groups are a list, a line under each saying what it's for and the version at the foot; each panel has a back link to Settings.
 - **Keyboard shortcuts** show only where there's a keyboard (a fine pointer, or a key pressed outside a field). On the web `?` opens them over any page as a record sleeve: Side A · Playing and Side B · Getting around, numbered A1…, dotted leaders to the keys in `type-badge` keycaps, the two sides side by side from 1024 px, a shared modifier written once ("Shift + ← or →"). iPadOS has its own ⌘ overlay, so iOS lists them there instead.
 - **The idle player bar** (desktop and tablet, nothing playing): the album heard last under the kicker "Heard last", Resume as the primary button and Feeling lucky beside it; with no history, "Nothing playing" and Feeling lucky.
 - **The side column** (web from 1280 px, the iPad at regular width): Queue and Lyrics beside any page, 340 wide on `ink-950`, the queue headed "Up next" with its counts in `type-meta` and its rows on two lines (the length beside the artist, whose name gives way first). A page lays itself out by its own width, not the window's (web `page-lg`, `page-xl`, `page-2xl`), so it narrows when the column opens.

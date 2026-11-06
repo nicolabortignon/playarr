@@ -104,7 +104,7 @@ The app was built against an inventory of everything the web app does (every rou
 - every page: Home, Search, Library (Artists, Albums, Favorites, Playlists, Made for you, Downloads), Artist, Album, Playlist, Mix, Queue, Your listening, Requests, and Discover's artist pages for artists not in the library;
 - every sheet: Add to playlist, the playlist cover picker, Show metadata, Edit mix points, the transition sheet, Stats for nerds;
 - playback as on the web: gapless, even volume, crossfades and DJ transitions, radio, the sleep timer, play reports, lyrics, the lock screen;
-- Settings: Playback and Appearance per device; Sources, Analysis, Requests and Updates for admins; Accounts and Mixes for everyone;
+- Settings: Playback and Appearance per device; Accounts and Made for you for everyone; Sources, Analysis, Requests and Updates for admins to change and members to read;
 - offline downloads, which the web does through its service worker.
 
 What differs on purpose: accounts replace the web's old profiles; user-facing text follows the web's (and [design.md](../design.md)'s Words where the two differ), with "this device" where the web names the browser; keyboard shortcuts only with a hardware keyboard on an iPad.

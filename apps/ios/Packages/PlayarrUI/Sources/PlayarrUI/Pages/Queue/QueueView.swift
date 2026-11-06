@@ -64,6 +64,8 @@ struct QueueView: View {
                 Button(editMode.isEditing ? "Done" : "Edit") {
                   withAnimation { editMode = editMode.isEditing ? .inactive : .active }
                 }
+                // In the bar's text color, as the ⋯ beside it: the accent on the bar's glass read at 4.3:1.
+                .tint(Color.paper)
               }
             }
           #endif

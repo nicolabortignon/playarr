@@ -34,6 +34,13 @@ public enum Format {
   /// JavaScript's Math.round: halves go up (Swift's `rounded()` takes -2.5 to -3, JavaScript to -2).
   public static func jsRound(_ value: Double) -> Double { (value + 0.5).rounded(.down) }
 
+  /// A line of phrases joined by dots that wraps only between them, never inside one ("0 of 3 songs · 0 MB ·" over
+  /// "3 couldn’t download", not "… · 3" over "couldn’t download"): the spaces inside each phrase don't break, and each dot
+  /// stays at the end of the phrase before it.
+  public static func wrapsAtDots(_ line: String) -> String {
+    line.components(separatedBy: " · ").map { $0.replacingOccurrences(of: " ", with: "\u{00A0}") }.joined(separator: "\u{00A0}· ")
+  }
+
   /// Lossy at this bitrate or more sounds as good as lossy gets: its badge leaves the bitrate out.
   static let ordinaryKbps: Double = 256
 

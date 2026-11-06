@@ -27,10 +27,13 @@ public final class AccountSession {
   public let mixes: MixesStore
   /// "Add to playlist" waiting to be shown (AccountSession.addToPlaylist).
   public var picking: PlaylistPick?
+  /// What this account searched for lately on this device (Search's empty page).
+  public let recentSearches: RecentSearches
 
+  /// `recentSearches`: where the account's recent searches are kept on this device (nil: in memory only).
   public init(
     key: AccountKey, account: Account, serverName: String, api: any APISending, client: APIClient?, player: Player,
-    queries: QueryCache, images: ImageCache, toasts: ToastCenter, notifier: (any RequestNotifier)? = nil
+    queries: QueryCache, images: ImageCache, toasts: ToastCenter, notifier: (any RequestNotifier)? = nil, recentSearches: URL? = nil
   ) {
     self.key = key
     self.account = account
@@ -51,9 +54,11 @@ public final class AccountSession {
     favorites = FavoritesStore(api: api, queries: queries, toasts: toasts)
     playlists = PlaylistsStore(api: api, queries: queries, toasts: toasts)
     mixes = MixesStore(api: api, queries: queries)
+    self.recentSearches = RecentSearches(file: recentSearches)
   }
 
-  /// The account's folder: Application Support/Playarr/<server id>/<account id>/ (queue, plays, stream cache, answers).
+  /// The account's folder: Application Support/Playarr/<server id>/<account id>/ (queue, plays, stream cache, answers,
+  /// recent searches).
   public static func folder(for key: AccountKey) -> URL {
     URL.applicationSupportDirectory.appending(path: "Playarr/\(key.serverId)/\(key.accountId)", directoryHint: .isDirectory)
   }
@@ -85,7 +90,8 @@ public final class AccountSession {
     let session = AccountSession(
       key: record.key, account: record.account, serverName: server.name, api: client, client: client, player: player,
       queries: queries, images: images, toasts: model.toasts,
-      notifier: LocalRequestNotifier { [weak model] in model?.isActive ?? true })
+      notifier: LocalRequestNotifier { [weak model] in model?.isActive ?? true },
+      recentSearches: folder.appending(path: "recent-searches.json"))
     owner.session = session
     return session
   }

@@ -12,6 +12,8 @@ struct PlaybackPanel: View {
   var openDownloads: () -> Void = {}
   /// An admin has stopped this account from changing Playback: read-only.
   var locked = false
+  /// Keyboard shortcuts are listed only while a keyboard is attached.
+  @State private var keyboard = HardwareKeyboard()
 
   var body: some View {
     let panel = PlaybackPanelModel(settings: settings)
@@ -60,10 +62,18 @@ struct PlaybackPanel: View {
       if let downloads {
         OfflineStorageSection(store: downloads, openDownloads: openDownloads)
       }
-      #if os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .pad { KeyboardShortcutsSection() }
-      #endif
+      if HardwareKeyboard.showsShortcuts(onPad: onPad, attached: keyboard.attached) { KeyboardShortcutsSection() }
     }
     .navigationTitle("Playback")
+    .onReceive(NotificationCenter.default.publisher(for: HardwareKeyboard.changes[0])) { _ in keyboard.recheck() }
+    .onReceive(NotificationCenter.default.publisher(for: HardwareKeyboard.changes[1])) { _ in keyboard.recheck() }
+  }
+
+  private var onPad: Bool {
+    #if os(iOS)
+      UIDevice.current.userInterfaceIdiom == .pad
+    #else
+      false
+    #endif
   }
 }

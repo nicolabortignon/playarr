@@ -41,18 +41,25 @@ private struct TitleInBar: ViewModifier {
   }
 }
 
-/// The bar's title: there for the back button's menu and VoiceOver's sake, seen once the page's own has gone.
+/// The bar's title, there once the page's own has gone. Until then the bar holds an empty stand-in, so the system draws
+/// no title of its own there (the navigation title stays for the back button's menu); the words themselves aren't
+/// drawn invisibly, which left them in the accessibility tree at 1:1 contrast and at a size the bar doesn't let grow.
 private struct BarTitleText: View {
   let title: String
   let state: BarTitle
 
   var body: some View {
-    Text(title)
-      .font(.sans(.headline))
-      .lineLimit(1)
-      .opacity(state.shown ? 1 : 0)
-      .animation(Motion.fast, value: state.shown)
-      .accessibilityHidden(!state.shown)
+    ZStack {
+      if state.shown {
+        Text(title)
+          .font(.sans(.headline))
+          .lineLimit(1)
+          .transition(.opacity)
+      } else {
+        Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+      }
+    }
+    .animation(Motion.fast, value: state.shown)
   }
 }
 

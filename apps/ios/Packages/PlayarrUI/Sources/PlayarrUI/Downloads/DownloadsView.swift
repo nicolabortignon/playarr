@@ -62,7 +62,10 @@ public struct DownloadsView<Cover: View>: View {
             // How far along it is goes under what it is when both don't fit, rather than being cut off.
             NameAndNumbers(
               name: d.subtitle.map { Text($0) },
-              numbers: Text("\(OfflineWording.progress(progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.danger.opacity(0.8)))"),
+              // Wrapping only between its phrases: "3 couldn’t download" stays in one piece.
+              numbers: Text(
+                "\(Format.wrapsAtDots(OfflineWording.progress(progress)))\(Text(Format.wrapsAtDots(OfflineWording.failures(failed))).foregroundStyle(.danger.opacity(0.8)))"
+              ),
               label: OfflineWording.rowDetail(d, progress) + OfflineWording.failures(failed)
             )
             .typeRole(.small)

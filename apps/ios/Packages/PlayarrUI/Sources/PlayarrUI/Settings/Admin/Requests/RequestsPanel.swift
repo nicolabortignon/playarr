@@ -5,13 +5,19 @@ import SwiftUI
 public struct RequestsPanel: View {
   @State private var model: RequestSettingsModel
 
-  public init(api: any APISending, requestsChanged: @escaping @MainActor () -> Void = {}) {
+  private let isAdmin: Bool
+
+  /// `isAdmin`: a member reads only that an admin changes these (the server doesn't show them the settings).
+  public init(api: any APISending, isAdmin: Bool = true, requestsChanged: @escaping @MainActor () -> Void = {}) {
     _model = State(initialValue: RequestSettingsModel(api: api, requestsChanged: requestsChanged))
+    self.isAdmin = isAdmin
   }
 
   public var body: some View {
     Form {
-      if let info = model.info {
+      if !isAdmin {
+        AdminOnlyNotice()
+      } else if let info = model.info {
         if !info.lidarr {
           Text("Requests need a Lidarr source. You can add one in Sources.")
         } else {
@@ -35,7 +41,7 @@ public struct RequestsPanel: View {
       }
     }
     .navigationTitle("Requests")
-    .task { await model.load() }
+    .task { if isAdmin { await model.load() } }
   }
 
   private func destination(_ info: RequestSettingsInfo) -> some View {

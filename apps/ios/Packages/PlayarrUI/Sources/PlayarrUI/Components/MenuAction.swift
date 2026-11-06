@@ -1,10 +1,13 @@
-/// One item of a menu (a song's, an album's, a playlist's): what it says, its glyph from the icon map (docs/design.md,
-/// "Icons"), and what it does. Menus come in groups with a line between them (`MenuButtons`), built by `SongMenu` and
-/// `PlayableMenu`, so a ⋯, a long press and VoiceOver's actions offer the same items in the same order.
+/// One item of a menu (a song's, an album's, a playlist's, a source's): what it says, its glyph from the icon map
+/// (docs/design.md, "Icons"), and what it does. Menus come in groups with a line between them (`MenuButtons`), built by
+/// `SongMenu`, `PlayableMenu` and `SourceMenu`, so a ⋯, a long press and VoiceOver's actions offer the same items in the
+/// same order.
 struct MenuAction: Identifiable {
   enum Kind: Hashable, Sendable {
     case play, shuffle, playNext, addToQueue, addToPlaylist, startRadio, goToAlbum, goToArtist, showMetadata, editMixPoints
     case favorite, openQueue, saveAsPlaylist, moveUp, moveDown, remove, rename, newCover, share, stopSharing, delete
+    /// A source's (Settings → Sources).
+    case syncNow, matchAgain, organizeFiles, edit
   }
 
   let kind: Kind
@@ -50,6 +53,10 @@ extension MenuAction.Kind {
     case .share: "Share with everyone"
     case .stopSharing: "Stop sharing"
     case .delete: "Delete playlist"
+    case .syncNow: "Sync now"
+    case .matchAgain: "Match again"
+    case .organizeFiles: "Organize files"
+    case .edit: "Edit"
     }
   }
 
@@ -77,6 +84,11 @@ extension MenuAction.Kind {
     case .share: "person.2"
     case .stopSharing: "lock"
     case .delete: "trash"
+    // Two arrows round, as the web's RefreshCw: "do it again", apart from Try again's one.
+    case .syncNow: "arrow.triangle.2.circlepath"
+    case .matchAgain: "text.magnifyingglass"
+    case .organizeFiles: "folder.badge.gearshape"
+    case .edit: "pencil"
     }
   }
 }

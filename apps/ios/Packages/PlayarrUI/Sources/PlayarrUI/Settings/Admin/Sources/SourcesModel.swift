@@ -67,6 +67,12 @@ public final class SourcesModel {
     }
   }
 
+  /// Move up (-1) or Move down (1), from a source's ⋯: one place, as dragging it there would.
+  public func move(_ source: SourceInfo, by offset: Int) async {
+    guard let index = sources.firstIndex(where: { $0.id == source.id }), sources.indices.contains(index + offset) else { return }
+    await move(fromOffsets: IndexSet(integer: index), toOffset: offset > 0 ? index + offset + 1 : index + offset)
+  }
+
   /// After the question; its songs leave every list, so everything is refreshed.
   public func remove(_ source: SourceInfo) async {
     await act { try await api.send(API.Settings.removeSource(id: source.id)) }

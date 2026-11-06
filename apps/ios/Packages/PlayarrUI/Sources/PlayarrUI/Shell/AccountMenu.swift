@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The account's button in the top-right corner of every tab (Home, Search, Library, Queue): its initial, opening
-/// Account (switch, add or sign out: `AccountSwitcherView`) and Settings.
+/// Account (switch, add or sign out: `AccountSwitcherView`), Your listening (a place, not a setting: it's in Library
+/// too) and Settings, as the web's avatar menu.
 struct AccountMenu: ViewModifier {
   @Environment(AppModel.self) private var app
   @Environment(AccountSession.self) private var session
@@ -12,6 +13,7 @@ struct AccountMenu: ViewModifier {
       ToolbarItem(placement: .primaryAction) {
         Menu {
           Button("Account", systemImage: "person.crop.circle") { app.showingAccounts = true }
+          Button("Your listening", systemImage: "chart.bar") { session.router.open(.listening) }
           // Phase 9 finds Settings by this identifier.
           Button("Settings", systemImage: "gearshape") { session.router.open(.settings) }
             .accessibilityIdentifier("settings")

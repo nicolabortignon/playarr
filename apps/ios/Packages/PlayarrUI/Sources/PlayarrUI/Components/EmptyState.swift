@@ -33,16 +33,19 @@ struct EmptyState: View {
   var fill: Fill?
   /// Beside the main action, outlined.
   var secondary: Action?
+  /// Under a page's own header (an empty playlist): less room above it, so it shows on the first screen with the header.
+  var underHeader = false
 
-  init(systemImage: String, line: PageLines.Line, fill: Fill? = nil, secondary: Action? = nil) {
+  init(systemImage: String, line: PageLines.Line, fill: Fill? = nil, secondary: Action? = nil, underHeader: Bool = false) {
     self.systemImage = systemImage
     self.line = line
     self.fill = fill
     self.secondary = secondary
+    self.underHeader = underHeader
   }
 
   var body: some View {
-    StateLayout(systemImage: systemImage, tone: .accent, title: line.title, hint: line.hint) {
+    StateLayout(systemImage: systemImage, tone: .accent, title: line.title, hint: line.hint, top: underHeader ? 8 : nil) {
       if fill != nil || secondary != nil {
         // Side by side where both fit, else one above the other (a phone at the larger text sizes).
         ViewThatFits(in: .horizontal) {
@@ -79,7 +82,12 @@ struct StateLayout<Actions: View>: View {
   let tone: Tone
   let title: String
   var hint: String?
+  /// The room above it: `margin` (nil), or less under a page's own header.
+  var top: CGFloat?
   @ViewBuilder let actions: () -> Actions
+
+  /// The room above and below it, on a page of its own.
+  static var margin: CGFloat { 48 }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -109,7 +117,8 @@ struct StateLayout<Actions: View>: View {
     }
     .frame(maxWidth: 420)
     .padding(.horizontal, 20)
-    .padding(.vertical, 48)
+    .padding(.top, top ?? Self.margin)
+    .padding(.bottom, Self.margin)
     .frame(maxWidth: .infinity)
   }
 }

@@ -26,20 +26,21 @@ enum SourceText {
   }
 
   /// How much of its albums a source has (AlbumSummary): Lidarr counts albums; a folder counts its songs, adding
-  /// up to all of them, its songs not matched yet unidentified. Nil without albums.
+  /// up to all of them, its songs not matched yet unidentified. Nil without albums. In lowercase: the web shows each
+  /// as a chip of its own, here they run on in one line ("5 on complete albums · 0 unidentified").
   static func albumSummary(_ source: SourceInfo) -> [(count: Int, label: String)]? {
     guard source.albums > 0 else { return nil }
     let counters: [(Int, String, String)] =
       source.kind == .folder
       ? [
-        (source.songsComplete, "On complete albums", "On complete albums"),
-        (source.songsIncomplete, "On incomplete albums", "On incomplete albums"),
-        (source.songsUnknown, "Unidentified", "Unidentified"),
+        (source.songsComplete, "on complete albums", "on complete albums"),
+        (source.songsIncomplete, "on incomplete albums", "on incomplete albums"),
+        (source.songsUnknown, "unidentified", "unidentified"),
       ]
       : [
-        (source.albumsComplete, "Complete Album", "Complete Albums"),
-        (source.albumsIncomplete, "Incomplete Album", "Incomplete Albums"),
-        (source.albumsUnknown, "Unidentified", "Unidentified"),
+        (source.albumsComplete, "complete album", "complete albums"),
+        (source.albumsIncomplete, "incomplete album", "incomplete albums"),
+        (source.albumsUnknown, "unidentified", "unidentified"),
       ]
     return counters.map { n, one, many in (n, n == 1 ? one : many) }
   }

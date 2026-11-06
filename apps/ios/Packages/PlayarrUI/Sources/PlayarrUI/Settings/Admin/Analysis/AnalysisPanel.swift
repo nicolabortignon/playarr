@@ -2,18 +2,22 @@ import PlayarrAPI
 import SwiftUI
 
 /// Settings → Analysis: the background switch and queue, then one section per analysis with its progress
-/// bar, "Analyze the N left" and "Reanalyze the entire collection" (after asking), and "Reanalyze everything".
+/// bar, "Analyze the N left" and "Reanalyze the entire collection" (after asking), and "Reanalyze everything". A
+/// member sees how far along they are; only an admin starts them.
 public struct AnalysisPanel: View {
   @State private var model: AnalysisModel
   @State private var asking: AnalysisModel.Row?
   @State private var askingEverything = false
+  private let isAdmin: Bool
 
-  public init(api: any APISending) {
+  public init(api: any APISending, isAdmin: Bool = true) {
     _model = State(initialValue: AnalysisModel(api: api))
+    self.isAdmin = isAdmin
   }
 
   public var body: some View {
     Form {
+      if !isAdmin { AdminOnlyNotice(text: "Analyses can be started by an admin.") }
       if let progress = model.progress {
         Section("In the background") {
           if model.analyzeLibrary != nil {
@@ -21,10 +25,10 @@ public struct AnalysisPanel: View {
               Text("Analyze every song in the library")
               Text(AnalysisText.switchDescription(progress))
             }
-            .disabled(!progress.enabled)
+            .disabled(!progress.enabled || !isAdmin)
           }
           Text(model.queueText).font(.footnote).foregroundStyle(.secondary)
-          if model.offersEverything {
+          if isAdmin, model.offersEverything {
             Button("Reanalyze everything") { askingEverything = true }.disabled(model.running)
           }
           if let notice = model.notice { InlineMessage(text: notice, isError: model.failed) }
@@ -35,7 +39,7 @@ public struct AnalysisPanel: View {
             if row.showsBar {
               ProgressView(value: Double(row.done), total: Double(max(row.of, 1))).accessibilityLabel(row.meter)
             }
-            if row.canRun {
+            if isAdmin, row.canRun {
               if let left = row.leftLabel {
                 Button(left) { Task { await model.run(row.kind) } }.disabled(model.running)
               }

@@ -1,11 +1,13 @@
 import PlayarrAPI
 import SwiftUI
 
-/// Settings (apps/web/src/pages/Settings.tsx): who's signed in, this device's Playback and Appearance, and for admins
-/// the server's panels (built in phase 9).
+/// Settings (apps/web/src/pages/Settings.tsx): who's signed in, then the panels in groups (`SettingsGroup`): This
+/// device · Server for an admin, This device · Your account · Server for a member, who can read the server's but not
+/// change them. Your listening isn't a setting: it's in Library and the account menu.
 struct SettingsView: View {
   let session: AccountSession
   @Environment(AppModel.self) private var app
+  @Environment(Theme.self) private var theme
 
   var body: some View {
     List {
@@ -21,25 +23,18 @@ struct SettingsView: View {
           .foregroundStyle(.paper)
         }
         .accessibilityHint("Switch accounts or add one")
-        NavigationLink("Your listening", value: Route.listening)
       }
-      Section {
-        NavigationLink(SettingsPanel.playback.title, value: Route.settingsPanel(.playback))
-        NavigationLink(SettingsPanel.appearance.title, value: Route.settingsPanel(.appearance))
-      } header: {
-        Text("This device")
-      } footer: {
-        Text("These settings are for this device.")
-      }
-      Section {
-        ForEach(SettingsPanel.server(for: role), id: \.self) { panel in
-          NavigationLink(panel.title, value: Route.settingsPanel(panel))
-            .accessibilityIdentifier("settings.\(panel.rawValue)")
+      ForEach(SettingsGroup.groups(for: role), id: \.title) { group in
+        Section {
+          ForEach(group.panels, id: \.self) { panel in
+            NavigationLink(panel.title, value: Route.settingsPanel(panel))
+              .accessibilityIdentifier("settings.\(panel.rawValue)")
+          }
+        } header: {
+          Text(group.title)
+        } footer: {
+          if let note = group.note { Text(note) }
         }
-      } header: {
-        Text(role == .admin ? "Server" : "Your account")
-      } footer: {
-        if role == .admin { Text("These settings apply to everyone.") }
       }
       #if DEBUG
         if session.client != nil {
@@ -52,6 +47,8 @@ struct SettingsView: View {
       }
     }
     .navigationTitle("Settings")
+    // Its rows are lighter than the page: the accent lifted to read on them.
+    .tint(theme.listAccent.color)
   }
 
   /// The store's copy, which follows a role changed in Settings → Accounts.
@@ -63,8 +60,15 @@ struct SettingsPanelView: View {
   let panel: SettingsPanel
   let session: AccountSession
   @Environment(AppModel.self) private var app
+  @Environment(Theme.self) private var theme
 
   var body: some View {
+    // A system list, its sheets too: the accent lifted to read on their rows ("Sign out on this device", "Add source").
+    content.tint(theme.listAccent.color)
+  }
+
+  @ViewBuilder
+  private var content: some View {
     switch panel {
     case .playback:
       PlaybackPanel(
@@ -80,11 +84,14 @@ struct SettingsPanelView: View {
       AccountsPanel(
         api: session.api,
         signOutHere: { [store = app.store, key = session.key] in await store.signOut(key) },
-        accountChanged: { [store = app.store, key = session.key] account in store.update(account, on: key.serverId) })
+        accountChanged: { [store = app.store, key = session.key] account in store.update(account, on: key.serverId) },
+        // The setup links made on this device, kept for the server (the demo keeps them only while it runs).
+        invites: session.client == nil ? InviteStore() : InviteStore(file: InviteStore.file(serverId: session.key.serverId)),
+        toast: { [toasts = session.toasts] in toasts.push($0) })
     case .mixes: MixesPanel(api: session.api, isAdmin: isAdmin, mixesChanged: { Task { await session.mixes.load() } })
-    case .analysis: AnalysisPanel(api: session.api)
-    case .requests: RequestsPanel(api: session.api, requestsChanged: { session.discover.invalidate([.requests, .health]) })
-    case .updates: UpdatesPanel(api: session.api)
+    case .analysis: AnalysisPanel(api: session.api, isAdmin: isAdmin)
+    case .requests: RequestsPanel(api: session.api, isAdmin: isAdmin, requestsChanged: { session.discover.invalidate([.requests, .health]) })
+    case .updates: UpdatesPanel(api: session.api, isAdmin: isAdmin)
     }
   }
 

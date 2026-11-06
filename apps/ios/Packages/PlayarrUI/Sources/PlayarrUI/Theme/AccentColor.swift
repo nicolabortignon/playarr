@@ -75,6 +75,18 @@ public enum AccentColor {
     return color
   }
 
+  /// The accent as text on something lighter than the page (a system list's rows, `Theme.listAccent`): its lightness
+  /// raised a percent at a time, as `legible` does for the page, until it reads 4.5:1 on `surface`. Unchanged when it
+  /// reads there already.
+  public static func legible(_ color: RGB, on surface: RGB) -> RGB {
+    guard color.contrast(with: surface) < 4.5 else { return color }
+    func byte(_ c: Double) -> UInt8 { UInt8((min(1, max(0, c)) * 255).rounded()) }
+    let (h, s, l) = hsl(byte(color.r), byte(color.g), byte(color.b))
+    var lifted = HSL(h: Int((h * 360).rounded()), s: Int((s * 100).rounded()), l: Int((l * 100).rounded()))
+    while lifted.rgb.contrast(with: surface) < 4.5, lifted.l < 95 { lifted.l += 1 }
+    return lifted.rgb
+  }
+
   /// The accent of an image (JPEG, PNG or WebP bytes), drawn at 32×32 as the web draws it on a canvas.
   public static func extract(imageData: Data) -> HSL? {
     guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),

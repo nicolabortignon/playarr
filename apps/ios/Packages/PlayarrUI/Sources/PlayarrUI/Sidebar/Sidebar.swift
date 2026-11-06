@@ -128,8 +128,7 @@ struct Sidebar: View {
   /// A row outside the list (Settings at the foot, the folded bar), drawn as the list draws a selected or plain row.
   private func row(_ item: SidebarItem, selected: Bool, action: @escaping () -> Void) -> some View {
     Button(action: action) {
-      Label(item.title, systemImage: item.systemImage)
-        .foregroundStyle(selected ? theme.accent.color : .primary)
+      place(item.title, systemImage: item.systemImage, selected: selected)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .padding(.horizontal, 12)
         .background(selected ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 12))
@@ -141,8 +140,18 @@ struct Sidebar: View {
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 
+  /// A place's glyph and name, the page you're on lit as the web's sidebar lights it: its name stays in the text color
+  /// over the highlight, where the accent read at 3.6:1, and its glyph takes the accent.
+  private func place(_ title: String, systemImage: String, selected: Bool) -> some View {
+    Label {
+      Text(title).foregroundStyle(.paper)
+    } icon: {
+      Image(systemName: systemImage).foregroundStyle(selected ? AnyShapeStyle(theme.accent.color) : AnyShapeStyle(.paper))
+    }
+  }
+
   private func link(_ item: SidebarItem) -> some View {
-    Label(item.title, systemImage: item.systemImage)
+    place(item.title, systemImage: item.systemImage, selected: session.router.sidebar == item)
       // How tall a row is at this text size, for where the links end.
       .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if item == .home { rowHeight = max(44, $0 + 12) } }
       // One element per row (its icon and name), so UI tests find the row itself by its identifier.
@@ -152,7 +161,8 @@ struct Sidebar: View {
   }
 
   private func playlistRow(_ playlist: PlaylistSummary) -> some View {
-    Label(playlist.name, systemImage: SidebarItem.playlist(playlist.id).systemImage)
+    let item = SidebarItem.playlist(playlist.id)
+    return place(playlist.name, systemImage: item.systemImage, selected: session.router.sidebar == item)
       .essentialLineLimit()
       .accessibilityElement(children: .combine)
       .tag(SidebarItem.playlist(playlist.id))

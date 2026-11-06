@@ -47,7 +47,8 @@ struct PlaylistView: View {
     }
     .titleInBar(playlist.name)
     #if os(iOS)
-      .toolbar { if model.mine, model.items.count > 1 { EditButton() } }
+      // In the bar's text color: the accent on the bar's glass doesn't read at 4.5:1.
+      .toolbar { if model.mine, model.items.count > 1 { EditButton().tint(Color.paper) } }
     #endif
     .refreshable { await model.load() }
     .sheet(isPresented: $pickingCover) { CoverPickerView(playlist: model, detail: playlist) }
@@ -59,7 +60,7 @@ struct PlaylistView: View {
         .listRowSeparator(.hidden)
       Section {
         if model.items.isEmpty {
-          EmptyState(systemImage: "music.note.list", line: PageLines.playlist(mine: model.mine))
+          EmptyState(systemImage: "music.note.list", line: PageLines.playlist(mine: model.mine), underHeader: true)
             .listRowSeparator(.hidden)
         }
         ForEach(Array(model.items.enumerated()), id: \.element.itemId) { index, item in
@@ -103,7 +104,8 @@ struct PlaylistView: View {
   /// The cover, Playlist, the name (tap to rename), its songs and whose it is, the action row, then what it's about.
   private func header(_ playlist: PlaylistDetail, cover showsCover: Bool) -> some View {
     VStack(alignment: .leading, spacing: 24) {
-      DetailHeader(kicker: "Playlist", showsCover: showsCover) {
+      // Nothing in it yet: a smaller cover, so the line saying so shows on a phone's first screen too.
+      DetailHeader(kicker: "Playlist", showsCover: showsCover, smallCover: model.items.isEmpty) {
         cover(playlist)
       } title: {
         if editing {

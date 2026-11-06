@@ -24,4 +24,10 @@ public struct RGB: Hashable, Sendable {
     func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
     return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
   }
+
+  /// The contrast ratio (WCAG) between this color and another: 1 for the same, 21 for black and white.
+  public func contrast(with other: RGB) -> Double {
+    let (light, dark) = luminance > other.luminance ? (luminance, other.luminance) : (other.luminance, luminance)
+    return (light + 0.05) / (dark + 0.05)
+  }
 }

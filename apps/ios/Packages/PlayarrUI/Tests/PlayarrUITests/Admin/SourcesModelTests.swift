@@ -29,9 +29,9 @@ import Testing
 
   @Test func summarisesAlbumsAndMatchesLikeTheWeb() throws {
     let lidarr = try #require(SourceText.albumSummary(Samples.lidarr()))
-    #expect(lidarr.map(\.label) == ["Complete Albums", "Incomplete Albums", "Unidentified"])
+    #expect(lidarr.map(\.label) == ["complete albums", "incomplete albums", "unidentified"])
     #expect(lidarr.map(\.count) == [80, 15, 5])
-    #expect(SourceText.albumSummary(Samples.folder())?.map(\.label) == ["On complete albums", "On incomplete albums", "Unidentified"])
+    #expect(SourceText.albumSummary(Samples.folder())?.map(\.label) == ["on complete albums", "on incomplete albums", "unidentified"])
     #expect(SourceText.matchSummary(Samples.lidarr()) == nil)
     #expect(SourceText.matchSummary(Samples.folder()) == nil)
     let folder = try #require(SourceText.matchSummary(Samples.folder(review: 3, matched: 1, ignored: 2)))
@@ -65,6 +65,21 @@ import Testing
     await model.move(fromOffsets: IndexSet(integer: 0), toOffset: 2)
     #expect(api.bodies(.put, "/api/settings/sources/order") == [#"{"ids":[2,1]}"#])
     #expect(model.sources.map(\.id) == [2, 1])
+  }
+
+  @Test func movesASourceOnePlaceFromItsMenu() async {
+    let model = SourcesModel(api: api, clock: clock)
+    api.on(.get, "/api/settings/sources", Samples.sources([Samples.lidarr(), Samples.folder(), Samples.folder(id: 3, name: "Vinyl rips")]))
+    await model.load()
+    api.on(.put, "/api/settings/sources/order", Samples.sources([Samples.folder(), Samples.lidarr(), Samples.folder(id: 3, name: "Vinyl rips")]))
+    await model.move(Samples.folder(), by: -1)
+    #expect(api.bodies(.put, "/api/settings/sources/order") == [#"{"ids":[2,1,3]}"#])
+    api.on(.put, "/api/settings/sources/order", Samples.sources([Samples.folder(), Samples.folder(id: 3, name: "Vinyl rips"), Samples.lidarr()]))
+    await model.move(Samples.lidarr(), by: 1)
+    #expect(api.bodies(.put, "/api/settings/sources/order").last == #"{"ids":[2,3,1]}"#)
+    // Nowhere further to go: nothing is sent.
+    await model.move(Samples.lidarr(), by: 1)
+    #expect(api.calls(.put, "/api/settings/sources/order").count == 2)
   }
 
   @Test func putsTheOrderBackWhenSavingItFails() async {

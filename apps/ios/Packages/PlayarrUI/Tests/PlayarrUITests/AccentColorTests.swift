@@ -27,6 +27,24 @@ import UniformTypeIdentifiers
     #expect(AccentColor.HSL(h: 240, s: 90, l: 69).rgb.luminance < 0.2)
   }
 
+  @Test @MainActor func liftsTheAccentAgainForTheRowsOfASystemList() {
+    // Lifted for the page, the blue reads 3.5:1 on a sheet's row: there it goes up to 76 %, the same hue.
+    let blue = AccentColor.HSL(h: 240, s: 90, l: 70).rgb
+    #expect(blue.contrast(with: Theme.listRow) < 4.5)
+    let lifted = AccentColor.legible(blue, on: Theme.listRow)
+    #expect(lifted == AccentColor.HSL(h: 240, s: 90, l: 76).rgb)
+    #expect(lifted.contrast(with: Theme.listRow) >= 4.5)
+    #expect(lifted.contrast(with: RGB(hex: 0x1c1c1e)) >= 4.5)
+    // Playarr's orange reads there already (6.5:1 on a page's row) and stays as it is.
+    #expect(AccentColor.legible(Theme.defaultAccent, on: Theme.listRow) == Theme.defaultAccent)
+  }
+
+  @Test @MainActor func measuresContrastBothWaysRound() {
+    #expect(abs(RGB(hex: 0x000000).contrast(with: RGB(hex: 0xffffff)) - 21) < 0.001)
+    #expect(RGB(hex: 0xffffff).contrast(with: RGB(hex: 0x000000)) == RGB(hex: 0x000000).contrast(with: RGB(hex: 0xffffff)))
+    #expect(Theme.defaultAccent.contrast(with: Theme.defaultAccent) == 1)
+  }
+
   @Test func aGrayCoverGivesNoAccentRatherThanADustyRed() {
     #expect(AccentColor.extract(rgba: pixels((128, 128, 128))) == nil)
   }

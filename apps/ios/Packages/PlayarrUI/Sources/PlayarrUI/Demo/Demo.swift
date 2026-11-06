@@ -125,6 +125,7 @@ public enum Demo {
       (.get, "/api/discover/artists/art-1/similar", [DiscoverArtist(mbid: "art-2", name: "Portishead", genres: ["trip hop"], artistId: 8)]),
       (.post, "/api/radio", dummyTracks),
     ]
+    routes += settingsRoutes
     for artist in artists {
       routes.append((.get, "/api/artists/\(artist.id)", artistDetail(artist)))
       routes.append((.get, "/api/artists/\(artist.id)/tracks", tracks.filter { $0.artistId == artist.id }))

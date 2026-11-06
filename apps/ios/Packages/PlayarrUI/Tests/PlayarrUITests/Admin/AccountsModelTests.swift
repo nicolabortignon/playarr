@@ -73,7 +73,9 @@ import Testing
     #expect(api.bodies(.post, "/api/accounts") == [#"{"canRequest":false,"locked":[],"name":"App Review","role":"member","sources":[2],"username":"reviewer"}"#])
     #expect(model.setupShown?.setup.code == "ABCD2345")
     #expect(model.accounts?.map(\.id) == [1, 2, 3])
-    #expect(model.summary(reviewer) == "reviewer · member · Creative Commons · not set up yet")
+    // Whether it's set up is a line of its own ("Invited · not set up yet"), not part of the summary.
+    #expect(model.summary(reviewer) == "reviewer · member · Creative Commons")
+    #expect(model.activityText(reviewer) == nil)
     #expect(AccountsModel.setupText(Self.setup).hasPrefix("Give them this code or link: they choose their own password with it. It works once, until "))
   }
 
@@ -138,10 +140,72 @@ import Testing
     let model = AccountsModel(api: api)
     await model.load()
     api.on(.post, "/api/accounts/2/reset", Self.setup)
-    await model.reset(Self.sam)
-    #expect(model.setupShown?.account.hasPassword == false)
-    #expect(model.summary(model.accounts![1]) == "sam · member · every source · not set up yet")
+    let shown = await model.reset(Self.sam)
+    #expect(shown?.account.hasPassword == false && shown?.setup == Self.setup)
+    #expect(model.accounts?[1].hasPassword == false)
+    #expect(model.summary(model.accounts![1]) == "sam · member · every source")
     #expect(model.sessions[2] == [])
+  }
+
+  /// This device's invites, on a day `setup` still works.
+  static func invites() -> InviteStore { InviteStore(now: { InviteStoreTests.now }) }
+
+  /// Jo, invited from another device (or long ago): this one has no link to copy.
+  static let jo = Account(id: 3, username: "jo", name: "Jo", role: .member, canRequest: true, sources: nil, hasPassword: false)
+
+  @Test func copiesTheInviteLinkThisDeviceMade() async {
+    signedIn(as: Self.nicola)
+    var copied: [String] = []
+    var toasts: [String] = []
+    let model = AccountsModel(api: api, invites: Self.invites(), copy: { copied.append($0) }, toast: { toasts.append($0) })
+    await model.load()
+    let form = AccountFormModel(account: nil, sources: model.sources)
+    form.name = "Jo"
+    form.username = "jo"
+    api.on(.post, "/api/accounts", CreatedAccount(account: Self.jo, setup: Self.setup))
+    #expect(await model.create(form))
+    #expect(model.copyInvite(Self.jo))
+    #expect(copied == ["http://nas:4000/redeem?code=ABCD2345"])
+    #expect(toasts == ["Copied Jo’s invite link"])
+  }
+
+  @Test func withoutALinkOnThisDeviceCopyingAsksForANewOne() async {
+    signedIn(as: Self.nicola)
+    api.on(.get, "/api/accounts", [Self.listed(Self.nicola), Self.listed(Self.jo)])
+    var copied: [String] = []
+    let model = AccountsModel(api: api, invites: Self.invites(), copy: { copied.append($0) })
+    await model.load()
+    #expect(!model.copyInvite(Self.jo))
+    #expect(copied.isEmpty)
+    #expect(
+      model.inviteQuestion(Self.jo)
+        == LossQuestion(
+          title: "New invite link for Jo?",
+          message:
+            "Playarr keeps no copy of an invite once it’s made, and this device has none for Jo: copying a link means making a new one, and the link or code Jo has now stops working.",
+          verb: "Make a new link"))
+    // Making the new link shows it, and from then on this device has it to copy.
+    api.on(.post, "/api/accounts/3/reset", Self.setup)
+    let shown = await model.reset(Self.jo)
+    #expect(shown?.setup.link == "http://nas:4000/redeem?code=ABCD2345")
+    #expect(model.copyInvite(Self.jo))
+    #expect(copied == ["http://nas:4000/redeem?code=ABCD2345"])
+  }
+
+  @Test func forgetsAnInviteOnceItsAccountIsSetUpOrRemoved() async {
+    signedIn(as: Self.nicola)
+    api.on(.get, "/api/accounts", [Self.listed(Self.nicola), Self.listed(Self.jo), Self.listed(Self.sam)])
+    let invites = Self.invites()
+    invites.remember(Self.setup, for: Self.jo.id)
+    invites.remember(Self.setup, for: Self.sam.id)
+    let model = AccountsModel(api: api, invites: invites)
+    await model.load()
+    // Sam has set up since: their old link is no use.
+    #expect(invites.invite(for: Self.sam.id) == nil)
+    #expect(invites.invite(for: Self.jo.id) == Self.setup)
+    api.on(.delete, "/api/accounts/3", [Self.listed(Self.nicola), Self.listed(Self.sam)])
+    await model.remove(Self.jo)
+    #expect(invites.invite(for: Self.jo.id) == nil)
   }
 
   @Test func neverOffersToRemoveTheLastAdmin() async {

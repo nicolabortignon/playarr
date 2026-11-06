@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Settings → Playback → Keyboard shortcuts (apps/web/src/components/PlaybackPanel.tsx `SHORTCUTS`), shown on an
-/// iPad, where a keyboard can be attached.
+/// iPad while a keyboard is attached (`HardwareKeyboard`).
 struct KeyboardShortcutsSection: View {
   /// The web's list: keys (combinations, each of keys) and what they do.
   static let rows: [(keys: [[String]], action: String)] = [

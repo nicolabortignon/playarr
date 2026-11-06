@@ -4,7 +4,8 @@ import PlayarrAPI
 
 /// Settings → Accounts. Everyone renames themselves, sees the devices they're signed in on, signs any of
 /// them out, and signs out here. Admins also list, add (a setup code to hand over), change, reset and
-/// remove accounts, and sign out anyone's devices (AccountsPanel.tsx).
+/// remove accounts, and sign out anyone's devices (AccountsPanel.tsx). Someone invited who never set up is
+/// "Invited · not set up yet", with Copy invite link (the link this device made, while it works) and New code.
 @MainActor @Observable
 public final class AccountsModel {
   /// A new or reset account's one-time code, on screen until dismissed.
@@ -33,18 +34,30 @@ public final class AccountsModel {
   @ObservationIgnored private let api: any APISending
   @ObservationIgnored private let signOutHere: @MainActor () async -> Void
   @ObservationIgnored private let accountChanged: @MainActor (Account) -> Void
+  @ObservationIgnored private let invites: InviteStore
+  @ObservationIgnored private let copy: @MainActor (String) -> Void
+  @ObservationIgnored private let toast: @MainActor (String) -> Void
+
+  /// The line under an account invited but never set up.
+  public static let invitedLine = "Invited · not set up yet"
 
   public static let everyoneIntro =
     "Each account has its own history, mixes, Favorites and playlists, and hears every source or only the ones you pick. Admins change settings, sources and accounts. You never choose anyone’s password: a new or reset account gets a setup code."
 
   /// `signOutHere` ends this device's session (ServerStore.signOut); `accountChanged` keeps the store's copy of
-  /// the signed-in account current (ServerStore.update).
+  /// the signed-in account current (ServerStore.update). `invites` keeps the setup links made here; `copy` puts text on
+  /// the clipboard; `toast` says what happened.
   public init(
-    api: any APISending, signOutHere: @escaping @MainActor () async -> Void = {}, accountChanged: @escaping @MainActor (Account) -> Void = { _ in }
+    api: any APISending, signOutHere: @escaping @MainActor () async -> Void = {}, accountChanged: @escaping @MainActor (Account) -> Void = { _ in },
+    invites: InviteStore = InviteStore(), copy: @escaping @MainActor (String) -> Void = { _ in },
+    toast: @escaping @MainActor (String) -> Void = { _ in }
   ) {
     self.api = api
     self.signOutHere = signOutHere
     self.accountChanged = accountChanged
+    self.invites = invites
+    self.copy = copy
+    self.toast = toast
   }
 
   public var isAdmin: Bool { me?.role == .admin }
@@ -104,6 +117,7 @@ public final class AccountsModel {
     return await act {
       let created = try await api.send(form.createEndpoint)
       accounts = (accounts ?? []) + [created.account]
+      invites.remember(created.setup, for: created.account.id)
       setupShown = SetupShown(account: created.account, setup: created.setup)
     }
   }
@@ -122,16 +136,40 @@ public final class AccountsModel {
     }
   }
 
-  /// After the question: a new setup code; the account is signed out everywhere.
-  public func reset(_ account: Account) async {
+  /// After the question: a new setup code, to show; the account is signed out everywhere, and the code given before
+  /// stops working.
+  @discardableResult
+  public func reset(_ account: Account) async -> SetupShown? {
+    var shown: SetupShown?
     await act {
       let setup = try await api.send(API.Accounts.reset(id: account.id))
       sessions[account.id] = []
       var reset = account
       reset.hasPassword = false
       replace(reset)
-      setupShown = SetupShown(account: reset, setup: setup)
+      invites.remember(setup, for: account.id)
+      shown = SetupShown(account: reset, setup: setup)
     }
+    return shown
+  }
+
+  /// Copy invite link: the link this device made goes on the clipboard (true). Without one (made elsewhere, or
+  /// expired) nothing is copied (false): the view asks whether to make a new one (`inviteQuestion`).
+  @discardableResult
+  public func copyInvite(_ account: Account) -> Bool {
+    guard let invite = invites.invite(for: account.id) else { return false }
+    copy(invite.link)
+    toast("Copied \(account.name)’s invite link")
+    return true
+  }
+
+  /// A new invite link, where this device had none to copy: the one given before stops working.
+  func inviteQuestion(_ account: Account) -> LossQuestion {
+    LossQuestion(
+      title: "New invite link for \(account.name)?",
+      message:
+        "Playarr keeps no copy of an invite once it’s made, and this device has none for \(account.name): copying a link means making a new one, and the link or code \(account.name) has now stops working.",
+      verb: "Make a new link")
   }
 
   /// The server keeps at least one admin.
@@ -142,6 +180,7 @@ public final class AccountsModel {
   /// After the question. Removing yourself signs you out here.
   public func remove(_ account: Account) async {
     let removed = await act { listed(try await api.send(API.Accounts.delete(id: account.id))) }
+    if removed { invites.forget(account.id) }
     if removed, account.id == me?.id { await signOutHere() }
   }
 
@@ -175,7 +214,8 @@ public final class AccountsModel {
     return LossQuestion(title: "Remove \(account.name)?", message: message, verb: "Remove")
   }
 
-  /// "sam · member · can request albums · Creative Commons · Playback locked · not set up yet".
+  /// "sam · member · can request albums · Creative Commons · Playback locked". Whether it's set up is its own line
+  /// (`invitedLine`).
   public func summary(_ account: Account) -> String {
     let names = Dictionary(sources.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     let library: String
@@ -187,15 +227,15 @@ public final class AccountsModel {
     let locked = AccountFormModel.deviceSettings.filter { account.locked?.contains($0.setting) == true }.map(\.label)
     return [
       account.username, account.role.rawValue, account.canRequest ? "can request albums" : nil, library,
-      locked.isEmpty ? nil : "\(locked.joined(separator: " and ")) locked", account.hasPassword ? nil : "not set up yet",
+      locked.isEmpty ? nil : "\(locked.joined(separator: " and ")) locked",
     ]
       .compactMap { $0 }
       .joined(separator: " · ")
   }
 
-  /// "1,234 songs played · 3 playlists", once the list has come.
+  /// "1,234 songs played · 3 playlists", once the list has come; nothing for someone who never set up.
   public func activityText(_ account: Account) -> String? {
-    guard let counts = activity[account.id] else { return nil }
+    guard account.hasPassword, let counts = activity[account.id] else { return nil }
     return "\(AdminText.count(counts.plays)) \(counts.plays == 1 ? "song" : "songs") played · \(AdminText.plural(counts.playlists, "playlist"))"
   }
 
@@ -208,6 +248,8 @@ public final class AccountsModel {
   private func listed(_ list: [ListedAccount]) {
     accounts = list.map(\.account)
     activity = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    // Someone who has set up since needs no invite any more.
+    for account in list where account.hasPassword { invites.forget(account.id) }
   }
 
   private func replace(_ account: Account) {

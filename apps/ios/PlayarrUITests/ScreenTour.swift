@@ -76,8 +76,43 @@ final class ScreenTour: XCTestCase {
   /// any step, when there's none (the page didn't open).
   @MainActor
   private func back() {
+    // The one on screen: the other tabs' bars keep their back buttons in the tree, out of sight (on the iPhone SE the
+    // first of them had no point to tap, and the tap went nowhere).
+    let backButtons = app.navigationBars.buttons.matching(identifier: "BackButton").allElementsBoundByIndex
+    if let shown = backButtons.first(where: { $0.isHittable }) { return shown.tap() }
     let inBar = app.navigationBars.buttons.firstMatch
     if inBar.exists { inBar.tap() } else { tap(app.buttons["BackButton"].firstMatch, timeout: 2) }
+  }
+
+  /// `back()` from the page titled `title`, once more if it's still there, so a tap that went nowhere doesn't skip the
+  /// rest of Settings.
+  @MainActor
+  private func back(from title: String) {
+    back()
+    let page = app.navigationBars[title]
+    if page.exists, !page.waitForNonExistence(timeout: 2) { back() }
+  }
+
+  /// Puts away a question a phone shows as a popover without Cancel, with a tap beside it: above it, or below it when
+  /// it sits at the top (on the iPhone SE the list had scrolled its button up, and the tap above landed on it).
+  @MainActor
+  private func dismissQuestion(answer verb: String) {
+    if tap(app.buttons["Cancel"].firstMatch, timeout: 1) { return }
+    let answer = app.buttons[verb].firstMatch
+    let high = answer.exists && answer.frame.minY < app.frame.height * 0.4
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: high ? 0.75 : 0.1)).tap()
+  }
+
+  /// The element, the page swiped up until it's there and clear of the bars at the foot (three swipes at most): a list
+  /// draws only the rows near the screen, and the iPhone Duo's cover screen shows few.
+  @MainActor
+  private func reveal(_ element: XCUIElement) -> XCUIElement {
+    var swipes = 0
+    while swipes < 3, !(element.waitForExistence(timeout: 1) && element.frame.midY < app.frame.height * 0.7) {
+      app.swipeUp(velocity: .slow)
+      swipes += 1
+    }
+    return element
   }
 
   @MainActor
@@ -210,9 +245,31 @@ final class ScreenTour: XCTestCase {
       shot("14-settings")
       if tap(app.buttons["Playback"]) {
         shot("14b-playback")
-        back()
+        back(from: "Playback")
       }
-      if tap(app.buttons["Appearance"]) { shot("15-appearance") }
+      if tap(app.buttons["Appearance"]) {
+        shot("15-appearance")
+        back(from: "Appearance")
+      }
+      // Accounts: someone invited who never set up says so, with Copy invite link and New code; this device made no link
+      // for them, so copying asks for a new one.
+      if tap(reveal(app.buttons["settings.accounts"].firstMatch), timeout: 2) {
+        shot("14c-settings-accounts", after: 1.5)
+        if tap(app.buttons["Copy Jo’s invite link"], timeout: 2) {
+          shot("14d-invite-question", after: 1)
+          dismissQuestion(answer: "Make a new link")
+        }
+        back(from: "Accounts")
+      }
+      // Sources: each source's ⋯ says what it does in words.
+      if tap(reveal(app.buttons["settings.sources"].firstMatch), timeout: 2) {
+        shot("14e-settings-sources", after: 1.5)
+        if tap(app.buttons["More for “Music”"].firstMatch, timeout: 2) {
+          shot("14f-source-menu", after: 0.8)
+          app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        }
+        back(from: "Sources")
+      }
     }
 
     // A playlist of your own with nothing in it yet, and what deleting it asks.
@@ -233,7 +290,7 @@ final class ScreenTour: XCTestCase {
     }
 
     // Last: the search field takes the tab bar's place while it's active. On the iPhone Duo's cover screen, where the
-    // tabs are a rail, the field can be there but out of sight: pulled down for, else the page is shot as it is.
+    // tabs are a rail, it sits under the page's title instead.
     if tap(tab("Search")) {
       let field = app.searchFields.firstMatch
       if field.waitForExistence(timeout: 5), !field.isHittable { app.swipeDown() }
@@ -242,10 +299,31 @@ final class ScreenTour: XCTestCase {
         field.typeText("mass")
       }
       shot("13-search")
+      if field.exists, field.isHittable {
+        // Return counts the search as a recent one, and puts the keyboard away: further down, what's beyond the library.
+        field.typeText("\n")
+        // Its heading near the top, with where it's from and what Request does: dragged there and held, so the page
+        // doesn't fling past it.
+        let beyond = app.staticTexts["Not in your library"]
+        let height = app.frame.height
+        var drags = 0
+        while drags < 5, beyond.waitForExistence(timeout: 3), beyond.frame.minY > height * 0.3 {
+          let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+          let distance = min(beyond.frame.minY - height * 0.15, height * 0.45)
+          start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -distance)), withVelocity: .slow, thenHoldForDuration: 0.3)
+          drags += 1
+        }
+        shot("13a-search-beyond")
+        for _ in 0..<drags { app.swipeDown() }
+      }
       // Nothing in the library: what to try, and New search.
       if field.exists, field.isHittable {
+        field.tap()
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4) + "zzzz")
         shot("13b-search-nothing")
+        // Empty again: the searches made lately, above the artists to try.
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4))
+        shot("13c-search-recent")
       }
     }
   }
@@ -335,8 +413,10 @@ final class ScreenTour: XCTestCase {
     if tap(sidebar("settings")) {
       shot("10-settings")
       if tap(app.buttons["Playback"]) { shot("10b-playback") }
-      // Picking Settings again goes back to its first page.
-      if tap(sidebar("settings")), tap(app.buttons["Your listening"]) { shot("15-stats", after: 2) }
+    }
+    // Your listening, from the account menu (on a page's root, not over Settings → Playback): it isn't a setting.
+    if tap(sidebar("home")), tap(app.buttons["Account and settings"].firstMatch), tap(app.buttons["Your listening"], timeout: 2) {
+      shot("15-stats", after: 2)
     }
     if tap(sidebar("search")) {
       let field = app.searchFields.firstMatch

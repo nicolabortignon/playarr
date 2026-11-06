@@ -5,13 +5,19 @@ import SwiftUI
 public struct UpdatesPanel: View {
   @State private var model: UpdatesModel
 
-  public init(api: any APISending) {
+  private let isAdmin: Bool
+
+  /// `isAdmin`: a member reads only that an admin changes these (the server doesn't show them the settings).
+  public init(api: any APISending, isAdmin: Bool = true) {
     _model = State(initialValue: UpdatesModel(api: api))
+    self.isAdmin = isAdmin
   }
 
   public var body: some View {
     Form {
-      if let info = model.info {
+      if !isAdmin {
+        AdminOnlyNotice()
+      } else if let info = model.info {
         Section { Text(UpdatesModel.intro).font(.footnote).foregroundStyle(.secondary) }
         Section("Version") {
           Text(model.versionText)
@@ -53,6 +59,6 @@ public struct UpdatesPanel: View {
       }
     }
     .navigationTitle("Updates")
-    .task { await model.poll() }
+    .task { if isAdmin { await model.poll() } }
   }
 }

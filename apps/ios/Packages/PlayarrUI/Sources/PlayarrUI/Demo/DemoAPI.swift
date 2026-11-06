@@ -17,6 +17,8 @@ public struct DemoAPI: APISending {
       answer = remembered
     } else if endpoint.method == .get, endpoint.path == "/api/search" {
       answer = Demo.search(endpoint.query.first { $0.name == "q" }?.value ?? "")
+    } else if endpoint.method == .get, endpoint.path == "/api/discover/search" {
+      answer = Demo.discover(endpoint.query.first { $0.name == "q" }?.value ?? "")
     } else if let known = answers["\(endpoint.method.rawValue) \(endpoint.path)"] {
       answer = known
     } else {

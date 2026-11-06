@@ -23,6 +23,15 @@ public final class AppRouter {
 
   public init() {}
 
+  /// How many pages are open over Search (its tab's, or on an iPad its detail column's): one more is a result opened
+  /// from it, which makes the search a recent one.
+  public var searchDepth: Int {
+    switch layout {
+    case .tabs: paths[.search]?.count ?? 0
+    case .split: sidebar == .search ? detail.count : 0
+    }
+  }
+
   /// Picks a tab; picking the one shown goes back to its first page, as iOS tab bars do.
   public func select(_ tab: AppTab) {
     if tab == self.tab {

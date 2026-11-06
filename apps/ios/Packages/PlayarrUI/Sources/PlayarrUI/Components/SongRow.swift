@@ -205,6 +205,9 @@ struct MissingSongRow: View {
       .foregroundStyle(.muted)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(spoken)
+      // VoiceOver's frame is the whole row, as tall as the others: left to itself it's only its words' (19 points),
+      // which the accessibility audit took for a control too small to tap.
+      .contentShape(.accessibility, Rectangle())
       if duration != nil { ControlGap() }
       if !own.isEmpty {
         MoreMenu(title: title, groups: [own])
@@ -212,7 +215,8 @@ struct MissingSongRow: View {
         ControlGap()
       }
     }
-    .contextMenu { if !own.isEmpty { MenuButtons(groups: [own]) } }
+    // A menu only where there's something in it: an album's missing song has nothing to do, so nothing to press.
+    .modifier(OwnMenu(own: own))
     .listRowInsets(.vertical, 0)
   }
 
@@ -221,6 +225,19 @@ struct MissingSongRow: View {
     switch lead {
     case .number(let number): "\(number). \(title), not in your library"
     case .cover: ([title] + subtitle.prefix(1) + ["not in your library"]).joined(separator: ", ")
+    }
+  }
+}
+
+/// A missing song's long press: its place's own actions, when it has some.
+private struct OwnMenu: ViewModifier {
+  let own: [MenuAction]
+
+  func body(content: Content) -> some View {
+    if own.isEmpty {
+      content
+    } else {
+      content.contextMenu { MenuButtons(groups: [own]) }
     }
   }
 }

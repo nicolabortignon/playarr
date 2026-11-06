@@ -15,6 +15,9 @@ struct DetailHeader<Cover: View, Title: View, Meta: View, Actions: View>: View {
   var overArt = false
   /// False where the art is drawn elsewhere: beside the page (an iPhone held sideways) or behind it (an artist's photo).
   var showsCover = true
+  /// On a phone, the cover at an artist's circle's size: a playlist with nothing in it yet, so the line saying so shows on
+  /// the first screen too.
+  var smallCover = false
   @ViewBuilder let cover: Cover
   @ViewBuilder let title: Title
   /// The one line under the title (`MetaLine` for words alone), in the meta type role.
@@ -25,13 +28,14 @@ struct DetailHeader<Cover: View, Title: View, Meta: View, Actions: View>: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
 
   init(
-    kicker: String, round: Bool = false, overArt: Bool = false, showsCover: Bool = true, @ViewBuilder cover: () -> Cover,
-    @ViewBuilder title: () -> Title, @ViewBuilder meta: () -> Meta, @ViewBuilder actions: () -> Actions
+    kicker: String, round: Bool = false, overArt: Bool = false, showsCover: Bool = true, smallCover: Bool = false,
+    @ViewBuilder cover: () -> Cover, @ViewBuilder title: () -> Title, @ViewBuilder meta: () -> Meta, @ViewBuilder actions: () -> Actions
   ) {
     self.kicker = kicker
     self.round = round
     self.overArt = overArt
     self.showsCover = showsCover
+    self.smallCover = smallCover
     self.cover = cover()
     self.title = title()
     self.meta = meta()
@@ -52,7 +56,7 @@ struct DetailHeader<Cover: View, Title: View, Meta: View, Actions: View>: View {
       VStack(alignment: .leading, spacing: 0) {
         if showsCover {
           art
-            .containerRelativeFrame(.horizontal) { width, _ in DetailCover.side(width: width, round: round) }
+            .containerRelativeFrame(.horizontal) { width, _ in DetailCover.side(width: width, round: round, small: smallCover) }
             .frame(maxWidth: .infinity)
             .padding(.bottom, 20)
         }
@@ -87,9 +91,9 @@ struct DetailHeader<Cover: View, Title: View, Meta: View, Actions: View>: View {
 /// How big a detail header's cover is on a phone.
 enum DetailCover {
   /// 64 % of the width, at most 256 points; an artist's circle 40 %, at most 160 (the web's `min(64vw, 256px)` and
-  /// `min(40vw, 160px)`). Small enough that Play shows on the first screen.
-  static func side(width: CGFloat, round: Bool) -> CGFloat {
-    round ? min(width * 0.4, 160) : min(width * 0.64, 256)
+  /// `min(40vw, 160px)`). Small enough that Play shows on the first screen; `small` (an empty playlist) as the circle.
+  static func side(width: CGFloat, round: Bool, small: Bool = false) -> CGFloat {
+    round || small ? min(width * 0.4, 160) : min(width * 0.64, 256)
   }
 }
 

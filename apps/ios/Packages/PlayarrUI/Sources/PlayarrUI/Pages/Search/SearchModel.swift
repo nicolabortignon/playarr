@@ -3,7 +3,8 @@ import Observation
 import PlayarrAPI
 
 /// Search, as apps/web/src/pages/Search.tsx: the library's answer (top artist, songs, albums, artists) plus playlist
-/// names matched here, accent-insensitively; "Try an artist" while empty. Discover ("Not in your library") is phase 8.
+/// names matched here, accent-insensitively; recent searches (`RecentSearches`) and "Try an artist" while empty. What's
+/// beyond the library is `DiscoverSearchModel`'s.
 @MainActor @Observable
 final class SearchModel {
   /// Songs shown before "Show all".
@@ -92,8 +93,9 @@ final class SearchModel {
     return results.artists.isEmpty && results.albums.isEmpty && results.tracks.isEmpty && playlistHits.isEmpty
   }
 
-  /// What an empty search says (docs/design.md, The lines): with Lidarr's search still to come, or with results, that
-  /// what's out there follows; with nothing beyond the library either (or no way to look), what to try and New search.
+  /// What an empty search says (docs/design.md, The lines): with the search beyond the library still to come, or with
+  /// results, that what's out there follows; with nothing beyond the library either (or no way to look), what to try
+  /// and New search.
   static func notFound(_ query: String, asksBeyond: Bool, beyond: DiscoverSearchModel?) -> (line: PageLines.Line, offersNewSearch: Bool) {
     guard asksBeyond, let beyond else { return (PageLines.search(query), true) }
     let settled = beyond.answered == query && !beyond.fetching

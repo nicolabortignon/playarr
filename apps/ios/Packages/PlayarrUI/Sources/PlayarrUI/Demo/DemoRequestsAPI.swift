@@ -32,6 +32,8 @@ public final class DemoRequestsAPI: APISending, Sendable {
       health.lidarr = HealthStatus.Lidarr(ok: true, version: "2.9")
       health.requests = true
       return health
+    case (.get, "/api/auth/me"):
+      return Self.account
     case (.get, "/api/musicbrainz/status"):
       return MusicBrainzStatus(queued: 0, background: 0, etaSeconds: 0, matching: 0)
     case (.get, "/api/discover/search"):

@@ -90,6 +90,14 @@ import Testing
     #expect(Format.releaseKind("Album", [""]) == "Album")
   }
 
+  @Test func aLineOfPhrasesWrapsOnlyBetweenThem() {
+    let nbsp = "\u{00A0}"
+    #expect(Format.wrapsAtDots("0 of 3 songs · 0 MB") == "0\(nbsp)of\(nbsp)3\(nbsp)songs\(nbsp)· 0\(nbsp)MB")
+    // A part that starts with its dot (a download's failures) keeps it with the phrase before.
+    #expect(Format.wrapsAtDots(" · 3 couldn’t download") == "\(nbsp)· 3\(nbsp)couldn’t\(nbsp)download")
+    #expect(Format.wrapsAtDots("") == "")
+  }
+
   @Test func saysWhenAnAlbumWasAdded() {
     let now = Format.parseDate("2026-11-03T12:00:00.000Z")!
     let english = Locale(identifier: "en_US")
