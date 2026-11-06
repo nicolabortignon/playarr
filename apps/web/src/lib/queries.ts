@@ -261,12 +261,28 @@ export const usePlaylist = (id: number) =>
     refetchInterval: (q) => (q.state.data?.cover.pending ? COVER_POLL_MS : false),
   });
 
+/** A song by its title in quotes, or how many: "“Teardrop”", "11 songs". */
+const songsNamed = (tracks: Track[]) => (tracks.length === 1 ? `“${tracks[0]!.title}”` : `${tracks.length} songs`);
+
+/**
+ * For Add to playlist's ticks: how many of these songs each of the account's own playlists already holds, by playlist
+ * id (those holding none are left out). Asked afresh each time the picker opens.
+ */
+export const usePlaylistsHolding = (recordingIds: string[]) =>
+  useQuery({
+    queryKey: ['playlists-holding', [...new Set(recordingIds)].sort()],
+    queryFn: () => api.playlistsHolding(recordingIds),
+    enabled: recordingIds.length > 0,
+    staleTime: 0,
+  });
+
 /** Playlist mutations: each returns the updated playlist, which refreshes both caches. */
 export function usePlaylistMutations() {
   const client = useQueryClient();
   const settle = (p: PlaylistDetail) => {
     client.setQueryData(['playlist', p.id], p);
     void client.invalidateQueries({ queryKey: ['playlists'] });
+    void client.invalidateQueries({ queryKey: ['playlists-holding'] });
   };
   const onError = (err: Error) => toast(err.message, 'error');
 
@@ -283,7 +299,21 @@ export function usePlaylistMutations() {
       mutationFn: ({ id, tracks }: { id: number; tracks: Track[] }) => api.addToPlaylist(id, tracks.map((t) => t.recordingId)),
       onSuccess: (p, { tracks }) => {
         settle(p);
-        toast(`Added ${tracks.length === 1 ? `“${tracks[0]!.title}”` : `${tracks.length} songs`} to “${p.name}”`);
+        toast(`Added ${songsNamed(tracks)} to “${p.name}”`);
+      },
+      onError,
+    }),
+    /** The picker's Add: the songs go to every playlist chosen, with one toast for those that took them and one for any that didn't. */
+    addToMany: useMutation({
+      mutationFn: ({ ids, tracks }: { ids: number[]; tracks: Track[] }) =>
+        Promise.allSettled(ids.map((id) => api.addToPlaylist(id, tracks.map((t) => t.recordingId)))),
+      onSuccess: (results, { tracks }) => {
+        const added = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+        const failed = results.flatMap((r) => (r.status === 'rejected' ? [r.reason as Error] : []));
+        added.forEach(settle);
+        const names = added.length > 2 ? `${added.length} playlists` : added.map((p) => `“${p.name}”`).join(' and ');
+        if (added.length) toast(`Added ${songsNamed(tracks)} to ${names}`);
+        if (failed.length) toast(failed.length === 1 ? failed[0]!.message : `Couldn’t add to ${failed.length} playlists: ${failed[0]!.message}`, 'error');
       },
       onError,
     }),

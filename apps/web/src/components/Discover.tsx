@@ -1,4 +1,4 @@
-import type { Album, AlbumRef, Availability, DiscoverAlbum, DiscoverArtist, DiscoverTrack } from '@playarr/shared';
+import type { Album, AlbumRef, Availability, DiscoverAlbum, DiscoverTrack } from '@playarr/shared';
 import { Check, Clock, Download, Loader2, Play, RotateCw, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -11,6 +11,7 @@ import { rowActionWords, RowAction } from './ActionRow';
 import { Button } from './Button';
 import { Cover } from './Cover';
 import { InlineLink } from './InlineLink';
+import { ListRow } from './SongRow';
 
 /**
  * One control for every state of an album that may not be in the library yet: Request → Requesting… → Searching →
@@ -220,7 +221,7 @@ export function DiscoverAlbumCard({
             )}
           />
           {!available && !onArtistPage && (
-            <span className="absolute top-2 left-2 rounded-cover bg-ink-950/75 px-1.5 py-0.5 font-mono text-[9px] tracking-[0.15em] text-paper-dim uppercase backdrop-blur">
+            <span className="absolute top-2 left-2 rounded-cover bg-ink-950/75 px-1.5 py-0.5 type-badge text-paper-dim backdrop-blur">
               {kind}
             </span>
           )}
@@ -246,30 +247,30 @@ export function DiscoverAlbumCard({
   );
 }
 
+/**
+ * A song beyond the library (search), in the one row: its cover, title, artist and album (linked), length and Request.
+ * Pressing it opens its album when some of that is here; otherwise only its links and Request do something.
+ */
 export function DiscoverTrackRow({ track }: { track: DiscoverTrack }) {
-  const navigate = useNavigate();
   const available = track.availability.state === 'available';
   // A song whose album is only partly here still opens that album.
   const opens = track.availability.albumId !== undefined && (available || track.availability.have !== undefined);
   return (
-    <li
-      className={cn(
-        'group grid grid-cols-[2.75rem_1fr_auto] items-center gap-3 rounded-md px-3 py-2 transition hover:bg-paper/[0.045] md:grid-cols-[2.75rem_1fr_auto_auto] md:gap-4',
-        opens && 'cursor-pointer',
-      )}
-      onClick={() => opens && navigate(`/albums/${track.availability.albumId}`)}
-    >
-      <div className="relative">
-        <Cover src={track.coverUrl} size={44} alt="" label={track.albumTitle} className="size-11 rounded-cover" />
-        {available && (
-          <div className="absolute inset-0 grid place-items-center rounded-cover bg-black/50 opacity-0 transition group-hover:opacity-100">
-            <Play className="size-4 fill-paper" />
-          </div>
-        )}
-      </div>
-      <div className="min-w-0">
-        <div className="truncate text-[15px] text-paper">{track.title}</div>
-        <div className="truncate text-[13px] text-muted">
+    <ListRow
+      lead={
+        <span className="relative size-11 shrink-0">
+          <Cover src={track.coverUrl} size={44} alt="" label={track.albumTitle} className="size-11 rounded-cover" />
+          {available && (
+            <span className="absolute inset-0 grid place-items-center rounded-cover bg-ink-950/55 opacity-0 transition pointer-fine:group-hover:opacity-100">
+              <Play aria-hidden className="size-4 fill-paper text-paper" />
+            </span>
+          )}
+        </span>
+      }
+      title={track.title}
+      main={opens ? { label: `Open ${track.albumTitle}`, to: `/albums/${track.availability.albumId}` } : undefined}
+      subtitle={
+        <>
           <InlineLink to={artistHref(track)}>{track.artistName}</InlineLink> <span className="text-ink-600">·</span>{' '}
           <InlineLink
             to={albumHref({ ...track, albumId: available ? track.availability.albumId : undefined })}
@@ -277,31 +278,17 @@ export function DiscoverTrackRow({ track }: { track: DiscoverTrack }) {
           >
             {track.albumTitle}
           </InlineLink>
-        </div>
-      </div>
-      <span className="hidden font-mono text-[13px] text-muted tabular md:block">
-        {track.duration ? formatTime(track.duration) : ''}
-      </span>
-      <RequestButton album={track.album} availability={track.availability} />
-    </li>
-  );
-}
-
-export function DiscoverArtistCard({ artist, style, className }: { artist: DiscoverArtist; style?: CSSProperties; className?: string }) {
-  const to = artist.artistId ? `/artists/${artist.artistId}` : `/discover/artists/${artist.mbid}`;
-  return (
-    <Link to={to} style={style} className={cn('group block animate-rise text-center', className)}>
-      <Cover
-        src={artist.imageUrl}
-        size={176}
-        alt={artist.name}
-        className="mx-auto rounded-full ring-1 ring-paper/10 transition duration-500 ease-out-expo group-hover:scale-[1.03]"
-      />
-      <div className="mt-3 truncate text-[15px] text-paper">{artist.name}</div>
-      <div className="truncate font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
-        {artist.artistId ? 'In your library' : (artist.disambiguation ?? artist.genres[0] ?? 'Artist')}
-      </div>
-    </Link>
+        </>
+      }
+      trailing={
+        <>
+          {track.duration ? <span className="hidden shrink-0 type-meta text-muted md:block">{formatTime(track.duration)}</span> : null}
+          <span className="relative z-10 shrink-0">
+            <RequestButton album={track.album} availability={track.availability} />
+          </span>
+        </>
+      }
+    />
   );
 }
 

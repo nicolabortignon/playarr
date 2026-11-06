@@ -1,24 +1,25 @@
 import type { Track } from '@playarr/shared';
-import { Disc3, GripVertical, ListMusic, ListPlus, ListStart, Mic2, X } from 'lucide-react';
+import { ListPlus } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { Equalizer } from '../components/Equalizer';
 import { FavoriteButton } from '../components/FavoriteButton';
 import { FormatBadge } from '../components/FormatBadge';
-import { Menu } from '../components/Menu';
-import { NameAndNumbers } from '../components/NameAndNumbers';
+import { InlineLink } from '../components/InlineLink';
+import { upNextMenu } from '../components/menus';
 import { OfflineMark } from '../components/OfflineMark';
 import { PageHeader } from '../components/PageHeader';
-import { Tempo } from '../components/Tempo';
+import { SongRow, SongTime } from '../components/SongRow';
 import { TransitionView } from '../components/TransitionView';
-import { formatDuration, formatTime, plural } from '../lib/format';
+import { formatDuration, plural } from '../lib/format';
 import { useTempos } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
+import { moveUpcoming, playUpcoming } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 
 export function QueuePage() {
@@ -66,21 +67,23 @@ export function QueuePage() {
             </>
           )}
         </div>
-        <div className="flex items-center gap-4 rounded-lg border border-line bg-paper/[0.03] p-3 pr-5">
+        {/* The song playing, set apart: a row's type and trailing order (time · ♥), with a larger cover. */}
+        <div className="flex items-center gap-4 rounded-panel border border-line bg-paper/[0.03] p-3 pr-4">
           <Cover src={track.coverUrl} size={72} alt="" className="size-[72px] shrink-0 rounded-cover" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
               <Equalizer playing={playing} />
-              <span className="truncate text-lg text-accent">{track.title}</span>
+              <span className="truncate type-body text-accent">{track.title}</span>
               <OfflineMark fileId={track.fileId} />
             </div>
-            <div className="truncate text-sm text-muted">
+            <div className="truncate type-small text-muted">
               <Link to={`/artists/${track.artistId}`} className="hover:text-paper hover:underline">{track.artistName}</Link>
               {' · '}
               <Link to={`/albums/${track.albumId}`} className="hover:text-paper hover:underline">{track.albumTitle}</Link>
             </div>
           </div>
           <FormatBadge format={track.format} className="hidden sm:inline-flex" />
+          <SongTime seconds={track.duration} />
           <FavoriteButton track={track} size="md" />
         </div>
         <TransitionView className="mt-2 ml-1" />
@@ -121,7 +124,10 @@ function clearWithUndo(ids: number[]) {
   });
 }
 
-/** Up next: drag to reorder (by the grip), tap to play from there, ⋯ for the rest. */
+/**
+ * Up next: tap a song to play from there; drag it by its handle, or move it with the handle's arrow keys or its menu's
+ * Move up and Move down; ⋯ (or a right-click, or a long press) for the rest.
+ */
 function UpNext({ ids, queue }: { ids: number[]; queue: Track[] }) {
   // Dragging reorders this copy; the player's order changes when the drag ends.
   const [order, setOrder] = useState(ids);
@@ -137,7 +143,7 @@ function UpNext({ ids, queue }: { ids: number[]; queue: Track[] }) {
           track={queue[queueIndex]!}
           bpm={tempos[queue[queueIndex]!.recordingId]}
           position={i}
-          order={order}
+          count={order.length}
           onDragEnd={commit}
         />
       ))}
@@ -150,69 +156,36 @@ function UpNextRow({
   track: t,
   bpm,
   position,
-  order,
+  count,
   onDragEnd,
 }: {
   queueIndex: number;
   track: Track;
   /** Its measured tempo, if any. */
   bpm: number | undefined;
+  /** Its place in Up next: 0 plays next. */
   position: number;
-  order: number[];
+  count: number;
   onDragEnd: () => void;
 }) {
   const controls = useDragControls();
-  const navigate = useNavigate();
-  const openPicker = useUI((s) => s.openPlaylistPicker);
-  const p = () => usePlayer.getState();
-  const at = () => p().pos + 1 + position;
   return (
-    <Reorder.Item
-      value={queueIndex}
-      dragListener={false}
-      dragControls={controls}
-      onDragEnd={onDragEnd}
-      whileDrag={{ scale: 1.02, boxShadow: '0 16px 40px -12px rgb(0 0 0 / 0.8)' }}
-      // On a phone the heart steps aside and the length goes under the title, so the title has the room.
-      className="group grid cursor-pointer grid-cols-[1.5rem_2.75rem_1fr_auto] items-center gap-2 rounded-md bg-ink-900 px-2 py-2 transition-colors hover:bg-ink-850 sm:grid-cols-[1.5rem_2.75rem_1fr_auto_auto_auto] md:gap-3"
-      onClick={() => p().jumpTo(at())}
-    >
-      <span
-        role="button"
-        aria-label={`Drag to reorder ${t.title}`}
-        onPointerDown={(e) => controls.start(e)}
-        onClick={(e) => e.stopPropagation()}
-        className="grid h-9 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
-      >
-        <GripVertical className="size-4" />
-      </span>
-      <Cover src={t.coverUrl} size={44} alt="" className="size-11 rounded-cover" />
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="truncate type-body text-paper">{t.title}</span>
-          <OfflineMark fileId={t.fileId} />
-        </div>
-        <NameAndNumbers className="type-small text-muted" name={t.artistName} numbers={formatTime(t.duration)} numbersClassName="tabular sm:hidden" />
-      </div>
-      <FavoriteButton track={t} reveal className="max-sm:hidden" />
-      <span className="font-mono text-[13px] text-muted tabular max-sm:hidden">
-        <Tempo bpm={bpm} />
-        {formatTime(t.duration)}
-      </span>
-      <div onClick={(e) => e.stopPropagation()} className="pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-within:opacity-100">
-        <Menu
-          label={`Actions for ${t.title}`}
-          items={[
-            ...(position > 0
-              ? [{ label: 'Play next', icon: ListStart, onSelect: () => p().setUpcoming([queueIndex, ...order.filter((i) => i !== queueIndex)]) }]
-              : []),
-            { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker([t]) },
-            { label: 'Go to album', icon: Disc3, onSelect: () => navigate(`/albums/${t.albumId}`) },
-            { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${t.artistId}`) },
-            { label: 'Remove from queue', icon: X, onSelect: () => p().removeAt(at()) },
-          ]}
-        />
-      </div>
-    </Reorder.Item>
+    <SongRow
+      track={t}
+      markCurrent={false}
+      // The artist alone: on a phone the length shares its line, and a name never loses to numbers.
+      subtitle={<InlineLink to={`/artists/${t.artistId}`}>{t.artistName}</InlineLink>}
+      stackOnPhones
+      onPlay={() => playUpcoming(position)}
+      bpm={bpm}
+      menu={upNextMenu(position, count)}
+      reorder={{
+        value: queueIndex,
+        controls,
+        label: `Drag to reorder ${t.title}`,
+        onDragEnd,
+        onMove: (by) => moveUpcoming(position, position + by),
+      }}
+    />
   );
 }

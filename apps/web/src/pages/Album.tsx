@@ -1,18 +1,16 @@
-import { ListEnd, ListMusic, ListPlus, Mic2 } from 'lucide-react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import { ActionRow } from '../components/ActionRow';
 import { AlbumCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/DetailHeader';
 import { RequestButton, useRestRequest } from '../components/Discover';
 import { FormatBadge } from '../components/FormatBadge';
-import { BackButton, ErrorState, SectionHeader, Shelf, Skeleton } from '../components/Section';
+import { useAlbumMenu } from '../components/menus';
+import { BackButton, ErrorState, SectionHeader, SHELF_CARD, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { useCoverAccent } from '../lib/color';
 import { formatDuration, plural, releaseKind } from '../lib/format';
 import { useAlbum, useArtist } from '../lib/queries';
-import { useUI } from '../lib/ui';
-import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { artistPhoto } from './Artist';
 
@@ -25,9 +23,8 @@ export function AlbumPage() {
   const playing = usePlayer((s) => s.playing);
   const playTracks = usePlayer((s) => s.playTracks);
   const toggle = usePlayer((s) => s.toggle);
-  const navigate = useNavigate();
-  const openPicker = useUI((s) => s.openPlaylistPicker);
   const rest = useRestRequest(album);
+  const menu = useAlbumMenu({ id, artistId: album?.artistId ?? Number.NaN }, { tracks: album?.tracks });
 
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !album) return <AlbumSkeleton />;
@@ -88,14 +85,7 @@ export function AlbumPage() {
               item: { key: `album:${album.id}`, title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl, href: `/albums/${album.id}` },
               tracks: album.tracks,
             }}
-            menu={{
-              items: [
-                { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(album.tracks, 'next') },
-                { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(album.tracks, 'end') },
-                { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker(album.tracks) },
-                { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${album.artistId}`) },
-              ],
-            }}
+            menu={{ items: menu }}
           />
         </DetailHeader>
 
@@ -115,7 +105,7 @@ export function AlbumPage() {
             <SectionHeader kicker="Discography" title={`More by ${album.artistName}`} to={`/artists/${album.artistId}`} />
             <Shelf>
               {more.map((a) => (
-                <AlbumCard key={a.id} album={a} size={180} className="w-[40vw] max-w-44 shrink-0 snap-start sm:w-40 md:w-44" />
+                <AlbumCard key={a.id} album={a} className={SHELF_CARD} />
               ))}
             </Shelf>
           </section>

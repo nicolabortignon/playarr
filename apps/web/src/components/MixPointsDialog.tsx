@@ -111,11 +111,11 @@ function preview(song: Track, time: number): () => void {
   return cancel;
 }
 
-/** The song menus' "Edit mix points", only with DJ mix on (the only setting that uses them). */
-export function useMixPointsItem(track: Track): MenuItem[] {
+/** The song menus' "Edit mix points", only with DJ mix on (the only setting that uses them); none for a song not in the library. */
+export function useMixPointsItem(track: Track | undefined): MenuItem[] {
   const dj = usePrefs((s) => s.transitions === 'dj');
   const edit = useUI((s) => s.editMixPoints);
-  return dj && track.recordingId ? [{ label: 'Edit mix points', icon: AudioWaveform, onSelect: () => edit(track) }] : [];
+  return dj && track?.recordingId ? [{ label: 'Edit mix points', icon: AudioWaveform, onSelect: () => edit(track) }] : [];
 }
 
 /**

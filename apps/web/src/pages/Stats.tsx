@@ -2,12 +2,13 @@ import type { ListeningStats, StatsRange } from '@playarr/shared';
 import { Play } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
-import { AlbumCard } from '../components/Cards';
+import { AlbumCard, ArtistAvatar } from '../components/Cards';
 import { ColumnChart } from '../components/ColumnChart';
-import { Cover } from '../components/Cover';
+import { InlineLink } from '../components/InlineLink';
 import { NameAndNumbers } from '../components/NameAndNumbers';
 import { PageHeader } from '../components/PageHeader';
 import { ErrorState, Skeleton } from '../components/Section';
+import { SongRow } from '../components/SongRow';
 import { Choice } from '../components/Choice';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
@@ -112,7 +113,7 @@ function Report({ stats }: { stats: ListeningStats }) {
       {year && top && (
         <section className="flex flex-col gap-6 sm:flex-row sm:items-end">
           <Link to={`/artists/${top.artist.id}`} className="block w-48 shrink-0 md:w-60">
-            <Cover src={top.artist.imageUrl} size={260} alt={top.artist.name} className="aspect-square rounded-cover ring-1 ring-paper/10" />
+            <ArtistAvatar name={top.artist.name} src={top.artist.imageUrl} size={240} />
           </Link>
           <div>
             <div className="type-kicker text-muted">Your artist of the year</div>
@@ -142,7 +143,7 @@ function Report({ stats }: { stats: ListeningStats }) {
             <li key={artist.id}>
               <Link to={`/artists/${artist.id}`} className="flex items-center gap-4 rounded-md px-2 py-2 transition hover:bg-paper/[0.05]">
                 <span className="w-6 text-right font-mono text-sm text-muted tabular">{i + 1}</span>
-                <Cover src={artist.imageUrl} size={56} alt="" className="size-12 shrink-0 rounded-full" />
+                <ArtistAvatar name={artist.name} src={artist.imageUrl} size={48} className="size-12 shrink-0" />
                 <NameAndNumbers
                   end
                   className="flex-1"
@@ -174,28 +175,25 @@ function Report({ stats }: { stats: ListeningStats }) {
             Play them
           </Button>
         </div>
-        <ol className="grid gap-x-8 gap-y-1 md:grid-cols-2">
+        {/* Two columns only where a song row fits whole in each: narrower, the titles would lose to the numbers. Columns
+            of minmax(0, 1fr), so a long title is cut short rather than widening the list past the screen. */}
+        <ol className="-mx-3 grid grid-cols-1 gap-x-8 xl:grid-cols-2">
           {stats.topTracks.map(({ track, plays }, i) => (
-            <li key={track.id}>
-              <button
-                type="button"
-                onClick={() =>
-                  playTracks(
-                    stats.topTracks.map((t) => t.track),
-                    i,
-                    { shuffle: false, source: { label: 'Your top songs', href: `${STATS_PATH}?range=${stats.range}` } },
-                  )
-                }
-                className="flex w-full items-center gap-4 rounded-md px-2 py-2 text-left transition hover:bg-paper/[0.05]"
-              >
-                <span className="w-6 text-right font-mono text-sm text-muted tabular">{i + 1}</span>
-                <Cover src={track.coverUrl} size={48} alt="" className="size-11 shrink-0 rounded-cover" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate type-body text-paper">{track.title}</span>
-                  <NameAndNumbers className="type-small text-muted" name={track.artistName} numbers={plural(plays, 'play')} numbersClassName="tabular" />
-                </span>
-              </button>
-            </li>
+            <SongRow
+              key={track.id}
+              track={track}
+              rank={i + 1}
+              subtitle={<InlineLink to={`/artists/${track.artistId}`}>{track.artistName}</InlineLink>}
+              numbers={plural(plays, 'play')}
+              stackOnPhones
+              onPlay={() =>
+                playTracks(
+                  stats.topTracks.map((t) => t.track),
+                  i,
+                  { shuffle: false, source: { label: 'Your top songs', href: `${STATS_PATH}?range=${stats.range}` } },
+                )
+              }
+            />
           ))}
         </ol>
       </section>

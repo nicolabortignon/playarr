@@ -32,17 +32,17 @@ export function PlayerBar() {
                 </span>
               </button>
               <div className="min-w-0">
-                <Link to={`/albums/${track.albumId}`} className="block truncate text-[15px] text-paper hover:underline">
+                <Link to={`/albums/${track.albumId}`} className="block truncate type-body text-paper hover:underline">
                   {track.title}
                 </Link>
-                <Link to={`/artists/${track.artistId}`} className="block truncate text-[13px] text-muted hover:text-paper-dim hover:underline">
+                <Link to={`/artists/${track.artistId}`} className="block truncate type-small text-muted hover:text-paper-dim hover:underline">
                   {track.artistName}
                 </Link>
               </div>
               <FavoriteButton track={track} size="md" />
             </>
           ) : (
-            <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Nothing playing</span>
+            <span className="type-kicker text-muted">Nothing playing</span>
           )}
         </div>
 
@@ -94,7 +94,10 @@ function Volume() {
   );
 }
 
-/** Mobile mini player, sits above the bottom tab bar. */
+/**
+ * Mobile mini player, above the bottom tab bar: "Open now playing" (the cover and the song) beside its own controls,
+ * buttons side by side rather than inside one another. The heart stays; Play and Next are 44 to tap.
+ */
 export function MiniPlayer() {
   const track = useCurrentTrack();
   const open = useUI((s) => s.setNowPlaying);
@@ -106,29 +109,28 @@ export function MiniPlayer() {
 
   return (
     <div className="fixed inset-x-2 bottom-[calc(60px+env(safe-area-inset-bottom)+6px)] z-40 md:hidden">
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label="Open now playing"
-        onClick={() => open(true)}
-        onKeyDown={(e) => e.key === 'Enter' && open(true)}
-        className="relative flex h-[60px] items-center gap-3 overflow-hidden rounded-xl border border-paper/[0.07] bg-ink-800 pr-2 pl-2 shadow-2xl shadow-black/60"
-      >
+      <div className="relative flex h-[60px] items-center overflow-hidden rounded-xl border border-paper/[0.07] bg-ink-800 pr-1 shadow-2xl shadow-black/60">
         {/* Tinted wash from the accent color. */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-accent/15 to-transparent" />
-        <Cover src={track.coverUrl} size={44} alt="" className="relative size-11 shrink-0 rounded-md" />
-        <div className="relative min-w-0 flex-1">
-          <div className="truncate text-[14px] text-paper">{track.title}</div>
-          <div className="truncate text-[12px] text-muted">{track.artistName}</div>
-        </div>
-        <div className="relative flex items-center" onClick={(e) => e.stopPropagation()}>
-          <FavoriteButton track={track} size="md" />
-          <PlayPauseButton size="sm" className="bg-transparent text-paper hover:scale-100" />
-          <button type="button" aria-label="Next" onClick={() => next()} className="grid size-10 place-items-center text-paper">
-            <SkipForward className="size-5 fill-current" />
-          </button>
-        </div>
-        <div className="absolute inset-x-3 bottom-0 h-[2px] rounded-full bg-paper/10">
+        <button
+          type="button"
+          aria-label="Open now playing"
+          onClick={() => open(true)}
+          // Its focus ring inside: the bar clips what's outside it.
+          className="relative flex min-w-0 flex-1 items-center gap-3 self-stretch pr-1 pl-2 text-left focus-visible:-outline-offset-2"
+        >
+          <Cover src={track.coverUrl} size={44} alt="" className="size-11 shrink-0 rounded-cover" />
+          <span className="min-w-0">
+            <span className="block truncate type-body text-paper">{track.title}</span>
+            <span className="block truncate type-small text-muted">{track.artistName}</span>
+          </span>
+        </button>
+        <FavoriteButton track={track} size="md" className="relative" />
+        <PlayPauseButton size="md" className="bg-transparent text-paper hover:scale-100" />
+        <button type="button" aria-label="Next" onClick={() => next()} className="relative grid size-11 shrink-0 place-items-center text-paper">
+          <SkipForward className="size-5 fill-current" />
+        </button>
+        <div className="pointer-events-none absolute inset-x-3 bottom-0 h-[2px] rounded-full bg-paper/10">
           <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
         </div>
       </div>

@@ -1,13 +1,15 @@
-import { BookmarkPlus, ListEnd, ListPlus, RefreshCw } from 'lucide-react';
+import { BookmarkPlus, RefreshCw } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
 import { ActionRow, RowAction, usePlayState } from '../components/ActionRow';
 import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/DetailHeader';
+import { DIVIDER } from '../components/Menu';
+import { queueItems } from '../components/menus';
 import { MixCover } from '../components/Mixes';
 import { BackButton, ErrorState } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, plural } from '../lib/format';
 import { useMix, useRegenerateMix, useSaveMix } from '../lib/queries';
-import { queueTracks } from '../player/actions';
+import { useUI } from '../lib/ui';
 import { usePlayer } from '../player/store';
 
 /** A generated mix: why these songs, when it changes, and the songs. */
@@ -20,6 +22,7 @@ export function MixPage() {
   const toggle = usePlayer((s) => s.toggle);
   const playState = usePlayState(`/mixes/${key}`);
   const navigate = useNavigate();
+  const openPicker = useUI((s) => s.openPlaylistPicker);
 
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !mix) {
@@ -57,15 +60,16 @@ export function MixPage() {
           }}
           menu={{
             label: 'Mix actions',
+            // What everything you can play offers, then the mix's own action.
             items: [
+              ...queueItems(mix.tracks, openPicker),
+              DIVIDER,
               {
                 label: 'Save as playlist',
                 icon: BookmarkPlus,
                 // Opens the new playlist, so it's clear what was made and where it lives.
                 onSelect: () => !save.isPending && save.mutate(undefined, { onSuccess: (playlist) => navigate(`/playlists/${playlist.id}`) }),
               },
-              { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(mix.tracks, 'next') },
-              { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(mix.tracks, 'end') },
             ],
           }}
         />

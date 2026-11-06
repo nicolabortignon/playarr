@@ -1,13 +1,13 @@
-import { Heart, ListEnd, ListMusic, ListPlus } from 'lucide-react';
+import { Heart } from 'lucide-react';
 import { ActionRow, usePlayState } from '../components/ActionRow';
 import { DetailHeader, joinMeta } from '../components/DetailHeader';
+import { queueItems } from '../components/menus';
 import { ErrorState, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { cn } from '../lib/cn';
 import { formatDuration, plural } from '../lib/format';
 import { useFavorites } from '../lib/queries';
 import { useUI } from '../lib/ui';
-import { queueTracks } from '../player/actions';
 import { usePlayer } from '../player/store';
 
 export function FavoritesPage() {
@@ -36,13 +36,7 @@ export function FavoritesPage() {
             onPlay={() => (playState !== 'idle' ? toggle() : playTracks(songs, 0, { shuffle: false, source: FAVORITES }))}
             onShuffle={() => playTracks(songs, 0, { shuffle: true, source: FAVORITES })}
             download={{ item: { key: 'favorites', title: 'Favorites', subtitle: 'Your favorite songs', href: '/favorites' }, tracks: songs }}
-            menu={{
-              items: [
-                { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(songs, 'next') },
-                { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(songs, 'end') },
-                { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker(songs) },
-              ],
-            }}
+            menu={{ items: queueItems(songs, openPicker) }}
           />
         )}
       </DetailHeader>

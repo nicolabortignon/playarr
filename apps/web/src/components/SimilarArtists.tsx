@@ -1,8 +1,7 @@
 import { useSimilarArtists } from '../lib/queries';
-import { DiscoverArtistCard } from './Discover';
-import { SectionHeader, Shelf, Skeleton } from './Section';
+import { DiscoverArtistCard } from './Cards';
+import { SectionHeader, SHELF_CARD, Shelf, Skeleton } from './Section';
 
-const CARD = 'w-[36vw] max-w-44 shrink-0 snap-start sm:w-36 md:w-44';
 const stagger = (i: number) => ({ animationDelay: `${Math.min(i, 8) * 40}ms` });
 
 /**
@@ -18,7 +17,7 @@ export function SimilarArtists({ mbid }: { mbid: string }) {
         <SectionHeader kicker="From ListenBrainz" title="Similar artists" />
         <Shelf>
           {Array.from({ length: 6 }, (_, i) => (
-            <Skeleton key={i} className={`aspect-square rounded-full ${CARD}`} />
+            <Skeleton key={i} className={`aspect-square rounded-full ${SHELF_CARD}`} />
           ))}
         </Shelf>
       </section>
@@ -46,7 +45,7 @@ export function SimilarArtists({ mbid }: { mbid: string }) {
             <SectionHeader kicker="From ListenBrainz" title={g.title} />
             <Shelf>
               {g.items.map((a, i) => (
-                <DiscoverArtistCard key={a.mbid} artist={a} className={CARD} style={stagger(i)} />
+                <DiscoverArtistCard key={a.mbid} artist={a} className={SHELF_CARD} style={stagger(i)} />
               ))}
             </Shelf>
           </section>

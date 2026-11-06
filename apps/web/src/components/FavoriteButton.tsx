@@ -7,7 +7,7 @@ import { useIsFavorite, useToggleFavorite } from '../lib/queries';
 interface FavoriteButtonProps {
   track: Track;
   size?: 'sm' | 'md' | 'lg';
-  /** In list rows on pointer devices: only show an empty heart on hover. */
+  /** In list rows on pointer devices: an empty heart shows only while the row is hovered or has the focus. */
   reveal?: boolean;
   className?: string;
 }
@@ -16,8 +16,8 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
   const favorite = useIsFavorite(track.recordingId);
   const toggle = useToggleFavorite();
   const [popping, setPopping] = useState(false);
-  // 44 px to tap on phones, whatever it looks like.
-  const box = { sm: 'size-8 max-md:size-11', md: 'size-9 max-md:size-11', lg: 'size-12' }[size];
+  // An icon button (docs/design.md, Controls): 44 to tap on touch screens, 36 with a mouse; Now Playing's is 48.
+  const box = { sm: 'size-11 pointer-fine:size-9', md: 'size-11 pointer-fine:size-9', lg: 'size-12' }[size];
   // Only until healQueue() has refreshed tracks saved by an older version.
   if (!track.recordingId) return null;
   const icon = { sm: 'size-4', md: 'size-[18px]', lg: 'size-6' }[size];
@@ -37,7 +37,7 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
         'grid shrink-0 place-items-center rounded-full transition hover:bg-paper/8',
         box,
         favorite ? 'text-accent' : 'text-muted hover:text-paper',
-        reveal && !favorite && 'pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100',
+        reveal && !favorite && 'pointer-fine:opacity-0 pointer-fine:group-focus-within:opacity-100 pointer-fine:group-hover:opacity-100',
         className,
       )}
     >

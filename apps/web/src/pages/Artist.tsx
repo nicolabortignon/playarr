@@ -1,5 +1,4 @@
 import type { Album, ArtistDetail } from '@playarr/shared';
-import { ListEnd, ListPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 import { ActionRow, usePlayState } from '../components/ActionRow';
@@ -8,6 +7,7 @@ import { AlbumCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { DetailHeader, joinMeta } from '../components/DetailHeader';
 import { DiscoverAlbumCard } from '../components/Discover';
+import { queueItems } from '../components/menus';
 import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
 import { SimilarArtists } from '../components/SimilarArtists';
 import { SlowLookup } from '../components/SlowLookup';
@@ -15,7 +15,8 @@ import { artistHero } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { useArtist, useDiscoverArtist } from '../lib/queries';
-import { playArtist, queueArtist } from '../player/actions';
+import { useUI } from '../lib/ui';
+import { artistTracks, playArtist } from '../player/actions';
 import { usePlayer } from '../player/store';
 import { gridItem, GRID } from './Albums';
 
@@ -109,6 +110,7 @@ export function ArtistPage() {
   const [bioOpen, setBioOpen] = useState(false);
   const toggle = usePlayer((s) => s.toggle);
   const playState = usePlayState(`/artists/${id}`);
+  const openPicker = useUI((s) => s.openPlaylistPicker);
 
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !artist) {
@@ -164,12 +166,8 @@ export function ArtistPage() {
         state={playState}
         onPlay={() => (playState !== 'idle' ? toggle() : void playArtist(artist.id))}
         onShuffle={() => void playArtist(artist.id, { shuffle: true })}
-        menu={{
-          items: [
-            { label: 'Play next', icon: ListPlus, onSelect: () => void queueArtist(artist.id, 'next') },
-            { label: 'Add to queue', icon: ListEnd, onSelect: () => void queueArtist(artist.id, 'end') },
-          ],
-        }}
+        // What everything you can play offers (components/menus.ts), all of their songs fetched once chosen.
+        menu={{ items: queueItems(() => artistTracks(artist.id), openPicker) }}
       />
     </DetailHeader>
   );

@@ -10,6 +10,7 @@ import { Cover } from './Cover';
 import { RequestButton } from './Discover';
 import { InlineLink } from './InlineLink';
 import { SectionHeader, Skeleton } from './Section';
+import { ListRow } from './SongRow';
 
 const MISSING_PREVIEW = 8;
 
@@ -82,8 +83,7 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
                     icon={<Plus />}
                     aria-label={`Add ${rec.title} to playlist`}
                     disabled={add.isPending}
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={() => {
                       add.mutate(
                         { id: playlistId, tracks: [rec.track!] },
                         { onSuccess: () => setAdded((s) => new Set(s).add(rec.recordingId)) },
@@ -131,54 +131,53 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** A suggestion in the one row: press it to play it (when it's in the library), its own Add or Request on the right. */
 function Row({ rec, index, onPlay, action }: { rec: RecommendedTrack; index: number; onPlay?: () => void; action: ReactNode }) {
   const albumId =
     rec.track?.albumId ??
     (rec.availability?.state === 'available' || rec.availability?.have !== undefined ? rec.availability?.albumId : undefined);
   return (
-    <li
-      className={cn(
-        'group grid animate-rise grid-cols-[2.75rem_1fr_auto] items-center gap-3 rounded-md px-3 py-2 transition hover:bg-paper/[0.045] lg:grid-cols-[2.75rem_1fr_14rem_auto] lg:gap-4',
-        onPlay && 'cursor-pointer',
-      )}
+    <ListRow
+      className="animate-rise"
       style={{ animationDelay: `${Math.min(index, 10) * 30}ms` }}
-      onClick={onPlay}
-    >
-      <div className="relative">
-        <Cover src={rec.coverUrl} size={44} alt="" label={rec.albumTitle} className="size-11 rounded-cover" />
-        {onPlay && (
-          <div className="absolute inset-0 grid place-items-center rounded-cover bg-black/50 opacity-0 transition group-hover:opacity-100">
-            <Play className="size-4 fill-paper" />
-          </div>
-        )}
-      </div>
-      <div className="min-w-0">
-        <div className="truncate text-[15px] text-paper">{rec.title}</div>
-        <div className="truncate text-[13px] text-muted">
+      lead={
+        <span className="relative size-11 shrink-0">
+          <Cover src={rec.coverUrl} size={44} alt="" label={rec.albumTitle} className="size-11 rounded-cover" />
+          {onPlay && (
+            <span className="absolute inset-0 grid place-items-center rounded-cover bg-ink-950/55 opacity-0 transition pointer-fine:group-hover:opacity-100">
+              <Play aria-hidden className="size-4 fill-paper text-paper" />
+            </span>
+          )}
+        </span>
+      }
+      title={rec.title}
+      main={onPlay && { label: `Play ${rec.title}`, onClick: onPlay }}
+      subtitle={
+        <>
           <InlineLink to={artistHref(rec)}>{rec.artistName}</InlineLink>
           {rec.albumTitle && (
             <>
               {' '}
               <span className="text-ink-600">·</span>{' '}
-              <InlineLink
-                to={albumHref({ ...rec, albumId })}
-                title={albumId ? undefined : `Find it in ${rec.artistName}’s discography`}
-              >
+              <InlineLink to={albumHref({ ...rec, albumId })} title={albumId ? undefined : `Find it in ${rec.artistName}’s discography`}>
                 {rec.albumTitle}
               </InlineLink>
             </>
           )}
-        </div>
-      </div>
-      <div className="hidden truncate text-[12px] text-muted lg:block" title={rec.because && `Similar to ${rec.because}`}>
-        {rec.because && (
-          <>
-            <span className="font-mono text-[10px] tracking-wider uppercase">like</span>{' '}
-            <span className="text-paper-dim">{rec.because}</span>
-          </>
-        )}
-      </div>
-      {action}
-    </li>
+        </>
+      }
+      trailing={
+        <>
+          <span className="hidden w-56 shrink-0 truncate type-small text-muted lg:block" title={rec.because && `Similar to ${rec.because}`}>
+            {rec.because && (
+              <>
+                <span className="type-badge">like</span> <span className="text-paper-dim">{rec.because}</span>
+              </>
+            )}
+          </span>
+          <span className="relative z-10 shrink-0">{action}</span>
+        </>
+      }
+    />
   );
 }

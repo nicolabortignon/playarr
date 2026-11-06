@@ -153,6 +153,11 @@ export const api = {
   deletePlaylist: (id: number) => request<void>(`/api/playlists/${id}`, { method: 'DELETE' }),
   addToPlaylist: (id: number, recordingIds: string[]) =>
     request<PlaylistDetail>(`/api/playlists/${id}/items`, { method: 'POST', body: JSON.stringify({ recordingIds }) }),
+  /** How many of these songs each of the account's own playlists already holds (only those holding any), by playlist id. */
+  playlistsHolding: (recordingIds: string[]) =>
+    request<{ holding: Record<string, number> }>('/api/playlists/holding', { method: 'POST', body: JSON.stringify({ recordingIds }) }).then(
+      (r) => r.holding,
+    ),
   removeFromPlaylist: (id: number, itemId: number) =>
     request<PlaylistDetail>(`/api/playlists/${id}/items/${itemId}`, { method: 'DELETE' }),
   reorderPlaylist: (id: number, itemIds: number[]) =>

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider, type RouteObject } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlayer } from '../player/store';
@@ -41,7 +41,8 @@ describe('PageError', () => {
   it('reloads into the new build when a page’s file is gone and nothing is playing', async () => {
     show('/queue');
     expect(await screen.findByText('Playarr was updated.')).toBeTruthy();
-    expect(reload).toHaveBeenCalledTimes(1);
+    // The reload is an effect of that render, which can run a moment after the text shows.
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
   });
 
   it('asks instead while music plays, and keeps the player bar', async () => {

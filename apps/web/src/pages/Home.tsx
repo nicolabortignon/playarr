@@ -5,15 +5,16 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { AccountMenu, accountName } from '../components/AccountMenu';
 import { Button, IconButton } from '../components/Button';
-import { AlbumCard, ArtistCard } from '../components/Cards';
+import { AlbumCard, ArtistAvatar, ArtistCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { MixCard } from '../components/Mixes';
-import { SectionHeader, Shelf, Skeleton } from '../components/Section';
+import { SectionHeader, SHELF_CARD, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
 import { toast } from '../lib/toast';
 import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMe, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
+import { GRID } from './Albums';
 import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
 import { feelingLucky } from '../player/actions';
@@ -71,7 +72,7 @@ export function HomePage() {
           <SectionHeader kicker="Made by you" title="Playlists" to="/playlists" />
           <Shelf>
             {playlists.map((p, i) => (
-              <PlaylistCard key={p.id} playlist={p} className="w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52" style={stagger(i, 40)} />
+              <PlaylistCard key={p.id} playlist={p} className={SHELF_CARD} style={stagger(i, 40)} />
             ))}
           </Shelf>
         </section>
@@ -81,10 +82,8 @@ export function HomePage() {
         <SectionHeader kicker="Just added" title="Recently added" to="/albums?sort=added" />
         <Shelf>
           {recent
-            ? recent.map((a, i) => (
-                <AlbumCard key={a.id} album={a} size={200} className="w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52" style={stagger(i, 40)} />
-              ))
-            : Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="aspect-square w-[42vw] max-w-52 shrink-0 sm:w-44 md:w-52" />)}
+            ? recent.map((a, i) => <AlbumCard key={a.id} album={a} className={SHELF_CARD} style={stagger(i, 40)} />)
+            : Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className={`aspect-square ${SHELF_CARD}`} />)}
         </Shelf>
       </section>
 
@@ -92,7 +91,7 @@ export function HomePage() {
         <SectionHeader kicker="The roster" title="Artists" to="/artists" />
         <Shelf>
           {shelfArtists(artists, recent).map((a, i) => (
-            <ArtistCard key={a.id} artist={a} className="w-[40vw] max-w-48 shrink-0 snap-start sm:w-40 md:w-48" style={stagger(i, 50)} />
+            <ArtistCard key={a.id} artist={a} className={SHELF_CARD} style={stagger(i, 50)} />
           ))}
         </Shelf>
       </section>
@@ -107,7 +106,7 @@ export function HomePage() {
             </IconButton>
           }
         />
-        <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:gap-x-6 lg:grid-cols-4 xl:grid-cols-6">
+        <div className={GRID}>
           {random?.map((a, i) => (
             <AlbumCard key={a.id} album={a} style={stagger(i, 35)} />
           ))}
@@ -146,14 +145,12 @@ function MadeForYou() {
       <SectionHeader kicker="Made for you" title="Your mixes" to="/mixes" />
       <Shelf>
         {mixes
-          ? mixes.map((m, i) => <MixCard key={m.key} mix={m} className={MIX_CARD} style={stagger(i, 40)} />)
-          : Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className={`aspect-square ${MIX_CARD}`} />)}
+          ? mixes.map((m, i) => <MixCard key={m.key} mix={m} className={SHELF_CARD} style={stagger(i, 40)} />)
+          : Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className={`aspect-square ${SHELF_CARD}`} />)}
       </Shelf>
     </section>
   );
 }
-
-const MIX_CARD = 'w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52';
 
 /** The year that's ending (in December) or just ended (in January), if anything was played in it. */
 export function reviewYear(now = new Date()): number | undefined {
@@ -174,7 +171,7 @@ function YearInReview() {
         to={`/settings/listening?range=${year}`}
         className="group relative flex items-center gap-5 overflow-hidden rounded-xl border border-line bg-ink-900 p-5 transition hover:border-paper/20 md:p-7"
       >
-        {top && <Cover src={top.artist.imageUrl} size={160} alt="" className="size-24 shrink-0 rounded-cover md:size-32" />}
+        {top && <ArtistAvatar name={top.artist.name} src={top.artist.imageUrl} size={128} className="size-24 shrink-0 md:size-32" />}
         <div className="min-w-0">
           <div className="type-kicker text-muted">Year in review</div>
           <div className="mt-1 font-display text-3xl text-paper md:text-5xl">Your {year} in music</div>
@@ -196,7 +193,7 @@ function JumpBackIn() {
       <SectionHeader kicker="Heard lately" title="Jump back in" />
       <Shelf>
         {albums.map((a, i) => (
-          <AlbumCard key={a.id} album={a} size={200} className={MIX_CARD} style={stagger(i, 40)} />
+          <AlbumCard key={a.id} album={a} className={SHELF_CARD} style={stagger(i, 40)} />
         ))}
       </Shelf>
     </section>

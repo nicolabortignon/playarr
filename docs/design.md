@@ -56,6 +56,16 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 - **Home greets** the account by name, with its avatar.
 - **Names never lose to numbers:** a name and its numbers share a line only when both fit; otherwise the numbers go under the name (web `NameAndNumbers`).
 
+## Rows, menus and toasts
+
+- **A song row:** [drag handle] · number or cover · title (`type-body`) over subtitle (`type-small`) · time (`type-meta`) · ♥ · ⋯. Every row in a list is the same height (52 with a number, 60 on touch or with a cover); missing songs are greyed in their place. The song playing has an accent title and the equalizer. With a mouse, ♥ and ⋯ show on hover or focus; on touch they always show. On a phone, the queue and Your listening drop the ♥ and put the numbers under the title.
+- **Accessible names:** a row's own button is "Play {title}" (or "Pause {title}" for the song playing); its ⋯ is "More for {title}".
+- **One song menu**, in every list: Play next · Add to queue · Add to playlist… · Start radio · Go to album · Go to artist · Show metadata, then after a line the place's own actions: Move up, Move down, then Remove last. Albums and playlists have one menu each too; a card's menu starts with Play and Shuffle.
+- **How a menu opens:** ⋯, a right-click, a half-second press on touch, or the menu key. With a mouse, links keep the browser's own menu. Escape closes only the menu.
+- **Toasts:** what happened, naming the song in curly quotes ("“Teardrop” plays next", "3 songs play next"), with Undo where it can be taken back. A toast with Undo stays 6 seconds, longer while it's hovered or focused.
+- **Add to playlist** ticks the playlists that already hold all the songs (a dash for some), and adds to several at once.
+- **Cards:** one width on every shelf (web `SHELF_CARD`). An artist is a circle with the name below: their photo, else their best album cover, else a vinyl monogram.
+
 ## Controls
 
 - **Buttons are actions**, always capsules, labeled in sentence case in Schibsted Grotesk medium, with an optional leading icon. Web: `Button`, `IconButton`. iOS: `.buttonStyle(.pill(_:size:))`.
@@ -86,7 +96,20 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 
 - **Sizes by role:** in a menu 16 (web `size-4`), in a toolbar 18 (`size-4.5`), an icon button 20 (`size-5`), a tab 22 (`size-5.5`). iOS uses the same points, growing with Dynamic Type.
 - **One stroke:** lucide's 2 on the web; SF Symbols' regular weight on iOS.
-- **One glyph per concept** on each platform, mapped below by plan 5 §6.
+- **One glyph per concept** on each platform (plan 5 §6 completes the map):
+
+| Concept | Web (lucide) | iOS (SF Symbols) |
+|---|---|---|
+| Play next | `ListStart` | `text.line.first.and.arrowtriangle.forward` |
+| Add to queue | `ListEnd` | `text.append` |
+| Add to playlist | `ListPlus` | `music.note.list` |
+| Start radio | `Radio` | `dot.radiowaves.left.and.right` |
+| Go to album | `Disc3` | `square.stack` |
+| Go to artist | `Mic2` | `music.mic` |
+| Show metadata | `Info` | `info.circle` |
+| Move up, down | `ArrowUp`, `ArrowDown` | `arrow.up`, `arrow.down` |
+| Remove (from a list) | `X` | `xmark` |
+| Delete (for good) | `Trash2` | `trash` |
 
 ## Motion
 

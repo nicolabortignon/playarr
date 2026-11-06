@@ -3,7 +3,7 @@ import { PageHeader } from '../components/PageHeader';
 import { ErrorState, Skeleton } from '../components/Section';
 import { useArtists } from '../lib/queries';
 import { useIncremental } from '../lib/useIncremental';
-import { gridItem } from './Albums';
+import { GRID, gridItem } from './Albums';
 
 export function ArtistsPage() {
   const { data, error, isPending, refetch } = useArtists();
@@ -15,9 +15,9 @@ export function ArtistsPage() {
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:gap-6 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          <div className={GRID}>
             {isPending
-              ? Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="aspect-[4/5]" />)
+              ? Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="aspect-square rounded-full" />)
               : visible.map((a, i) => <ArtistCard key={a.id} artist={a} {...gridItem(i)} />)}
           </div>
           {more && <div ref={sentinel} aria-hidden className="h-px" />}

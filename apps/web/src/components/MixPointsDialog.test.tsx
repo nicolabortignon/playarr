@@ -360,12 +360,12 @@ describe('Edit mix points in the song menus', () => {
   it('is in a song list’s menu only with DJ mix on, and opens the dialog', () => {
     usePrefs.setState({ transitions: 'crossfade' });
     wrap(<TrackList tracks={[track(1)]} />);
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for Song 1' }));
     expect(screen.queryByRole('menuitem', { name: 'Edit mix points' })).toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
 
     act(() => usePrefs.setState({ transitions: 'dj' }));
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for Song 1' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Edit mix points' }));
     expect(useUI.getState().mixPointsTrack?.id).toBe(1);
   });

@@ -1,26 +1,24 @@
-import { ChevronDown, Disc3, Info, ListMusic, ListPlus, Mic2, Quote, Radio } from 'lucide-react';
+import { ChevronDown, ListMusic, Quote } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { useShallow } from 'zustand/react/shallow';
 import { sized } from '../lib/api';
-import { formatTime } from '../lib/format';
 import { useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
-import { useShallow } from 'zustand/react/shallow';
+import { playUpcoming } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { IconButton } from './Button';
 import { Cover } from './Cover';
 import { FavoriteButton } from './FavoriteButton';
-import { OfflineMark } from './OfflineMark';
 import { FormatBadge } from './FormatBadge';
 import { LyricsView } from './LyricsView';
 import { Menu } from './Menu';
-import { useMixPointsItem } from './MixPointsDialog';
+import { upNextMenu, useSongMenu } from './menus';
 import { SeekBar, Transport } from './Transport';
 import { SleepTimer } from './SleepTimer';
-import { Tempo } from './Tempo';
+import { SongRow } from './SongRow';
 import { TransitionView } from './TransitionView';
-import { startRadio } from '../player/radio';
 
 /** The modal on top: dialogs are portaled to the end of the page, after Now Playing. */
 function topModal(): Element | undefined {
@@ -36,12 +34,9 @@ export function NowPlaying() {
 
 function Sheet() {
   const setOpen = useUI((s) => s.setNowPlaying);
-  const openPicker = useUI((s) => s.openPlaylistPicker);
-  const showMetadata = useUI((s) => s.showMetadata);
   const lyricsOpen = useUI((s) => s.lyricsOpen);
   const setLyrics = useUI((s) => s.setLyrics);
   const track = useCurrentTrack()!;
-  const mixPoints = useMixPointsItem(track);
   const source = usePlayer((s) => s.source);
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
@@ -50,8 +45,10 @@ function Sheet() {
   const close = () => setOpen(false);
   const go = (to: string) => {
     close();
-    navigate(to);
+    void navigate(to);
   };
+  // The one song menu, for the song playing: no Play next or Add to queue; Open queue is this place's own.
+  const menu = useSongMenu(track, { playing: true, go, own: [{ label: 'Open queue', icon: ListMusic, onSelect: () => go('/queue') }] });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -108,7 +105,7 @@ function Sheet() {
           <div className="min-w-0 px-4 text-center">
             {/* Over the cover's blur, where muted would sink into the art: paper-dim (docs/design.md, Color). */}
             <div className="type-kicker text-paper-dim">Playing from</div>
-            <button type="button" onClick={() => go(source?.href ?? `/albums/${track.albumId}`)} className="block max-w-full truncate text-[13px] text-paper hover:underline">
+            <button type="button" onClick={() => go(source?.href ?? `/albums/${track.albumId}`)} className="block max-w-full truncate type-small text-paper hover:underline">
               {source?.label ?? track.albumTitle}
             </button>
           </div>
@@ -117,18 +114,7 @@ function Sheet() {
             <IconButton label="Lyrics" aria-pressed={lyricsOpen} onClick={() => setLyrics(!lyricsOpen)} className={lyricsOpen ? 'text-accent' : 'text-paper'}>
               <Quote className="size-5" />
             </IconButton>
-            <Menu
-              className="text-paper"
-              items={[
-                { label: 'Add to playlist…', icon: ListPlus, onSelect: () => openPicker([track]) },
-                { label: 'Start radio', icon: Radio, onSelect: () => void startRadio(track) },
-                { label: 'Go to album', icon: Disc3, onSelect: () => go(`/albums/${track.albumId}`) },
-                { label: 'Go to artist', icon: Mic2, onSelect: () => go(`/artists/${track.artistId}`) },
-                { label: 'Show metadata', icon: Info, onSelect: () => showMetadata(track.id) },
-                ...mixPoints,
-                { label: 'Open queue', icon: ListMusic, onSelect: () => go('/queue') },
-              ]}
-            />
+            <Menu className="text-paper" items={menu} />
           </div>
         </header>
 
@@ -183,7 +169,7 @@ function Sheet() {
               <Transport size="lg" />
               <TransitionView className="self-center" />
             </div>
-            <UpNext onNavigate={close} />
+            <UpNext go={go} onNavigate={close} />
           </div>
         </div>
       </div>
@@ -191,45 +177,38 @@ function Sheet() {
   );
 }
 
-function UpNext({ onNavigate }: { onNavigate: () => void }) {
-  const upcoming = usePlayer(useShallow((s) => s.order.slice(s.pos + 1, s.pos + 5).map((i) => s.queue[i]!)));
-  const pos = usePlayer((s) => s.pos);
-  const jumpTo = usePlayer((s) => s.jumpTo);
-  const tempos = useTempos(upcoming);
-  if (!upcoming.length) return null;
+/** The next few songs, on wide screens: the queue's rows, compact, with the same menu. */
+function UpNext({ go, onNavigate }: { go: (to: string) => void; onNavigate: () => void }) {
+  const ids = usePlayer(useShallow((s) => s.order.slice(s.pos + 1)));
+  const queue = usePlayer((s) => s.queue);
+  const shown = ids.slice(0, 4);
+  const tempos = useTempos(shown.map((i) => queue[i]));
+  if (!shown.length) return null;
   return (
     <div className="hidden md:block">
       <div className="mb-2 flex items-center justify-between">
         <span className="type-kicker text-muted">Up next</span>
-        <Link to="/queue" onClick={onNavigate} className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase hover:text-paper">
+        <Link to="/queue" onClick={onNavigate} className="type-kicker text-muted hover:text-paper">
           Queue
         </Link>
       </div>
-      <ol>
-        {upcoming.map((t, i) => (
-          <li
-            key={`${t.id}-${i}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => jumpTo(pos + 1 + i)}
-            onKeyDown={(e) => e.key === 'Enter' && jumpTo(pos + 1 + i)}
-            className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left transition hover:bg-paper/[0.06]"
-          >
-            <Cover src={t.coverUrl} size={36} alt="" className="size-9 shrink-0 rounded-cover" />
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1.5">
-                <span className="truncate text-sm text-paper">{t.title}</span>
-                <OfflineMark fileId={t.fileId} />
-              </span>
-              <span className="block truncate text-xs text-muted">{t.artistName}</span>
-            </span>
-            <FavoriteButton track={t} reveal />
-            <span className="font-mono text-xs text-muted tabular">
-              <Tempo bpm={tempos[t.recordingId]} />
-              {formatTime(t.duration)}
-            </span>
-          </li>
-        ))}
+      <ol className="-mx-2">
+        {shown.map((queueIndex, i) => {
+          const t = queue[queueIndex]!;
+          return (
+            <SongRow
+              key={queueIndex}
+              track={t}
+              compact
+              markCurrent={false}
+              // Plain text: a link would open its page behind the sheet.
+              subtitle={t.artistName}
+              onPlay={() => playUpcoming(i)}
+              bpm={tempos[t.recordingId]}
+              menu={{ ...upNextMenu(i, ids.length), go }}
+            />
+          );
+        })}
       </ol>
     </div>
   );

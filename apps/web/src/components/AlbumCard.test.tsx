@@ -1,9 +1,10 @@
 import type { Album, HealthStatus } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
+import { HOLD_MS } from '../lib/contextMenu';
 import { AlbumCard } from './Cards';
 
 const album = (over: Partial<Album> = {}): Album => ({
@@ -94,6 +95,29 @@ describe('AlbumCard', () => {
     renderCard(album({ title: 'Loose songs', albumType: 'Loose', trackCount: 3, totalTrackCount: 5 }));
     await screen.findByText('Loose songs');
     expect(screen.queryByRole('button', { name: /request/i })).toBeNull();
+  });
+
+  it('opens the album’s menu on a right-click or a long press, with Play and Shuffle first, and a long press doesn’t open the album', async () => {
+    const router = renderCard(album({ trackCount: 11 }));
+    const link = (await screen.findByText('Mezzanine')).closest('a')!;
+    fireEvent.pointerDown(link, { pointerType: 'mouse', button: 2 });
+    fireEvent.contextMenu(link, { clientX: 20, clientY: 30 });
+    const items = () => within(screen.getByRole('menu')).getAllByRole('menuitem').map((i) => i.textContent);
+    expect(items()).toEqual(['Play', 'Shuffle', 'Play next', 'Add to queue', 'Add to playlist…', 'Go to artist']);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.pointerDown(link, { pointerType: 'touch', button: 0, clientX: 20, clientY: 30 });
+      act(() => vi.advanceTimersByTime(HOLD_MS));
+      expect(items()[0]).toBe('Play');
+      fireEvent.pointerUp(link, { pointerType: 'touch' });
+      fireEvent.click(link);
+      expect(router.state.location.pathname).toBe('/');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps only its size while far off screen, and comes back when scrolled near', () => {

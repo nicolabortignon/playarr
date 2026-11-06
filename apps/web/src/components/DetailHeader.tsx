@@ -20,6 +20,7 @@ export function DetailHeader({
   round,
   kicker,
   title,
+  titleAction,
   heading,
   meta,
   overArt,
@@ -34,6 +35,8 @@ export function DetailHeader({
   kicker: ReactNode;
   /** The h1's content: the name (or an artist's logo, with the name for screen readers). */
   title: ReactNode;
+  /** Beside the h1, shown while it's hovered or the action has the focus: a playlist's Rename (a pencil). */
+  titleAction?: ReactNode;
   /** In place of the h1: a playlist's name and description being edited. */
   heading?: ReactNode;
   /** The one line under the title (`joinMeta`): who, when, how many, how long. */
@@ -50,7 +53,15 @@ export function DetailHeader({
         {cover && <div className={cn(round ? ROUND : COVER, 'animate-rise')}>{cover}</div>}
         <div className="min-w-0 flex-1 animate-rise [animation-delay:80ms]">
           <div className="type-kicker text-muted">{kicker}</div>
-          {heading ?? <h1 className={cn('mt-1.5 type-page-title text-balance text-paper', overArt && 'drop-shadow-2xl')}>{title}</h1>}
+          {heading ??
+            (titleAction ? (
+              <div className="group/title mt-1.5 flex items-center gap-2">
+                <h1 className={cn('min-w-0 type-page-title text-balance text-paper', overArt && 'drop-shadow-2xl')}>{title}</h1>
+                {titleAction}
+              </div>
+            ) : (
+              <h1 className={cn('mt-1.5 type-page-title text-balance text-paper', overArt && 'drop-shadow-2xl')}>{title}</h1>
+            ))}
           {meta && (
             <div className={cn('mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 type-meta', overArt ? 'text-paper-dim' : 'text-muted')}>{meta}</div>
           )}

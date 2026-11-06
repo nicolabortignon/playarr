@@ -6,7 +6,7 @@ import type { Download } from '../player/offline';
 import { usePlayer } from '../player/store';
 import { Button, type ButtonProps } from './Button';
 import { DownloadButton } from './DownloadButton';
-import { Menu, type MenuItem } from './Menu';
+import { Menu, type MenuEntry } from './Menu';
 
 /**
  * What makes a worded button of the row round and wordless once the row narrows to a step (index.css: row-step-1
@@ -42,8 +42,8 @@ export interface ActionRowProps {
   action?: ReactNode;
   /** What the download button keeps on the device; none on an artist's page. */
   download?: { item: Omit<Download, 'tracks' | 'addedAt'>; tracks: Track[] };
-  /** ⋯: the page's other actions. */
-  menu?: { label?: string; items: MenuItem[] };
+  /** ⋯: the page's other actions (components/menus.ts), its own after a line. */
+  menu?: { label?: string; items: MenuEntry[] };
   className?: string;
 }
 

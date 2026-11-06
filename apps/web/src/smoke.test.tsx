@@ -218,7 +218,7 @@ describe('Playarr web against live server', () => {
       await screen.findByRole('heading', { name });
       cleanup();
 
-      // Add a whole album via its ⋯ menu → Add to playlist… → pick the playlist.
+      // Add a whole album via its ⋯ menu → Add to playlist… → choose the playlist → Add.
       const album = (await (await fetch('/api/albums/8')).json()) as { title: string; tracks: { title: string }[] };
       renderAt('/albums/8');
       await screen.findByRole('heading', { name: album.title });
@@ -227,7 +227,8 @@ describe('Playarr web against live server', () => {
       const addItem = await screen.findByRole('menuitem', { name: 'Add to playlist…' });
       await act(async () => fireEvent.click(addItem));
       const picker = await screen.findByRole('dialog', { name: /^Add/ });
-      await act(async () => fireEvent.click(within(picker).getByRole('button', { name: new RegExp(name) })));
+      await act(async () => fireEvent.click(await within(picker).findByRole('checkbox', { name: new RegExp(name) })));
+      await act(async () => fireEvent.click(within(picker).getByRole('button', { name: 'Add' })));
       await waitFor(async () => {
         const p = (await (await fetch(`/api/playlists/${id}`)).json()) as { trackCount: number };
         expect(p.trackCount).toBe(album.tracks.length);

@@ -1,24 +1,19 @@
 import type { PlaylistSummary } from '@playarr/shared';
 import { Play, Plus } from 'lucide-react';
-import type { CSSProperties } from 'react';
+import { useRef, type CSSProperties } from 'react';
 import { Link } from 'react-router';
+import { useCardMenu, type CardMenuAt } from '../components/Cards';
+import { ContextMenu } from '../components/Menu';
+import { usePlaylistMenu } from '../components/menus';
 import { PageHeader } from '../components/PageHeader';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { ErrorState, Skeleton } from '../components/Section';
-import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
-import { queryClient } from '../lib/queryClient';
 import { usePlaylists } from '../lib/queries';
 import { useUI } from '../lib/ui';
-import { usePlayer } from '../player/store';
+import { playPlaylist } from '../player/actions';
 import { GRID } from './Albums';
-
-export async function playPlaylist(id: number, opts?: { shuffle?: boolean }) {
-  const p = await queryClient.fetchQuery({ queryKey: ['playlist', id], queryFn: () => api.playlist(id) });
-  const tracks = p.items.flatMap((i) => (i.track ? [i.track] : []));
-  usePlayer.getState().playTracks(tracks, 0, { ...opts, source: { label: p.name, href: `/playlists/${id}` } });
-}
 
 export function PlaylistsPage() {
   const { data: playlists, error, isPending, refetch } = usePlaylists();
@@ -49,8 +44,12 @@ export function PlaylistsPage() {
 }
 
 export function PlaylistCard({ playlist: p, style, className }: { playlist: PlaylistSummary; style?: CSSProperties; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const menu = useCardMenu(ref);
+  // An empty playlist has nothing to queue: the browser's own menu stays.
+  const hasMenu = p.trackCount > 0;
   return (
-    <div className={cn('group relative animate-rise', className)} style={style}>
+    <div ref={ref} className={cn('group relative animate-rise', hasMenu && 'long-press', className)} style={style} {...(hasMenu ? menu.events : {})}>
       <Link to={`/playlists/${p.id}`} className="block">
         <PlaylistCover
           cover={p.cover}
@@ -58,19 +57,32 @@ export function PlaylistCard({ playlist: p, style, className }: { playlist: Play
           name={p.name}
           className="rounded-cover shadow-cover ring-1 ring-paper/5"
         />
-        <div className="mt-3 truncate text-[15px] text-paper">{p.name}</div>
-        <div className="truncate font-mono text-[12px] text-muted">{plural(p.trackCount, 'song')}{p.mine ? '' : ` · ${p.owner}`}</div>
+        <div className="mt-3 truncate type-body leading-snug text-paper">{p.name}</div>
+        <div className="truncate type-meta text-muted">
+          {plural(p.trackCount, 'song')}
+          {p.mine ? '' : ` · ${p.owner}`}
+        </div>
       </Link>
-      {p.trackCount > 0 && (
-        <button
-          type="button"
-          aria-label={`Play ${p.name}`}
-          onClick={() => void playPlaylist(p.id)}
-          className="absolute right-2.5 bottom-[4.25rem] grid size-11 translate-y-2 place-items-center rounded-full bg-accent text-accent-ink opacity-0 shadow-xl shadow-black/40 transition duration-300 ease-out-expo group-hover:translate-y-0 group-hover:opacity-100 hover:scale-105 focus-visible:translate-y-0 focus-visible:opacity-100 pointer-coarse:hidden"
-        >
-          <Play className="ml-0.5 size-5 fill-current" />
-        </button>
+      {/* On the cover (a square as wide as the card), as on an album card, whatever the text below it. */}
+      {hasMenu && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 aspect-square">
+          <button
+            type="button"
+            aria-label={`Play ${p.name}`}
+            onClick={() => void playPlaylist(p.id)}
+            className="pointer-events-auto absolute right-2.5 bottom-2.5 grid size-11 translate-y-2 place-items-center rounded-full bg-accent text-accent-ink opacity-0 shadow-xl shadow-black/40 transition duration-300 ease-out-expo group-hover:translate-y-0 group-hover:opacity-100 hover:scale-105 focus-visible:translate-y-0 focus-visible:opacity-100 pointer-coarse:hidden"
+          >
+            <Play className="ml-0.5 size-5 fill-current" />
+          </button>
+        </div>
       )}
+      {menu.menuAt && hasMenu && <PlaylistCardMenu playlist={p} at={menu.menuAt} onClose={menu.close} />}
     </div>
   );
+}
+
+/** The playlist's one menu (components/menus.ts), with Play and Shuffle first; its owner's actions are on its page. */
+function PlaylistCardMenu({ playlist, at, onClose }: { playlist: PlaylistSummary; at: NonNullable<CardMenuAt>; onClose: () => void }) {
+  const items = usePlaylistMenu(playlist, { card: true });
+  return <ContextMenu items={items} label={`More for ${playlist.name}`} at={at.at} keyboard={at.keyboard} onClose={onClose} />;
 }

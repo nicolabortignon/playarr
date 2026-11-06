@@ -2,10 +2,9 @@ import { Search as SearchIcon, X } from 'lucide-react';
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Button, IconButton } from '../components/Button';
-import { AlbumCard, ArtistCard } from '../components/Cards';
-import { Cover } from '../components/Cover';
-import { DiscoverAlbumCard, DiscoverArtistCard, DiscoverTrackRow, RequestsPill } from '../components/Discover';
-import { SectionHeader, Shelf, Skeleton } from '../components/Section';
+import { AlbumCard, ArtistAvatar, ArtistCard, DiscoverArtistCard } from '../components/Cards';
+import { DiscoverAlbumCard, DiscoverTrackRow, RequestsPill } from '../components/Discover';
+import { SectionHeader, SHELF_CARD, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { activeRequestCount, useArtists, useDiscover, useHasLidarr, usePlaylists, useRequests, useSearch } from '../lib/queries';
 import { useDebounced } from '../lib/useDebounced';
@@ -93,7 +92,7 @@ export function SearchPage() {
                   to={`/artists/${top.id}`}
                   className="group flex items-center gap-5 rounded-lg border border-line bg-paper/[0.025] p-5 transition hover:bg-paper/[0.05]"
                 >
-                  <Cover src={top.imageUrl} size={112} alt={top.name} className="size-28 shrink-0 rounded-full shadow-xl" />
+                  <ArtistAvatar name={top.name} src={top.imageUrl} size={112} className="size-28 shrink-0 shadow-xl" />
                   <div className="min-w-0">
                     <div className="font-display text-3xl leading-tight text-paper">{top.name}</div>
                     <div className="mt-1 type-kicker text-muted">Artist</div>
@@ -138,7 +137,7 @@ export function SearchPage() {
               <SectionHeader title="Albums" />
               <Shelf>
                 {data.albums.map((a) => (
-                  <AlbumCard key={a.id} album={a} size={180} className="w-[40vw] max-w-44 shrink-0 snap-start sm:w-40 md:w-44" />
+                  <AlbumCard key={a.id} album={a} className={SHELF_CARD} />
                 ))}
               </Shelf>
             </section>
@@ -149,7 +148,7 @@ export function SearchPage() {
               <SectionHeader title="Artists" />
               <Shelf>
                 {data.artists.map((a) => (
-                  <ArtistCard key={a.id} artist={a} className="w-[40vw] max-w-44 shrink-0 snap-start sm:w-40 md:w-44" />
+                  <ArtistCard key={a.id} artist={a} className={SHELF_CARD} />
                 ))}
               </Shelf>
             </section>
@@ -214,7 +213,7 @@ function DiscoverSection({ q }: { q: string }) {
             <SectionHeader title="Albums" />
             <Shelf>
               {albums.map((a, i) => (
-                <DiscoverAlbumCard key={a.mbid} album={a} className="w-[40vw] max-w-44 shrink-0 snap-start sm:w-40 md:w-44" style={{ animationDelay: `${i * 30}ms` }} />
+                <DiscoverAlbumCard key={a.mbid} album={a} className={SHELF_CARD} style={{ animationDelay: `${i * 30}ms` }} />
               ))}
             </Shelf>
           </div>
@@ -224,7 +223,7 @@ function DiscoverSection({ q }: { q: string }) {
             <SectionHeader title="Artists" />
             <Shelf>
               {artists.map((a, i) => (
-                <DiscoverArtistCard key={a.mbid} artist={a} className="w-[32vw] max-w-40 shrink-0 snap-start sm:w-36 md:w-40" style={{ animationDelay: `${i * 40}ms` }} />
+                <DiscoverArtistCard key={a.mbid} artist={a} className={SHELF_CARD} style={{ animationDelay: `${i * 40}ms` }} />
               ))}
             </Shelf>
           </div>

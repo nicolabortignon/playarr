@@ -55,6 +55,10 @@ describe('Your listening', () => {
     expect(screen.getByRole('radio', { name: '2025' })).toBeTruthy();
     expect(screen.getByText('By month')).toBeTruthy();
     expect(screen.getAllByText(/Most:/)[0]!.textContent).toContain('2 h');
+    // A top song shows its plays where other lists show the length, and plays from there when pressed.
+    expect(screen.getAllByText('20 plays').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Play Song 2' }));
+    expect(usePlayer.getState().queue[usePlayer.getState().order[usePlayer.getState().pos]!]!.id).toBe(2);
     fireEvent.click(screen.getByRole('button', { name: /Play them/ }));
     expect(usePlayer.getState().queue.map((t) => t.id)).toEqual([1, 2]);
     expect(usePlayer.getState().source).toEqual({ label: 'Your top songs of 2026', href: '/settings/listening?range=2026' });

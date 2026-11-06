@@ -1,9 +1,9 @@
 import { Play, Trash2 } from 'lucide-react';
-import { Link } from 'react-router';
 import { IconButton } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { NameAndNumbers } from '../components/NameAndNumbers';
 import { PageHeader } from '../components/PageHeader';
+import { ListRow } from '../components/SongRow';
 import { formatBytes, plural } from '../lib/format';
 import { useDownloadState } from '../player/downloads';
 import { canKeepOffline, downloadProgress, removeDownload, useOffline, type Download } from '../player/offline';
@@ -27,7 +27,7 @@ export function DownloadsPage() {
           connection.
         </p>
       ) : (
-        <ul className="max-w-3xl divide-y divide-line">
+        <ul className="-mx-3 max-w-3xl">
           {downloads.map((d) => (
             <Row key={d.key} download={d} />
           ))}
@@ -37,23 +37,20 @@ export function DownloadsPage() {
   );
 }
 
+/** A download in the list's one row: the row opens its page, Play plays it, the bin takes it off the device. */
 function Row({ download: d }: { download: Download }) {
   const progress = useOffline((s) => downloadProgress(d, s.songs));
   const failed = useDownloadState((s) => d.tracks.filter((t) => t.fileId in s.failed).length);
   const playTracks = usePlayer((s) => s.playTracks);
   const done = progress.done === progress.total;
   return (
-    <li className="flex items-center gap-4 py-3">
-      <Link to={d.href} className="shrink-0">
-        <Cover src={d.coverUrl} size={64} alt="" className="size-14 rounded-cover" />
-      </Link>
-      <div className="min-w-0 flex-1">
-        <Link to={d.href} className="block truncate type-body text-paper hover:underline">
-          {d.title}
-        </Link>
-        {/* How far along it is goes under what it is when both don't fit, rather than being cut off. */}
+    <ListRow
+      lead={<Cover src={d.coverUrl} size={44} alt="" label={d.title} className="size-11 shrink-0 rounded-cover" />}
+      title={d.title}
+      main={{ label: d.title, to: d.href }}
+      // How far along it is goes under what it is when both don't fit, rather than being cut off.
+      subtitle={
         <NameAndNumbers
-          className="type-small text-muted"
           name={d.subtitle}
           numbers={
             <>
@@ -62,23 +59,30 @@ function Row({ download: d }: { download: Download }) {
             </>
           }
         />
-        {!done && (
-          <div className="mt-1.5 h-1 max-w-48 overflow-hidden rounded-full bg-paper/10">
+      }
+      trailing={
+        <>
+          <button
+            type="button"
+            aria-label={`Play ${d.title}`}
+            onClick={() => playTracks(d.tracks, 0, { shuffle: false, source: { label: d.title, href: d.href } })}
+            className="relative z-10 grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-ink transition tap-target hover:brightness-110"
+          >
+            <Play className="size-4 fill-current" />
+          </button>
+          <IconButton label={`Remove ${d.title} from this device`} onClick={() => void removeDownload(d.key)} className="relative z-10">
+            <Trash2 className="size-4" />
+          </IconButton>
+        </>
+      }
+      // Along the row's bottom edge, so a download in progress is no taller than one that's done.
+      overlay={
+        !done && (
+          <div className="pointer-events-none absolute inset-x-3 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-paper/10">
             <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} />
           </div>
-        )}
-      </div>
-      <button
-        type="button"
-        aria-label={`Play ${d.title}`}
-        onClick={() => playTracks(d.tracks, 0, { shuffle: false, source: { label: d.title, href: d.href } })}
-        className="relative grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-ink transition tap-target hover:brightness-110"
-      >
-        <Play className="size-4 fill-current" />
-      </button>
-      <IconButton label={`Remove ${d.title} from this device`} onClick={() => void removeDownload(d.key)}>
-        <Trash2 className="size-4" />
-      </IconButton>
-    </li>
+        )
+      }
+    />
   );
 }

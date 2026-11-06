@@ -25,6 +25,9 @@ export function SectionHeader({ title, kicker, to, action }: { title: string; ki
   );
 }
 
+/** Every card on a shelf is this wide (docs/design.md): albums, playlists, mixes and artists alike. */
+export const SHELF_CARD = 'w-[42vw] max-w-52 shrink-0 snap-start sm:w-44 md:w-52';
+
 /**
  * Horizontal row with arrow buttons on pointer devices, and a thin line under it showing where it's scrolled to. It
  * snaps to cards on touch screens only: with a trackpad, snapping fights the scroll's own momentum. Scrolling past its

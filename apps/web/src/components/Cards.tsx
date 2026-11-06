@@ -1,14 +1,37 @@
-import type { Album, Artist } from '@playarr/shared';
+import type { Album, Artist, DiscoverArtist } from '@playarr/shared';
 import { Pause, Play } from 'lucide-react';
-import { useRef, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { Link } from 'react-router';
 import { cn } from '../lib/cn';
+import { useContextMenu, type Point } from '../lib/contextMenu';
 import { plural } from '../lib/format';
 import { useNearScreen } from '../lib/viewport';
 import { playAlbum } from '../player/actions';
 import { currentTrack, usePlayer } from '../player/store';
 import { Cover } from './Cover';
 import { canRequestRest, RequestRest } from './Discover';
+import { ContextMenu } from './Menu';
+import { useAlbumMenu } from './menus';
+
+/** Where a card's menu opens, and whether from the keyboard. */
+export type CardMenuAt = { at: Point; keyboard: boolean } | null;
+
+/**
+ * A card's menu on a right-click, a long press or the menu key, as on a row (lib/contextMenu.ts). The card mounts the
+ * menu only then. From the keyboard it opens under the cover (a square as wide as the card).
+ */
+export function useCardMenu(card: { current: HTMLElement | null }) {
+  const [menuAt, setMenuAt] = useState<CardMenuAt>(null);
+  const events = useContextMenu(
+    (at, keyboard) => {
+      const r = card.current?.getBoundingClientRect();
+      const point = at ?? (r ? { x: r.left, y: r.top + r.width } : undefined);
+      if (point) setMenuAt({ at: point, keyboard });
+    },
+    { links: 'ours' },
+  );
+  return { menuAt, close: () => setMenuAt(null), events };
+}
 
 export function AlbumCard({ album, size = 220, style, className }: { album: Album; size?: number; style?: CSSProperties; className?: string }) {
   // Booleans about this album only: a new track or play/pause re-renders the cards it concerns, not all of them.
@@ -18,9 +41,10 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
   // Far off screen in a long grid, the card keeps only its size: no image, no buttons, nothing to update.
   const ref = useRef<HTMLDivElement>(null);
   const { near, height } = useNearScreen(ref);
+  const menu = useCardMenu(ref);
 
   return (
-    <div ref={ref} className={cn('group relative animate-rise', className)} style={near ? style : { ...style, height }}>
+    <div ref={ref} className={cn('group relative animate-rise long-press', className)} style={near ? style : { ...style, height }} {...menu.events}>
       {near && (
         <>
           <Link to={`/albums/${album.id}`} className="block rounded-md outline-offset-4">
@@ -33,12 +57,12 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
               />
             </div>
             <div className="mt-3 min-w-0">
-              <div className={cn('truncate text-[15px] leading-snug', isCurrent ? 'text-accent' : 'text-paper')}>{album.title}</div>
-              <div className="truncate text-[13px] text-muted">
+              <div className={cn('truncate type-body leading-snug', isCurrent ? 'text-accent' : 'text-paper')}>{album.title}</div>
+              <div className="truncate type-small text-muted">
                 {album.artistName}
-                {album.year && <span className="font-mono text-[12px]"> · {album.year}</span>}
+                {album.year && <span className="type-meta"> · {album.year}</span>}
                 {album.trackCount < album.totalTrackCount && (
-                  <span className="font-mono text-[12px]">
+                  <span className="type-meta">
                     {' '}
                     · {album.trackCount} of {album.totalTrackCount}
                   </span>
@@ -66,7 +90,57 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
           </div>
         </>
       )}
+      {menu.menuAt && <AlbumCardMenu album={album} at={menu.menuAt} onClose={menu.close} />}
     </div>
+  );
+}
+
+/** The album's one menu (components/menus.ts), with Play and Shuffle first: a card on a touch screen has no Play button. */
+function AlbumCardMenu({ album, at, onClose }: { album: Album; at: NonNullable<CardMenuAt>; onClose: () => void }) {
+  const items = useAlbumMenu(album, { card: true });
+  return <ContextMenu items={items} label={`More for ${album.title}`} at={at.at} keyboard={at.keyboard} onClose={onClose} />;
+}
+
+/**
+ * An artist's picture: their photo, else their best album cover (the server's pick when there's no photo), in a circle;
+ * a vinyl monogram of their initials when there's neither. Alt-less: their name is always beside it.
+ */
+export function ArtistAvatar({ name, src, size, eager, className }: { name: string; src?: string; size: number; eager?: boolean; className?: string }) {
+  return <Cover src={src} size={size} alt="" label={name} eager={eager} className={cn('rounded-full ring-1 ring-paper/10', className)} />;
+}
+
+/** An artist on a shelf or in a grid, in or out of the library: the picture in a circle, the name below it as on album cards. */
+export function ArtistTile({
+  to,
+  name,
+  imageUrl,
+  meta,
+  style,
+  className,
+  tileRef,
+  empty,
+}: {
+  to: string;
+  name: string;
+  imageUrl?: string;
+  /** Under the name: "4 albums · 41 songs", "In your library". */
+  meta?: ReactNode;
+  style?: CSSProperties;
+  className?: string;
+  tileRef?: Ref<HTMLAnchorElement>;
+  /** Far off screen in a long grid: just its size. */
+  empty?: boolean;
+}) {
+  return (
+    <Link ref={tileRef} to={to} style={style} className={cn('group block animate-rise text-center', className)}>
+      {!empty && (
+        <>
+          <ArtistAvatar name={name} src={imageUrl} size={220} className="w-full shadow-cover transition duration-500 ease-out-expo group-hover:scale-[1.03]" />
+          <div className="mt-3 truncate type-body leading-snug text-paper">{name}</div>
+          {meta && <div className="truncate type-small text-muted">{meta}</div>}
+        </>
+      )}
+    </Link>
   );
 }
 
@@ -74,29 +148,29 @@ export function ArtistCard({ artist, style, className }: { artist: Artist; style
   const ref = useRef<HTMLAnchorElement>(null);
   const { near, height } = useNearScreen(ref);
   return (
-    <Link
-      ref={ref}
+    <ArtistTile
+      tileRef={ref}
       to={`/artists/${artist.id}`}
+      name={artist.name}
+      imageUrl={artist.imageUrl}
+      meta={`${plural(artist.albumCount, 'album')} · ${plural(artist.trackCount, 'song')}`}
+      empty={!near}
       style={near ? style : { ...style, height }}
-      className={cn('group relative block animate-rise overflow-hidden rounded-cover bg-ink-800 ring-1 ring-paper/5', className)}
-    >
-      {near && (
-        <>
-          <Cover
-            src={artist.imageUrl}
-            size={260}
-            alt={artist.name}
-            className="aspect-[4/5] transition duration-700 ease-out-expo group-hover:scale-[1.04]"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-ink-950/95 via-ink-950/20 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-3.5">
-            <div className="font-display text-xl leading-tight text-paper md:text-2xl">{artist.name}</div>
-            <div className="mt-1 font-mono text-[11px] tracking-wider text-paper-dim/80 uppercase">
-              {plural(artist.albumCount, 'album')} · {plural(artist.trackCount, 'track')}
-            </div>
-          </div>
-        </>
-      )}
-    </Link>
+      className={className}
+    />
+  );
+}
+
+/** An artist from ListenBrainz or a search beyond the library: their page here when they're in it, else their discography. */
+export function DiscoverArtistCard({ artist, style, className }: { artist: DiscoverArtist; style?: CSSProperties; className?: string }) {
+  return (
+    <ArtistTile
+      to={artist.artistId ? `/artists/${artist.artistId}` : `/discover/artists/${artist.mbid}`}
+      name={artist.name}
+      imageUrl={artist.imageUrl}
+      meta={artist.artistId ? 'In your library' : (artist.disambiguation ?? artist.genres[0] ?? 'Artist')}
+      style={style}
+      className={className}
+    />
   );
 }

@@ -156,6 +156,18 @@ body::after {
 }
 
 /*
+ * A long press opens a row's or a card's own menu (lib/contextMenu.ts): no callout (iOS's link preview, Save image)
+ * and, on touch screens, no text selection in its way.
+ */
+@utility long-press {
+  -webkit-touch-callout: none;
+  @media (pointer: coarse) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/*
  * The action row (components/ActionRow.tsx) never wraps. As its container narrows, Shuffle drops its words (step 1),
  * then the page's own action (step 2), then the gaps close up and Play drops its icon (step 3). Where each step starts
  * depends on what the row holds, which it says in data-layout:

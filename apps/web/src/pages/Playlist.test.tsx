@@ -1,4 +1,4 @@
-import type { PlaylistCoverInfo, PlaylistDetail } from '@playarr/shared';
+import type { PlaylistCoverInfo, PlaylistDetail, PlaylistItem, Track } from '@playarr/shared';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -21,6 +21,28 @@ const SHARED: PlaylistDetail = {
   mine: false,
   items: [{ itemId: 1, recordingId: 'local:00000000000000cc', title: 'Sneaky Snitch', artistName: 'Kevin MacLeod', albumTitle: 'Royalty Free', addedAt: '2026-11-03T10:00:00Z' }],
 };
+
+const song = (id: number, title: string): Track =>
+  ({ id, recordingId: `rec-${id}`, fileId: id, albumId: 70, artistId: 7, title, artistName: 'Massive Attack', albumTitle: 'Blue Lines', duration: 300, streamUrl: `/s/${id}` }) as Track;
+const item = (itemId: number, track: Track): PlaylistItem => ({
+  itemId,
+  recordingId: track.recordingId,
+  title: track.title,
+  artistName: track.artistName,
+  albumTitle: track.albumTitle,
+  addedAt: '2026-11-03T10:00:00Z',
+  track,
+});
+const MINE: PlaylistDetail = {
+  ...SHARED,
+  mine: true,
+  shared: false,
+  trackCount: 3,
+  items: [item(1, song(1, 'Teardrop')), item(2, song(2, 'Unfinished Sympathy')), item(3, song(3, 'Safe from Harm'))],
+};
+
+/** The open menu's items, and its lines as "—". */
+const menuEntries = () => [...screen.getByRole('menu').children].map((c) => (c.getAttribute('role') === 'separator' ? '—' : c.textContent));
 
 afterEach(() => {
   cleanup();
@@ -62,6 +84,59 @@ describe('PlaylistPage', () => {
     const about = within(await screen.findByRole('region', { name: 'About this cover' }));
     expect(about.getByText('Each line is a song, traced from its loudness over time.')).toBeTruthy();
     expect(about.getByText('96 BPM · energy 42%')).toBeTruthy();
+  });
+
+  it('keeps the one song menu on its songs, with the owner’s Move up, Move down and Remove after a line', async () => {
+    view(MINE);
+    fireEvent.click(await screen.findByRole('button', { name: 'More for Unfinished Sympathy' }));
+    expect(menuEntries()).toEqual([
+      'Play next',
+      'Add to queue',
+      'Add to playlist…',
+      'Start radio',
+      'Go to album',
+      'Go to artist',
+      'Show metadata',
+      '—',
+      'Move up',
+      'Move down',
+      'Remove from playlist',
+    ]);
+  });
+
+  it('moves a song from its menu or its handle’s arrow keys, and saves the order', async () => {
+    const reorder = vi.spyOn(api, 'reorderPlaylist').mockImplementation(async (_id, itemIds) => ({ ...MINE, items: itemIds.map((i) => MINE.items.find((x) => x.itemId === i)!) }));
+    view(MINE);
+    fireEvent.click(await screen.findByRole('button', { name: 'More for Teardrop' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move down' }));
+    await waitFor(() => expect(reorder).toHaveBeenLastCalledWith(5, [2, 1, 3]));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Drag to reorder Safe from Harm' }), { key: 'ArrowUp' });
+    await waitFor(() => expect(reorder).toHaveBeenLastCalledWith(5, [2, 3, 1]));
+  });
+
+  it('offers only its songs’ own menu to someone else, and nothing to move', async () => {
+    view({ ...MINE, mine: false, shared: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'More for Teardrop' }));
+    expect(menuEntries()).not.toContain('Move down');
+    expect(menuEntries()).not.toContain('Remove from playlist');
+    expect(screen.queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
+  });
+
+  it('puts the playlist’s own actions after what everything you can play offers', async () => {
+    view(MINE);
+    fireEvent.click(await screen.findByRole('button', { name: 'Playlist actions' }));
+    expect(menuEntries()).toEqual(['Play next', 'Add to queue', 'Add to playlist…', '—', 'Rename', 'New cover…', 'Share with everyone', 'Delete playlist']);
+  });
+
+  it('renames from a pencil beside the title, or from ⋯', async () => {
+    view(MINE);
+    fireEvent.click(await screen.findByRole('button', { name: 'Rename playlist' }));
+    expect(screen.getByRole('textbox', { name: 'Playlist name' })).toBeTruthy();
+    cleanup();
+    view(MINE);
+    fireEvent.click(await screen.findByRole('button', { name: 'Playlist actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    expect(screen.getByRole('textbox', { name: 'Playlist name' })).toBeTruthy();
   });
 
   it('lets the owner share it with everyone on the server', async () => {

@@ -60,14 +60,14 @@ export function LibraryPage() {
           onClick={() => openPicker([])}
           className="flex w-full items-center gap-4 rounded-lg px-2 py-2.5 text-left transition hover:bg-paper/[0.04]"
         >
-          <span className="grid size-14 place-items-center rounded-md border border-dashed border-paper/25 text-accent">
+          <span className="grid size-14 place-items-center rounded-cover border border-dashed border-paper/25 text-accent">
             <Plus className="size-5" />
           </span>
           <span className="text-[16px] text-paper">New playlist</span>
         </button>
         {playlists?.map((p) => (
           <Link key={p.id} to={`/playlists/${p.id}`} className="flex items-center gap-4 rounded-lg px-2 py-2.5 transition hover:bg-paper/[0.04]">
-            <PlaylistCover cover={p.cover} size={56} name={p.name} className="size-14 shrink-0 rounded-md" />
+            <PlaylistCover cover={p.cover} size={56} name={p.name} className="size-14 shrink-0 rounded-cover" />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[16px] text-paper">{p.name}</span>
               <span className="block font-mono text-[12px] text-muted">{plural(p.trackCount, 'song')}</span>

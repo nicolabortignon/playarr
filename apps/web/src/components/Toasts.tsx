@@ -44,7 +44,10 @@ export function Toasts() {
   );
 }
 
-/** A toast with a button (Reload…): it stays until the button is used or it's dismissed. */
+/**
+ * A toast with a button. Reload stays until it's used or put off (Later); an Undo goes by itself after a while, but
+ * not while it's pointed at or has the focus, so the button can still be reached.
+ */
 function ActionToast({
   toast,
   action,
@@ -54,10 +57,16 @@ function ActionToast({
   action: NonNullable<Toast['action']>;
   dismiss: () => void;
 }) {
+  const hold = useToasts((s) => s.hold);
+  const timed = !!toast.timeout;
   return (
     <motion.div
       {...motionProps}
       role="status"
+      onPointerEnter={timed ? () => hold(toast.id, true) : undefined}
+      onPointerLeave={timed ? () => hold(toast.id, false) : undefined}
+      onFocus={timed ? () => hold(toast.id, true) : undefined}
+      onBlur={timed ? () => hold(toast.id, false) : undefined}
       className={cn(BOX, 'flex items-center gap-4', TONES[toast.tone])}
     >
       <span>{toast.message}</span>
@@ -72,9 +81,11 @@ function ActionToast({
         >
           {action.label}
         </Button>
-        <Button variant="ghost" size="small" onClick={dismiss}>
-          Later
-        </Button>
+        {!timed && (
+          <Button variant="ghost" size="small" onClick={dismiss}>
+            Later
+          </Button>
+        )}
       </span>
     </motion.div>
   );

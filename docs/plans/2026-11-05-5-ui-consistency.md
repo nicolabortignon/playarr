@@ -113,6 +113,7 @@ The standard:
 
   Pick one treatment for everywhere: the artist's best album cover, in a circle, with the name **below** it as on album cards. Keep the vinyl monogram for an artist with no cover at all.
 - **Done when** one song row and one card per platform cover every list and shelf, the trailing order is the same on both apps, and every row in a list is the same height.
+- *Web done 2026-11-06: `SongRow`/`ListRow` (components/SongRow.tsx) in every list, Now Playing's Up next and Downloads, trailing time · ♥ · ⋯ as on iOS, one height per list; one shelf card width (`SHELF_CARD`); artists are circles with the name below everywhere (photo, else best album cover, else vinyl monogram); the player bar's text is 15/13.*
 
 ## 6. Icons — S
 

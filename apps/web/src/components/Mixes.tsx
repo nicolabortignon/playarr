@@ -116,8 +116,8 @@ export function MixCard({ mix, className, style }: { mix: MixSummary; className?
         className="rounded-cover shadow-cover ring-1 ring-paper/5"
       />
       <div className="mt-3 min-w-0">
-        <div className="truncate text-[15px] leading-snug text-paper">{mix.subtitle}</div>
-        <div className="truncate font-mono text-[12px] text-muted">{plural(mix.trackCount, 'song')}</div>
+        <div className="truncate type-body leading-snug text-paper">{mix.subtitle}</div>
+        <div className="truncate type-meta text-muted">{plural(mix.trackCount, 'song')}</div>
       </div>
     </Link>
   );
