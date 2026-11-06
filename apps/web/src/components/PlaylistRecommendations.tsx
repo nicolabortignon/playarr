@@ -125,7 +125,7 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="mt-6 first:mt-0">
-      <h3 className="mb-2 font-mono text-[11px] tracking-[0.2em] text-paper-dim/70 uppercase">{title}</h3>
+      <h3 className="mb-2 type-kicker text-muted">{title}</h3>
       <ol className="-mx-3">{children}</ol>
     </div>
   );

@@ -87,6 +87,7 @@ The standard:
   - The navigation bar shows the title only once the large one has scrolled away.
   - Kickers use one color (`muted`) and one tracking.
 - **Done when** Albums, Artists, Playlists, Favorites, Downloads, Queue and Library share one header per platform, and no screen shows the same title twice.
+- *Web done 2026-11-06: `PageHeader` on every tab and list page, `DetailHeader` (cover · kicker · title · one meta line · action row) on album, playlist, mix, Favorites, artist and discover artist; a playlist's or mix's own cover drops its name; every kicker is `type-kicker text-muted` (`paper-dim` over art); Home greets the account by name with its avatar.*
 
 ## 5. Rows and cards — M
 

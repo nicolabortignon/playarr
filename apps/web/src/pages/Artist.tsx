@@ -1,10 +1,12 @@
-import type { Album } from '@playarr/shared';
+import type { Album, ArtistDetail } from '@playarr/shared';
 import { ListEnd, ListPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useParams } from 'react-router';
 import { ActionRow, usePlayState } from '../components/ActionRow';
 import { Button } from '../components/Button';
 import { AlbumCard } from '../components/Cards';
+import { Cover } from '../components/Cover';
+import { DetailHeader, joinMeta } from '../components/DetailHeader';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
 import { SimilarArtists } from '../components/SimilarArtists';
@@ -34,6 +36,15 @@ function groupAlbums(albums: Album[]) {
     else groups[0]!.albums.push(a);
   }
   return groups.filter((g) => g.albums.length);
+}
+
+/**
+ * The artist's own photo, if there is one. The server falls back to their newest album's cover for an artist without
+ * one, which isn't a photo of them: then undefined.
+ */
+export function artistPhoto(artist: Pick<ArtistDetail, 'imageUrl' | 'albums'>): string | undefined {
+  const url = artist.imageUrl;
+  return url && !artist.albums.some((a) => a.coverUrl === url) ? url : undefined;
 }
 
 /**
@@ -82,7 +93,7 @@ function NotInLibrary({ artistMbid, owned }: { artistMbid: string; owned: Album[
           <SectionHeader title={g.title} kicker={plural(g.items.length, 'release')} />
           <div className={GRID}>
             {g.items.map((a, i) => (
-              <DiscoverAlbumCard key={a.mbid} album={a} style={{ animationDelay: `${Math.min(i, 20) * 30}ms` }} />
+              <DiscoverAlbumCard key={a.mbid} album={a} onArtistPage style={{ animationDelay: `${Math.min(i, 20) * 30}ms` }} />
             ))}
           </div>
         </section>
@@ -112,66 +123,85 @@ export function ArtistPage() {
     );
   }
 
-  const hero = artist.fanartUrl ?? artist.imageUrl;
+  const photo = artist.fanartUrl ?? artistPhoto(artist);
   const showLogo = artist.logoUrl && !logoFailed;
+  const title = showLogo ? (
+    <>
+      <span className="sr-only">{artist.name}</span>
+      <img
+        src={artist.logoUrl}
+        alt=""
+        onError={() => setLogoFailed(true)}
+        className="max-h-24 max-w-[80%] animate-rise object-contain object-left drop-shadow-[0_4px_24px_color-mix(in_oklab,var(--color-ink-950)_60%,transparent)] md:max-h-36 md:max-w-[560px]"
+      />
+    </>
+  ) : (
+    artist.name
+  );
+  const header = (
+    <DetailHeader
+      // Without a photo: their best album cover (the server's pick) as a round picture beside the name.
+      cover={
+        photo ? undefined : (
+          <Cover
+            src={artist.imageUrl ?? artist.albums.find((a) => a.coverUrl)?.coverUrl}
+            size={192}
+            alt=""
+            label={artist.name}
+            eager
+            className="w-full rounded-full shadow-cover-hero ring-1 ring-paper/10"
+          />
+        )
+      }
+      round
+      kicker="Artist"
+      title={title}
+      meta={joinMeta(plural(artist.albumCount, 'album'), plural(artist.trackCount, 'song'))}
+      overArt={!!photo}
+    >
+      <ActionRow
+        title={artist.name}
+        state={playState}
+        onPlay={() => (playState !== 'idle' ? toggle() : void playArtist(artist.id))}
+        onShuffle={() => void playArtist(artist.id, { shuffle: true })}
+        menu={{
+          items: [
+            { label: 'Play next', icon: ListPlus, onSelect: () => void queueArtist(artist.id, 'next') },
+            { label: 'Add to queue', icon: ListEnd, onSelect: () => void queueArtist(artist.id, 'end') },
+          ],
+        }}
+      />
+    </DetailHeader>
+  );
 
   return (
     <div>
-      <section className="relative isolate flex h-[52vh] min-h-[360px] items-end overflow-hidden md:h-[60vh]">
-        <BackButton fallback="/artists" className="absolute top-3 left-3 z-20" />
-        {hero && (
+      {photo ? (
+        <section className="relative isolate flex h-[52vh] min-h-[360px] items-end overflow-hidden md:h-[60vh]">
+          <BackButton fallback="/artists" className="absolute top-3 left-3 z-20" />
           <img
             src={artistHero(artist)}
             alt=""
             className={cn(
               'absolute inset-0 -z-10 h-full w-full animate-fade object-cover object-[center_30%]',
-              // No wide photo: use the square image as a soft, blurred backdrop instead of a blown-up crop.
+              // No wide photo: use the square one as a soft, blurred backdrop instead of a blown-up crop.
               !artist.fanartUrl && 'scale-125 opacity-60 blur-2xl saturate-150',
             )}
           />
-        )}
-        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-ink-900 via-ink-900/45 to-ink-900/10" />
-        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-ink-900/70 via-transparent to-transparent" />
-
-        <div className="w-full px-5 pb-8 md:px-10 md:pb-12">
-          <div className="mb-3 font-mono text-[11px] tracking-[0.25em] text-paper-dim/80 uppercase">
-            {artist.genres.slice(0, 3).join(' · ') || 'Artist'}
-          </div>
-          {showLogo ? (
-            <h1>
-              <span className="sr-only">{artist.name}</span>
-              <img
-                src={artist.logoUrl}
-                alt=""
-                onError={() => setLogoFailed(true)}
-                className="max-h-24 max-w-[80%] animate-rise object-contain object-left drop-shadow-[0_4px_24px_rgb(0_0_0/0.6)] md:max-h-36 md:max-w-[560px]"
-              />
-            </h1>
-          ) : (
-            <h1 className="animate-rise font-display text-6xl leading-[0.9] tracking-tight text-paper drop-shadow-2xl md:text-8xl">
-              {artist.name}
-            </h1>
-          )}
-          <p className="mt-3 type-meta text-paper-dim">
-            {plural(artist.albumCount, 'album')} · {plural(artist.trackCount, 'track')}
-          </p>
-          <ActionRow
-            className="mt-6"
-            title={artist.name}
-            state={playState}
-            onPlay={() => (playState !== 'idle' ? toggle() : void playArtist(artist.id))}
-            onShuffle={() => void playArtist(artist.id, { shuffle: true })}
-            menu={{
-              items: [
-                { label: 'Play next', icon: ListPlus, onSelect: () => void queueArtist(artist.id, 'next') },
-                { label: 'Add to queue', icon: ListEnd, onSelect: () => void queueArtist(artist.id, 'end') },
-              ],
-            }}
-          />
+          <div className="absolute inset-0 -z-10 bg-gradient-to-t from-ink-900 via-ink-900/45 to-ink-900/10" />
+          <div className="absolute inset-0 -z-10 bg-gradient-to-r from-ink-900/70 via-transparent to-transparent" />
+          {/* Room under the row for Play's glow, which the band would otherwise cut off. */}
+          <div className="w-full px-5 pb-10 md:px-10 md:pb-12">{header}</div>
+        </section>
+      ) : (
+        // No photo: a compact header rather than a band of blur before the name.
+        <div className="relative px-5 pt-6 md:px-10 md:pt-14">
+          <BackButton fallback="/artists" className="absolute top-3 left-3 z-20" />
+          {header}
         </div>
-      </section>
+      )}
 
-      <div className="px-5 pt-6 md:px-10 md:pt-10">
+      <div className={cn('px-5 md:px-10', photo ? 'pt-6 md:pt-10' : 'pt-10 md:pt-14')}>
         {groupAlbums(artist.albums).map((g) => (
           <section key={g.title} className="mb-14">
             <SectionHeader title={g.title} kicker={plural(g.albums.length, 'release')} />
@@ -189,8 +219,8 @@ export function ArtistPage() {
 
         {artist.overview && (
           <section className="max-w-3xl">
-            <SectionHeader title="About" />
-            <p className={cn('text-[15px] leading-relaxed whitespace-pre-line text-paper-dim/90', !bioOpen && 'line-clamp-5')}>
+            <SectionHeader title="About" kicker={artist.genres.slice(0, 3).join(' · ') || undefined} />
+            <p className={cn('type-body leading-relaxed whitespace-pre-line text-paper-dim', !bioOpen && 'line-clamp-5')}>
               {artist.overview}
             </p>
             <Button variant="ghost" size="small" onClick={() => setBioOpen((o) => !o)} aria-expanded={bioOpen} className="mt-3 -ml-3.5">

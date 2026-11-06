@@ -115,7 +115,7 @@ function OrganizeBody({
           <div className="max-h-[50dvh] space-y-5 overflow-y-auto pr-1">
             {albums.map(([title, list]) => (
               <section key={title}>
-                <h3 className="mb-1.5 font-mono text-[11px] tracking-[0.15em] text-muted uppercase">{title}</h3>
+                <h3 className="mb-1.5 type-kicker text-muted">{title}</h3>
                 <ul className="space-y-0.5">
                   {list.map((m) => (
                     <li key={m.from}>

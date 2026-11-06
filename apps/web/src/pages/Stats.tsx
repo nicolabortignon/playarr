@@ -5,6 +5,8 @@ import { Button } from '../components/Button';
 import { AlbumCard } from '../components/Cards';
 import { ColumnChart } from '../components/ColumnChart';
 import { Cover } from '../components/Cover';
+import { NameAndNumbers } from '../components/NameAndNumbers';
+import { PageHeader } from '../components/PageHeader';
 import { ErrorState, Skeleton } from '../components/Section';
 import { Choice } from '../components/Choice';
 import { cn } from '../lib/cn';
@@ -37,6 +39,7 @@ export const STATS_PATH = '/settings/listening';
 export function StatsPage() {
   return (
     <div className="px-5 pt-8 pb-16 md:px-10 md:pt-14">
+      <PageHeader title="Your listening" />
       <ListeningStatsView />
     </div>
   );
@@ -72,7 +75,7 @@ export function ListeningStatsView() {
           <Skeleton className="h-64" />
         </div>
       ) : !data.plays ? (
-        <p className="max-w-md text-[15px] text-paper-dim">
+        <p className="max-w-md type-body text-paper-dim">
           Nothing played in this period yet. Songs count once heard for 30 seconds, from every device that counts its plays (Settings → Playback).
         </p>
       ) : (
@@ -89,12 +92,13 @@ function Report({ stats }: { stats: ListeningStats }) {
   return (
     <div className="space-y-14">
       <section>
-        {year && <div className="mb-2 font-mono text-[11px] tracking-[0.2em] text-accent uppercase">Year in review</div>}
-        <div className="font-sans text-[3.5rem] leading-none font-semibold tracking-tight text-paper tabular md:text-[5rem]">
+        {year && <div className="mb-2 type-kicker text-muted">Year in review</div>}
+        {/* The big numbers are in the display face, without figures of one width: those set "1,792" as "1 , 792". */}
+        <div className="font-display text-6xl leading-none text-paper md:text-7xl">
           {number(stats.minutes)}
-          <span className="ml-3 text-[1.25rem] font-normal tracking-normal text-paper-dim md:text-2xl">minutes</span>
+          <span className="ml-3 font-sans text-xl text-paper-dim md:text-2xl">minutes</span>
         </div>
-        <p className="mt-3 max-w-xl text-[15px] text-paper-dim">
+        <p className="mt-3 max-w-xl type-body text-paper-dim">
           {plural(stats.songs, 'song')} by {plural(stats.artists, 'artist')}, on {plural(stats.days, 'day')}.
         </p>
         <dl className="mt-8 grid max-w-3xl grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
@@ -111,11 +115,11 @@ function Report({ stats }: { stats: ListeningStats }) {
             <Cover src={top.artist.imageUrl} size={260} alt={top.artist.name} className="aspect-square rounded-cover ring-1 ring-paper/10" />
           </Link>
           <div>
-            <div className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Your artist of the year</div>
+            <div className="type-kicker text-muted">Your artist of the year</div>
             <Link to={`/artists/${top.artist.id}`} className="mt-2 block font-display text-4xl text-paper hover:underline md:text-6xl">
               {top.artist.name}
             </Link>
-            <p className="mt-2 text-[15px] text-paper-dim">
+            <p className="mt-2 type-body text-paper-dim">
               {minutesLabel(top.minutes)} over {plural(top.plays, 'play')}
               {stats.firstSong && (
                 <>
@@ -132,17 +136,21 @@ function Report({ stats }: { stats: ListeningStats }) {
       )}
 
       <section>
-        <h2 className="mb-5 font-display text-3xl text-paper">Top artists</h2>
+        <h2 className="mb-5 type-section-title text-paper">Top artists</h2>
         <ol className="grid gap-x-8 gap-y-1 md:grid-cols-2">
           {stats.topArtists.map(({ artist, plays, minutes }, i) => (
             <li key={artist.id}>
               <Link to={`/artists/${artist.id}`} className="flex items-center gap-4 rounded-md px-2 py-2 transition hover:bg-paper/[0.05]">
                 <span className="w-6 text-right font-mono text-sm text-muted tabular">{i + 1}</span>
                 <Cover src={artist.imageUrl} size={56} alt="" className="size-12 shrink-0 rounded-full" />
-                <span className="min-w-0 flex-1 truncate text-[15px] text-paper">{artist.name}</span>
-                <span className="shrink-0 text-right text-[13px] text-muted tabular">
-                  {minutesLabel(minutes)} · {plural(plays, 'play')}
-                </span>
+                <NameAndNumbers
+                  end
+                  className="flex-1"
+                  name={artist.name}
+                  nameClassName="type-body text-paper"
+                  numbers={`${minutesLabel(minutes)} · ${plural(plays, 'play')}`}
+                  numbersClassName="type-small text-muted tabular"
+                />
               </Link>
             </li>
           ))}
@@ -151,7 +159,7 @@ function Report({ stats }: { stats: ListeningStats }) {
 
       <section>
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <h2 className="font-display text-3xl text-paper">Top songs</h2>
+          <h2 className="type-section-title text-paper">Top songs</h2>
           <Button
             variant="primary"
             icon={<Play className="fill-current" />}
@@ -183,10 +191,9 @@ function Report({ stats }: { stats: ListeningStats }) {
                 <span className="w-6 text-right font-mono text-sm text-muted tabular">{i + 1}</span>
                 <Cover src={track.coverUrl} size={48} alt="" className="size-11 shrink-0 rounded-cover" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] text-paper">{track.title}</span>
-                  <span className="block truncate text-[13px] text-muted">{track.artistName}</span>
+                  <span className="block truncate type-body text-paper">{track.title}</span>
+                  <NameAndNumbers className="type-small text-muted" name={track.artistName} numbers={plural(plays, 'play')} numbersClassName="tabular" />
                 </span>
-                <span className="shrink-0 text-[13px] text-muted tabular">{plural(plays, 'play')}</span>
               </button>
             </li>
           ))}
@@ -195,7 +202,7 @@ function Report({ stats }: { stats: ListeningStats }) {
 
       {stats.topAlbums.length > 0 && (
         <section>
-          <h2 className="mb-5 font-display text-3xl text-paper">Top albums</h2>
+          <h2 className="mb-5 type-section-title text-paper">Top albums</h2>
           <div className={GRID}>
             {stats.topAlbums.slice(0, 6).map(({ album }) => (
               <AlbumCard key={album.id} album={album} />
@@ -205,7 +212,7 @@ function Report({ stats }: { stats: ListeningStats }) {
       )}
 
       <section>
-        <h2 className="mb-6 font-display text-3xl text-paper">When you listen</h2>
+        <h2 className="mb-6 type-section-title text-paper">When you listen</h2>
         <div className={cn('grid gap-10', year ? 'lg:grid-cols-[2fr_1fr]' : 'md:grid-cols-[2fr_1fr]')}>
           <ColumnChart title="By hour of the day" values={stats.hours} labels={HOURS} ticks={(i) => i % 6 === 0} format={minutesLabel} />
           <ColumnChart title="By day of the week" values={stats.weekdays} labels={WEEKDAYS} format={minutesLabel} />
@@ -217,11 +224,11 @@ function Report({ stats }: { stats: ListeningStats }) {
 
       {stats.topGenres.length > 0 && (
         <section>
-          <h2 className="mb-5 font-display text-3xl text-paper">Your sound</h2>
+          <h2 className="mb-5 type-section-title text-paper">Your sound</h2>
           <ul className="flex flex-wrap gap-2">
             {stats.topGenres.map((g) => (
-              <li key={g.genre} className="rounded-full border border-line px-4 py-2 text-[14px] text-paper">
-                {g.genre} <span className="ml-1 text-[12px] text-muted tabular">{minutesLabel(g.minutes)}</span>
+              <li key={g.genre} className="rounded-full border border-line px-4 py-2 text-sm text-paper">
+                {g.genre} <span className="ml-1 type-meta text-muted">{minutesLabel(g.minutes)}</span>
               </li>
             ))}
           </ul>
@@ -234,8 +241,8 @@ function Report({ stats }: { stats: ListeningStats }) {
 function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[13px] text-muted">{label}</dt>
-      <dd className="mt-1 text-2xl font-semibold text-paper tabular">{value}</dd>
+      <dt className="type-small text-muted">{label}</dt>
+      <dd className="mt-1.5 font-display text-3xl leading-none text-paper">{value}</dd>
     </div>
   );
 }

@@ -5,11 +5,11 @@ import { Link } from 'react-router';
 import { IconButton } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { RequestButton } from '../components/Discover';
+import { PageHeader } from '../components/PageHeader';
 import { ErrorState, Skeleton } from '../components/Section';
 import { api } from '../lib/api';
 import { useRequests, useRequestsEnabled } from '../lib/queries';
 import { toast } from '../lib/toast';
-import { PageTitle } from './Albums';
 
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
@@ -31,10 +31,11 @@ export function RequestsPage() {
 
   return (
     <div className="max-w-4xl px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Requests" count={data?.length} />
-      <p className="-mt-4 mb-8 max-w-xl text-sm text-muted md:-mt-6">
-        Albums you asked Lidarr to find. Progress updates live; finished albums land in your library automatically.
-      </p>
+      <PageHeader
+        title="Requests"
+        count={data?.length}
+        description="Albums you asked Lidarr to find. Progress updates live; finished albums land in your library automatically."
+      />
       {error && <ErrorState error={error} onRetry={() => void refetch()} />}
       {isPending && (
         <div className="space-y-3">

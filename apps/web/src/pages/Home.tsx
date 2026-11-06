@@ -1,18 +1,19 @@
+import type { Account } from '@playarr/shared';
 import { Dices, Pause, Play } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Link } from 'react-router';
+import { AccountMenu, accountName } from '../components/AccountMenu';
 import { Button, IconButton } from '../components/Button';
 import { AlbumCard, ArtistCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { MixCard } from '../components/Mixes';
-import { Wordmark } from '../components/Nav';
 import { SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
 import { toast } from '../lib/toast';
-import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
+import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMe, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
 import { FAVORITES } from './Favorites';
 import { PlaylistCard } from './Playlists';
 import { feelingLucky } from '../player/actions';
@@ -30,17 +31,14 @@ export function HomePage() {
 
   return (
     <div className="px-5 pt-6 md:px-10 md:pt-14">
-      <div className="mb-8 md:hidden">
-        <Wordmark />
-      </div>
-
+      <Greeting />
 
       <section className="relative mb-14 grid items-end gap-10 md:mb-20 xl:grid-cols-[1fr_auto]">
         <div className="animate-rise">
-          <p className="max-w-md text-[15px] leading-relaxed text-paper-dim/80">
+          <p className="max-w-md type-body leading-relaxed text-paper-dim">
             {lib ? (
               <>
-                {lib.tracks} tracks across {lib.albums} albums, {formatDuration(lib.durationSeconds)} of music
+                {lib.tracks} songs across {lib.albums} albums, {formatDuration(lib.durationSeconds)} of music
                 waiting in your library.
               </>
             ) : (
@@ -119,6 +117,23 @@ export function HomePage() {
   );
 }
 
+/** "Hi, Alex.": the account's name, else its username; before anyone has signed in (a new server), just hello. */
+function greeting(account: Pick<Account, 'name' | 'username'> | undefined): string {
+  return account ? `Hi, ${accountName(account)}.` : 'Hi there.';
+}
+
+/** Home's title: the account greeted by name, beside its avatar (Account and Settings), as on iOS. */
+export function Greeting() {
+  const { data: me, isPending } = useMe();
+  return (
+    <header className="mb-4 flex animate-rise items-center justify-between gap-4 md:mb-5">
+      {/* Nothing until the account is known, rather than a greeting that changes as it arrives. */}
+      <h1 className="min-w-0 type-page-title break-words text-paper">{isPending ? <span className="invisible">Hi.</span> : greeting(me)}</h1>
+      {me && <AccountMenu account={me} />}
+    </header>
+  );
+}
+
 /**
  * Made for you: the generated mixes, first thing on Home. Hidden until there's at least one (a new
  * library has no tags or history yet, and the server is still making them).
@@ -161,7 +176,7 @@ function YearInReview() {
       >
         {top && <Cover src={top.artist.imageUrl} size={160} alt="" className="size-24 shrink-0 rounded-cover md:size-32" />}
         <div className="min-w-0">
-          <div className="font-mono text-[11px] tracking-[0.2em] text-accent uppercase">Year in review</div>
+          <div className="type-kicker text-muted">Year in review</div>
           <div className="mt-1 font-display text-3xl text-paper md:text-5xl">Your {year} in music</div>
           <p className="mt-2 text-[14px] text-paper-dim">
             {data.minutes.toLocaleString()} minutes{top ? `, most of all ${top.artist.name}` : ''}

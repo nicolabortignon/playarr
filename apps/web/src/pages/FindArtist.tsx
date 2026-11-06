@@ -16,9 +16,9 @@ export function FindArtistPage() {
     return <Navigate replace to={album ? albumHref({ ...ref, albumTitle: album }) : artistHref(ref)} />;
   }
   return (
-    <div className="px-5 pt-10 md:px-10 md:pt-16">
-      <div className="font-mono text-[11px] tracking-[0.25em] text-paper-dim/80 uppercase">Artist</div>
-      <h1 className="mt-3 font-display text-5xl leading-[0.95] tracking-tight text-paper md:text-7xl">{name}</h1>
+    <div className="px-5 pt-6 md:px-10 md:pt-14">
+      <div className="type-kicker text-muted">Artist</div>
+      <h1 className="mt-1.5 type-page-title text-balance text-paper">{name}</h1>
       {error || !name ? (
         <div className="mt-6 max-w-md text-sm text-muted">
           <p>{error instanceof Error ? error.message : 'No artist given.'}</p>
@@ -30,7 +30,7 @@ export function FindArtistPage() {
         </div>
       ) : (
         <>
-          <p className="mt-5 font-mono text-[12px] text-muted">Looking them up on MusicBrainz…</p>
+          <p className="mt-3 type-meta text-muted">Looking them up on MusicBrainz…</p>
           <SlowLookup active what={`“${name}”`} className="mt-3" />
           <Skeleton className="mt-10 h-48 w-full max-w-3xl" />
         </>

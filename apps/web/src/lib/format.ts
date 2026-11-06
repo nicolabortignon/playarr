@@ -45,6 +45,35 @@ export function plural(n: number, word: string, pluralWord = `${word}s`) {
   return `${n} ${n === 1 ? word : pluralWord}`;
 }
 
+/** MusicBrainz's secondary types that name what a release is on their own. */
+const SECONDARY_KINDS: Record<string, string> = {
+  compilation: 'Compilation',
+  soundtrack: 'Soundtrack',
+  spokenword: 'Spoken word',
+  interview: 'Interview',
+  audiobook: 'Audiobook',
+  'audio drama': 'Audio drama',
+  'dj-mix': 'DJ mix',
+  'mixtape/street': 'Mixtape',
+  'field recording': 'Field recording',
+};
+const PRIMARY_KINDS: Record<string, string> = { album: 'Album', ep: 'EP', single: 'Single', broadcast: 'Broadcast', other: 'Release', loose: 'Loose songs' };
+
+/**
+ * What a release is, from its MusicBrainz types, for a kicker or a card: "Album", "EP", "Live album", "Soundtrack".
+ * Live, remix and demo describe the primary type ("Live EP"); the other secondary types replace it.
+ */
+export function releaseKind(type: string, secondaryTypes: readonly string[] = []): string {
+  const primary = PRIMARY_KINDS[type.toLowerCase()] ?? (type || 'Album');
+  const secondary = secondaryTypes[0]?.toLowerCase();
+  if (!secondary) return primary;
+  if (secondary === 'live' || secondary === 'remix' || secondary === 'demo') {
+    const noun = primary === 'EP' ? 'EP' : primary === 'Release' || primary === 'Loose songs' ? 'album' : primary.toLowerCase();
+    return `${secondary[0]!.toUpperCase()}${secondary.slice(1)} ${noun}`;
+  }
+  return SECONDARY_KINDS[secondary] ?? `${secondary[0]!.toUpperCase()}${secondary.slice(1)}`;
+}
+
 /** A rough wait: "4 s", "2 min". */
 export function formatWait(seconds: number): string {
   return seconds < 60 ? `${Math.max(1, Math.round(seconds))} s` : `${Math.round(seconds / 60)} min`;

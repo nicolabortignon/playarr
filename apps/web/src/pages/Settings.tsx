@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router';
 import { AnalysisPanel } from '../components/AnalysisPanel';
 import { AppearancePanel } from '../components/AppearancePanel';
 import { MixesPanel } from '../components/MixesPanel';
+import { PageHeader } from '../components/PageHeader';
 import { PlaybackPanel } from '../components/PlaybackPanel';
 import { ListeningStatsView } from './Stats';
 import { AccountsPanel } from '../components/AccountsPanel';
@@ -9,7 +10,6 @@ import { RequestsPanel } from '../components/RequestsPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
 import { UpdatesPanel } from '../components/UpdatesPanel';
 import { cn } from '../lib/cn';
-import { PageTitle } from './Albums';
 
 const PANELS = [
   { id: 'sources', label: 'Sources', scope: undefined, Panel: SourcesPanel },
@@ -29,7 +29,7 @@ export function SettingsPage() {
   const { Panel } = current;
   return (
     <div className="max-w-4xl px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Settings" />
+      <PageHeader title="Settings" />
       <nav aria-label="Settings" className="scrollbar-none mb-10 flex gap-6 overflow-x-auto overflow-y-hidden border-b border-line">
         {PANELS.map((p) => (
           <Link
@@ -37,7 +37,7 @@ export function SettingsPage() {
             to={`/settings/${p.id}`}
             aria-current={p.id === current.id ? 'page' : undefined}
             className={cn(
-              '-mb-px border-b-2 pb-3 text-[15px] whitespace-nowrap transition-colors',
+              '-mb-px border-b-2 pb-3 type-body whitespace-nowrap transition-colors',
               p.id === current.id ? 'border-accent text-paper' : 'border-transparent text-paper-dim/70 hover:text-paper',
             )}
           >
@@ -45,7 +45,7 @@ export function SettingsPage() {
           </Link>
         ))}
       </nav>
-      {current.scope && <p className="-mt-6 mb-8 text-[13px] text-muted">{current.scope}</p>}
+      {current.scope && <p className="-mt-6 mb-8 type-small text-muted">{current.scope}</p>}
       <Panel />
     </div>
   );

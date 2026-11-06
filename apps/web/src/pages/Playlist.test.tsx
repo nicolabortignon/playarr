@@ -1,6 +1,6 @@
 import type { PlaylistCoverInfo, PlaylistDetail } from '@playarr/shared';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
@@ -49,6 +49,19 @@ describe('PlaylistPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Playlist actions' }));
     expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Delete playlist' })).toBeNull();
+  });
+
+  it('says it’s shared in its meta line, and keeps what its cover means in the cover picker, after Play', async () => {
+    view({ ...SHARED, mine: true, description: 'Songs for the A1', cover: { ...COVER, tempo: 96, energy: 0.42 } });
+    const play = await screen.findByRole('button', { name: 'Play Road trip' });
+    expect(screen.getByText('Shared with everyone')).toBeTruthy();
+    // The description reads after the row; the cover's explanation isn't on the page at all.
+    expect(play.compareDocumentPosition(screen.getByText('Songs for the A1')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText(/traced from its loudness/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'New cover' }));
+    const about = within(await screen.findByRole('region', { name: 'About this cover' }));
+    expect(about.getByText('Each line is a song, traced from its loudness over time.')).toBeTruthy();
+    expect(about.getByText('96 BPM · energy 42%')).toBeTruthy();
   });
 
   it('lets the owner share it with everyone on the server', async () => {

@@ -1,12 +1,12 @@
 import { ArrowDownToLine, ChartColumn, ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { IconButton } from '../components/Button';
+import { PageHeader } from '../components/PageHeader';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { SectionHeader } from '../components/Section';
 import { plural } from '../lib/format';
 import { useFavorites, useHealth, usePlaylists, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
-import { PageTitle } from './Albums';
 import { useOffline } from '../player/offline';
 
 /** Everything that's "yours" in one place; the Library tab on phones. */
@@ -32,11 +32,14 @@ export function LibraryPage() {
 
   return (
     <div className="max-w-3xl px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Library">
-        <IconButton to="/settings" label="Settings" className="md:hidden">
-          <Settings className="size-5" />
-        </IconButton>
-      </PageTitle>
+      <PageHeader
+        title="Library"
+        actions={
+          <IconButton to="/settings" label="Settings" className="md:hidden">
+            <Settings className="size-5" />
+          </IconButton>
+        }
+      />
       <nav className="-mx-2 mb-12">
         {rows.map(({ to, label, icon: Icon, detail }) => (
           <Link key={to} to={to} className="flex items-center gap-4 rounded-lg px-2 py-3 transition hover:bg-paper/[0.04]">

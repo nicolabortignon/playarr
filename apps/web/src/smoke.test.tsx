@@ -262,15 +262,18 @@ describe('Playarr web against live server', () => {
       id = ((await created.json()) as { id: number }).id;
 
       renderAt(`/playlists/${id}`);
+      // The page sets the name beside the cover, so the cover leaves it off.
       const cover = await screen.findByRole('img', { name: /^Smoke cover/ });
       const src = cover.querySelector('img')!.getAttribute('src')!;
-      expect(src).toMatch(new RegExp(`^/art/playlist/${id}\\?v=\\w+&size=\\d+$`));
+      expect(src).toMatch(new RegExp(`^/art/playlist/${id}\\?v=\\w+&size=\\d+&title=0$`));
       const image = await fetch(src);
       expect(image.headers.get('content-type')).toBe('image/webp');
       expect((await image.arrayBuffer()).byteLength).toBeGreaterThan(1000);
 
-      // Either still listening to the songs, or the facts behind the finished cover.
-      await screen.findByText(/Listening to the songs|energy \d+%/);
+      // About this cover, in the cover picker: either still listening to the songs, or the facts behind the cover.
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New cover' })));
+      const about = await screen.findByRole('region', { name: 'About this cover' });
+      await within(about).findByText(/Listening to the songs|energy \d+%/);
     } finally {
       if (id) await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
     }
@@ -296,10 +299,10 @@ describe('Playarr web against live server', () => {
 
       renderAt(`/playlists/${id}`);
       await screen.findByRole('heading', { name });
-      // The header shows the cover with its title; the picker offers one candidate per style.
+      // The header's cover leaves the title off (it's beside it); the picker offers one candidate per style.
       const header = screen.getByRole('img', { name });
-      expect(header.querySelector('img')!.getAttribute('src')).not.toContain('title=0');
-      await act(async () => fireEvent.click(screen.getAllByRole('button', { name: 'New cover' })[0]!));
+      expect(header.querySelector('img')!.getAttribute('src')).toContain('title=0');
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'New cover' })));
       const picker = await screen.findByRole('dialog', { name: 'New cover' });
       const candidates = within(picker).getAllByRole('button', { name: / cover$/ });
       expect(candidates).toHaveLength(6);

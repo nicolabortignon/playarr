@@ -15,7 +15,18 @@ import { orbitLayout, toneFromCovers, washStops, type OrbitCircle, type WashStop
  * the mix's colour), and its name. Where the circles go comes from the mix's key (lib/mixOrbit.ts), so a mix keeps its
  * look as its songs change, and looks the same in the app.
  */
-export function MixCover({ mix, size, className }: { mix: Pick<MixSummary, 'key' | 'kind' | 'title' | 'covers' | 'hue'>; size: number; className?: string }) {
+export function MixCover({
+  mix,
+  size,
+  titled = true,
+  className,
+}: {
+  mix: Pick<MixSummary, 'key' | 'kind' | 'title' | 'covers' | 'hue'>;
+  size: number;
+  /** With its name drawn on it, as on a card; the mix's own page sets the name beside it instead. */
+  titled?: boolean;
+  className?: string;
+}) {
   const { covers } = mix;
   const layout = orbitLayout(mix.key, covers.length);
   const base = washStops(mix.hue);
@@ -58,12 +69,14 @@ export function MixCover({ mix, size, className }: { mix: Pick<MixSummary, 'key'
         </div>
       ))}
       {layout.dot && <div className="absolute rounded-full" style={{ ...place(layout.dot), background: `oklch(0.78 0.13 ${hue})` }} />}
-      <div className="absolute inset-x-0 bottom-0 p-[7cqi]">
-        <div className="font-mono text-[4.6cqi] tracking-[0.2em] text-paper/75 uppercase">Made for you</div>
-        <div className="mt-[1.5cqi] font-display text-[12.5cqi] leading-[0.95] text-balance text-paper drop-shadow-[0_2px_12px_rgb(0_0_0/0.4)]">
-          {mix.title}
+      {titled && (
+        <div className="absolute inset-x-0 bottom-0 p-[7cqi]">
+          <div className="font-mono text-[4.6cqi] tracking-[0.2em] text-paper/75 uppercase">Made for you</div>
+          <div className="mt-[1.5cqi] font-display text-[12.5cqi] leading-[0.95] text-balance text-paper drop-shadow-[0_2px_12px_rgb(0_0_0/0.4)]">
+            {mix.title}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

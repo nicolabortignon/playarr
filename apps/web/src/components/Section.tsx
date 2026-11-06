@@ -10,8 +10,8 @@ export function SectionHeader({ title, kicker, to, action }: { title: string; ki
   return (
     <div className="mb-4 flex items-end justify-between gap-4 md:mb-5">
       <div>
-        {kicker && <div className="mb-1 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">{kicker}</div>}
-        <h2 className="font-display text-2xl leading-none text-paper md:text-[1.75rem]">{title}</h2>
+        {kicker && <div className="mb-1 type-kicker text-muted">{kicker}</div>}
+        <h2 className="type-section-title text-paper">{title}</h2>
       </div>
       <div className="flex items-center gap-1">
         {action}
@@ -156,7 +156,7 @@ function ScrollIndicator({ target }: { target: RefObject<HTMLDivElement | null> 
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={`animate-pulse rounded bg-ink-800 ${className ?? ''}`} />;
+  return <div className={cn('animate-pulse rounded bg-ink-800', className)} />;
 }
 
 /** A page that couldn't load: what went wrong, a retry where there's one, and a way home. */

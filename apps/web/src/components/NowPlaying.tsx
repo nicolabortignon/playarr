@@ -106,7 +106,8 @@ function Sheet() {
             <ChevronDown className="size-6" />
           </IconButton>
           <div className="min-w-0 px-4 text-center">
-            <div className="font-mono text-[10px] tracking-[0.25em] text-paper-dim/70 uppercase">Playing from</div>
+            {/* Over the cover's blur, where muted would sink into the art: paper-dim (docs/design.md, Color). */}
+            <div className="type-kicker text-paper-dim">Playing from</div>
             <button type="button" onClick={() => go(source?.href ?? `/albums/${track.albumId}`)} className="block max-w-full truncate text-[13px] text-paper hover:underline">
               {source?.label ?? track.albumTitle}
             </button>
@@ -199,7 +200,7 @@ function UpNext({ onNavigate }: { onNavigate: () => void }) {
   return (
     <div className="hidden md:block">
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Up next</span>
+        <span className="type-kicker text-muted">Up next</span>
         <Link to="/queue" onClick={onNavigate} className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase hover:text-paper">
           Queue
         </Link>

@@ -10,7 +10,9 @@ import { Equalizer } from '../components/Equalizer';
 import { FavoriteButton } from '../components/FavoriteButton';
 import { FormatBadge } from '../components/FormatBadge';
 import { Menu } from '../components/Menu';
+import { NameAndNumbers } from '../components/NameAndNumbers';
 import { OfflineMark } from '../components/OfflineMark';
+import { PageHeader } from '../components/PageHeader';
 import { Tempo } from '../components/Tempo';
 import { TransitionView } from '../components/TransitionView';
 import { formatDuration, formatTime, plural } from '../lib/format';
@@ -18,7 +20,6 @@ import { useTempos } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
 import { useCurrentTrack, usePlayer } from '../player/store';
-import { PageTitle } from './Albums';
 
 export function QueuePage() {
   const track = useCurrentTrack();
@@ -34,7 +35,7 @@ export function QueuePage() {
   if (!track) {
     return (
       <div className="px-5 pt-8 md:px-10 md:pt-14">
-        <PageTitle title="Queue" />
+        <PageHeader title="Queue" />
         <p className="text-muted">
           Nothing queued. Pick an <Link to="/albums" className="text-accent hover:underline">album</Link> to start listening.
         </p>
@@ -44,14 +45,17 @@ export function QueuePage() {
 
   return (
     <div className="max-w-4xl px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Queue">
-        <Button icon={<ListPlus />} onClick={() => openPicker([track, ...upcoming])}>
-          Save as playlist
-        </Button>
-      </PageTitle>
+      <PageHeader
+        title="Queue"
+        actions={
+          <Button icon={<ListPlus />} onClick={() => openPicker([track, ...upcoming])}>
+            Save as playlist
+          </Button>
+        }
+      />
 
       <section className="mb-12">
-        <div className="mb-3 font-mono text-[11px] tracking-[0.25em] text-muted uppercase">
+        <div className="mb-3 type-kicker text-muted">
           Now playing
           {source && (
             <>
@@ -84,8 +88,8 @@ export function QueuePage() {
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <div className="font-mono text-[11px] tracking-[0.25em] text-muted uppercase">
-            Up next{upcoming.length > 0 && ` · ${plural(upcoming.length, 'track')} · ${formatDuration(total)}`}
+          <div className="type-kicker text-muted">
+            Up next{upcoming.length > 0 && ` · ${plural(upcoming.length, 'song')} · ${formatDuration(total)}`}
           </div>
           {upcoming.length > 0 && (
             <Button variant="ghost" size="small" onClick={() => clearWithUndo(upcomingIds)}>
@@ -94,7 +98,7 @@ export function QueuePage() {
           )}
         </div>
         {upcoming.length === 0 ? (
-          <p className="py-6 text-sm text-muted">The queue ends after this track.</p>
+          <p className="py-6 text-sm text-muted">The queue ends after this song.</p>
         ) : (
           <UpNext ids={upcomingIds} queue={queue} />
         )}
@@ -108,7 +112,7 @@ function clearWithUndo(ids: number[]) {
   const { clearUpcoming, setUpcoming } = usePlayer.getState();
   const current = usePlayer.getState().order[usePlayer.getState().pos];
   clearUpcoming();
-  toast(`Cleared ${plural(ids.length, 'track')}`, 'info', {
+  toast(`Cleared ${plural(ids.length, 'song')}`, 'info', {
     label: 'Undo',
     run: () => {
       const s = usePlayer.getState();
@@ -169,7 +173,8 @@ function UpNextRow({
       dragControls={controls}
       onDragEnd={onDragEnd}
       whileDrag={{ scale: 1.02, boxShadow: '0 16px 40px -12px rgb(0 0 0 / 0.8)' }}
-      className="group grid cursor-pointer grid-cols-[1.5rem_2.75rem_1fr_auto_auto_auto] items-center gap-2 rounded-md bg-ink-900 px-2 py-2 transition-colors hover:bg-ink-850 md:gap-3"
+      // On a phone the heart steps aside and the length goes under the title, so the title has the room.
+      className="group grid cursor-pointer grid-cols-[1.5rem_2.75rem_1fr_auto] items-center gap-2 rounded-md bg-ink-900 px-2 py-2 transition-colors hover:bg-ink-850 sm:grid-cols-[1.5rem_2.75rem_1fr_auto_auto_auto] md:gap-3"
       onClick={() => p().jumpTo(at())}
     >
       <span
@@ -184,12 +189,12 @@ function UpNextRow({
       <Cover src={t.coverUrl} size={44} alt="" className="size-11 rounded-cover" />
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="truncate text-[15px] text-paper">{t.title}</span>
+          <span className="truncate type-body text-paper">{t.title}</span>
           <OfflineMark fileId={t.fileId} />
         </div>
-        <div className="truncate text-[13px] text-muted">{t.artistName}</div>
+        <NameAndNumbers className="type-small text-muted" name={t.artistName} numbers={formatTime(t.duration)} numbersClassName="tabular sm:hidden" />
       </div>
-      <FavoriteButton track={t} reveal />
+      <FavoriteButton track={t} reveal className="max-sm:hidden" />
       <span className="font-mono text-[13px] text-muted tabular max-sm:hidden">
         <Tempo bpm={bpm} />
         {formatTime(t.duration)}

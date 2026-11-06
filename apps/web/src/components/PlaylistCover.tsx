@@ -7,12 +7,24 @@ import { cn } from '../lib/cn';
 const TITLE_MIN_SIZE = 120;
 
 /**
- * The playlist's generated artwork (drawn by the server from what its songs sound like), with
- * its title on cards and headers. When the URL changes (a new cover, a rename), the previous
- * image stays up until the next has loaded.
+ * The playlist's generated artwork (drawn by the server from what its songs sound like), with its title on cards.
+ * When the URL changes (a new cover, a rename), the previous image stays up until the next has loaded.
  */
-export function PlaylistCover({ cover, size, name, className }: { cover: PlaylistCoverInfo; size: number; name: string; className?: string }) {
-  const url = `${sized(cover.url, size)!}${size < TITLE_MIN_SIZE ? '&title=0' : ''}`;
+export function PlaylistCover({
+  cover,
+  size,
+  name,
+  titled = true,
+  className,
+}: {
+  cover: PlaylistCoverInfo;
+  size: number;
+  name: string;
+  /** With its name drawn on it, as on a card; the playlist's own page sets the name beside it instead. */
+  titled?: boolean;
+  className?: string;
+}) {
+  const url = `${sized(cover.url, size)!}${!titled || size < TITLE_MIN_SIZE ? '&title=0' : ''}`;
   const [shown, setShown] = useState<string>();
   return (
     <div role="img" aria-label={name} className={cn('relative aspect-square overflow-hidden bg-ink-800', className)}>

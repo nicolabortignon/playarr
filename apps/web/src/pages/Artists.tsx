@@ -1,15 +1,16 @@
 import { ArtistCard } from '../components/Cards';
+import { PageHeader } from '../components/PageHeader';
 import { ErrorState, Skeleton } from '../components/Section';
 import { useArtists } from '../lib/queries';
 import { useIncremental } from '../lib/useIncremental';
-import { gridItem, PageTitle } from './Albums';
+import { gridItem } from './Albums';
 
 export function ArtistsPage() {
   const { data, error, isPending, refetch } = useArtists();
   const { visible, more, sentinel } = useIncremental(data);
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Artists" count={data?.length} />
+      <PageHeader title="Artists" count={data?.length} />
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : (

@@ -2,6 +2,7 @@ import type { PlaylistSummary } from '@playarr/shared';
 import { Play, Plus } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router';
+import { PageHeader } from '../components/PageHeader';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { ErrorState, Skeleton } from '../components/Section';
 import { api } from '../lib/api';
@@ -11,7 +12,7 @@ import { queryClient } from '../lib/queryClient';
 import { usePlaylists } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { usePlayer } from '../player/store';
-import { GRID, PageTitle } from './Albums';
+import { GRID } from './Albums';
 
 export async function playPlaylist(id: number, opts?: { shuffle?: boolean }) {
   const p = await queryClient.fetchQuery({ queryKey: ['playlist', id], queryFn: () => api.playlist(id) });
@@ -25,7 +26,7 @@ export function PlaylistsPage() {
 
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Playlists" count={playlists?.length} />
+      <PageHeader title="Playlists" count={playlists?.length} />
       {error && <ErrorState error={error} onRetry={() => void refetch()} />}
       <div className={GRID}>
         <button

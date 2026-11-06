@@ -2,11 +2,12 @@ import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
+import { Cover } from '../components/Cover';
+import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/DetailHeader';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
 import { SimilarArtists } from '../components/SimilarArtists';
 import { SlowLookup } from '../components/SlowLookup';
-import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { titleKey } from '../lib/links';
@@ -23,9 +24,8 @@ export function DiscoverArtistPage() {
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !artist) {
     return (
-      <div className="px-5 pt-10 md:px-10 md:pt-16">
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="mt-4 h-16 w-80" />
+      <div className="px-5 pt-6 md:px-10 md:pt-14">
+        <DetailHeaderSkeleton round />
         <SlowLookup active what="this artist’s albums" className="mt-6" />
         <div className={cn(GRID, 'mt-12')}>
           {Array.from({ length: 8 }, (_, i) => (
@@ -43,43 +43,27 @@ export function DiscoverArtistPage() {
 
   return (
     <div>
-      <section className="relative isolate overflow-hidden px-5 pt-10 pb-10 md:px-10 md:pt-16">
+      <div className="relative px-5 pt-6 md:px-10 md:pt-14">
         <BackButton fallback="/search" className="absolute top-3 left-3 z-20" />
-        {artist.imageUrl && (
-          <img
-            src={sized(artist.imageUrl, 480)}
-            alt=""
-            className="absolute inset-0 -z-10 h-full w-full scale-125 animate-fade object-cover opacity-40 blur-3xl saturate-150"
-          />
-        )}
-        <div className="absolute inset-0 -z-10 bg-gradient-to-b from-transparent via-ink-900/60 to-ink-900" />
-        <div className="font-mono text-[11px] tracking-[0.25em] text-paper-dim/80 uppercase">
-          {artist.genres.join(' · ') || artist.disambiguation || 'Artist'}
-        </div>
-        <h1 className="mt-3 animate-rise font-display text-5xl leading-[0.95] tracking-tight text-paper md:text-7xl">
-          {artist.name}
-        </h1>
-        <div className="mt-5 flex flex-wrap items-center gap-4 font-mono text-[12px] text-paper-dim/80">
-          <span>
-            {plural(artist.albums.length, 'release')} · {owned} in your library
-          </span>
-          {artist.artistId && (
-            <Link to={`/artists/${artist.artistId}`} className="inline-flex items-center gap-1.5 text-accent hover:underline">
-              Open in your library <ArrowRight className="size-3.5" />
-            </Link>
-          )}
-        </div>
-        {artist.overview && (
-          <div className="mt-6 max-w-2xl">
-            <p className={cn('text-[15px] leading-relaxed text-paper-dim/90', !bioOpen && 'line-clamp-3')}>{artist.overview}</p>
-            <Button variant="ghost" size="small" onClick={() => setBioOpen((o) => !o)} aria-expanded={bioOpen} className="mt-2 -ml-3.5">
-              {bioOpen ? 'Less' : 'Read more'}
-            </Button>
-          </div>
-        )}
-      </section>
+        <DetailHeader
+          cover={<Cover src={artist.imageUrl} size={192} alt="" label={artist.name} eager className="w-full rounded-full shadow-cover-hero ring-1 ring-paper/10" />}
+          round
+          kicker="Artist"
+          title={artist.name}
+          meta={
+            <>
+              {joinMeta(artist.disambiguation, plural(artist.albums.length, 'release'), `${owned} in your library`)}
+              {artist.artistId && (
+                <Link to={`/artists/${artist.artistId}`} className="ml-1 inline-flex items-center gap-1.5 text-accent hover:underline">
+                  Open in your library <ArrowRight className="size-3.5" />
+                </Link>
+              )}
+            </>
+          }
+        />
+      </div>
 
-      <div className="px-5 md:px-10">
+      <div className="px-5 pt-10 md:px-10 md:pt-14">
         {wantedAlbum && !highlight && artist.albums.length > 0 && (
           <p className="-mt-2 mb-8 max-w-xl text-sm text-muted">
             “{wantedAlbum}” isn’t among these albums and EPs; it’s probably a single or a compilation. You can still
@@ -99,6 +83,7 @@ export function DiscoverArtistPage() {
                   <DiscoverAlbumCard
                     key={a.mbid}
                     album={a}
+                    onArtistPage
                     highlighted={a.mbid === highlight}
                     style={{ animationDelay: `${Math.min(i, 20) * 30}ms` }}
                   />
@@ -120,6 +105,16 @@ export function DiscoverArtistPage() {
         <div className="mt-14">
           <SimilarArtists mbid={artist.mbid} />
         </div>
+
+        {artist.overview && (
+          <section className="max-w-3xl">
+            <SectionHeader title="About" kicker={artist.genres.slice(0, 3).join(' · ') || undefined} />
+            <p className={cn('type-body leading-relaxed text-paper-dim', !bioOpen && 'line-clamp-5')}>{artist.overview}</p>
+            <Button variant="ghost" size="small" onClick={() => setBioOpen((o) => !o)} aria-expanded={bioOpen} className="mt-3 -ml-3.5">
+              {bioOpen ? 'Less' : 'Read more'}
+            </Button>
+          </section>
+        )}
       </div>
     </div>
   );

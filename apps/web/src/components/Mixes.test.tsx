@@ -73,6 +73,8 @@ describe('mixes', () => {
     const save = vi.spyOn(api, 'saveMix').mockResolvedValue({ id: 9, name: 'Vibes of the hour · 1 Nov' } as never);
     renderAt('/mixes/vibes', [{ path: '/mixes/:key', element: <MixPage /> }]);
     expect(await screen.findByRole('heading', { name: 'Vibes of the hour' })).toBeTruthy();
+    // Its name once: the cover beside the title leaves it off.
+    expect(screen.getAllByText('Vibes of the hour')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Play Vibes of the hour' }));
     expect(usePlayer.getState().queue.map((t) => t.id)).toEqual([1, 2]);
     expect(usePlayer.getState().source).toEqual({ label: 'Vibes of the hour', href: '/mixes/vibes' }); // "Playing from"

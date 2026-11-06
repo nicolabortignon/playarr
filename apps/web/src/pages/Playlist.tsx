@@ -1,4 +1,4 @@
-import type { CoverLayout, PlaylistCoverInfo, PlaylistItem } from '@playarr/shared';
+import type { PlaylistItem } from '@playarr/shared';
 import { Disc3, GripVertical, Info, ListEnd, ListPlus, Lock, Mic2, Palette, Pencil, Trash2, Users, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router';
 import { ActionRow, usePlayState } from '../components/ActionRow';
 import { Button } from '../components/Button';
 import { Cover } from '../components/Cover';
+import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/DetailHeader';
 import { Dialog } from '../components/Dialog';
 import { Equalizer } from '../components/Equalizer';
 import { FavoriteButton } from '../components/FavoriteButton';
@@ -13,7 +14,7 @@ import { Menu } from '../components/Menu';
 import { CoverPicker } from '../components/CoverPicker';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { PlaylistRecommendations } from '../components/PlaylistRecommendations';
-import { BackButton, ErrorState, Skeleton } from '../components/Section';
+import { BackButton, ErrorState } from '../components/Section';
 import { cn } from '../lib/cn';
 import { formatDuration, formatTime, plural } from '../lib/format';
 import { usePlaylist, usePlaylistMutations, useTempos } from '../lib/queries';
@@ -44,11 +45,8 @@ export function PlaylistPage() {
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !playlist) {
     return (
-      <div className="px-5 pt-8 md:px-10 md:pt-14">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end">
-          <Skeleton className="aspect-square w-56" />
-          <Skeleton className="h-14 w-72" />
-        </div>
+      <div className="px-5 pt-6 md:px-10 md:pt-14">
+        <DetailHeaderSkeleton />
       </div>
     );
   }
@@ -65,101 +63,109 @@ export function PlaylistPage() {
   const unavailable = items.length - playable.length;
   // Another account's shared playlist plays here; only its owner changes it.
   const mine = playlist.mine;
+  const canPickCover = mine && items.length > 0;
+  const cover = (
+    <PlaylistCover
+      cover={playlist.cover}
+      size={288}
+      name={playlist.name}
+      titled={false}
+      className="w-full rounded-cover shadow-cover-hero ring-1 ring-paper/10"
+    />
+  );
 
   return (
     <div className="relative px-5 pt-6 md:px-10 md:pt-14">
       <BackButton fallback="/playlists" className="absolute top-3 left-3 z-20" />
-      <header className="flex flex-col gap-6 md:flex-row md:items-end md:gap-10">
-        <button
-          type="button"
-          onClick={() => mine && items.length > 0 && setPickingCover(true)}
-          aria-label="New cover"
-          disabled={!mine || !items.length}
-          className="group relative mx-auto w-[min(64vw,256px)] shrink-0 animate-rise md:mx-0 md:w-56 lg:w-64"
-        >
-          <PlaylistCover
-            cover={playlist.cover}
-            size={256}
-            name={playlist.name}
-            className="w-full rounded-cover shadow-cover-hero ring-1 ring-paper/10"
-          />
-          {mine && items.length > 0 && (
-            <span className="absolute right-2.5 bottom-2.5 inline-flex items-center gap-1.5 rounded-full bg-ink-950/80 px-3 py-1.5 font-mono text-[10px] tracking-[0.15em] text-paper uppercase opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
-              <Palette className="size-3.5" /> New cover
-            </span>
-          )}
-        </button>
-        <div className="min-w-0 flex-1 animate-rise [animation-delay:80ms]">
-          <div className="font-mono text-[11px] tracking-[0.25em] text-paper-dim/70 uppercase">Playlist</div>
-          {editing ? (
+      <DetailHeader
+        // The cover is also the way to a new one (and says so when the songs have moved on from it).
+        cover={
+          canPickCover ? (
+            <button
+              type="button"
+              onClick={() => setPickingCover(true)}
+              aria-label="New cover"
+              title={playlist.cover.stale ? 'The playlist has changed a lot since this cover was drawn' : undefined}
+              className="group relative block w-full"
+            >
+              {cover}
+              <span
+                className={cn(
+                  'absolute right-2.5 bottom-2.5 inline-flex items-center gap-1.5 rounded-full bg-ink-950/80 px-3 py-1.5 type-badge text-paper backdrop-blur transition',
+                  !playlist.cover.stale && 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100',
+                )}
+              >
+                <Palette className="size-3.5" /> New cover
+              </span>
+            </button>
+          ) : (
+            cover
+          )
+        }
+        kicker="Playlist"
+        title={
+          <span className={cn(mine && 'cursor-text')} onClick={() => mine && setEditing(true)} title={mine ? 'Click to rename' : undefined}>
+            {playlist.name}
+          </span>
+        }
+        heading={
+          editing ? (
             <EditDetails
               name={playlist.name}
               description={playlist.description}
               onCancel={() => setEditing(false)}
               onSave={(patch) => mutations.update.mutate({ id, ...patch }, { onSuccess: () => setEditing(false) })}
             />
-          ) : (
-            <>
-              <h1
-                className={cn('mt-2 font-display text-[2.5rem] leading-[1.02] tracking-tight text-balance text-paper md:text-6xl lg:text-7xl', mine && 'cursor-text')}
-                onClick={() => mine && setEditing(true)}
-                title={mine ? 'Click to rename' : undefined}
-              >
-                {playlist.name}
-              </h1>
-              {playlist.description ? (
-                <p className="mt-3 max-w-2xl text-[15px] text-paper-dim/90" onClick={() => mine && setEditing(true)}>
-                  {playlist.description}
-                </p>
-              ) : null}
-            </>
-          )}
-          <div className="mt-4 font-mono text-[12px] text-muted">
-            {plural(items.length, 'song')} · {formatDuration(playlist.duration)}
-            {unavailable > 0 && ` · ${unavailable} not in library`}
-          </div>
-          {(!mine || playlist.shared) && (
-            <div className="mt-1 font-mono text-[12px] text-muted">{mine ? 'Shared with everyone on this server' : `Shared by ${playlist.owner}`}</div>
-          )}
-          {mine && items.length > 0 && <CoverNote cover={playlist.cover} onNewCover={() => setPickingCover(true)} />}
-        </div>
-      </header>
-
-      <ActionRow
-        className="mt-8"
-        title={playlist.name}
-        disabled={!playable.length}
-        state={playState}
-        onPlay={() =>
-          playState !== 'idle' ? toggle() : playTracks(playable, 0, { shuffle: false, source: { label: playlist.name, href: `/playlists/${id}` } })
+          ) : undefined
         }
-        onShuffle={() => playTracks(playable, 0, { shuffle: true, source: { label: playlist.name, href: `/playlists/${id}` } })}
-        download={{
-          item: { key: `playlist:${id}`, title: playlist.name, subtitle: 'Playlist', coverUrl: playlist.cover.url, href: `/playlists/${id}` },
-          tracks: playable,
-        }}
-        menu={{
-          label: 'Playlist actions',
-          items: [
-            ...(mine ? [{ label: 'Rename', icon: Pencil, onSelect: () => setEditing(true) }] : []),
-            ...(playable.length
-              ? [
-                  { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(playable, 'next') },
-                  { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(playable, 'end') },
-                ]
-              : []),
-            ...(mine && items.length ? [{ label: 'New cover…', icon: Palette, onSelect: () => setPickingCover(true) }] : []),
-            ...(mine
-              ? [
-                  playlist.shared
-                    ? { label: 'Stop sharing', icon: Lock, onSelect: () => mutations.update.mutate({ id, shared: false }) }
-                    : { label: 'Share with everyone', icon: Users, onSelect: () => mutations.update.mutate({ id, shared: true }) },
-                  { label: 'Delete playlist', icon: Trash2, onSelect: () => setConfirmDelete(true) },
-                ]
-              : []),
-          ],
-        }}
-      />
+        meta={joinMeta(
+          plural(items.length, 'song'),
+          formatDuration(playlist.duration),
+          unavailable > 0 && `${unavailable} not in library`,
+          mine ? playlist.shared && <span title="Everyone on this server can see and play it">Shared with everyone</span> : `Shared by ${playlist.owner}`,
+        )}
+      >
+        <ActionRow
+          title={playlist.name}
+          disabled={!playable.length}
+          state={playState}
+          onPlay={() =>
+            playState !== 'idle' ? toggle() : playTracks(playable, 0, { shuffle: false, source: { label: playlist.name, href: `/playlists/${id}` } })
+          }
+          onShuffle={() => playTracks(playable, 0, { shuffle: true, source: { label: playlist.name, href: `/playlists/${id}` } })}
+          download={{
+            item: { key: `playlist:${id}`, title: playlist.name, subtitle: 'Playlist', coverUrl: playlist.cover.url, href: `/playlists/${id}` },
+            tracks: playable,
+          }}
+          menu={{
+            label: 'Playlist actions',
+            items: [
+              ...(mine ? [{ label: 'Rename', icon: Pencil, onSelect: () => setEditing(true) }] : []),
+              ...(playable.length
+                ? [
+                    { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(playable, 'next') },
+                    { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(playable, 'end') },
+                  ]
+                : []),
+              ...(mine && items.length ? [{ label: 'New cover…', icon: Palette, onSelect: () => setPickingCover(true) }] : []),
+              ...(mine
+                ? [
+                    playlist.shared
+                      ? { label: 'Stop sharing', icon: Lock, onSelect: () => mutations.update.mutate({ id, shared: false }) }
+                      : { label: 'Share with everyone', icon: Users, onSelect: () => mutations.update.mutate({ id, shared: true }) },
+                    { label: 'Delete playlist', icon: Trash2, onSelect: () => setConfirmDelete(true) },
+                  ]
+                : []),
+            ],
+          }}
+        />
+      </DetailHeader>
+      {/* What it's about: after the row, so Play comes first on a phone. */}
+      {playlist.description && !editing && (
+        <p className="mt-6 max-w-2xl type-body text-paper-dim" onClick={() => mine && setEditing(true)}>
+          {playlist.description}
+        </p>
+      )}
 
       {items.length === 0 ? (
         <p className="mt-12 max-w-md text-sm text-muted">
@@ -167,7 +173,7 @@ export function PlaylistPage() {
           album, the queue or Now Playing.
         </p>
       ) : (
-        <Reorder.Group axis="y" values={items} onReorder={setItems} as="ol" className="mt-8 -mx-3 max-w-5xl">
+        <Reorder.Group axis="y" values={items} onReorder={setItems} as="ol" className="mt-6 -mx-3 max-w-5xl md:mt-8">
           {items.map((item) => (
             <PlaylistRow
               key={item.itemId}
@@ -303,49 +309,6 @@ function PlaylistRow({
   );
 }
 
-const COVER_STORY: Record<CoverLayout, string> = {
-  ridges: 'Each line is a song, traced from its loudness over time.',
-  grooves: 'A record of the playlist: each band of grooves is a song, as wide as it is long.',
-  blocks: 'A tile per song, sized by its length; each shape follows how it sounds.',
-  horizon: 'Each hill is a song’s loudness over time. The slower the music, the bigger the sun.',
-  currents: 'Each ribbon belongs to a song: a steady beat flows smoothly, free time swirls; louder songs run wider.',
-  colonies: 'Each style is a slime-mould species in its own colour, growing with its songs’ tempo and beat.',
-};
-
-/** What the generated cover is made of, so it reads as a portrait of the music rather than decoration. */
-function CoverNote({ cover, onNewCover }: { cover: PlaylistCoverInfo; onNewCover: () => void }) {
-  const facts = [
-    cover.tempo && `${cover.tempo} BPM`,
-    cover.styles.length && cover.styles.join(' / '),
-    cover.era && (cover.era[0] === cover.era[1] ? String(cover.era[0]) : `${cover.era[0]}–${cover.era[1]}`),
-    `energy ${Math.round(cover.energy * 100)}%`,
-  ].filter(Boolean);
-  return (
-    <div className="mt-3 max-w-xl text-[13px] leading-snug text-muted">
-      {cover.pending && !cover.frozen ? (
-        <span className="inline-flex items-center gap-2">
-          <span className="size-1.5 animate-pulse rounded-full bg-accent" />
-          Listening to the songs to draw the cover… {cover.analyzed} of {cover.total}
-        </span>
-      ) : (
-        <>
-          <span className="text-paper-dim/80">{COVER_STORY[cover.layout]}</span>
-          <span className="mt-1 block font-mono text-[11px] tracking-wide uppercase">{facts.join(' · ')}</span>
-          {cover.stale ? (
-            <button type="button" onClick={onNewCover} className="mt-2 text-left text-paper-dim hover:text-paper">
-              The playlist has changed a lot since this cover was drawn. <span className="text-accent underline-offset-2 hover:underline">New cover</span>
-            </button>
-          ) : (
-            <Button variant="ghost" size="small" icon={<Palette />} onClick={onNewCover} className="mt-2 -ml-3">
-              New cover
-            </Button>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 function EditDetails({
   name: initialName,
   description: initialDescription,
@@ -381,7 +344,7 @@ function EditDetails({
         rows={2}
         placeholder="Add a description"
         aria-label="Description"
-        className="w-full resize-none rounded-md border border-line bg-ink-900/60 p-2 text-[15px] text-paper-dim placeholder:text-muted focus:border-accent focus:outline-none"
+        className="w-full resize-none rounded-panel border border-line bg-ink-900/60 p-2 type-body text-paper-dim placeholder:text-muted focus:border-accent focus:outline-none"
       />
       <div className="flex gap-2">
         <Button variant="primary" onClick={save}>

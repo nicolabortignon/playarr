@@ -4,7 +4,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
-import { ArtistPage } from './Artist';
+import { artistPhoto, ArtistPage } from './Artist';
 
 const owned = (id: number, title: string, mbid: string): Album => ({
   id,
@@ -20,7 +20,7 @@ const owned = (id: number, title: string, mbid: string): Album => ({
   mbid,
 });
 
-const discovered = (mbid: string, title: string, availability: DiscoverAlbum['availability'], type = 'Album'): DiscoverAlbum => ({
+const discovered = (mbid: string, title: string, availability: DiscoverAlbum['availability'], type = 'Album', year?: number): DiscoverAlbum => ({
   mbid,
   title,
   artistName: 'Massive Attack',
@@ -28,6 +28,7 @@ const discovered = (mbid: string, title: string, availability: DiscoverAlbum['av
   type,
   secondaryTypes: [],
   availability,
+  year,
 });
 
 const artist = (over: Partial<ArtistDetail> = {}): ArtistDetail => ({
@@ -70,9 +71,9 @@ describe('Artist page', () => {
       name: 'Massive Attack',
       albums: [
         discovered('rg-mezz', 'Mezzanine', { state: 'available', albumId: 70 }),
-        discovered('rg-blue', 'Blue Lines', { state: 'none' }),
+        discovered('rg-blue', 'Blue Lines', { state: 'none' }, 'Album', 1991),
         discovered('rg-heli', 'Heligoland', { state: 'partial', albumId: 71, have: 2, total: 10 }),
-        discovered('rg-ep', 'Ritual Spirit', { state: 'none' }, 'EP'),
+        discovered('rg-ep', 'Ritual Spirit', { state: 'none' }, 'EP', 2016),
       ],
     } as DiscoverArtistDetail);
     renderArtist();
@@ -83,6 +84,58 @@ describe('Artist page', () => {
     expect(within(albums).queryByText('Mezzanine')).toBeNull();
     expect(within(albums).queryByText('Heligoland')).toBeNull();
     expect(screen.getByText('EPs & soundtracks not in your library').closest('section')!.textContent).toContain('Ritual Spirit');
+  });
+
+  it('says what each album not in the library is and when, rather than the artist’s own name', async () => {
+    vi.spyOn(api, 'artist').mockResolvedValue(artist());
+    vi.spyOn(api, 'discoverArtist').mockResolvedValue({
+      mbid: 'art-1',
+      name: 'Massive Attack',
+      albums: [discovered('rg-blue', 'Blue Lines', { state: 'none' }, 'Album', 1991), discovered('rg-ep', 'Ritual Spirit', { state: 'none' }, 'EP', 2016)],
+    } as DiscoverArtistDetail);
+    renderArtist();
+    const albums = within((await screen.findByText('Albums not in your library')).closest('section')!);
+    expect(albums.getByText('Album · 1991')).toBeTruthy();
+    expect(albums.queryByText('Massive Attack')).toBeNull();
+    // Nor a badge on the cover saying it again.
+    expect(albums.queryByText('Album')).toBeNull();
+    const eps = within(screen.getByText('EPs & soundtracks not in your library').closest('section')!);
+    expect(eps.getByText('EP · 2016')).toBeTruthy();
+  });
+
+  it('heads the page with what it is, the name and one line of counts', async () => {
+    vi.spyOn(api, 'artist').mockResolvedValue(artist({ mbid: undefined, albumCount: 2, trackCount: 24 }));
+    renderArtist();
+    const header = within((await screen.findByRole('heading', { level: 1, name: 'Massive Attack' })).closest('header')!);
+    expect(header.getByText('Artist')).toBeTruthy();
+    expect(header.getByText('2 albums')).toBeTruthy();
+    expect(header.getByText('24 songs')).toBeTruthy();
+    expect(header.getByRole('button', { name: 'Play Massive Attack' })).toBeTruthy();
+  });
+
+  it('draws a photo behind the name, and shows an album cover beside it when there’s no photo', async () => {
+    const cover = '/art/album/70/cover';
+    const withAlbum = artist({ mbid: undefined, albums: [{ ...owned(70, 'Mezzanine', 'rg-mezz'), coverUrl: cover }] });
+    vi.spyOn(api, 'artist').mockResolvedValue({ ...withAlbum, imageUrl: cover });
+    renderArtist();
+    const header = (await screen.findByRole('heading', { level: 1, name: 'Massive Attack' })).closest('header')!;
+    // The server's fallback picture is an album cover, not a photo: it's the round picture in the header.
+    expect(header.querySelector(`img[src^="${cover}"]`)).toBeTruthy();
+    cleanup();
+
+    vi.spyOn(api, 'artist').mockResolvedValue({ ...withAlbum, imageUrl: cover, fanartUrl: '/art/artist/7/fanart' });
+    renderArtist();
+    const hero = (await screen.findByRole('heading', { level: 1, name: 'Massive Attack' })).closest('section')!;
+    expect(hero.querySelector('img[src^="/art/artist/7/fanart"]')).toBeTruthy();
+  });
+});
+
+describe('artistPhoto', () => {
+  it('is the artist’s picture unless that is only one of their album covers', () => {
+    const albums = [{ coverUrl: '/art/album/70/cover' }] as ArtistDetail['albums'];
+    expect(artistPhoto({ imageUrl: '/art/artist/7/poster', albums })).toBe('/art/artist/7/poster');
+    expect(artistPhoto({ imageUrl: '/art/album/70/cover', albums })).toBeUndefined();
+    expect(artistPhoto({ albums })).toBeUndefined();
   });
 
   it('skips the section for artists MusicBrainz doesn’t know', async () => {

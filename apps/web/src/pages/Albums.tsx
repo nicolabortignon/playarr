@@ -1,8 +1,9 @@
 import type { AlbumSort } from '@playarr/shared';
 import { useSearchParams } from 'react-router';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties } from 'react';
 import { AlbumCard } from '../components/Cards';
 import { Choice } from '../components/Choice';
+import { PageHeader } from '../components/PageHeader';
 import { ErrorState, Skeleton } from '../components/Section';
 import { useAlbums } from '../lib/queries';
 import { useIncremental } from '../lib/useIncremental';
@@ -28,18 +29,6 @@ export function gridItem(i: number, { lift = false } = {}): { className: string;
   return i < ANIMATED ? { className: base, style: { animationDelay: `${i * 25}ms` } } : { className: `${base} animate-none` };
 }
 
-export function PageTitle({ title, count, children }: { title: string; count?: number; children?: ReactNode }) {
-  return (
-    <header className="mb-8 flex flex-wrap items-end justify-between gap-4 md:mb-10">
-      <h1 className="flex items-baseline gap-3 font-display text-5xl leading-none text-paper md:text-7xl">
-        {title}
-        {count !== undefined && <span className="font-mono text-sm tracking-normal text-muted">{count}</span>}
-      </h1>
-      {children}
-    </header>
-  );
-}
-
 export function AlbumsPage() {
   const [params, setParams] = useSearchParams();
   const sort = (SORTS.find((s) => s.value === params.get('sort'))?.value ?? 'artist') as AlbumSort;
@@ -48,16 +37,20 @@ export function AlbumsPage() {
 
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
-      <PageTitle title="Albums" count={data?.length}>
-        <Choice
-          label="Sort albums"
-          options={SORTS}
-          value={sort}
-          onChange={(v) => setParams(v === 'artist' ? {} : { sort: v }, { replace: true })}
-          // On a phone the row scrolls from one edge of the screen to the other.
-          className="-mx-5 px-5 md:-mx-1.5 md:px-1.5"
-        />
-      </PageTitle>
+      <PageHeader
+        title="Albums"
+        count={data?.length}
+        actions={
+          <Choice
+            label="Sort albums"
+            options={SORTS}
+            value={sort}
+            onChange={(v) => setParams(v === 'artist' ? {} : { sort: v }, { replace: true })}
+            // On a phone the row scrolls from one edge of the screen to the other.
+            className="-mx-5 px-5 md:-mx-1.5 md:px-1.5"
+          />
+        }
+      />
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : (

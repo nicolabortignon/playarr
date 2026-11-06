@@ -96,7 +96,7 @@ export function SearchPage() {
                   <Cover src={top.imageUrl} size={112} alt={top.name} className="size-28 shrink-0 rounded-full shadow-xl" />
                   <div className="min-w-0">
                     <div className="font-display text-3xl leading-tight text-paper">{top.name}</div>
-                    <div className="mt-1 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Artist</div>
+                    <div className="mt-1 type-kicker text-muted">Artist</div>
                   </div>
                 </Link>
               </section>
@@ -177,9 +177,7 @@ function DiscoverSection({ q }: { q: string }) {
     <section className="mt-16 border-t border-line pt-10">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="mb-1 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">
-            Lidarr · MusicBrainz · Deezer
-          </div>
+          <div className="mb-1 type-kicker text-muted">Lidarr · MusicBrainz · Deezer</div>
           <h2 className="flex items-center gap-3 font-display text-3xl leading-none text-paper md:text-4xl">
             Not in your library
             {isFetching && <span className="size-2 animate-pulse rounded-full bg-accent" aria-label="Searching" />}
@@ -249,7 +247,7 @@ function BrowseArtists() {
   const suggested = [...artists].sort((a, b) => b.albumCount - a.albumCount || b.trackCount - a.trackCount).slice(0, SUGGESTED_ARTISTS);
   return (
     <div className="mt-8">
-      <div className="mb-4 font-mono text-[11px] tracking-[0.25em] text-muted uppercase">Try an artist</div>
+      <div className="mb-4 type-kicker text-muted">Try an artist</div>
       <div className="flex flex-wrap gap-2">
         {suggested.map((a) => (
           <Link

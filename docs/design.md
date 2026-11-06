@@ -30,20 +30,31 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 |---|---|---|---|
 | Page title | `type-page-title` | `.typeRole(.pageTitle)` | Gloock. Web: 40 px on a phone up to 72 px. iOS: the large title, 34 pt |
 | Section title | `type-section-title` | `.typeRole(.sectionTitle)` | Gloock. Web: 24 to 28 px. iOS: 22 pt |
-| Kicker | `type-kicker` | `.typeRole(.kicker)` | DM Mono 11, capitals, 0.2 em apart, always `muted` |
+| Kicker | `type-kicker` | `.typeRole(.kicker)` | DM Mono 11, capitals, 0.2 em apart, `muted` (`paper-dim` over art) |
 | Body | `type-body` | `.typeRole(.body)` | Schibsted Grotesk 15: row titles, paragraphs |
 | Small | `type-small` | `.typeRole(.small)` | 13: row subtitles, secondary lines |
 | Meta | `type-meta` | `.typeRole(.meta)` | DM Mono 12, figures of one width: times, counts |
 | Badge | `type-badge` | `.typeRole(.badge)` | DM Mono 10, capitals, 0.08 em apart |
 
 - iOS sizes grow with Dynamic Type; spaced capitals close up at the accessibility sizes.
-- Big numbers (Stats' headline) are set in Gloock, not DM Mono, whose comma takes a full cell ("1 , 792").
+- Big numbers (Stats' headline and tiles) are set in Gloock: monospaced or tabular figures give the comma a full cell ("1 , 792").
 
 ## Shape
 
 - **Radii:** covers and thumbnails 4 (`rounded-cover`, `Radius.cover`); panels and cards 12 (`rounded-panel`, `Radius.panel`); dialogs and sheets 16 (`rounded-dialog`, `Radius.dialog`); pills and round buttons are full (`rounded-full`, `Capsule`/`Circle`).
 - **Cover shadows:** a cover on a shelf or in a grid (`shadow-cover`, `.coverShadow(.shelf)`); a page's own cover and Now Playing's (`shadow-cover-hero`, `.coverShadow(.hero)`).
 - **Glow:** a large primary button (Play, Feeling lucky) glows with the accent (`shadow-glow`).
+
+## Headers
+
+- **Page header**, for tabs and library lists (web `PageHeader`): the page's name as a large title, its count beside it in `type-meta` `muted`, the page's controls (sort, filter) on the right.
+- **Detail header**, for everything you can play (web `DetailHeader`): cover · kicker saying what it is · title · one meta line, its parts joined by dots · the action row. On a phone the cover is at most 256 wide (64 % of the screen), so Play shows on the first screen.
+  - An album's meta line: the artist (linked, with their photo) · year · N songs · length, then the format badge. Missing songs show in the list, not here.
+  - An artist without a photo gets a small circle with their best album cover (or a vinyl monogram), not an empty band.
+  - Release kinds are named "Album", "EP", "Live album", "Live EP", "Compilation", "DJ mix", "Mixtape", "Loose songs" and "Release" (`releaseKind`).
+- **A title appears once per screen.** A playlist's or mix's own cover drops its name on its page; cards keep it.
+- **Home greets** the account by name, with its avatar.
+- **Names never lose to numbers:** a name and its numbers share a line only when both fit; otherwise the numbers go under the name (web `NameAndNumbers`).
 
 ## Controls
 
@@ -69,7 +80,7 @@ Album, playlist, mix, Favorites and artist pages, on both apps, in this order:
 4. **Download:** an outlined icon button whose ring fills as songs arrive and ends in a tick in `success`. Not on artist pages.
 5. **⋯:** an outlined icon button.
 
-The row never wraps. When it doesn't fit, Shuffle and then the page's action drop their words and become icon buttons, keeping their names; last, the gaps close up and Play drops its icon, but keeps its word.
+The row never wraps, and doesn't scroll (that would clip Play's glow). When it doesn't fit, Shuffle and then the page's action drop their words and become icon buttons, keeping their names; last, the gaps close up and Play drops its icon, but keeps its word. At its narrowest the row is 330 wide.
 
 ## Icons
 

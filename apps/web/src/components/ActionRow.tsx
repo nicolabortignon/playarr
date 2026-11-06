@@ -51,16 +51,18 @@ export interface ActionRowProps {
  * The row under the header of everything you can play (docs/design.md, The action row): Play, Shuffle, the page's own
  * action, Download, ⋯, in that order. Play is as wide as the widest of Play, Pause and Resume, so playing or pausing
  * moves nothing. The row never wraps: as its space narrows, Shuffle and then the page's action drop their words to
- * become icon buttons (keeping their names); then the gaps close up and Play drops its icon, keeping its word. On
- * screens narrower still, what's left scrolls sideways.
+ * become icon buttons (keeping their names); then the gaps close up and Play drops its icon, keeping its word.
  */
 export function ActionRow({ title, state, onPlay, onShuffle, disabled, action, download, menu, className }: ActionRowProps) {
   // What the row holds decides where it starts narrowing (index.css, row-step-*).
   const layout = action ? 'action' : download ? 'default' : 'short';
   return (
     <div data-layout={layout} className={cn('@container/action-row', className)}>
-      {/* The padding keeps focus rings clear of the edges it scrolls within; scrolling past them doesn't swipe back a page. */}
-      <div className="scrollbar-none -m-1 flex items-center gap-3 overflow-x-auto overscroll-x-contain p-1 row-step-3:gap-2">
+      {/*
+       * Not a scroll container: one would clip Play's glow into a box. At its narrowest the row fits a 375 px phone;
+       * on a narrower screen it runs on into the page's padding.
+       */}
+      <div className="flex items-center gap-3 row-step-3:gap-2">
         <PlayButton title={title} state={state} onPlay={onPlay} disabled={disabled} />
         <Button
           variant="secondary"

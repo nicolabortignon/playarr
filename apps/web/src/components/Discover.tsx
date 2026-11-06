@@ -3,7 +3,7 @@ import { Check, Clock, Download, Loader2, Play, RotateCw, TriangleAlert } from '
 import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
-import { formatTime } from '../lib/format';
+import { formatTime, releaseKind } from '../lib/format';
 import { albumHref, artistHref, titleKey } from '../lib/links';
 import { useRequestAlbum, useRequests, useRequestsEnabled } from '../lib/queries';
 import { useDelayedFlag } from '../lib/useDelayedFlag';
@@ -185,12 +185,15 @@ export function DiscoverAlbumCard({
   style,
   className,
   highlighted,
+  onArtistPage,
 }: {
   album: DiscoverAlbum;
   style?: CSSProperties;
   className?: string;
   /** Arrived here from a song on this album: bring it into view and mark it. */
   highlighted?: boolean;
+  /** On the artist's own page, where their name says nothing: what it is and when ("EP · 2019") instead, and no badge. */
+  onArtistPage?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -216,18 +219,22 @@ export function DiscoverAlbumCard({
               highlighted && 'ring-2 ring-accent ring-offset-4 ring-offset-ink-900 saturate-100',
             )}
           />
-          {!available && (
+          {!available && !onArtistPage && (
             <span className="absolute top-2 left-2 rounded-cover bg-ink-950/75 px-1.5 py-0.5 font-mono text-[9px] tracking-[0.15em] text-paper-dim uppercase backdrop-blur">
               {kind}
             </span>
           )}
         </div>
         <div className="mt-3 min-w-0">
-          <div className="truncate text-[15px] leading-snug text-paper">{album.title}</div>
-          <div className="truncate text-[13px] text-muted">
-            {album.artistName}
-            {album.year && <span className="font-mono text-[12px]"> · {album.year}</span>}
-          </div>
+          <div className="truncate type-body leading-snug text-paper">{album.title}</div>
+          {onArtistPage ? (
+            <div className="truncate type-small text-muted">{[releaseKind(album.type, album.secondaryTypes), album.year].filter(Boolean).join(' · ')}</div>
+          ) : (
+            <div className="truncate type-small text-muted">
+              {album.artistName}
+              {album.year && <span className="type-meta"> · {album.year}</span>}
+            </div>
+          )}
         </div>
       </Link>
       <RequestButton
