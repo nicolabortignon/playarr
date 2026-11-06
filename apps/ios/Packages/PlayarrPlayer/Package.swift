@@ -8,7 +8,9 @@ let package = Package(
   products: [.library(name: "PlayarrPlayer", targets: ["PlayarrPlayer"])],
   dependencies: [.package(path: "../PlayarrAPI")],
   targets: [
-    .target(name: "PlayarrPlayer", dependencies: ["PlayarrAPI"]),
-    .testTarget(name: "PlayarrPlayerTests", dependencies: ["PlayarrPlayer"]),
+    .target(name: "PlayarrPlayer", dependencies: ["PlayarrAPI", "ObjCExceptions"]),
+    // Catches the Objective-C exceptions AVFoundation raises, which Swift can't (see ObjCExceptions.h).
+    .target(name: "ObjCExceptions"),
+    .testTarget(name: "PlayarrPlayerTests", dependencies: ["PlayarrPlayer", "ObjCExceptions"]),
   ]
 )

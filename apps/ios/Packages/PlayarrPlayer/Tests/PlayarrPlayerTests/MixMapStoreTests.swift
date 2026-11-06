@@ -36,7 +36,8 @@ struct MixMapStoreTests {
     let maps = store()
     for n in 1...3 { maps.want(song(n)) }
     maps.want(song(1))
-    try await Task.sleep(for: .milliseconds(200))
+    // The store waits 50 ms for more rows, then asks: up to 2 s for the answer, on a busy machine.
+    for _ in 0..<100 where maps.map("rec-3") == nil { try await Task.sleep(for: .milliseconds(20)) }
     #expect(server.asked.withLock { $0 } == [["rec-1", "rec-2", "rec-3"]])
     #expect(maps.map("rec-3")?.bpm == 120)
   }

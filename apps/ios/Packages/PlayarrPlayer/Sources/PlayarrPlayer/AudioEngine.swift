@@ -1,5 +1,6 @@
 import AVFoundation
 import AudioToolbox
+import ObjCExceptions
 import PlayarrAPI
 
 /// The audio engine: AVAudioEngine with two decks taking turns and a third player node for transition files, each
@@ -72,6 +73,8 @@ public final class AudioEngine {
   private var upcomingDeck: Deck?
   private var wantsToPlay = false
   private var nodesStarted = false
+  /// Starts in a row whose nodes wouldn't play (see `startNodes`); one that works sets it back to 0.
+  private var failedStarts = 0
   private var lastNow: SampleTime = 0
   private var endReported: UUID?
   private var pumping = false
@@ -548,7 +551,20 @@ public final class AudioEngine {
     }
     // Offline (tests), nodes started before the first render all begin at sample 0; live, at one host time.
     let when = engine.isInManualRenderingMode ? nil : AVAudioTime(hostTime: mach_absolute_time() + AVAudioTime.hostTime(forSeconds: 0.05))
-    for deck in decks + [transitionDeck] { deck.node.play(at: when) }
+    do {
+      try ObjCExceptions.catching { for deck in decks + [transitionDeck] { deck.node.play(at: when) } }
+    } catch {
+      // The engine stopped itself as the nodes started (its output changed under it), and a node told to play on a
+      // stopped engine raises an exception, which would end the app. Start over from here, twice at most, then wait
+      // for Play.
+      failedStarts += 1
+      if failedStarts == 3 {
+        failedStarts = 0
+        wantsToPlay = false
+      }
+      return reloadCurrent()
+    }
+    failedStarts = 0
     nodesStarted = true
     state = .playing
   }
