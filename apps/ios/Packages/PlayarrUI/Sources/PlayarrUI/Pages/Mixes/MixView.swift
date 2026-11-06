@@ -2,8 +2,8 @@ import PlayarrAPI
 import PlayarrPlayer
 import SwiftUI
 
-/// A mix's page: why these songs, when it changes, Play, Shuffle, New mix, the ⋯ menu (Save as playlist, Play next,
-/// Add to queue), Download and the songs (apps/web/src/pages/Mix.tsx).
+/// A mix's page: why these songs, when it changes, the action row (Play, Shuffle, New mix, Download and ⋯: Save as
+/// playlist, Play next, Add to queue) and the songs (apps/web/src/pages/Mix.tsx).
 struct MixView: View {
   let session: AccountSession
   @State private var model: MixModel
@@ -55,31 +55,24 @@ struct MixView: View {
       TimelineView(.periodic(from: .now, by: 60)) { context in
         Text(model.facts(now: context.date)).font(.mono(.caption)).foregroundStyle(.secondary)
       }
-      FlowRow {
-        PlayShuffleButtons(title: mix.title, disabled: mix.tracks.isEmpty) {
-          model.play(shuffle: false)
-        } shuffle: {
-          model.play(shuffle: true)
-        }
-        Button(model.regenerating ? "Mixing…" : "New mix", systemImage: "arrow.clockwise") { Task { await model.regenerate() } }
-          .buttonStyle(.pill(.outlined))
-          .disabled(model.regenerating)
-        DownloadButton(
+      ActionRow(
+        title: mix.title, playState: model.playState, disabled: mix.tracks.isEmpty, play: model.playOrPause,
+        shuffle: { model.play(shuffle: true) },
+        download: DownloadButton(
           store: session.player.downloads,
           item: DownloadItem(
             key: PinnedDownload.Key.mix(mix.key), title: mix.title, subtitle: "Mix", coverUrl: mix.covers.first, href: "/mixes/\(mix.key)"),
-          tracks: mix.tracks)
-        Menu {
-          Button("Save as playlist", systemImage: "bookmark") {
-            // Opens the new playlist, so it's clear what was made and where it lives.
-            Task { if let playlist = await model.save() { session.router.open(.playlist(playlist.id)) } }
-          }
-          Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.queue(next: true) }
-          Button("Add to queue", systemImage: "text.append") { model.queue(next: false) }
-        } label: {
-          Image(systemName: "ellipsis").frame(width: 44, height: 44)
+          tracks: mix.tracks),
+        moreLabel: "Mix actions"
+      ) { compact in
+        newMix(compact: compact)
+      } more: {
+        Button("Save as playlist", systemImage: "bookmark") {
+          // Opens the new playlist, so it's clear what was made and where it lives.
+          Task { if let playlist = await model.save() { session.router.open(.playlist(playlist.id)) } }
         }
-        .accessibilityLabel("Mix actions")
+        Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.queue(next: true) }
+        Button("Add to queue", systemImage: "text.append") { model.queue(next: false) }
       }
       LazyVStack(spacing: 0) {
         ForEach(Array(mix.tracks.enumerated()), id: \.element.id) { index, track in
@@ -88,6 +81,24 @@ struct MixView: View {
       }
     }
     .padding(20)
+  }
+
+  /// Another draw of the mix ("Mixing…" while it's made), as an icon when the row has no room for its words.
+  @ViewBuilder private func newMix(compact: Bool) -> some View {
+    let title = model.regenerating ? "Mixing…" : "New mix"
+    Group {
+      if compact {
+        Button { Task { await model.regenerate() } } label: { Image(systemName: "arrow.clockwise") }
+          .buttonStyle(.outlinedIcon)
+          .accessibilityLabel(title)
+      } else {
+        Button { Task { await model.regenerate() } } label: {
+          SteadyLabel(title, systemImage: "arrow.clockwise", among: [("New mix", "arrow.clockwise"), ("Mixing…", "arrow.clockwise")])
+        }
+        .buttonStyle(.pill(.secondary, size: .large))
+      }
+    }
+    .disabled(model.regenerating)
   }
 
   /// The mix as its cover draws it.

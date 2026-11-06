@@ -9,11 +9,9 @@ public struct RequestsPill: View {
   public var body: some View {
     if let count = context?.requests.activeCount, count > 0 {
       NavigationLink(value: Route.requests) {
-        Pill(style: .outlined) {
-          Label(Format.plural(count, "request") + " in progress", systemImage: "arrow.triangle.2.circlepath")
-        }
+        Label(Format.plural(count, "request") + " in progress", systemImage: "arrow.triangle.2.circlepath")
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.pill(.secondary, size: .small))
     }
   }
 }

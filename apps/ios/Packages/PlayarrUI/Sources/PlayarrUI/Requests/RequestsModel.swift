@@ -79,7 +79,7 @@ public final class RequestsModel {
     RequestButtonState.make(availability, allowed: allowed, pending: pendingState(for: album))
   }
 
-  /// Asks Lidarr for the album. Returns at once; the button shows "Requesting" (then "Looking up") meanwhile.
+  /// Asks Lidarr for the album. Returns at once; the button shows "Requesting…" (then "Looking up…") meanwhile.
   public func request(_ album: AlbumRef) {
     let key = album.requestKey
     guard pending[key] == nil else { return }

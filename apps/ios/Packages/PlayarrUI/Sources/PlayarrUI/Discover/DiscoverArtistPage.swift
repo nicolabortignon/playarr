@@ -98,7 +98,9 @@ private struct DiscographyView: View {
       .foregroundStyle(.secondary)
       if let overview = artist.overview {
         Text(overview).font(.sans(.callout)).foregroundStyle(.secondary).lineLimit(bioOpen ? nil : 3)
-        Button { bioOpen.toggle() } label: { Kicker(text: bioOpen ? "Less" : "Read more") }
+        Button { bioOpen.toggle() } label: {
+          Kicker(text: bioOpen ? "Less" : "Read more").frame(minHeight: 44).contentShape(Rectangle())
+        }
       }
     }
     .padding(.horizontal, 20)

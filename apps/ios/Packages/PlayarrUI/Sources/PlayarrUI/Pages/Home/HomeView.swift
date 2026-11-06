@@ -10,6 +10,7 @@ struct HomeView: View {
   @Environment(Theme.self) private var theme
   @Environment(AccountSession.self) private var session
   @Environment(\.verticalSizeClass) private var verticalSizeClass
+  @Environment(\.dynamicTypeSize) private var typeSize
 
   init(session: AccountSession) {
     _model = State(initialValue: HomeModel(session: session))
@@ -61,8 +62,9 @@ struct HomeView: View {
           .redacted(reason: model.libraryLine == nil ? .placeholder : [])
       }
       if sideways { Spacer(minLength: 0) }
-      // Side by side on one line: a long song title is cut short rather than pushing Resume onto the next.
-      HStack(spacing: 12) {
+      // Side by side on one line: a long song title is cut short rather than pushing Resume onto the next. At the
+      // accessibility sizes, one above the other.
+      AdaptiveStack(spacing: 12) {
         Button {
           Task {
             picking = true
@@ -77,8 +79,8 @@ struct HomeView: View {
             Twinkle(on: picking)
           }
         }
-        .buttonStyle(.pill())
-        .fixedSize()
+        .buttonStyle(.pill(.primary, size: .large))
+        .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: false)
         .disabled(picking)
         .accessibilityLabel("Feeling lucky")
         .accessibilityHint("Plays 15 songs picked for this hour, new every time")

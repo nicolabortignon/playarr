@@ -43,7 +43,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 - **Radii:** covers and thumbnails 4 (`rounded-cover`, `Radius.cover`); panels and cards 12 (`rounded-panel`, `Radius.panel`); dialogs and sheets 16 (`rounded-dialog`, `Radius.dialog`); pills and round buttons are full (`rounded-full`, `Capsule`/`Circle`).
 - **Cover shadows:** a cover on a shelf or in a grid (`shadow-cover`, `.coverShadow(.shelf)`); a page's own cover and Now Playing's (`shadow-cover-hero`, `.coverShadow(.hero)`).
-- **Glow:** a large primary button (Play, Feeling lucky) glows with the accent (`shadow-glow`).
+- **Glow:** a large primary button (Play, Feeling lucky) glows with the accent (web `shadow-glow`; iOS's large primary pill draws the same).
 
 ## Headers
 
@@ -66,7 +66,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 - **Sizes:** large 48 (a page's action row, Feeling lucky, an empty page's action), regular 40 (dialogs, panels, error states), small 32 (inside a card or a row, such as Request). Icons are 20, 18 and 16. Whatever the visual size, the tap target is at least 44 (on the web on touch screens, through the `tap-target` utility; on iOS always).
 - **States:** disabled at 40 % opacity. Pending says its verb with an ellipsis ("Requesting…"), and is disabled meanwhile.
 - **Icon buttons** are round and always have an accessible name: 48 in an action row (outlined); otherwise 44 to tap on touch and 36 with a mouse on the web, 44 on iOS (plain).
-- **Choices** are the mono capitals pills (Albums' sort, Stats' ranges, Transitions, Keep up to, Motion). Web: `Choice`. Selected is filled with paper and an ink label; the rest are outlined with `line` and a `muted` label. A row of choices never wraps on a phone; it scrolls sideways.
+- **Choices** are the mono capitals pills (Albums' sort, Stats' ranges, Transitions, Keep up to, Motion). Web: `Choice`. Selected is filled with paper and an ink label; the rest are outlined with `line` and a `muted` label. A row of choices never wraps on a phone; it scrolls sideways. iOS Settings keeps the system's pickers for these, as its forms do (iOS: `.choice(selected:)` on pages, such as Stats' ranges).
 - **Statuses** that do nothing when tapped (Searching, Importing, 42 %, a format) are badges (`type-badge`), not buttons.
 - **Text fields:** web `TextField`. The label sits above, the field is 44 tall, radius 12, `ink-850` with a `line` border, and the accent ring when focused.
 
@@ -80,7 +80,7 @@ Album, playlist, mix, Favorites and artist pages, on both apps, in this order:
 4. **Download:** an outlined icon button whose ring fills as songs arrive and ends in a tick in `success`. Not on artist pages.
 5. **⋯:** an outlined icon button.
 
-The row never wraps, and doesn't scroll (that would clip Play's glow). When it doesn't fit, Shuffle and then the page's action drop their words and become icon buttons, keeping their names; last, the gaps close up and Play drops its icon, but keeps its word. At its narrowest the row is 330 wide.
+The row never wraps, and doesn't scroll (that would clip Play's glow). When it doesn't fit, Shuffle and then the page's action drop their words and become icon buttons, keeping their names; last, the gaps close up and Play drops its icon, but keeps its word. At its narrowest the row is 330 wide. Only at iOS's accessibility text sizes, where even that doesn't fit, does it scroll sideways, unclipped.
 
 ## Icons
 

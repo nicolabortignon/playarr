@@ -36,12 +36,12 @@ import Testing
     let session = demoSession()
     let model = AlbumModel(id: 70, session: session)
     await model.load()
-    #expect(model.playLabel == "Play")
+    #expect(model.playState == .stopped)
     model.playOrPause()
     #expect(session.player.queue.source == PlaySource(label: "Mezzanine", href: "/albums/70"))
-    #expect(model.playLabel == "Pause")
+    #expect(model.playState == .playing)
     model.playOrPause()
-    #expect(model.playLabel == "Resume")
+    #expect(model.playState == .paused)
   }
 
   @Test func aSongTappedPlaysTheAlbumFromThere() async {

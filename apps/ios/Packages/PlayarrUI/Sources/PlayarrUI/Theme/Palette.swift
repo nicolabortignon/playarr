@@ -7,7 +7,7 @@ import SwiftUI
 extension ShapeStyle where Self == Color {
   /// Text: titles, row titles, paragraphs.
   public static var paper: Color { .primary }
-  /// Hairlines, and the outline of a secondary button.
+  /// Hairlines, panel borders and unselected choices. (A secondary button's outline is brighter: paper at 15 %.)
   public static var line: Color { .white.opacity(0.08) }
   /// Errors, and actions that destroy something.
   public static var danger: Color { .red }

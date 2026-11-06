@@ -51,15 +51,35 @@ final class ArtistModel {
     return genres.isEmpty ? "Artist" : genres.joined(separator: " · ")
   }
 
+  /// Play, or Pause and Resume while the queue is this artist's.
+  var playState: PlayState { PlayState.of(session.player.queue, href: "/artists/\(id)") }
+
+  /// The Play button: pause or resume this artist's songs, or play them.
+  func playOrPause() async {
+    if playState.isCurrent { session.player.togglePlay() } else { await play() }
+  }
+
   func play(shuffle: Bool = false) async {
+    guard let tracks = await tracks() else { return }
+    let source = tracks.first.map { PlaySource(label: $0.artistName, href: "/artists/\(id)") }
+    session.player.play(tracks, source: source, shuffle: shuffle)
+  }
+
+  /// ⋯'s Play next and Add to queue, with every song of the artist's.
+  func queue(next: Bool) async {
+    guard let tracks = await tracks() else { return }
+    next ? session.actions.playNext(tracks) : session.actions.addToQueue(tracks)
+  }
+
+  /// The artist's songs, or nil once a toast has said why they couldn't be had.
+  private func tracks() async -> [Track]? {
+    let api = session.api
+    let id = self.id
     do {
-      let api = session.api
-      let id = self.id
-      let tracks = try await session.queries.fetch(.artistTracks(id)) { try await api.send(API.Library.artistTracks(id: id)) }
-      let source = tracks.first.map { PlaySource(label: $0.artistName, href: "/artists/\(id)") }
-      session.player.play(tracks, source: source, shuffle: shuffle)
+      return try await session.queries.fetch(.artistTracks(id)) { try await api.send(API.Library.artistTracks(id: id)) }
     } catch {
       session.toasts.push(error.localizedDescription, tone: .error)
+      return nil
     }
   }
 

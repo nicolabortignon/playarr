@@ -21,22 +21,18 @@ public struct DownloadItem: Sendable, Equatable {
 
 /// Download an album, playlist, mix or Favorites to this device, to play without a connection; shows how far along it
 /// is, and removes it when tapped again (apps/web/src/components/DownloadButton.tsx). Before starting, it checks the
-/// songs fit on the device. Drawn like the Request button (`Pill`): "Download" filled with the accent; once pressed it
-/// draws in to a circle of the same height, its icon inside and its outline filling as the songs arrive; a green tick
-/// once they're all here.
+/// songs fit on the device. An action row's outlined icon button: its ring fills as the songs arrive, and it ends in a
+/// tick.
 public struct DownloadButton: View {
   let store: DownloadStore
   let item: DownloadItem
   let tracks: [Track]
-  /// The Request button's small size, for a row of small pills.
-  var small: Bool
   @State private var shortOfRoom: (needed: Int64, free: Int64)?
 
-  public init(store: DownloadStore, item: DownloadItem, tracks: [Track], small: Bool = false) {
+  public init(store: DownloadStore, item: DownloadItem, tracks: [Track]) {
     self.store = store
     self.item = item
     self.tracks = tracks
-    self.small = small
   }
 
   private var songs: [Track] { tracks.filter { $0.fileId > 0 } }
@@ -44,29 +40,14 @@ public struct DownloadButton: View {
   /// The page's songs: a playlist edited (or an album changed) since it was downloaded downloads what it has now.
   private var signature: [Int] { songs.map(\.fileId) }
 
-  /// The letter spacing grows with the text, as `em` does on the web.
-  @ScaledMetric(relativeTo: .caption2) private var textScale: CGFloat = 1
-  @Environment(\.dynamicTypeSize) private var typeSize
-
   public var body: some View {
     Button(action: toggle) {
-      HStack(spacing: 6) {
-        Image(systemName: icon)
-        if phase == .notDownloaded { Text("Download") }
-      }
-      // Regular at the accessibility sizes, where a weight on the font reads to the audit as text that doesn't fully grow.
-      .font(.mono(size: small ? 10 : 11, relativeTo: .caption2, weight: typeSize.isAccessibilitySize ? .regular : .medium))
-      .textCase(.uppercase)
-      .tracking(0.8 * textScale)
-      .lineLimit(1)
-      .padding(.horizontal, phase == .notDownloaded ? (small ? 10 : 14) : 0)
-      .frame(minWidth: height, minHeight: height)
-      .foregroundStyle(foreground)
-      .background { outline }
-      .contentShape(Capsule())
-      .animation(.snappy, value: stage)
+      Image(systemName: icon)
+        .foregroundStyle(foreground)
+        .contentTransition(.symbolEffect(.replace))
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.outlinedIcon(progress: progress))
+    .animation(Motion.standard, value: stage)
     .disabled(songs.isEmpty)
     .accessibilityLabel(OfflineWording.buttonLabel(phase, title: item.title))
     .accessibilityAddTraits(phase == .notDownloaded ? [] : .isSelected)
@@ -82,8 +63,6 @@ public struct DownloadButton: View {
       Text(OfflineWording.noRoomMessage(item.title, needed: room.needed, free: room.free))
     }
   }
-
-  private var height: CGFloat { small ? 28 : 32 }
 
   private var stage: Int {
     switch phase {
@@ -103,19 +82,16 @@ public struct DownloadButton: View {
 
   private var foreground: AnyShapeStyle {
     switch phase {
-    case .notDownloaded: AnyShapeStyle(.background)
+    case .notDownloaded: AnyShapeStyle(.paper)
     case .downloading: AnyShapeStyle(.tint)
     case .downloaded: AnyShapeStyle(.success)
     }
   }
 
-  /// The pill filled with the accent, then a circle whose outline is the progress, then a green one.
-  @ViewBuilder private var outline: some View {
-    switch phase {
-    case .notDownloaded: Capsule().fill(.tint)
-    case .downloading: ProgressRing(fraction: phase.fraction, lineWidth: 2).padding(1)
-    case .downloaded: Capsule().strokeBorder(.success.opacity(0.35), lineWidth: 1)
-    }
+  /// The ring, while the songs arrive.
+  private var progress: Double? {
+    if case .downloading = phase { return phase.fraction }
+    return nil
   }
 
   private func toggle() {

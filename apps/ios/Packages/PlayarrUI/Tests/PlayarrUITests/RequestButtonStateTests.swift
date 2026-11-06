@@ -7,22 +7,30 @@ import Testing
     RequestButtonState.make(a, allowed: allowed, pending: pending)
   }
 
-  @Test func saysEachStateInTheWebsWords() {
+  @Test func saysEachStateInTheDesignLanguagesWords() {
     #expect(state(availability(.noneValue)).label == "Request")
     #expect(state(availability(.searching)).label == "Searching")
     #expect(state(availability(.downloading, progress: 0.425)).label == "43%")
     #expect(state(availability(.downloading)).label == "0%")
     #expect(state(availability(.importing)).label == "Importing")
-    #expect(state(availability(.waiting)).label == "Search again")
-    #expect(state(availability(.failed)).label == "Retry")
+    // Every retry is "Try again".
+    #expect(state(availability(.waiting)).label == "Try again")
+    #expect(state(availability(.failed)).label == "Try again")
     #expect(state(availability(.available, albumId: 5)) == .inLibrary(albumId: 5))
     #expect(state(availability(.available, albumId: 5)).label == "In library")
   }
 
-  @Test func saysRequestingThenLookingUp() {
-    #expect(state(availability(.noneValue), pending: .requesting).label == "Requesting")
+  @Test func asksForTheRestOnAPartlyHereAlbumsPage() {
+    #expect(state(availability(.noneValue)).restLabel == "Request the rest")
+    #expect(state(availability(.failed)).restLabel == "Try again")
+    #expect(state(availability(.noneValue), pending: .requesting).restLabel == "Requesting…")
+    #expect(state(availability(.searching)).restLabel == "Searching")
+  }
+
+  @Test func saysRequestingThenLookingUpWithAnEllipsis() {
+    #expect(state(availability(.noneValue), pending: .requesting).label == "Requesting…")
     let slow = state(availability(.failed), pending: .lookingUp)
-    #expect(slow.label == "Looking up")
+    #expect(slow.label == "Looking up…")
     #expect(slow.help == "Finding this album on MusicBrainz, which answers about one request per second")
   }
 

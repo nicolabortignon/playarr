@@ -12,7 +12,7 @@ struct ErrorState: View {
       Text(message)
     } actions: {
       Button("Try again", systemImage: "arrow.clockwise") { Task { await retry() } }
-        .buttonStyle(.pill())
+        .buttonStyle(.pill(.primary))
     }
   }
 }

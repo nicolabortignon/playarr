@@ -6,7 +6,6 @@ import SwiftUI
 struct AlbumView: View {
   @State private var model: AlbumModel
   @Environment(AccountSession.self) private var session
-  @Environment(Theme.self) private var theme
   @Environment(\.verticalSizeClass) private var verticalSizeClass
 
   init(id: Int, session: AccountSession, theme: Theme) {
@@ -79,7 +78,7 @@ struct AlbumView: View {
     }
   }
 
-  /// The cover (unless it's beside the page), the kicker with the album's buttons, the title, artist and details.
+  /// The cover (unless it's beside the page), the kicker, the title, artist and details.
   private func header(_ album: AlbumDetail, cover: Bool) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       if cover {
@@ -89,18 +88,7 @@ struct AlbumView: View {
           .coverShadow(.hero)
           .padding(.bottom, 8)
       }
-      // The kicker's line, with the album's own buttons on the right (the empty space under the cover).
-      HStack(spacing: 10) {
-        if let kicker = model.kicker { Kicker(text: kicker) }
-        Spacer(minLength: 8)
-        RequestRestButton(album: Album(album), small: true)
-        DownloadButton(
-          store: session.player.downloads,
-          item: DownloadItem(
-            key: PinnedDownload.Key.album(album.id), title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl,
-            href: "/albums/\(album.id)"),
-          tracks: album.tracks, small: true)
-      }
+      if let kicker = model.kicker { Kicker(text: kicker) }
       Text(album.title).font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
       NavigationLink(value: Route.artist(album.artistId)) {
         HStack(spacing: 8) {
@@ -119,38 +107,24 @@ struct AlbumView: View {
     .padding(.horizontal, 20)
   }
 
-  /// Play and Shuffle as round icons of one size, ⋯ on the right.
+  /// Play, Shuffle, Request the rest when only some of it is here, Download and ⋯.
   private func buttons(_ album: AlbumDetail) -> some View {
-    HStack(spacing: 12) {
-      Button { model.playOrPause() } label: {
-        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-          .font(.system(size: 22, weight: .semibold))
-          .frame(width: 56, height: 56)
-          .background(theme.accent.color, in: Circle())
-          .foregroundStyle(.black)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("\(model.playLabel) \(album.title)")
-      .sensoryFeedback(.selection, trigger: model.isPlaying)
-      Button { model.shuffle() } label: {
-        Image(systemName: "shuffle")
-          .font(.system(size: 20, weight: .semibold))
-          .frame(width: 56, height: 56)
-          .background(theme.accent.color.opacity(0.18), in: Circle())
-          .foregroundStyle(theme.accent.color)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Shuffle \(album.title)")
-      Spacer(minLength: 0)
-      Menu {
-        Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { session.actions.playNext(album.tracks) }
-        Button("Add to queue", systemImage: "text.append") { session.actions.addToQueue(album.tracks) }
-        Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist(album.tracks) }
-        Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(album.artistId)) }
-      } label: {
-        Image(systemName: "ellipsis").frame(width: 44, height: 44)
-      }
-      .accessibilityLabel("More for \(album.title)")
+    ActionRow(
+      title: album.title, playState: model.playState, play: model.playOrPause, shuffle: model.shuffle,
+      download: DownloadButton(
+        store: session.player.downloads,
+        item: DownloadItem(
+          key: PinnedDownload.Key.album(album.id), title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl,
+          href: "/albums/\(album.id)"),
+        tracks: album.tracks),
+      moreLabel: "More for \(album.title)"
+    ) { compact in
+      RequestRestButton(album: Album(album), compact: compact)
+    } more: {
+      Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { session.actions.playNext(album.tracks) }
+      Button("Add to queue", systemImage: "text.append") { session.actions.addToQueue(album.tracks) }
+      Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist(album.tracks) }
+      Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(album.artistId)) }
     }
     .padding(.horizontal, 20)
   }

@@ -1,11 +1,12 @@
 import PlayarrAPI
 
 /// What a Request button shows for an album that may not be in the library yet: one control for every state,
-/// Request → Searching → 42% → Importing → In library (components/Discover.tsx, RequestButton).
+/// Request → Requesting… → Searching → 42% → Importing → In library (components/Discover.tsx, RequestButton). Pending
+/// verbs end with an ellipsis, and every retry is "Try again" (docs/design.md, "Words").
 public enum RequestButtonState: Equatable, Sendable {
   /// Nothing can be asked for (no Lidarr, requests off, or the account may not request) and nothing is on its way.
   case hidden
-  /// Asking the server; `slow` after 2 s ("Looking up").
+  /// Asking the server; `slow` after 2 s ("Looking up…").
   case requesting(slow: Bool)
   /// Some of its songs are here: "3/12" (or "3 here") opening the album, and Request for the rest when allowed.
   case partial(count: String, summary: String, albumId: Int?, canRequest: Bool)
@@ -49,17 +50,19 @@ public enum RequestButtonState: Equatable, Sendable {
   public var label: String {
     switch self {
     case .hidden: ""
-    case .requesting(let slow): slow ? "Looking up" : "Requesting"
+    case .requesting(let slow): slow ? "Looking up…" : "Requesting…"
     case .partial(let count, _, _, _): count
     case .request: "Request"
     case .searching: "Searching"
     case .downloading(let percent, _): "\(percent)%"
     case .importing: "Importing"
-    case .searchAgain: "Search again"
-    case .retry: "Retry"
+    case .searchAgain, .retry: "Try again"
     case .inLibrary: "In library"
     }
   }
+
+  /// The words as a partly-here album's own action in its action row, where what's asked for is the rest of it.
+  public var restLabel: String { self == .request ? "Request the rest" : label }
 
   /// The web's tooltip: Lidarr's message, or why it's slow.
   public var help: String? {

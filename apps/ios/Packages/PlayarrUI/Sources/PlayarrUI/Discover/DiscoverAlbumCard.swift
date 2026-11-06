@@ -50,7 +50,7 @@ struct DiscoverAlbumCard: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("\(album.title), \(byline)")
-      RequestButton(album: AlbumRef(mbid: album.mbid, artistName: album.artistName, albumTitle: album.title), availability: album.availability, small: true)
+      RequestButton(album: AlbumRef(mbid: album.mbid, artistName: album.artistName, albumTitle: album.title), availability: album.availability)
     }
     .frame(width: width, alignment: .leading)
     .id(album.mbid)

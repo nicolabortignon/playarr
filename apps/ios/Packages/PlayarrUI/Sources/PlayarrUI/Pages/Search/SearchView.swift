@@ -55,7 +55,7 @@ struct SearchView: View {
     VStack(alignment: .leading, spacing: 12) {
       if !model.suggestions.isEmpty {
         Kicker(text: "Try an artist")
-        FlowLayout {
+        FlowLayout(lineSpacing: 0) {
           ForEach(model.suggestions) { Chip(text: $0.name, route: .artist($0.id)) }
           if let all = model.allArtistsLabel { Chip(text: all, route: .artists) }
         }
@@ -102,16 +102,15 @@ struct SearchView: View {
             .padding(.horizontal, 20)
         }
         if let label = model.showAllLabel {
-          Button { model.showAllTracks = true } label: { Kicker(text: label) }
+          Button { model.showAllTracks = true } label: { Kicker(text: label).frame(minHeight: 44).contentShape(Rectangle()) }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
         }
       }
     }
     if !model.playlistHits.isEmpty {
       VStack(alignment: .leading, spacing: 0) {
         SectionHeader(title: "Playlists")
-        FlowLayout { ForEach(model.playlistHits) { Chip(text: "\($0.name) · \($0.trackCount)", route: .playlist($0.id)) } }
+        FlowLayout(lineSpacing: 0) { ForEach(model.playlistHits) { Chip(text: "\($0.name) · \($0.trackCount)", route: .playlist($0.id)) } }
           .padding(.horizontal, 20)
       }
     }

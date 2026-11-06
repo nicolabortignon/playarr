@@ -65,8 +65,7 @@ private struct RequestsList: View {
       } else {
         summary(request)
       }
-      RequestButton(album: AlbumRef(mbid: request.mbid, artistName: request.artistName, albumTitle: request.title), availability: request.availability, small: true)
-        .buttonStyle(.borderless)
+      RequestButton(album: AlbumRef(mbid: request.mbid, artistName: request.artistName, albumTitle: request.title), availability: request.availability)
     }
     .accessibilityElement(children: .contain)
   }

@@ -75,10 +75,9 @@ final class AlbumModel {
   var moreByArtist: [Album] { (artist?.value?.albums ?? []).filter { $0.id != id } }
 
   var isCurrent: Bool { session.player.queue.currentTrack?.albumId == id }
-  var isPlaying: Bool { isCurrent && session.player.queue.playing }
 
-  /// "Pause", "Resume" or "Play".
-  var playLabel: String { isPlaying ? "Pause" : isCurrent ? "Resume" : "Play" }
+  /// Play, or Pause and Resume while one of its songs is playing.
+  var playState: PlayState { PlayState(isCurrent: isCurrent, playing: session.player.queue.playing) }
 
   var source: PlaySource? { album.value.map { PlaySource(label: $0.title, href: "/albums/\($0.id)") } }
 

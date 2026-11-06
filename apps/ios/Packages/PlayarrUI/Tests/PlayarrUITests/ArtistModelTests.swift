@@ -34,4 +34,26 @@ import Testing
     #expect(session.player.queue.source == PlaySource(label: "Massive Attack", href: "/artists/7"))
     #expect(!session.player.queue.shuffle)
   }
+
+  @Test func queuesEverySongOfTheArtistNextOrLast() async {
+    let session = demoSession()
+    session.player.play(Demo.dummyTracks)
+    let model = ArtistModel(id: 7, session: session)
+    await model.queue(next: true)
+    await model.queue(next: false)
+    let massive = Array(repeating: "Massive Attack", count: 5)
+    #expect(session.player.queue.upcoming(20).map(\.artistName) == massive + ["Portishead", "Portishead"] + massive)
+    #expect(session.player.queue.currentTrack?.title == "Mysterons")
+    #expect(session.toasts.toasts.map(\.message) == ["Playing 5 tracks next", "Added 5 tracks to queue"])
+  }
+
+  @Test func playPausesAndResumesTheArtistsSongs() async {
+    let session = demoSession()
+    let model = ArtistModel(id: 7, session: session)
+    #expect(model.playState == .stopped)
+    await model.playOrPause()
+    #expect(model.playState == .playing)
+    await model.playOrPause()
+    #expect(model.playState == .paused)
+  }
 }

@@ -17,16 +17,19 @@ struct StatsView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 32) {
         if model.isYear { Text("Your \(model.range)").font(.display(.largeTitle)) }
+        // One row that scrolls sideways, edge to edge, rather than wrapping.
         ScrollView(.horizontal) {
           HStack(spacing: 8) {
             ForEach(model.periods, id: \.self) { period in
               Button(period.label) { Task { await model.select(period.range) } }
-                .buttonStyle(.pill(period.range == model.range ? .filled : .quiet))
+                .buttonStyle(.choice(selected: period.range == model.range))
                 .accessibilityAddTraits(period.range == model.range ? .isSelected : [])
             }
           }
         }
         .scrollIndicators(.hidden)
+        .contentMargins(.horizontal, 20, for: .scrollContent)
+        .padding(.horizontal, -20)
         if let stats = model.stats {
           if stats.plays == 0 {
             Text(StatsModel.nothingPlayed).foregroundStyle(.secondary)
@@ -91,7 +94,7 @@ struct StatsView: View {
     }
     section("Top songs") {
       Button("Play them", systemImage: "play.fill") { model.playTop(all: true) }
-        .buttonStyle(.pill())
+        .buttonStyle(.pill(.primary))
       ForEach(Array(stats.topTracks.enumerated()), id: \.element.track.id) { index, item in
         Button { model.playTop(from: index, all: false) } label: {
           HStack(spacing: 14) {

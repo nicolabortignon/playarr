@@ -3,6 +3,8 @@ import SwiftUI
 /// Chips that wrap onto the next line ("Try an artist", playlists found).
 struct FlowLayout: Layout {
   var spacing: CGFloat = 8
+  /// Between lines; none for chips, whose taps already reach past what's drawn.
+  var lineSpacing: CGFloat?
 
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let width = proposal.width ?? .infinity
@@ -13,7 +15,7 @@ struct FlowLayout: Layout {
     for subview in subviews {
       let size = subview.sizeThatFits(.unspecified)
       if x > 0, x + size.width > width {
-        y += line + spacing
+        y += line + (lineSpacing ?? spacing)
         x = 0
         line = 0
       }
@@ -31,7 +33,7 @@ struct FlowLayout: Layout {
     for subview in subviews {
       let size = subview.sizeThatFits(.unspecified)
       if x > bounds.minX, x + size.width > bounds.maxX {
-        y += line + spacing
+        y += line + (lineSpacing ?? spacing)
         x = bounds.minX
         line = 0
       }
@@ -42,7 +44,7 @@ struct FlowLayout: Layout {
   }
 }
 
-/// A rounded chip that opens a page.
+/// A rounded chip that opens a page, 44 points to tap.
 struct Chip: View {
   let text: String
   let route: Route
@@ -54,6 +56,8 @@ struct Chip: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .overlay(Capsule().stroke(Color.secondary.opacity(0.4)))
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
   }

@@ -2,7 +2,7 @@ import PlayarrAPI
 import PlayarrPlayer
 import SwiftUI
 
-/// Favorites: Play, Shuffle and Download, then the songs with their hearts
+/// Favorites: how many songs, the action row (Play, Shuffle, Download, ⋯), then the songs with their hearts
 /// (apps/web/src/pages/Favorites.tsx).
 struct FavoritesView: View {
   let session: AccountSession
@@ -16,20 +16,26 @@ struct FavoritesView: View {
           empty
         } else {
           let tracks = list.map(\.track)
+          let playState = PlayState.of(session.player.queue, href: FavoritesStore.source.href)
           VStack(alignment: .leading, spacing: 16) {
-            FlowRow {
-              PlayShuffleButtons(title: "Favorites") {
-                session.player.play(tracks, source: FavoritesStore.source)
-              } shuffle: {
-                session.player.play(tracks, source: FavoritesStore.source, shuffle: true)
-              }
-              DownloadButton(
+            Text("\(Format.plural(tracks.count, "song")) · \(Format.duration(favorites.duration))")
+              .font(.mono(.caption))
+              .foregroundStyle(.secondary)
+            ActionRow(
+              title: "Favorites", playState: playState,
+              play: {
+                if playState.isCurrent { session.player.togglePlay() } else { session.player.play(tracks, source: FavoritesStore.source) }
+              },
+              shuffle: { session.player.play(tracks, source: FavoritesStore.source, shuffle: true) },
+              download: DownloadButton(
                 store: session.player.downloads,
                 item: DownloadItem(key: PinnedDownload.Key.favorites, title: "Favorites", subtitle: "Your favorite songs", href: "/favorites"),
-                tracks: tracks)
-              Text("\(Format.plural(tracks.count, "song")) · \(Format.duration(favorites.duration))")
-                .font(.mono(.caption))
-                .foregroundStyle(.secondary)
+                tracks: tracks),
+              moreLabel: "More for Favorites"
+            ) {
+              Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { session.actions.playNext(tracks) }
+              Button("Add to queue", systemImage: "text.append") { session.actions.addToQueue(tracks) }
+              Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist(tracks) }
             }
             LazyVStack(spacing: 0) {
               ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in

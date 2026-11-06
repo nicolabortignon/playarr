@@ -38,7 +38,7 @@ struct DiscoverTrackRow: View {
       if let duration = track.duration {
         Text(Format.time(duration)).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
       }
-      RequestButton(album: track.album, availability: track.availability, small: true)
+      RequestButton(album: track.album, availability: track.availability)
     }
     .padding(.vertical, 6)
   }

@@ -30,7 +30,9 @@ There is no design doc. The tokens live in `apps/web/src/index.css` (`ink-*`, `p
 - Each role has a web token and an iOS token of the same name. iOS gains `paper`, `paperDim`, `muted`, `danger` and `success`.
 - **Done when** both apps' theme files name the same roles, and the doc lists them.
 
-## 2. One set of buttons and controls — M
+## 2. One set of buttons and controls — M — done 2026-11-06
+
+*Done: the web as noted below; on iOS one `.pill(_:size:)` style (primary, secondary, ghost, danger; 48, 40, 32, never under 44 to tap), `.outlinedIcon`, `.choice(selected:)` and `StatusBadge` replace `Pill` and the old `.pill()`, and every action is in sentence case.*
 
 - **Web: no shared components.** There's no `Button`, `IconButton` or `Input`. Nine button recipes are copied between files: the hero Play in `Album.tsx:89`, `Artist.tsx:159`, `Playlist.tsx:131`, `Favorites.tsx:42` and `Mix.tsx:66`; the small outline button in `Section.tsx:178`, `Mixes.tsx:16` and `AccountsPanel.tsx:17`; and seven more.
 - **Web: dialogs disagree with pages.** Dialog buttons are `rounded-lg` where page buttons are `rounded-full` (`Playlist.tsx:206`, `AddToPlaylistDialog.tsx:63`).
@@ -46,7 +48,9 @@ The changes:
 - **Done when** no page builds a button from classes, and a grep finds no `red-[0-9]`/`emerald-[0-9]` outside `index.css`.
 - *Web done 2026-11-06: `Button`, `IconButton`, `TextField` and `Choice` (components/), used by every page, panel and dialog; dialog buttons are capsules; Request buttons say what they do in sentence case, and non-tappable states are badges. Player controls, sliders, menu items, tiles and inline text actions keep their own markup.*
 
-## 3. One action row for everything you can play — S
+## 3. One action row for everything you can play — S — done 2026-11-06
+
+*Done: both apps' album, playlist, mix, Favorites and artist pages share one row (web `ActionRow`, iOS `ActionRow`): Play as wide as Resume, Shuffle, the page's own action, Download as an outlined icon with a ring and a green tick, ⋯; it narrows instead of wrapping. Feeling lucky is a primary large button on both.*
 
 Play, Shuffle, Download and ⋯ come in five layouts today:
 

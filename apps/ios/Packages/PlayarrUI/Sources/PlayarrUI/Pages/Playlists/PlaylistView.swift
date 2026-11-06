@@ -3,8 +3,8 @@ import PlayarrPlayer
 import SwiftUI
 
 /// A playlist's page (apps/web/src/pages/Playlist.tsx): the cover (tap for a new one), name and description (tap to
-/// edit), whose it is, Play, Shuffle, the ⋯ menu, the songs (hold and drag, or Edit, to reorder; sent on the drop) and
-/// "Songs like these". Someone else's shared playlist shows the same page without the ways to change it.
+/// edit), whose it is, the action row (Play, Shuffle, Download, ⋯), the songs (hold and drag, or Edit, to reorder; sent
+/// on the drop) and "Songs like these". Someone else's shared playlist shows the same page without the ways to change it.
 struct PlaylistView: View {
   @State private var model: PlaylistModel
   @Environment(Theme.self) private var theme
@@ -103,8 +103,8 @@ struct PlaylistView: View {
         TextField("Add a description", text: $details, axis: .vertical).lineLimit(2...4)
         HStack {
           Button("Save") { Task { if await model.save(name: name, description: details) { editing = false } } }
-            .buttonStyle(.pill())
-          Button("Cancel") { editing = false }.buttonStyle(.pill(.quiet))
+            .buttonStyle(.pill(.primary))
+          Button("Cancel") { editing = false }.buttonStyle(.pill(.secondary))
         }
       } else {
         Text(playlist.name).font(.display(.largeTitle)).onTapGesture(perform: startEditing)
@@ -118,27 +118,23 @@ struct PlaylistView: View {
       }
       if model.canPickCover { coverNote(CoverNote(playlist.cover)) }
 
-      FlowRow {
-        PlayShuffleButtons(title: playlist.name, disabled: model.playable.isEmpty) {
-          model.play(shuffle: false)
-        } shuffle: {
-          model.play(shuffle: true)
-        }
-        DownloadButton(
+      ActionRow(
+        title: playlist.name, playState: model.playState, disabled: model.playable.isEmpty, play: model.playOrPause,
+        shuffle: { model.play(shuffle: true) },
+        download: DownloadButton(
           store: model.session.player.downloads,
           item: DownloadItem(
             key: PinnedDownload.Key.playlist(playlist.id), title: playlist.name, subtitle: "Playlist", coverUrl: playlist.cover.url,
             href: "/playlists/\(playlist.id)"),
-          tracks: model.playable)
-        Menu {
-          ForEach(model.actions, id: \.self) { action in
-            Button(action.label, systemImage: action.systemImage, role: action == .delete ? .destructive : nil) { perform(action) }
-          }
-        } label: {
-          Image(systemName: "ellipsis").frame(width: 44, height: 44)
+          tracks: model.playable),
+        moreLabel: "Playlist actions"
+      ) {
+        ForEach(model.actions, id: \.self) { action in
+          Button(action.label, systemImage: action.systemImage, role: action == .delete ? .destructive : nil) { perform(action) }
         }
-        .accessibilityLabel("Playlist actions")
       }
+      // Room for Play's glow to fade out: the next list row would cut it off in a line.
+      .padding(.bottom, 16)
     }
   }
 

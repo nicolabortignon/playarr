@@ -61,17 +61,15 @@ struct ArtistView: View {
       VStack(alignment: .leading, spacing: 12) {
         Kicker(text: model.kicker)
         ArtistTitle(name: artist.name, logoUrl: artist.logoUrl)
-        // The counts beside the buttons on one line, else under them.
-        ViewThatFits(in: .horizontal) {
-          HStack(spacing: 12) {
-            playButtons(artist.name)
-            counts
-          }
-          VStack(alignment: .leading, spacing: 10) {
-            playButtons(artist.name)
-            counts
-          }
+        counts
+        ActionRow(
+          title: artist.name, playState: model.playState, play: { Task { await model.playOrPause() } },
+          shuffle: { Task { await model.play(shuffle: true) } }, moreLabel: "More for \(artist.name)"
+        ) {
+          Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { Task { await model.queue(next: true) } }
+          Button("Add to queue", systemImage: "text.append") { Task { await model.queue(next: false) } }
         }
+        .padding(.top, 4)
       }
       .padding(20)
     }
@@ -99,21 +97,15 @@ struct ArtistView: View {
     VStack(alignment: .leading, spacing: 8) {
       SectionHeader(title: "About")
       Text(overview).font(.sans(.callout)).foregroundStyle(.secondary).lineLimit(model.bioOpen ? nil : 5).padding(.horizontal, 20)
-      Button { model.bioOpen.toggle() } label: { Kicker(text: model.bioOpen ? "Less" : "Read more") }
-        .padding(.horizontal, 20)
+      Button { model.bioOpen.toggle() } label: {
+        Kicker(text: model.bioOpen ? "Less" : "Read more").frame(minHeight: 44).contentShape(Rectangle())
+      }
+      .padding(.horizontal, 20)
     }
   }
 }
 
 extension ArtistView {
-  fileprivate func playButtons(_ artist: String) -> some View {
-    PlayShuffleButtons(title: artist) {
-      Task { await model.play() }
-    } shuffle: {
-      Task { await model.play(shuffle: true) }
-    }
-  }
-
   @ViewBuilder fileprivate var counts: some View {
     if let counts = model.counts { Text(counts).font(.mono(.caption)).foregroundStyle(.secondary).lineLimit(1).fixedSize() }
   }

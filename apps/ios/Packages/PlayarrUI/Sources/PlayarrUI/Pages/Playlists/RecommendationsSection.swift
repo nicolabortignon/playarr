@@ -22,7 +22,7 @@ struct RecommendationsSection: View {
           } else if let error = model.error, model.recommendations == nil {
             VStack(alignment: .leading, spacing: 8) {
               Text("Couldn’t reach ListenBrainz. \(error)").foregroundStyle(.secondary)
-              Button("Try again") { Task { await model.load() } }.buttonStyle(.borderless)
+              Button("Try again", systemImage: "arrow.clockwise") { Task { await model.load() } }.buttonStyle(.pill(.secondary))
             }
           } else if model.empty {
             Text("ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try a new mix or add a few more songs.")
@@ -33,7 +33,7 @@ struct RecommendationsSection: View {
             ForEach(model.owned, id: \.recordingId) { recommendation in
               row(recommendation) {
                 Button("Add", systemImage: "plus") { Task { await model.add(recommendation) } }
-                  .buttonStyle(.pill(.outlined, small: true))
+                  .buttonStyle(.pill(.secondary, size: .small))
                   .accessibilityLabel("Add \(recommendation.title) to playlist")
               }
             }
@@ -43,12 +43,15 @@ struct RecommendationsSection: View {
             ForEach(model.shownMissing, id: \.recordingId) { recommendation in
               row(recommendation) {
                 if let album = recommendation.album, let availability = recommendation.availability {
-                  RequestButton(album: album, availability: availability, small: true)
+                  RequestButton(album: album, availability: availability)
                 }
               }
             }
             if let more = model.moreLabel {
-              Button(more) { model.showAll.toggle() }.font(.mono(.caption)).buttonStyle(.borderless)
+              Button { model.showAll.toggle() } label: {
+                Text(more).font(.mono(.caption)).frame(minHeight: 44).contentShape(Rectangle())
+              }
+              .buttonStyle(.borderless)
             }
           }
         } header: {

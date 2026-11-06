@@ -62,7 +62,7 @@ final class ScreenTour: XCTestCase {
 
     if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch) {
       shot("03-album")
-      // Download: the pill draws in to a circle filling as the songs arrive, then a tick.
+      // Download: the ring fills as the songs arrive, then a tick.
       if tap(button(beginningWith: "Download Mezzanine"), timeout: 2) {
         shot("03b-album-downloading", after: 0.4)
         shot("03c-album-downloaded", after: 4)
@@ -111,6 +111,10 @@ final class ScreenTour: XCTestCase {
       shot("17-favorites")
       app.navigationBars.buttons.firstMatch.tap()
     }
+    if tap(button(beginningWith: "Your listening"), timeout: 2) {
+      shot("20-stats", after: 2)
+      app.navigationBars.buttons.firstMatch.tap()
+    }
     if tap(button(beginningWith: "Made for you"), timeout: 2) {
       if tap(button(beginningWith: "Your vibes"), timeout: 3) { shot("18-mix") }
       tap(app.tabBars.buttons["Library"], timeout: 1)
@@ -133,6 +137,10 @@ final class ScreenTour: XCTestCase {
     }
     if tap(app.buttons["Account and settings"].firstMatch), tap(app.buttons["Settings"]) {
       shot("14-settings")
+      if tap(app.buttons["Playback"]) {
+        shot("14b-playback")
+        app.navigationBars.buttons.firstMatch.tap()
+      }
       if tap(app.buttons["Appearance"]) { shot("15-appearance") }
     }
 
@@ -180,7 +188,7 @@ final class ScreenTour: XCTestCase {
   }
 
   /// The iPad, sideways as it's mostly held: Home, an album, the artist, the albums, Now Playing, the queue and lyrics
-  /// columns, a playlist, Settings and Search.
+  /// columns, a playlist, Favorites, a mix, Settings and its Playback, Your listening and Search.
   @MainActor
   func testTheMainScreensOnIPad() throws {
     try XCTSkipUnless(onIPad, "The iPad's tour")
@@ -213,7 +221,14 @@ final class ScreenTour: XCTestCase {
     }
     if tap(sidebar("albums")) { shot("08-albums") }
     if tap(sidebar("playlist.1"), timeout: 2) { shot("09-playlist") }
-    if tap(sidebar("settings")) { shot("10-settings") }
+    if tap(sidebar("favorites")) { shot("13-favorites") }
+    if tap(sidebar("mixes")), tap(button(beginningWith: "Your vibes"), timeout: 3) { shot("14-mix") }
+    if tap(sidebar("settings")) {
+      shot("10-settings")
+      if tap(app.buttons["Playback"]) { shot("10b-playback") }
+      // Picking Settings again goes back to its first page.
+      if tap(sidebar("settings")), tap(app.buttons["Your listening"]) { shot("15-stats", after: 2) }
+    }
     if tap(sidebar("search")) {
       let field = app.searchFields.firstMatch
       if field.waitForExistence(timeout: 5) {
@@ -221,6 +236,28 @@ final class ScreenTour: XCTestCase {
         field.typeText("mass")
         shot("11-search")
       }
+    }
+  }
+
+  /// With Lidarr (`-UITestsRequests`): a partly-here album's action row with Request the rest, and Search's Request
+  /// buttons before and after one is pressed.
+  @MainActor
+  func testRequesting() throws {
+    try XCTSkipIf(folder?.lastPathComponent == "duo", "On the iPhone and the iPad")
+    if onIPad { XCUIDevice.shared.orientation = .landscapeLeft }
+    defer { XCUIDevice.shared.orientation = .portrait }
+    launch(["-UITests", "-UITestsRequests"])
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10) { shot("21-album-request") }
+    let search = onIPad ? app.descendants(matching: .any)["sidebar.search"].firstMatch : app.tabBars.buttons["Search"]
+    guard tap(search) else { return }
+    let field = app.searchFields.firstMatch
+    guard field.waitForExistence(timeout: 5) else { return }
+    field.tap()
+    // Search on the keyboard puts it away.
+    field.typeText("Heligoland\n")
+    if app.staticTexts["Not in your library"].waitForExistence(timeout: 10) {
+      shot("22-search-request")
+      if tap(app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Request")).firstMatch) { shot("23-search-requested", after: 1.5) }
     }
   }
 

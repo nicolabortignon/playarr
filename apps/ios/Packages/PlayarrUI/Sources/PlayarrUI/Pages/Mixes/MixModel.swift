@@ -92,6 +92,14 @@ final class MixModel {
     session.player.play(tracks, source: source, shuffle: shuffle)
   }
 
+  /// Play, or Pause and Resume while the queue is this mix.
+  var playState: PlayState { PlayState.of(session.player.queue, href: source.href) }
+
+  /// The Play button: pause or resume this mix, or play it from the top, in order.
+  func playOrPause() {
+    if playState.isCurrent { session.player.togglePlay() } else { play(shuffle: false) }
+  }
+
   func queue(next: Bool) {
     guard let tracks = mix?.tracks, !tracks.isEmpty else { return }
     next ? session.actions.playNext(tracks) : session.actions.addToQueue(tracks)

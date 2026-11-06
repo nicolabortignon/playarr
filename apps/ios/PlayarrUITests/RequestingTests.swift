@@ -8,7 +8,7 @@ final class RequestingTests: XCTestCase {
     continueAfterFailure = false
   }
 
-  /// A button or text whose label is `label`, whatever its case (the request controls are drawn upper-case).
+  /// A button or text whose label is `label`, whatever its case (the statuses are drawn as badges, in capitals).
   private func labelled(_ query: XCUIElementQuery, _ label: String) -> XCUIElement {
     query.matching(NSPredicate(format: "label ==[c] %@", label)).firstMatch
   }

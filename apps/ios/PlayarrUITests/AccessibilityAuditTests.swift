@@ -181,10 +181,10 @@ enum AuditExceptions {
     if issue.auditType == .contrast, let element = issue.element, measuredContrast(of: element) >= 4.5 {
       return true
     }
-    // The small upper-case labels (`Kicker`, `Pill`, Download) are reported as "partially unsupported" at the largest
-    // size though they're drawn at it: caption-sized text at AX5 is about 40 points, a line 48 tall. Tried: letter
-    // spacing that scales, none, regular weight, the system's monospaced face; the report stayed. Ignored only for text
-    // that measurably grew (44 points or more, from about 13 at the usual size).
+    // The small upper-case labels (`Kicker`, choices, `StatusBadge`) are reported as "partially unsupported" at the
+    // largest size though they're drawn at it: caption-sized text at AX5 is about 40 points, a line 48 tall. Tried:
+    // letter spacing that scales, none, regular weight, the system's monospaced face; the report stayed. Ignored only
+    // for text that measurably grew (44 points or more, from about 13 at the usual size).
     if issue.auditType == .dynamicType, let element = issue.element, element.elementType == .staticText,
       element.frame.height >= 44
     {

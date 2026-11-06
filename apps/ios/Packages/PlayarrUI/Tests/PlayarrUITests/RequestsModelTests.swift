@@ -81,11 +81,11 @@ import Testing
     let ref = AlbumRef(mbid: "rg-1", artistName: "Massive Attack", albumTitle: "Mezzanine")
     requests.request(ref)
     #expect(requests.pendingState(for: ref) == .requesting)
-    #expect(requests.buttonState(for: ref, availability: availability(.noneValue), allowed: true).label == "Requesting")
+    #expect(requests.buttonState(for: ref, availability: availability(.noneValue), allowed: true).label == "Requesting…")
     #expect(await clock.nextSleep() == .seconds(2))
     clock.advance(by: .seconds(2))
     await eventually { requests.pendingState(for: ref) == .lookingUp }
-    #expect(requests.buttonState(for: ref, availability: availability(.noneValue), allowed: true).label == "Looking up")
+    #expect(requests.buttonState(for: ref, availability: availability(.noneValue), allowed: true).label == "Looking up…")
     api.on(.get, "/api/requests", [albumRequest("rg-1", "Mezzanine", .searching)])
     await answer.open()
     await eventually { requests.pendingState(for: ref) == nil }

@@ -38,17 +38,22 @@ struct QueueView: View {
             .onMove { model.move(from: $0, to: $1); reordered += 1 }
             .onDelete { model.remove($0) }
           } header: {
-            // Edit and Clear as plain words in the header, just under the playing song, rather than in the bar.
-            HStack(spacing: 16) {
+            // Edit and Clear as plain words in the header, just under the playing song, rather than in the bar; each
+            // 44 points to tap.
+            HStack(spacing: 8) {
               Text(model.header)
               Spacer()
               if !upcoming.isEmpty {
                 #if os(iOS)
-                  Button(editMode.isEditing ? "Done" : "Edit") {
+                  Button {
                     withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                  } label: {
+                    Text(editMode.isEditing ? "Done" : "Edit").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                   }
                 #endif
-                Button("Clear") { model.clear() }
+                Button { model.clear() } label: {
+                  Text("Clear").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                }
               }
             }
           }

@@ -138,9 +138,15 @@ A folding iPhone. Two pieces of code handle it: `UnderTheRail` for the cover scr
 
 ## 8. Haptics, buttons and icons
 
-**Haptics** come from one table, `Haptic` (`Components/Haptic.swift`): medium impact for play/pause; selection for shuffle, repeat, the lyrics toggle and the side column; light impact for reordering the queue; success for songs dropped; success or error with a toast. The heart, Feeling lucky and the album's play button have their own. System Haptics off silences them all.
+**Haptics** come from one table, `Haptic` (`Components/Haptic.swift`): medium impact for play/pause; selection for shuffle, repeat, the lyrics toggle and the side column; light impact for reordering the queue; success for songs dropped; success or error with a toast. The heart, Feeling lucky and the action row's Play have their own. System Haptics off silences them all.
 
-**Buttons** share the Request button's look: `.buttonStyle(.pill())` (`Discover/Pill.swift`), DM Mono upper case in a capsule 32 points tall (28 small), with at least 44 points to tap. Filled with the accent for the main action (Play, Try again), outlined beside it (Shuffle, New mix), quiet for the lesser choice (Cancel).
+**Buttons** follow [the design language](../design.md#controls), in `Components/`:
+
+- **Actions** are `.buttonStyle(.pill(_:size:))` (`PillButtonStyle.swift`): a capsule with its words in sentence case in Schibsted Grotesk medium (regular at the accessibility sizes), an optional leading icon. Variants: `.primary` (the accent, the one main action: Play, Feeling lucky, Try again, Save), `.secondary` (outlined: Shuffle, New mix, Cancel), `.ghost` and `.danger`. Sizes: `.large` 48 points, `.regular` 40, `.small` 32 (its words a size down); every one takes at least 44 points to tap. Disabled at 40 %; pending, the verb with an ellipsis ("Requesting…"). A large primary (Play, Feeling lucky) glows with the accent, as the web's `shadow-glow`.
+- **Icon buttons** in an action row are `.buttonStyle(.outlinedIcon)` (`OutlinedIconButtonStyle.swift`), a 48-point outlined circle; `OutlinedIcon` draws the same for a menu's label or a status.
+- **Choices** (Stats' ranges) are `.buttonStyle(.choice(selected:))` (`ChoiceButtonStyle.swift`): DM Mono capitals, the chosen one filled. A row of them scrolls sideways rather than wrapping. Settings keeps the system's segmented pickers and menus.
+- **Statuses** that do nothing when tapped (Searching, Importing, 42%, and Requesting… in a card) are a `StatusBadge`, in badge capitals, as tall as a small pill and taking its room, so a card doesn't move as Request turns into Searching.
+- **The action row** (`ActionRow.swift`) on the album, playlist, mix, Favorites and artist pages: Play, Shuffle, the page's own action (New mix, Request the rest), Download (`DownloadButton`, its ring filling as the songs arrive) and ⋯. Play is as wide as its widest word, and says Pause or Resume while the queue is the page's own (`PlayState`). The row never wraps: short of room, Shuffle and then the page's action become icons, then the gaps close up and Play drops its icon but keeps its word (`ActionRowCompaction`); at the largest text sizes it scrolls sideways.
 
 **Fonts** (`Theme/Typography.swift`): Schibsted Grotesk for text, Gloock for titles, DM Mono for labels and numbers, all bundled and growing with Dynamic Type.
 
@@ -148,7 +154,7 @@ A folding iPhone. Two pieces of code handle it: `UnderTheRail` for the cover scr
 
 ## Tests and screenshots
 
-- Unit: `NowPlayingLayoutTests`, `TracklistTests` (`Packages/PlayarrUI/Tests/PlayarrUITests/TracklistTests.swift`), `ShellLayoutTests`, `RouterSnapshotTests`, `KeyCommandTests`, `TrackDragTests`, `AccessibilityStyleTests`.
+- Unit: `NowPlayingLayoutTests`, `TracklistTests` (`Packages/PlayarrUI/Tests/PlayarrUITests/TracklistTests.swift`), `ShellLayoutTests`, `RouterSnapshotTests`, `KeyCommandTests`, `TrackDragTests`, `AccessibilityStyleTests`, `ActionRowTests`.
 - UI: `SidewaysNowPlayingTests` (pages turn, the sleeve, a tap plays, back upright, turn to open), `IPadLayoutTests` (sidebar, column, Up next, keyboard, drag, restoration; Escape only on a device with `TEST_RUNNER_PLAYARR_DEVICE_CHECKS=1`).
 - `pnpm ios:screens` runs `ScreenTour` on an iPhone 17 Pro, an iPad Pro 13" and the iPhone Duo (`apps/ios/Makefile`), upright and sideways, with the Duo's folds forced.
 

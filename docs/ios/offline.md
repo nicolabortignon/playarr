@@ -59,7 +59,7 @@ A download is a `PinnedDownload` (`PinnedDownload.swift`; `Download` is the one-
 - the transitions between them;
 - its songs' levels.
 
-**The button.** `DownloadButton` sits on the Album, Playlist, Mix and Favorites pages. When the page's songs change (a playlist edited since), the download is updated to match, and transitions between songs that no longer follow each other go.
+**The button.** `DownloadButton` sits in the action row of the Album, Playlist, Mix and Favorites pages: an outlined circle whose ring fills as the songs arrive, ending in a tick. When the page's songs change (a playlist edited since), the download is updated to match, and transitions between songs that no longer follow each other go.
 
 **Room.** Before starting, `room(for:)` adds up the songs not yet on the device (`Track.size`). They have to fit in the free space (`volumeAvailableCapacityForImportantUsage`) plus the songs kept as you listen (they'd make way), minus 256 MB kept free (`DownloadStore.reserve`). If they don't, an alert gives both sizes.
 

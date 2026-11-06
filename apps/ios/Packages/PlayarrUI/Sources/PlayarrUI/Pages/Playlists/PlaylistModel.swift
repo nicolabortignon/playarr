@@ -93,6 +93,14 @@ final class PlaylistModel {
     session.player.play(playable, source: source, shuffle: shuffle)
   }
 
+  /// Play, or Pause and Resume while the queue is this playlist.
+  var playState: PlayState { PlayState.of(session.player.queue, href: "/playlists/\(id)") }
+
+  /// The Play button: pause or resume this playlist, or play it from the top, in order.
+  func playOrPause() {
+    if playState.isCurrent { session.player.togglePlay() } else { play(shuffle: false) }
+  }
+
   /// Tapping a song plays the playlist from there.
   func play(from item: PlaylistItem) {
     guard let track = item.track, let index = playable.firstIndex(of: track) else { return }

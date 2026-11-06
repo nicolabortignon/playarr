@@ -120,6 +120,18 @@ import Testing
     #expect(session.toasts.toasts.map(\.message) == ["Playing 2 tracks next"])
   }
 
+  @Test func playPausesAndResumesThePlaylistOnceItPlays() async {
+    let (model, session) = await model(Listening.playlist(items: three))
+    #expect(model.playState == .stopped)
+    model.playOrPause()
+    #expect(session.player.queue.currentTrack?.title == "Angel")
+    #expect(model.playState == .playing)
+    model.playOrPause()
+    #expect(model.playState == .paused)
+    model.playOrPause()
+    #expect(model.playState == .playing)
+  }
+
   @Test func pollsEveryFourSecondsWhileTheCoverIsDrawn() async {
     let clock = TestClock()
     let (model, _) = await model(Listening.playlist(pending: true), clock: clock)

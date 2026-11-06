@@ -58,4 +58,20 @@ import Testing
     mix.queue(next: false)
     #expect(session.toasts.toasts.map(\.message) == ["Added 2 tracks to queue"])
   }
+
+  @Test func playPausesTheMixOnlyWhileItsTheQueue() async {
+    api.on(.get, "/api/mixes/vibes", Listening.mix(tracks: [Listening.angel, Listening.risingson]))
+    let session = demoSession(api: api)
+    let mix = MixModel(key: "vibes", session: session)
+    await mix.load()
+    #expect(mix.playState == .stopped)
+    mix.playOrPause()
+    #expect(mix.playState == .playing)
+    #expect(!session.player.queue.shuffle)
+    mix.playOrPause()
+    #expect(mix.playState == .paused)
+    // Another page's queue: Play starts the mix again.
+    session.player.play([Listening.angel], source: PlaySource(label: "Favorites", href: "/favorites"))
+    #expect(mix.playState == .stopped)
+  }
 }
