@@ -136,11 +136,24 @@ export class MusicBrainz {
   /** Artists by name or by another name they go by ("N Sync" finds *NSYNC), best match first. */
   searchArtists(name: string, signal?: AbortSignal, opts?: { background?: boolean }) {
     const q = luceneEscape(name);
-    return this.get<{ artists: { id: string; name: string; score: number }[] }>(
+    return this.get<{ artists: { id: string; name: string; score: number; disambiguation?: string }[] }>(
       `/artist?query=${encodeURIComponent(`artist:"${q}" OR alias:"${q}"`)}&limit=5`,
       signal,
       opts,
     ).then((r) => r.artists);
+  }
+
+  /**
+   * Albums and EPs with an official release whose title or artist matches free text ("ok computer", "teardrop massive
+   * attack"), best match first: search beyond the library when there's no Lidarr to ask.
+   */
+  searchAlbums(text: string, signal?: AbortSignal) {
+    const q = luceneEscape(text);
+    const query = `(releasegroup:"${q}" OR artist:"${q}" OR ${q}) AND (primarytype:album OR primarytype:ep) AND status:official`;
+    return this.get<{ 'release-groups': (MbReleaseGroup & { score: number })[] }>(
+      `/release-group?query=${encodeURIComponent(query)}&limit=25`,
+      signal,
+    ).then((r) => r['release-groups']);
   }
 
   /** The release group (album) a specific release (edition) belongs to. */

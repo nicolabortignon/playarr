@@ -23,7 +23,8 @@ const VERSION_WORDS = /\b(remix|mix|live|edit|version|dub|bootleg|cover|instrume
 
 /**
  * Search beyond the library:
- * - artists & albums: Lidarr's metadata search (results carry MusicBrainz ids, ready to request)
+ * - artists & albums: Lidarr's metadata search (results carry MusicBrainz ids, ready to request), or MusicBrainz
+ *   itself on a server without Lidarr, so search never stops at the library
  * - songs: Deezer (popularity-ranked); their album is resolved to MusicBrainz when requested
  */
 export class Discover {
@@ -39,7 +40,8 @@ export class Discover {
     if (q.length < 2) return { artists: [], albums: [], tracks: [] };
     const nq = normalize(q);
 
-    const [hits, deezer] = await Promise.allSettled([this.lidarr.search(q), searchDeezerTracks(q, signal)]);
+    const lidarr = this.lidarr.configured;
+    const [hits, deezer] = await Promise.allSettled([lidarr ? this.lidarr.search(q) : Promise.resolve([]), searchDeezerTracks(q, signal)]);
     if (hits.status === 'rejected' && deezer.status === 'rejected') {
       throw new Error(`Search failed: ${(hits.reason as Error).message}`);
     }
@@ -61,6 +63,17 @@ export class Discover {
       rawTracks = [...matching, ...rawTracks];
     }
     const songs = rankTracks(rawTracks, nq).slice(0, 10);
+    // "teardrop massive attack": a search for artists finds ones called "Teardrop"; the top song knows better.
+    const songArtist = songs.find((s) => nq.includes(normalize(s.artist.name)))?.artist.name;
+
+    if (!lidarr) {
+      const found = await this.searchMusicBrainz(q, nq, songArtist, signal);
+      if (!found && deezer.status === 'rejected') throw new Error(`Search failed: ${(deezer.reason as Error).message}`);
+      const artists = found?.artists ?? [];
+      const albums = found?.albums ?? [];
+      const knownMbids = new Map([...albums.map((a) => [normalize(a.artistName), a.artistMbid] as const), ...artists.map((a) => [normalize(a.name), a.mbid] as const)]);
+      return { artists, albums, tracks: await Promise.all(songs.map((t) => this.deezerTrack(t, knownMbids))) };
+    }
 
     // Artists: Lidarr matches by name, so keep the ones the query actually names.
     let lookupArtists = lidarrHits
@@ -69,8 +82,6 @@ export class Discover {
         const name = normalize(a.artistName);
         return name && (nq.includes(name) || name.includes(nq));
       });
-    // "teardrop massive attack": Lidarr finds artists called "Teardrop"; the top song knows better.
-    const songArtist = songs.find((s) => nq.includes(normalize(s.artist.name)))?.artist.name;
     if (songArtist && !lookupArtists.some((a) => normalize(a.artistName) === normalize(songArtist))) {
       const found = await this.lidarr.search(songArtist).catch(() => []);
       const exact = found.find((h) => h.artist && normalize(h.artist.artistName) === normalize(songArtist))?.artist;
@@ -78,7 +89,12 @@ export class Discover {
     }
     lookupArtists.sort((a, b) => Number(normalize(b.artistName) === nq) - Number(normalize(a.artistName) === nq));
 
-    const albums = rankAlbums(lidarrHits.flatMap((h) => (h.album ? [h.album] : [])), nq).slice(0, 12);
+    const albums = rankAlbums(lidarrHits.flatMap((h) => (h.album ? [h.album] : [])), nq, (a) => ({
+      title: a.title,
+      artist: a.artist.artistName,
+      type: a.albumType,
+      secondaryTypes: a.secondaryTypes ?? [],
+    })).slice(0, 12);
 
     // Songs only carry artist names; reuse any MusicBrainz ids this search already turned up.
     const knownMbids = new Map<string, string>();
@@ -90,6 +106,66 @@ export class Discover {
       artists: await Promise.all(lookupArtists.slice(0, 6).map((a) => this.toArtist(a))),
       albums: await Promise.all(albums.map((a) => this.lookupAlbum(a))),
       tracks: await Promise.all(songs.map((t) => this.deezerTrack(t, knownMbids))),
+    };
+  }
+
+  /**
+   * Artists and albums from MusicBrainz, for a server without Lidarr; undefined when MusicBrainz can't be reached. An
+   * artist the query names ("radiohead", "teardrop massive attack") brings their own albums and EPs; any other text
+   * finds albums by title.
+   */
+  private async searchMusicBrainz(
+    q: string,
+    nq: string,
+    songArtist: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<{ artists: DiscoverArtist[]; albums: DiscoverAlbum[] } | undefined> {
+    const found = await this.mb.searchArtists(q, signal).catch(() => undefined);
+    let named = (found ?? []).filter((a) => {
+      const name = normalize(a.name);
+      return name && (nq.includes(name) || name.includes(nq));
+    });
+    if (songArtist && !named.some((a) => normalize(a.name) === normalize(songArtist))) {
+      const more = await this.mb.searchArtists(songArtist, signal).catch(() => []);
+      const exact = more.find((a) => normalize(a.name) === normalize(songArtist));
+      if (exact) named = [exact, ...named];
+    }
+    named.sort((a, b) => Number(normalize(b.name) === nq) - Number(normalize(a.name) === nq));
+
+    // The artist whose whole name is in the query: their discography, newest first as on their page, the query's
+    // other words picking the album.
+    const owner = named.find((a) => nq.includes(normalize(a.name)));
+    const groups = await (owner
+      ? this.mb.artistReleaseGroups(owner.id, signal).then((rgs) => [...rgs].sort(byNewest))
+      : this.mb.searchAlbums(q, signal)
+    ).catch(() => undefined);
+    if (!found && !groups) return undefined;
+    const albums = rankAlbums(groups ?? [], nq, (rg) => ({
+      title: rg.title,
+      artist: owner?.name ?? creditName(rg['artist-credit']),
+      type: rg['primary-type'] ?? '',
+      secondaryTypes: rg['secondary-types'] ?? [],
+    })).slice(0, 12);
+
+    return {
+      artists: await mapLimit(named.slice(0, 6), 3, async (a): Promise<DiscoverArtist> => {
+        const artistId = await this.library.artistIdByMbid(a.id);
+        const imageUrl = remoteArtUrl(await deezerArtistPicture(a.name, normalize, signal).catch(() => undefined));
+        return {
+          mbid: a.id,
+          name: a.name,
+          ...(a.disambiguation ? { disambiguation: a.disambiguation } : {}),
+          ...(imageUrl ? { imageUrl } : {}),
+          genres: [],
+          ...(artistId !== undefined ? { artistId } : {}),
+        };
+      }),
+      albums: await Promise.all(
+        albums.map((rg) => {
+          const lead = rg['artist-credit']?.[0]?.artist;
+          return this.mbAlbum(rg, owner?.name ?? creditName(rg['artist-credit']), owner?.id ?? lead?.id ?? '');
+        }),
+      ),
     };
   }
 
@@ -146,7 +222,7 @@ export class Discover {
       rgs
         .filter((rg) => ['Album', 'EP'].includes(rg['primary-type'] ?? ''))
         .filter((rg) => !(rg['secondary-types'] ?? []).some((t) => HIDDEN_SECONDARY.has(t)))
-        .sort((a, b) => (b['first-release-date'] ?? '').localeCompare(a['first-release-date'] ?? ''))
+        .sort(byNewest)
         .map((rg) => this.mbAlbum(rg, name, mbid)),
     );
     const base = lookup
@@ -217,6 +293,9 @@ export class Discover {
   }
 }
 
+/** Release groups, newest first. */
+const byNewest = (a: MbReleaseGroup, b: MbReleaseGroup) => (b['first-release-date'] ?? '').localeCompare(a['first-release-date'] ?? '');
+
 function image(images: LidarrImage[], type: string) {
   return images.find((i) => i.coverType === type)?.remoteUrl ?? undefined;
 }
@@ -255,19 +334,28 @@ export function rankTracks(tracks: DeezerTrack[], nq: string): DeezerTrack[] {
   return [...best.values()].sort((a, b) => b.score - a.score).map((x) => x.t);
 }
 
-/** Re-rank Lidarr's album hits: title/artist match and studio albums over singles, remixes, bootlegs. */
-export function rankAlbums(albums: LidarrLookupAlbum[], nq: string): LidarrLookupAlbum[] {
+/** What ranking needs to know of an album hit, from Lidarr or MusicBrainz. */
+interface AlbumFacts {
+  title: string;
+  artist: string;
+  type: string;
+  secondaryTypes: string[];
+}
+
+/** Re-rank album hits: title/artist match and studio albums over singles, remixes, bootlegs. */
+export function rankAlbums<T>(albums: T[], nq: string, facts: (album: T) => AlbumFacts): T[] {
   const wantsVersion = VERSION_WORDS.test(nq);
   return albums
     .map((a, i) => {
-      const artist = normalize(a.artist.artistName);
-      let score = titleScore(nq, normalize(a.title), artist) - i * 0.5;
+      const f = facts(a);
+      const artist = normalize(f.artist);
+      let score = titleScore(nq, normalize(f.title), artist) - i * 0.5;
       if (artist && nq.includes(artist)) score += 30;
-      if (a.albumType === 'Album') score += 10;
-      else if (a.albumType === 'EP') score += 4;
-      if ((a.secondaryTypes ?? []).some((t) => HIDDEN_SECONDARY.has(t))) score -= 10;
-      if (!wantsVersion && VERSION_WORDS.test(a.title)) score -= 15;
-      if (/various artists/i.test(a.artist.artistName)) score -= 12;
+      if (f.type === 'Album') score += 10;
+      else if (f.type === 'EP') score += 4;
+      if (f.secondaryTypes.some((t) => HIDDEN_SECONDARY.has(t))) score -= 10;
+      if (!wantsVersion && VERSION_WORDS.test(f.title)) score -= 15;
+      if (/various artists/i.test(f.artist)) score -= 12;
       return { a, score };
     })
     .sort((x, y) => y.score - x.score)

@@ -11,7 +11,7 @@ No source needs a key except Lidarr. Deezer, MusicBrainz and ListenBrainz are pu
 | Need | Source | Why |
 |---|---|---|
 | Songs ("bohemian rhapsody") | Deezer's public search (`discover/deezer.ts`) | Ranked by popularity, so it finds Queen rather than a cover. MusicBrainz has no popularity, and Lidarr has no song search |
-| Artists and albums | Lidarr's `/api/v1/search` | Results carry MusicBrainz ids and are ready to add |
+| Artists and albums | Lidarr's `/api/v1/search`; without Lidarr, MusicBrainz's artist and release-group search | Results carry MusicBrainz ids and are ready to add; Lidarr's search is MusicBrainz's data, ranked |
 | An artist's discography | MusicBrainz release-group browse (`discover/musicbrainz.ts`) | Complete, and every Lidarr album *is* a MusicBrainz release group (`foreignAlbumId`) |
 | Similar artists and songs | ListenBrainz labs API (`discover/listenbrainz.ts`) | Built from real listening sessions, keyed by MusicBrainz ids |
 
@@ -21,7 +21,7 @@ Deezer answers are cached for 30 minutes. Every upstream call has a timeout, and
 
 ## 2. Search (`GET /api/discover/search?q=`)
 
-`Discover.search` (`discover/discover.ts`) needs at least two characters. It asks Lidarr and Deezer (40 songs) at the same time; either may fail and the other's results still come back. Without a Lidarr source, search shows songs only.
+`Discover.search` (`discover/discover.ts`) needs at least two characters. It asks Lidarr and Deezer (40 songs) at the same time; either may fail and the other's results still come back. Without a Lidarr source, MusicBrainz finds the artists and albums instead (`searchMusicBrainz`): artists by name or alias, kept when the query names them; then, for an artist whose whole name is in the query ("radiohead", "teardrop massive attack"), their official albums and EPs, newest first, and for any other query albums and EPs with an official release whose title or artist matches (`MusicBrainz.searchAlbums`). Both go through the same `rankAlbums` as Lidarr's hits. That's two MusicBrainz requests, about a second apart.
 
 **Songs.** When the query names an artist plus a title ("teardrop massive attack"), Deezer's free-text ranking favours remixes that contain every word. So when a result's artist name is part of the query, that artist's top 50 tracks are also fetched, and those whose titles match the rest of the query go first. `rankTracks` then scores every song:
 
@@ -53,7 +53,7 @@ Links follow what is known (`apps/web/src/lib/links.ts`):
 
 `GET /api/discover/artists/:mbid` (`Discover.artist`) asks Lidarr's artist lookup and MusicBrainz's release-group browse (`type=album|ep`, up to 100) together. It keeps release groups whose primary type is Album or EP and drops those with a secondary type of Live, Compilation, Remix, DJ-mix, Mixtape/Street, Demo, Interview, Spokenword, Audiobook, Audio drama or Field recording, so soundtracks stay. Newest first, each with its availability. If MusicBrainz fails the page still shows Lidarr's artist, with `discographyError`.
 
-**Missing albums.** A library artist's page shows, below its own albums, the albums and EPs from that discography that aren't in the library at all, each with Request (`NotInLibrary` in `apps/web/src/pages/Artist.tsx`). Albums partly in the library stay in the sections above, with their own Request for the rest.
+**Missing albums.** A library artist's page shows, below its own albums, the albums and EPs from that discography that aren't in the library at all, each with Request (`NotInLibrary` in `apps/web/src/pages/Artist.tsx`). The browse asks for each group's artist credits (`inc=artist-credits`) and only for groups with an official release (`release-group-status=website-default`, as MusicBrainz's own pages list them), so bootlegs stay out; without Lidarr, the page's name is the credit carrying the artist's own id. Albums partly in the library stay in the sections above, with their own Request for the rest.
 
 **Similar artists.** `GET /api/discover/artists/:mbid/similar` returns up to 24 artists from ListenBrainz's labs `similar-artists`, cached 6 h. Library artists carry their Playarr id and photo; the others get a Deezer photo for that exact name, where Deezer has a real one.
 
