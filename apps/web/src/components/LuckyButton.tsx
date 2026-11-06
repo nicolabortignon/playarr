@@ -1,7 +1,7 @@
-import type { Album, Track } from '@playarr/shared';
+import type { Account, Album, LuckyMix, Track } from '@playarr/shared';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
-import { sized } from '../lib/api';
+import { api, sized } from '../lib/api';
 import { cn } from '../lib/cn';
 import { reduceMotionNow } from '../lib/motion';
 import { queryClient } from '../lib/queryClient';
@@ -12,8 +12,9 @@ import { Button } from './Button';
 /**
  * Feeling lucky: 15 songs put together now, a new set at every press. While they're picked the sparkles twinkle, and
  * covers come out from behind the button, fanning open clockwise like a hand of cards, the first song's dealt last and
- * on top; then the others gather under it and the stack slips back behind the button (plan 7 §5). On Home, as the
- * action that fills an empty queue, Made for you or Your listening, and in the player bar while nothing plays.
+ * on top; then the others gather under it and the stack slips back behind the button (plan 7 §5). The songs are asked
+ * for as a press looks likely, so that card goes out in the same rhythm as the rest. On Home, as the action that fills
+ * an empty queue, Made for you or Your listening, and in the player bar while nothing plays.
  */
 export function LuckyButton({
   variant = 'primary',
@@ -32,20 +33,28 @@ export function LuckyButton({
   const press = async () => {
     // Still under Reduce Motion: the sparkles say it's picking, and the music starting says what it found.
     const still = reduceMotionNow();
-    const atHand = still ? [] : coversAtHand();
+    const { answer, hand } = takeNext();
+    // A place in the fan for each cover at hand, and one for the first song's, dealt once it's known.
+    const cards = still ? [] : hand.slice(0, IN_HAND);
+    const atHand: Deal | null = cards.length ? { cards, spares: hand.slice(IN_HAND), slots: cards.length + 1 } : null;
     setPicking(true);
     setPresses((n) => n + 1);
-    // A place in the fan for each cover at hand, and one for the first song's, dealt once it's known.
-    const cards = atHand.slice(0, IN_HAND);
-    setDeal(cards.length ? { cards, spares: atHand.slice(IN_HAND), slots: cards.length + 1 } : null);
+    setDeal(null);
+    // The fan waits a moment for the songs, so every card goes out in one rhythm; past that the covers at hand go out,
+    // and the first song's follows once it's known.
+    const wait = atHand ? setTimeout(() => setDeal(atHand), WAIT_MS) : undefined;
     try {
-      const covers = fanCovers(await feelingLucky());
+      const covers = fanCovers(await feelingLucky(answer));
       const landing = covers.at(-1);
+      // Its picture first, so it doesn't come out blank.
+      if (landing && !still) await pictureOf(landing, PICTURE_WAIT_MS);
+      clearTimeout(wait);
       // It found nothing (and has said so): the cards out go back.
       if (!landing) return setDeal(allDealt);
       // Without covers at hand (nothing loaded yet), a few of the songs it found are dealt instead.
-      setDeal((d) => (d ? withLanding(d, landing) : still ? null : { cards: covers.slice(0, -1), spares: [], slots: covers.length, landing }));
+      setDeal((d) => (still ? null : withLanding(d ?? atHand ?? { cards: covers.slice(0, -1), spares: [], slots: covers.length }, landing)));
     } catch (err) {
+      clearTimeout(wait);
       setDeal(allDealt);
       toast((err as Error).message, 'error');
     } finally {
@@ -61,6 +70,8 @@ export function LuckyButton({
         size={size}
         icon={<Twinkle on={picking} small={size !== 'large'} />}
         onClick={() => void press()}
+        onPointerEnter={() => void getNext()}
+        onFocus={() => void getNext()}
         disabled={picking}
         aria-busy={picking}
         // While the songs are picked the sparkles say so; the button stays lit rather than dimming.
@@ -113,6 +124,60 @@ const AT_HAND = 8;
 const IN_HAND = 4;
 
 /**
+ * The next press, made ready once one looks likely (the pointer comes over the button, a finger touches it, or it takes
+ * the focus): its songs asked for and the covers it will deal loading, so the fan can deal the first song's in the same
+ * rhythm as the others, and the music starts at once. Kept two minutes, for the account it was asked for; a press
+ * takes it, and the one after asks afresh.
+ */
+interface Next {
+  at: number;
+  account?: number;
+  answer: Promise<LuckyMix>;
+  hand: FanCover[];
+}
+let next: Next | null = null;
+const NEXT_KEPT_MS = 2 * 60_000;
+
+function getNext(): Next {
+  const account = queryClient.getQueryData<Account>(['me'])?.id;
+  if (next && next.account === account && Date.now() - next.at < NEXT_KEPT_MS) return next;
+  const ready: Next = { at: Date.now(), account, answer: api.lucky(), hand: reduceMotionNow() ? [] : coversAtHand() };
+  next = ready;
+  // The spare too, in case it stands in for a card showing the first song's album.
+  for (const c of ready.hand.slice(0, IN_HAND + 1)) void pictureOf(c);
+  ready.answer.then(
+    ({ tracks }) => fanCovers(tracks).forEach((c) => void pictureOf(c)),
+    // Failed: the press asks again.
+    () => {
+      if (next === ready) next = null;
+    },
+  );
+  return ready;
+}
+
+function takeNext(): Next {
+  const taken = getNext();
+  next = null;
+  return taken;
+}
+
+/** The size the fan asks its covers at (they're 60 points, or 44). */
+const FAN_ART = 96;
+
+/** Load a cover's picture as the fan shows it; resolves once it's there (or failed), or after `ms`. */
+function pictureOf(c: FanCover, ms = Infinity): Promise<void> {
+  const url = sized(c.url, FAN_ART);
+  return new Promise((resolve) => {
+    if (!url) return resolve();
+    const img = new Image();
+    img.onload = img.onerror = () => resolve();
+    img.src = url;
+    if (img.complete) resolve();
+    if (ms < Infinity) setTimeout(resolve, ms);
+  });
+}
+
+/**
  * Covers at hand to deal while it picks: albums already loaded (Home's shelves, Albums, Jump back in, kept from the
  * last visit), shuffled; none when nothing is loaded yet.
  */
@@ -145,9 +210,12 @@ export function fanCovers(tracks: Track[]): FanCover[] {
 }
 
 /**
- * The fan's timing: between one card and the next as it opens, a card's spring into its place, the fan held open once
- * the last card is out, and its going back (the others gathering under the last card, then the stack slipping down).
+ * The fan's timing: how long it waits for the songs before dealing the covers at hand, and for the first song's
+ * picture; between one card and the next as it opens, a card's spring into its place, the fan held open once the last
+ * card is out, and its going back (the others gathering under the last card, then the stack slipping down).
  */
+const WAIT_MS = 300;
+const PICTURE_WAIT_MS = 300;
 const DEAL_MS = 70;
 const OPEN_MS = 450;
 const HOLD_MS = 300;
@@ -219,7 +287,7 @@ function CoverFan({ cards, slots, landing, done, small, onDone }: Deal & { small
             zIndex: i,
             transformOrigin: '50% 160%',
             backgroundColor: c.color,
-            backgroundImage: c.url ? `url(${sized(c.url, 96)})` : undefined,
+            backgroundImage: c.url ? `url(${sized(c.url, FAN_ART)})` : undefined,
           }}
           className="absolute rounded-cover bg-ink-700 bg-cover bg-center shadow-cover"
         />

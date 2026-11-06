@@ -1,4 +1,4 @@
-import type { Track } from '@playarr/shared';
+import type { LuckyMix, Track } from '@playarr/shared';
 import { api } from '../lib/api';
 import { queryClient } from '../lib/queryClient';
 import { toast, toastWithUndo } from '../lib/toast';
@@ -37,8 +37,8 @@ export async function playArtist(id: number, opts?: { shuffle?: boolean }) {
  * Feeling lucky: 15 songs put together on the server, starting from one that suits the hour; new at every press. The
  * songs it found, playing from the first (none when the library is empty).
  */
-export async function feelingLucky(): Promise<Track[]> {
-  const { tracks, subtitle } = await api.lucky();
+export async function feelingLucky(mix: Promise<LuckyMix> = api.lucky()): Promise<Track[]> {
+  const { tracks, subtitle } = await mix;
   if (!tracks.length) {
     toast('Nothing to play yet: add some music to the library first.');
     return [];

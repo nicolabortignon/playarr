@@ -14,18 +14,30 @@ const FOUND = [song(1, 1), song(2, 2), song(3, 2), song(4, 3), song(5, 4), song(
 /** Albums on Home's shelves, loaded before the press. */
 const SHELF = [20, 21, 22, 23].map((id) => ({ id, title: `Album ${id}`, coverUrl: `/art/album/${id}/cover`, coverColor: '#405060' }) as Album);
 
-/** Feeling lucky's answer, held back until `answer()`: while it picks. */
-function picking() {
+/** Feeling lucky's answer (its songs, unless said), held back until `answer()`: while it picks. */
+function picking(mix: LuckyMix = { tracks: FOUND, subtitle: 'Evening: warm' }) {
   let answer!: () => void;
-  vi.spyOn(api, 'lucky').mockReturnValue(new Promise<LuckyMix>((resolve) => (answer = () => resolve({ tracks: FOUND, subtitle: 'Evening: warm' }))));
+  vi.spyOn(api, 'lucky').mockReturnValue(new Promise<LuckyMix>((resolve) => (answer = () => resolve(mix))));
   return () => act(() => answer());
 }
 const fan = () => document.querySelector<HTMLElement>('[data-fan]');
 /** The covers in the fan, in the order dealt. */
 const dealt = () => [...document.querySelectorAll<HTMLElement>('[data-fan] [data-cover]')].map((c) => c.dataset.cover);
-const press = () => fireEvent.click(screen.getByRole('button', { name: 'Feeling lucky' }));
+const button = () => screen.getByRole('button', { name: 'Feeling lucky' });
+const press = () => fireEvent.click(button());
+
+/** Pictures load at once (happy-dom loads none). */
+class LoadingImage {
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  complete = false;
+  set src(_: string) {
+    queueMicrotask(() => this.onload?.());
+  }
+}
 
 beforeEach(() => {
+  vi.stubGlobal('Image', LoadingImage);
   usePrefs.setState({ motion: 'full' });
   usePlayer.setState({ queue: [], order: [], pos: -1, playing: false });
   queryClient.clear();
@@ -33,6 +45,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   queryClient.clear();
 });
 
@@ -53,21 +66,51 @@ describe('the covers Feeling lucky deals', () => {
 });
 
 describe('Feeling lucky', () => {
-  it('fans out covers at hand while it picks, deals the first song’s last as the music starts, then puts them all back', async () => {
+  it('asks for the songs as the pointer comes over it, so the first song’s cover goes out in one rhythm with the others', async () => {
+    queryClient.setQueryData(['albums', 'added', 14], SHELF);
+    const lucky = vi.spyOn(api, 'lucky').mockResolvedValue({ tracks: FOUND, subtitle: 'Evening: warm' });
+    render(<LuckyButton />);
+    fireEvent.pointerEnter(button());
+    fireEvent.pointerEnter(button());
+    expect(lucky).toHaveBeenCalledTimes(1);
+    await act(async () => {});
+    press();
+    await waitFor(() => expect(fan()).not.toBeNull());
+    // All five from the start: the covers at hand, then the first song's, last and on top.
+    expect(dealt()).toHaveLength(5);
+    expect(dealt().slice(0, 4).sort()).toEqual(SHELF.map((a) => a.coverUrl).sort());
+    expect(dealt().at(-1)).toBe('/art/album/1/cover');
+    expect(usePlayer.getState().queue.map((t) => t.id)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(lucky).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(fan()?.dataset.fan).toBe('back'), { timeout: 3000 });
+    await waitFor(() => expect(fan()).toBeNull(), { timeout: 3000 });
+  });
+
+  it('asks afresh at the next press', async () => {
+    const lucky = vi.spyOn(api, 'lucky').mockResolvedValue({ tracks: FOUND, subtitle: 'Evening: warm' });
+    render(<LuckyButton />);
+    fireEvent.pointerEnter(button());
+    press();
+    await waitFor(() => expect(usePlayer.getState().queue).toHaveLength(6));
+    await waitFor(() => expect(button().hasAttribute('disabled')).toBe(false));
+    press();
+    await waitFor(() => expect(lucky).toHaveBeenCalledTimes(2));
+  });
+
+  it('while the songs take a while, deals the covers at hand after a moment, then the first song’s once it’s known', async () => {
     queryClient.setQueryData(['albums', 'added', 14], SHELF);
     const answer = picking();
     render(<LuckyButton />);
     press();
-    expect(fan()?.dataset.fan).toBe('open');
+    expect(fan()).toBeNull();
+    await waitFor(() => expect(fan()?.dataset.fan).toBe('open'));
     expect(dealt().sort()).toEqual(SHELF.map((a) => a.coverUrl).sort());
     // The fan is behind the button, which keeps its name.
-    expect(screen.getByRole('button', { name: 'Feeling lucky' })).toBeTruthy();
+    expect(button()).toBeTruthy();
     await answer();
     expect(usePlayer.getState().queue.map((t) => t.id)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(dealt()).toHaveLength(5);
+    await waitFor(() => expect(dealt()).toHaveLength(5));
     expect(dealt().at(-1)).toBe('/art/album/1/cover');
-    await waitFor(() => expect(fan()?.dataset.fan).toBe('back'), { timeout: 3000 });
-    await waitFor(() => expect(fan()).toBeNull(), { timeout: 3000 });
   });
 
   it('swaps a card showing the first song’s album for another at hand, so no album is dealt twice', async () => {
@@ -77,29 +120,36 @@ describe('Feeling lucky', () => {
     const answer = picking();
     render(<LuckyButton />);
     press();
-    expect(dealt()).toEqual([1, 21, 22, 23].map((id) => `/art/album/${id}/cover`));
+    await waitFor(() => expect(dealt()).toEqual([1, 21, 22, 23].map((id) => `/art/album/${id}/cover`)));
     await answer();
-    expect(dealt()).toEqual([20, 21, 22, 23, 1].map((id) => `/art/album/${id}/cover`));
+    await waitFor(() => expect(dealt()).toEqual([20, 21, 22, 23, 1].map((id) => `/art/album/${id}/cover`)));
   });
 
   it('deals songs it found when nothing is loaded to deal while it picks', async () => {
     const answer = picking();
     render(<LuckyButton />);
     press();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
     expect(fan()).toBeNull();
     await answer();
-    expect(dealt()).toEqual(['/art/album/2/cover', '/art/album/3/cover', '/art/album/4/cover', '/art/album/1/cover']);
+    await waitFor(() => expect(dealt()).toEqual(['/art/album/2/cover', '/art/album/3/cover', '/art/album/4/cover', '/art/album/1/cover']));
     await waitFor(() => expect(fan()).toBeNull(), { timeout: 3000 });
   });
 
-  it('puts the cards out back when it finds nothing', async () => {
+  it('puts the cards out back when it finds nothing, and deals none when it says so at once', async () => {
     queryClient.setQueryData(['albums', 'added', 14], SHELF);
-    vi.spyOn(api, 'lucky').mockResolvedValue({ tracks: [], subtitle: '' });
+    const answer = picking({ tracks: [], subtitle: '' });
     render(<LuckyButton />);
     press();
+    await waitFor(() => expect(dealt()).toHaveLength(4));
+    await answer();
     await waitFor(() => expect(fan()?.dataset.fan).toBe('back'), { timeout: 3000 });
-    expect(dealt()).toHaveLength(4);
     await waitFor(() => expect(fan()).toBeNull(), { timeout: 3000 });
+
+    vi.spyOn(api, 'lucky').mockResolvedValue({ tracks: [], subtitle: '' });
+    press();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+    expect(fan()).toBeNull();
   });
 
   it('keeps still under Reduce Motion: the sparkles say it’s picking, and the music starting says what it found', async () => {
@@ -108,6 +158,7 @@ describe('Feeling lucky', () => {
     const answer = picking();
     render(<LuckyButton />);
     press();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
     expect(fan()).toBeNull();
     await answer();
     await waitFor(() => expect(usePlayer.getState().queue).toHaveLength(6));
