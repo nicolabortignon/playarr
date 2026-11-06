@@ -5,7 +5,8 @@ const cache = new Map<string, string | null>();
 
 /**
  * Pick a vivid, legible accent color from an image (same-origin, so canvas is readable).
- * Buckets pixels by hue, weights by saturation, then clamps lightness for dark UI.
+ * Buckets pixels by hue, weights by saturation, then clamps lightness for dark UI, raising it where the color is too
+ * dark to read (`legibleLightness`).
  */
 export async function extractAccent(url: string): Promise<string | null> {
   if (cache.has(url)) return cache.get(url)!;
@@ -44,10 +45,10 @@ export async function extractAccent(url: string): Promise<string | null> {
     cache.set(url, null);
     return null;
   }
-  const h = best.h / best.w;
-  const s = Math.min(0.9, Math.max(0.45, best.s / best.w));
-  const l = Math.min(0.68, Math.max(0.56, best.l / best.w));
-  const color = `hsl(${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+  const h = Math.round((best.h / best.w) * 360);
+  const s = Math.round(Math.min(0.9, Math.max(0.45, best.s / best.w)) * 100);
+  const l = legibleLightness(h, s, Math.round(Math.min(0.68, Math.max(0.56, best.l / best.w)) * 100));
+  const color = `hsl(${h} ${s}% ${l}%)`;
   cache.set(url, color);
   return color;
 }
@@ -69,12 +70,34 @@ export function knownAccentHue(url: string): number | null | undefined {
 function hslHue(color: string): number | null {
   const m = color.match(/^hsl\((\d+) (\d+)% (\d+)%\)$/);
   if (!m) return null;
-  const s = Number(m[2]) / 100;
-  const l = Number(m[3]) / 100;
-  const k = (n: number) => (n + Number(m[1]) / 30) % 12;
+  return oklchHue(...hslToRgb(Number(m[1]), Number(m[2]), Number(m[3])));
+}
+
+/**
+ * The accent's ink is near black, and the accent is also text on the near-black page: below a relative luminance of
+ * 0.2 (blues, purples, deep reds) one of the two falls under 4.5:1, so the lightness (percent) goes up a percent at a
+ * time until it's there. As iOS's `AccentColor.legible`.
+ */
+export function legibleLightness(hue: number, saturation: number, lightness: number): number {
+  let l = lightness;
+  while (luminance(hslToRgb(hue, saturation, l)) < 0.2 && l < 95) l++;
+  return l;
+}
+
+/** sRGB channels (0–1) of a hue in degrees, saturation and lightness in percent. */
+function hslToRgb(hue: number, saturation: number, lightness: number): [number, number, number] {
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const k = (n: number) => (n + hue / 30) % 12;
   const a = s * Math.min(l, 1 - l);
   const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
-  return oklchHue(f(0), f(8), f(4));
+  return [f(0), f(8), f(4)];
+}
+
+/** Relative luminance (WCAG) of sRGB channels 0–1: 0 for black, 1 for white. */
+export function luminance([r, g, b]: [number, number, number]): number {
+  const linear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
 }
 
 /** The OKLCH hue (degrees) of an sRGB colour, channels 0–1. */

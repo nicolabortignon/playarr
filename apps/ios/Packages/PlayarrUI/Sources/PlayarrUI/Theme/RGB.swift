@@ -18,4 +18,10 @@ public struct RGB: Hashable, Sendable {
   }
 
   public var color: Color { Color(.sRGB, red: r, green: g, blue: b) }
+
+  /// Relative luminance (WCAG): 0 for black, 1 for white.
+  public var luminance: Double {
+    func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+  }
 }

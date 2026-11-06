@@ -17,7 +17,14 @@ import UniformTypeIdentifiers
   @Test func clampsAVividColourForADarkScreen() {
     // Pure red: hue 0, saturation 1 → clamped to 90 %, lightness 0.5 → 56 %.
     #expect(AccentColor.extract(rgba: pixels((255, 0, 0))) == .init(h: 0, s: 90, l: 56))
-    #expect(AccentColor.extract(rgba: pixels((0, 0, 255))) == .init(h: 240, s: 90, l: 56))
+  }
+
+  @Test func liftsAColourTooDarkToRead() {
+    // Pure blue at 56 % is a luminance of 0.09: black on it, and it on black, read at under 3:1. At 70 % both clear 4.5:1.
+    let blue = AccentColor.extract(rgba: pixels((0, 0, 255)))
+    #expect(blue == .init(h: 240, s: 90, l: 70))
+    #expect((blue?.rgb.luminance ?? 0) >= 0.2)
+    #expect(AccentColor.HSL(h: 240, s: 90, l: 69).rgb.luminance < 0.2)
   }
 
   @Test func ignoresNearBlackAndNearWhite() {

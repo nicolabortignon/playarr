@@ -4,7 +4,8 @@ import ImageIO
 
 /// The accent colour taken from album art, as apps/web/src/lib/color.ts does it: the cover drawn at 32×32, its
 /// pixels sorted into 12 hue bins weighted by saturation and mid-lightness (near-black and near-white dropped),
-/// the heaviest bin's average hue, with saturation clamped to 45–90 % and lightness to 56–68 %.
+/// the heaviest bin's average hue, with saturation clamped to 45–90 % and lightness to 56–68 %, then raised where the
+/// colour is too dark to read (`legible`).
 public enum AccentColor {
   /// A colour as hue (degrees), saturation and lightness (percent), rounded as the web's `hsl()` string.
   public struct HSL: Hashable, Sendable {
@@ -59,7 +60,16 @@ public enum AccentColor {
     let h = best.h / best.w
     let s = min(0.9, max(0.45, best.s / best.w))
     let l = min(0.68, max(0.56, best.l / best.w))
-    return HSL(h: Int((h * 360).rounded()), s: Int((s * 100).rounded()), l: Int((l * 100).rounded()))
+    return legible(HSL(h: Int((h * 360).rounded()), s: Int((s * 100).rounded()), l: Int((l * 100).rounded())))
+  }
+
+  /// The accent's ink is near black, and the accent is also text on the near-black app: below a relative luminance of
+  /// 0.2 (blues, purples, deep reds) one of the two falls under 4.5:1, so the lightness goes up a percent at a time
+  /// until it's there. As the web's `legibleLightness`.
+  static func legible(_ color: HSL) -> HSL {
+    var color = color
+    while color.rgb.luminance < 0.2, color.l < 95 { color.l += 1 }
+    return color
   }
 
   /// The accent of an image (JPEG, PNG or WebP bytes), drawn at 32×32 as the web draws it on a canvas.

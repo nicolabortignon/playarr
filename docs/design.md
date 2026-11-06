@@ -15,7 +15,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 | Secondary text | `text-paper-dim` (#b8b0a3) | `.paperDim` (white 70 %, 85 % with Increase Contrast) | the artist under a title, descriptions |
 | Muted | `text-muted` (#857d71) | `.muted` (white 50 %, 65 % with Increase Contrast) | kickers, times, counts, hints |
 | Line | `border-line` (paper at 8 %) | `.line` (white at 8 %) | hairlines, panel borders, unselected choices |
-| Accent | `accent`, with `accent-ink` on it (from the cover playing) | `theme.accent` | the one primary action on a screen, the playing song, links |
+| Accent | `accent`, with `accent-ink` on it (from the cover playing, lifted to a relative luminance of at least 0.2 so ink on it and it on the page read at 4.5:1) | `theme.accent` (the same) | the one primary action on a screen, the playing song, links |
 | Danger | `danger` (#f87171), with `ink-950` on it | `.danger` (system red) | errors, Delete |
 | Success | `success` (#34d399) | `.success` (system green) | downloaded, saved, connected |
 | Warning | `warning` (#fcd34d) | `.warning` (system yellow) | worth a look before going on |
