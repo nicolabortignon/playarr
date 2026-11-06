@@ -78,7 +78,7 @@ It reads every exported type from `packages/shared/src/index.ts` and `packages/m
 
 - **iPhone, and narrow iPad windows** (`TabShell`): tabs Home, Search, Library and Queue, each a stack of pages, with the mini player (`MiniPlayer`) above the tab bar.
 - **iPad** (`SplitShell`): the desktop web's sidebar (`Sidebar`), the page, a side column for the queue or lyrics (`SideColumnView`), and the player bar (`PlayerBar`) along the bottom. Keyboard shortcuts with a hardware keyboard (`PlayarrCommands`), and drag and drop of songs (`TrackDrag`).
-- **iPhone Duo**: on the cover screen the system's tabs and bar buttons stand in a column on the right, and pages run under it (`UnderTheRail`). Opened, Now Playing lays out along the fold (`Fold`).
+- **iPhone Duo**: on the cover screen the system's tabs and bar buttons stand in a column on the right; pages' backgrounds run under it and their content keeps clear of it (`UnderTheRail`). Opened, Now Playing lays out along the fold (`Fold`).
 - **Now Playing** (`NowPlayingView`) covers everything, swiped down to close: lyrics, the sleep timer, the transition sheet, up next. On the iPhone it also turns sideways.
 
 Every page is a `Route`, registered once in `shellDestinations(_:)` so tabs and the iPad's detail column both show it. Where the app is (`RouterSnapshot`) is kept in the scene's storage, so a window iOS closed in the background comes back where it was. All of this is in [layouts.md](layouts.md).
@@ -87,7 +87,7 @@ Every page is a `Route`, registered once in `shellDestinations(_:)` so tabs and 
 
 `PlayarrUI/Sources/PlayarrUI/Demo/` is a server in memory, for UI tests, screenshots and view-model tests. It isn't something a user can open: the only way in is a launch argument (`PlayarrApp.makeModel()`).
 
-- `-UITestsDemo` makes `AppModel.demo()`: signed in as "Demo" to a demo server answered by `DemoAPI` from the `Demo` library (Massive Attack and Portishead, three albums, lyrics, a mix, a playlist and a favorite). Nothing is kept: a temporary folder and a `UserDefaults` suite of its own.
+- `-UITestsDemo` makes `AppModel.demo()`: signed in as "Demo" to a demo server answered by `DemoAPI` from the `Demo` library (Massive Attack, and Portishead without a photo of their own; three albums, lyrics, a mix, a playlist and a favorite). Nothing is kept: a temporary folder and a `UserDefaults` suite of its own.
 - `DemoState` remembers changes between calls, so tests can heart a song and make, fill, reorder and delete a playlist.
 - `DemoPlayerBackend` and `SilentSource` let the real player run on silence: time moves and songs end with no server and no sound. The demo has no analysis, so DJ mix cuts or plays gapless.
 - `DemoArt` draws each cover and artist photo from its address. `make screens` alone puts the albums' real covers in instead, from `PLAYARR_DEMO_COVERS` (see [release.md](release.md)).
@@ -127,7 +127,7 @@ Notes:
 
 - **Sandboxed shells** (Claude's): SwiftPM and the compiler can't start their own sandboxes inside another, so `swift test` needs `--disable-sandbox` and `xcodebuild` needs `-IDEPackageSupportDisableManifestSandbox=YES` and `-Xfrontend -disable-sandbox`. The Makefile and `release.mjs` already pass them. Swift and Xcode commands also need the shell's own sandbox off.
 - **Which simulator.** `SIMULATOR` picks one by name (default "iPhone 17 Pro"); without one by that name, the first available iPhone. This Mac has two "iPhone 17 Pro"s and the Makefile takes the first listed, on iOS 26.3; to use the iOS 26.5 one, pass its id: `make -C apps/ios test SIMULATOR_ID=<id>` (from `xcrun simctl list devices available`).
-- **UI tests run on a simulator of their own**: parallel runs on a shared one break each other. `make screens` makes "Playarr Screens iphone", "ipad" and "duo"; the iPhone Duo needs its own iOS 27 runtime.
+- **UI tests run on a simulator of their own**: parallel runs on a shared one break each other. `make screens` makes "Playarr Screens iphone", "ipad" and "duo" (and "se" when asked for); the iPhone Duo needs its own iOS 27 runtime.
 - **Drags.** XCUITest drags don't reach SwiftUI's list reordering on the simulator, so the playlist UI test only checks the reorder handles; `PlaylistModelTests` covers the move.
 - **Against a dev server.** `AccountsUITests` signs in to a real server when given `TEST_RUNNER_PLAYARR_UITEST_SERVER`, `_ADMIN` and `_PASSWORD`, and is skipped without them (as in CI).
 - **CI** runs `make test` on every push and pull request that changes `apps/ios`; see [release.md](release.md).

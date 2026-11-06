@@ -53,7 +53,7 @@ private struct RequestsList: View {
         ForEach(0..<3, id: \.self) { _ in Skeleton(aspectRatio: nil, height: 64) }
       }
     }
-    .navigationTitle(requests.requests.map { "Requests (\($0.count))" } ?? "Requests")
+    .pageHeader("Requests", count: requests.requests.map { Format.plural($0.count, "request") })
     .refreshable { await requests.refresh() }
     .task { if requests.requests == nil { await requests.refresh() } }
   }

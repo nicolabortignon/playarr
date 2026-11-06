@@ -64,10 +64,10 @@ final class HomeModel {
     await session.refreshListening()
   }
 
-  /// "8 tracks across 3 albums, 44 min of music waiting in your library."
+  /// "8 songs across 3 albums, 44 min of music waiting in your library."
   var libraryLine: String? {
     guard let library = health.value?.library else { return nil }
-    return "\(library.tracks) tracks across \(library.albums) albums, \(Format.duration(library.durationSeconds)) of music waiting in your library."
+    return "\(library.tracks) songs across \(library.albums) albums, \(Format.duration(library.durationSeconds)) of music waiting in your library."
   }
 
   /// Year in review: the year that's ending (December) or just ended (January), if anything was played in it.

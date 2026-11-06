@@ -50,11 +50,25 @@ final class ScreenTour: XCTestCase {
     app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
   }
 
+  /// A tab: in the tab bar, or on the iPhone Duo's cover screen in the column down the right, which isn't one.
+  @MainActor
+  private func tab(_ name: String) -> XCUIElement {
+    let inBar = app.tabBars.buttons[name]
+    return inBar.exists ? inBar : app.buttons[name].firstMatch
+  }
+
+  /// Back to the page before, with the bar's back button (in the Duo's column, outside any navigation bar).
+  @MainActor
+  private func back() {
+    let inBar = app.navigationBars.buttons.firstMatch
+    (inBar.exists ? inBar : app.buttons["BackButton"].firstMatch).tap()
+  }
+
   @MainActor
   func testTheMainScreens() throws {
     try XCTSkipIf(onIPad, "The iPad has its own tour")
     launch(["-UITests", "-UITestsDemo"])
-    _ = app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
+    _ = app.staticTexts["8 songs across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
     shot("01-home")
     app.swipeUp()
     shot("02-home-scrolled")
@@ -75,7 +89,7 @@ final class ScreenTour: XCTestCase {
     }
 
     // Home's listening button: playing, the cover alone with a pause sign; tapped, paused, Resume and the title.
-    if tap(app.tabBars.buttons["Home"]) {
+    if tap(tab("Home")) {
       app.swipeDown()
       shot("05b-home-playing")
       if tap(button(beginningWith: "Pause"), timeout: 2) {
@@ -93,59 +107,75 @@ final class ScreenTour: XCTestCase {
       tap(app.buttons["Close now playing"])
     }
 
-    if tap(app.tabBars.buttons["Queue"]) { shot("08-queue") }
+    if tap(tab("Queue")) { shot("08-queue") }
 
-    if tap(app.tabBars.buttons["Library"]) {
+    if tap(tab("Library")) {
       shot("09-library")
       if tap(button(beginningWith: "Albums")) {
         shot("10-albums")
-        app.navigationBars.buttons.firstMatch.tap()
+        back()
       }
       if tap(button(beginningWith: "Artists")) {
         shot("11-artists")
-        if tap(button(beginningWith: "Massive Attack")) { shot("12-artist") }
+        if tap(button(beginningWith: "Massive Attack")) {
+          shot("12-artist")
+          back()
+        }
+        // An artist without a photo of their own: the compact header, their album's cover in a circle.
+        if tap(button(beginningWith: "Portishead"), timeout: 2) { shot("12b-artist-without-photo") }
       }
     }
-    if tap(app.tabBars.buttons["Library"]) { tap(app.tabBars.buttons["Library"], timeout: 1) }
+    if tap(tab("Library")) { tap(tab("Library"), timeout: 1) }
     if tap(button(beginningWith: "Favorites"), timeout: 2) {
       shot("17-favorites")
-      app.navigationBars.buttons.firstMatch.tap()
+      back()
     }
     if tap(button(beginningWith: "Your listening"), timeout: 2) {
       shot("20-stats", after: 2)
-      app.navigationBars.buttons.firstMatch.tap()
+      back()
     }
     if tap(button(beginningWith: "Made for you"), timeout: 2) {
-      if tap(button(beginningWith: "Your vibes"), timeout: 3) { shot("18-mix") }
-      tap(app.tabBars.buttons["Library"], timeout: 1)
-      tap(app.tabBars.buttons["Library"], timeout: 1)
+      if tap(button(beginningWith: "Your vibes"), timeout: 3) {
+        shot("18-mix")
+        // Scrolled: the mix's name in the bar, now that its own title has gone under it.
+        app.swipeUp()
+        shot("18b-mix-scrolled")
+      }
+      tap(tab("Library"), timeout: 1)
+      tap(tab("Library"), timeout: 1)
     }
     app.swipeUp()
     if tap(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "songs")).firstMatch, timeout: 2) {
       shot("19-playlist")
-      tap(app.tabBars.buttons["Library"], timeout: 1)
-      tap(app.tabBars.buttons["Library"], timeout: 1)
+      // The cover picker, with what the cover is drawn from under the candidates.
+      if tap(app.buttons["New cover"].firstMatch, timeout: 2) {
+        app.swipeUp()
+        shot("19b-cover-picker", after: 2)
+        tap(app.buttons["Cancel"], timeout: 2)
+      }
+      tap(tab("Library"), timeout: 1)
+      tap(tab("Library"), timeout: 1)
     }
     if tap(button(beginningWith: "Downloads"), timeout: 2) {
       shot("16-downloads")
-      app.navigationBars.buttons.firstMatch.tap()
+      back()
     }
 
-    if tap(app.tabBars.buttons["Library"]) {
+    if tap(tab("Library")) {
       // Back to Library's root (the tab remembers the artist page).
-      tap(app.tabBars.buttons["Library"], timeout: 1)
+      tap(tab("Library"), timeout: 1)
     }
     if tap(app.buttons["Account and settings"].firstMatch), tap(app.buttons["Settings"]) {
       shot("14-settings")
       if tap(app.buttons["Playback"]) {
         shot("14b-playback")
-        app.navigationBars.buttons.firstMatch.tap()
+        back()
       }
       if tap(app.buttons["Appearance"]) { shot("15-appearance") }
     }
 
     // Last: the search field takes the tab bar's place while it's active.
-    if tap(app.tabBars.buttons["Search"]) {
+    if tap(tab("Search")) {
       let field = app.searchFields.firstMatch
       if field.waitForExistence(timeout: 5) {
         field.tap()
@@ -164,17 +194,17 @@ final class ScreenTour: XCTestCase {
     try FileManager.default.createDirectory(at: folder!, withIntermediateDirectories: true)
     defer { XCUIDevice.shared.orientation = .portrait }
     launch(["-UITests", "-UITestsDemo"])
-    _ = app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
+    _ = app.staticTexts["8 songs across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
     // The playlist first, opened upright where Library shows it, then turned.
-    if tap(app.tabBars.buttons["Library"]), tap(button(beginningWith: "Late night"), timeout: 3) {
+    if tap(tab("Library")), tap(button(beginningWith: "Late night"), timeout: 3) {
       XCUIDevice.shared.orientation = .landscapeLeft
       shot("06-playlist", after: 2)
       XCUIDevice.shared.orientation = .portrait
-      tap(app.tabBars.buttons["Library"], timeout: 1)
+      tap(tab("Library"), timeout: 1)
     }
     XCUIDevice.shared.orientation = .landscapeLeft
     shot("05-library", after: 2)
-    if tap(app.tabBars.buttons["Home"]) { shot("01-home") }
+    if tap(tab("Home")) { shot("01-home") }
     if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch) {
       shot("02-album")
       if tap(app.buttons["Play Mezzanine"]), tap(app.buttons["Massive Attack"].firstMatch, timeout: 2) { shot("03-artist") }
@@ -184,7 +214,7 @@ final class ScreenTour: XCTestCase {
       if tap(app.buttons["Lyrics"]) { shot("04b-lyrics") }
       tap(app.buttons["Close now playing"], timeout: 2)
     }
-    if tap(app.tabBars.buttons["Search"]) { shot("07-search") }
+    if tap(tab("Search")) { shot("07-search") }
   }
 
   /// The iPad, sideways as it's mostly held: Home, an album, the artist, the albums, Now Playing, the queue and lyrics
@@ -196,7 +226,7 @@ final class ScreenTour: XCTestCase {
     defer { XCUIDevice.shared.orientation = .portrait }
     // Enough playlists that the sidebar scrolls, to see its links fold to the one you're on.
     launch(["-UITests", "-UITestsDemo", "-UITestsManyPlaylists"])
-    _ = app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
+    _ = app.staticTexts["8 songs across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
     shot("01-home")
     let sidebar = { (item: String) in self.app.descendants(matching: .any)["sidebar.\(item)"].firstMatch }
     if sidebar("favorites").waitForExistence(timeout: 3) {
@@ -248,7 +278,7 @@ final class ScreenTour: XCTestCase {
     defer { XCUIDevice.shared.orientation = .portrait }
     launch(["-UITests", "-UITestsRequests"])
     if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10) { shot("21-album-request") }
-    let search = onIPad ? app.descendants(matching: .any)["sidebar.search"].firstMatch : app.tabBars.buttons["Search"]
+    let search = onIPad ? app.descendants(matching: .any)["sidebar.search"].firstMatch : tab("Search")
     guard tap(search) else { return }
     let field = app.searchFields.firstMatch
     guard field.waitForExistence(timeout: 5) else { return }

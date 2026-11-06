@@ -9,7 +9,7 @@ final class PerformanceTests: XCTestCase {
     let app = XCUIApplication.demo()
     let started = Date()
     app.launch()
-    XCTAssertTrue(app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 15))
+    XCTAssertTrue(app.staticTexts["8 songs across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 15))
     let seconds = Date().timeIntervalSince(started)
     XCTAssertLessThan(seconds, 10, "Home took \(seconds) s to show")
   }

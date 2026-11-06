@@ -71,7 +71,7 @@ The standard:
 - **Done when** the tours show the same row on those five pages on each platform, and playing an album moves nothing.
 - *Web done 2026-11-06: `ActionRow` on the album, playlist, mix, Favorites and artist pages; Play is as wide as Resume; the row narrows in three steps by container queries (index.css, `row-step-*`) and never wraps.*
 
-## 4. One page header — S–M
+## 4. One page header — S–M — done 2026-11-06
 
 - **iOS, sibling pages:** Albums has an inline title with its count and a sort button. Artists, right beside it in Library, has a large title and no sort. Queue (a tab) has no title, while Library (a tab) has a large one.
 - **iOS, repeated names:** mix and playlist pages show their name three times on one screen: in the navigation bar, as the page title, and on the cover.
@@ -92,6 +92,7 @@ The standard:
   - Kickers use one color (`muted`) and one tracking.
 - **Done when** Albums, Artists, Playlists, Favorites, Downloads, Queue and Library share one header per platform, and no screen shows the same title twice.
 - *Web done 2026-11-06: `PageHeader` on every tab and list page, `DetailHeader` (cover · kicker · title · one meta line · action row) on album, playlist, mix, Favorites, artist and discover artist; a playlist's or mix's own cover drops its name; every kicker is `type-kicker text-muted` (`paper-dim` over art); Home greets the account by name with its avatar.*
+- *iOS done 2026-11-06: `.pageHeader(_:count:)` (the system large title in Gloock, the count under it as the navigation subtitle) on every tab and list page, with sort, filter and Edit in the bar; `DetailHeader` (cover · kicker · title · `MetaLine` · action row) on album, playlist, mix, Favorites, artist and discover artist, the cover beside the words at regular width; the bar shows a detail page's name only once its own title has scrolled under it (`titleInBar`); playlist and mix covers drop their name on their own page; kickers are `.muted`, `.paperDim` over art.*
 
 ## 5. Rows and cards — M
 

@@ -42,7 +42,7 @@ public struct NotInLibrarySection: View {
           VStack(alignment: .leading, spacing: 0) {
             SectionHeader(title: group.title, kicker: group.kicker)
             LazyVGrid(columns: columns, alignment: .leading, spacing: 24) {
-              ForEach(group.albums, id: \.mbid) { DiscoverAlbumCard(album: $0, width: 150) }
+              ForEach(group.albums, id: \.mbid) { DiscoverAlbumCard(album: $0, width: 150, onArtistPage: true) }
             }
             .padding(.horizontal, 20)
           }

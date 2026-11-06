@@ -26,6 +26,8 @@ struct OfflineWordingTests {
     var mix = d
     mix.subtitle = nil
     #expect(OfflineWording.rowDetail(mix, DownloadProgress(done: 1, total: 1, bytes: 40 * mb)) == "1 song · 40 MB")
+    // The numbers alone, for when they go under the subtitle.
+    #expect(OfflineWording.progress(DownloadProgress(done: 0, total: 3, bytes: 0)) == "0 of 3 songs · 0 MB")
     #expect(OfflineWording.failures(2) == " · 2 couldn’t download")
     #expect(OfflineWording.failures(0) == "")
   }

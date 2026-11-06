@@ -38,7 +38,7 @@ public struct DownloadsView<Cover: View>: View {
         .listStyle(.plain)
       }
     }
-    .navigationTitle("Downloads")
+    .pageHeader("Downloads", count: downloads.isEmpty ? nil : Format.plural(downloads.count, "download"))
   }
 
   private func row(_ d: PinnedDownload) -> some View {
@@ -57,10 +57,14 @@ public struct DownloadsView<Cover: View>: View {
         Button { open(d.href) } label: {
           VStack(alignment: .leading, spacing: 4) {
             Text(d.title).essentialLineLimit()
-            Text("\(OfflineWording.rowDetail(d, progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.danger.opacity(0.8)))")
-              .font(.sans(.footnote))
-              .foregroundStyle(.paperDim)
-              .essentialLineLimit()
+            // How far along it is goes under what it is when both don't fit, rather than being cut off.
+            NameAndNumbers(
+              name: d.subtitle.map { Text($0) },
+              numbers: Text("\(OfflineWording.progress(progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.danger.opacity(0.8)))"),
+              label: OfflineWording.rowDetail(d, progress) + OfflineWording.failures(failed)
+            )
+            .font(.sans(.footnote))
+            .foregroundStyle(.paperDim)
           }
           .frame(minHeight: 44, alignment: .leading)
           .contentShape(Rectangle())

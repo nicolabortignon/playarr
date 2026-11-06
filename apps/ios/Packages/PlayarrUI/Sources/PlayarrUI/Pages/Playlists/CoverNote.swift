@@ -1,11 +1,11 @@
 import PlayarrAPI
 
-/// What the generated cover is made of, so it reads as a portrait of the music rather than decoration
-/// (pages/Playlist.tsx CoverNote).
+/// What the generated cover is made of, so it reads as a portrait of the music rather than decoration: the cover
+/// picker's "About this cover" (components/CoverPicker.tsx AboutCover).
 struct CoverNote: Equatable {
   /// "Listening to the songs to draw the cover… 3 of 12" while it's still being drawn.
   var listening: String?
-  /// How the layout draws the songs.
+  /// How the cover's own layout draws the songs (`story(_:)` for another's).
   var story: String
   /// "120 BPM · Electronic / House · 1990–1999 · energy 72%".
   var facts: String
@@ -31,7 +31,7 @@ struct CoverNote: Equatable {
     case .blocks: "A tile per song, sized by its length; each shape follows how it sounds."
     case .horizon: "Each hill is a song’s loudness over time. The slower the music, the bigger the sun."
     case .currents: "Each ribbon belongs to a song: a steady beat flows smoothly, free time swirls; louder songs run wider."
-    case .colonies: "Each style is a slime-mould species in its own colour, growing with its songs’ tempo and beat."
+    case .colonies: "Each style is a slime-mold species in its own color, growing with its songs’ tempo and beat."
     case .unknown: "Drawn from what the songs sound like."
     }
   }

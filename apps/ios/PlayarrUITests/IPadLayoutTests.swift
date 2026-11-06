@@ -136,7 +136,7 @@ final class IPadLayoutTests: XCTestCase {
     let app = XCUIApplication.demo(["-UITestsRestore"])
     app.launch()
     app.element("sidebar.artists").tap()
-    app.buttons["Portishead, 1 album · 3 tracks"].firstMatch.tap()
+    app.buttons["Portishead, 1 album · 3 songs"].firstMatch.tap()
     XCTAssertTrue(app.staticTexts["Portishead"].waitForExistence(timeout: 5))
     // iOS keeps a scene's state when it goes to the background, and gives it back when it closed the app there.
     XCUIDevice.shared.press(.home)

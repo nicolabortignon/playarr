@@ -10,6 +10,7 @@ import Testing
     #expect(CoverPickerModel.styles.map(\.label) == ["Currents", "Colonies", "Horizon", "Ridges", "Grooves", "Blocks"])
     #expect(picker.chosen == .horizon)
     #expect(picker.intro == "Drawn from the 1 songs in this playlist as they are now.")
+    #expect(picker.note == CoverNote(playlist.cover))
     #expect(picker.preview(.currents) == "/art/playlist/5/preview?layout=currents&variant=3")
     picker.shuffle()
     #expect(picker.preview(.blocks) == "/art/playlist/5/preview?layout=blocks&variant=4")
@@ -29,6 +30,11 @@ import Testing
     cover.tempo = nil
     cover.styles = []
     #expect(CoverNote(cover).facts == "2001 · energy 72%")
+  }
+
+  @Test func tellsEachStylesStoryInAmericanSpelling() {
+    #expect(CoverNote.story(.colonies) == "Each style is a slime-mold species in its own color, growing with its songs’ tempo and beat.")
+    #expect(CoverNote.story(.horizon) == "Each hill is a song’s loudness over time. The slower the music, the bigger the sun.")
   }
 
   @Test func saysItsStillListeningUntilTheCoverIsPinned() {

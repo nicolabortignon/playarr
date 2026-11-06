@@ -27,7 +27,8 @@ struct ArtistCard: View {
         .overlay(alignment: .bottomLeading) {
           VStack(alignment: .leading, spacing: 4) {
             Text(artist.name).font(.display(.title3)).foregroundStyle(.white).lineLimit(2)
-            Kicker(text: counts, tracking: 0.55).lineLimit(1)
+            // Over the photo: paper-dim, and set a little tighter than a kicker so it fits the card.
+            Text(counts.uppercased()).font(.mono(.caption2)).tracking(0.55).foregroundStyle(.paperDim).lineLimit(1)
           }
           .padding(12)
         }
@@ -41,5 +42,5 @@ struct ArtistCard: View {
     .prefetch { session.prefetchArtist(artist.id) }
   }
 
-  var counts: String { "\(Format.plural(artist.albumCount, "album")) · \(Format.plural(artist.trackCount, "track"))" }
+  var counts: String { "\(Format.plural(artist.albumCount, "album")) · \(Format.plural(artist.trackCount, "song"))" }
 }

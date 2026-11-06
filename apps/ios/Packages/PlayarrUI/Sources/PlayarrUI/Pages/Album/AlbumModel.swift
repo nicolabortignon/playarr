@@ -55,20 +55,19 @@ final class AlbumModel {
     return Self.rows(album)
   }
 
-  /// "Album · 1998".
-  var kicker: String? {
-    guard let album = album.value else { return nil }
-    let kind = album.secondaryTypes.first ?? album.albumType
-    return album.year.map { "\(kind) · \($0)" } ?? kind
-  }
+  /// What it is: "Album", "EP", "Live album" (`Format.releaseKind`).
+  var kicker: String? { album.value.map { Format.releaseKind($0.albumType, $0.secondaryTypes) } }
 
-  /// "3 tracks · 17 min · 2 missing · added 3 days ago".
-  func details(now: Date = Date()) -> String? {
-    guard let album = album.value else { return nil }
-    var parts = [Format.plural(album.trackCount, "track"), Format.duration(album.duration)]
-    if album.trackCount < album.totalTrackCount { parts.append("\(album.totalTrackCount - album.trackCount) missing") }
-    if let added = album.addedAt.flatMap({ Format.addedAgo($0, now: now) }) { parts.append("added \(added)") }
-    return parts.joined(separator: " · ")
+  /// The meta line after the artist: "1998 · 3 songs · 17 min" (`facts(_:)`).
+  var facts: String? { album.value.map(Self.facts) }
+
+  /// The artist's small photo beside their name, when they have one of their own (`ArtistDetail.photo`).
+  var artistPhoto: String? { artist?.value?.photo }
+
+  /// "1998 · 3 songs · 17 min": when, how many, how long. Missing songs show greyed in the list, and the action row
+  /// offers the rest, so the line stays short enough for the format badge after it.
+  static func facts(_ album: AlbumDetail) -> String {
+    MetaLine.join([album.year.map { String($0) }, Format.plural(album.trackCount, "song"), Format.duration(album.duration)])
   }
 
   /// More by the artist: their other albums.

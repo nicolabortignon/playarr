@@ -25,7 +25,8 @@ struct PlaylistCard: View {
   var subtitle: String { Format.plural(playlist.trackCount, "song") + (playlist.mine ? "" : " · \(playlist.owner)") }
 }
 
-/// The playlist's artwork (apps/web/src/components/PlaylistCover.tsx).
+/// The playlist's artwork (apps/web/src/components/PlaylistCover.tsx), drawn by the server with the playlist's name on
+/// it, as on a card. Small, or on the playlist's own page (which sets the name beside it), without.
 struct PlaylistCover: View {
   /// Below this the title on the cover would be unreadable, and lists show the name beside it anyway.
   static let titleMinPoints: CGFloat = 120
@@ -33,10 +34,16 @@ struct PlaylistCover: View {
   let cover: PlaylistCoverInfo
   let points: CGFloat
   let name: String
+  /// With its name drawn on it; the playlist's own page shows the name beside it instead.
+  var titled = true
 
   var body: some View {
-    let separator = cover.url.contains("?") ? "&" : "?"
-    let path = points < Self.titleMinPoints ? cover.url + separator + "title=0" : cover.url
-    Cover(path: path, points: points, label: name)
+    Cover(path: Self.path(cover.url, points: points, titled: titled), points: points, label: name)
+  }
+
+  /// The server path of the cover: with `title=0` where the name stays off it.
+  static func path(_ url: String, points: CGFloat, titled: Bool) -> String {
+    guard !titled || points < titleMinPoints else { return url }
+    return url + (url.contains("?") ? "&" : "?") + "title=0"
   }
 }

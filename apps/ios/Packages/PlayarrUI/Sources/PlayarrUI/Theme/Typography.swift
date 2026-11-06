@@ -25,12 +25,26 @@ public enum Typography {
     }
     #if canImport(UIKit)
       let bar = UINavigationBar.appearance()
+      let appearance = UINavigationBarAppearance()
       if let title = UIFont(name: display, size: size(.largeTitle)) {
-        bar.largeTitleTextAttributes = [.font: UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: title)]
+        let attributes: [NSAttributedString.Key: Any] = [.font: UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: title)]
+        bar.largeTitleTextAttributes = attributes
+        appearance.largeTitleTextAttributes = attributes
       }
       if let title = UIFont(name: sans, size: size(.headline))?.withWeight(.semibold) {
-        bar.titleTextAttributes = [.font: UIFontMetrics(forTextStyle: .headline).scaledFont(for: title)]
+        let attributes: [NSAttributedString.Key: Any] = [.font: UIFontMetrics(forTextStyle: .headline).scaledFont(for: title)]
+        bar.titleTextAttributes = attributes
+        appearance.titleTextAttributes = attributes
       }
+      // The count under a page's title ("128 albums", `pageHeader(_:count:)`): the meta role, DM Mono in `.muted`.
+      if let count = UIFont(name: mono, size: size(.caption)) {
+        let muted = UIColor { UIColor(white: 1, alpha: Muted.opacity($0.accessibilityContrast == .high ? .increased : .standard)) }
+        let attributes: [NSAttributedString.Key: Any] = [.font: UIFontMetrics(forTextStyle: .caption1).scaledFont(for: count), .foregroundColor: muted]
+        appearance.subtitleTextAttributes = attributes
+        appearance.largeSubtitleTextAttributes = attributes
+      }
+      // The system's look otherwise; the bar at the scroll edge is drawn from it.
+      bar.standardAppearance = appearance
     #endif
   }
 
@@ -73,6 +87,11 @@ extension Font {
 
   public static func display(size: CGFloat) -> Font {
     .custom(Typography.display, fixedSize: size)
+  }
+
+  /// Gloock at its own size that still grows with Dynamic Type, as `style` does: Stats' big numbers.
+  public static func display(size: CGFloat, relativeTo style: Font.TextStyle) -> Font {
+    .custom(Typography.display, size: size, relativeTo: style)
   }
 
   /// Labels and numbers: DM Mono (regular or medium).

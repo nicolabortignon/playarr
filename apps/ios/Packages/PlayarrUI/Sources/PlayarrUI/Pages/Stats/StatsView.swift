@@ -45,7 +45,7 @@ struct StatsView: View {
       }
       .padding(20)
     }
-    .navigationTitle("Your listening")
+    .pageHeader("Your listening")
     .task { await model.load() }
     .refreshable { await model.load() }
   }
@@ -53,9 +53,10 @@ struct StatsView: View {
   @ViewBuilder private func report(_ stats: ListeningStats) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       if model.isYear { Text("YEAR IN REVIEW").font(.mono(.caption2)).tracking(2).foregroundStyle(theme.accent.color) }
+      // The big numbers are in the display face, without figures of one width: those set "1,792" as "1 , 792".
       HStack(alignment: .firstTextBaseline, spacing: 10) {
-        Text(Format.number(Int(stats.minutes.rounded()))).font(.sans(size: 56, weight: .semibold)).monospacedDigit()
-        Text("minutes").font(.sans(.title3)).foregroundStyle(.secondary)
+        Text(Format.number(Int(stats.minutes.rounded()))).font(.display(size: 60, relativeTo: .largeTitle))
+        Text("minutes").font(.sans(.title3)).foregroundStyle(.paperDim)
       }
       Text(StatsModel.summary(stats)).foregroundStyle(.secondary)
       Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 16) {
@@ -84,10 +85,15 @@ struct StatsView: View {
           HStack(spacing: 14) {
             Text("\(index + 1)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
             Cover(path: item.artist.imageUrl, points: 48, label: item.artist.name, circle: true).frame(width: 48, height: 48)
-            Text(item.artist.name).lineLimit(1)
-            Spacer()
-            Text("\(Format.minutes(item.minutes)) · \(Format.plural(item.plays, "play"))").font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
+            // The numbers at the line's end, or under the name when both don't fit.
+            NameAndNumbers(
+              name: Text(item.artist.name).font(.sans(.subheadline)).foregroundStyle(.paper),
+              numbers: Text("\(Format.minutes(item.minutes)) · \(Format.plural(item.plays, "play"))").monospacedDigit(), end: true
+            )
+            .font(.sans(.footnote))
+            .foregroundStyle(.muted)
           }
+          .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
       }
@@ -100,12 +106,13 @@ struct StatsView: View {
           HStack(spacing: 14) {
             Text("\(index + 1)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.secondary).frame(width: 24, alignment: .trailing)
             Cover(path: item.track.coverUrl, points: 44, label: item.track.albumTitle).frame(width: 44, height: 44)
-            VStack(alignment: .leading) {
-              Text(item.track.title).lineLimit(1)
-              Text(item.track.artistName).font(.sans(.footnote)).foregroundStyle(.secondary).lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(item.track.title).font(.sans(.subheadline)).lineLimit(1)
+              NameAndNumbers(name: Text(item.track.artistName), numbers: Text(Format.plural(item.plays, "play")).monospacedDigit())
+                .font(.sans(.footnote))
+                .foregroundStyle(.muted)
             }
-            Spacer()
-            Text(Format.plural(item.plays, "play")).font(.sans(.footnote).monospacedDigit()).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
           }
           .contentShape(Rectangle())
         }
@@ -142,9 +149,9 @@ struct StatsView: View {
   }
 
   private func tile(_ tile: (label: String, value: String)) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(tile.label).font(.sans(.footnote)).foregroundStyle(.secondary)
-      Text(tile.value).font(.sans(.title2).weight(.semibold)).monospacedDigit()
+    VStack(alignment: .leading, spacing: 6) {
+      Text(tile.label).font(.sans(.footnote)).foregroundStyle(.muted)
+      Text(tile.value).font(.display(size: 30, relativeTo: .title))
     }
   }
 

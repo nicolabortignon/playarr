@@ -2,7 +2,8 @@ import PlayarrAPI
 import SwiftUI
 
 /// An artist's discography from MusicBrainz, with what's in the library and what can be requested
-/// (pages/DiscoverArtist.tsx): Albums, then EPs & soundtracks; `album` brings one into view and marks it.
+/// (pages/DiscoverArtist.tsx): the header (their picture in a circle, how many releases and how many are here), Albums,
+/// then EPs & soundtracks, similar artists and About; `album` brings one into view and marks it.
 public struct DiscoverArtistPage: View {
   let mbid: String
   let album: String?
@@ -33,13 +34,15 @@ private struct DiscographyView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 32) {
           if let artist = model.artist, let discography = model.discography {
-            hero(artist, discography)
+            header(artist, discography).padding(.horizontal, 20)
             if let notice = discography.notice { Text(notice).font(.sans(.footnote)).foregroundStyle(.secondary).padding(.horizontal, 20) }
             ForEach(discography.groups) { group in
               VStack(alignment: .leading, spacing: 0) {
                 SectionHeader(title: group.title, kicker: group.kicker)
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 24) {
-                  ForEach(group.albums, id: \.mbid) { DiscoverAlbumCard(album: $0, highlighted: $0.mbid == discography.highlighted, width: 150) }
+                  ForEach(group.albums, id: \.mbid) {
+                    DiscoverAlbumCard(album: $0, highlighted: $0.mbid == discography.highlighted, width: 150, onArtistPage: true)
+                  }
                 }
                 .padding(.horizontal, 20)
               }
@@ -55,6 +58,7 @@ private struct DiscographyView: View {
               Text(empty).foregroundStyle(.secondary).padding(.horizontal, 20)
             }
             SimilarArtistsSection(mbid: artist.mbid)
+            if let overview = artist.overview { about(overview, genres: artist.genres) }
           } else if let error = model.error {
             VStack(alignment: .leading, spacing: 12) {
               Text(error).foregroundStyle(.secondary)
@@ -71,43 +75,53 @@ private struct DiscographyView: View {
             .padding(.horizontal, 20)
           }
         }
-        .padding(.vertical, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 20)
       }
       .onChange(of: model.discography?.highlighted) { _, mbid in
         guard let mbid else { return }
         withAnimation { proxy.scrollTo(mbid, anchor: .center) }
       }
     }
-    .navigationTitle(model.artist?.name ?? "")
-    .inlineTitle()
+    .titleInBar(model.artist?.name ?? "")
     .task(id: context.generation(.discoverArtist)) { await model.load() }
   }
 
-  private func hero(_ artist: DiscoverArtistDetail, _ discography: Discography) -> some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Kicker(text: artist.genres.isEmpty ? (artist.disambiguation ?? "Artist") : artist.genres.joined(separator: " · "))
-      Text(artist.name).font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
-      HStack(spacing: 16) {
-        Text(discography.summary)
+  /// Their picture in a circle, Artist, the name, and how many releases there are and how many are here.
+  private func header(_ artist: DiscoverArtistDetail, _ discography: Discography) -> some View {
+    DetailHeader(kicker: "Artist", round: true) {
+      Cover(path: artist.imageUrl, points: 192, label: artist.name, circle: true)
+    } title: {
+      DetailTitle(artist.name)
+    } meta: {
+      VStack(alignment: .leading, spacing: 4) {
+        MetaLine(artist.disambiguation, discography.summary)
         if let id = artist.artistId {
-          NavigationLink(value: DiscoverDestination.libraryArtist(id: id).route) { Label("Open in your library", systemImage: "arrow.right") }
-            .foregroundStyle(.tint)
+          NavigationLink(value: DiscoverDestination.libraryArtist(id: id).route) {
+            HStack(spacing: 6) {
+              Text("Open in your library")
+              Image(systemName: "arrow.right")
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+          }
+          .foregroundStyle(.tint)
         }
       }
-      .font(.mono(.caption))
-      .foregroundStyle(.secondary)
-      if let overview = artist.overview {
-        Text(overview).font(.sans(.callout)).foregroundStyle(.secondary).lineLimit(bioOpen ? nil : 3)
-        Button { bioOpen.toggle() } label: {
-          Kicker(text: bioOpen ? "Less" : "Read more").frame(minHeight: 44).contentShape(Rectangle())
-        }
-      }
+    } actions: {
+      EmptyView()
     }
-    .padding(.horizontal, 20)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(alignment: .topLeading) {
-      Cover(path: artist.imageUrl, points: 360, label: artist.name)
-        .frame(width: 360, height: 360).blur(radius: 60).opacity(0.35).allowsHitTesting(false)
+  }
+
+  /// About: the genres as its kicker, then the biography.
+  private func about(_ overview: String, genres: [String]) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader(title: "About", kicker: genres.isEmpty ? nil : genres.prefix(3).joined(separator: " · "))
+      Text(overview).font(.sans(.callout)).foregroundStyle(.secondary).lineLimit(bioOpen ? nil : 5).padding(.horizontal, 20)
+      Button { bioOpen.toggle() } label: {
+        Kicker(text: bioOpen ? "Less" : "Read more").frame(minHeight: 44).contentShape(Rectangle())
+      }
+      .padding(.horizontal, 20)
     }
   }
 }

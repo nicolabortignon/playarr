@@ -64,7 +64,7 @@ Make variables go after the target, also through pnpm (`pnpm ios:screens SCREENS
 
 - `SIMULATOR="iPad Pro 13-inch (M5)"` for `build` and `test` (default "iPhone 17 Pro"; the first available iPhone when there's none by that name), or `SIMULATOR_ID=<id>` to pick one exactly;
 - `ONLY="AccessibilityAuditTests IPadLayoutTests"` for `test-app`;
-- `SCREENS="iphone ipad duo"` for `screens`, `SETS="iphone-6.9 ipad-13 iphone-6.3"` for `screenshots`;
+- `SCREENS="iphone ipad duo"` for `screens` (`se`, the smallest iPhone, only when named), `SETS="iphone-6.9 ipad-13 iphone-6.3"` for `screenshots`;
 - `TESTERS="a@example.com b@example.com"` (space-separated) for `setup`, `DEVICE="name or UDID"` for `device`;
 - `VERSION=1.1.0` and `DRY_RUN=1` for `release`.
 
@@ -100,6 +100,7 @@ Accounts, sessions, setup codes, the 401 rules and Bonjour are described in [../
 
 - User-facing text copies the web's wording. Where the web names the browser, say "this device" ("This file format is not supported on this device").
 - Every control is at least 44 points (`.contentShape` after the frame). Colors, type, radii and cover shadows come from `Theme/` by role ([design.md](../design.md)): secondary text is `.paperDim`, quieter text (kickers, times, counts) `.muted`; text drawn on artwork goes through `ArtworkText`. Use `AdaptiveStack`, `essentialLineLimit()`, `reducesMotion` and `pointerHover()` where they fit.
+- **Headers.** A tab or a library list takes `pageHeader(_:count:)`, its controls going in the bar; anything you can play takes `DetailHeader` and `titleInBar(_:)`, its meta line a `MetaLine` of parts joined by dots ([layouts.md](layouts.md#2-iphone-upright)). A kicker is `Kicker` (`.muted` in the kicker role, `overArt:` for `.paperDim` over art). A name beside numbers is `NameAndNumbers`, so the numbers move under the name rather than cut it.
 - Put `.accessibilityLabel` on the `Button` or `NavigationLink` itself. Never wrap a button in `.accessibilityElement(children: .ignore)`: VoiceOver and UI tests can't tap the wrapper.
 - An accessibility audit exception (`AuditExceptions` in `AccessibilityAuditTests.swift`) says what, where and why, and is added only after trying to fix the view; check contrast against the element's own pixels (`measuredContrast`) before ignoring a contrast issue.
 - After a change to the UI, run `corepack pnpm ios:screens` to refresh `screenshots/` at the repo root (iphone, iphone-sideways, ipad, duo, duo-sideways; not committed).

@@ -21,25 +21,21 @@ struct AlbumView: View {
         } page: {
           ScrollView { content(cover: false).padding(.top, 16) }
         }
-        .background(alignment: .top) { tint.ignoresSafeArea() }
+        .background(alignment: .top) { wash().ignoresSafeArea() }
       } else {
         ScrollView {
-          // The album's wash runs from the very top of the screen, behind the status bar and the back button; the
-          // cover starts below the back button, with room above it.
+          // The page starts below the bar; its wash scrolls with it and reaches up behind the status bar and the back
+          // button (and on the iPhone Duo's cover screen under the column on the right).
           content(cover: true)
-            .padding(.top, Self.coverTop)
-            .background(alignment: .top) { tint }
+            .padding(.top, 12)
+            .background(alignment: .top) { wash(overhang: 200) }
         }
-        .ignoresSafeArea(edges: .top)
       }
     }
-    .inlineTitle()
+    .titleInBar(model.album.value?.title ?? "")
     .task { await model.load() }
     .refreshable { await model.album.refresh() }
   }
-
-  /// Where the cover starts: below the status bar and the navigation bar's back button (44 pt), with a margin.
-  @MainActor private static var coverTop: CGFloat { ScreenInsets.top + 44 + 24 }
 
   @ViewBuilder private func content(cover: Bool) -> some View {
     if let error = model.album.error {
@@ -47,7 +43,6 @@ struct AlbumView: View {
     } else if let album = model.album.value {
       VStack(alignment: .leading, spacing: 24) {
         header(album, cover: cover)
-        buttons(album)
         songs
         if let overview = album.overview { linerNotes(overview) }
         if !model.moreByArtist.isEmpty {
@@ -60,49 +55,37 @@ struct AlbumView: View {
       .padding(.bottom, 24)
     } else {
       VStack(spacing: 16) {
-        Skeleton().frame(width: 260)
+        Skeleton().frame(width: 256)
         ForEach(0..<8, id: \.self) { _ in Skeleton(aspectRatio: nil, height: 36) }
       }
       .padding(20)
     }
   }
 
-  /// The header's wash, tinted with the album's own colour.
-  @ViewBuilder private var tint: some View {
+  /// The header's wash, tinted with the album's own color. With an overhang it reaches that far past the top and the
+  /// sides of what it's behind: scrolled content can't ignore the safe area, but it's drawn under the bars all the same.
+  @ViewBuilder private func wash(overhang: CGFloat = 0) -> some View {
     if let tint = model.tint {
       LinearGradient(
         stops: [.init(color: tint.color.opacity(0.32), location: 0), .init(color: tint.color.opacity(0.08), location: 0.55), .init(color: .clear, location: 1)],
         startPoint: .top, endPoint: .bottom
       )
-      .frame(height: 520 + Self.coverTop)
+      .frame(height: 520 + overhang)
+      .padding(.top, -overhang)
+      .padding(.horizontal, -overhang)
     }
   }
 
-  /// The cover (unless it's beside the page), the kicker, the title, artist and details.
+  /// The cover (unless it's beside the page), what kind of release it is, the title, the meta line and the action row.
   private func header(_ album: AlbumDetail, cover: Bool) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
-      if cover {
-        Cover(path: album.coverUrl, points: 280, label: album.title)
-          .frame(maxWidth: 280)
-          .frame(maxWidth: .infinity)
-          .coverShadow(.hero)
-          .padding(.bottom, 8)
-      }
-      if let kicker = model.kicker { Kicker(text: kicker) }
-      Text(album.title).font(.display(.largeTitle)).accessibilityAddTraits(.isHeader)
-      NavigationLink(value: Route.artist(album.artistId)) {
-        HStack(spacing: 8) {
-          if let image = model.artist?.value?.imageUrl {
-            Cover(path: image, points: 24, circle: true).frame(width: 24, height: 24)
-          }
-          Text(album.artistName)
-        }
-      }
-      .buttonStyle(.plain)
-      HStack(spacing: 8) {
-        if let details = model.details() { Text(details).font(.mono(.caption)).foregroundStyle(.secondary) }
-        FormatBadge(format: album.format)
-      }
+    DetailHeader(kicker: model.kicker ?? "Album", overArt: true, showsCover: cover) {
+      Cover(path: album.coverUrl, points: 256, label: album.title)
+    } title: {
+      DetailTitle(album.title)
+    } meta: {
+      AlbumMetaLine(album: album, facts: model.facts ?? "", photo: model.artistPhoto)
+    } actions: {
+      buttons(album)
     }
     .padding(.horizontal, 20)
   }
@@ -126,7 +109,6 @@ struct AlbumView: View {
       Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist(album.tracks) }
       Button("Go to artist", systemImage: "music.mic") { session.router.open(.artist(album.artistId)) }
     }
-    .padding(.horizontal, 20)
   }
 
   private var songs: some View {
@@ -155,5 +137,54 @@ struct AlbumView: View {
       Text(overview).font(.sans(.callout)).foregroundStyle(.secondary)
     }
     .padding(.horizontal, 20)
+  }
+}
+
+/// An album's meta line (docs/design.md, "Headers"): the artist, with their photo when they have one of their own,
+/// then "1998 · 3 songs · 17 min" and the format badge. One line where it fits; on a phone the artist has a line of
+/// their own and the rest follows, so the badge never sits beside a wrapped block of words.
+private struct AlbumMetaLine: View {
+  let album: AlbumDetail
+  let facts: String
+  let photo: String?
+
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 8) {
+        artist
+        Text(verbatim: "·").accessibilityHidden(true)
+        factsAndBadge
+      }
+      VStack(alignment: .leading, spacing: 8) {
+        artist
+        factsAndBadge
+      }
+      VStack(alignment: .leading, spacing: 8) {
+        artist
+        Text(facts)
+        FormatBadge(format: album.format)
+      }
+    }
+  }
+
+  private var artist: some View {
+    NavigationLink(value: Route.artist(album.artistId)) {
+      HStack(spacing: 8) {
+        if let photo { Cover(path: photo, points: 24, circle: true).frame(width: 24, height: 24) }
+        Text(album.artistName).typeRole(.body).foregroundStyle(.paper).lineLimit(1)
+      }
+      // 44 points to tap, without spreading the header's lines apart.
+      .frame(minHeight: 44)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .padding(.vertical, -10)
+  }
+
+  private var factsAndBadge: some View {
+    HStack(spacing: 8) {
+      Text(facts).lineLimit(1)
+      FormatBadge(format: album.format)
+    }
   }
 }

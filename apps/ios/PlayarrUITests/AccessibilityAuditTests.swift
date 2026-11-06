@@ -41,7 +41,7 @@ final class AccessibilityAuditTests: XCTestCase {
     try skipOnIPad()
     let app = XCUIApplication.demo()
     app.launch()
-    XCTAssertTrue(app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["8 songs across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10))
     try audit(app, "Home")
 
     app.tabBars.buttons["Library"].tap()
@@ -55,7 +55,7 @@ final class AccessibilityAuditTests: XCTestCase {
 
     app.tabBars.buttons["Library"].tap()
     app.button(startingWith: "Artists").tap()
-    app.buttons["Massive Attack, 2 albums · 5 tracks"].firstMatch.tap()
+    app.buttons["Massive Attack, 2 albums · 5 songs"].firstMatch.tap()
     try audit(app, "Artist")
 
     app.tabBars.buttons["Queue"].tap()

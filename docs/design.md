@@ -47,14 +47,16 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 ## Headers
 
-- **Page header**, for tabs and library lists (web `PageHeader`): the page's name as a large title, its count beside it in `type-meta` `muted`, the page's controls (sort, filter) on the right.
-- **Detail header**, for everything you can play (web `DetailHeader`): cover · kicker saying what it is · title · one meta line, its parts joined by dots · the action row. On a phone the cover is at most 256 wide (64 % of the screen), so Play shows on the first screen.
-  - An album's meta line: the artist (linked, with their photo) · year · N songs · length, then the format badge. Missing songs show in the list, not here.
-  - An artist without a photo gets a small circle with their best album cover (or a vinyl monogram), not an empty band.
-  - Release kinds are named "Album", "EP", "Live album", "Live EP", "Compilation", "DJ mix", "Mixtape", "Loose songs" and "Release" (`releaseKind`).
-- **A title appears once per screen.** A playlist's or mix's own cover drops its name on its page; cards keep it.
+- **Page header**, for tabs and library lists (web `PageHeader`, iOS `.pageHeader(_:count:)`): the page's name as a large title, the page's controls (sort, filter, Edit) on the right. The count is in `type-meta` `muted`: beside the title on the web, under it as the navigation subtitle on iOS, where the system's large title (in Gloock) has no room beside it. On iPad, pages opened from the sidebar show their title inline in the bar, as iPadOS chooses; pushed pages show it large.
+- **Detail header**, for everything you can play (web and iOS `DetailHeader`): cover · kicker saying what it is · title · one meta line, its parts joined by dots · the action row. On a phone the cover is at most 256 wide (64 % of the screen), above the words, so Play shows on the first screen, down to the iPhone SE. At iPad width the cover (240, or a 192 circle) sits beside the words, aligned to their foot, with the action row under them.
+  - An album's meta line: the artist (linked, with their photo) · year · N songs · length, then the format badge. Missing songs show in the list, not here. Where it doesn't fit on one line, the artist goes on a line of its own and the rest under it; it never wraps around the badge.
+  - A playlist's meta line: songs · length · sharing ("Shared with everyone", "Shared by Sam"). Its description comes after the action row.
+  - An artist: the kicker is "Artist", the meta line their counts ("2 albums · 5 songs"), and their genres go in About's kicker. An artist with a photo of their own gets a band (taller where it would otherwise go under the bar); one without gets a small circle with their best album cover (or a vinyl monogram), not an empty band.
+  - Release kinds are named "Album", "EP", "Live album", "Live EP", "Compilation", "DJ mix", "Mixtape", "Loose songs" and "Release" (`releaseKind`). Cards on an artist's own page say only the kind and year ("EP · 2019"), without a badge.
+- **A title appears once per screen.** A playlist's or mix's own cover drops its name on its page; cards keep it. On iOS the bar shows a detail page's name only once the page's own title has scrolled under it.
+- **Under the iPhone Duo's column** (and any side inset): backgrounds (the album's wash, an artist's photo, a blurred cover) run under it; rows, words and buttons keep clear of it; sideways strips (shelves, Stats' ranges) scroll under it and stop clear of it.
 - **Home greets** the account by name, with its avatar.
-- **Names never lose to numbers:** a name and its numbers share a line only when both fit; otherwise the numbers go under the name (web `NameAndNumbers`).
+- **Names never lose to numbers:** a name and its numbers share a line only when both fit; otherwise the numbers go under the name, on up to two lines (web and iOS `NameAndNumbers`). Stats' big numbers are in the display face.
 
 ## Rows, menus and toasts
 

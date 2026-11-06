@@ -15,9 +15,10 @@ public enum Demo {
     id: 7, name: "Massive Attack", sortName: "Massive Attack", genres: ["trip hop"],
     overview: "Bristol collective at the heart of trip hop.", albumCount: 2, trackCount: 5,
     imageUrl: "/art/artist/7/poster", mbid: "art-1")
+  /// Without a photo of their own: the server answers their album's cover instead, so their page has the compact header.
   public static let otherArtist = Artist(
     id: 8, name: "Portishead", sortName: "Portishead", genres: ["trip hop"], albumCount: 1, trackCount: 3,
-    imageUrl: "/art/artist/8/poster", mbid: "art-2")
+    imageUrl: "/art/album/80/cover", mbid: "art-2")
   public static let artists = [artist, otherArtist]
 
   static func track(_ id: Int, _ title: String, album: Int, albumTitle: String, artist: Artist, number: Int, disc: Int = 1, duration: Double, format: AudioFormat = flac) -> Track {

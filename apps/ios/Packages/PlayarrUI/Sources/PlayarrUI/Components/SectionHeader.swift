@@ -35,21 +35,17 @@ extension SectionHeader where Action == EmptyView {
   }
 }
 
-/// The small, spaced, upper-case line above titles.
+/// The small, spaced, upper-case line above a title or a section ("ALBUM", "MADE FOR YOU"): the kicker type role in
+/// `.muted`, or in `.paperDim` over art (a tinted header, a photo, a blurred cover), as docs/design.md has it.
 struct Kicker: View {
   let text: String
-  /// The web's `tracking-[0.2em]`; counts under a name use `tracking-wider` (0.55).
-  var tracking: CGFloat = 2
-  /// The spacing grows with the text, as `em` does on the web.
-  @ScaledMetric(relativeTo: .caption2) private var scale: CGFloat = 1
-  @Environment(\.dynamicTypeSize) private var typeSize
+  var overArt = false
 
   var body: some View {
+    // Upper-cased here as well as by the role, so VoiceOver and the UI tests read what's drawn ("LINER NOTES").
     Text(text.uppercased())
-      .font(.mono(.caption2))
-      // None at the accessibility sizes, where the spaced letters would break "MADE FOR YOU" over two lines.
-      .tracking(typeSize.isAccessibilitySize ? 0 : tracking * scale)
-      .foregroundStyle(.paperDim)
+      .typeRole(.kicker)
+      .foregroundStyle(overArt ? AnyShapeStyle(.paperDim) : AnyShapeStyle(.muted))
       // Grows with the text size even where a row is tight (Now Playing's header), wrapping rather than squeezing.
       .fixedSize(horizontal: false, vertical: true)
   }

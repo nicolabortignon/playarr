@@ -79,8 +79,9 @@ test-app: project
 # of each device, upright and (iPhone) sideways, in screenshots/<device>/ at the repo root, replaced on every run
 # (SCREENS_DIR reaches the test runner through xcodebuild's TEST_RUNNER_ prefix). SCREENS="ipad" takes one device.
 SCREENS_ROOT := $(abspath $(CURDIR)/../../screenshots)
-# name|device type[|runtime]: the iPhone Duo runs only on its own iOS 27 runtime.
-SCREENS_DEVICES := "iphone|iPhone 17 Pro" "ipad|iPad Pro 13-inch (M5)" "duo|iPhone Duo|com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4"
+# name|device type[|runtime]: the iPhone Duo runs only on its own iOS 27 runtime. "se", the smallest iPhone (to see
+# that Play still shows on the first screen), runs only when asked for: SCREENS=se.
+SCREENS_DEVICES := "iphone|iPhone 17 Pro" "ipad|iPad Pro 13-inch (M5)" "duo|iPhone Duo|com.apple.CoreSimulator.SimRuntime.iOS-27-2-iPhone19-4" "se|iPhone SE (3rd generation)"
 SCREENS ?= iphone ipad duo
 # The demo albums' real covers for these screenshots only, downloaded once (scripts/screens-covers.mjs): the app and
 # the App Store screenshots keep the demo's drawn ones.

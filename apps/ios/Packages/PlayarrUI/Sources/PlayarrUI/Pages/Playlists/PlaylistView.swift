@@ -2,9 +2,10 @@ import PlayarrAPI
 import PlayarrPlayer
 import SwiftUI
 
-/// A playlist's page (apps/web/src/pages/Playlist.tsx): the cover (tap for a new one), name and description (tap to
-/// edit), whose it is, the action row (Play, Shuffle, Download, ⋯), the songs (hold and drag, or Edit, to reorder; sent
-/// on the drop) and "Songs like these". Someone else's shared playlist shows the same page without the ways to change it.
+/// A playlist's page (apps/web/src/pages/Playlist.tsx): the cover (tap for a new one), the name (tap to edit), its
+/// songs and whose it is, the action row (Play, Shuffle, Download, ⋯), what it's about, the songs (hold and drag, or
+/// Edit, to reorder; sent on the drop) and "Songs like these". What the cover is drawn from is in the cover picker.
+/// Someone else's shared playlist shows the same page without the ways to change it.
 struct PlaylistView: View {
   @State private var model: PlaylistModel
   @Environment(Theme.self) private var theme
@@ -37,14 +38,13 @@ struct PlaylistView: View {
     Group {
       if GatefoldRule.applies(verticalSizeClass) {
         // Sideways: the cover stays on the left, the songs scroll beside it.
-        Gatefold { _ in cover(playlist) } page: { list(playlist, cover: false) }
+        Gatefold { side in cover(playlist, points: side).coverShadow(.hero) } page: { list(playlist, cover: false) }
       } else {
         list(playlist, cover: true)
       }
     }
-    .navigationTitle(playlist.name)
+    .titleInBar(playlist.name)
     #if os(iOS)
-      .navigationBarTitleDisplayMode(.inline)
       .toolbar { if model.mine, model.items.count > 1 { EditButton() } }
     #endif
     .refreshable { await model.load() }
@@ -80,73 +80,80 @@ struct PlaylistView: View {
     .listStyle(.plain)
   }
 
-  /// The cover, which opens the cover picker on your own playlists.
-  private func cover(_ playlist: PlaylistDetail) -> some View {
-    Button { pickingCover = true } label: {
-      PlaylistCover(cover: playlist.cover, points: 256, name: playlist.name)
-        .coverShadow(.hero)
+  /// The page's own cover (without the name drawn on it: it's beside it), which opens the cover picker on your own
+  /// playlists, and says so when the songs have moved on from it.
+  @ViewBuilder private func cover(_ playlist: PlaylistDetail, points: CGFloat = 256) -> some View {
+    let art = PlaylistCover(cover: playlist.cover, points: points, name: playlist.name, titled: false)
+    if model.canPickCover {
+      Button { pickingCover = true } label: {
+        art.overlay(alignment: .bottomTrailing) {
+          if playlist.cover.stale {
+            Label("New cover", systemImage: "paintpalette")
+              .typeRole(.badge)
+              .foregroundStyle(.paper)
+              .padding(.horizontal, 10)
+              .padding(.vertical, 6)
+              .background(.black.opacity(0.8), in: Capsule())
+              .padding(10)
+          }
+        }
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("New cover")
+      .accessibilityHint(playlist.cover.stale ? "The playlist has changed a lot since this cover was drawn" : "")
+    } else {
+      art
     }
-    .buttonStyle(.plain)
-    .disabled(!model.canPickCover)
-    .accessibilityLabel("New cover")
   }
 
-  @ViewBuilder private func header(_ playlist: PlaylistDetail, cover showsCover: Bool) -> some View {
+  /// The cover, Playlist, the name (tap to rename), its songs and whose it is, the action row, then what it's about.
+  private func header(_ playlist: PlaylistDetail, cover showsCover: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 24) {
+      DetailHeader(kicker: "Playlist", showsCover: showsCover) {
+        cover(playlist)
+      } title: {
+        if editing {
+          editFields
+        } else {
+          DetailTitle(playlist.name).onTapGesture(perform: startEditing)
+        }
+      } meta: {
+        MetaLine(model.facts, model.sharing)
+      } actions: {
+        ActionRow(
+          title: playlist.name, playState: model.playState, disabled: model.playable.isEmpty, play: model.playOrPause,
+          shuffle: { model.play(shuffle: true) },
+          download: DownloadButton(
+            store: model.session.player.downloads,
+            item: DownloadItem(
+              key: PinnedDownload.Key.playlist(playlist.id), title: playlist.name, subtitle: "Playlist", coverUrl: playlist.cover.url,
+              href: "/playlists/\(playlist.id)"),
+            tracks: model.playable),
+          moreLabel: "Playlist actions"
+        ) {
+          ForEach(model.actions, id: \.self) { action in
+            Button(action.label, systemImage: action.systemImage, role: action == .delete ? .destructive : nil) { perform(action) }
+          }
+        }
+      }
+      // What it's about: after the row, so Play comes first on a phone.
+      if !editing, !playlist.description.isEmpty {
+        Text(playlist.description).typeRole(.body).foregroundStyle(.paperDim).onTapGesture(perform: startEditing)
+      }
+    }
+    // Room for Play's glow to fade out: the next list row would cut it off in a line.
+    .padding(.bottom, 16)
+  }
+
+  /// Renaming and describing it, in place of the name.
+  private var editFields: some View {
     VStack(alignment: .leading, spacing: 12) {
-      if showsCover {
-        cover(playlist).frame(maxWidth: 256).frame(maxWidth: .infinity)
-      }
-
-      Kicker(text: "Playlist")
-      if editing {
-        TextField("Playlist name", text: $name).font(.display(.largeTitle)).accessibilityIdentifier("playlist.editName")
-        TextField("Add a description", text: $details, axis: .vertical).lineLimit(2...4)
-        HStack {
-          Button("Save") { Task { if await model.save(name: name, description: details) { editing = false } } }
-            .buttonStyle(.pill(.primary))
-          Button("Cancel") { editing = false }.buttonStyle(.pill(.secondary))
-        }
-      } else {
-        Text(playlist.name).font(.display(.largeTitle)).onTapGesture(perform: startEditing)
-        if !playlist.description.isEmpty {
-          Text(playlist.description).foregroundStyle(.secondary).onTapGesture(perform: startEditing)
-        }
-      }
-      Text(model.facts).font(.mono(.caption)).foregroundStyle(.secondary)
-      if let sharing = model.sharing {
-        Text(sharing).font(.mono(.caption)).foregroundStyle(.secondary)
-      }
-      if model.canPickCover { coverNote(CoverNote(playlist.cover)) }
-
-      ActionRow(
-        title: playlist.name, playState: model.playState, disabled: model.playable.isEmpty, play: model.playOrPause,
-        shuffle: { model.play(shuffle: true) },
-        download: DownloadButton(
-          store: model.session.player.downloads,
-          item: DownloadItem(
-            key: PinnedDownload.Key.playlist(playlist.id), title: playlist.name, subtitle: "Playlist", coverUrl: playlist.cover.url,
-            href: "/playlists/\(playlist.id)"),
-          tracks: model.playable),
-        moreLabel: "Playlist actions"
-      ) {
-        ForEach(model.actions, id: \.self) { action in
-          Button(action.label, systemImage: action.systemImage, role: action == .delete ? .destructive : nil) { perform(action) }
-        }
-      }
-      // Room for Play's glow to fade out: the next list row would cut it off in a line.
-      .padding(.bottom, 16)
-    }
-  }
-
-  private func coverNote(_ note: CoverNote) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      if let listening = note.listening {
-        Label(listening, systemImage: "circle.fill").symbolEffect(.pulse).font(.sans(.footnote)).foregroundStyle(.secondary)
-      } else {
-        Text(note.story).font(.sans(.footnote)).foregroundStyle(.secondary)
-        Text(note.facts.uppercased()).font(.mono(.caption2)).foregroundStyle(.secondary)
-        Button(note.stale ? "The playlist has changed a lot since this cover was drawn. New cover" : "New cover") { pickingCover = true }
-          .font(.mono(.caption))
+      TextField("Playlist name", text: $name).font(.display(.largeTitle)).accessibilityIdentifier("playlist.editName")
+      TextField("Add a description", text: $details, axis: .vertical).lineLimit(2...4)
+      HStack {
+        Button("Save") { Task { if await model.save(name: name, description: details) { editing = false } } }
+          .buttonStyle(.pill(.primary))
+        Button("Cancel") { editing = false }.buttonStyle(.pill(.secondary))
       }
     }
   }

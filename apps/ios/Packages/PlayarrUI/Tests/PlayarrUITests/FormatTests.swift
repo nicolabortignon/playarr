@@ -47,6 +47,28 @@ import Testing
     #expect(!Format.isHiRes(mp3))
   }
 
+  @Test func namesAReleaseByItsPrimaryTypeQualifiedOrReplacedByItsFirstSecondaryType() {
+    // As apps/web/src/lib/format.test.ts.
+    #expect(Format.releaseKind("Album") == "Album")
+    #expect(Format.releaseKind("EP", []) == "EP")
+    #expect(Format.releaseKind("Album", ["Live"]) == "Live album")
+    #expect(Format.releaseKind("EP", ["Live"]) == "Live EP")
+    #expect(Format.releaseKind("Album", ["Compilation", "Live"]) == "Compilation")
+    #expect(Format.releaseKind("Album", ["DJ-mix"]) == "DJ mix")
+    #expect(Format.releaseKind("Album", ["Mixtape/Street"]) == "Mixtape")
+    #expect(Format.releaseKind("Album", ["Soundtrack"]) == "Soundtrack")
+    #expect(Format.releaseKind("Single", ["Remix"]) == "Remix single")
+  }
+
+  @Test func saysSomethingReadableForLooseSongsAndTypesItDoesntKnow() {
+    #expect(Format.releaseKind("Loose") == "Loose songs")
+    #expect(Format.releaseKind("Other") == "Release")
+    #expect(Format.releaseKind("Other", ["Live"]) == "Live album")
+    #expect(Format.releaseKind("") == "Album")
+    #expect(Format.releaseKind("Album", ["bonus"]) == "Bonus")
+    #expect(Format.releaseKind("Album", [""]) == "Album")
+  }
+
   @Test func saysWhenAnAlbumWasAdded() {
     let now = Format.parseDate("2026-11-03T12:00:00.000Z")!
     let english = Locale(identifier: "en_US")

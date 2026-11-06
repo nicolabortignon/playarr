@@ -74,7 +74,7 @@ struct LibraryView: View {
         }
       }
     }
-    .navigationTitle("Library")
+    .pageHeader("Library")
     .task {
       await health.load()
       await session.favorites.load()

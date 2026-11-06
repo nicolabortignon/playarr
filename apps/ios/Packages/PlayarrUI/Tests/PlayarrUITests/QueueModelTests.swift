@@ -15,7 +15,7 @@ import Testing
     let (_, model) = playing()
     #expect(model.current?.title == "Angel")
     #expect(model.upcoming.map(\.track.title) == ["Risingson", "Inertia Creeps", "Protection", "Karmacoma"])
-    #expect(model.header == "Up next · 4 tracks · 24 min")
+    #expect(model.header == "Up next · 4 songs · 24 min")
   }
 
   @Test func dragsASongToAnotherPlace() {
@@ -39,7 +39,7 @@ import Testing
     model.clear()
     #expect(model.upcoming.isEmpty)
     let toast = try #require(session.toasts.toasts.last)
-    #expect(toast.message == "Cleared 4 tracks")
+    #expect(toast.message == "Cleared 4 songs")
     session.toasts.perform(toast)
     #expect(model.upcoming.map(\.track.title) == ["Risingson", "Inertia Creeps", "Protection", "Karmacoma"])
   }

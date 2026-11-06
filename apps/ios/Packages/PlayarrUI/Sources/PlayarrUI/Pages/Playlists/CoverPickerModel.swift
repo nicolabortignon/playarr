@@ -12,6 +12,8 @@ final class CoverPickerModel {
 
   let playlistId: Int
   let intro: String
+  /// About this cover: what the songs are like, and whether it's still being drawn or the songs have moved on from it.
+  let note: CoverNote
   /// Starts past the cover's own variation, so every candidate is new.
   private(set) var variant: Int
   var chosen: CoverLayout
@@ -19,6 +21,7 @@ final class CoverPickerModel {
   init(playlist: PlaylistDetail) {
     playlistId = playlist.id
     intro = "Drawn from the \(playlist.trackCount) songs in this playlist as they are now."
+    note = CoverNote(playlist.cover)
     variant = playlist.cover.variant + 1
     chosen = playlist.cover.layout
   }

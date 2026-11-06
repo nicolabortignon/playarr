@@ -44,10 +44,10 @@ final class PlaylistModel {
     return line
   }
 
-  /// Whose it is, when that's worth saying.
+  /// Whose it is, when that's worth saying: the end of the header's meta line.
   var sharing: String? {
     guard let playlist, !playlist.mine || playlist.shared else { return nil }
-    return playlist.mine ? "Shared with everyone on this server" : "Shared by \(playlist.owner)"
+    return playlist.mine ? "Shared with everyone" : "Shared by \(playlist.owner)"
   }
 
   /// The ⋯ menu ("Playlist actions").

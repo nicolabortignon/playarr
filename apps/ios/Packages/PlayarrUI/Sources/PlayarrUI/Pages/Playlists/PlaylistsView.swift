@@ -32,7 +32,7 @@ struct PlaylistsView: View {
         .padding(20)
       }
     }
-    .navigationTitle("Playlists")
+    .pageHeader("Playlists", count: store.playlists.map { Format.plural($0.count, "playlist") })
     .task(id: store.pollRound) { await store.poll() }
     .refreshable { await store.load() }
   }

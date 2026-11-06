@@ -27,9 +27,29 @@ import Testing
   @Test func describesTheAlbum() async {
     let model = AlbumModel(id: 70, session: demoSession())
     await model.load()
-    #expect(model.kicker == "Album · 1998")
-    #expect(model.details(now: Format.parseDate("2026-11-04T12:00:00Z")!) == "3 tracks · 17 min · 2 missing · added 3 days ago")
+    #expect(model.kicker == "Album")
+    // Missing songs are greyed in the list and how long ago it came isn't said: the line stays one short line.
+    #expect(model.facts == "1998 · 3 songs · 17 min")
+    #expect(model.artistPhoto == "/art/artist/7/poster")
     #expect(model.moreByArtist.map(\.title) == ["Protection"])
+  }
+
+  @Test func theMetaLineLeavesOutAYearItDoesntKnow() {
+    var album = Demo.protection
+    #expect(AlbumModel.facts(album) == "1994 · 2 songs · 13 min")
+    album.year = nil
+    album.trackCount = 1
+    #expect(AlbumModel.facts(album) == "1 song · 13 min")
+  }
+
+  @Test func theKickerSaysWhatKindOfReleaseItIs() async {
+    var live = Demo.mezzanine
+    live.secondaryTypes = ["Live"]
+    let api = FakeAPI.demoLibrary()
+    api.on(.get, "/api/albums/70", live)
+    let model = AlbumModel(id: 70, session: demoSession(api: api))
+    await model.load()
+    #expect(model.kicker == "Live album")
   }
 
   @Test func playsPausesAndResumes() async {

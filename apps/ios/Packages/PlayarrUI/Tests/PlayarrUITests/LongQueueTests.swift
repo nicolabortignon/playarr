@@ -14,7 +14,7 @@ import Testing
       }
     }
     #expect(model.upcoming.count == 4999)
-    #expect(model.header == "Up next · 4999 tracks · 333 hr 16 min")
+    #expect(model.header == "Up next · 4999 songs · 333 hr 16 min")
     #expect(took < .seconds(1), "20 redraws' worth took \(took)")
   }
 }

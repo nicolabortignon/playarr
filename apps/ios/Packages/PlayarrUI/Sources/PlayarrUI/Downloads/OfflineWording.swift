@@ -47,8 +47,13 @@ enum OfflineWording {
 
   /// "Massive Attack · 3 of 11 songs · 132 MB", without the failures.
   static func rowDetail(_ d: PinnedDownload, _ progress: DownloadProgress) -> String {
+    (d.subtitle.map { "\($0) · " } ?? "") + self.progress(progress)
+  }
+
+  /// "3 of 11 songs · 132 MB", or "11 songs · 484 MB" once they're all here: a row's numbers, after what it is.
+  static func progress(_ progress: DownloadProgress) -> String {
     let songs = progress.isComplete ? count(progress.total, "song") : "\(progress.done) of \(count(progress.total, "song"))"
-    return (d.subtitle.map { "\($0) · " } ?? "") + "\(songs) · \(ByteCount.format(progress.bytes))"
+    return "\(songs) · \(ByteCount.format(progress.bytes))"
   }
 
   /// " · 2 couldn’t download", or nothing.

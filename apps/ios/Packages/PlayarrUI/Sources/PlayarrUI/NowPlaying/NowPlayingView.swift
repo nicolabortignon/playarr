@@ -173,7 +173,7 @@ struct NowPlayingView: View {
       }
       .frame(maxWidth: .infinity)
       VStack(spacing: 2) {
-        Kicker(text: "Playing from").accessibilityHidden(true)
+        Kicker(text: "Playing from", overArt: true).accessibilityHidden(true)
         Button(model.playingFrom ?? "") { if let route = model.playingFromRoute { session.router.go(route) } }
           .font(.sans(.footnote)).essentialLineLimit()
           .frame(minHeight: 44)
@@ -357,7 +357,7 @@ struct NowPlayingView: View {
         .keyboardShortcut(.cancelAction)
       Button { if let route = model.playingFromRoute { session.router.go(route) } } label: {
         VStack(alignment: .leading, spacing: 1) {
-          Kicker(text: "Playing from")
+          Kicker(text: "Playing from", overArt: true)
           // "Mezzanine · 3 songs · 17 min left": the time left after the name, quieter.
           Text("\(model.playingFrom ?? "")\(Text(tail.map { " · \($0)" } ?? "").foregroundStyle(.paperDim))")
             .font(.sans(.subheadline)).lineLimit(1)

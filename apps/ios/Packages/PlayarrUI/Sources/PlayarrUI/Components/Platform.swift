@@ -53,6 +53,23 @@ extension View {
     #endif
   }
 
+  /// The page header of a tab or a library list (docs/design.md, "Headers"): the system's large title (in Gloock,
+  /// `Typography.register`), with the page's controls in the bar on the right. The bar shows the title only once the
+  /// large one has scrolled away. Large whichever page it was opened from.
+  func pageHeader(_ title: String) -> some View {
+    #if os(iOS)
+      navigationTitle(title).navigationBarTitleDisplayMode(.large)
+    #else
+      navigationTitle(title)
+    #endif
+  }
+
+  /// A page header with how many the page holds under the title ("128 albums"), once known. Until then the line is
+  /// kept blank rather than left out: a subtitle arriving after the page has opened folds its large title into the bar.
+  func pageHeader(_ title: String, count: String?) -> some View {
+    pageHeader(title).navigationSubtitle(count ?? "\u{00A0}")
+  }
+
   /// The tab bar shrinks while scrolling down, as Apple Music's does.
   func minimizingTabBar() -> some View {
     #if os(iOS)

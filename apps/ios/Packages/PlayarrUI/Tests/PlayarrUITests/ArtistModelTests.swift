@@ -22,8 +22,28 @@ import Testing
     let model = ArtistModel(id: 7, session: demoSession())
     await model.load()
     #expect(model.similarInLibrary.map(\.name) == ["Portishead"])
-    #expect(model.counts == "2 albums · 5 tracks")
-    #expect(model.kicker == "trip hop")
+    #expect(model.counts == "2 albums · 5 songs")
+    #expect(model.genres == "trip hop")
+  }
+
+  @Test func aPhotoIsTheirsOnlyWhenItIsntOneOfTheirAlbumCovers() {
+    var artist = Demo.artistDetail(Demo.artist)
+    #expect(artist.photo == "/art/artist/7/poster")
+    #expect(artist.heroPhoto == "/art/artist/7/poster")
+    // The server's stand-in for an artist without a photo: their newest album's cover.
+    artist.imageUrl = "/art/album/70/cover"
+    #expect(artist.photo == nil)
+    #expect(artist.heroPhoto == nil)
+    #expect(artist.roundCover == "/art/album/70/cover")
+    // A wide photo is a photo of them, whatever the square one is.
+    artist.fanartUrl = "/art/artist/7/fanart"
+    #expect(artist.heroPhoto == "/art/artist/7/fanart")
+    artist.fanartUrl = nil
+    artist.imageUrl = nil
+    #expect(artist.photo == nil)
+    #expect(artist.roundCover == "/art/album/70/cover")
+    artist.albums = []
+    #expect(artist.roundCover == nil)
   }
 
   @Test func playsEverySongOfTheArtistInOrder() async {

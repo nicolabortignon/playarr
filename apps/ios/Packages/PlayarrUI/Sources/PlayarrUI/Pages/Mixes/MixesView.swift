@@ -30,7 +30,7 @@ struct MixesView: View {
         .padding(20)
       }
     }
-    .navigationTitle("Made for you")
+    .pageHeader("Made for you", count: store.mixes.map { Format.plural($0.count, "mix", "mixes") })
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button { session.router.open(.settingsPanel(.mixes)) } label: {

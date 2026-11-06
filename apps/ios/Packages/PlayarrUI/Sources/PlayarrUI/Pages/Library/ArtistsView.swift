@@ -25,8 +25,7 @@ struct ArtistsView: View {
         .padding(20)
       }
     }
-    .navigationTitle("Artists")
-    .navigationSubtitle(artists.value.map { Format.plural($0.count, "artist") } ?? "")
+    .pageHeader("Artists", count: artists.value.map { Format.plural($0.count, "artist") })
     .task { await artists.load() }
     .refreshable { await artists.refresh() }
   }

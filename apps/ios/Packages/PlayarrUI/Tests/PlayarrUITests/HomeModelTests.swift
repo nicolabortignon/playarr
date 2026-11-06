@@ -27,7 +27,7 @@ import Testing
   @Test func saysHowBigTheLibraryIs() async {
     let model = HomeModel(session: demoSession())
     await model.load()
-    #expect(model.libraryLine == "8 tracks across 3 albums, 45 min of music waiting in your library.")
+    #expect(model.libraryLine == "8 songs across 3 albums, 45 min of music waiting in your library.")
     #expect(model.jumpBackIn.count == 3)
     #expect(model.favoriteTracks.map(\.title) == ["Risingson"])
     #expect(model.showsMixes)

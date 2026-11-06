@@ -30,6 +30,8 @@ struct MixCard: View {
 struct MixCover: View {
   let mix: MixSummary
   let width: CGFloat
+  /// With "Made for you" and its name drawn on it, as on a card; the mix's own page sets them beside it instead.
+  var titled = true
 
   @Environment(Theme.self) private var theme
   @Environment(AccountSession.self) private var session
@@ -71,12 +73,14 @@ struct MixCover: View {
       }
       .frame(width: width, height: width, alignment: .topLeading)
       // Part of the picture: it scales with the cover, and the card's own label is what VoiceOver reads.
-      ArtworkText(lines: [
-        Text("MADE FOR YOU").font(.mono(size: width * 0.046)).tracking(2).foregroundStyle(.white.opacity(0.75)),
-        Text(mix.title).font(.display(size: width * 0.125)).foregroundStyle(.white),
-      ])
-      .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
-      .padding(width * 0.07)
+      if titled {
+        ArtworkText(lines: [
+          Text("MADE FOR YOU").font(.mono(size: width * 0.046)).tracking(2).foregroundStyle(.white.opacity(0.75)),
+          Text(mix.title).font(.display(size: width * 0.125)).foregroundStyle(.white),
+        ])
+        .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
+        .padding(width * 0.07)
+      }
     }
     .frame(width: width, height: width)
     .clipShape(RoundedRectangle(cornerRadius: 4))

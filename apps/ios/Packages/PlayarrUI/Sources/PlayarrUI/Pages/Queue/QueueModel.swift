@@ -26,11 +26,11 @@ struct QueueModel {
     return q.order.dropFirst(q.pos + 1).map { Upcoming(queueIndex: $0, track: q.queue[$0]) }
   }
 
-  /// "Up next · 4 tracks · 21 min".
+  /// "Up next · 4 songs · 21 min".
   var header: String {
     let songs = upcoming
     guard !songs.isEmpty else { return "Up next" }
-    return "Up next · \(Format.plural(songs.count, "track")) · \(Format.duration(songs.reduce(0) { $0 + $1.track.duration }))"
+    return "Up next · \(Format.plural(songs.count, "song")) · \(Format.duration(songs.reduce(0) { $0 + $1.track.duration }))"
   }
 
   /// Plays from the `offset`-th song of Up next.
@@ -63,7 +63,7 @@ struct QueueModel {
     let song = player.queue.currentTrack?.id
     player.clearUpcoming()
     let player = self.player
-    session.toasts.push("Cleared \(Format.plural(ids.count, "track"))", action: .init("Undo") {
+    session.toasts.push("Cleared \(Format.plural(ids.count, "song"))", action: .init("Undo") {
       let q = player.queue
       // The same entry of the same queue: a new queue reuses the indices.
       guard q.pos >= 0, q.order[q.pos] == playing, q.currentTrack?.id == song else { return }

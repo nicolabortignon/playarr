@@ -20,9 +20,9 @@ struct UpNextPreview: View {
     if !entries.isEmpty {
       VStack(alignment: .leading, spacing: 4) {
         HStack {
-          Kicker(text: "Up next").accessibilityAddTraits(.isHeader)
+          Kicker(text: "Up next", overArt: true).accessibilityAddTraits(.isHeader)
           Spacer()
-          Button { session.router.showQueue() } label: { Kicker(text: "Queue").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
+          Button { session.router.showQueue() } label: { Kicker(text: "Queue", overArt: true).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }
             .buttonStyle(.plain)
             .accessibilityLabel("Open queue")
         }

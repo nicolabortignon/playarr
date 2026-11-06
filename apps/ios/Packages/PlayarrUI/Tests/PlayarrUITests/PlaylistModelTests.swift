@@ -73,7 +73,7 @@ import Testing
     api.on(.patch, "/api/playlists/5", Listening.playlist(items: three, shared: true))
     await model.setShared(true)
     #expect(api.bodies(.patch, "/api/playlists/5") == [#"{"shared":true}"#])
-    #expect(model.sharing == "Shared with everyone on this server")
+    #expect(model.sharing == "Shared with everyone")
     #expect(model.actions.contains(.stopSharing))
     #expect(model.actions(for: three[0]).last == .remove)
   }

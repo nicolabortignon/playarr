@@ -40,15 +40,15 @@ final class ArtistModel {
   /// Similar artists with music in the library (their pages open here).
   var similarInLibrary: [DiscoverArtist] { (similar?.value ?? []).filter { $0.artistId != nil } }
 
-  /// "2 albums · 5 tracks".
+  /// The header's meta line: "2 albums · 5 songs".
   var counts: String? {
-    artist.value.map { "\(Format.plural($0.albumCount, "album")) · \(Format.plural($0.trackCount, "track"))" }
+    artist.value.map { "\(Format.plural($0.albumCount, "album")) · \(Format.plural($0.trackCount, "song"))" }
   }
 
-  /// "trip hop · electronic", or "Artist".
-  var kicker: String {
+  /// About's kicker: "trip hop · electronic", or nil without genres.
+  var genres: String? {
     let genres = artist.value?.genres.prefix(3) ?? []
-    return genres.isEmpty ? "Artist" : genres.joined(separator: " · ")
+    return genres.isEmpty ? nil : genres.joined(separator: " · ")
   }
 
   /// Play, or Pause and Resume while the queue is this artist's.

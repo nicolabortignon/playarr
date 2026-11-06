@@ -2,15 +2,16 @@ import PlayarrAPI
 import PlayarrPlayer
 import SwiftUI
 
-/// The Queue tab (apps/web/src/pages/Queue.tsx).
+/// The Queue tab (apps/web/src/pages/Queue.tsx): its large title, with Edit and Save as playlist in the bar, the song
+/// playing and where it's from, then Up next with Clear.
 struct QueueView: View {
   let session: AccountSession
-  /// In the iPad's side column: Up next's rows leave out the heart (it's in their ⋯ menu) and put the length after
-  /// the artist, so the titles keep their room.
+  /// In the iPad's side column, under its Queue and Lyrics switch: no title of its own.
   var narrow = false
   @Environment(Theme.self) private var theme
   @State private var reordered = 0
   @Environment(\.reducesMotion) private var reducesMotion
+  @Environment(\.horizontalSizeClass) private var sizeClass
   #if os(iOS)
     @State private var editMode: EditMode = .inactive
   #endif
@@ -30,7 +31,7 @@ struct QueueView: View {
           }
           Section {
             if upcoming.isEmpty {
-              Text("The queue ends after this track.").foregroundStyle(.paperDim)
+              Text("The queue ends after this song.").foregroundStyle(.paperDim)
             }
             ForEach(Array(upcoming.enumerated()), id: \.element.id) { offset, song in
               upNextRow(song, offset: offset, model: model)
@@ -38,19 +39,11 @@ struct QueueView: View {
             .onMove { model.move(from: $0, to: $1); reordered += 1 }
             .onDelete { model.remove($0) }
           } header: {
-            // Edit and Clear as plain words in the header, just under the playing song, rather than in the bar; each
-            // 44 points to tap.
+            // Clear as a plain word beside what's coming, 44 points to tap (as the web's Up next).
             HStack(spacing: 8) {
               Text(model.header)
               Spacer()
               if !upcoming.isEmpty {
-                #if os(iOS)
-                  Button {
-                    withAnimation { editMode = editMode.isEditing ? .inactive : .active }
-                  } label: {
-                    Text(editMode.isEditing ? "Done" : "Edit").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
-                  }
-                #endif
                 Button { model.clear() } label: {
                   Text("Clear").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                 }
@@ -64,6 +57,16 @@ struct QueueView: View {
           .onChange(of: upcoming.isEmpty) { _, empty in if empty { editMode = .inactive } }
         #endif
         .toolbar {
+          #if os(iOS)
+            // The page's own controls, in the bar on the right (docs/design.md, "Headers").
+            if !upcoming.isEmpty {
+              ToolbarItem(placement: .primaryAction) {
+                Button(editMode.isEditing ? "Done" : "Edit") {
+                  withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                }
+              }
+            }
+          #endif
           ToolbarItem(placement: .secondaryAction) {
             Button("Save as playlist", systemImage: "text.badge.plus") {
               session.addToPlaylist(AccountSession.queueToSave(session.player.queue))
@@ -80,10 +83,15 @@ struct QueueView: View {
         }
       }
     }
-    // No title: the tab bar already says where you are.
-    .navigationTitle("")
-    .inlineTitle()
+    .navigationTitle(narrow ? "" : "Queue")
+    #if os(iOS)
+      .navigationBarTitleDisplayMode(narrow ? .inline : .large)
+    #endif
   }
+
+  /// Up next's rows on a phone and in the side column leave out the heart (it's in their ⋯ menu) and put the length
+  /// under the title, after the artist, so the titles keep their room.
+  private var compactRows: Bool { narrow || sizeClass == .compact }
 
   private func nowPlayingHeader(_ model: QueueModel) -> some View {
     HStack(spacing: 4) {
@@ -123,6 +131,7 @@ struct QueueView: View {
 
   private func upNextRow(_ song: QueueModel.Upcoming, offset: Int, model: QueueModel) -> some View {
     let track = song.track
+    let compact = compactRows
     return HStack(spacing: 12) {
       Button { model.play(offset) } label: {
         AdaptiveStack(spacing: 12) {
@@ -132,11 +141,16 @@ struct QueueView: View {
               Text(track.title).essentialLineLimit()
               OfflineMark(store: session.player.downloads, fileId: track.fileId)
             }
-            Text(narrow ? "\(track.artistName) · \(Format.time(track.duration))" : track.artistName)
-              .font(.sans(.footnote)).foregroundStyle(.paperDim).essentialLineLimit()
+            if compact {
+              // The length after the artist, or under them when both don't fit.
+              NameAndNumbers(name: Text(track.artistName), numbers: Text(Format.time(track.duration)).monospacedDigit())
+                .font(.sans(.footnote)).foregroundStyle(.paperDim)
+            } else {
+              Text(track.artistName).font(.sans(.footnote)).foregroundStyle(.paperDim).essentialLineLimit()
+            }
           }
           Spacer(minLength: 8)
-          if !narrow { SongLength(track: track) }
+          if !compact { SongLength(track: track) }
         }
         .contentShape(Rectangle())
       }
@@ -145,7 +159,7 @@ struct QueueView: View {
       .accessibilityLabel("\(track.title), \(track.artistName), \(Format.time(track.duration))")
       .accessibilityHint("Plays from this song")
       .accessibilityActions { upNextItems(song, offset: offset, model: model) }
-      if !narrow { FavoriteButton(track: track, size: .row) }
+      if !compact { FavoriteButton(track: track, size: .row) }
       Menu {
         upNextItems(song, offset: offset, model: model)
       } label: {
@@ -165,7 +179,7 @@ struct QueueView: View {
     let track = song.track
     if offset > 0 { Button("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") { model.playNext(song) } }
     Button("Add to playlist…", systemImage: "music.note.list") { session.addToPlaylist([track]) }
-    if narrow {
+    if compactRows {
       let favorite = session.isFavorite(track)
       Button(favorite ? "Remove from Favorites" : "Add to Favorites", systemImage: favorite ? "heart.slash" : "heart") { session.toggleFavorite(track) }
     }

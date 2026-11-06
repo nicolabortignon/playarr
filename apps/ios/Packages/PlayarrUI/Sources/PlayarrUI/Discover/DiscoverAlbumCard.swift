@@ -7,11 +7,14 @@ struct DiscoverAlbumCard: View {
   let album: DiscoverAlbum
   var highlighted = false
   var width: CGFloat = ShelfCard.width
+  /// On the artist's own page, where their name says nothing: what it is and when ("EP · 2019") instead, and no badge.
+  var onArtistPage = false
 
-  init(album: DiscoverAlbum, highlighted: Bool = false, width: CGFloat = ShelfCard.width) {
+  init(album: DiscoverAlbum, highlighted: Bool = false, width: CGFloat = ShelfCard.width, onArtistPage: Bool = false) {
     self.album = album
     self.highlighted = highlighted
     self.width = width
+    self.onArtistPage = onArtistPage
   }
 
   private var kind: String {
@@ -21,9 +24,15 @@ struct DiscoverAlbumCard: View {
     return album.secondaryTypes.first ?? album.type
   }
 
-  private var byline: String { album.year.map { "\(album.artistName) · \($0)" } ?? album.artistName }
+  /// The line under the title: "Massive Attack · 2010", or on the artist's own page "EP · 2019".
+  static func byline(_ album: DiscoverAlbum, onArtistPage: Bool) -> String {
+    let year = album.year.map { String($0) }
+    let who = onArtistPage ? Format.releaseKind(album.type, album.secondaryTypes) : album.artistName
+    return MetaLine.join([who, year])
+  }
 
   var body: some View {
+    let byline = Self.byline(album, onArtistPage: onArtistPage)
     VStack(alignment: .leading, spacing: 10) {
       NavigationLink(value: DiscoverDestination.card(album).route) {
         VStack(alignment: .leading, spacing: 8) {
@@ -31,7 +40,7 @@ struct DiscoverAlbumCard: View {
             .frame(width: width, height: width)
             .saturation(album.availability.state == .available || highlighted ? 1 : 0.85)
             .overlay(alignment: .topLeading) {
-              if album.availability.state != .available {
+              if album.availability.state != .available, !onArtistPage {
                 Text(kind.uppercased())
                   .font(.mono(size: 9)).tracking(1.5)
                   .padding(.horizontal, 6).padding(.vertical, 2)

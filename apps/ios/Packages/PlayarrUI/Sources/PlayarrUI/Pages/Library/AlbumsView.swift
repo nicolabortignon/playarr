@@ -24,8 +24,7 @@ struct AlbumsView: View {
         .padding(20)
       }
     }
-    .navigationTitle("Albums")
-    .navigationSubtitle(model.albums.value.map { Format.plural($0.count, "album") } ?? "")
+    .pageHeader("Albums", count: model.albums.value.map { Format.plural($0.count, "album") })
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Menu {

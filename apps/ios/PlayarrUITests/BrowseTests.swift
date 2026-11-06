@@ -18,7 +18,7 @@ final class BrowseTests: XCTestCase {
   @MainActor
   func testHomeOpensAnAlbumThatPlaysAndNowPlayingOpensAndCloses() {
     let app = launch()
-    XCTAssertTrue(app.staticTexts["8 tracks across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["8 songs across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10))
 
     app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch.tap()
     XCTAssertTrue(app.staticTexts["LINER NOTES"].waitForExistence(timeout: 5))
@@ -61,7 +61,7 @@ final class BrowseTests: XCTestCase {
     app.buttons["Done"].tap()
     XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5))
     app.buttons["Clear"].tap()
-    XCTAssertTrue(app.staticTexts["The queue ends after this track."].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["The queue ends after this song."].waitForExistence(timeout: 5))
     app.buttons["Undo"].tap()
     XCTAssertTrue(app.buttons["Risingson, Massive Attack, 4:58"].waitForExistence(timeout: 5))
   }
