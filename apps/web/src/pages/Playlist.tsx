@@ -216,8 +216,7 @@ export function PlaylistPage() {
           <EmptyState
             icon={ListPlus}
             title="This playlist is waiting for its first song."
-            hint="Choose Add to playlist… in any song’s ⋯ menu, or on an album, the queue or Now Playing."
-            action={{ label: 'Find songs', to: '/search' }}
+            hint="Choose Add to playlist… in any song’s ⋯ menu."
           />
         ) : (
           <EmptyState icon={ListMusic} title="Nothing in this playlist yet." />

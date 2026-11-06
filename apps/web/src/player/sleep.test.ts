@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { SLEEP_FADE_MS, sleepGain, sleepLabel, sleepsAtSongEnd, useSleep } from './sleep';
+import { useToasts } from '../lib/toast';
+import { useUI } from '../lib/ui';
+import { fellAsleep, SLEEP_FADE_MS, sleepGain, sleepLabel, sleepsAtSongEnd, useSleep } from './sleep';
 
 describe('sleep timer', () => {
   it('fades out over the last seconds, and says how long is left', () => {
@@ -20,5 +22,30 @@ describe('sleep timer', () => {
     useSleep.getState().sleepAtEndOfSong();
     expect(sleepsAtSongEnd()).toBe(true);
     expect(sleepsAtSongEnd()).toBe(false);
+  });
+});
+
+describe('the timer’s end', () => {
+  it('says goodnight in Now Playing when it’s open, and with a toast when it isn’t', () => {
+    useToasts.setState({ toasts: [] });
+    useUI.setState({ nowPlayingOpen: true });
+    fellAsleep();
+    expect(useSleep.getState().sleptAt).not.toBeNull();
+    expect(useToasts.getState().toasts).toEqual([]);
+    useSleep.getState().wake();
+    expect(useSleep.getState().sleptAt).toBeNull();
+    useUI.setState({ nowPlayingOpen: false });
+    fellAsleep();
+    expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Sleep timer: music stopped']);
+  });
+
+  it('forgets the last goodnight when a new timer is set', () => {
+    fellAsleep();
+    useSleep.getState().sleepIn(30);
+    expect(useSleep.getState().sleptAt).toBeNull();
+    fellAsleep();
+    useSleep.getState().sleepAtEndOfSong();
+    expect(useSleep.getState().sleptAt).toBeNull();
+    useSleep.getState().cancel();
   });
 });

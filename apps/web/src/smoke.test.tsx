@@ -54,7 +54,7 @@ describe('Playarr web against live server', () => {
     ['/albums', 'Albums'],
     ['/albums?sort=added', 'Recently added'],
     ['/search', 'Try an artist'],
-    ['/queue', /Nothing queued/],
+    ['/queue', /The deck’s empty/],
     ['/nope', 'This groove is empty.'],
     ['/requests', 'Requests'],
     ['/favorites', 'Favorites'],

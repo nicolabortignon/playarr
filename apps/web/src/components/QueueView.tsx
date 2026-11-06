@@ -17,6 +17,7 @@ import { Equalizer } from './Equalizer';
 import { FavoriteButton } from './FavoriteButton';
 import { FormatBadge } from './FormatBadge';
 import { InlineLink } from './InlineLink';
+import { useJumpBackIn } from './JumpBackIn';
 import { upNextMenu } from './menus';
 import { OfflineMark } from './OfflineMark';
 import { SongRow, SongTime } from './SongRow';
@@ -50,7 +51,7 @@ export function QueueView({ narrow }: { narrow?: boolean }) {
   const upcoming = upcomingIds.map((i) => queue[i]!);
   const total = upcoming.reduce((sum, t) => sum + t.duration, 0);
 
-  if (!track) return <EmptyState icon={List} title="Nothing queued yet." action="lucky" className={narrow ? 'py-10 md:py-10' : undefined} />;
+  if (!track) return <EmptyQueue narrow={narrow} />;
 
   return (
     <>
@@ -70,6 +71,7 @@ export function QueueView({ narrow }: { narrow?: boolean }) {
         <div className={cn('flex items-center rounded-panel border border-line bg-paper/[0.03]', narrow ? 'gap-3 p-2.5 pr-2' : 'gap-4 p-3 pr-4')}>
           <Cover
             src={track.coverUrl}
+            color={track.coverColor}
             size={narrow ? 56 : 72}
             alt=""
             className={cn('shrink-0 rounded-cover', narrow ? 'size-14' : 'size-[72px]')}
@@ -127,6 +129,12 @@ export function QueueView({ narrow }: { narrow?: boolean }) {
       </section>
     </>
   );
+}
+
+/** Nothing queued (docs/design.md, The lines): Feeling lucky, and the album heard last beside it. */
+function EmptyQueue({ narrow }: { narrow?: boolean }) {
+  const jump = useJumpBackIn();
+  return <EmptyState icon={List} title="The deck’s empty." action="lucky" secondary={jump ?? undefined} className={narrow ? 'py-10 md:py-10' : undefined} />;
 }
 
 /** Clear what's coming up, with a way back for a mis-tap. */

@@ -1,7 +1,7 @@
 import type { Account } from '@playarr/shared';
 import { Dices, Pause, Play } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { AccountMenu, accountName } from '../components/AccountMenu';
 import { IconButton } from '../components/Button';
@@ -117,18 +117,44 @@ export function HomePage() {
   );
 }
 
-/** "Hi, Alex.": the account's name, else its username; before anyone has signed in (a new server), just hello. */
-function greeting(account: Pick<Account, 'name' | 'username'> | undefined): string {
-  return account ? `Hi, ${accountName(account)}.` : 'Hi there.';
+/**
+ * The part of the day Home greets with, by the hours Vibes of the hour changes mood at (5, 17 and 22:
+ * apps/server/src/mixes/generators.ts, DAYPARTS). Its daytime is a mood, not a greeting, so the greeting splits it at noon.
+ */
+export function partOfDay(hour: number): 'Morning' | 'Afternoon' | 'Evening' | 'Late night' {
+  if (hour >= 5 && hour < 12) return 'Morning';
+  if (hour >= 12 && hour < 17) return 'Afternoon';
+  if (hour >= 17 && hour < 22) return 'Evening';
+  return 'Late night';
 }
 
-/** Home's title: the account greeted by name, beside its avatar (Account and Settings), as on iOS. */
+/**
+ * "Morning, Alex.", "Late night, Alex.": the part of the day and the account's name, else its username; before anyone
+ * has signed in (a new server), just hello.
+ */
+export function greeting(account: Pick<Account, 'name' | 'username'> | undefined, hour: number): string {
+  return account ? `${partOfDay(hour)}, ${accountName(account)}.` : 'Hi there.';
+}
+
+/** The hour on this device's clock, moving on as the hour does. */
+function useHour(): number {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1);
+    const id = setTimeout(() => setNow(new Date()), nextHour.getTime() - Date.now() + 1000);
+    return () => clearTimeout(id);
+  }, [now]);
+  return now.getHours();
+}
+
+/** Home's title: the account greeted by name and the time of day, beside its avatar (Account and Settings), as on iOS. */
 export function Greeting() {
   const { data: me, isPending } = useMe();
+  const hour = useHour();
   return (
     <header className="mb-4 flex animate-rise items-center justify-between gap-4 md:mb-5">
       {/* Nothing until the account is known, rather than a greeting that changes as it arrives. */}
-      <h1 className="min-w-0 type-page-title break-words text-paper">{isPending ? <span className="invisible">Hi.</span> : greeting(me)}</h1>
+      <h1 className="min-w-0 type-page-title break-words text-paper">{isPending ? <span className="invisible">Hi.</span> : greeting(me, hour)}</h1>
       {me && <AccountMenu account={me} />}
     </header>
   );
@@ -230,7 +256,7 @@ export function shelfArtists<A extends { id: number; albumCount: number }>(artis
 const stagger = (i: number, stepMs: number) => ({ animationDelay: `${Math.min(i, 8) * stepMs}ms` });
 
 /** Three recent covers fanned out like records on a table. */
-function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl?: string }[] }) {
+function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl?: string; coverColor?: string }[] }) {
   if (!albums?.length) return null;
   const poses = [
     'rotate-[-8deg] translate-x-10 translate-y-4',
@@ -247,7 +273,7 @@ function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl
             className={`group relative -ml-16 block w-40 animate-rise transition duration-500 ease-out-expo hover:z-20 hover:-translate-y-3 hover:rotate-0 page-2xl:w-52 ${poses[i]}`}
             style={{ animationDelay: `${150 + i * 90}ms` }}
           >
-            <Cover src={a.coverUrl} size={208} alt={a.title} eager className="rounded-cover shadow-cover-hero ring-1 ring-paper/10" />
+            <Cover src={a.coverUrl} color={a.coverColor} size={208} alt={a.title} eager className="rounded-cover shadow-cover-hero ring-1 ring-paper/10" />
           </Link>
         ))}
       </div>
@@ -281,7 +307,7 @@ function ListeningButton() {
       )}
     >
       <motion.span layout="position" transition={spring} className="relative grid size-10 shrink-0 place-items-center">
-        <Cover src={track.coverUrl} size={36} alt="" className="size-[34px] rounded-full" />
+        <Cover src={track.coverUrl} color={track.coverColor} size={36} alt="" className="size-[34px] rounded-full" />
         {playing && <ProgressRing />}
         <span className="absolute inset-[3px] grid place-items-center rounded-full bg-ink-950/45">
           {playing ? <Pause className="size-3.5 fill-paper text-paper" /> : <Play className="size-3.5 translate-x-px fill-paper text-paper" />}

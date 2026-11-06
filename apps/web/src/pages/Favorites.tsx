@@ -1,6 +1,7 @@
 import { Heart } from 'lucide-react';
 import { ActionRow, usePlayState } from '../components/ActionRow';
 import { DetailHeader, joinMeta } from '../components/DetailHeader';
+import { useJumpBackIn } from '../components/JumpBackIn';
 import { queueItems } from '../components/menus';
 import { EmptyState, ErrorState, SongRowsSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
@@ -42,9 +43,7 @@ export function FavoritesPage() {
       </DetailHeader>
       {error && <ErrorState error={error} onRetry={() => void refetch()} />}
       {isPending && <SongRowsSkeleton className="mt-6 -mx-3 md:mt-8" />}
-      {favorites && favorites.length === 0 && (
-        <EmptyState icon={Heart} title="Songs you heart land here." action={{ label: 'Find something to love', to: '/' }} />
-      )}
+      {favorites && favorites.length === 0 && <NoFavorites />}
       {favorites && favorites.length > 0 && (
         <div className="mt-6 -mx-3 md:mt-8">
           <TrackList tracks={favorites} variant="mixed" source={FAVORITES} />
@@ -52,6 +51,15 @@ export function FavoritesPage() {
       )}
     </div>
   );
+}
+
+/**
+ * No favorites yet (docs/design.md, The lines): Jump back in, to hear something worth a heart; Feeling lucky when nothing
+ * has been heard yet. Nothing until the history is known, rather than one button that turns into the other.
+ */
+function NoFavorites() {
+  const jump = useJumpBackIn();
+  return <EmptyState icon={Heart} title="No hearts yet." hint="Heart a song and it lands here." action={jump === undefined ? undefined : (jump ?? 'lucky')} />;
 }
 
 /** Favorites' cover, as it has no art of its own: a heart on a wash of the accent. */

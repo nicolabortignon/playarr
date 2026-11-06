@@ -40,19 +40,36 @@ function StateLayout({
   );
 }
 
+/** A link or a button that fills an empty page; `title` says more where the label can't ("Plays “Mezzanine”…"). */
+export type PageAction = { label: string; icon?: ReactNode; title?: string } & ({ to: string } | { onClick: () => void });
 /** What fills an empty page: a link, a button, or Feeling lucky (songs in the queue at once). */
-export type EmptyAction = { label: string; icon?: ReactNode; to: string } | { label: string; icon?: ReactNode; onClick: () => void } | 'lucky';
+export type EmptyAction = PageAction | 'lucky';
+
+function ActionButton({ action, variant }: { action: EmptyAction; variant: 'primary' | 'secondary' }) {
+  if (action === 'lucky') return <LuckyButton variant={variant} />;
+  const common = { variant, size: 'large', icon: action.icon, title: action.title } as const;
+  return 'to' in action ? (
+    <Button {...common} to={action.to}>
+      {action.label}
+    </Button>
+  ) : (
+    <Button {...common} onClick={action.onClick}>
+      {action.label}
+    </Button>
+  );
+}
 
 /**
- * A list with nothing in it yet: an icon, one line in the app's voice (warm, brief, specific: "Songs you heart land
- * here."), and the action that fills it, as a large primary button. A second, quieter line only where the first can't
- * say it all.
+ * A list with nothing in it yet: an icon, one line in the app's voice (docs/design.md, The lines: "No hearts yet."),
+ * and the action that fills it, as a large primary button; a second one, where there is one, beside it, outlined. A
+ * second, quieter line only where the first can't say it all.
  */
 export function EmptyState({
   icon,
   title,
   hint,
   action,
+  secondary,
   className,
 }: {
   /** The page's own glyph (lucide): a heart for Favorites, a disc for Albums. */
@@ -60,6 +77,8 @@ export function EmptyState({
   title: ReactNode;
   hint?: ReactNode;
   action?: EmptyAction;
+  /** Beside the action, outlined: the queue's Jump back in, beside Feeling lucky. */
+  secondary?: EmptyAction;
   className?: string;
 }) {
   return (
@@ -70,16 +89,11 @@ export function EmptyState({
       hint={hint}
       className={className}
       actions={
-        action === 'lucky' ? (
-          <LuckyButton />
-        ) : action && 'to' in action ? (
-          <Button variant="primary" size="large" icon={action.icon} to={action.to}>
-            {action.label}
-          </Button>
-        ) : action ? (
-          <Button variant="primary" size="large" icon={action.icon} onClick={action.onClick}>
-            {action.label}
-          </Button>
+        action || secondary ? (
+          <>
+            {action && <ActionButton action={action} variant="primary" />}
+            {secondary && <ActionButton action={secondary} variant="secondary" />}
+          </>
         ) : undefined
       }
     />
@@ -88,14 +102,14 @@ export function EmptyState({
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : typeof error === 'string' ? error : undefined);
 
-/** A page that couldn't load: what went wrong, a retry where there's one, and a way home. */
+/** A page that couldn't load: the line (docs/design.md, The lines), what went wrong, a retry where there's one, a way home. */
 export function ErrorState({ error, onRetry, className }: { error: unknown; onRetry?: () => void; className?: string }) {
   return (
     <StateLayout
       role="alert"
       icon={CircleAlert}
       tone="danger"
-      title="Something skipped."
+      title="The needle skipped."
       hint={messageOf(error) ?? 'Unknown error'}
       className={cn('mt-12', className)}
       actions={

@@ -50,6 +50,8 @@ export interface Download {
   title: string;
   subtitle?: string;
   coverUrl?: string;
+  /** Its cover's own color, for the space the cover takes while it loads (an album's `coverColor`). */
+  coverColor?: string;
   /** Where it lives in the app. */
   href: string;
   /** Its songs as of the last visit: what's downloaded, and what plays offline. */

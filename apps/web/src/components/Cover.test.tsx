@@ -79,3 +79,26 @@ describe('Cover', () => {
     expect(again.container.querySelector('img')).not.toBeNull();
   });
 });
+
+/** A box's own background color, as the browser keeps it (hex or rgb). */
+const sameColor = (shown: string, hex: string) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return shown === hex || shown === `rgb(${r}, ${g}, ${b})`;
+};
+
+describe('a loading cover', () => {
+  it('fills its space with the album’s own color, not gray', () => {
+    const { container } = render(<Cover src="/art/album/1/cover" color="#1f4e79" size={100} alt="Mezzanine" />);
+    const box = container.firstElementChild as HTMLElement;
+    expect(sameColor(box.style.backgroundColor, '#1f4e79')).toBe(true);
+    // The picture isn't there yet (it waits for its turn): the color is what shows.
+    expect(box.querySelector('img')).toBeNull();
+  });
+
+  it('stays the ink gray without a color (an older server, Discover’s covers)', () => {
+    const { container } = render(<Cover src="/art/album/1/cover" size={100} alt="Mezzanine" />);
+    const box = container.firstElementChild as HTMLElement;
+    expect(box.style.backgroundColor).toBe('');
+    expect(box.className).toContain('bg-ink-800');
+  });
+});

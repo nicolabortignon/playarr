@@ -186,3 +186,11 @@ describe('A row’s menu without its ⋯', () => {
     expect(usePlayer.getState().pos).toBe(0);
   });
 });
+
+describe('a song row’s cover', () => {
+  it('shows the album’s own color while it loads', () => {
+    list({ tracks: [{ ...track(1), coverUrl: '/art/album/10/cover', coverColor: '#0e2a47' }], variant: 'mixed' });
+    const box = row('Song 1').querySelector<HTMLElement>('.aspect-square')!;
+    expect(['#0e2a47', 'rgb(14, 42, 71)']).toContain(box.style.backgroundColor);
+  });
+});

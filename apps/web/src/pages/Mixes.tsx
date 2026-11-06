@@ -36,7 +36,7 @@ export function MixesPage() {
         <EmptyState
           icon={Sparkles}
           title="Your mixes are on their way."
-          hint="They appear as you listen, and as Playarr learns your library’s genres, years and sound."
+          hint="They appear as you listen, and as Playarr learns your library."
           action="lucky"
         />
       )}

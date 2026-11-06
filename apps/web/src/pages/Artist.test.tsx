@@ -103,6 +103,16 @@ describe('Artist page', () => {
     expect(eps.getByText('EP · 2016')).toBeTruthy();
   });
 
+  it('says what each of its own albums is and when, rather than the artist’s own name', async () => {
+    vi.spyOn(api, 'artist').mockResolvedValue(artist({ albums: [{ ...owned(70, 'Mezzanine', 'rg-mezz'), year: 1998 }, { ...owned(72, 'Ritual Spirit', 'rg-ep'), albumType: 'EP', year: 2016 }] }));
+    vi.spyOn(api, 'discoverArtist').mockResolvedValue({ mbid: 'art-1', name: 'Massive Attack', albums: [] } as unknown as DiscoverArtistDetail);
+    renderArtist();
+    const card = (title: string) => screen.getByRole('link', { name: new RegExp(title) });
+    expect((await screen.findByRole('link', { name: /Mezzanine/ })).textContent).toContain('Album · 1998');
+    expect(card('Mezzanine').textContent).not.toContain('Massive Attack');
+    expect(card('Ritual Spirit').textContent).toContain('EP · 2016');
+  });
+
   it('heads the page with what it is, the name and one line of counts', async () => {
     vi.spyOn(api, 'artist').mockResolvedValue(artist({ mbid: undefined, albumCount: 2, trackCount: 24 }));
     renderArtist();

@@ -75,7 +75,7 @@ export function AlbumsPage() {
 export function EmptyLibrary({ icon, title }: { icon: LucideIcon; title: string }) {
   const member = useIsMember();
   return member ? (
-    <EmptyState icon={icon} title={title} hint="Music shows up here once an admin adds some to the library." />
+    <EmptyState icon={icon} title={title} hint="Music shows up here once an admin adds some." />
   ) : (
     <EmptyState
       icon={icon}

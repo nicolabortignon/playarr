@@ -1,17 +1,32 @@
 import type { ListeningStats, Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
+import { usePrefs } from '../lib/prefs';
 import { usePlayer } from '../player/store';
 import { reviewYear } from './Home';
-import { minutesLabel, StatsPage } from './Stats';
+import { CountUp, isNewRecord, minutesLabel, StatsPage } from './Stats';
 
+beforeEach(() => {
+  usePrefs.setState({ motion: 'full' });
+  vi.spyOn(api, 'favorites').mockResolvedValue([]);
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
+
+function view(range = '2026') {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={[`/stats?range=${range}`]}>
+        <StatsPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
 const track = (id: number) => ({ id, fileId: id, recordingId: `r${id}`, title: `Song ${id}`, artistName: 'Artist', albumId: 1 }) as Track;
 const stats: ListeningStats = {
@@ -71,5 +86,64 @@ describe('Your listening', () => {
     expect(reviewYear(new Date(2026, 11, 3))).toBe(2026);
     expect(reviewYear(new Date(2027, 0, 20))).toBe(2026);
     expect(reviewYear(new Date(2026, 5, 1))).toBeUndefined();
+  });
+});
+
+describe('Your listening’s little rituals', () => {
+  it('counts the headline number up as the page opens, landing on the real one', async () => {
+    render(<CountUp value={1792} />);
+    // The real number holds its place and is what's read out; the count runs over it.
+    const real = screen.getByText('1,792');
+    expect(real.className).toContain('text-transparent');
+    expect(real.parentElement!.textContent).not.toBe('1,7921,792');
+    await waitFor(() => expect(real.className).not.toContain('text-transparent'), { timeout: 3000 });
+    expect(real.parentElement!.textContent).toBe('1,792');
+  });
+
+  it('shows the number at once under Reduce Motion', () => {
+    usePrefs.setState({ motion: 'reduce' });
+    render(<CountUp value={1792} />);
+    expect(screen.getByText('1,792').className).not.toContain('text-transparent');
+    expect(screen.getByText('1,792').parentElement!.textContent).toBe('1,792');
+  });
+
+  it('flags a new longest streak: the one going on, when it’s more than a day', () => {
+    expect(isNewRecord({ longestStreak: 9, currentStreak: 9 })).toBe(true);
+    expect(isNewRecord({ longestStreak: 9, currentStreak: 3 })).toBe(false);
+    expect(isNewRecord({ longestStreak: 1, currentStreak: 1 })).toBe(false);
+    // Servers before it don't send the streak going on.
+    expect(isNewRecord({ longestStreak: 9 })).toBe(false);
+  });
+
+  it('puts the flag on the Longest streak tile', async () => {
+    vi.spyOn(api, 'stats').mockResolvedValue({ ...stats, range: 'month', currentStreak: 9 });
+    view('month');
+    expect(await screen.findByText('New record')).toBeTruthy();
+    cleanup();
+    vi.spyOn(api, 'stats').mockResolvedValue({ ...stats, range: 'month', currentStreak: 4 });
+    view('month');
+    expect(await screen.findByText('Longest streak')).toBeTruthy();
+    expect(screen.queryByText('New record')).toBeNull();
+  });
+
+  it('opens a year in review like a sleeve sliding out, and keeps it still under Reduce Motion', async () => {
+    vi.spyOn(api, 'stats').mockResolvedValue(stats);
+    view();
+    expect(await screen.findByText('Your artist of the year')).toBeTruthy();
+    expect(screen.getByText('Year in review').closest('[data-sleeve]')).not.toBeNull();
+    cleanup();
+    usePrefs.setState({ motion: 'reduce' });
+    view();
+    expect(await screen.findByText('Your artist of the year')).toBeTruthy();
+    expect(document.querySelector('[data-sleeve]')).toBeNull();
+  });
+
+  it('says no spins in this period yet, with Feeling lucky', async () => {
+    vi.spyOn(api, 'stats').mockResolvedValue({ ...stats, range: 'month', plays: 0, minutes: 0 });
+    view('month');
+    // docs/design.md, The lines: Stats.
+    expect(await screen.findByText('No spins in this period yet.')).toBeTruthy();
+    expect(screen.getByText('A song counts once it’s heard for 30 seconds.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Feeling lucky' })).toBeTruthy();
   });
 });

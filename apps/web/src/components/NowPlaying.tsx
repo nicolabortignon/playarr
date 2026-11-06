@@ -1,14 +1,18 @@
-import { ChevronDown, Ellipsis, List, Quote } from 'lucide-react';
-import { AnimatePresence, motion, useDragControls } from 'motion/react';
-import { useEffect } from 'react';
+import type { Track } from '@playarr/shared';
+import { ChevronDown, Ellipsis, List, Moon, Quote } from 'lucide-react';
+import { AnimatePresence, motion, useDragControls, useMotionTemplate, useMotionValue, useSpring } from 'motion/react';
+import { useEffect, useState, type PointerEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import { sized } from '../lib/api';
+import { cn } from '../lib/cn';
+import { useReduceMotion } from '../lib/motion';
 import { useOverlay } from '../lib/overlays';
 import { useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
-import { useColumnLayout } from '../lib/useMediaQuery';
+import { useColumnLayout, useMediaQuery } from '../lib/useMediaQuery';
 import { playUpcoming } from '../player/actions';
+import { useSleep } from '../player/sleep';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { IconButton } from './Button';
 import { Cover } from './Cover';
@@ -81,20 +85,7 @@ function Sheet() {
       dragElastic={{ top: 0, bottom: 0.6 }}
       onDragEnd={(_, info) => (info.offset.y > 120 || info.velocity.y > 600) && close()}
     >
-      {/* Atmosphere: the cover itself, blown up and blurred. */}
-      <AnimatePresence>
-        <motion.img
-          key={track.coverUrl ?? 'none'}
-          src={sized(track.coverUrl, 300)}
-          alt=""
-          aria-hidden
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.55 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 1.2 }}
-          className="pointer-events-none absolute inset-0 h-full w-full scale-150 object-cover blur-[90px] saturate-150"
-        />
-      </AnimatePresence>
+      <Backdrop coverUrl={track.coverUrl} />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_0%,color-mix(in_oklab,var(--color-ink-950)_50%,transparent)_55%,color-mix(in_oklab,var(--color-ink-950)_92%,transparent)_100%)]" />
       {/* The art fades into the ink of the bars around it: Safari's status bar and toolbar, or the installed app's. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[calc(env(safe-area-inset-top)+3rem)] bg-gradient-to-b from-ink-950 to-transparent md:hidden" />
@@ -133,17 +124,12 @@ function Sheet() {
               <motion.div
                 key={track.albumId}
                 initial={{ opacity: 0, scale: 0.92 }}
-                animate={{ opacity: 1, scale: playing ? 1 : 0.86 }}
+                // Paused, the cover settles back (smaller, its shadow softer); playing lifts it again (plan 7 §3).
+                animate={{ opacity: 1, scale: playing ? 1 : PAUSED_SCALE }}
                 transition={{ type: 'spring', damping: 22, stiffness: 180 }}
                 className="aspect-square w-[min(100cqw,100cqh,560px)]"
               >
-                <Cover
-                  src={track.coverUrl}
-                  size={560}
-                  alt={track.albumTitle}
-                  eager
-                  className="w-full rounded-lg shadow-cover-hero ring-1 ring-paper/10"
-                />
+                <CoverObject track={track} playing={playing} />
               </motion.div>
             </div>
           )}
@@ -168,7 +154,7 @@ function Sheet() {
               </div>
               <FavoriteButton track={track} size="lg" className="-mr-2" />
             </div>
-            <SeekBar />
+            <SeekBar energy />
             <div className="flex flex-col gap-2">
               <Transport size="lg" />
               <TransitionView className="self-center" />
@@ -177,7 +163,168 @@ function Sheet() {
           </div>
         </div>
       </div>
+      <SleepWell />
     </motion.div>
+  );
+}
+
+/** How far the cover settles back while the music is paused (as iOS's). */
+const PAUSED_SCALE = 0.86;
+/** The most the cover tilts towards the pointer, in degrees. */
+const MAX_TILT = 2;
+
+/**
+ * Atmosphere: the cover itself, blown up and blurred, drifting slowly through its own colors (plan 7 §3), still under
+ * Reduce Motion. A new cover fades in over the last.
+ */
+function Backdrop({ coverUrl }: { coverUrl?: string }) {
+  const reduce = useReduceMotion();
+  return (
+    <div aria-hidden data-drift={!reduce || undefined} className={cn('pointer-events-none absolute inset-0', !reduce && 'animate-drift will-change-transform')}>
+      <AnimatePresence>
+        <motion.img
+          key={coverUrl ?? 'none'}
+          src={sized(coverUrl, 300)}
+          alt=""
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.55 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: reduce ? 0 : 1.2 }}
+          className="absolute inset-0 h-full w-full scale-150 object-cover blur-[90px] saturate-150"
+        />
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * Now Playing's cover, as an object (plan 7 §3): its shadow lifts while the music plays and softens when it's paused,
+ * and with a mouse it tilts a degree or two towards the pointer, catching a faint sheen. Never on touch, and still under
+ * Reduce Motion.
+ */
+function CoverObject({ track, playing }: { track: Track; playing: boolean }) {
+  const reduce = useReduceMotion();
+  const mouse = useMediaQuery('(hover: hover) and (pointer: fine)');
+  const tilts = mouse && !reduce;
+  const spring = { stiffness: 160, damping: 18, mass: 0.6 };
+  const rotateX = useSpring(0, spring);
+  const rotateY = useSpring(0, spring);
+  const sheen = useSpring(0, spring);
+  const x = useMotionValue(50);
+  const y = useMotionValue(50);
+  const light = useMotionTemplate`radial-gradient(circle at ${x}% ${y}%, color-mix(in oklab, var(--color-paper) 22%, transparent), transparent 62%)`;
+
+  const follow = (e: PointerEvent<HTMLDivElement>) => {
+    if (!tilts || e.pointerType !== 'mouse') return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const px = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width));
+    const py = Math.min(1, Math.max(0, (e.clientY - box.top) / box.height));
+    rotateY.set((px - 0.5) * 2 * MAX_TILT);
+    rotateX.set(-(py - 0.5) * 2 * MAX_TILT);
+    x.set(px * 100);
+    y.set(py * 100);
+    sheen.set(1);
+  };
+  const rest = () => {
+    rotateX.set(0);
+    rotateY.set(0);
+    sheen.set(0);
+  };
+  useEffect(() => {
+    if (!tilts) rest();
+  }, [tilts]);
+
+  return (
+    <motion.div
+      onPointerMove={follow}
+      onPointerLeave={rest}
+      style={tilts ? { rotateX, rotateY, transformPerspective: 900 } : undefined}
+      data-tilt={tilts || undefined}
+      className="relative"
+    >
+      <Cover
+        src={track.coverUrl}
+        color={track.coverColor}
+        size={560}
+        alt={track.albumTitle}
+        eager
+        className={cn('w-full rounded-lg ring-1 ring-paper/10 transition-shadow duration-500', playing ? 'shadow-cover-hero' : 'shadow-cover')}
+      />
+      {tilts && <motion.div aria-hidden style={{ background: light, opacity: sheen }} className="pointer-events-none absolute inset-0 rounded-lg" />}
+    </motion.div>
+  );
+}
+
+/** How long the moon and "Sleep well" stay before the screen rests. */
+const MOON_MS = 4000;
+/** A goodnight older than this isn't said: Now Playing opened long after the music stopped. */
+const SLEPT_LATELY_MS = 2000;
+
+/**
+ * The sleep timer's end (plan 7 §5): Now Playing dims to a moon and "Sleep well" for a moment, then the screen rests,
+ * dark, until a touch, a key or the music playing again wakes it.
+ */
+function SleepWell() {
+  const sleptAt = useSleep((s) => s.sleptAt);
+  const playing = usePlayer((s) => s.playing);
+  const reduce = useReduceMotion();
+  const [moon, setMoon] = useState(false);
+  // Said as it happens, not to Now Playing opened long after the music stopped.
+  const [stale] = useState(() => (sleptAt !== null && Date.now() - sleptAt > SLEPT_LATELY_MS ? sleptAt : null));
+  const resting = sleptAt !== null && sleptAt !== stale && !playing;
+
+  useEffect(() => {
+    if (stale !== null) useSleep.getState().wake();
+  }, [stale]);
+  // The moon and the words for a moment, then the screen rests.
+  useEffect(() => {
+    if (!resting) return setMoon(false);
+    setMoon(true);
+    const id = setTimeout(() => setMoon(false), MOON_MS);
+    return () => clearTimeout(id);
+  }, [resting, sleptAt]);
+  // A key wakes it (a touch too, below), and so does the music playing again.
+  useEffect(() => {
+    if (!resting) return;
+    const wake = () => useSleep.getState().wake();
+    window.addEventListener('keydown', wake, true);
+    return () => window.removeEventListener('keydown', wake, true);
+  }, [resting]);
+  useEffect(() => {
+    if (playing) useSleep.getState().wake();
+  }, [playing]);
+
+  const fade = (seconds: number) => ({ duration: reduce ? 0 : seconds });
+  return (
+    <AnimatePresence>
+      {resting && (
+        <motion.div
+          key="resting"
+          role="status"
+          aria-label="Sleep well"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={fade(1.2)}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            useSleep.getState().wake();
+          }}
+          className="absolute inset-0 z-20 grid place-items-center bg-ink-950/90"
+        >
+          <AnimatePresence>
+            {moon && (
+              <motion.div key="moon" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={fade(1.5)} className="flex flex-col items-center text-center">
+                <span className="grid size-14 place-items-center rounded-full bg-ink-800 text-paper-dim ring-1 ring-line">
+                  <Moon className="size-6" />
+                </span>
+                <p className="mt-5 type-section-title text-paper">Sleep well</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

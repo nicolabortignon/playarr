@@ -4,7 +4,7 @@ import { useRef, useState, type CSSProperties, type ReactNode, type Ref } from '
 import { Link } from 'react-router';
 import { cn } from '../lib/cn';
 import { useContextMenu, type Point } from '../lib/contextMenu';
-import { plural } from '../lib/format';
+import { plural, releaseKind } from '../lib/format';
 import { useNearScreen } from '../lib/viewport';
 import { playAlbum } from '../player/actions';
 import { currentTrack, usePlayer } from '../player/store';
@@ -33,7 +33,20 @@ export function useCardMenu(card: { current: HTMLElement | null }) {
   return { menuAt, close: () => setMenuAt(null), events };
 }
 
-export function AlbumCard({ album, size = 220, style, className }: { album: Album; size?: number; style?: CSSProperties; className?: string }) {
+export function AlbumCard({
+  album,
+  size = 220,
+  onArtistPage,
+  style,
+  className,
+}: {
+  album: Album;
+  size?: number;
+  /** On the artist's own page, where their name says nothing: what it is in its place ("EP · 2019"). */
+  onArtistPage?: boolean;
+  style?: CSSProperties;
+  className?: string;
+}) {
   // Booleans about this album only: a new track or play/pause re-renders the cards it concerns, not all of them.
   const isCurrent = usePlayer((s) => currentTrack(s)?.albumId === album.id);
   const playingHere = usePlayer((s) => s.playing && currentTrack(s)?.albumId === album.id);
@@ -51,6 +64,7 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
             <div className="relative">
               <Cover
                 src={album.coverUrl}
+                color={album.coverColor}
                 size={size}
                 alt={album.title}
                 className="rounded-cover shadow-cover ring-1 ring-paper/5"
@@ -59,7 +73,7 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
             <div className="mt-3 min-w-0">
               <div className={cn('truncate type-body leading-snug', isCurrent ? 'text-accent' : 'text-paper')}>{album.title}</div>
               <div className="truncate type-small text-muted">
-                {album.artistName}
+                {onArtistPage ? releaseKind(album.albumType, album.secondaryTypes) : album.artistName}
                 {album.year && <span className="type-meta"> · {album.year}</span>}
                 {album.trackCount < album.totalTrackCount && (
                   <span className="type-meta">

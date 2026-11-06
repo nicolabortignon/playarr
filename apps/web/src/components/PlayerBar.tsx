@@ -1,3 +1,4 @@
+import type { Track } from '@playarr/shared';
 import { List, Maximize2, Play, Quote, SkipForward, Volume1, Volume2, VolumeX } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
@@ -7,6 +8,7 @@ import { toast } from '../lib/toast';
 import { useUI, type SideColumnView } from '../lib/ui';
 import { useColumnLayout } from '../lib/useMediaQuery';
 import { playAlbum } from '../player/actions';
+import { useEndOfSongLine } from '../player/endOfSong';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 import { Button } from './Button';
 import { Cover } from './Cover';
@@ -33,7 +35,7 @@ export function PlayerBar() {
           <>
             <div className="flex min-w-0 items-center gap-3.5">
               <button type="button" onClick={() => open(true)} aria-label="Open now playing" className="group relative shrink-0">
-                <Cover src={track.coverUrl} size={56} alt={track.albumTitle} className="size-14 rounded-cover shadow-lg ring-1 ring-paper/5" />
+                <Cover src={track.coverUrl} color={track.coverColor} size={56} alt={track.albumTitle} className="size-14 rounded-cover shadow-lg ring-1 ring-paper/5" />
                 <span className="absolute inset-0 grid place-items-center rounded-cover bg-ink-950/50 opacity-0 transition group-hover:opacity-100">
                   <Maximize2 className="size-4.5" />
                 </span>
@@ -42,9 +44,7 @@ export function PlayerBar() {
                 <Link to={`/albums/${track.albumId}`} className="block truncate type-body text-paper hover:underline">
                   {track.title}
                 </Link>
-                <Link to={`/artists/${track.artistId}`} className="block truncate type-small text-muted hover:text-paper-dim hover:underline">
-                  {track.artistName}
-                </Link>
+                <Subtitle track={track} link />
               </div>
               <FavoriteButton track={track} size="md" />
             </div>
@@ -93,7 +93,7 @@ function Idle() {
       <div className="flex min-w-0 items-center gap-3.5">
         {last ? (
           <>
-            <Cover src={last.coverUrl} size={56} alt="" className="size-14 shrink-0 rounded-cover shadow-lg ring-1 ring-paper/5" />
+            <Cover src={last.coverUrl} color={last.coverColor} size={56} alt="" className="size-14 shrink-0 rounded-cover shadow-lg ring-1 ring-paper/5" />
             <div className="min-w-0">
               <div className="type-kicker text-muted">Heard last</div>
               <Link to={`/albums/${last.id}`} className="block truncate type-body text-paper hover:underline">
@@ -122,6 +122,28 @@ function Idle() {
         <LuckyButton variant={last ? 'secondary' : 'primary'} size="regular" />
       </div>
     </>
+  );
+}
+
+/**
+ * Under the song's title, its artist (a link in the player bar); from ten seconds before the song gives way, what comes
+ * next (plan 7 §5): "Next: Teardrop", or with DJ mix "Mixing into Teardrop on the next bar".
+ */
+function Subtitle({ track, link }: { track: Track; link?: boolean }) {
+  const ending = useEndOfSongLine();
+  if (ending) {
+    return (
+      <span key={ending} className="block animate-fade truncate type-small text-muted">
+        {ending}
+      </span>
+    );
+  }
+  return link ? (
+    <Link to={`/artists/${track.artistId}`} className="block truncate type-small text-muted hover:text-paper-dim hover:underline">
+      {track.artistName}
+    </Link>
+  ) : (
+    <span className="block truncate type-small text-muted">{track.artistName}</span>
   );
 }
 
@@ -213,10 +235,10 @@ export function MiniPlayer() {
           // Its focus ring inside: the bar clips what's outside it.
           className="relative flex min-w-0 flex-1 items-center gap-3 self-stretch pr-1 pl-2 text-left focus-visible:-outline-offset-2"
         >
-          <Cover src={track.coverUrl} size={44} alt="" className="size-11 shrink-0 rounded-cover" />
+          <Cover src={track.coverUrl} color={track.coverColor} size={44} alt="" className="size-11 shrink-0 rounded-cover" />
           <span className="min-w-0">
             <span className="block truncate type-body text-paper">{track.title}</span>
-            <span className="block truncate type-small text-muted">{track.artistName}</span>
+            <Subtitle track={track} />
           </span>
         </button>
         <FavoriteButton track={track} size="md" className="relative" />

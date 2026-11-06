@@ -1,6 +1,3 @@
-import { useEffect, useState } from 'react';
-import { sized } from './api';
-
 const cache = new Map<string, string | null>();
 
 /** Pick a vivid, legible accent color from an image (same-origin, so canvas is readable), as `accentOf` picks it. */
@@ -133,17 +130,18 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   return [h / 6, s, l];
 }
 
+/** What the server has read of an album's cover, sent with the album and its songs (`Album.coverColor`, `coverAccent`). */
+export interface CoverColors {
+  coverColor?: string;
+  coverAccent?: string;
+}
 
-/** Accent color for a specific cover (e.g. an album page header), independent of what's playing. */
-export function useCoverAccent(coverUrl: string | undefined): string | null {
-  const [color, setColor] = useState<string | null>(null);
-  useEffect(() => {
-    if (!coverUrl) return setColor(null);
-    let cancelled = false;
-    void extractAccent(sized(coverUrl, 96)!).then((c) => !cancelled && setColor(c));
-    return () => {
-      cancelled = true;
-    };
-  }, [coverUrl]);
-  return color;
+/**
+ * The accent a cover gives, when the server has read it: its `coverAccent`; null when it has and the cover has none to
+ * give (a `coverColor` without a `coverAccent`: a gray or black-and-white cover); undefined when it hasn't (an older
+ * server, a cover not read yet, Discover's covers), and the picture is read here (`extractAccent`).
+ */
+export function knownAccent(colors: CoverColors | undefined): string | null | undefined {
+  if (colors?.coverAccent) return colors.coverAccent;
+  return colors?.coverColor ? null : undefined;
 }

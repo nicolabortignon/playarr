@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { cn } from '../lib/cn';
 
 interface SliderProps {
@@ -13,6 +13,10 @@ interface SliderProps {
   valueText?: (v: number) => string;
   /** Shows a hover tooltip with this formatter (pointer devices). */
   tooltip?: (v: number) => string;
+  /** Where a drag would land while it's under way (null once it ends): for a picture that follows it. */
+  onScrub?: (value: number | null) => void;
+  /** Drawn under the line, inside the slider (Now Playing's energy strip): pressing or dragging it seeks there too. */
+  children?: ReactNode;
   className?: string;
 }
 
@@ -27,6 +31,8 @@ export function Slider({
   label,
   valueText,
   tooltip,
+  onScrub,
+  children,
   className,
 }: SliderProps) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -41,24 +47,28 @@ export function Slider({
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * max;
   };
 
+  const dragTo = (v: number | null) => {
+    setDrag(v);
+    onScrub?.(v);
+  };
   const onPointerDown = (e: PointerEvent) => {
     if (max <= 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const v = valueAt(e.clientX);
-    setDrag(v);
+    dragTo(v);
     if (live) onChange(v);
   };
   const onPointerMove = (e: PointerEvent) => {
     if (e.pointerType === 'mouse') setHover(valueAt(e.clientX));
     if (drag === null) return;
     const v = valueAt(e.clientX);
-    setDrag(v);
+    dragTo(v);
     if (live) onChange(v);
   };
   const onPointerUp = (e: PointerEvent) => {
     if (drag === null) return;
     onChange(valueAt(e.clientX));
-    setDrag(null);
+    dragTo(null);
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -78,6 +88,23 @@ export function Slider({
     }
   };
 
+  const line = (
+    <div ref={trackRef} className="relative h-[3px] w-full rounded-full bg-paper/12 transition-[height] group-hover:h-[5px]">
+      <div className="absolute inset-y-0 left-0 rounded-full bg-paper/12" style={{ width: `${bufPct}%` }} />
+      <div
+        className={cn('absolute inset-y-0 left-0 rounded-full bg-paper transition-colors group-hover:bg-accent', drag !== null && 'bg-accent')}
+        style={{ width: `${pct}%` }}
+      />
+      <div
+        className={cn(
+          'absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-paper ring-4 ring-ink-950/25 transition-transform',
+          drag !== null ? 'scale-110' : 'scale-0 group-hover:scale-100 group-focus-visible:scale-100',
+        )}
+        style={{ left: `${pct}%` }}
+      />
+    </div>
+  );
+
   return (
     <div
       role="slider"
@@ -90,26 +117,25 @@ export function Slider({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={() => setDrag(null)}
+      onPointerCancel={() => dragTo(null)}
       onPointerLeave={() => setHover(null)}
       onKeyDown={onKeyDown}
-      // On touch screens a taller box than it looks takes the taps: 44 px, the line drawn the same.
-      className={cn('group relative flex h-5 cursor-pointer touch-none items-center select-none tap-target', className)}
+      // On touch screens a taller box than it looks takes the taps: 44 px, the line drawn the same. With something drawn
+      // under the line, the line keeps its row and the box grows to hold both.
+      className={cn(
+        'group relative flex h-5 cursor-pointer touch-none items-center select-none tap-target',
+        children != null && 'h-auto flex-col items-stretch',
+        className,
+      )}
     >
-      <div ref={trackRef} className="relative h-[3px] w-full rounded-full bg-paper/12 transition-[height] group-hover:h-[5px]">
-        <div className="absolute inset-y-0 left-0 rounded-full bg-paper/12" style={{ width: `${bufPct}%` }} />
-        <div
-          className={cn('absolute inset-y-0 left-0 rounded-full bg-paper transition-colors group-hover:bg-accent', drag !== null && 'bg-accent')}
-          style={{ width: `${pct}%` }}
-        />
-        <div
-          className={cn(
-            'absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-paper ring-4 ring-ink-950/25 transition-transform',
-            drag !== null ? 'scale-110' : 'scale-0 group-hover:scale-100 group-focus-visible:scale-100',
-          )}
-          style={{ left: `${pct}%` }}
-        />
-      </div>
+      {children != null ? (
+        <>
+          <div className="flex h-6 items-center">{line}</div>
+          {children}
+        </>
+      ) : (
+        line
+      )}
       {tooltip && hover !== null && max > 0 && (
         <div
           className="pointer-events-none absolute -top-7 -translate-x-1/2 rounded bg-ink-700 px-1.5 py-0.5 type-meta text-paper shadow-lg"

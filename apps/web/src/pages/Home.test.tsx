@@ -2,12 +2,18 @@ import type { Account } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, ApiError } from '../lib/api';
-import { Greeting, shelfArtists } from './Home';
+import { Greeting, greeting, partOfDay, shelfArtists } from './Home';
 
+beforeEach(() => {
+  // A morning: only the clock's date is faked, so queries' timers still run.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 10, 6, 8, 30));
+});
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -41,10 +47,10 @@ function renderGreeting() {
 }
 
 describe('Home greeting', () => {
-  it('greets the account by name, beside its avatar, which opens Account and Settings', async () => {
+  it('greets the account by name and the time of day, beside its avatar, which opens Account and Settings', async () => {
     vi.spyOn(api, 'me').mockResolvedValue(account());
     const router = renderGreeting();
-    expect(await screen.findByRole('heading', { level: 1, name: 'Hi, Alex.' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Morning, Alex.' })).toBeTruthy();
     const avatar = screen.getByRole('button', { name: 'Account and settings' });
     expect(avatar.textContent).toBe('A');
     fireEvent.click(avatar);
@@ -64,7 +70,7 @@ describe('Home greeting', () => {
   it('uses the username when the account has no name', async () => {
     vi.spyOn(api, 'me').mockResolvedValue(account({ name: '  ' }));
     renderGreeting();
-    expect(await screen.findByRole('heading', { level: 1, name: 'Hi, alex.' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Morning, alex.' })).toBeTruthy();
   });
 
   it('just says hello, with no avatar, before anyone has signed in', async () => {
@@ -72,6 +78,24 @@ describe('Home greeting', () => {
     renderGreeting();
     expect(await screen.findByRole('heading', { level: 1, name: 'Hi there.' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Account and settings' })).toBeNull();
+  });
+
+  it('greets late at night after ten', async () => {
+    vi.setSystemTime(new Date(2026, 10, 6, 23, 15));
+    vi.spyOn(api, 'me').mockResolvedValue(account());
+    renderGreeting();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Late night, Alex.' })).toBeTruthy();
+  });
+
+  it('changes at the hours Vibes of the hour changes mood (5, 17, 22), with the day split at noon', () => {
+    const at = (hours: number[]) => hours.map(partOfDay);
+    expect(at([5, 9, 11])).toEqual(['Morning', 'Morning', 'Morning']);
+    expect(at([12, 16])).toEqual(['Afternoon', 'Afternoon']);
+    expect(at([17, 21])).toEqual(['Evening', 'Evening']);
+    expect(at([22, 23, 0, 4])).toEqual(['Late night', 'Late night', 'Late night', 'Late night']);
+    expect(greeting(account(), 18)).toBe('Evening, Alex.');
+    expect(greeting(account({ name: '' }), 13)).toBe('Afternoon, alex.');
+    expect(greeting(undefined, 13)).toBe('Hi there.');
   });
 });
 

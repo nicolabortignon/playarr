@@ -1,6 +1,6 @@
-import type { Track } from '@playarr/shared';
+import type { Album, AlbumDetail, Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
@@ -135,10 +135,29 @@ describe('Queue', () => {
     expect(upcomingTitles()).toEqual(['Song 2', 'Song 3', 'Song 4']);
   });
 
-  it('offers Feeling lucky when nothing is queued', () => {
+  it('says the deck’s empty, with Feeling lucky and the album heard last beside it', async () => {
+    const mezzanine = { id: 70, title: 'Mezzanine', artistId: 7, artistName: 'Massive Attack' } as Album;
+    vi.spyOn(api, 'recentAlbums').mockResolvedValue([mezzanine]);
+    const album = vi.spyOn(api, 'album').mockResolvedValue({ ...mezzanine, tracks: [track(8)], discCount: 1, missingTracks: [] } as AlbumDetail);
     usePlayer.setState({ queue: [], order: [], pos: -1 });
     renderQueue();
-    expect(screen.getByText('Nothing queued yet.')).toBeTruthy();
+    // docs/design.md, The lines: the queue.
+    expect(screen.getByText('The deck’s empty.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Feeling lucky' })).toBeTruthy();
+    const jump = await screen.findByRole('button', { name: 'Jump back in' });
+    expect(jump.getAttribute('title')).toBe('Plays “Mezzanine”, the album heard last');
+    fireEvent.click(jump);
+    await waitFor(() => expect(usePlayer.getState().queue.map((t) => t.title)).toEqual(['Song 8']));
+    expect(album).toHaveBeenCalledWith(70);
+    expect(usePlayer.getState()).toMatchObject({ playing: true, source: { label: 'Mezzanine', href: '/albums/70' } });
+  });
+
+  it('offers Feeling lucky alone when nothing has been heard yet', async () => {
+    const recent = vi.spyOn(api, 'recentAlbums').mockResolvedValue([]);
+    usePlayer.setState({ queue: [], order: [], pos: -1 });
+    renderQueue();
+    await waitFor(() => expect(recent).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Feeling lucky' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Jump back in' })).toBeNull();
   });
 });

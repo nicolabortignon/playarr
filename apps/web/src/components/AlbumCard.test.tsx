@@ -47,6 +47,12 @@ function renderCard(a: Album) {
 }
 
 describe('AlbumCard', () => {
+  it('shows the album’s own color while its cover loads', () => {
+    renderCard(album({ coverUrl: '/art/album/70/cover', coverColor: '#2b1d14' }));
+    const box = screen.getByRole('link', { name: /Mezzanine/ }).querySelector<HTMLElement>('.aspect-square')!;
+    expect(['#2b1d14', 'rgb(43, 29, 20)']).toContain(box.style.backgroundColor);
+  });
+
   it('offers the rest of an incomplete album, without opening it', async () => {
     const request = vi.spyOn(api, 'requestAlbum').mockResolvedValue({
       mbid: 'rg-1',

@@ -209,9 +209,10 @@ describe('PlaylistPage', () => {
     expect(await screen.findByText('All playlists')).toBeTruthy();
   });
 
-  it('says an empty playlist is waiting for its first song, and where to find some', async () => {
+  it('tells its owner an empty playlist is waiting for its first song, and how to add one', async () => {
     view({ ...MINE, items: [], trackCount: 0 });
+    // docs/design.md, The lines: a playlist of your own.
     expect(await screen.findByText('This playlist is waiting for its first song.')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Find songs' }).getAttribute('href')).toBe('/search');
+    expect(screen.getByText('Choose Add to playlist… in any song’s ⋯ menu.')).toBeTruthy();
   });
 });

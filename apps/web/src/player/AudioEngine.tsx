@@ -1,10 +1,8 @@
 import { valueAt } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { useEffect, useRef } from 'react';
-import { sized } from '../lib/api';
-import { extractAccent } from '../lib/color';
+import { usePlayerAccent } from '../lib/accent';
 import { playableUrl } from '../lib/playable';
-import { setFaviconAccent } from '../lib/favicon';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
 import { canSetVolume, continues, fadeCurve, fadeSeconds, isDesktop, levelDb, levelGain, playsAlbum, silentClip, upNext } from './decks';
@@ -32,11 +30,10 @@ import { playTracker } from './playTracker';
 import { AHEAD_S, JoinGraph } from './joinGraph';
 import { type JoinReport, reportJoin } from './joins';
 import { useAutoplay } from './radio';
-import { sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
+import { fellAsleep, sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, nextByPress, takeNextPresses, useClock, useCurrentTrack, usePlayer } from './store';
 import { readyTransition, type ReadyTransition, upcomingPlan, useTransition, useUpcomingTransition } from './transitions';
 
-const DEFAULT_ACCENT = '#ff7a1a';
 /** Have the next song loaded this long before the current one ends. */
 const PRELOAD_S = 30;
 /** Start the next song this much early, for the moment it takes to start. */
@@ -262,7 +259,6 @@ export function AudioEngine() {
   /** How long an element takes to start playing (s), learned at each changeover: the next starts that much ahead. */
   const startLag = useRef(0.05);
   const track = useCurrentTrack();
-  const accent = usePrefs((s) => s.accent);
   const playing = usePlayer((s) => s.playing);
   const restartToken = usePlayer((s) => s.restartToken);
   const firstLoad = useRef(true);
@@ -1142,6 +1138,7 @@ export function AudioEngine() {
       clearBridge();
       applyVolumes();
       usePlayer.getState().setPlaying(false);
+      fellAsleep();
       return;
     }
     const o: Overlap | null = inTail ? null : { out: br, in: incoming, startedAt: null, ending: m };
@@ -1496,6 +1493,7 @@ export function AudioEngine() {
       incoming.pause();
       setTimeOnLoad(incoming, plan.bResume);
       usePlayer.getState().setPlaying(false);
+      fellAsleep();
       return;
     }
     applyVolumes();
@@ -1923,26 +1921,8 @@ export function AudioEngine() {
   // Tab title follows the current track; so do the accent color and favicon, unless Settings → Appearance fixes the color.
   useEffect(() => {
     document.title = track ? `${track.title} · ${track.artistName}` : 'Playarr';
-    const apply = (color: string) => {
-      document.documentElement.style.setProperty('--accent', color);
-      setFaviconAccent(color);
-    };
-    if (accent !== 'album') {
-      apply(accent);
-      return;
-    }
-    if (!track?.coverUrl) {
-      apply(DEFAULT_ACCENT);
-      return;
-    }
-    let cancelled = false;
-    void extractAccent(sized(track.coverUrl, 96)!).then((color) => {
-      if (!cancelled) apply(color ?? DEFAULT_ACCENT);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [track, accent]);
+  }, [track]);
+  usePlayerAccent(track);
 
   // Events only count from the element playing the current song (the other is loading or fading out),
   // not while it plays the silent clip that readies it, nor while a transition plays instead.
@@ -2004,6 +1984,7 @@ export function AudioEngine() {
         const p = usePlayer.getState();
         p.next(true);
         p.setPlaying(false);
+        fellAsleep();
         return;
       }
       // The next song is loaded but wasn't started early (timers are slowed in the background): start it

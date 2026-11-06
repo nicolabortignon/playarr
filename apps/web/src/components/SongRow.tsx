@@ -154,14 +154,15 @@ export function ListRow({
   );
 
   const classes = cn(
-    'group relative isolate flex items-center rounded-md transition-colors',
+    // Colors and the lift's shadow ease; the row's movement is motion's (a CSS transform transition would fight it).
+    'group relative isolate flex items-center rounded-md transition-[color,background-color,box-shadow]',
     compact ? 'min-h-12 gap-3 px-2 py-1 pointer-coarse:min-h-13' : 'min-h-13 gap-3 px-3 py-2 md:gap-4 pointer-coarse:min-h-15',
     main && (compact ? 'hover:bg-paper/[0.06]' : 'hover:bg-paper/[0.045]'),
     current && 'bg-paper/[0.035]',
     missing && 'opacity-40',
     hasMenu && 'long-press',
-    // Lifted while dragged: opaque, over the rows it passes.
-    dragging && 'bg-ink-800 shadow-cover',
+    // Lifted while dragged: opaque, a little larger, its shadow under it, over the rows it passes (plan 7 §5).
+    dragging && 'cursor-grabbing bg-ink-800 shadow-cover',
     className,
   );
   const events = hasMenu ? context : {};
@@ -177,7 +178,9 @@ export function ListRow({
           setDragging(false);
           reorder.onDragEnd();
         }}
-        whileDrag={{ scale: 1.02 }}
+        whileDrag={{ scale: 1.03 }}
+        // The rows it passes part for it at the standard pace (docs/design.md, Motion), as it settles where it's dropped.
+        transition={REORDER_TRANSITION}
         title={hint}
         style={style}
         className={classes}
@@ -193,6 +196,9 @@ export function ListRow({
     </li>
   );
 }
+
+/** How a dragged row lifts and settles, and the others part for it: the standard 250 ms, easing out. */
+const REORDER_TRANSITION = { duration: 0.25, ease: [0.16, 1, 0.3, 1] } as const;
 
 /** As wide as a row's ♥ or ⋯: keeps a missing song's length in line with the others'. */
 export const ControlGap = () => <span aria-hidden className="size-11 shrink-0 pointer-fine:size-9" />;
@@ -293,7 +299,7 @@ export function SongRow({
       </span>
     ) : (
       <span className={cn('relative shrink-0', compact ? 'size-10' : 'size-11')}>
-        <Cover src={t.coverUrl} size={compact ? 40 : 44} alt="" label={t.albumTitle} className="size-full rounded-cover" />
+        <Cover src={t.coverUrl} color={t.coverColor} size={compact ? 40 : 44} alt="" label={t.albumTitle} className="size-full rounded-cover" />
         <span
           className={cn(
             'absolute inset-0 grid place-items-center rounded-cover bg-ink-950/55 opacity-0 transition pointer-fine:group-hover:opacity-100',

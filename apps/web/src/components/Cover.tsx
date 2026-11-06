@@ -12,6 +12,11 @@ interface CoverProps {
   className?: string;
   /** Text for the placeholder "record label" when there's no artwork. */
   label?: string;
+  /**
+   * The cover's own color (`coverColor`, `#rrggbb`), filling its space until the picture arrives, so a loading cover is
+   * the album's color rather than gray (docs/design.md, Slow on purpose). Gray without one (older servers, Discover).
+   */
+  color?: string;
   /** Load at once, without waiting for a turn (the one big cover a page opens with). */
   eager?: boolean;
 }
@@ -19,7 +24,7 @@ interface CoverProps {
 /** How far ahead of scrolling covers start loading. */
 const AHEAD = '50% 0px';
 
-export function Cover({ src, size, alt, className, label, eager }: CoverProps) {
+export function Cover({ src, size, alt, className, label, color, eager }: CoverProps) {
   const url = sized(src, size);
   const ref = useRef<HTMLDivElement>(null);
   // State is keyed by URL so a reused slot (player bar, queue) never inherits a previous image's failure.
@@ -53,7 +58,7 @@ export function Cover({ src, size, alt, className, label, eager }: CoverProps) {
   useEffect(() => finish, [imgUrl]);
 
   return (
-    <div ref={ref} className={cn('@container relative aspect-square overflow-hidden bg-ink-800', className)}>
+    <div ref={ref} className={cn('@container relative aspect-square overflow-hidden bg-ink-800', className)} style={color ? { backgroundColor: color } : undefined}>
       {(!url || failed) && <Placeholder label={label ?? alt} />}
       {show && (
         <img

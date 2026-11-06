@@ -1,4 +1,5 @@
 import { ArrowDownToLine, Disc3, Lock, Play, X } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import { IconButton } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { removeDownloadWithUndo } from '../components/DownloadButton';
@@ -22,13 +23,13 @@ export function DownloadsPage() {
         <EmptyState
           icon={Lock}
           title="Downloads need a secure connection."
-          hint="Browsers only let Playarr keep music on a device over HTTPS. Open it through a reverse proxy with a certificate, for example."
+          hint="Browsers only keep music on a device over HTTPS."
         />
       ) : !downloads.length ? (
         <EmptyState
           icon={ArrowDownToLine}
-          title="Take your music with you."
-          hint="Download an album, playlist or mix and it plays here, with or without a connection."
+          title="Nothing in the record bag yet."
+          hint="Download an album, a playlist or a mix, and it plays here with or without a connection."
           action={{ label: 'Browse albums', icon: <Disc3 />, to: '/albums' }}
         />
       ) : (
@@ -44,13 +45,14 @@ export function DownloadsPage() {
 
 /** A download in the list's one row: the row opens its page, Play plays it, × takes it off the device (with Undo). */
 function Row({ download: d }: { download: Download }) {
-  const progress = useOffline((s) => downloadProgress(d, s.songs));
+  // Compared by its numbers: a new object at every read would re-render without end.
+  const progress = useOffline(useShallow((s) => downloadProgress(d, s.songs)));
   const failed = useDownloadState((s) => d.tracks.filter((t) => t.fileId in s.failed).length);
   const playTracks = usePlayer((s) => s.playTracks);
   const done = progress.done === progress.total;
   return (
     <ListRow
-      lead={<Cover src={d.coverUrl} size={44} alt="" label={d.title} className="size-11 shrink-0 rounded-cover" />}
+      lead={<Cover src={d.coverUrl} color={d.coverColor} size={44} alt="" label={d.title} className="size-11 shrink-0 rounded-cover" />}
       title={d.title}
       main={{ label: d.title, to: d.href }}
       // How far along it is goes under what it is when both don't fit, rather than being cut off.

@@ -8,6 +8,7 @@ import { toast } from '../lib/toast';
 import {
   canKeepOffline,
   type Download,
+  downloadProgress,
   keepSong,
   keepTransition,
   keptAsPlayed,
@@ -201,6 +202,29 @@ function fail(fileId: number, reason: string) {
   useDownloadState.setState((s) => ({ failed: { ...s.failed, [fileId]: reason } }));
 }
 
+/** What the device holds: its downloads, and the songs kept on it. */
+type Held = { pins: Record<string, Download>; songs: Parameters<typeof downloadProgress>[1] };
+
+/** Every song of the download is on the device: the ring has closed into its tick. */
+const complete = (d: Download, songs: Held['songs']) => {
+  const { done, total } = downloadProgress(d, songs);
+  return total > 0 && done === total;
+};
+
+/**
+ * Downloads whose last song arrived between `before` and `after`. Not one that's whole as it's added (its button says
+ * so at once) or put back by an Undo.
+ */
+export function justDownloaded(before: Held, after: Held): Download[] {
+  return Object.values(after.pins).filter((d) => {
+    const was = before.pins[d.key];
+    return !!was && !complete(was, before.songs) && complete(d, after.songs);
+  });
+}
+
+/** A download's song is on the device. */
+export const onThisDevice = (title: string) => `“${title}” is on this device`;
+
 /** Try the songs and transitions that failed again (back online, or after space was freed). */
 function retry() {
   warnedFull = false;
@@ -227,6 +251,11 @@ export function useDownloads() {
       if (s.transitions !== 'dj') pairJob?.abort.abort();
       else void pump();
     });
+    // A download's last song arrived: the ring closes into its tick, and a toast says it's here (plan 7 §5).
+    const offDone = useOffline.subscribe((s, prev) => {
+      if (s.songs === prev.songs && s.pins === prev.pins) return;
+      for (const d of justDownloaded(prev, s)) toast(onThisDevice(d.title));
+    });
     // The player moved on to another pair: one left aside for it may be fetched now (or must wait).
     const offPlayer = useTransition.subscribe((s, prev) => {
       if (s.fromFileId === prev.fromFileId && s.toFileId === prev.toFileId) return;
@@ -237,6 +266,7 @@ export function useDownloads() {
     navigator.serviceWorker?.addEventListener('controllerchange', retry);
     return () => {
       off();
+      offDone();
       offPrefs();
       offPlayer();
       window.removeEventListener('online', retry);

@@ -206,7 +206,7 @@ function Everyone({ me }: { me: Account }) {
   return (
     <SettingsSection
       title="Everyone"
-      description="Each account has its own history, mixes, favorites and playlists, and hears every source or only the ones you pick. Admins change settings, sources and accounts. You never choose anyone’s password: a new or reset account gets a setup code."
+      description="Each account has its own history, mixes, Favorites and playlists, and hears every source or only the ones you pick. Admins change settings, sources and accounts. You never choose anyone’s password: a new or reset account gets a setup code."
     >
       <ul className="divide-y divide-line">
         {accounts.map((a) => (

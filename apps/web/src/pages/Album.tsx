@@ -9,7 +9,7 @@ import { useAlbumMenu } from '../components/menus';
 import { BackButton, SectionHeader, SHELF_CARD, Shelf } from '../components/Section';
 import { ErrorState, SongRowsSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
-import { useCoverAccent } from '../lib/color';
+import { useCoverAccent } from '../lib/accent';
 import { formatDuration, plural, releaseKind } from '../lib/format';
 import { useAlbum, useArtist } from '../lib/queries';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -19,7 +19,8 @@ export function AlbumPage() {
   const id = Number(useParams().id);
   const { data: album, error, isPending, refetch } = useAlbum(id);
   const { data: artist } = useArtist(album?.artistId ?? Number.NaN);
-  const accent = useCoverAccent(album?.coverUrl);
+  // The album's own accent at once when the server sends it, else read from the cover.
+  const accent = useCoverAccent(album?.coverUrl, album);
   const current = useCurrentTrack();
   const playing = usePlayer((s) => s.playing);
   const playTracks = usePlayer((s) => s.playTracks);
@@ -51,6 +52,7 @@ export function AlbumPage() {
           cover={
             <Cover
               src={album.coverUrl}
+              color={album.coverColor}
               size={288}
               alt={album.title}
               eager
@@ -83,7 +85,14 @@ export function AlbumPage() {
             onShuffle={() => playTracks(album.tracks, 0, { shuffle: true, source: albumSource(album) })}
             action={rest && <RequestButton size="large" album={rest.album} availability={rest.availability} />}
             download={{
-              item: { key: `album:${album.id}`, title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl, href: `/albums/${album.id}` },
+              item: {
+                key: `album:${album.id}`,
+                title: album.title,
+                subtitle: album.artistName,
+                coverUrl: album.coverUrl,
+                coverColor: album.coverColor,
+                href: `/albums/${album.id}`,
+              },
               tracks: album.tracks,
             }}
             menu={{ label: `More for “${album.title}”`, items: menu }}

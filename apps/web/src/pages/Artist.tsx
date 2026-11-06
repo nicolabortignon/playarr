@@ -207,7 +207,7 @@ export function ArtistPage() {
             <SectionHeader title={g.title} kicker={plural(g.albums.length, 'release')} />
             <div className={GRID}>
               {g.albums.map((a, i) => (
-                <AlbumCard key={a.id} album={a} {...gridItem(i, { lift: true })} />
+                <AlbumCard key={a.id} album={a} onArtistPage {...gridItem(i, { lift: true })} />
               ))}
             </div>
           </section>

@@ -57,7 +57,6 @@ const ALLOW = {
   web: [
     { file: 'components/AppearancePanel.tsx', check: 'hex color', reason: 'the accent choices themselves, and the swatch of all of them' },
     { file: 'lib/prefs.ts', check: 'hex color', reason: 'the accent choices, kept as the colors they are' },
-    { file: 'player/AudioEngine.tsx', check: 'hex color', reason: 'the accent before a cover gives one (index.css’s --accent)' },
     { file: 'lib/favicon.ts', check: ['hex color', 'color function'], reason: 'the favicon is drawn on a canvas, which takes colors, not classes' },
     { file: 'lib/color.ts', check: 'color function', reason: 'reads the accent out of a cover’s pixels and writes it as a color' },
     { file: 'components/Mixes.tsx', check: 'color function', reason: 'a mix’s cover is drawn in colors made from its own hue' },

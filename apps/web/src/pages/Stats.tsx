@@ -1,5 +1,7 @@
 import type { ListeningStats, StatsRange } from '@playarr/shared';
-import { ChartColumn, Play } from 'lucide-react';
+import { ChartColumn, Flag, Play } from 'lucide-react';
+import { animate, motion } from 'motion/react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
 import { AlbumCard, ArtistAvatar } from '../components/Cards';
@@ -13,6 +15,7 @@ import { Choice } from '../components/Choice';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { STATS_PATH } from '../lib/links';
+import { useReduceMotion } from '../lib/motion';
 import { useListeningStats } from '../lib/queries';
 import { usePlayer } from '../player/store';
 import { GRID } from './Albums';
@@ -73,8 +76,8 @@ export function ListeningStatsView() {
       ) : !data.plays ? (
         <EmptyState
           icon={ChartColumn}
-          title="Nothing played in this period yet."
-          hint="A song counts once it’s heard for 30 seconds, on every device that counts its plays."
+          title="No spins in this period yet."
+          hint="A song counts once it’s heard for 30 seconds."
           action="lucky"
         />
       ) : (
@@ -88,13 +91,13 @@ function Report({ stats }: { stats: ListeningStats }) {
   const year = isYear(stats.range);
   const playTracks = usePlayer((s) => s.playTracks);
   const top = stats.topArtists[0];
-  return (
-    <div className="space-y-14">
+  const opening = (
+    <>
       <section>
         {year && <div className="mb-2 type-kicker text-muted">Year in review</div>}
         {/* The big numbers are in the display face, without figures of one width: those set "1,792" as "1 , 792". */}
         <div className="font-display text-6xl leading-none text-paper md:text-7xl">
-          {number(stats.minutes)}
+          <CountUp value={stats.minutes} />
           <span className="ml-3 font-sans text-xl text-paper-dim md:text-2xl">minutes</span>
         </div>
         <p className="mt-3 max-w-xl type-body text-paper-dim">
@@ -102,7 +105,7 @@ function Report({ stats }: { stats: ListeningStats }) {
         </p>
         <dl className="mt-8 grid max-w-3xl grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
           <Tile label="Plays" value={number(stats.plays)} />
-          <Tile label="Longest streak" value={plural(stats.longestStreak, 'day')} />
+          <Tile label="Longest streak" value={plural(stats.longestStreak, 'day')} flag={isNewRecord(stats) && <RecordFlag />} />
           <Tile label="New artists" value={number(stats.newArtists)} />
           <Tile label="A day, on average" value={minutesLabel(Math.round(stats.minutes / Math.max(1, stats.days)))} />
         </dl>
@@ -132,6 +135,17 @@ function Report({ stats }: { stats: ListeningStats }) {
             </p>
           </div>
         </section>
+      )}
+    </>
+  );
+  return (
+    <div className="space-y-14">
+      {year ? (
+        <SleeveOut key={stats.range} className="space-y-14">
+          {opening}
+        </SleeveOut>
+      ) : (
+        opening
       )}
 
       <section>
@@ -266,11 +280,81 @@ function ReportSkeleton() {
   );
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
+function Tile({ label, value, flag }: { label: string; value: string; flag?: ReactNode }) {
   return (
     <div>
       <dt className="type-small text-muted">{label}</dt>
       <dd className="mt-1.5 font-display text-3xl leading-none text-paper">{value}</dd>
+      {flag && <dd className="mt-2">{flag}</dd>}
     </div>
+  );
+}
+
+/** The streak going on is the period's longest, and more than a day: a new record, flagged (plan 7 §5). */
+export const isNewRecord = ({ longestStreak, currentStreak = 0 }: Pick<ListeningStats, 'longestStreak' | 'currentStreak'>) =>
+  currentStreak > 1 && currentStreak === longestStreak;
+
+/** The small flag on a longest streak that's the one going on now. */
+function RecordFlag() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 px-2 py-0.5 type-badge text-accent">
+      <Flag aria-hidden className="size-3" />
+      New record
+    </span>
+  );
+}
+
+/** How long the headline number takes to count up to itself. */
+const COUNT_UP_S = 1.4;
+
+/**
+ * A big number that counts up to itself as the report opens (plan 7 §5); at once under Reduce Motion. The number itself
+ * holds its place (and is what a screen reader reads) while the count runs over it, so nothing beside it moves.
+ */
+export function CountUp({ value, format = number }: { value: number; format?: (n: number) => string }) {
+  const reduce = useReduceMotion();
+  // The number shown while it counts; null once it has landed on the real one.
+  const [counting, setCounting] = useState<number | null>(reduce ? null : 0);
+  useEffect(() => {
+    if (reduce || value <= 0) return setCounting(null);
+    setCounting(0);
+    const run = animate(0, value, {
+      duration: COUNT_UP_S,
+      ease: [0.16, 1, 0.3, 1],
+      // Landed as soon as it reads as the real number: the two never show at once.
+      onUpdate: (n) => setCounting(Math.round(n) >= value ? null : Math.round(n)),
+      onComplete: () => setCounting(null),
+    });
+    return () => run.stop();
+  }, [value, reduce]);
+  return (
+    <span className="relative inline-block">
+      <span className={cn(counting !== null && 'text-transparent')}>{format(value)}</span>
+      {counting !== null && (
+        <span aria-hidden className="absolute top-0 left-0">
+          {format(counting)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The year in review opens like a sleeve pulled out of a crate (plan 7 §5): its first screen rises into place, tipping
+ * upright as it comes. Still under Reduce Motion.
+ */
+function SleeveOut({ children, className }: { children: ReactNode; className?: string }) {
+  const reduce = useReduceMotion();
+  return (
+    <motion.div
+      data-sleeve={!reduce || undefined}
+      initial={reduce ? false : { opacity: 0, y: 64, rotateX: -12 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      transition={{ type: 'spring', damping: 24, stiffness: 120, mass: 0.9 }}
+      style={{ transformPerspective: 1200, transformOrigin: '50% 100%' }}
+      className={className}
+    >
+      {children}
+    </motion.div>
   );
 }

@@ -55,7 +55,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
   - An album's meta line: the artist (linked, with their photo) · year · N songs · length, then the format badge. Missing songs show in the list, not here. Where it doesn't fit on one line, the artist goes on a line of its own and the rest under it; it never wraps around the badge.
   - A playlist's meta line: songs · length · sharing ("Shared with everyone", "Shared by Sam"). Its description comes after the action row.
   - An artist: the kicker is "Artist", the meta line their counts ("2 albums · 5 songs"), and their genres go in About's kicker. An artist with a photo of their own gets a band (taller where it would otherwise go under the bar); one without gets a small circle with their best album cover (or a vinyl monogram), not an empty band.
-  - Release kinds are named "Album", "EP", "Live album", "Live EP", "Compilation", "DJ mix", "Mixtape", "Loose songs" and "Release" (`releaseKind`). Cards on an artist's own page, in the library or beyond it, say only the kind and year ("Album · 1998", "EP · 2019"), without the artist's name or a badge.
+  - Release kinds are named "Album", "EP", "Live album", "Live EP", "Compilation", "DJ mix", "Mixtape", "Loose songs" and "Release" (`releaseKind`). Cards on an artist's own page, in the library or beyond it, say the kind and year ("Album · 1998", "EP · 2019"), and how much of an album you have when it's only part ("8 of 12"), without the artist's name or a badge. A card's second line is `type-small` everywhere, its figures tabular.
 - **A title appears once per screen.** A playlist's or mix's own cover drops its name on its page; cards keep it. On iOS the bar shows a detail page's name only once the page's own title has scrolled under it.
 - **Sheets on iOS:** pickers open at medium and large heights; close is on the leading side and confirm on the trailing side, each with an icon.
 - **Sheets on the iPhone Duo:** on the cover screen a full-height sheet's bar buttons move into the side column, and buttons with words only are dropped. Every bar button in a sheet has an icon (the system's close and confirm roles, or a symbol), so Cancel, Done and Use this are always there.
@@ -86,7 +86,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 ## Empty, loading and error
 
-- **Empty:** an icon in a ring, one line in the display face in the app's voice ("No hearts yet.", "Not in your crates."), a quieter line only where the first can't say it all, and the one action that fills the page as a large primary button. Where nothing else fills it, that's Feeling lucky.
+- **Empty:** an icon in a ring, one line in the display face in the app's voice ("No hearts yet.", "Not in your crates."), a quieter line only where the first can't say it all, and the one action that fills the page as a large primary button, with at most one more beside it, outlined (the queue's Jump back in). Where nothing else fills it, that's Feeling lucky.
 - **Loading:** skeletons shaped like what they stand for, in the real grid or rows, as many as fill the first screen; never a spinner on its own for a page. iOS Settings' panels, which are system forms, keep the system's spinner.
 - **Error:** a whole page that couldn't load says so in the voice (the table below) with the reason, Try again and Back home. A part of a page (a panel, a section, a dialog) says what happened and why in its place, with a small Try again.
 - **The lines**, the same on both apps (plan 7 §4). The voice is a record shop's: warm, brief, about the music. A second line only where the first can't say it all; the action is what fills the page.
@@ -196,6 +196,9 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | Loading | `LoaderCircle`, spinning | the system's spinner | |
   | The song playing | the equalizer (`Equalizer`) | `waveform`, moving | each app's own animation |
   | Feeling lucky | `Twinkle` (Playarr's three stars) | `Twinkle` (the same drawing) | |
+  | Jump back in | `Undo2` | `arrow.uturn.backward` | |
+  | New record (Stats) | `Flag` | `flag` | |
+  | Sleep well | `Moon` | `moon` | |
   | Edit mix points | `AudioWaveform` | `waveform` | |
   | A transition | `Blend` | `arrow.triangle.merge` | to align: one picture |
 
@@ -277,6 +280,21 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 - **The idle player bar** (desktop and tablet, nothing playing): the album heard last under the kicker "Heard last", Resume as the primary button and Feeling lucky beside it; with no history, "Nothing playing" and Feeling lucky.
 - **The side column** (web from 1280 px, the iPad at regular width): Queue and Lyrics beside any page, 340 wide on `ink-950`, the queue headed "Up next" with its counts in `type-meta` and its rows on two lines (the length beside the artist, whose name gives way first). A page lays itself out by its own width, not the window's (web `page-lg`, `page-xl`, `page-2xl`), so it narrows when the column opens.
 - **Fixed layers on the web:** iPhone Safari paints its translucent bars in the color of the topmost fixed element at each edge, so that element has a solid background (the tab bar, Now Playing), and anything without a color of its own (the film grain) stays below them (z-index under 40).
+
+## Moments
+
+The small delights of [plan 7](plans/2026-11-05-7-delight.md): quiet, on-theme, gone if you don't look for them. Under Reduce Motion the ones that move don't start at all (shortening a loop would only make it flicker); what they say still shows.
+
+- **A cover's own color while it loads:** every cover's space takes the album's `coverColor` from the server instead of gray, and the accent its `coverAccent` at once (orange when the server found none to give; read from the image only when the server hasn't read it).
+- **Home greets by the time of day:** "Morning, Alex." (5 to 12), "Afternoon" (12 to 17), "Evening" (17 to 22), "Late night" (22 to 5), the parts of the day Vibes of the hour uses.
+- **The end of a song:** from ten seconds before the next song takes over, the player's second line says "Next: Teardrop"; with DJ mix about to blend them, "Mixing into Teardrop on the next bar" during the last bar, then "Mixing into Teardrop" while it does. Not when the sleep timer stops after this song.
+- **Feeling lucky** flicks through three or four covers while it picks, about 140 ms each, landing on the first song's for a moment; the music never waits for it.
+- **A finished download:** the ring closes into its tick, then a toast: "“Mezzanine” is on this device" (on iOS, "this iPhone" or "this iPad").
+- **The sleep timer's end:** Now Playing shows a moon and "Sleep well" for 4 seconds, then rests dark until it's touched; with Now Playing closed, a toast says it instead.
+- **Stats:** the headline counts up over 1.4 seconds (the real number is what's read aloud); a streak still going that equals the longest gets a "New record" pill with a flag; the year in review slides up like a sleeve.
+- **Now Playing's cover:** paused, it settles back (smaller, its shadow softer) and lifts again on Play; with a mouse it tilts up to 2° toward the pointer, catching a faint sheen; behind it, the backdrop drifts through the cover's colors, 40 seconds each way.
+- **The energy strip** sits under Now Playing's seek bar for an analyzed song: phrases played in the accent, the rest fainter, lit to where a drag would land, and it seeks where it's pressed. Its 20 points stay reserved for songs without one, so the controls never jump.
+- **Reordering:** the song dragged lifts (a shadow, 3 % larger) and the others part over 250 ms.
 
 ## Motion
 

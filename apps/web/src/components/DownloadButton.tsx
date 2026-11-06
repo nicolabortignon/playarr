@@ -1,7 +1,9 @@
 import type { Track } from '@playarr/shared';
 import { ArrowDownToLine, CircleCheck } from 'lucide-react';
 import { useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { toast, toastWithUndo } from '../lib/toast';
+import { onThisDevice } from '../player/downloads';
 import { addDownload, canKeepOffline, downloadProgress, removeDownload, restoreDownload, useOffline, type Download } from '../player/offline';
 import { IconButton } from './Button';
 
@@ -20,7 +22,8 @@ export function removeDownloadWithUndo(download: Download) {
  */
 export function DownloadButton({ item, tracks, className }: { item: Omit<Download, 'tracks' | 'addedAt'>; tracks: Track[]; className?: string }) {
   const pin = useOffline((s) => s.pins[item.key]);
-  const progress = useOffline((s) => (pin ? downloadProgress(pin, s.songs) : null));
+  // Compared by its numbers: a new object at every read would re-render without end.
+  const progress = useOffline(useShallow((s) => (pin ? downloadProgress(pin, s.songs) : null)));
   const songs = tracks.filter((t) => t.fileId);
 
   // A playlist edited (or an album changed) since it was downloaded: download what it has now.
@@ -38,7 +41,10 @@ export function DownloadButton({ item, tracks, className }: { item: Omit<Downloa
       removeDownloadWithUndo(pin);
     } else {
       addDownload({ ...item, tracks: songs });
-      toast(`Downloading “${item.title}”`);
+      // Every song on the device already (heard through, kept as it played): there's nothing to wait for.
+      const now = useOffline.getState();
+      const added = downloadProgress(now.pins[item.key]!, now.songs);
+      toast(added.done === added.total ? onThisDevice(item.title) : `Downloading “${item.title}”`);
     }
   };
 

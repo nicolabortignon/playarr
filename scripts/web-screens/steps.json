@@ -2,6 +2,7 @@
   "phone": [
     ["go", "/"], ["shot", "home"], ["scroll", 0.8], ["shot", "home-2"], ["scroll", 0.8], ["shot", "home-3"], ["scroll", 0.8], ["shot", "home-4"], ["scroll", 0.8], ["shot", "home-5"],
     ["go", "/library"], ["shot", "library"],
+    ["nav", "/queue"], ["shot", "queue-empty"],
     ["go", "/albums"], ["shot", "albums"],
     ["go", "/artists"], ["shot", "artists"],
     ["click", "Radiohead"], ["shot", "artist"], ["scroll", 0.8], ["shot", "artist-2"], ["scroll", 0.8], ["shot", "artist-3"],
@@ -23,6 +24,7 @@
     ["nav", "/mixes"], ["shot", "mixes"], ["scroll", 0.8], ["shot", "mixes-2"],
     ["click", "Discovery Weekly"], ["wait", 1500], ["shot", "mix"],
     ["nav", "/stats"], ["wait", 1000], ["shot", "stats"], ["scroll", 0.8], ["shot", "stats-2"], ["scroll", 0.8], ["shot", "stats-3"], ["scroll", 0.8], ["shot", "stats-4"],
+    ["nav", "/stats?range=2020"], ["wait", 1000], ["shot", "stats-empty"],
     ["nav", "/downloads"], ["shot", "downloads"],
     ["nav", "/requests"], ["shot", "requests"],
     ["nav", "/settings"], ["shot", "settings-list"],
@@ -34,10 +36,13 @@
     ["nav", "/settings/mixes"], ["shot", "settings-mixes"],
     ["nav", "/settings/requests"], ["shot", "settings-requests"],
     ["nav", "/settings/updates"], ["shot", "settings-updates"],
+    ["go", "/"], ["needs", "album-playing"], ["eval", "(() => { if (window.__energyShot) return true; window.__energyShot = true; const real = window.fetch.bind(window); const shape = [0.2, 0.3, 0.5, 0.55, 0.85, 0.9, 0.55, 0.6, 0.9, 1, 0.3, 0.25, 0.95, 1, 0.9, 0.45, 0.2]; window.fetch = async (input, init) => { const res = await real(input, init); const url = typeof input === 'string' ? input : input.url; if (!url.includes('/api/mix-maps') || !res.ok) return res; const maps = await res.json(); for (const id of JSON.parse(init.body).ids) maps[id] ??= { version: 99, duration: 600, bpm: 120, firstBeat: 0.5, downbeatOffset: 0, gridStable: true, beatConfidence: 0.9, introEnd: 16, outroStart: 560, coldStart: false, coldEnd: false, soundEnd: 599, phraseEnergy: Array.from({ length: 75 }, (_, k) => shape[k % shape.length]) }; return new Response(JSON.stringify(maps), { status: 200, headers: { 'Content-Type': 'application/json' } }); }; return true; })()"], ["click", "Open now playing", 1500], ["shot", "now-playing-energy"],
+    ["eval", "(async () => { const seek = document.querySelector('[role=slider][aria-label=Seek]'); if (!seek) return false; const key = (target, k) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); const playing = () => !!document.querySelector('button[aria-label=Pause]'); if (!playing()) key(document.body, ' '); const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const left = () => Number(seek.getAttribute('aria-valuemax')) - Number(seek.getAttribute('aria-valuenow')); key(seek, 'Home'); await wait(80); for (let i = 0; i < 100 && left() > 16; i++) { key(seek, 'ArrowRight'); await wait(80); } for (let i = 0; i < 90 && playing() && left() > 7; i++) await wait(100); for (let i = 0; i < 3 && left() > 10; i++) { key(seek, 'ArrowRight'); await wait(80); } if (playing()) key(document.body, ' '); return true; })()", 1200], ["click", "Close now playing"], ["shot", "mini-player-next"],
     ["go", "/this-is-not-a-page"], ["shot", "not-found"]
   ],
   "tablet": [
     ["go", "/"], ["shot", "home"], ["scroll", 0.8], ["shot", "home-2"], ["scroll", 0.8], ["shot", "home-3"], ["scroll", 0.8], ["shot", "home-4"],
+    ["nav", "/queue"], ["shot", "queue-empty"],
     ["go", "/albums"], ["shot", "albums"], ["eval", "document.querySelector('meta[name=viewport]').content = 'width=1440, viewport-fit=cover'", 1500], ["shot", "player-idle"],
     ["go", "/artists"], ["shot", "artists"],
     ["click", "Massive Attack"], ["shot", "artist"], ["scroll", 0.8], ["shot", "artist-2"],
@@ -59,6 +64,7 @@
     ["nav", "/mixes"], ["shot", "mixes"],
     ["click", "Vibes of the hour"], ["wait", 1500], ["shot", "mix"],
     ["nav", "/stats"], ["wait", 1000], ["shot", "stats"], ["scroll", 0.8], ["shot", "stats-2"], ["scroll", 0.8], ["shot", "stats-3"],
+    ["nav", "/stats?range=2020"], ["wait", 1000], ["shot", "stats-empty"],
     ["nav", "/downloads"], ["shot", "downloads"],
     ["nav", "/settings/sources"], ["shot", "settings-sources"],
     ["nav", "/settings/playback"], ["shot", "settings-playback"], ["scroll", 0.8], ["shot", "settings-playback-2"],
@@ -72,6 +78,8 @@
     ["nav", "/albums"], ["needs", "album-playing"], ["key", "?"], ["shot", "shortcuts"], ["key", "Escape"],
     ["eval", "document.querySelector('meta[name=viewport]').content = 'width=1440, viewport-fit=cover'", 1500], ["click", {"css": "footer button", "text": "Queue"}], ["wait", 600], ["shot", "queue-column"],
     ["click", {"css": "aside [role=radio]", "text": "Lyrics"}], ["wait", 3500], ["shot", "queue-column-lyrics"], ["click", "Close queue and lyrics"],
+    ["go", "/"], ["needs", "album-playing"], ["eval", "(() => { if (window.__energyShot) return true; window.__energyShot = true; const real = window.fetch.bind(window); const shape = [0.2, 0.3, 0.5, 0.55, 0.85, 0.9, 0.55, 0.6, 0.9, 1, 0.3, 0.25, 0.95, 1, 0.9, 0.45, 0.2]; window.fetch = async (input, init) => { const res = await real(input, init); const url = typeof input === 'string' ? input : input.url; if (!url.includes('/api/mix-maps') || !res.ok) return res; const maps = await res.json(); for (const id of JSON.parse(init.body).ids) maps[id] ??= { version: 99, duration: 600, bpm: 120, firstBeat: 0.5, downbeatOffset: 0, gridStable: true, beatConfidence: 0.9, introEnd: 16, outroStart: 560, coldStart: false, coldEnd: false, soundEnd: 599, phraseEnergy: Array.from({ length: 75 }, (_, k) => shape[k % shape.length]) }; return new Response(JSON.stringify(maps), { status: 200, headers: { 'Content-Type': 'application/json' } }); }; return true; })()"], ["click", "Open now playing", 1500], ["shot", "now-playing-energy"], ["click", "Close now playing"],
+    ["eval", "(async () => { const seek = document.querySelector('[role=slider][aria-label=Seek]'); if (!seek) return false; const key = (target, k) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); const playing = () => !!document.querySelector('button[aria-label=Pause]'); if (!playing()) key(document.body, ' '); const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const left = () => Number(seek.getAttribute('aria-valuemax')) - Number(seek.getAttribute('aria-valuenow')); key(seek, 'Home'); await wait(80); for (let i = 0; i < 100 && left() > 16; i++) { key(seek, 'ArrowRight'); await wait(80); } for (let i = 0; i < 90 && playing() && left() > 7; i++) await wait(100); for (let i = 0; i < 3 && left() > 10; i++) { key(seek, 'ArrowRight'); await wait(80); } if (playing()) key(document.body, ' '); return true; })()", 1200], ["shot", "player-bar-next"],
     ["go", "/this-is-not-a-page"], ["shot", "not-found"]
   ]
 }

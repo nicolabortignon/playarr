@@ -1,11 +1,12 @@
 import type { MixMap } from '@playarr/mix';
+import { useMemo } from 'react';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 
 /**
  * A song's energy per phrase as a strip of columns over its bar lines: the pieces the transition
- * view and Edit mix points both draw. One color (the accent), thin bar ticks underneath, and the
- * numbers in a table for anyone who can't read the picture.
+ * view and Edit mix points both draw, and under Now Playing's seek bar. One color (the accent), thin
+ * bar ticks underneath, and the numbers in a table for anyone who can't read the picture.
  */
 
 /** One 16-beat phrase of a song, placed in a picture. */
@@ -105,6 +106,40 @@ export function PhraseColumns({
       ))}
     </>
   );
+}
+
+/**
+ * A song's energy under Now Playing's seek bar (plan 7 §6): its phrases as columns across the whole song, so the drop
+ * and the quiet bridge show before you jump there. What's played, or where a drag would land (`at`), is in the accent;
+ * what's ahead, fainter. The box keeps its height without a picture (a song not analyzed, or its map on its way), so
+ * nothing under it moves from one song to the next.
+ */
+export function SongEnergy({ map, duration, at, className }: { map?: MixMap; duration: number; at: number; className?: string }) {
+  const span = duration > 0 ? duration : (map?.duration ?? 0);
+  // Placed once per song, not at every tick of the clock.
+  const phrases = useMemo(() => (map && span > 0 ? phrasesAndBars(map, (t) => t, 0, span).phrases : []), [map, span]);
+  const played = span > 0 ? Math.min(100, Math.max(0, (at / span) * 100)) : 0;
+  return (
+    <div aria-hidden data-energy={phrases.length || undefined} className={cn('relative h-5', className)}>
+      {phrases.length > 0 && (
+        <>
+          <EnergyColumns phrases={phrases} className="bg-accent/25" />
+          <div className="absolute inset-0" style={{ clipPath: `inset(0 ${100 - played}% 0 0)` }}>
+            <EnergyColumns phrases={phrases} className="bg-accent" />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Columns as tall as each phrase sounds, a pixel apart, in a `relative` box. */
+function EnergyColumns({ phrases, className }: { phrases: PhraseColumn[]; className: string }) {
+  return phrases.map((p, k) => (
+    <div key={k} className="absolute inset-y-0 flex items-end" style={{ left: `${p.left * 100}%`, width: `calc(${p.width * 100}% - 1px)` }}>
+      <div className={cn('w-full rounded-t-xs', className)} style={{ height: `max(${heardHeight(p.energy) * 100}%, 2px)` }} />
+    </div>
+  ));
 }
 
 /** The bar lines under a strip: phrase starts taller and stronger. */

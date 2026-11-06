@@ -1,7 +1,10 @@
 import { LoaderCircle, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from 'lucide-react';
+import { useState } from 'react';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
-import { useClock, usePlayer } from '../player/store';
+import { useMixMaps } from '../lib/queries';
+import { useClock, useCurrentTrack, usePlayer } from '../player/store';
+import { SongEnergy } from './EnergyStrip';
 import { Slider } from './Slider';
 
 export function PlayPauseButton({ size = 'md', className }: { size?: 'sm' | 'md' | 'lg'; className?: string }) {
@@ -74,11 +77,17 @@ export function Transport({ size = 'md' }: { size?: 'md' | 'lg' }) {
   );
 }
 
-export function SeekBar({ className, compact }: { className?: string; compact?: boolean }) {
+/**
+ * The seek bar: compact in the player bar (the times beside it), else the times under it. `energy` draws the song's
+ * energy under the line, as Now Playing does: pressing or dragging on it seeks there too.
+ */
+export function SeekBar({ className, compact, energy }: { className?: string; compact?: boolean; energy?: boolean }) {
   const time = useClock((s) => s.time);
   const duration = useClock((s) => s.duration);
   const buffered = useClock((s) => s.buffered);
   const seek = useClock((s) => s.seek);
+  // While the line is dragged, the energy under it is lit up to where the drag would land.
+  const [scrub, setScrub] = useState<number | null>(null);
   const timeCls = 'type-meta text-muted';
 
   if (compact) {
@@ -92,11 +101,30 @@ export function SeekBar({ className, compact }: { className?: string; compact?: 
   }
   return (
     <div className={className}>
-      <Slider label="Seek" value={time} max={duration} buffered={buffered} onChange={seek} step={10} valueText={formatTime} className="h-6" />
+      <Slider
+        label="Seek"
+        value={time}
+        max={duration}
+        buffered={buffered}
+        onChange={seek}
+        step={10}
+        valueText={formatTime}
+        onScrub={energy ? setScrub : undefined}
+        className={energy ? undefined : 'h-6'}
+      >
+        {energy ? <CurrentEnergy at={scrub ?? time} duration={duration} /> : undefined}
+      </Slider>
       <div className={cn('mt-1 flex justify-between', timeCls)}>
         <span>{formatTime(time)}</span>
         <span>-{formatTime(Math.max(0, duration - time))}</span>
       </div>
     </div>
   );
+}
+
+/** The song playing's energy, from its mix map once it has one (plan 7 §6). */
+function CurrentEnergy({ at, duration }: { at: number; duration: number }) {
+  const recordingId = useCurrentTrack()?.recordingId;
+  const map = useMixMaps(recordingId ? [recordingId] : [], !!recordingId).data?.[recordingId ?? ''];
+  return <SongEnergy map={map} duration={duration} at={at} className="mt-0.5" />;
 }

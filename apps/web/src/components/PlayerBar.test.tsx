@@ -1,12 +1,16 @@
+import type { TransitionPlan } from '@playarr/mix';
 import type { Album, AlbumDetail, Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
+import { usePrefs } from '../lib/prefs';
 import { useUI } from '../lib/ui';
-import { usePlayer } from '../player/store';
-import { PlayerBar } from './PlayerBar';
+import { useSleep } from '../player/sleep';
+import { useClock, usePlayer } from '../player/store';
+import { useTransition } from '../player/transitions';
+import { MiniPlayer, PlayerBar } from './PlayerBar';
 
 const track = (id: number) =>
   ({ id, recordingId: `rec-${id}`, fileId: id, albumId: 17, artistId: 7, title: `Song ${id}`, artistName: 'Radiohead', albumTitle: 'OK Computer', duration: 200, streamUrl: `/s/${id}` }) as Track;
@@ -16,11 +20,11 @@ const OK_COMPUTER = { id: 17, title: 'OK Computer', artistId: 7, artistName: 'Ra
 const room = (column: boolean) =>
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(min-width: 1280px)' && column, media: query, addEventListener() {}, removeEventListener() {} }));
 
-function view(path = '/') {
+function view(path = '/', bar = <PlayerBar />) {
   const router = createMemoryRouter(
     [
-      { path: '/queue', element: <PlayerBar /> },
-      { path: '*', element: <PlayerBar /> },
+      { path: '/queue', element: bar },
+      { path: '*', element: bar },
     ],
     { initialEntries: [path] },
   );
@@ -115,5 +119,51 @@ describe('Queue and Lyrics in the player bar', () => {
     expect(useUI.getState().sideColumn).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Lyrics' }));
     expect(useUI.getState()).toMatchObject({ nowPlayingOpen: true, lyricsOpen: true, sideColumn: null });
+  });
+});
+
+describe('the end of a song', () => {
+  const at = (time: number) => act(() => useClock.setState({ time, duration: 200 }));
+  beforeEach(() => {
+    vi.spyOn(api, 'recentAlbums').mockResolvedValue([]);
+    usePrefs.setState({ transitions: 'off', crossfade: 0 });
+    useSleep.setState({ endsAt: null, endOfSong: false });
+    useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
+    usePlayer.setState({ queue: [track(1), { ...track(2), title: 'Teardrop' }], order: [0, 1], pos: 0, playing: true, mixMode: 'auto' });
+  });
+
+  it('turns the mini player’s subtitle to what comes next, ten seconds before the song ends', async () => {
+    view('/', <MiniPlayer />);
+    await at(185);
+    expect(screen.getByText('Radiohead')).toBeTruthy();
+    await at(191);
+    expect(screen.getByText('Next: Teardrop')).toBeTruthy();
+    expect(screen.queryByText('Radiohead')).toBeNull();
+  });
+
+  it('says the mix comes on the next bar when DJ mix will blend them', async () => {
+    usePrefs.setState({ transitions: 'dj' });
+    const plan = { style: 'long', aStart: 180, beats: 32 } as TransitionPlan;
+    useTransition.setState({ fromFileId: 1, toFileId: 2, result: { status: 'ready', plan, url: '/transitions/1.flac' } });
+    view('/', <MiniPlayer />);
+    await at(178.5);
+    expect(screen.getByText('Mixing into Teardrop on the next bar')).toBeTruthy();
+    await at(182);
+    expect(screen.getByText('Mixing into Teardrop')).toBeTruthy();
+  });
+
+  it('says nothing of what follows when the sleep timer stops after this song', async () => {
+    useSleep.setState({ endOfSong: true });
+    view('/', <MiniPlayer />);
+    await at(195);
+    expect(screen.queryByText(/Next:/)).toBeNull();
+    expect(screen.getByText('Radiohead')).toBeTruthy();
+  });
+
+  it('turns the player bar’s artist link to what comes next too', async () => {
+    view('/');
+    await at(195);
+    expect(screen.getByText('Next: Teardrop')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Radiohead' })).toBeNull();
   });
 });

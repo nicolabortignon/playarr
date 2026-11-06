@@ -1,12 +1,14 @@
+import type { MixMapEntry } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { useUI } from '../lib/ui';
-import { usePlayer } from '../player/store';
+import { useSleep } from '../player/sleep';
+import { useClock, usePlayer } from '../player/store';
 import { NowPlaying } from './NowPlaying';
 import { MiniPlayer } from './PlayerBar';
 
@@ -28,9 +30,10 @@ beforeEach(() => {
   vi.spyOn(api, 'favorites').mockResolvedValue([]);
   vi.spyOn(api, 'mixMaps').mockResolvedValue({});
   vi.spyOn(api, 'lyrics').mockResolvedValue(null);
-  usePrefs.setState({ transitions: 'off' });
+  usePrefs.setState({ transitions: 'off', motion: 'full' });
   usePlayer.setState({ queue: [1, 2, 3].map(track), order: [0, 1, 2], pos: 0, playing: true });
   useUI.setState({ nowPlayingOpen: true, lyricsOpen: false });
+  useSleep.setState({ endsAt: null, endOfSong: false, sleptAt: null });
 });
 afterEach(() => {
   cleanup();
@@ -112,5 +115,106 @@ describe('Mini player', () => {
     expect(useUI.getState().nowPlayingOpen).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     expect(usePlayer.getState().pos).toBe(1);
+  });
+});
+
+/** A window with a mouse (a fine pointer that hovers), or a touch screen. */
+const pointer = (mouse: boolean) =>
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query === '(hover: hover) and (pointer: fine)' && mouse,
+    media: query,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+
+describe('Now Playing’s cover', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const cover = () => screen.getByRole('img', { name: 'A' }).closest('.aspect-square') as HTMLElement;
+
+  it('settles back with a softer shadow while paused, and lifts again playing', () => {
+    usePlayer.setState({ queue: [{ ...track(1), coverUrl: '/art/album/1/cover' }, track(2)], order: [0, 1], pos: 0 });
+    wrap(<NowPlaying />);
+    expect(cover().className).toContain('shadow-cover-hero');
+    act(() => usePlayer.setState({ playing: false }));
+    expect(cover().className).not.toContain('shadow-cover-hero');
+    expect(cover().className).toContain('shadow-cover');
+    act(() => usePlayer.setState({ playing: true }));
+    expect(cover().className).toContain('shadow-cover-hero');
+  });
+
+  it('tilts towards a mouse and catches its sheen, but not on a touch screen or under Reduce Motion', () => {
+    pointer(true);
+    wrap(<NowPlaying />);
+    expect(document.querySelector('[data-tilt]')).not.toBeNull();
+    cleanup();
+    pointer(false);
+    wrap(<NowPlaying />);
+    expect(document.querySelector('[data-tilt]')).toBeNull();
+    cleanup();
+    pointer(true);
+    usePrefs.setState({ motion: 'reduce' });
+    wrap(<NowPlaying />);
+    expect(document.querySelector('[data-tilt]')).toBeNull();
+  });
+
+  it('has a backdrop drifting through its colors, still under Reduce Motion', () => {
+    wrap(<NowPlaying />);
+    expect(document.querySelector('[data-drift]')?.className).toContain('animate-drift');
+    cleanup();
+    usePrefs.setState({ motion: 'reduce' });
+    wrap(<NowPlaying />);
+    expect(document.querySelector('[data-drift]')).toBeNull();
+    expect(document.querySelector('.animate-drift')).toBeNull();
+  });
+});
+
+describe('Now Playing’s seek bar', () => {
+  /** Song 1, analyzed: a beat at 120 BPM, so 8 s phrases, quiet then a drop. */
+  const analyzed = { version: 99, duration: 200, bpm: 120, firstBeat: 0, downbeatOffset: 0, phraseEnergy: [0.2, 0.3, 1, 0.9, 0.1, 0.8] } as unknown as MixMapEntry;
+
+  it('shows an analyzed song’s energy under the line, inside the slider, so pressing it seeks there', async () => {
+    vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': analyzed });
+    useClock.setState({ time: 0, duration: 200 });
+    wrap(<NowPlaying />);
+    const slider = screen.getByRole('slider', { name: 'Seek' });
+    await waitFor(() => expect(slider.querySelector('[data-energy="6"]')).not.toBeNull());
+    expect(api.mixMaps).toHaveBeenCalledWith(['rec-1']);
+  });
+
+  it('keeps the strip’s room, empty, for a song not analyzed', async () => {
+    useClock.setState({ time: 0, duration: 200 });
+    wrap(<NowPlaying />);
+    await waitFor(() => expect(api.mixMaps).toHaveBeenCalled());
+    const slider = screen.getByRole('slider', { name: 'Seek' });
+    expect(slider.querySelector('[data-energy]')).toBeNull();
+    expect(slider.querySelector('.h-5')).not.toBeNull();
+  });
+});
+
+describe('the sleep timer’s end in Now Playing', () => {
+  it('dims to a moon and “Sleep well”, and a touch wakes it', () => {
+    usePlayer.setState({ playing: false });
+    wrap(<NowPlaying />);
+    act(() => useSleep.setState({ sleptAt: Date.now() }));
+    const goodnight = screen.getByRole('status', { name: 'Sleep well' });
+    expect(goodnight.textContent).toContain('Sleep well');
+    fireEvent.pointerDown(goodnight);
+    expect(useSleep.getState().sleptAt).toBeNull();
+  });
+
+  it('wakes when the music plays again', () => {
+    usePlayer.setState({ playing: false });
+    wrap(<NowPlaying />);
+    act(() => useSleep.setState({ sleptAt: Date.now() }));
+    expect(screen.getByRole('status', { name: 'Sleep well' })).toBeTruthy();
+    act(() => usePlayer.setState({ playing: true }));
+    expect(useSleep.getState().sleptAt).toBeNull();
+  });
+
+  it('says nothing to Now Playing opened long after the music stopped', () => {
+    usePlayer.setState({ playing: false });
+    useSleep.setState({ sleptAt: Date.now() - 60_000 });
+    wrap(<NowPlaying />);
+    expect(screen.queryByRole('status', { name: 'Sleep well' })).toBeNull();
   });
 });
