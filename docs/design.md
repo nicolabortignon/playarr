@@ -77,9 +77,31 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 ## Empty, loading and error
 
-- **Empty:** an icon in a ring, one line in the display face in the app's voice ("Songs you heart land here.", "Not in your crates."), a quieter line only where the first can't say it all, and the one action that fills the page as a large primary button. Where nothing else fills it, that's Feeling lucky.
+- **Empty:** an icon in a ring, one line in the display face in the app's voice ("No hearts yet.", "Not in your crates."), a quieter line only where the first can't say it all, and the one action that fills the page as a large primary button. Where nothing else fills it, that's Feeling lucky.
 - **Loading:** skeletons shaped like what they stand for, in the real grid or rows, as many as fill the first screen; never a spinner on its own for a page.
-- **Error:** a whole page that couldn't load says "Something skipped." with the reason, Try again and Back home. A part of a page (a panel, a section, a dialog) says what happened and why in its place, with a small Try again.
+- **Error:** a whole page that couldn't load says so in the voice (the table below) with the reason, Try again and Back home. A part of a page (a panel, a section, a dialog) says what happened and why in its place, with a small Try again.
+- **The lines**, the same on both apps (plan 7 §4). The voice is a record shop's: warm, brief, about the music. A second line only where the first can't say it all; the action is what fills the page.
+
+  | Where | The line | Under it | The action |
+  |---|---|---|---|
+  | Queue | The deck's empty. | | Feeling lucky · Jump back in |
+  | Favorites | No hearts yet. | Heart a song and it lands here. | Jump back in |
+  | Downloads | Nothing in the record bag yet. | Download an album, a playlist or a mix, and it plays here with or without a connection. | Browse albums |
+  | Downloads, a browser without HTTPS | Downloads need a secure connection. | Browsers only keep music on a device over HTTPS. | |
+  | Playlists | Make a playlist for a mood, a trip or a friend. | | New playlist |
+  | A playlist of your own | This playlist is waiting for its first song. | Choose Add to playlist… in any song's ⋯ menu. | |
+  | Someone else's playlist | Nothing in this playlist yet. | | |
+  | Albums | Your crates are empty. | Admin: Add Lidarr or a folder of music, and it shows up here. Member: Music shows up here once an admin adds some. | Admin: Add music |
+  | Artists | Nobody on the roster yet. | (as Albums) | (as Albums) |
+  | An artist | Nothing by {artist} here yet. | | |
+  | Made for you | Your mixes are on their way. | They appear as you listen, and as Playarr learns your library. | |
+  | Stats | No spins in this period yet. | A song counts once it's heard for 30 seconds. | |
+  | Search, nothing at all | Not in your crates. | Nothing in your library matches “{query}”. | What's out there (beyond the library), or Clear search |
+  | Search, near matches | Nothing called “{query}”. Close: | | |
+  | A page that failed | The needle skipped. | The reason. | Try again · Back home |
+  | A link to nowhere (404) | Side C. This groove is empty. | | Back home |
+
+  The sidebar's empty playlist list stays plain ("No playlists yet."), and a part of a page that failed says what happened, not a line in the voice: clarity first.
 - **What isn't possible here** says why and who can change it, never a button that leads nowhere. Requests without Lidarr: an admin reads "Requests need a Lidarr source." with Add Lidarr; everyone else "Requests aren’t set up on this server." and that an admin can add one. Requests turned off, or an account that can't request, read the same way.
 
 ## Controls
