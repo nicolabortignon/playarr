@@ -125,6 +125,24 @@ export class Playlists {
     this.db.prepare('DELETE FROM playlists WHERE id = ?').run(id);
   }
 
+  /**
+   * For Add to playlist: how many of these songs each of the viewer's own playlists already holds (only those that hold
+   * any), so the picker can tick them.
+   */
+  holding(recordingIds: string[], viewer: Viewer): Record<number, number> {
+    const wanted = [...new Set(recordingIds)];
+    if (!wanted.length) return {};
+    const rows = this.db
+      .prepare(
+        `SELECT i.playlist_id AS id, COUNT(DISTINCT i.recording_id) AS n FROM playlist_items i
+         JOIN playlists p ON p.id = i.playlist_id
+         WHERE p.account_id = ? AND i.recording_id IN (${wanted.map(() => '?').join(', ')})
+         GROUP BY i.playlist_id`,
+      )
+      .all(viewer.account, ...wanted) as { id: number; n: number }[];
+    return Object.fromEntries(rows.map((r) => [r.id, r.n]));
+  }
+
   /** Append songs the owner may hear (duplicates allowed, like most players). Unknown ids are rejected. */
   async addItems(id: number, recordingIds: string[], viewer: Viewer): Promise<PlaylistDetail> {
     this.row(id, viewer, 'own');

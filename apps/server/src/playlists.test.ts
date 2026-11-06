@@ -26,7 +26,7 @@ async function setup() {
   playlistRoutes(app, { playlists, recommendations: {} as Recommendations, covers, library: s.library });
   const as = (id: number, method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, payload?: object) =>
     app.inject({ method, url, headers: asAccount(id), ...(payload ? { payload } : {}) });
-  return { ...s, sam, covers, app, as };
+  return { ...s, sam, covers, playlists, app, as };
 }
 
 describe('playlists per account', () => {
@@ -71,5 +71,25 @@ describe('playlists per account', () => {
     const { id } = (await as(sam.id, 'POST', '/api/playlists', { name: 'Sam’s' })).json() as PlaylistDetail;
     expect((await as(sam.id, 'POST', `/api/playlists/${id}/items`, { recordingIds: [CC_REC] })).statusCode).toBe(404);
     expect((await as(sam.id, 'POST', '/api/playlists', { name: 'Again', recordingIds: [CC_REC] })).statusCode).toBe(404);
+  });
+
+  it('says which of the asker’s own playlists already hold songs, and how many of them', async () => {
+    const { sam, playlists, library, lidarr } = await setup();
+    const home = { account: 1, library };
+    const both = await playlists.create(home, 'Both', '', ['rec-1', 'rec-2', 'rec-2']);
+    const one = await playlists.create(home, 'One', '', ['rec-2'], true);
+    await playlists.create(home, 'Other', '', [CC_REC]);
+    const sams = await playlists.create({ account: sam.id, library: library.view([lidarr]) }, 'Sam’s', '', ['rec-1']);
+
+    expect(playlists.holding(['rec-1', 'rec-2'], home)).toEqual({ [both.id]: 2, [one.id]: 1 });
+    // Sam can see the shared playlist but not add to it: only Sam's own counts.
+    expect(playlists.holding(['rec-1', 'rec-2'], { account: sam.id, library })).toEqual({ [sams.id]: 1 });
+  });
+
+  it('answers Add to playlist’s question over the API', async () => {
+    const { as } = await setup();
+    const { id } = (await as(1, 'POST', '/api/playlists', { name: 'Mine', recordingIds: [CC_REC] })).json() as PlaylistDetail;
+    expect((await as(1, 'POST', '/api/playlists/holding', { recordingIds: [CC_REC] })).json()).toEqual({ holding: { [id]: 1 } });
+    expect((await as(1, 'POST', '/api/playlists/holding', { recordingIds: 'nope' })).statusCode).toBe(400);
   });
 });

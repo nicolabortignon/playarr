@@ -81,6 +81,14 @@ export function playlistRoutes(
     );
   });
 
+  // Which of the asker's playlists already hold these songs, for Add to playlist's ticks. A POST, as an album or a
+  // mix makes a long list.
+  app.post<{ Body: { recordingIds?: string[] } }>('/api/playlists/holding', (req, reply) => {
+    const ids = recordingIds(req.body?.recordingIds);
+    if (!ids) return reply.code(400).send({ error: 'recordingIds must be a list of song ids' });
+    return { holding: playlists.holding(ids, viewer(req)) };
+  });
+
   app.get<Id>('/api/playlists/:id', (req, reply) => handle(reply, () => playlists.get(id(req.params.id), viewer(req))));
 
   app.patch<Id & { Body: { name?: string; description?: string; shared?: boolean } }>('/api/playlists/:id', (req, reply) => {
