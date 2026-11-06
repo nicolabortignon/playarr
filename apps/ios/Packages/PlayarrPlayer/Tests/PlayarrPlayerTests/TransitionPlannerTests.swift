@@ -201,6 +201,20 @@ struct TransitionPlannerTests {
     #expect(planner.upcoming.result == .gaveUp)  // too close to its mix point to be made in time
   }
 
+  @Test func aReadyTransitionKeepsItsAnswerAsItTakesOverAndTheClockSettlesBack() async {
+    server.answers.withLock { $0 = [.success(Self.ready)] }
+    let planner = planner()
+    begin(planner)
+    await play(planner, from: 0, for: 179.5)
+    #expect(planner.upcoming.result == .answer(Self.ready))
+    // The clock follows the transition now, a few milliseconds behind the song's own time.
+    clock.advance(by: 0.25)
+    planner.clock(179.46, seeked: false)
+    await play(planner, from: 179.46, for: 2)
+    #expect(planner.upcoming.result == .answer(Self.ready))
+    #expect(server.asked == 1)
+  }
+
   @Test func aLevelLearnedIsAnotherPair() async {
     server.answers.withLock { $0 = [.success(Self.ready)] }
     let planner = planner()

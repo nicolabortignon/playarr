@@ -26,6 +26,9 @@ public final class TransitionPlanner {
   public static let readyLead = 1.0
   /// After giving up, a jump back this far before the cut-off (a restart) is worth asking again.
   public static let restartMargin = 10.0
+  /// The clock can step this little back or ahead without a seek: as a transition takes over from the song, the clock
+  /// follows the transition, a few milliseconds off the song's own time. That's no jump leaving the answer behind.
+  public static let settle = 0.5
 
   /// What's known of the transition into the next song: the server's answer, or "gave up".
   public enum Result: Sendable, Equatable {
@@ -157,11 +160,13 @@ public final class TransitionPlanner {
     // Listening moves the clock about as fast as time passes; a seek or a new song's reset doesn't.
     let listening = !seeked && step > 0 && step <= elapsed * 1.25 + 0.5
     if listening { played += step }
+    // A seek or a restart can leave the answer behind; the clock settling as a transition takes over doesn't.
+    let jumped = seeked || (!listening && !(abs(step) <= Self.settle))
     self.time = time
     lastTime = time
     lastAt = now
     guard let p = pair else { return }
-    if !listening && outOfStep(p, time) {
+    if jumped && outOfStep(p, time) {
       startOver(p)
     } else if p.ended == nil && tooLate(p) {
       return giveUp(p, .late)
