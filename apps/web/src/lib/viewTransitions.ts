@@ -1,7 +1,9 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useContext, useLayoutEffect, useRef, type MouseEvent, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
-import { UNSAFE_ViewTransitionContext, useLocation } from 'react-router';
+import { UNSAFE_ViewTransitionContext, useLocation, useNavigate } from 'react-router';
 import { reduceMotionNow, useReduceMotion } from './motion';
+import { albumQuery } from './queries';
 import { useUI } from './ui';
 
 /*
@@ -50,6 +52,12 @@ const grewFrom = new Map<number, { page: string; nth: number }>();
 /** The album's growing covers on the page, in order (they carry `data-grows`, their album). */
 const coversOf = (albumId: number) => [...document.querySelectorAll<HTMLElement>(`[data-grows="${albumId}"]`)];
 
+/**
+ * How long a cover pressed waits for its album, when it isn't loaded yet (a tap: no pointer rested on it to load it
+ * ahead), so the page opens with its cover to grow into rather than its skeleton. Past that it opens anyway.
+ */
+const WAIT_FOR_ALBUM_MS = 250;
+
 /** A plain click, which the link follows here (not one opening a new tab or window). */
 const plainClick = (e: MouseEvent) => e.button === 0 && !e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey && !e.defaultPrevented;
 
@@ -66,6 +74,10 @@ export function useGrowingCover<T extends HTMLElement = HTMLDivElement>(albumId:
   const page = useLocation().key;
   const growing = useGrowingAlbum();
   const viewTransition = useCoversGrow() && albumId !== undefined;
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  // A press waiting for its album: another doesn't open the page twice.
+  const waiting = useRef(false);
 
   // Named before each picture is taken: layout effects run before the page that's going is pictured (React Router
   // starts the transition from an effect), and as the page that's coming mounts, before it's pictured.
@@ -85,7 +97,19 @@ export function useGrowingCover<T extends HTMLElement = HTMLDivElement>(albumId:
 
   const onClick = (e: MouseEvent) => {
     const el = ref.current;
-    if (viewTransition && el && albumId !== undefined && plainClick(e)) grewFrom.set(albumId, { page, nth: coversOf(albumId).indexOf(el) });
+    if (!viewTransition || !el || albumId === undefined) return;
+    if (waiting.current) return e.preventDefault();
+    if (!plainClick(e)) return;
+    grewFrom.set(albumId, { page, nth: coversOf(albumId).indexOf(el) });
+    if (client.getQueryData(albumQuery(albumId).queryKey)) return;
+    // Not loaded yet: the page would open on its skeleton, with no cover to grow into. A moment for it, then go.
+    e.preventDefault();
+    waiting.current = true;
+    const go = () => {
+      waiting.current = false;
+      void navigate(`/albums/${albumId}`, { viewTransition: true });
+    };
+    void Promise.race([client.ensureQueryData(albumQuery(albumId)), new Promise((resolve) => setTimeout(resolve, WAIT_FOR_ALBUM_MS))]).then(go, go);
   };
 
   return { ref, onClick, viewTransition };

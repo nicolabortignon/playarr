@@ -103,6 +103,35 @@ describe('an album’s cover growing into its page', () => {
     await waitFor(() => expect(named()).toEqual({}));
   });
 
+  it('waits a moment for an album not loaded yet (a tap), so the page opens with its cover to grow into', async () => {
+    const { pictures } = viewTransitions();
+    let answer!: () => void;
+    vi.spyOn(api, 'album').mockReturnValue(new Promise((resolve) => (answer = () => resolve(detail(protection)))));
+    const router = view();
+    fireEvent.click(screen.getByRole('link', { name: /Protection/ }));
+    // Pressed again while it waits: still one page opened.
+    fireEvent.click(screen.getByRole('link', { name: /Protection/ }));
+    expect(router.state.location.pathname).toBe('/');
+    expect(api.album).toHaveBeenCalledOnce();
+    await act(async () => answer());
+    await waitFor(() => expect(pictures).toHaveLength(1));
+    expect(router.state.location.pathname).toBe('/albums/71');
+    expect(router.state.historyAction).toBe('PUSH');
+    expect(pictures[0]!.after['album-cover']).toBe(screen.getByRole('heading', { level: 1, name: 'Protection' }).closest('header')!.querySelector('div > div'));
+  });
+
+  it('opens anyway once the wait is over, with the album still on its way', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    viewTransitions();
+    vi.spyOn(api, 'album').mockReturnValue(new Promise(() => {}));
+    const router = view();
+    fireEvent.click(screen.getByRole('link', { name: /Protection/ }));
+    expect(router.state.location.pathname).toBe('/');
+    await act(() => vi.advanceTimersByTimeAsync(250));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/albums/71'));
+    vi.useRealTimers();
+  });
+
   it('shrinks back into that card going back, which doesn’t rise under it', async () => {
     const { pictures } = viewTransitions();
     const router = view();
