@@ -37,9 +37,19 @@ const xcodebuild = (args) =>
 const NO_MACRO_SANDBOX = 'OTHER_SWIFT_FLAGS=$(inherited) -Xfrontend -disable-sandbox';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * App Store Connect refuses pictographs in What to Test (it answered 409 for a "♥" in a commit subject): ♥ is named,
+ * any other emoji dropped.
+ */
+const plain = (text) =>
+  text
+    .replaceAll('♥', 'heart')
+    .replace(/ ?[\p{Extended_Pictographic}\u{FE0F}]+/gu, '')
+    .trim();
+
 /** "What to Test": one line per commit subject (merges left out), at most 25 lines and 4000 characters. */
 export function whatsNew(subjects) {
-  const lines = subjects.filter((s) => !/^Merge (branch|pull request|remote-tracking branch) /.test(s)).map((s) => `- ${s}`);
+  const lines = subjects.filter((s) => !/^Merge (branch|pull request|remote-tracking branch) /.test(s)).map((s) => `- ${plain(s)}`);
   if (!lines.length) return 'No changes since the last build.';
   const shown = [];
   for (const line of lines) {

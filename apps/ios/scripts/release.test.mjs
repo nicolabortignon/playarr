@@ -19,6 +19,10 @@ test('whatsNew stays under App Store Connect’s 4000 characters', () => {
   assert.ok(whatsNew(Array.from({ length: 25 }, () => 'x'.repeat(300))).length <= 4000);
 });
 
+test('whatsNew leaves out the pictographs App Store Connect refuses, keeping other symbols', () => {
+  assert.equal(whatsNew(['Rows end with time · ♥ · ⋯ 🎧, and Settings → Sources says “Sync now”']), '- Rows end with time · heart · ⋯, and Settings → Sources says “Sync now”');
+});
+
 test('whatsNew says so when only merges came in', () => {
   assert.equal(whatsNew(["Merge branch 'main'"]), 'No changes since the last build.');
 });
