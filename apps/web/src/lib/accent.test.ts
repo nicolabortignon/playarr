@@ -1,6 +1,6 @@
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useCoverAccent, usePlayerAccent } from './accent';
+import { accentGlide, useCoverAccent, usePlayerAccent } from './accent';
 import { extractAccent } from './color';
 import { usePrefs } from './prefs';
 
@@ -42,6 +42,43 @@ describe('the player’s accent', () => {
     usePrefs.setState({ accent: '#a78bfa' });
     renderHook(() => usePlayerAccent({ coverUrl: '/art/album/1/cover', coverAccent: '#5b8fd9' }));
     expect(accentNow()).toBe('#a78bfa');
+  });
+});
+
+describe('the accent’s glide to a new song’s color', () => {
+  const glideNow = () => document.documentElement.style.getPropertyValue('--accent-glide');
+
+  it('takes one beat of the song when its tempo is known, else 0.8 s', () => {
+    expect(accentGlide(120)).toBe('500ms');
+    expect(accentGlide(174)).toBe('345ms');
+    expect(accentGlide(undefined)).toBe('800ms');
+    expect(accentGlide(0)).toBe('800ms');
+    // A misread tempo doesn't make it snap or crawl.
+    expect(accentGlide(40)).toBe('1200ms');
+    expect(accentGlide(400)).toBe('300ms');
+  });
+
+  it('is set before the color, so the color glides over the new song’s beat', () => {
+    const set = vi.spyOn(document.documentElement.style, 'setProperty');
+    const first = { coverUrl: '/art/album/1/cover', coverAccent: '#5b8fd9' };
+    const { rerender } = renderHook(({ track, bpm }) => usePlayerAccent(track, bpm), { initialProps: { track: first, bpm: 96 } });
+    expect(set.mock.calls.map(([name, value]) => `${name}: ${value}`)).toEqual(['--accent-glide: 625ms', '--accent: #5b8fd9']);
+    // The next song, its tempo known as its color comes.
+    set.mockClear();
+    rerender({ track: { coverUrl: '/art/album/2/cover', coverAccent: '#d95b5b' }, bpm: 120 });
+    expect(set.mock.calls.map(([name, value]) => `${name}: ${value}`)).toEqual(['--accent-glide: 500ms', '--accent: #d95b5b']);
+    set.mockRestore();
+  });
+
+  it('isn’t set again for a tempo learned once the color has come', () => {
+    const { rerender } = renderHook(({ bpm }) => usePlayerAccent({ coverUrl: '/art/album/1/cover', coverAccent: '#5b8fd9' }, bpm), {
+      initialProps: { bpm: undefined as number | undefined },
+    });
+    expect(glideNow()).toBe('800ms');
+    const set = vi.spyOn(document.documentElement.style, 'setProperty');
+    rerender({ bpm: 120 });
+    expect(set).not.toHaveBeenCalledWith('--accent', expect.anything());
+    set.mockRestore();
   });
 });
 

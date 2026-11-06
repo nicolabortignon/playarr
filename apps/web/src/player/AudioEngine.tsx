@@ -1,7 +1,6 @@
-import { valueAt } from '@playarr/mix';
+import { type TransitionPlan, valueAt } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { useEffect, useRef } from 'react';
-import { usePlayerAccent } from '../lib/accent';
 import { playableUrl } from '../lib/playable';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
@@ -29,6 +28,8 @@ import { useOffline } from './offline';
 import { playTracker } from './playTracker';
 import { AHEAD_S, JoinGraph } from './joinGraph';
 import { type JoinReport, reportJoin } from './joins';
+import { isBlend, overlapOf, useBlend } from './blend';
+import { setPulseSource, useMetered } from './pulse';
 import { useAutoplay } from './radio';
 import { fellAsleep, sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, nextByPress, takeNextPresses, useClock, useCurrentTrack, usePlayer } from './store';
@@ -468,9 +469,62 @@ export function AudioEngine() {
       let any = false;
       for (const deck of [a.current, b.current, bridge.current]) if (deck && !g.routed(deck)) any = g.route(deck) || any;
       if (any) applyVolumes();
+      publishMetered();
     };
     if (context.state === 'running') routeAll();
     else void context.resume().then(routeAll, () => {});
+  }
+
+  /**
+   * The graph's meter, where what's heard plays through it (desktop, once a click has let Web Audio start); else null.
+   * Not asked whether the context runs: it rests between live mixes for a moment (restAudio), and wakes again.
+   */
+  function meterNow(): AnalyserNode | null {
+    const g = graph.current;
+    const deck = playingDeck();
+    return g?.meter && deck && g.routed(deck) ? g.meter : null;
+  }
+
+  /** The now-playing bars can follow what's heard (player/pulse.ts). */
+  function publishMetered() {
+    const metered = meterNow() !== null;
+    if (useMetered.getState().metered !== metered) useMetered.setState({ metered });
+  }
+
+  /** Where the song shown is as it's heard: the graph holds an element's sound back a little at a join. */
+  function heardSongTime(): number {
+    const g = graph.current;
+    const deck = playingDeck();
+    return currentSongTime() - (g && deck && g.routed(deck) ? g.delayOf(deck) : 0);
+  }
+
+  /** The DJ transition being heard (a server's, or a live mix), and how far into it (negative in its lead of A). */
+  function transitionHeard(): { from: Track; to: Track; plan: TransitionPlan; time: number } | null {
+    const l = liveHeard();
+    if (l?.mix) return { from: l.from, to: l.to, plan: l.mix.plan, time: l.playback!.time() };
+    const m = bridging();
+    const br = bridge.current;
+    if (!m || !br) return null;
+    // Still getting in step, silenced, the transition isn't heard yet: the first song is, this far from the mix point.
+    const deck = active();
+    const time = silenced.current.has(br) && deck ? songTime(deck) - m.transition.plan.aStart : bridgeTime(m, br);
+    return { from: m.from, to: m.to, plan: m.transition.plan, time };
+  }
+
+  /**
+   * A blend shows (player/blend.ts) from the start of the transition until A has faded out of it, whatever happens
+   * meanwhile (the switch to B, a pause); it goes with the transition (its end, a skip, a seek out of it).
+   */
+  function publishBlend() {
+    const heard = transitionHeard();
+    const blending = heard && isBlend(heard.plan) && heard.time >= 0 && heard.time < overlapOf(heard.plan, mixMapOf(heard.from.recordingId)?.bpm ?? 0);
+    const { blend } = useBlend.getState();
+    if (!blending) {
+      if (blend) useBlend.setState({ blend: null });
+      return;
+    }
+    if (blend?.plan === heard.plan && blend.from === heard.from && blend.to === heard.to) return;
+    useBlend.setState({ blend: { from: heard.from, to: heard.to, plan: heard.plan } });
   }
 
   function remaining(deck: HTMLAudioElement) {
@@ -1393,6 +1447,8 @@ export function AudioEngine() {
         b: incoming,
         context,
         aOffset: offsetOf(deck),
+        // Through the meter, where it's on the same context: the now-playing bars follow the mix too.
+        output: graph.current?.context === context ? (graph.current.meter ?? undefined) : undefined,
         onStarted: () => {
           l.started = true;
           applyVolumes();
@@ -1786,6 +1842,24 @@ export function AudioEngine() {
     };
   }, []);
 
+  // What the now-playing bars, Now Playing's glow and a blend's covers keep time with (player/pulse.ts): where the song
+  // is as it's heard, the meter on desktop, and the transition being heard. A blend shows and goes as the clock moves on.
+  useEffect(() => {
+    setPulseSource({ songTime: heardSongTime, meter: meterNow, blend: () => transitionHeard() });
+    const offClock = useClock.subscribe(publishBlend);
+    const offPlayer = usePlayer.subscribe(() => {
+      publishBlend();
+      publishMetered();
+    });
+    return () => {
+      setPulseSource(null);
+      offClock();
+      offPlayer();
+      useBlend.setState({ blend: null });
+      useMetered.setState({ metered: false });
+    };
+  }, []);
+
   // A transition loads ahead once ready for the songs playing next, and is dropped when they change.
   useEffect(() => {
     const offTransition = useTransition.subscribe(prepareBridge);
@@ -1918,11 +1992,10 @@ export function AudioEngine() {
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
   }, [playing]);
 
-  // Tab title follows the current track; so do the accent color and favicon, unless Settings → Appearance fixes the color.
+  // Tab title follows the current track (the accent color and the favicon follow it too: AppShell's FollowTheSong).
   useEffect(() => {
     document.title = track ? `${track.title} · ${track.artistName}` : 'Playarr';
   }, [track]);
-  usePlayerAccent(track);
 
   // Events only count from the element playing the current song (the other is loading or fading out),
   // not while it plays the silent clip that readies it, nor while a transition plays instead.

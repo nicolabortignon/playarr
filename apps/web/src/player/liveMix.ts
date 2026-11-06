@@ -294,6 +294,7 @@ export function playLiveMix(
     context,
     aOffset = 0,
     volume = 1,
+    output = context.destination,
     onStarted,
     onLanded,
   }: {
@@ -302,6 +303,8 @@ export function playLiveMix(
     context: AudioContext;
     aOffset?: number;
     volume?: number;
+    /** Where the mix goes: the speakers, or the graph's meter on its way there (player/joinGraph.ts). */
+    output?: AudioNode;
     /** A has faded out and paused: the mix is what's heard. */
     onStarted?: () => void;
     /** B's element has been told to play (the promise says whether it does). */
@@ -323,7 +326,7 @@ export function playLiveMix(
   if (b.readyState >= 1 /* HAVE_METADATA */) seekB();
   else b.addEventListener('loadedmetadata', seekB, { once: true });
 
-  // The transition → its fades in over A and out under B → the volume → the speakers.
+  // The transition → its fades in over A and out under B → the volume → the speakers (through the meter, if there's one).
   const source = context.createBufferSource();
   source.buffer = buffer;
   const fade = context.createGain();
@@ -333,7 +336,7 @@ export function playLiveMix(
   fade.gain.linearRampToValueAtTime(0, endsAt);
   const level = context.createGain();
   level.gain.value = volume;
-  source.connect(fade).connect(level).connect(context.destination);
+  source.connect(fade).connect(level).connect(output);
   // Sample-exact on the context's clock; the elements only follow by timer, a few milliseconds either way.
   source.start(startsAt);
 

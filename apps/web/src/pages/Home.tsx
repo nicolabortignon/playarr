@@ -15,6 +15,7 @@ import { TrackList } from '../components/TrackList';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
 import { STATS_PATH } from '../lib/links';
+import { useGrowingCover } from '../lib/viewTransitions';
 import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMe, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
 import { GRID } from './Albums';
 import { FAVORITES } from './Favorites';
@@ -255,29 +256,39 @@ export function shelfArtists<A extends { id: number; albumCount: number }>(artis
  */
 const stagger = (i: number, stepMs: number) => ({ animationDelay: `${Math.min(i, 8) * stepMs}ms` });
 
+type StackAlbum = { id: number; title: string; coverUrl?: string; coverColor?: string };
+
 /** Three recent covers fanned out like records on a table. */
-function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl?: string; coverColor?: string }[] }) {
+function CoverStack({ albums }: { albums?: StackAlbum[] }) {
   if (!albums?.length) return null;
-  const poses = [
-    'rotate-[-8deg] translate-x-10 translate-y-4',
-    'rotate-[4deg] -translate-x-2 -translate-y-2 z-10',
-    'rotate-[14deg] -translate-x-16 translate-y-6',
-  ];
   return (
     <div className="hidden page-xl:block">
       <div className="flex justify-end pr-6">
         {albums.map((a, i) => (
-          <Link
-            key={a.id}
-            to={`/albums/${a.id}`}
-            className={`group relative -ml-16 block w-40 animate-rise transition duration-500 ease-out-expo hover:z-20 hover:-translate-y-3 hover:rotate-0 page-2xl:w-52 ${poses[i]}`}
-            style={{ animationDelay: `${150 + i * 90}ms` }}
-          >
-            <Cover src={a.coverUrl} color={a.coverColor} size={208} alt={a.title} eager className="rounded-cover shadow-cover-hero ring-1 ring-paper/10" />
-          </Link>
+          <StackCover key={a.id} album={a} index={i} />
         ))}
       </div>
     </div>
+  );
+}
+
+const POSES = ['rotate-[-8deg] translate-x-10 translate-y-4', 'rotate-[4deg] -translate-x-2 -translate-y-2 z-10', 'rotate-[14deg] -translate-x-16 translate-y-6'];
+
+/** One of the fanned covers: picked up off the table, it straightens as it grows into its album's page (plan 7 §1). */
+function StackCover({ album: a, index: i }: { album: StackAlbum; index: number }) {
+  const cover = useGrowingCover<HTMLAnchorElement>(a.id);
+  return (
+    <Link
+      ref={cover.ref}
+      data-grows={a.id}
+      to={`/albums/${a.id}`}
+      viewTransition={cover.viewTransition}
+      onClick={cover.onClick}
+      className={`group relative -ml-16 block w-40 animate-rise transition duration-500 ease-out-expo hover:z-20 hover:-translate-y-3 hover:rotate-0 page-2xl:w-52 ${POSES[i]}`}
+      style={{ animationDelay: `${150 + i * 90}ms` }}
+    >
+      <Cover src={a.coverUrl} color={a.coverColor} size={208} alt={a.title} eager className="rounded-cover shadow-cover-hero ring-1 ring-paper/10" />
+    </Link>
   );
 }
 

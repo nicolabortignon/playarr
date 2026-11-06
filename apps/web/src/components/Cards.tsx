@@ -1,10 +1,10 @@
 import type { Album, Artist, DiscoverArtist } from '@playarr/shared';
-import { Pause, Play } from 'lucide-react';
 import { useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { Link } from 'react-router';
 import { cn } from '../lib/cn';
 import { useContextMenu, type Point } from '../lib/contextMenu';
 import { plural, releaseKind } from '../lib/format';
+import { useGrowingCover } from '../lib/viewTransitions';
 import { useNearScreen } from '../lib/viewport';
 import { playAlbum } from '../player/actions';
 import { currentTrack, usePlayer } from '../player/store';
@@ -12,6 +12,7 @@ import { Cover } from './Cover';
 import { canRequestRest, RequestRest } from './Discover';
 import { ContextMenu } from './Menu';
 import { useAlbumMenu } from './menus';
+import { PlayPauseIcon } from './PlayPauseIcon';
 
 /** Where a card's menu opens, and whether from the keyboard. */
 export type CardMenuAt = { at: Point; keyboard: boolean } | null;
@@ -55,13 +56,15 @@ export function AlbumCard({
   const ref = useRef<HTMLDivElement>(null);
   const { near, height } = useNearScreen(ref);
   const menu = useCardMenu(ref);
+  // Opening the album grows this cover into its page; going back shrinks it home (plan 7 §1).
+  const cover = useGrowingCover(album.id, ref);
 
   return (
     <div ref={ref} className={cn('group relative animate-rise long-press', className)} style={near ? style : { ...style, height }} {...menu.events}>
       {near && (
         <>
-          <Link to={`/albums/${album.id}`} className="block rounded-md outline-offset-4">
-            <div className="relative">
+          <Link to={`/albums/${album.id}`} viewTransition={cover.viewTransition} onClick={cover.onClick} className="block rounded-md outline-offset-4">
+            <div ref={cover.ref} data-grows={album.id} className="relative">
               <Cover
                 src={album.coverUrl}
                 color={album.coverColor}
@@ -72,15 +75,15 @@ export function AlbumCard({
             </div>
             <div className="mt-3 min-w-0">
               <div className={cn('truncate type-body leading-snug', isCurrent ? 'text-accent' : 'text-paper')}>{album.title}</div>
-              <div className="truncate type-small text-muted">
-                {onArtistPage ? releaseKind(album.albumType, album.secondaryTypes) : album.artistName}
-                {album.year && <span className="type-meta"> · {album.year}</span>}
-                {album.trackCount < album.totalTrackCount && (
-                  <span className="type-meta">
-                    {' '}
-                    · {album.trackCount} of {album.totalTrackCount}
-                  </span>
-                )}
+              {/* A card's second line: type-small everywhere, its figures tabular (docs/design.md, Headers). */}
+              <div className="truncate type-small text-muted tabular">
+                {[
+                  onArtistPage ? releaseKind(album.albumType, album.secondaryTypes) : album.artistName,
+                  album.year,
+                  album.trackCount < album.totalTrackCount && `${album.trackCount} of ${album.totalTrackCount}`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </div>
             </div>
           </Link>
@@ -99,7 +102,7 @@ export function AlbumCard({
                   : 'translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 focus-visible:translate-y-0 focus-visible:opacity-100 pointer-coarse:hidden',
               )}
             >
-              {playingHere ? <Pause className="size-5 fill-current" /> : <Play className="ml-0.5 size-5 fill-current" />}
+              <PlayPauseIcon playing={playingHere} className="size-5" />
             </button>
           </div>
         </>

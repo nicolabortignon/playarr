@@ -294,6 +294,12 @@ The small delights of [plan 7](plans/2026-11-05-7-delight.md): quiet, on-theme, 
 - **Stats:** the headline counts up over 1.4 seconds (the real number is what's read aloud); a streak still going that equals the longest gets a "New record" pill with a flag; the year in review slides up like a sleeve.
 - **Now Playing's cover:** paused, it settles back (smaller, its shadow softer) and lifts again on Play; with a mouse it tilts up to 2° toward the pointer, catching a faint sheen; behind it, the backdrop drifts through the cover's colors, 40 seconds each way.
 - **The energy strip** sits under Now Playing's seek bar for an analyzed song: phrases played in the accent, the rest fainter, lit to where a drag would land, and it seeks where it's pressed. Its 20 points stay reserved for songs without one, so the controls never jump.
+- **Covers move from where they came from:** an album's cover grows from the card pressed into its page, and shrinks back into it going back; the player's cover grows into Now Playing's, and back as it closes. Only the cover moves; the rest of the page changes at once underneath (web: the View Transitions API, where the browser has it; iOS: the zoom navigation transition).
+- **Play and Pause are one shape:** the triangle splits into the two bars, and back, over 200 ms, from wherever it is when pressed again.
+- **The accent changes on the beat:** it glides to the new song's color over one beat of that song (0.3 to 1.2 s; 0.8 s when its tempo isn't known).
+- **The bars keep time:** the equalizer shows the bass, the middle and the treble of what's heard, each landing on the song's beat (the treble on half-beats), and settles when the music stops. Where the app can't hear the music (phones, without Web Audio) or the song has no steady beat, they loop as before.
+- **Now Playing breathes:** a glow of the accent behind the cover swells on each bar's downbeat, a little deeper in busier phrases: a quarter of the accent at most, never a flash, and only while playing.
+- **A DJ blend you can see:** while two songs blend, the player's cover shows both, the one leaving behind at the top left and the one arriving in front at the bottom right, each as present as its song is in the mix; Now Playing says "Mixing into Teardrop" for the whole blend.
 - **Reordering:** the song dragged lifts (a shadow, 3 % larger) and the others part over 250 ms.
 
 ## Motion
@@ -301,7 +307,8 @@ The small delights of [plan 7](plans/2026-11-05-7-delight.md): quiet, on-theme, 
 - **Fast, 150 ms:** a press, a hover, a color changing (Tailwind's default; `Motion.fast`).
 - **Standard, 250 ms:** things that move or change size: menus, toasts, rows (`duration-250`, `Motion.standard`).
 - **Sheets and dialogs** spring in: web Now Playing at damping 34, stiffness 320, mass 0.9, and dialogs at damping 32, stiffness 380; iOS sheets use the system's spring.
-- **Slow on purpose:** covers fade in over 500 to 700 ms, and the accent follows a new cover over 0.8 s.
+- **Slow on purpose:** covers fade in over 500 to 700 ms, and the accent glides to a new song's color over one beat of it (0.3 to 1.2 s; 0.8 s without a tempo).
+- **Covers growing** (Moments): 360 ms into an album page and 420 ms into Now Playing, easing (0.2, 0, 0, 1), Now Playing's sheet fading in around the cover over 320 ms.
 - **Reduce Motion:** the system setting, or Settings → Appearance → Motion, collapses every duration to nothing.
 
 ## Words

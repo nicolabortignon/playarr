@@ -92,10 +92,17 @@
   /* Overridden at runtime from the playing track's cover art. */
   --accent: #ff7a1a;
   --accent-ink: #0f0e0c;
+  /* How long the accent glides to a new song's color: one beat of the song when its tempo is known (lib/accent.ts). */
+  --accent-glide: 0.8s;
   --player-h: 0px;
   --tabbar-h: 0px;
   color-scheme: dark;
-  transition: --accent 0.8s ease;
+  transition: --accent var(--accent-glide) ease;
+  /*
+   * A view transition captures only what's named (a cover growing into its page, Now Playing's cover and sheet): the
+   * rest of the page changes at once underneath, as it does without one (lib/viewTransitions.ts).
+   */
+  view-transition-name: none;
 }
 
 @property --accent {
@@ -329,6 +336,32 @@ body::after {
   }
 }
 
+/*
+ * Covers that grow (plan 7 §1, lib/viewTransitions.ts). An album's cover grows from its card into the album page's
+ * header and shrinks back into the card going back; the player's cover grows into Now Playing's, its sheet fading in
+ * around it, and shrinks home as it closes. The cover flies above the sheet whichever way it goes.
+ */
+::view-transition-group(album-cover) {
+  animation-duration: 0.36s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+::view-transition-group(now-playing-cover) {
+  z-index: 2;
+  animation-duration: 0.42s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+::view-transition-group(now-playing) {
+  z-index: 1;
+  animation-duration: 0.32s;
+}
+/* Square to square: each image fills the box as it grows, rather than keeping its own height. */
+::view-transition-old(album-cover),
+::view-transition-new(album-cover),
+::view-transition-old(now-playing-cover),
+::view-transition-new(now-playing-cover) {
+  height: 100%;
+}
+
 /* Less motion: when the device asks for it (unless Settings → Appearance says Full), or when Settings says Reduced. */
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-motion='full']),
@@ -338,6 +371,12 @@ body::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+  /* A view transition isn't started then (lib/viewTransitions.ts); one that is anyway (going back) doesn't move. */
+  :root:not([data-motion='full'])::view-transition-group(*),
+  :root:not([data-motion='full'])::view-transition-old(*),
+  :root:not([data-motion='full'])::view-transition-new(*) {
+    animation: none !important;
+  }
 }
 
 :root[data-motion='reduce'],
@@ -346,4 +385,9 @@ body::after {
 :root[data-motion='reduce'] *::after {
   animation-duration: 0.01ms !important;
   transition-duration: 0.01ms !important;
+}
+:root[data-motion='reduce']::view-transition-group(*),
+:root[data-motion='reduce']::view-transition-old(*),
+:root[data-motion='reduce']::view-transition-new(*) {
+  animation: none !important;
 }

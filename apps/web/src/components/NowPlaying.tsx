@@ -1,17 +1,20 @@
 import type { Track } from '@playarr/shared';
-import { ChevronDown, Ellipsis, List, Moon, Quote } from 'lucide-react';
+import { Blend, ChevronDown, Ellipsis, List, Moon, Quote } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls, useMotionTemplate, useMotionValue, useSpring } from 'motion/react';
-import { useEffect, useState, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
 import { useReduceMotion } from '../lib/motion';
 import { useOverlay } from '../lib/overlays';
-import { useTempos } from '../lib/queries';
+import { useSongMap, useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { useColumnLayout, useMediaQuery } from '../lib/useMediaQuery';
+import { closeNowPlaying, NOW_PLAYING, NOW_PLAYING_COVER } from '../lib/viewTransitions';
 import { playUpcoming } from '../player/actions';
+import { useBlend } from '../player/blend';
+import { breath, energyAt, onPulse, songBeat } from '../player/pulse';
 import { useSleep } from '../player/sleep';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { IconButton } from './Button';
@@ -28,23 +31,30 @@ import { TransitionView } from './TransitionView';
 
 export function NowPlaying() {
   const open = useUI((s) => s.nowPlayingOpen);
-  const setOpen = useUI((s) => s.setNowPlaying);
   const track = useCurrentTrack();
+  // Closed at once, its cover shrinking back into the player's (lib/viewTransitions.ts): a new presence, so the sheet
+  // goes with the old one rather than sliding away in the transition's picture.
+  const cut = useUI((s) => s.nowPlayingCut);
   // Escape closes it when it's on top: a menu or a dialog opened from it (Edit mix points, the next transition) first.
-  useOverlay(open && !!track, () => setOpen(false));
-  return <AnimatePresence>{open && track && <Sheet />}</AnimatePresence>;
+  useOverlay(open && !!track, closeNowPlaying);
+  return <AnimatePresence key={cut}>{open && track && <Sheet />}</AnimatePresence>;
 }
 
 function Sheet() {
   const setOpen = useUI((s) => s.setNowPlaying);
   const lyricsOpen = useUI((s) => s.lyricsOpen);
   const setLyrics = useUI((s) => s.setLyrics);
+  // Named while its cover grows out of the player's, or shrinks back into it (lib/viewTransitions.ts).
+  const morph = useUI((s) => s.coverMorph === 'sheet');
   const track = useCurrentTrack()!;
+  // Opened by growing the player's cover into it: in place at once, rather than sliding up, its cover already there.
+  const [grewWith] = useState(() => (useUI.getState().nowPlayingGrown ? track.albumId : null));
   const source = usePlayer((s) => s.source);
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
   const navigate = useNavigate();
   const columnFits = useColumnLayout();
+  // Dragged down, it slides away under the finger; leaving for a page, it slides away as the page changes.
   const close = () => setOpen(false);
   const go = (to: string) => {
     close();
@@ -74,7 +84,8 @@ function Sheet() {
       // iPhone Safari 26 draws its translucent status bar and toolbar in this background color, as the topmost fixed
       // element at those edges (the film grain sits below it, index.css), rather than letting the page show through.
       className="fixed inset-0 z-50 overflow-hidden bg-ink-950"
-      initial={{ y: '100%' }}
+      style={morph ? { viewTransitionName: NOW_PLAYING } : undefined}
+      initial={grewWith !== null ? false : { y: '100%' }}
       animate={{ y: 0 }}
       exit={{ y: '100%' }}
       transition={{ type: 'spring', damping: 34, stiffness: 320, mass: 0.9 }}
@@ -93,7 +104,7 @@ function Sheet() {
 
       <div className="relative mx-auto flex h-full max-w-6xl flex-col px-6 pt-[max(env(safe-area-inset-top),1rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)] md:px-12">
         <header className="flex h-14 shrink-0 touch-none items-center justify-between" onPointerDown={(e) => controls.start(e)}>
-          <IconButton label="Close now playing" onClick={close} className="text-paper">
+          <IconButton label="Close now playing" onClick={closeNowPlaying} className="text-paper">
             <ChevronDown className="size-5" />
           </IconButton>
           <div className="min-w-0 px-4 text-center">
@@ -123,13 +134,14 @@ function Sheet() {
             >
               <motion.div
                 key={track.albumId}
-                initial={{ opacity: 0, scale: 0.92 }}
+                initial={grewWith === track.albumId ? false : { opacity: 0, scale: 0.92 }}
                 // Paused, the cover settles back (smaller, its shadow softer); playing lifts it again (plan 7 §3).
                 animate={{ opacity: 1, scale: playing ? 1 : PAUSED_SCALE }}
                 transition={{ type: 'spring', damping: 22, stiffness: 180 }}
-                className="aspect-square w-[min(100cqw,100cqh,560px)]"
+                className="relative aspect-square w-[min(100cqw,100cqh,560px)]"
               >
-                <CoverObject track={track} playing={playing} />
+                <BeatGlow track={track} playing={playing} />
+                <CoverObject track={track} playing={playing} named={morph} />
               </motion.div>
             </div>
           )}
@@ -157,7 +169,7 @@ function Sheet() {
             <SeekBar energy />
             <div className="flex flex-col gap-2">
               <Transport size="lg" />
-              <TransitionView className="self-center" />
+              <MixLine />
             </div>
             <UpNext go={go} onOpenQueue={openQueue} />
           </div>
@@ -197,12 +209,76 @@ function Backdrop({ coverUrl }: { coverUrl?: string }) {
   );
 }
 
+/** The glow's opacity at rest between breaths, and how much more a breath adds in the loudest phrases: barely there. */
+const GLOW_REST = 0.08;
+const GLOW_BREATH = 0.16;
+/** How much a breath swells the glow. */
+const GLOW_SWELL = 0.04;
+/** The glow comes in over this long as the music plays (Now Playing opened, Play pressed), and goes as slowly paused. */
+const GLOW_FADE_MS = 700;
+
+/**
+ * A soft glow of the accent behind the cover, breathing on each bar's downbeat (plan 7 §2): in over the end of a bar,
+ * out from its downbeat, deeper in the loud phrases than the quiet ones (the song's energy, from its mix map). Only for
+ * a song with a beat grid, never a flash, gone while paused, and not there at all under Reduce Motion.
+ */
+function BeatGlow({ track, playing }: { track: Track; playing: boolean }) {
+  const reduce = useReduceMotion();
+  const map = useSongMap(track, !reduce);
+  const beat = useMemo(() => songBeat(map), [map]);
+  const glow = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = glow.current;
+    if (!el || !beat) return;
+    if (!playing) {
+      // Eased out from wherever its breath was; while playing, it's set every frame with nothing easing it.
+      el.style.transition = `opacity ${GLOW_FADE_MS}ms ease-out`;
+      el.style.opacity = '0';
+      return;
+    }
+    el.style.transition = '';
+    const from = performance.now();
+    return onPulse(({ time }) => {
+      const b = breath(beat, time);
+      const coming = Math.min(1, (performance.now() - from) / GLOW_FADE_MS);
+      el.style.opacity = String(coming * (GLOW_REST + GLOW_BREATH * (0.5 + 0.5 * energyAt(beat, time)) * b));
+      el.style.transform = `scale(${1 + GLOW_SWELL * b})`;
+    });
+  }, [beat, playing]);
+
+  if (reduce || !beat) return null;
+  return (
+    <div
+      ref={glow}
+      aria-hidden
+      data-glow
+      className="pointer-events-none absolute -inset-[7%] rounded-panel bg-accent opacity-0 blur-3xl will-change-[opacity,transform]"
+    />
+  );
+}
+
+/**
+ * Under the transport: during a DJ blend, "Mixing into Teardrop", from its start until the song being left has faded
+ * out of it (plan 7 §2); else what the next transition will be (TransitionView).
+ */
+function MixLine() {
+  const blend = useBlend((s) => s.blend);
+  if (!blend) return <TransitionView className="self-center" />;
+  return (
+    <p className="-my-2 inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 self-center type-small text-paper-dim">
+      <Blend className="size-3.5 shrink-0 text-muted" aria-hidden />
+      <span className="truncate">Mixing into {blend.to.title}</span>
+    </p>
+  );
+}
+
 /**
  * Now Playing's cover, as an object (plan 7 §3): its shadow lifts while the music plays and softens when it's paused,
  * and with a mouse it tilts a degree or two towards the pointer, catching a faint sheen. Never on touch, and still under
- * Reduce Motion.
+ * Reduce Motion. `named` while it grows out of the player's cover or shrinks back into it.
  */
-function CoverObject({ track, playing }: { track: Track; playing: boolean }) {
+function CoverObject({ track, playing, named }: { track: Track; playing: boolean; named?: boolean }) {
   const reduce = useReduceMotion();
   const mouse = useMediaQuery('(hover: hover) and (pointer: fine)');
   const tilts = mouse && !reduce;
@@ -238,7 +314,7 @@ function CoverObject({ track, playing }: { track: Track; playing: boolean }) {
     <motion.div
       onPointerMove={follow}
       onPointerLeave={rest}
-      style={tilts ? { rotateX, rotateY, transformPerspective: 900 } : undefined}
+      style={{ ...(tilts ? { rotateX, rotateY, transformPerspective: 900 } : {}), ...(named ? { viewTransitionName: NOW_PLAYING_COVER } : {}) }}
       data-tilt={tilts || undefined}
       className="relative"
     >

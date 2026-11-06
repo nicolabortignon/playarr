@@ -1,4 +1,4 @@
-import type { MixMapEntry } from '@playarr/mix';
+import type { MixMapEntry, TransitionPlan } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { useUI } from '../lib/ui';
+import { useBlend } from '../player/blend';
+import { setPulseSource } from '../player/pulse';
 import { useSleep } from '../player/sleep';
 import { useClock, usePlayer } from '../player/store';
 import { NowPlaying } from './NowPlaying';
@@ -216,5 +218,154 @@ describe('the sleep timer’s end in Now Playing', () => {
     useSleep.setState({ sleptAt: Date.now() - 60_000 });
     wrap(<NowPlaying />);
     expect(screen.queryByRole('status', { name: 'Sleep well' })).toBeNull();
+  });
+});
+
+describe('a DJ blend in Now Playing', () => {
+  const plan = { style: 'long', aStart: 180, length: 20, aGain: [{ at: 0, value: 1 }, { at: 16, value: 0 }], bGain: [{ at: 0, value: 0 }, { at: 8, value: 1 }] } as Partial<TransitionPlan> as TransitionPlan;
+  afterEach(() => useBlend.setState({ blend: null }));
+
+  it('says “Mixing into Teardrop” for as long as the two play together, past the switch to it', () => {
+    const teardrop = { ...track(2), title: 'Teardrop' };
+    usePlayer.setState({ queue: [track(1), teardrop, track(3)], order: [0, 1, 2], pos: 0 });
+    wrap(<NowPlaying />);
+    expect(screen.queryByText('Mixing into Teardrop')).toBeNull();
+    act(() => useBlend.setState({ blend: { from: track(1), to: teardrop, plan } }));
+    expect(screen.getByText('Mixing into Teardrop')).toBeTruthy();
+    // The switch: Teardrop is the song playing now, the first still fading out under it.
+    act(() => usePlayer.setState({ pos: 1 }));
+    expect(screen.getByText('Mixing into Teardrop')).toBeTruthy();
+    act(() => useBlend.setState({ blend: null }));
+    expect(screen.queryByText('Mixing into Teardrop')).toBeNull();
+  });
+});
+
+describe('Now Playing’s breathing glow', () => {
+  /** 120 BPM from its first downbeat at 1 s: bars every 2 s; a quiet phrase, then a loud one. */
+  const analyzed = { version: 99, duration: 200, bpm: 120, firstBeat: 0.5, downbeatOffset: 1, gridStable: true, beatConfidence: 0.9, phraseEnergy: [0.2, 1] } as unknown as MixMapEntry;
+  let songTime = 9;
+  const glow = () => document.querySelector<HTMLElement>('[data-glow]');
+  beforeEach(() => {
+    songTime = 9;
+    setPulseSource({ songTime: () => songTime, meter: () => null, blend: () => null });
+  });
+  afterEach(() => setPulseSource(null));
+
+  it('breathes on each bar’s downbeat, barely there and deeper in a loud phrase', async () => {
+    vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': analyzed });
+    wrap(<NowPlaying />);
+    await waitFor(() => expect(glow()).not.toBeNull());
+    // It comes in over 0.7 s as Now Playing opens, then follows the bars: fullest on the downbeat at 9 s (a loud phrase).
+    await waitFor(() => expect(Number(glow()!.style.opacity)).toBeCloseTo(0.24, 2), { timeout: 2000 });
+    // Halfway through the bar it has breathed out.
+    songTime = 10;
+    await waitFor(() => expect(Number(glow()!.style.opacity)).toBeLessThan(0.11));
+    // The same downbeat in a quiet phrase breathes less deep.
+    songTime = 3;
+    await waitFor(() => expect(Number(glow()!.style.opacity)).toBeCloseTo(0.176, 2));
+    // Never more than barely visible.
+    expect(Number(glow()!.style.opacity)).toBeLessThan(0.3);
+  });
+
+  it('fades away while paused', async () => {
+    vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': analyzed });
+    wrap(<NowPlaying />);
+    await waitFor(() => expect(Number(glow()?.style.opacity)).toBeGreaterThan(0.1), { timeout: 2000 });
+    act(() => usePlayer.setState({ playing: false }));
+    expect(glow()!.style.opacity).toBe('0');
+    expect(glow()!.style.transition).toContain('opacity');
+  });
+
+  it('isn’t there for a song without a beat grid, nor under Reduce Motion', async () => {
+    vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': { ...analyzed, gridStable: false } });
+    wrap(<NowPlaying />);
+    await waitFor(() => expect(api.mixMaps).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(glow()).toBeNull();
+    cleanup();
+    vi.mocked(api.mixMaps).mockResolvedValue({ 'rec-1': analyzed });
+    usePrefs.setState({ motion: 'reduce' });
+    wrap(<NowPlaying />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(glow()).toBeNull();
+  });
+});
+
+describe('the cover growing into Now Playing', () => {
+  /** The elements carrying a view-transition name, by name: each name once, or the browser would skip the transition. */
+  function named(): Record<string, HTMLElement> {
+    const entries = [...document.querySelectorAll<HTMLElement>('*')].filter((el) => el.style.viewTransitionName).map((el) => [el.style.viewTransitionName, el] as const);
+    expect(new Set(entries.map(([name]) => name)).size).toBe(entries.length);
+    return Object.fromEntries(entries);
+  }
+  /** The browser's View Transitions API, run at once: what's named for the picture before, and after the change. */
+  function viewTransitions() {
+    const pictures: { before: Record<string, HTMLElement>; after: Record<string, HTMLElement> }[] = [];
+    let finish = () => {};
+    const start = vi.fn((update: () => void) => {
+      const before = named();
+      update();
+      pictures.push({ before, after: named() });
+      const finished = new Promise<void>((done) => (finish = done));
+      return { finished, ready: Promise.resolve(), updateCallbackDone: Promise.resolve(), skipTransition() {} };
+    });
+    Object.defineProperty(document, 'startViewTransition', { configurable: true, value: start });
+    return { start, pictures, finish: () => act(async () => finish()) };
+  }
+  afterEach(() => {
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
+  });
+
+  const players = () => wrap(<><MiniPlayer /><NowPlaying /></>);
+  const playerCover = () => screen.getByRole('button', { name: 'Open now playing' }).querySelector<HTMLElement>('[data-cover]')!.parentElement!;
+  const sheet = () => screen.queryByRole('dialog', { name: 'Now playing' });
+
+  it('grows the player’s cover into Now Playing’s, the sheet fading in around it rather than sliding up', async () => {
+    useUI.setState({ nowPlayingOpen: false });
+    const { start, pictures, finish } = viewTransitions();
+    players();
+    fireEvent.click(screen.getByRole('button', { name: 'Open now playing' }));
+    expect(start).toHaveBeenCalledOnce();
+    const { before, after } = pictures[0]!;
+    // Before: the player's cover. After: Now Playing's, and its sheet.
+    expect(before['now-playing-cover']).toBe(playerCover());
+    expect(before['now-playing']).toBeUndefined();
+    expect(after['now-playing']).toBe(sheet());
+    expect(sheet()!.contains(after['now-playing-cover']!)).toBe(true);
+    expect(sheet()!.style.transform).not.toContain('100%');
+    await finish();
+    expect(named()).toEqual({});
+  });
+
+  it('shrinks it home as Now Playing closes, the sheet gone at once rather than sliding away', async () => {
+    useUI.setState({ nowPlayingOpen: true });
+    const { pictures, finish } = viewTransitions();
+    players();
+    fireEvent.click(screen.getByRole('button', { name: 'Close now playing' }));
+    const { before, after } = pictures[0]!;
+    expect(before['now-playing']).toBeTruthy();
+    expect(before['now-playing-cover']).not.toBe(playerCover());
+    expect(after['now-playing-cover']).toBe(playerCover());
+    expect(sheet()).toBeNull();
+    await finish();
+    expect(named()).toEqual({});
+    expect(useUI.getState().nowPlayingOpen).toBe(false);
+  });
+
+  it('just opens and closes it under Reduce Motion, or where the browser can’t', () => {
+    useUI.setState({ nowPlayingOpen: false });
+    players();
+    fireEvent.click(screen.getByRole('button', { name: 'Open now playing' }));
+    expect(useUI.getState()).toMatchObject({ nowPlayingOpen: true, nowPlayingGrown: false, coverMorph: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Close now playing' }));
+    expect(useUI.getState().nowPlayingOpen).toBe(false);
+    cleanup();
+    usePrefs.setState({ motion: 'reduce' });
+    const { start } = viewTransitions();
+    players();
+    fireEvent.click(screen.getByRole('button', { name: 'Open now playing' }));
+    expect(start).not.toHaveBeenCalled();
+    expect(useUI.getState().nowPlayingOpen).toBe(true);
+    expect(named()).toEqual({});
   });
 });

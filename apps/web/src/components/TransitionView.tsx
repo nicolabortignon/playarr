@@ -6,6 +6,7 @@ import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { usePrefs } from '../lib/prefs';
 import { useMixMaps } from '../lib/queries';
+import { overlapOf } from '../player/blend';
 import { upNext } from '../player/decks';
 import { useSleep } from '../player/sleep';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -198,17 +199,6 @@ interface Strip {
   bars: BarTick[];
   /** The mix, 0–1 (zero width for a straight cut). */
   mix: { left: number; width: number };
-}
-
-/**
- * How long both songs sound together, from the start of the mix: until the song playing has faded
- * out (its gain's last step down to silence), else the plan's beats at its tempo. The rest of the
- * plan is the next song easing back to its own tempo, alone.
- */
-export function overlapOf(plan: TransitionPlan, bpmA: number): number {
-  const lastHeard = plan.aGain.findLastIndex((p) => p.value > 0);
-  if (lastHeard >= 0) return Math.min(plan.aGain[lastHeard + 1]?.at ?? plan.length, plan.length);
-  return bpmA > 0 && plan.beats > 0 ? Math.min((plan.beats * 60) / bpmA, plan.length) : plan.length;
 }
 
 /**

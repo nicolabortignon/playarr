@@ -12,6 +12,8 @@ import { TrackList } from '../components/TrackList';
 import { useCoverAccent } from '../lib/accent';
 import { formatDuration, plural, releaseKind } from '../lib/format';
 import { useAlbum, useArtist } from '../lib/queries';
+import { ALBUM_COVER_SIZE } from '../lib/prefetch';
+import { useAlbumCoverName } from '../lib/viewTransitions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { artistPhoto } from './Artist';
 
@@ -27,6 +29,8 @@ export function AlbumPage() {
   const toggle = usePlayer((s) => s.toggle);
   const rest = useRestRequest(album);
   const menu = useAlbumMenu({ id, artistId: album?.artistId ?? Number.NaN }, { tracks: album?.tracks });
+  // Opened from a cover, that cover grows into this one; going back, it shrinks home (plan 7 §1).
+  const coverName = useAlbumCoverName(id);
 
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !album) return <AlbumSkeleton />;
@@ -49,11 +53,12 @@ export function AlbumPage() {
       />
       <div className="relative px-5 pt-6 md:px-10 md:pt-14">
         <DetailHeader
+          coverName={coverName}
           cover={
             <Cover
               src={album.coverUrl}
               color={album.coverColor}
-              size={288}
+              size={ALBUM_COVER_SIZE}
               alt={album.title}
               eager
               className="w-full rounded-cover shadow-cover-hero ring-1 ring-paper/10"

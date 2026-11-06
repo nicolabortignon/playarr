@@ -22,7 +22,7 @@ import type {
   UpdateInfo,
   UpdateSettings,
 } from '@playarr/shared';
-import { MIX_MAP_VERSION, type MixMap } from '@playarr/mix';
+import { MIX_MAP_VERSION, type MixMap, type MixMapEntry } from '@playarr/mix';
 import { keepPreviousData, queryOptions, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import { api, ApiError, type AnalysisKind } from './api';
@@ -570,6 +570,16 @@ export const useLyrics = (trackId: number, enabled = true) =>
  * times: a server that can't analyze audio never has them).
  */
 export const useMixMaps = (recordingIds: string[], enabled = true) => useQuery(mixMapsQuery(recordingIds, enabled));
+
+/**
+ * One song's mix map (its beat, its energy), once it's measured. The next song's is asked for ahead (AppShell's
+ * FollowTheSong), so the accent, the now-playing bars and Now Playing's glow find it at once when it plays. `enabled`
+ * false only reads what's here.
+ */
+export function useSongMap(track: Pick<Track, 'recordingId'> | undefined, enabled = true): MixMapEntry | undefined {
+  const id = track?.recordingId;
+  return useMixMaps(id ? [id] : [], enabled && !!id).data?.[id ?? ''];
+}
 
 export const mixMapsQuery = (recordingIds: string[], enabled = true) =>
   queryOptions({

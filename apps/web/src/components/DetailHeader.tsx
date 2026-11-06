@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { cn } from '../lib/cn';
 import { Skeleton } from './States';
 
@@ -17,6 +17,7 @@ const ROUND = 'mx-auto w-[min(40vw,160px)] shrink-0 md:mx-0 md:w-40 page-lg:w-48
  */
 export function DetailHeader({
   cover,
+  coverName,
   round,
   kicker,
   title,
@@ -29,6 +30,11 @@ export function DetailHeader({
 }: {
   /** The page's art, filling its box. None on an artist's photo, which is drawn behind the header. */
   cover?: ReactNode;
+  /**
+   * The name the cover's box carries while an album's cover grows into the page from the card it was opened from, or
+   * shrinks back into it (lib/viewTransitions.ts). A cover that grew there doesn't rise into place as the page opens.
+   */
+  coverName?: string;
   /** An artist's picture: a circle, smaller than a cover. */
   round?: boolean;
   /** What it is: "Album", "Live album", "Playlist", "Made for you", "Artist". */
@@ -47,10 +53,16 @@ export function DetailHeader({
   children?: ReactNode;
   className?: string;
 }) {
+  // Shown as a cover grew into it: it's in place already.
+  const [grew] = useState(coverName !== undefined);
   return (
     <header className={className}>
       <div className="flex flex-col gap-5 md:flex-row md:items-end md:gap-8 page-lg:gap-10">
-        {cover && <div className={cn(round ? ROUND : COVER, 'animate-rise')}>{cover}</div>}
+        {cover && (
+          <div className={cn(round ? ROUND : COVER, !grew && 'animate-rise')} style={coverName ? { viewTransitionName: coverName } : undefined}>
+            {cover}
+          </div>
+        )}
         <div className="min-w-0 flex-1 animate-rise [animation-delay:80ms]">
           <div className="type-kicker text-muted">{kicker}</div>
           {heading ??

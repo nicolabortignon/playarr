@@ -7,8 +7,9 @@ import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { usePlayer } from '../player/store';
 import { useSleep } from '../player/sleep';
+import { overlapOf } from '../player/blend';
 import { useTransition, type UpcomingResult } from '../player/transitions';
-import { nextSongClock, overlapOf, TransitionView } from './TransitionView';
+import { nextSongClock, TransitionView } from './TransitionView';
 
 const track = (id: number) =>
   ({ id, recordingId: `rec-${id}`, fileId: id, albumId: id, artistId: id, title: `Song ${id}`, artistName: `Artist ${id}`, albumTitle: 'A', duration: 240, streamUrl: `/s/${id}` }) as Track;

@@ -7,6 +7,7 @@ import { formatTime, releaseKind } from '../lib/format';
 import { albumHref, artistHref, titleKey } from '../lib/links';
 import { useRequestAlbum, useRequests, useRequestsEnabled } from '../lib/queries';
 import { useDelayedFlag } from '../lib/useDelayedFlag';
+import { useGrowingCover } from '../lib/viewTransitions';
 import { rowActionWords, RowAction } from './ActionRow';
 import { Button } from './Button';
 import { Cover } from './Cover';
@@ -205,12 +206,15 @@ export function DiscoverAlbumCard({
   const available = availabilityState === 'available';
   // Partly in the library: the album page plays what's there.
   const partial = availabilityState === 'partial' || (have !== undefined && libraryAlbumId !== undefined);
-  const to = (available || partial) && libraryAlbumId ? `/albums/${libraryAlbumId}` : `/discover/artists/${album.artistMbid}`;
+  const opensAlbum = (available || partial) && libraryAlbumId !== undefined;
+  const to = opensAlbum ? `/albums/${libraryAlbumId}` : `/discover/artists/${album.artistMbid}`;
   const kind = partial && have !== undefined && total ? `${have} of ${total}` : (album.secondaryTypes[0] ?? album.type);
+  // An album in the library opens there, its cover growing into the page (plan 7 §1).
+  const cover = useGrowingCover(opensAlbum ? libraryAlbumId : undefined, ref);
   return (
     <div ref={ref} className={cn('group animate-rise', className)} style={style} data-highlighted={highlighted || undefined}>
-      <Link to={to} className="block">
-        <div className="relative">
+      <Link to={to} viewTransition={cover.viewTransition} onClick={cover.onClick} className="block">
+        <div ref={cover.ref} data-grows={opensAlbum ? libraryAlbumId : undefined} className="relative">
           <Cover
             src={album.coverUrl}
             size={200}
@@ -229,14 +233,10 @@ export function DiscoverAlbumCard({
         </div>
         <div className="mt-3 min-w-0">
           <div className="truncate type-body leading-snug text-paper">{album.title}</div>
-          {onArtistPage ? (
-            <div className="truncate type-small text-muted">{[releaseKind(album.type, album.secondaryTypes), album.year].filter(Boolean).join(' · ')}</div>
-          ) : (
-            <div className="truncate type-small text-muted">
-              {album.artistName}
-              {album.year && <span className="type-meta"> · {album.year}</span>}
-            </div>
-          )}
+          {/* A card's second line: type-small everywhere, its figures tabular (docs/design.md, Headers). */}
+          <div className="truncate type-small text-muted tabular">
+            {[onArtistPage ? releaseKind(album.type, album.secondaryTypes) : album.artistName, album.year].filter(Boolean).join(' · ')}
+          </div>
         </div>
       </Link>
       <RequestButton

@@ -1,17 +1,26 @@
-import { LoaderCircle, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from 'lucide-react';
+import { LoaderCircle, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { useMixMaps } from '../lib/queries';
+import { useDelayedFlag } from '../lib/useDelayedFlag';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 import { SongEnergy } from './EnergyStrip';
+import { PlayPauseIcon } from './PlayPauseIcon';
 import { Slider } from './Slider';
 
+/** A song starting this quickly shows no spinner: Play just becomes Pause. */
+const SPINNER_AFTER_MS = 300;
+
+/**
+ * Play and Pause, one morphing into the other (plan 7 §1): the player bar's, the mini player's and Now Playing's. A
+ * song slow to start shows a spinner, once it has kept the music waiting a moment.
+ */
 export function PlayPauseButton({ size = 'md', className }: { size?: 'sm' | 'md' | 'lg'; className?: string }) {
   const playing = usePlayer((s) => s.playing);
   const toggle = usePlayer((s) => s.toggle);
   const hasTrack = usePlayer((s) => s.pos >= 0);
-  const loading = useClock((s) => s.loading && playing);
+  const loading = useDelayedFlag(useClock((s) => s.loading && playing), SPINNER_AFTER_MS);
   const dims = { sm: 'size-10', md: 'size-11', lg: 'size-[4.5rem]' }[size];
   const icon = { sm: 'size-4.5', md: 'size-4.5', lg: 'size-8' }[size];
   return (
@@ -26,13 +35,7 @@ export function PlayPauseButton({ size = 'md', className }: { size?: 'sm' | 'md'
         className,
       )}
     >
-      {loading ? (
-        <LoaderCircle className={cn(icon, 'animate-spin')} />
-      ) : playing ? (
-        <Pause className={cn(icon, 'fill-current')} />
-      ) : (
-        <Play className={cn(icon, 'ml-[8%] fill-current')} />
-      )}
+      {loading ? <LoaderCircle className={cn(icon, 'animate-spin')} /> : <PlayPauseIcon playing={playing} className={icon} />}
     </button>
   );
 }

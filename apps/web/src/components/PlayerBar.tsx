@@ -1,22 +1,46 @@
 import type { Track } from '@playarr/shared';
 import { List, Maximize2, Play, Quote, SkipForward, Volume1, Volume2, VolumeX } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
+import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
+import { preloadImage } from '../lib/prefetch';
 import { useRecentAlbums } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { useUI, type SideColumnView } from '../lib/ui';
 import { useColumnLayout } from '../lib/useMediaQuery';
+import { openNowPlaying } from '../lib/viewTransitions';
 import { playAlbum } from '../player/actions';
 import { useEndOfSongLine } from '../player/endOfSong';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 import { Button } from './Button';
 import { Cover } from './Cover';
+import { Equalizer } from './Equalizer';
 import { FavoriteButton } from './FavoriteButton';
 import { FormatBadge } from './FormatBadge';
 import { LuckyButton } from './LuckyButton';
+import { PlayerCover } from './PlayerCover';
 import { Slider } from './Slider';
 import { PlayPauseButton, SeekBar, Transport } from './Transport';
+
+/**
+ * Now Playing's cover (and its backdrop's), loaded ahead as the player's cover is pointed at or pressed: the cover
+ * growing into Now Playing's arrives whole (lib/viewTransitions.ts).
+ */
+const nowPlayingArtAhead = (track: Track) => () => {
+  for (const size of [560, 300]) preloadImage(sized(track.coverUrl, size));
+};
+
+/** The song's title, after the bars marking it as playing (following the music where they can, plan 7 §2). */
+function PlayingTitle({ children }: { children: ReactNode }) {
+  const playing = usePlayer((s) => s.playing);
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <Equalizer playing={playing} className="shrink-0" />
+      {children}
+    </span>
+  );
+}
 
 /**
  * Desktop/tablet bottom bar: the song (its cover opens Now Playing), the transport and the seek bar, then the format,
@@ -24,7 +48,6 @@ import { PlayPauseButton, SeekBar, Transport } from './Transport';
  */
 export function PlayerBar() {
   const track = useCurrentTrack();
-  const open = useUI((s) => s.setNowPlaying);
 
   return (
     <footer className="fixed inset-x-0 bottom-0 z-40 hidden h-[88px] border-t border-line bg-ink-950/85 backdrop-blur-2xl md:block">
@@ -34,16 +57,25 @@ export function PlayerBar() {
         {track ? (
           <>
             <div className="flex min-w-0 items-center gap-3.5">
-              <button type="button" onClick={() => open(true)} aria-label="Open now playing" className="group relative shrink-0">
-                <Cover src={track.coverUrl} color={track.coverColor} size={56} alt={track.albumTitle} className="size-14 rounded-cover shadow-lg ring-1 ring-paper/5" />
+              <button
+                type="button"
+                onClick={openNowPlaying}
+                onPointerEnter={nowPlayingArtAhead(track)}
+                onFocus={nowPlayingArtAhead(track)}
+                aria-label="Open now playing"
+                className="group relative shrink-0"
+              >
+                <PlayerCover track={track} size={56} className="size-14 rounded-cover shadow-lg" coverClassName="ring-1 ring-paper/5" />
                 <span className="absolute inset-0 grid place-items-center rounded-cover bg-ink-950/50 opacity-0 transition group-hover:opacity-100">
                   <Maximize2 className="size-4.5" />
                 </span>
               </button>
               <div className="min-w-0">
-                <Link to={`/albums/${track.albumId}`} className="block truncate type-body text-paper hover:underline">
-                  {track.title}
-                </Link>
+                <PlayingTitle>
+                  <Link to={`/albums/${track.albumId}`} className="block truncate type-body text-paper hover:underline">
+                    {track.title}
+                  </Link>
+                </PlayingTitle>
                 <Subtitle track={track} link />
               </div>
               <FavoriteButton track={track} size="md" />
@@ -216,7 +248,6 @@ function Volume() {
  */
 export function MiniPlayer() {
   const track = useCurrentTrack();
-  const open = useUI((s) => s.setNowPlaying);
   const next = usePlayer((s) => s.next);
   const time = useClock((s) => s.time);
   const duration = useClock((s) => s.duration);
@@ -231,13 +262,17 @@ export function MiniPlayer() {
         <button
           type="button"
           aria-label="Open now playing"
-          onClick={() => open(true)}
+          onClick={openNowPlaying}
+          onPointerDown={nowPlayingArtAhead(track)}
+          onFocus={nowPlayingArtAhead(track)}
           // Its focus ring inside: the bar clips what's outside it.
           className="relative flex min-w-0 flex-1 items-center gap-3 self-stretch pr-1 pl-2 text-left focus-visible:-outline-offset-2"
         >
-          <Cover src={track.coverUrl} color={track.coverColor} size={44} alt="" className="size-11 shrink-0 rounded-cover" />
+          <PlayerCover track={track} size={44} className="size-11 shrink-0" />
           <span className="min-w-0">
-            <span className="block truncate type-body text-paper">{track.title}</span>
+            <PlayingTitle>
+              <span className="block truncate type-body text-paper">{track.title}</span>
+            </PlayingTitle>
             <Subtitle track={track} />
           </span>
         </button>

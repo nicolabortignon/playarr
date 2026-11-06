@@ -110,6 +110,34 @@ describe('the graph', () => {
     expect(nodes.filter((n) => n.kind === 'delay').every((n) => n.connected.length === 1)).toBe(true);
   });
 
+  it('plays everything through its meter on the way out, unchanged, where the context can analyze', () => {
+    const { context, nodes } = fakeContext(() => new Float32Array(0), () => new Float32Array(0));
+    const analyzer = {
+      connected: [] as unknown[],
+      fftSize: 2048,
+      smoothingTimeConstant: 0.8,
+      connect(to: unknown) {
+        analyzer.connected.push(to);
+        return to;
+      },
+    };
+    Object.assign(context, { createAnalyser: () => analyzer });
+    const g = JoinGraph.create(context)!;
+    expect(g.meter).toBe(analyzer);
+    expect(analyzer.connected).toEqual([context.destination]);
+    // Bins about 47 Hz apart at 48 kHz, smoothed a little: the bars move with the music without jittering.
+    expect(analyzer).toMatchObject({ fftSize: 1024, smoothingTimeConstant: 0.55 });
+    g.route(document.createElement('audio'));
+    const gain = nodes.find((n) => n.kind === 'gain')!;
+    expect(gain.connected).toEqual([analyzer]);
+    // Without an analyzer, the elements play straight to the speakers.
+    const plain = fakeContext(() => new Float32Array(0), () => new Float32Array(0));
+    const h = JoinGraph.create(plain.context)!;
+    expect(h.meter).toBeNull();
+    h.route(document.createElement('audio'));
+    expect(plain.nodes.find((n) => n.kind === 'gain')!.connected).toEqual([plain.context.destination]);
+  });
+
   it('holds a level a cross-fade owns until it is over', () => {
     const { context } = fakeContext(() => new Float32Array(0), () => new Float32Array(0));
     const g = JoinGraph.create(context)!;

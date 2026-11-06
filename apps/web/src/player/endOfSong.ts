@@ -1,6 +1,7 @@
 import type { TransitionPlan } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
+import { useBlend } from './blend';
 import { fadeSeconds, upNext } from './decks';
 import { mixMapOf } from './mixMaps';
 import { useSleep } from './sleep';
@@ -48,7 +49,9 @@ export function endOfSongLine({ time, duration, next, plan, ready, bar, fade = 0
 
 /**
  * `endOfSongLine` for the song playing, re-rendering only when the words change. Nothing when the sleep timer stops
- * the music after this song: nothing follows it.
+ * the music after this song: nothing follows it. Once a blend out of it is heard (player/blend.ts), "Mixing into
+ * Teardrop" for as long as it's the song shown: the engine knows the blend is playing, whatever the transitions store
+ * has made of the pair meanwhile (it can let its answer go at the mix point, taking the start as a seek).
  */
 export function useEndOfSongLine(): string | undefined {
   const current = usePlayer(currentTrack);
@@ -62,17 +65,20 @@ export function useEndOfSongLine(): string | undefined {
   const result = useTransition((s) => (s.fromFileId === current?.fileId && s.toFileId === next?.fileId ? s.result : null));
   const plan = dj && mixed && result && 'plan' in result ? result.plan : undefined;
   const bpm = (current && mixMapOf(current.recordingId)?.bpm) || 0;
+  const blendingInto = useBlend((s) => (s.blend && s.blend.from.fileId === current?.fileId ? s.blend.to.title : undefined));
   return useClock((c) =>
     sleepEnd
       ? undefined
-      : endOfSongLine({
-          time: c.time,
-          duration: c.duration,
-          next,
-          plan,
-          ready: result?.status === 'ready',
-          bar: bpm > 0 ? (4 * 60) / bpm : undefined,
-          fade,
-        }),
+      : blendingInto !== undefined
+        ? `Mixing into ${blendingInto}`
+        : endOfSongLine({
+            time: c.time,
+            duration: c.duration,
+            next,
+            plan,
+            ready: result?.status === 'ready',
+            bar: bpm > 0 ? (4 * 60) / bpm : undefined,
+            fade,
+          }),
   );
 }

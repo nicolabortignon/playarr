@@ -1,10 +1,12 @@
 // Joins measured on the sound itself (desktop). An element's reported time isn't the sample being heard
 // (each element has its own decoder, buffers and output path), so two elements lined up by their
 // currentTime can still be a few milliseconds apart as heard: at a join that's a bump. Here every
-// <audio> element plays through one Web Audio graph (element → delay → gain → speakers). At a join the
-// two files hold the same sound (a transition's lead of A, its tail of B), so the graph records both as
-// they come out, finds how far apart they are by cross-correlation, delays the one ahead by exactly that,
-// checks, and cross-fades on the audio clock: the two then join to the sample.
+// <audio> element plays through one Web Audio graph (element → delay → gain → meter → speakers). At a
+// join the two files hold the same sound (a transition's lead of A, its tail of B), so the graph records
+// both as they come out, finds how far apart they are by cross-correlation, delays the one ahead by
+// exactly that, checks, and cross-fades on the audio clock: the two then join to the sample. The meter,
+// an analyzer everything passes through unchanged, is where the now-playing bars read what's heard
+// (player/pulse.ts).
 
 /** Recorded per look at the two outputs: about 0.17 s at 48 kHz, plenty to line up a beat's worth of sound. */
 const CAPTURE_FRAMES = 8192;
@@ -20,6 +22,12 @@ const MIN_RMS = 1e-4;
 const GAIN_SMOOTHING_S = 0.005;
 /** The longest delay an element can be given (the coarse step aims for about AHEAD_S). */
 const MAX_DELAY_S = 1;
+/**
+ * The meter's analysis: 1024 samples (about 21 ms at 48 kHz, bins 47 Hz apart), smoothed a little from one reading to
+ * the next, so the bars move with the music without jittering.
+ */
+const METER_FFT = 1024;
+const METER_SMOOTHING = 0.55;
 /**
  * A new file found behind the old one (a delay can't bring it forward), or far ahead, jumps to this far
  * ahead of it, so the gap is one a delay can take up.
@@ -144,8 +152,20 @@ export class JoinGraph {
   private readonly routes = new Map<HTMLMediaElement, Route>();
   /** Gains a scheduled cross-fade owns until then (context time): volume changes leave them alone meanwhile. */
   private readonly rampedUntil = new Map<HTMLMediaElement, number>();
+  /**
+   * Everything the graph plays meets here on its way to the speakers, unchanged: the level of what's heard, for the
+   * now-playing bars (player/pulse.ts). A live mix plays into it too. Null where the context can't analyze.
+   */
+  readonly meter: AnalyserNode | null;
 
-  private constructor(readonly context: AudioContext) {}
+  private constructor(readonly context: AudioContext) {
+    this.meter = makeMeter(context);
+  }
+
+  /** Where each element's sound goes: through the meter, else straight to the speakers. */
+  get output(): AudioNode {
+    return this.meter ?? this.context.destination;
+  }
 
   /** A graph on `context`, where it has what's needed (a desktop browser); null otherwise. */
   static create(context: AudioContext): JoinGraph | null {
@@ -166,7 +186,7 @@ export class JoinGraph {
       const gain = this.context.createGain();
       // At the level it plays at now, so one already playing carries on as it was.
       gain.gain.value = element.muted ? 0 : element.volume;
-      source.connect(delay).connect(gain).connect(this.context.destination);
+      source.connect(delay).connect(gain).connect(this.output);
       this.routes.set(element, { delay, gain });
       // The level is the graph's from now on; the element plays at full volume into it.
       element.volume = 1;
@@ -303,5 +323,19 @@ export class JoinGraph {
   /** Volume changes reach the element's gain again (a cross-fade called off). */
   release(element: HTMLMediaElement) {
     this.rampedUntil.delete(element);
+  }
+}
+
+/** The analyzer everything passes through on its way out (see JoinGraph.meter); null where there's none to be had. */
+function makeMeter(context: AudioContext): AnalyserNode | null {
+  if (typeof context.createAnalyser !== 'function') return null;
+  try {
+    const meter = context.createAnalyser();
+    meter.fftSize = METER_FFT;
+    meter.smoothingTimeConstant = METER_SMOOTHING;
+    meter.connect(context.destination);
+    return meter;
+  } catch {
+    return null;
   }
 }

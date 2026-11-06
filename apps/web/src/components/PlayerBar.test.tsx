@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { useUI } from '../lib/ui';
+import { useBlend } from '../player/blend';
 import { useSleep } from '../player/sleep';
 import { useClock, usePlayer } from '../player/store';
 import { useTransition } from '../player/transitions';
@@ -129,6 +130,7 @@ describe('the end of a song', () => {
     usePrefs.setState({ transitions: 'off', crossfade: 0 });
     useSleep.setState({ endsAt: null, endOfSong: false });
     useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
+    useBlend.setState({ blend: null });
     usePlayer.setState({ queue: [track(1), { ...track(2), title: 'Teardrop' }], order: [0, 1], pos: 0, playing: true, mixMode: 'auto' });
   });
 
@@ -150,6 +152,23 @@ describe('the end of a song', () => {
     expect(screen.getByText('Mixing into Teardrop on the next bar')).toBeTruthy();
     await at(182);
     expect(screen.getByText('Mixing into Teardrop')).toBeTruthy();
+  });
+
+  it('keeps saying it’s mixing for as long as the blend is heard, even once the transitions store has let its answer go', async () => {
+    usePrefs.setState({ transitions: 'dj' });
+    const plan = { style: 'long', aStart: 180, beats: 32 } as TransitionPlan;
+    const [song, teardrop] = usePlayer.getState().queue as [Track, Track];
+    // At the mix point the store can take the transition's start for a seek, start over, and give up as too late.
+    useTransition.setState({ fromFileId: 1, toFileId: 2, result: { status: 'gave up' }, ready: undefined });
+    useBlend.setState({ blend: { from: song, to: teardrop, plan } });
+    view('/', <MiniPlayer />);
+    await at(184);
+    expect(screen.getByText('Mixing into Teardrop')).toBeTruthy();
+    // Teardrop shown, past the switch: the blend goes on a moment, but it's no longer mixing into what's shown.
+    act(() => usePlayer.setState({ pos: 1 }));
+    await at(21);
+    expect(screen.queryByText('Mixing into Teardrop')).toBeNull();
+    expect(screen.getByText('Radiohead')).toBeTruthy();
   });
 
   it('says nothing of what follows when the sleep timer stops after this song', async () => {

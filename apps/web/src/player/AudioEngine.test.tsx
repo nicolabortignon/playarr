@@ -14,6 +14,8 @@ import { useOffline } from './offline';
 import { useSleep } from './sleep';
 import { currentTrack, useClock, usePlayer } from './store';
 import { useTransition } from './transitions';
+import { useBlend } from './blend';
+import { pulseNow, useMetered } from './pulse';
 
 vi.mock('./loadAhead', () => ({ useLoadAhead: () => {} }));
 vi.mock('./playTracker', () => ({ playTracker: { start: vi.fn(), finish: vi.fn(), tick: vi.fn(), pause: vi.fn() } }));
@@ -571,6 +573,39 @@ describe('AudioEngine', () => {
       expect(usePlayer.getState().playing).toBe(true);
     });
 
+    it('shows the blend from the transition’s start until the first song has faded out of it, past the switch', async () => {
+      // The first song is heard until 16 s into the transition (its gain gone by then), the next one comes in over it.
+      transitionReady(1, 2, { plan: plan({ aGain: [{ at: 0, value: 1 }, { at: 8, value: 1 }, { at: 16, value: 0 }] }) });
+      const [a, b, bridge] = await start([song(1), song(2), song(3)]);
+      await at(a, 145);
+      await at(a, 169.99);
+      // The transition's lead of the first song isn't the blend yet.
+      expect(useBlend.getState().blend).toBeNull();
+      await inStepWith(a, 170.3, bridge, 0.3);
+      await at(bridge, 2);
+      expect(useBlend.getState().blend).toMatchObject({ from: { fileId: 1 }, to: { fileId: 2 }, plan: { aStart: 170 } });
+      await at(bridge, 13);
+      expect(now()).toBe(2);
+      expect(useBlend.getState().blend?.from.fileId).toBe(1);
+      // The first song has faded out: the next one plays on alone, easing back to its own tempo.
+      await at(bridge, 16.5);
+      expect(useBlend.getState().blend).toBeNull();
+      await at(bridge, 23.99);
+      await overlap();
+      await at(b, 40);
+      expect(useBlend.getState().blend).toBeNull();
+      expect(fake(a).paused).toBe(true);
+    });
+
+    it('lets the blend go with a skip out of the transition', async () => {
+      transitionReady(1, 2);
+      await intoTransition(6);
+      expect(useBlend.getState().blend).not.toBeNull();
+      await act(async () => usePlayer.getState().next());
+      await settle();
+      expect(useBlend.getState().blend).toBeNull();
+    });
+
     it('seeks within the transition while the seek stays inside it', async () => {
       transitionReady(1, 2);
       const [, , bridge] = await intoTransition(4);
@@ -914,6 +949,24 @@ describe('AudioEngine', () => {
         expect(useJoins.getState().last!.gapMs).toBeCloseTo(0.01, 6);
         // A has stopped, the cross-fade over (by the audio clock: 40 ms from when it was asked).
         expect(fake(a).paused).toBe(true);
+      });
+
+      it('lets the now-playing bars follow what’s heard once the elements play through the graph', async () => {
+        const g = Object.assign(fakeGraph([]), { meter: {} as AnalyserNode });
+        Object.assign(g.context, { state: 'running' });
+        const [a] = await start([song(1), song(2)]);
+        await at(a, 50);
+        // Not before a click lets Web Audio start: the bars loop meanwhile.
+        expect(useMetered.getState().metered).toBe(false);
+        document.dispatchEvent(new Event('pointerdown'));
+        await settle();
+        expect(useMetered.getState().metered).toBe(true);
+        // Where the song is as it's heard: the graph holds an element's sound back by its delay.
+        g.delays.set(a, 0.02);
+        expect(pulseNow()?.time).toBeCloseTo(49.98, 9);
+        expect(pulseNow()?.blend).toBeNull();
+        cleanup();
+        expect(useMetered.getState().metered).toBe(false);
       });
 
       it('corrects once more when the check finds it still off', async () => {
@@ -1522,6 +1575,8 @@ describe('AudioEngine', () => {
         expect(usePlayer.getState().playing).toBe(true);
         await mixAt(1);
         expect(clock()).toBe(63.5); // the first song's time, inside the mix (from its start at 62.5)
+        // A blend you can see: both songs, while they play together.
+        expect(useBlend.getState().blend).toMatchObject({ from: { fileId: 1 }, to: { fileId: 2 }, plan: { style: 'quick' } });
         await mixAt(2.5); // half a second before the switch (the tick that sees it comes at the end of the step)
         await wait(490);
         expect(now()).toBe(1);
@@ -1533,6 +1588,7 @@ describe('AudioEngine', () => {
         expect(fake(b).paused).toBe(false);
         expect(fake(b).time).toBe(36);
         expect(clock()).toBe(36);
+        expect(useBlend.getState().blend).toBeNull();
         await at(b, 40);
         expect(clock()).toBe(40);
         expect(titles).toEqual(['Song 1', 'Song 2']);

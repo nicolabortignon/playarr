@@ -113,6 +113,24 @@ describe('Artist page', () => {
     expect(card('Ritual Spirit').textContent).toContain('EP · 2016');
   });
 
+  it('sets every card’s second line alike, its own albums’ and those beyond the library: small type, figures of one width', async () => {
+    vi.spyOn(api, 'artist').mockResolvedValue(artist({ albums: [{ ...owned(70, 'Mezzanine', 'rg-mezz'), year: 1998, trackCount: 8, totalTrackCount: 12 }] }));
+    vi.spyOn(api, 'discoverArtist').mockResolvedValue({
+      mbid: 'art-1',
+      name: 'Massive Attack',
+      albums: [discovered('rg-blue', 'Blue Lines', { state: 'none' }, 'Album', 1991)],
+    } as DiscoverArtistDetail);
+    renderArtist();
+    const ours = await screen.findByText('Album · 1998 · 8 of 12');
+    const beyond = await screen.findByText('Album · 1991');
+    for (const line of [ours, beyond]) {
+      expect(line.className).toContain('type-small');
+      expect(line.className).toContain('tabular');
+      // No part of it in the mono meta type, as the year was.
+      expect(line.querySelector('.type-meta')).toBeNull();
+    }
+  });
+
   it('heads the page with what it is, the name and one line of counts', async () => {
     vi.spyOn(api, 'artist').mockResolvedValue(artist({ mbid: undefined, albumCount: 2, trackCount: 24 }));
     renderArtist();

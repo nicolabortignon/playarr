@@ -1,5 +1,5 @@
 import type { Track } from '@playarr/shared';
-import { Pause, Play, Shuffle } from 'lucide-react';
+import { Shuffle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn';
 import type { Download } from '../player/offline';
@@ -7,6 +7,7 @@ import { usePlayer } from '../player/store';
 import { Button, type ButtonProps } from './Button';
 import { DownloadButton } from './DownloadButton';
 import { Menu, type MenuEntry } from './Menu';
+import { PlayPauseIcon } from './PlayPauseIcon';
 
 /**
  * What makes a worded button of the row round and wordless once the row narrows to a step (index.css: row-step-1
@@ -85,18 +86,21 @@ export function ActionRow({ title, state, onPlay, onShuffle, disabled, action, d
   );
 }
 
+/** Play: its icon morphs between Play and Pause (plan 7 §1) beside the word it says now. */
 function PlayButton({ title, state, onPlay, disabled }: { title: string; state: PlayState; onPlay: () => void; disabled?: boolean }) {
   return (
     <Button variant="primary" size="large" onClick={onPlay} disabled={disabled} aria-label={`${WORDS[state]} ${title}`}>
-      {/* Every word it can say, stacked in one cell: the button is as wide as the widest. */}
-      <span className="grid">
-        {(['idle', 'playing', 'paused'] as const).map((w) => (
-          <span key={w} aria-hidden={w !== state || undefined} className={cn('col-start-1 row-start-1 flex items-center justify-center gap-2', w !== state && 'invisible')}>
-            {/* At the row's narrowest, Play keeps its word but not its icon. */}
-            {w === 'playing' ? <Pause className="size-5 fill-current row-step-3:hidden" /> : <Play className="size-5 fill-current row-step-3:hidden" />}
-            {WORDS[w]}
-          </span>
-        ))}
+      <span className="flex items-center justify-center gap-2">
+        {/* At the row's narrowest, Play keeps its word but not its icon. */}
+        <PlayPauseIcon playing={state === 'playing'} className="size-5 shrink-0 row-step-3:hidden" />
+        {/* Every word it can say, stacked in one cell: the button is as wide as the widest. */}
+        <span className="grid">
+          {(['idle', 'playing', 'paused'] as const).map((w) => (
+            <span key={w} aria-hidden={w !== state || undefined} className={cn('col-start-1 row-start-1 text-center', w !== state && 'invisible')}>
+              {WORDS[w]}
+            </span>
+          ))}
+        </span>
       </span>
     </Button>
   );
