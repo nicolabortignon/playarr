@@ -35,7 +35,7 @@ struct NowPlayingTracklist: View {
           }
         }
         Text(tracklist.end.uppercased())
-          .font(.mono(.caption2)).tracking(2).foregroundStyle(.muted)
+          .font(.mono(.caption2)).tracking(2).foregroundStyle(.paperDim)
           .frame(minHeight: 44)
           .listRowBackground(Color.clear)
           .listRowSeparator(.hidden)
@@ -124,7 +124,7 @@ struct NowPlayingTracklist: View {
           .foregroundStyle(theme.accent.color)
         HStack(spacing: 8) {
           Button(track.artistName) { session.actions.goToArtist(track) }
-            .font(.sans(.subheadline)).foregroundStyle(.muted).buttonStyle(.plain)
+            .font(.sans(.subheadline)).foregroundStyle(.paperDim).buttonStyle(.plain)
             .frame(minHeight: 32)
           FormatBadge(format: track.format)
         }
@@ -141,11 +141,11 @@ struct NowPlayingTracklist: View {
     let track = line.track
     return Button { session.player.jump(to: line.orderPos) } label: {
       HStack(spacing: 12) {
-        Text(line.number).font(.mono(.footnote)).foregroundStyle(.muted).frame(width: 32, alignment: .center)
+        Text(line.number).font(.mono(.footnote)).foregroundStyle(.paperDim).frame(width: 32, alignment: .center)
         VStack(alignment: .leading, spacing: 1) {
           Text(track.title).font(.sans(.body)).essentialLineLimit()
           if let detail = detail(line) {
-            Text(detail).font(.sans(.footnote)).foregroundStyle(.muted).essentialLineLimit()
+            Text(detail).font(.sans(.footnote)).foregroundStyle(.paperDim).essentialLineLimit()
           }
         }
         OfflineMark(store: session.player.downloads, fileId: track.fileId)
@@ -184,7 +184,7 @@ struct NowPlayingTracklist: View {
       // Heard as one: a hairline down the number column.
       Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 10).frame(width: 32).accessibilityHidden(true)
     case .crossfade(let seconds):
-      Label("\(seconds) s", systemImage: "arrow.left.and.right").font(.mono(.caption2)).foregroundStyle(.muted)
+      Label("\(seconds) s", systemImage: "arrow.left.and.right").font(.mono(.caption2)).foregroundStyle(.paperDim)
         .padding(.leading, 44).frame(height: 18).accessibilityHidden(true)
     case .dj:
       // The next mix in words, opening the transition sheet (phase 5's line).

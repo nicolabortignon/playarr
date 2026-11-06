@@ -20,8 +20,8 @@ struct ToastsView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(toast.tone == .error ? Color.red.opacity(0.4) : Color.secondary.opacity(0.2)))
-        .foregroundStyle(toast.tone == .error ? Color.red : Color.primary)
+        .overlay(Capsule().stroke(toast.tone == .error ? Color.danger.opacity(0.4) : Color.secondary.opacity(0.2)))
+        .foregroundStyle(toast.tone == .error ? Color.danger : Color.primary)
         .onTapGesture { if toast.action == nil { center.dismiss(toast.id) } }
         .transition(.move(edge: .top).combined(with: .opacity))
         .sensoryFeedback(Haptic.toast(isError: toast.tone == .error), trigger: toast.id)

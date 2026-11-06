@@ -99,7 +99,7 @@ Accounts, sessions, setup codes, the 401 rules and Bonjour are described in [../
 ## 6. Look, text and accessibility
 
 - User-facing text copies the web's wording. Where the web names the browser, say "this device" ("This file format is not supported on this device").
-- Every control is at least 44 points (`.contentShape` after the frame). Secondary text uses `.muted`; text drawn on artwork goes through `ArtworkText`. Use `AdaptiveStack`, `essentialLineLimit()`, `reducesMotion` and `pointerHover()` where they fit.
+- Every control is at least 44 points (`.contentShape` after the frame). Colors, type, radii and cover shadows come from `Theme/` by role ([design.md](../design.md)): secondary text is `.paperDim`, quieter text (kickers, times, counts) `.muted`; text drawn on artwork goes through `ArtworkText`. Use `AdaptiveStack`, `essentialLineLimit()`, `reducesMotion` and `pointerHover()` where they fit.
 - Put `.accessibilityLabel` on the `Button` or `NavigationLink` itself. Never wrap a button in `.accessibilityElement(children: .ignore)`: VoiceOver and UI tests can't tap the wrapper.
 - An accessibility audit exception (`AuditExceptions` in `AccessibilityAuditTests.swift`) says what, where and why, and is added only after trying to fix the view; check contrast against the element's own pixels (`measuredContrast`) before ignoring a contrast issue.
 - After a change to the UI, run `corepack pnpm ios:screens` to refresh `screenshots/` at the repo root (iphone, iphone-sideways, ipad, duo, duo-sideways; not committed).

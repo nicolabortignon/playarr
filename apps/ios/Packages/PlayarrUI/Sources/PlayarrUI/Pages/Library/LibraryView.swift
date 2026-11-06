@@ -69,7 +69,7 @@ struct LibraryView: View {
               .buttonStyle(.plain)
           }
           .font(.sans(.footnote))
-          .foregroundStyle(.muted)
+          .foregroundStyle(.paperDim)
           .frame(minHeight: 44)
         }
       }

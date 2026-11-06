@@ -13,7 +13,9 @@ Proposed 2026-11-05 from a review of every screen of both apps (how, below); not
 - Two code reads, one per app, counted the variants named below. Treat the counts as lower bounds.
 - Not seen: analysis was off (no ffmpeg on this Mac, silent audio), so DJ mix, even volume, Stats for nerds and mix points weren't on screen. First run (setup mode) is plan 4's.
 
-## 1. Write the design language down — S
+## 1. Write the design language down — S — done 2026-11-06
+
+*Done: [`docs/design.md`](../design.md) lists every role with its web and iOS name. The web gained `danger`, `success` and `warning`, the `type-*` roles, `rounded-cover`/`-panel`/`-dialog` and `shadow-cover`/`-cover-hero`; iOS gained `Theme/Palette.swift` (`.paper`, `.paperDim`, `.muted`, `.line`, `.danger`, `.success`, `.warning`), `TypeRole.swift` (`.typeRole(_:)`) and `Shape.swift` (`Radius`, `.coverShadow(_:)`, `Motion`). Every raw red, green and amber on both apps now uses a role, covers and thumbnails share the 4 radius, and covers use the two shadows. iOS's old `.muted` (white at 70 %) is now `.paperDim`; `.muted` is the quieter level, as on the web.*
 
 There is no design doc. The tokens live in `apps/web/src/index.css` (`ink-*`, `paper`, `paper-dim`, `muted`, `line`, `accent`) and in iOS's `Theme/`. iOS has no ink or paper tokens: secondary text is white at 70% in cards and rows (`Muted.swift:12`), and the system `.secondary` on detail pages (`AlbumView.swift:115`, `ArtistView.swift:85`, `PlaylistView.swift:112`).
 

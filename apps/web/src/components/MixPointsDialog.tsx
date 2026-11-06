@@ -137,7 +137,7 @@ function Loader({ song, onSaved }: { song: Track; onSaved: () => void }) {
   const map = data?.[song.recordingId];
   if (error) {
     return (
-      <p role="alert" className="p-5 text-[15px] text-red-300/90">
+      <p role="alert" className="p-5 text-[15px] text-danger">
         Couldn’t load this song’s mix points: {(error as Error).message}
       </p>
     );
@@ -263,7 +263,7 @@ function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: Cu
       </div>
 
       {save.error && (
-        <p role="alert" className="text-[14px] text-red-300/90">
+        <p role="alert" className="text-[14px] text-danger">
           Couldn’t save the mix points: {(save.error as Error).message}
         </p>
       )}

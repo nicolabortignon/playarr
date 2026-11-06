@@ -92,7 +92,7 @@ function PublicAddress({ publicUrl }: { publicUrl: string | undefined }) {
 
 const Problem = ({ error }: { error: string | null }) =>
   error ? (
-    <p role="alert" className="text-sm text-red-300/90">
+    <p role="alert" className="text-sm text-danger">
       {error}
     </p>
   ) : null;

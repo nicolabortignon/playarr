@@ -39,7 +39,7 @@
         #endif
         Button("Play album") { Task { await playAlbum() } }
           .disabled(Int(albumId) == nil)
-        if let failure { Text(failure).foregroundStyle(.red) }
+        if let failure { Text(failure).foregroundStyle(.danger) }
       }
     }
 
@@ -69,7 +69,7 @@
         }
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)
-        if let error = player.error { Text(error).foregroundStyle(.red) }
+        if let error = player.error { Text(error).foregroundStyle(.danger) }
       }
     }
 

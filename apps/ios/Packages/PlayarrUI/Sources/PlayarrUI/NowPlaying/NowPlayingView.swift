@@ -179,7 +179,7 @@ struct NowPlayingView: View {
           .frame(minHeight: 44)
           .contentShape(Rectangle())
           .accessibilityLabel("Playing from \(model.playingFrom ?? "")")
-        if let tail { Text(tail).font(.mono(.caption2)).foregroundStyle(.muted) }
+        if let tail { Text(tail).font(.mono(.caption2)).foregroundStyle(.paperDim) }
       }
       .layoutPriority(1)
       HStack(spacing: 0) {
@@ -221,7 +221,7 @@ struct NowPlayingView: View {
   private func cover(_ track: Track, playing: Bool) -> some View {
     let reduce = appearance.reduceMotion(system: systemReduceMotion)
     return Cover(path: track.coverUrl, points: 360, label: track.albumTitle, corner: 8)
-      .shadow(color: .black.opacity(0.85), radius: 40, y: 30)
+      .coverShadow(.hero)
       .scaleEffect(playing ? 1 : 0.86)
       .animation(reduce ? nil : .spring(response: 0.45, dampingFraction: 0.7), value: playing)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -359,7 +359,7 @@ struct NowPlayingView: View {
         VStack(alignment: .leading, spacing: 1) {
           Kicker(text: "Playing from")
           // "Mezzanine · 3 songs · 17 min left": the time left after the name, quieter.
-          Text("\(model.playingFrom ?? "")\(Text(tail.map { " · \($0)" } ?? "").foregroundStyle(.muted))")
+          Text("\(model.playingFrom ?? "")\(Text(tail.map { " · \($0)" } ?? "").foregroundStyle(.paperDim))")
             .font(.sans(.subheadline)).lineLimit(1)
         }
         .frame(minHeight: 44)

@@ -17,6 +17,18 @@
   --color-line: rgb(236 230 220 / 0.08);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
+  --color-danger: #f87171;
+  --color-success: #34d399;
+  --color-warning: #fcd34d;
+
+  /* docs/design.md: covers and thumbnails, panels and cards, dialogs. Pills and round buttons are rounded-full. */
+  --radius-cover: 4px;
+  --radius-panel: 12px;
+  --radius-dialog: 16px;
+
+  /* A cover on a shelf or in a grid, and a page's own cover. */
+  --shadow-cover: 0 12px 32px -12px rgb(0 0 0 / 0.8);
+  --shadow-cover-hero: 0 30px 70px -20px rgb(0 0 0 / 0.9);
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
@@ -121,6 +133,45 @@ body::after {
 
 @utility tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The type scale, by role (docs/design.md); iOS has the same roles (`.typeRole(_:)`). Each sets the font, never the
+ * color: kickers and meta are `text-muted`, titles `text-paper`.
+ */
+@utility type-page-title {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 1.75rem + 3.2vw, 4.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+}
+@utility type-section-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 1.3rem + 0.8vw, 1.75rem);
+  line-height: 1;
+}
+@utility type-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+@utility type-body {
+  font-size: 15px;
+}
+@utility type-small {
+  font-size: 13px;
+}
+@utility type-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+@utility type-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /*

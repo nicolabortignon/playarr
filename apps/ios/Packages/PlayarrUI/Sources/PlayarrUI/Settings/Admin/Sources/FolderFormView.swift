@@ -16,7 +16,7 @@ struct FolderFormView: View {
           }
         }
         .pickerStyle(.segmented)
-        if model.smb, model.smbOff { Text("\(FolderFormModel.smbOffText).").font(.footnote).foregroundStyle(.red) }
+        if model.smb, model.smbOff { Text("\(FolderFormModel.smbOffText).").font(.footnote).foregroundStyle(.danger) }
       }
       if model.remote { connection }
       if let request = model.browsing {

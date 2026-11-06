@@ -49,7 +49,7 @@ struct Kicker: View {
       .font(.mono(.caption2))
       // None at the accessibility sizes, where the spaced letters would break "MADE FOR YOU" over two lines.
       .tracking(typeSize.isAccessibilitySize ? 0 : tracking * scale)
-      .foregroundStyle(.muted)
+      .foregroundStyle(.paperDim)
       // Grows with the text size even where a row is tight (Now Playing's header), wrapping rather than squeezing.
       .fixedSize(horizontal: false, vertical: true)
   }

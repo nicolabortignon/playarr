@@ -164,7 +164,7 @@ public struct SourcesPanel: View {
   private func color(_ tone: SourceText.Tone) -> Color {
     switch tone {
     case .accent: .accentColor
-    case .error: .red
+    case .error: .danger
     case .muted: .secondary
     }
   }

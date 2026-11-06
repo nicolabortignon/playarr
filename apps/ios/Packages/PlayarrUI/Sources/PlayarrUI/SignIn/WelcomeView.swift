@@ -34,7 +34,7 @@ struct WelcomeView: View {
             } header: {
                 Text("Or type its address")
             } footer: {
-                if let error = model.error { Text(error).foregroundStyle(.red) }
+                if let error = model.error { Text(error).foregroundStyle(.danger) }
             }
 
             Section {

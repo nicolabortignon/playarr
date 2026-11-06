@@ -100,7 +100,7 @@ function Report({ stats }: { stats: ListeningStats }) {
       {year && top && (
         <section className="flex flex-col gap-6 sm:flex-row sm:items-end">
           <Link to={`/artists/${top.artist.id}`} className="block w-48 shrink-0 md:w-60">
-            <Cover src={top.artist.imageUrl} size={260} alt={top.artist.name} className="aspect-square rounded-[4px] ring-1 ring-paper/10" />
+            <Cover src={top.artist.imageUrl} size={260} alt={top.artist.name} className="aspect-square rounded-cover ring-1 ring-paper/10" />
           </Link>
           <div>
             <div className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Your artist of the year</div>
@@ -173,7 +173,7 @@ function Report({ stats }: { stats: ListeningStats }) {
                 className="flex w-full items-center gap-4 rounded-md px-2 py-2 text-left transition hover:bg-paper/[0.05]"
               >
                 <span className="w-6 text-right font-mono text-sm text-muted tabular">{i + 1}</span>
-                <Cover src={track.coverUrl} size={48} alt="" className="size-11 shrink-0 rounded-[3px]" />
+                <Cover src={track.coverUrl} size={48} alt="" className="size-11 shrink-0 rounded-cover" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] text-paper">{track.title}</span>
                   <span className="block truncate text-[13px] text-muted">{track.artistName}</span>

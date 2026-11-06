@@ -25,7 +25,7 @@ struct TrackRow: View {
           VStack(alignment: .leading, spacing: 2) {
             Text(track.title).essentialLineLimit().foregroundStyle(current ? theme.accent.color : .primary)
             if style == .mixed {
-              Text("\(track.artistName) · \(track.albumTitle)").font(.sans(.footnote)).essentialLineLimit().foregroundStyle(.muted)
+              Text("\(track.artistName) · \(track.albumTitle)").font(.sans(.footnote)).essentialLineLimit().foregroundStyle(.paperDim)
             }
           }
           OfflineMark(store: session.player.downloads, fileId: track.fileId)
@@ -61,7 +61,7 @@ struct TrackRow: View {
         if current {
           Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: playing && !reducesMotion).foregroundStyle(theme.accent.color)
         } else {
-          Text("\(track.trackNumber)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.muted)
+          Text("\(track.trackNumber)").font(.sans(.subheadline).monospacedDigit()).foregroundStyle(.paperDim)
         }
       }
       .frame(width: 28)

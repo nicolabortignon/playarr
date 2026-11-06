@@ -28,7 +28,7 @@ struct PlayerBarTransport: View {
       Image(systemName: image).frame(width: 44, height: 44).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .foregroundStyle(on == true ? AnyShapeStyle(theme.accent.color) : on == false ? AnyShapeStyle(.muted) : AnyShapeStyle(.primary))
+    .foregroundStyle(on == true ? AnyShapeStyle(theme.accent.color) : on == false ? AnyShapeStyle(.paperDim) : AnyShapeStyle(.primary))
     .pointerHover()
     .accessibilityLabel(label)
   }

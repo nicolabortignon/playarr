@@ -43,7 +43,7 @@ export function MixPage() {
         <MixCover
           mix={mix}
           size={256}
-          className="mx-auto w-[min(64vw,256px)] shrink-0 animate-rise rounded-[4px] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.9)] ring-1 ring-paper/10 md:mx-0 md:w-56 lg:w-64"
+          className="mx-auto w-[min(64vw,256px)] shrink-0 animate-rise rounded-cover shadow-cover-hero ring-1 ring-paper/10 md:mx-0 md:w-56 lg:w-64"
         />
         <div className="min-w-0 flex-1 animate-rise [animation-delay:80ms]">
           <div className="font-mono text-[11px] tracking-[0.25em] text-paper-dim/70 uppercase">Made for you</div>

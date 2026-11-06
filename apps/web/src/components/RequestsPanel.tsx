@@ -19,7 +19,7 @@ export function RequestsPanel() {
   if (error instanceof ApiError && error.status === 403) {
     return <AwayNotice />;
   }
-  if (error && !data) return <p className="text-sm text-red-300/80">{error.message}</p>;
+  if (error && !data) return <p className="text-sm text-danger">{error.message}</p>;
   if (!data) return <PanelSkeleton />;
 
   if (!data.lidarr) {
@@ -77,7 +77,7 @@ function Destination({
   if (!info.options) {
     return (
       <div className="rounded-lg border border-line px-4 py-3">
-        <p className="flex items-start gap-2 text-sm text-red-300/80">
+        <p className="flex items-start gap-2 text-sm text-danger">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           <span>Couldn’t get the choices from Lidarr{info.error ? `: ${info.error}` : '.'}</span>
         </p>

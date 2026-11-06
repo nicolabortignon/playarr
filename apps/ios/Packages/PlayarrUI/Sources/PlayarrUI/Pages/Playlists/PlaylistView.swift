@@ -84,7 +84,7 @@ struct PlaylistView: View {
   private func cover(_ playlist: PlaylistDetail) -> some View {
     Button { pickingCover = true } label: {
       PlaylistCover(cover: playlist.cover, points: 256, name: playlist.name)
-        .shadow(color: .black.opacity(0.8), radius: 30, y: 20)
+        .coverShadow(.hero)
     }
     .buttonStyle(.plain)
     .disabled(!model.canPickCover)

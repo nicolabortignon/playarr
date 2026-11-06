@@ -201,7 +201,7 @@ function DiscoverSection({ q }: { q: string }) {
           ))}
         </div>
       )}
-      {error && !data && <p className="text-sm text-red-300/80">{(error as Error).message}</p>}
+      {error && !data && <p className="text-sm text-danger">{(error as Error).message}</p>}
       {nothing && <p className="text-sm text-muted">Nothing found for “{debounced}”.</p>}
 
       <div className="space-y-12">

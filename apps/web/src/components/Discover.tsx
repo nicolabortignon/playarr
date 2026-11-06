@@ -69,7 +69,7 @@ export function RequestButton({
           title={summary}
           aria-label={`${summary}: open the album`}
           onClick={stop(() => albumId && navigate(`/albums/${albumId}`))}
-          className={cn(pill, 'border border-emerald-400/30 text-emerald-300 tabular hover:bg-emerald-400/10')}
+          className={cn(pill, 'border border-success/30 text-success tabular hover:bg-success/10')}
         >
           {total ? `${have}/${total}` : `${have} here`}
         </button>
@@ -92,7 +92,7 @@ export function RequestButton({
         <button
           type="button"
           onClick={stop(() => albumId && navigate(`/albums/${albumId}`))}
-          className={cn(base, 'border border-emerald-400/30 text-emerald-300 hover:bg-emerald-400/10')}
+          className={cn(base, 'border border-success/30 text-success hover:bg-success/10')}
         >
           <Check className="size-3" /> In library
         </button>
@@ -131,7 +131,7 @@ export function RequestButton({
       );
     case 'failed':
       return (
-        <button type="button" title={message} onClick={ask} className={cn(base, 'border border-red-400/40 text-red-300 hover:bg-red-400/10')}>
+        <button type="button" title={message} onClick={ask} className={cn(base, 'border border-danger/40 text-danger hover:bg-danger/10')}>
           <TriangleAlert className="size-3" /> Retry
         </button>
       );
@@ -175,13 +175,13 @@ export function DiscoverAlbumCard({
             size={200}
             alt={album.title}
             className={cn(
-              'rounded-[4px] ring-1 ring-paper/5',
+              'rounded-cover ring-1 ring-paper/5',
               !available && 'saturate-[0.85]',
               highlighted && 'ring-2 ring-accent ring-offset-4 ring-offset-ink-900 saturate-100',
             )}
           />
           {!available && (
-            <span className="absolute top-2 left-2 rounded-[3px] bg-ink-950/75 px-1.5 py-0.5 font-mono text-[9px] tracking-[0.15em] text-paper-dim uppercase backdrop-blur">
+            <span className="absolute top-2 left-2 rounded-cover bg-ink-950/75 px-1.5 py-0.5 font-mono text-[9px] tracking-[0.15em] text-paper-dim uppercase backdrop-blur">
               {kind}
             </span>
           )}
@@ -218,9 +218,9 @@ export function DiscoverTrackRow({ track }: { track: DiscoverTrack }) {
       onClick={() => opens && navigate(`/albums/${track.availability.albumId}`)}
     >
       <div className="relative">
-        <Cover src={track.coverUrl} size={44} alt="" label={track.albumTitle} className="size-11 rounded-[3px]" />
+        <Cover src={track.coverUrl} size={44} alt="" label={track.albumTitle} className="size-11 rounded-cover" />
         {available && (
-          <div className="absolute inset-0 grid place-items-center rounded-[3px] bg-black/50 opacity-0 transition group-hover:opacity-100">
+          <div className="absolute inset-0 grid place-items-center rounded-cover bg-black/50 opacity-0 transition group-hover:opacity-100">
             <Play className="size-4 fill-paper" />
           </div>
         )}

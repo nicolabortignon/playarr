@@ -43,7 +43,7 @@ function Row({ download: d }: { download: Download }) {
   return (
     <li className="flex items-center gap-4 py-3">
       <Link to={d.href} className="shrink-0">
-        <Cover src={d.coverUrl} size={64} alt="" className="size-14 rounded-[4px]" />
+        <Cover src={d.coverUrl} size={64} alt="" className="size-14 rounded-cover" />
       </Link>
       <div className="min-w-0 flex-1">
         <Link to={d.href} className="block truncate text-[15px] text-paper hover:underline">
@@ -52,7 +52,7 @@ function Row({ download: d }: { download: Download }) {
         <div className="truncate text-[13px] text-muted">
           {d.subtitle ? `${d.subtitle} · ` : ''}
           {done ? plural(progress.total, 'song') : `${progress.done} of ${plural(progress.total, 'song')}`} · {formatBytes(progress.bytes)}
-          {failed > 0 && <span className="text-red-300/80"> · {failed} couldn’t download</span>}
+          {failed > 0 && <span className="text-danger"> · {failed} couldn’t download</span>}
         </div>
         {!done && (
           <div className="mt-1.5 h-1 max-w-48 overflow-hidden rounded-full bg-paper/10">

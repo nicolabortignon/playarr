@@ -46,7 +46,7 @@ export function SourcesPanel() {
     if (data) setOrder(data.sources);
   }, [data]);
 
-  if (error) return <p className="text-sm text-red-300/80">{(error as Error).message}</p>;
+  if (error) return <p className="text-sm text-danger">{(error as Error).message}</p>;
   if (!data) return <div className="h-24 animate-pulse rounded-lg bg-paper/5" />;
 
   const { canEdit } = data;
@@ -256,7 +256,7 @@ function SourceStatus({ source: s }: { source: SourceInfo }) {
       ? // Each album takes a few MusicBrainz lookups at about one per second.
         [`Matching… ${plural(s.matching, 'album')} left · about ${formatWait(s.matching * 3.3)}`, 'text-accent']
       : s.error
-        ? [s.error, 'text-red-300/80']
+        ? [s.error, 'text-danger']
         : !s.enabled
           ? ['Turned off', 'text-muted']
           : s.lastSyncAt
@@ -498,7 +498,7 @@ function LidarrForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
         </p>
       )}
       {test && test !== 'running' && (
-        <p className={cn('flex items-center gap-2 text-sm', test.ok ? 'text-emerald-300' : 'text-red-300/80')}>
+        <p className={cn('flex items-center gap-2 text-sm', test.ok ? 'text-success' : 'text-danger')}>
           {test.ok ? <Check className="size-4" /> : <TriangleAlert className="size-4" />}
           {test.ok ? `Connected to Lidarr ${test.version ?? ''}` : test.error}
         </p>
@@ -625,7 +625,7 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
           );
         })}
       </div>
-      {smb && smbOff && <p className="text-[13px] text-red-300/80">{SMB_OFF}.</p>}
+      {smb && smbOff && <p className="text-[13px] text-danger">{SMB_OFF}.</p>}
       {remote && (
         <div className="space-y-4">
           <div className="flex gap-3">
@@ -816,7 +816,7 @@ function FolderBrowser({
           </li>
         )}
       </ul>
-      {error && <p className="px-3 py-2 text-[13px] text-red-300/80">{(error as Error).message}</p>}
+      {error && <p className="px-3 py-2 text-[13px] text-danger">{(error as Error).message}</p>}
       {data?.path && !(rootLabel && data.path === '/') && (
         <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2">
           <span className="text-[12px] text-muted">

@@ -29,7 +29,7 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
                 src={album.coverUrl}
                 size={size}
                 alt={album.title}
-                className="rounded-[4px] shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)] ring-1 ring-paper/5"
+                className="rounded-cover shadow-cover ring-1 ring-paper/5"
               />
             </div>
             <div className="mt-3 min-w-0">
@@ -78,7 +78,7 @@ export function ArtistCard({ artist, style, className }: { artist: Artist; style
       ref={ref}
       to={`/artists/${artist.id}`}
       style={near ? style : { ...style, height }}
-      className={cn('group relative block animate-rise overflow-hidden rounded-[4px] bg-ink-800 ring-1 ring-paper/5', className)}
+      className={cn('group relative block animate-rise overflow-hidden rounded-cover bg-ink-800 ring-1 ring-paper/5', className)}
     >
       {near && (
         <>

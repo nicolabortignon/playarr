@@ -15,9 +15,9 @@ struct AlbumCard: View {
     NavigationLink(value: Route.album(album.id)) {
       VStack(alignment: .leading, spacing: 6) {
         Cover(path: album.coverUrl, points: width ?? 180, label: album.title)
-          .shadow(color: .black.opacity(0.5), radius: 10, y: 6)
+          .coverShadow(.shelf)
         Text(album.title).font(.sans(.subheadline)).essentialLineLimit().foregroundStyle(current ? theme.accent.color : .primary)
-        Text(subtitle).font(.sans(.caption)).essentialLineLimit().foregroundStyle(.muted)
+        Text(subtitle).font(.sans(.caption)).essentialLineLimit().foregroundStyle(.paperDim)
       }
       .frame(width: width)
       .contentShape(Rectangle())

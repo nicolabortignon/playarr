@@ -18,7 +18,7 @@ struct AlbumView: View {
       if GatefoldRule.applies(verticalSizeClass), let album = model.album.value {
         // Sideways: the cover stays on the left, the rest scrolls beside it, all on the album's wash.
         Gatefold { side in
-          Cover(path: album.coverUrl, points: side, label: album.title).shadow(color: .black.opacity(0.6), radius: 24, y: 16)
+          Cover(path: album.coverUrl, points: side, label: album.title).coverShadow(.hero)
         } page: {
           ScrollView { content(cover: false).padding(.top, 16) }
         }
@@ -86,7 +86,7 @@ struct AlbumView: View {
         Cover(path: album.coverUrl, points: 280, label: album.title)
           .frame(maxWidth: 280)
           .frame(maxWidth: .infinity)
-          .shadow(color: .black.opacity(0.6), radius: 24, y: 16)
+          .coverShadow(.hero)
           .padding(.bottom, 8)
       }
       // The kicker's line, with the album's own buttons on the right (the empty space under the cover).

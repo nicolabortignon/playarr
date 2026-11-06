@@ -57,9 +57,9 @@ public struct DownloadsView<Cover: View>: View {
         Button { open(d.href) } label: {
           VStack(alignment: .leading, spacing: 4) {
             Text(d.title).essentialLineLimit()
-            Text("\(OfflineWording.rowDetail(d, progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.red.opacity(0.8)))")
+            Text("\(OfflineWording.rowDetail(d, progress))\(Text(OfflineWording.failures(failed)).foregroundStyle(.danger.opacity(0.8)))")
               .font(.sans(.footnote))
-              .foregroundStyle(.muted)
+              .foregroundStyle(.paperDim)
               .essentialLineLimit()
           }
           .frame(minHeight: 44, alignment: .leading)

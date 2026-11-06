@@ -17,7 +17,7 @@ export function TrackMetadataDialog() {
   return (
     <Dialog open={id !== null} onClose={close} title="Song metadata" wide>
       {error ? (
-        <p role="alert" className="p-5 text-[15px] text-red-300/90">
+        <p role="alert" className="p-5 text-[15px] text-danger">
           Couldn’t load this song’s metadata: {(error as Error).message}
         </p>
       ) : isPending || !data ? (
@@ -193,7 +193,7 @@ function RematchButton({ copy: c }: { copy: TrackCopyMetadata }) {
       </button>
       {!lidarr && <SlowLookup active={rematch.isPending} what="this album" />}
       {outcome && (
-        <p role="status" className={cn('text-[13px]', outcome.error ? 'text-red-300/90' : 'text-paper-dim')}>
+        <p role="status" className={cn('text-[13px]', outcome.error ? 'text-danger' : 'text-paper-dim')}>
           {outcome.text}
         </p>
       )}
@@ -220,7 +220,7 @@ function PathValue({ path }: { path: string }) {
           title={copied ? 'Copied' : 'Copy path'}
           className="grid size-6 shrink-0 place-items-center rounded text-muted transition hover:bg-paper/8 hover:text-paper"
         >
-          {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+          {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
         </button>
       )}
     </span>

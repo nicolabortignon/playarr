@@ -153,9 +153,9 @@ function Row({ rec, index, onPlay, action }: { rec: RecommendedTrack; index: num
       onClick={onPlay}
     >
       <div className="relative">
-        <Cover src={rec.coverUrl} size={44} alt="" label={rec.albumTitle} className="size-11 rounded-[3px]" />
+        <Cover src={rec.coverUrl} size={44} alt="" label={rec.albumTitle} className="size-11 rounded-cover" />
         {onPlay && (
-          <div className="absolute inset-0 grid place-items-center rounded-[3px] bg-black/50 opacity-0 transition group-hover:opacity-100">
+          <div className="absolute inset-0 grid place-items-center rounded-cover bg-black/50 opacity-0 transition group-hover:opacity-100">
             <Play className="size-4 fill-paper" />
           </div>
         )}

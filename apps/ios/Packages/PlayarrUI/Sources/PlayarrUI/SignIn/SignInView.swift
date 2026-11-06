@@ -21,7 +21,7 @@ struct SignInView: View {
                 TextField("Username", text: $username).playarrUsernameField()
                 SecureField("Password", text: $password).playarrPasswordField(new: false)
             } footer: {
-                if let error = model.error { Text(error).foregroundStyle(.red) }
+                if let error = model.error { Text(error).foregroundStyle(.danger) }
             }
             Section {
                 Button("Sign in") { Task { if await model.signIn(username: username, password: password) { onDone() } } }

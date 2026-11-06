@@ -22,9 +22,9 @@ struct RedeemView: View {
                 SecureField("Confirm password", text: $confirm).playarrPasswordField(new: true)
             } footer: {
                 if !confirm.isEmpty, confirm != password {
-                    Text("The passwords don’t match.").foregroundStyle(.red)
+                    Text("The passwords don’t match.").foregroundStyle(.danger)
                 } else if let error = model.error {
-                    Text(error).foregroundStyle(.red)
+                    Text(error).foregroundStyle(.danger)
                 }
             }
             Button("Set password and sign in") { Task { if await model.redeem(code: code, password: password) { onDone() } } }

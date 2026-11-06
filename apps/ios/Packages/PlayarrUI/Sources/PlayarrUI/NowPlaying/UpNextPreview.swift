@@ -48,7 +48,7 @@ struct UpNextPreview: View {
         Cover(path: track.coverUrl, points: 36, label: track.albumTitle, corner: 3).frame(width: 36, height: 36)
         VStack(alignment: .leading, spacing: 0) {
           Text(track.title).font(.subheadline).essentialLineLimit()
-          Text(track.artistName).font(.caption).foregroundStyle(.muted).essentialLineLimit()
+          Text(track.artistName).font(.caption).foregroundStyle(.paperDim).essentialLineLimit()
         }
         Spacer(minLength: 8)
         SongLength(track: track, font: .caption.monospacedDigit())

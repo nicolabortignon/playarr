@@ -21,7 +21,7 @@ struct MixView: View {
         if GatefoldRule.applies(verticalSizeClass) {
           // Sideways: the cover stays on the left, the rest scrolls beside it.
           Gatefold { side in
-            MixCover(mix: Self.summary(mix), width: side).shadow(color: .black.opacity(0.8), radius: 30, y: 20)
+            MixCover(mix: Self.summary(mix), width: side).coverShadow(.hero)
           } page: {
             ScrollView { details(mix, cover: false) }
           }
@@ -46,7 +46,7 @@ struct MixView: View {
     VStack(alignment: .leading, spacing: 16) {
       if cover {
         MixCover(mix: Self.summary(mix), width: 256)
-          .shadow(color: .black.opacity(0.8), radius: 30, y: 20)
+          .coverShadow(.hero)
           .frame(maxWidth: .infinity)
       }
       Kicker(text: "Made for you")

@@ -205,7 +205,7 @@ export function AnalysisPanel() {
   const settings = useMixSettings();
   const save = useSaveMixSettings();
   const member = useIsMember();
-  if (error && !p) return <p className="text-sm text-red-300/80">{error.message}</p>;
+  if (error && !p) return <p className="text-sm text-danger">{error.message}</p>;
   if (!p) return <Loading />;
 
   // Away from home before setup the settings answer 403; a member gets them but may not change them.

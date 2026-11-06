@@ -83,7 +83,7 @@ struct Sidebar: View {
             playlistRow(playlist)
           }
           if list.isEmpty {
-            Text("No playlists yet.").font(.callout).foregroundStyle(.muted)
+            Text("No playlists yet.").font(.callout).foregroundStyle(.paperDim)
           }
         }
       } header: {

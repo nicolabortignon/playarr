@@ -61,7 +61,7 @@ struct ReviewView: View {
         }
         Text("\(model.remaining) to review").font(.caption.monospaced()).foregroundStyle(.secondary)
         if group.notFound == true {
-          Label("Not found on MusicBrainz", systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+          Label("Not found on MusicBrainz", systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.warning)
         }
       }
       Section("Albums on MusicBrainz") {

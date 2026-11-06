@@ -30,7 +30,7 @@ struct QueueView: View {
           }
           Section {
             if upcoming.isEmpty {
-              Text("The queue ends after this track.").foregroundStyle(.muted)
+              Text("The queue ends after this track.").foregroundStyle(.paperDim)
             }
             ForEach(Array(upcoming.enumerated()), id: \.element.id) { offset, song in
               upNextRow(song, offset: offset, model: model)
@@ -105,7 +105,7 @@ struct QueueView: View {
         .foregroundStyle(theme.accent.color)
         // A button of its own (not merged into the row), so VoiceOver can open the album.
         Button("\(track.artistName) · \(track.albumTitle)") { session.router.open(.album(track.albumId)) }
-          .font(.sans(.subheadline)).foregroundStyle(.muted).essentialLineLimit().buttonStyle(.plain)
+          .font(.sans(.subheadline)).foregroundStyle(.paperDim).essentialLineLimit().buttonStyle(.plain)
           .frame(minHeight: 44, alignment: .leading)
           .contentShape(Rectangle())
           .accessibilityHint("Opens the album")
@@ -128,7 +128,7 @@ struct QueueView: View {
               OfflineMark(store: session.player.downloads, fileId: track.fileId)
             }
             Text(narrow ? "\(track.artistName) · \(Format.time(track.duration))" : track.artistName)
-              .font(.sans(.footnote)).foregroundStyle(.muted).essentialLineLimit()
+              .font(.sans(.footnote)).foregroundStyle(.paperDim).essentialLineLimit()
           }
           Spacer(minLength: 8)
           if !narrow { SongLength(track: track) }
@@ -147,7 +147,7 @@ struct QueueView: View {
         Image(systemName: "ellipsis").frame(width: 44, height: 44).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .foregroundStyle(.muted)
+      .foregroundStyle(.paperDim)
       .pointerHover()
       .accessibilityLabel("More for \(track.title)")
     }

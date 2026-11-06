@@ -131,7 +131,7 @@ A folding iPhone. Two pieces of code handle it: `UnderTheRail` for the cover scr
 
 - **VoiceOver:** page and section titles carry the header trait, so the rotor's Headings jump between sections. Song rows (`Components/TrackRow.swift`) and Up next's rows (`Pages/Queue/QueueView.swift`) offer their menu as custom actions. Sleeve lines read their number, title, artist, length, "played" or "next", and "joined to the song before". There are no custom rotors.
 - **Text sizes:** `AdaptiveStack` turns rows into columns at AX1–AX5, and `essentialLineLimit()` lets essential text wrap there (`Accessibility/AdaptiveStack.swift`). The iPad's Now Playing goes to one column; the sleeve keeps its shape with a 36% record column.
-- **Increase Contrast:** secondary text uses `.muted` (`Accessibility/Muted.swift`), white at 70%, or 85% with more contrast.
+- **Increase Contrast:** secondary text uses `.paperDim` (`Theme/Palette.swift`), white at 70%, or 85% with more contrast; quieter text uses `.muted`, white at 50%, or 65%.
 - **Bold Text:** no code of its own; the bundled fonts are left to the system.
 - **Reduce Motion:** Settings → Appearance → Motion (System, Reduced or Full) together with the system setting becomes the `reducesMotion` environment value, set once by `AppShell`, which also drops animations app-wide.
 - **Audits:** `AccessibilityAuditTests` runs Xcode's `performAccessibilityAudit()` over each main screen on the iPhone and the iPad, at AX5 (upright), and on Downloads. Exceptions live in one enum, `AuditExceptions`, each with its reason; contrast is re-measured from the element's pixels where the audit misreads it.

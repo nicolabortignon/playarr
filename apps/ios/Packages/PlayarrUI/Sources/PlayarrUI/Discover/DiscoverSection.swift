@@ -49,7 +49,7 @@ private struct DiscoverResultsView: View {
           .padding(.horizontal, 20)
       }
       if let error = model.error, model.results == nil {
-        Text(error).font(.sans(.footnote)).foregroundStyle(.red).padding(.horizontal, 20)
+        Text(error).font(.sans(.footnote)).foregroundStyle(.danger).padding(.horizontal, 20)
       }
       if model.nothing {
         Text("Nothing found for “\(model.answered)”.").font(.sans(.footnote)).foregroundStyle(.secondary).padding(.horizontal, 20)

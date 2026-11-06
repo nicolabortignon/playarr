@@ -25,7 +25,7 @@ export function AccountsPanel() {
   if (!server) return LOADING;
   if (server.setup) return <ClaimServer />;
   if (isPending) return LOADING;
-  if (!me) return <p className="text-sm text-red-300/80">{error?.message ?? 'Sign in to see your account.'}</p>;
+  if (!me) return <p className="text-sm text-danger">{error?.message ?? 'Sign in to see your account.'}</p>;
   return (
     <div>
       <You me={me} />
@@ -143,7 +143,7 @@ function Everyone({ me }: { me: Account }) {
     },
   );
 
-  if (error) return <p className="mt-12 text-sm text-red-300/80">{error.message}</p>;
+  if (error) return <p className="mt-12 text-sm text-danger">{error.message}</p>;
   if (!accounts) return LOADING;
   const sourceNames = new Map((sourceList?.sources ?? []).map((s) => [s.id, s.name]));
 
@@ -209,7 +209,7 @@ function Everyone({ me }: { me: Account }) {
               type="button"
               disabled={remove.isPending}
               onClick={() => removing && remove.mutate(removing)}
-              className="inline-flex h-10 items-center rounded-full bg-red-400/90 px-5 text-[14px] font-medium text-ink-950 transition hover:bg-red-400 disabled:opacity-40"
+              className="inline-flex h-10 items-center rounded-full bg-danger/90 px-5 text-[14px] font-medium text-ink-950 transition hover:bg-danger disabled:opacity-40"
             >
               Remove
             </button>

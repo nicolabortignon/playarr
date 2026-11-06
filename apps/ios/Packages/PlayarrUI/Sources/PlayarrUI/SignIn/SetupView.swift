@@ -22,9 +22,9 @@ struct SetupView: View {
                 SecureField("Confirm password", text: $confirm).playarrPasswordField(new: true)
             } footer: {
                 if !confirm.isEmpty, confirm != password {
-                    Text("The passwords don’t match.").foregroundStyle(.red)
+                    Text("The passwords don’t match.").foregroundStyle(.danger)
                 } else if let error = model.error {
-                    Text(error).foregroundStyle(.red)
+                    Text(error).foregroundStyle(.danger)
                 }
             }
             Button("Claim this server") { Task { if await model.claim(username: username, name: name, password: password) { onDone() } } }

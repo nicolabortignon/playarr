@@ -35,7 +35,7 @@ export function UpdatesPanel() {
   if (error instanceof ApiError && error.status === 403) {
     return <AwayNotice />;
   }
-  if (error && !data) return <p className="text-sm text-red-300/80">{error.message}</p>;
+  if (error && !data) return <p className="text-sm text-danger">{error.message}</p>;
   if (!data) return <div aria-busy="true" aria-label="Loading" className="h-40 max-w-prose animate-pulse rounded-lg bg-paper/5" />;
 
   const busy = data.requested || data.status?.state === 'checking';
@@ -153,7 +153,7 @@ function LastCheck({ info }: { info: UpdateInfo }) {
   if (!status?.lastCheck) return <p className="text-[15px] text-muted">Not checked yet.</p>;
   const outcome =
     status.state === 'failed' ? (
-      <span className="text-red-300/80">{status.error ?? 'The update failed'}</span>
+      <span className="text-danger">{status.error ?? 'The update failed'}</span>
     ) : status.lastUpdate === status.lastCheck && status.deployed ? (
       <span className="text-paper">Updated to <span className="font-mono text-[13px]">{short(status.deployed)}</span></span>
     ) : (

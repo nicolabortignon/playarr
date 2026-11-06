@@ -36,7 +36,7 @@ public struct UpdatesPanel: View {
           }
           Section("Last check") {
             let last = model.lastCheck()
-            Text(last.text).foregroundStyle(last.failed ? .red : .primary)
+            Text(last.text).foregroundStyle(last.failed ? .danger : .primary)
             Button(model.checkLabel, systemImage: "arrow.clockwise") { Task { await model.checkNow() } }
               .disabled(model.busy || model.checking)
             if let log = info.log {

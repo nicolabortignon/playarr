@@ -233,7 +233,7 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
         />
         <Row label="Mix in" value={joins['mix in'] ? joinOf(joins['mix in']) : 'none yet'} />
         <Row label="Mix out" value={joins['mix out'] ? joinOf(joins['mix out']) : 'none yet'} />
-        {clock.error && <Row label="Error" value={<span className="text-red-300/90">{clock.error}</span>} />}
+        {clock.error && <Row label="Error" value={<span className="text-danger">{clock.error}</span>} />}
       </Group>
 
       <Group title="Rhythm">

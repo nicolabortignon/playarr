@@ -66,7 +66,7 @@ export function QueuePage() {
           )}
         </div>
         <div className="flex items-center gap-4 rounded-lg border border-line bg-paper/[0.03] p-3 pr-5">
-          <Cover src={track.coverUrl} size={72} alt="" className="size-[72px] shrink-0 rounded-[4px]" />
+          <Cover src={track.coverUrl} size={72} alt="" className="size-[72px] shrink-0 rounded-cover" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
               <Equalizer playing={playing} />
@@ -184,7 +184,7 @@ function UpNextRow({
       >
         <GripVertical className="size-4" />
       </span>
-      <Cover src={t.coverUrl} size={44} alt="" className="size-11 rounded-[3px]" />
+      <Cover src={t.coverUrl} size={44} alt="" className="size-11 rounded-cover" />
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="truncate text-[15px] text-paper">{t.title}</span>

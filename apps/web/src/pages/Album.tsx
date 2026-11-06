@@ -53,7 +53,7 @@ export function AlbumPage() {
             size={320}
             alt={album.title}
             eager
-            className="mx-auto w-[min(72vw,320px)] shrink-0 animate-rise rounded-[4px] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.9)] ring-1 ring-paper/10 md:mx-0 md:w-64 lg:w-72"
+            className="mx-auto w-[min(72vw,320px)] shrink-0 animate-rise rounded-cover shadow-cover-hero ring-1 ring-paper/10 md:mx-0 md:w-64 lg:w-72"
           />
           <div className="min-w-0 animate-rise [animation-delay:80ms]">
             <div className="font-mono text-[11px] tracking-[0.25em] text-paper-dim/70 uppercase">

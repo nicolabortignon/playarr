@@ -22,7 +22,7 @@ struct SongLength: View {
       Text(Format.time(track.duration))
     }
     .font(font)
-    .foregroundStyle(.muted)
+    .foregroundStyle(.paperDim)
     .task(id: sizeClass == .regular ? track.recordingId : nil) {
       if sizeClass == .regular { maps.want(track) }
     }

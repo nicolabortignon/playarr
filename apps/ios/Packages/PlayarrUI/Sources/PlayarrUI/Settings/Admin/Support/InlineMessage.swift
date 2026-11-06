@@ -8,7 +8,7 @@ struct InlineMessage: View {
   var body: some View {
     Label(text, systemImage: isError ? "exclamationmark.triangle" : "checkmark.circle")
       .font(.footnote)
-      .foregroundStyle(isError ? Color.red : Color.secondary)
+      .foregroundStyle(isError ? Color.danger : Color.secondary)
       .accessibilityIdentifier(isError ? "admin.error" : "admin.notice")
   }
 }

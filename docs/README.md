@@ -6,6 +6,7 @@ How Playarr works today, part by part. The code is the final word; these pages s
 
 - [architecture.md](architecture.md): the big picture: server, web, iOS, shared packages, how they talk, and how it's deployed.
 - [decisions.md](decisions.md): the decisions log, dated, with the reason behind each.
+- [design.md](design.md): the design language: colors, type, shapes, icons, motion and words, by role, with each app's name for them.
 
 ## Server (`apps/server`)
 

@@ -75,7 +75,7 @@ export function MixesPanel() {
   if (error instanceof ApiError && error.status === 403) {
     return <AwayNotice />;
   }
-  if (error && !data) return <p className="text-sm text-red-300/80">{error.message}</p>;
+  if (error && !data) return <p className="text-sm text-danger">{error.message}</p>;
   if (!data) {
     return (
       <div aria-busy="true" aria-label="Loading" className="max-w-prose space-y-3">
@@ -187,7 +187,7 @@ export function MixesPanel() {
             <button
               type="button"
               onClick={() => clear.mutate(undefined, { onSettled: () => setConfirmClear(false) })}
-              className="inline-flex h-10 items-center rounded-full bg-red-400/90 px-5 text-[14px] font-medium text-ink-950 transition hover:bg-red-400"
+              className="inline-flex h-10 items-center rounded-full bg-danger/90 px-5 text-[14px] font-medium text-ink-950 transition hover:bg-danger"
             >
               Clear history
             </button>

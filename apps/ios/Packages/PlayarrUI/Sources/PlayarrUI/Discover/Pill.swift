@@ -45,8 +45,8 @@ struct Pill<Label: View>: View {
     switch style {
     case .filled: AnyShapeStyle(.background)
     case .outlined: AnyShapeStyle(.tint)
-    case .done: AnyShapeStyle(.green)
-    case .warning: AnyShapeStyle(.red)
+    case .done: AnyShapeStyle(.success)
+    case .warning: AnyShapeStyle(.danger)
     case .quiet: AnyShapeStyle(.secondary)
     }
   }
@@ -54,8 +54,8 @@ struct Pill<Label: View>: View {
   private var border: AnyShapeStyle {
     switch style {
     case .filled, .outlined: AnyShapeStyle(.tint.opacity(0.4))
-    case .done: AnyShapeStyle(.green.opacity(0.35))
-    case .warning: AnyShapeStyle(.red.opacity(0.45))
+    case .done: AnyShapeStyle(.success.opacity(0.35))
+    case .warning: AnyShapeStyle(.danger.opacity(0.45))
     case .quiet: AnyShapeStyle(.separator)
     }
   }

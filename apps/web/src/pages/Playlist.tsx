@@ -78,7 +78,7 @@ export function PlaylistPage() {
             cover={playlist.cover}
             size={256}
             name={playlist.name}
-            className="w-full rounded-[4px] shadow-[0_30px_70px_-20px_rgb(0_0_0/0.9)] ring-1 ring-paper/10"
+            className="w-full rounded-cover shadow-cover-hero ring-1 ring-paper/10"
           />
           {mine && items.length > 0 && (
             <span className="absolute right-2.5 bottom-2.5 inline-flex items-center gap-1.5 rounded-full bg-ink-950/80 px-3 py-1.5 font-mono text-[10px] tracking-[0.15em] text-paper uppercase opacity-0 backdrop-blur transition group-hover:opacity-100 group-focus-visible:opacity-100">
@@ -214,7 +214,7 @@ export function PlaylistPage() {
                   onSuccess: () => navigate('/playlists', { replace: true }),
                 })
               }
-              className="h-10 rounded-lg bg-red-500/90 px-4 font-medium text-white transition hover:bg-red-500"
+              className="h-10 rounded-lg bg-danger/90 px-4 font-medium text-ink-950 transition hover:bg-danger"
             >
               Delete
             </button>
@@ -277,9 +277,9 @@ function PlaylistRow({
         <span />
       )}
       <div className="relative">
-        <Cover src={track?.coverUrl} size={44} alt="" label={item.albumTitle} className="size-11 rounded-[3px]" />
+        <Cover src={track?.coverUrl} size={44} alt="" label={item.albumTitle} className="size-11 rounded-cover" />
         {isCurrent && (
-          <div className="absolute inset-0 grid place-items-center rounded-[3px] bg-black/50">
+          <div className="absolute inset-0 grid place-items-center rounded-cover bg-black/50">
             <Equalizer playing={playing} />
           </div>
         )}

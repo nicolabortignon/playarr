@@ -12,7 +12,7 @@ export function FormatBadge({ format, className }: { format?: AudioFormat; class
     <span
       title={hiRes ? 'Hi-Res lossless' : format?.lossless ? 'Lossless' : 'Lossy'}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-[3px] border px-1.5 py-px font-mono text-[10px] leading-4 tracking-wider uppercase',
+        'inline-flex items-center gap-1.5 rounded-cover border px-1.5 py-px font-mono text-[10px] leading-4 tracking-wider uppercase',
         hiRes ? 'border-accent/50 text-accent' : 'border-line text-muted',
         className,
       )}

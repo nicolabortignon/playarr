@@ -160,7 +160,7 @@ function Sheet() {
                   size={560}
                   alt={track.albumTitle}
                   eager
-                  className="w-full rounded-lg shadow-[0_40px_80px_-20px_rgb(0_0_0/0.85)] ring-1 ring-paper/10"
+                  className="w-full rounded-lg shadow-cover-hero ring-1 ring-paper/10"
                 />
               </motion.div>
             </div>
@@ -223,7 +223,7 @@ function UpNext({ onNavigate }: { onNavigate: () => void }) {
             onKeyDown={(e) => e.key === 'Enter' && jumpTo(pos + 1 + i)}
             className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-left transition hover:bg-paper/[0.06]"
           >
-            <Cover src={t.coverUrl} size={36} alt="" className="size-9 shrink-0 rounded-[3px]" />
+            <Cover src={t.coverUrl} size={36} alt="" className="size-9 shrink-0 rounded-cover" />
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5">
                 <span className="truncate text-sm text-paper">{t.title}</span>

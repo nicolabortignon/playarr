@@ -12,7 +12,7 @@ struct VolumeControl: View {
         Image(systemName: display.systemImage).frame(width: 44, height: 44).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .foregroundStyle(.muted)
+      .foregroundStyle(.paperDim)
       .pointerHover()
       .accessibilityLabel(display.muteLabel)
       .accessibilityIdentifier("playerBar.mute")

@@ -90,10 +90,10 @@ export function TrackList({ tracks, variant = 'album', showDiscs, missing, sourc
               <div className="relative grid h-full place-items-center">
                 {variant === 'mixed' ? (
                   <div className="relative">
-                    <Cover src={t.coverUrl} size={44} alt="" label={t.albumTitle} className="size-11 rounded-[3px]" />
+                    <Cover src={t.coverUrl} size={44} alt="" label={t.albumTitle} className="size-11 rounded-cover" />
                     <div
                       className={cn(
-                        'absolute inset-0 grid place-items-center rounded-[3px] bg-black/50 opacity-0 transition group-hover:opacity-100',
+                        'absolute inset-0 grid place-items-center rounded-cover bg-black/50 opacity-0 transition group-hover:opacity-100',
                         isCurrent && 'opacity-100',
                       )}
                     >

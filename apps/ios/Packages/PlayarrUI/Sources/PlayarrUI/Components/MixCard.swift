@@ -12,7 +12,7 @@ struct MixCard: View {
       VStack(alignment: .leading, spacing: 6) {
         MixCover(mix: mix, width: width)
         Text(mix.subtitle).font(.sans(.subheadline)).essentialLineLimit()
-        Text(Format.plural(mix.trackCount, "song")).font(.mono(.caption)).foregroundStyle(.muted)
+        Text(Format.plural(mix.trackCount, "song")).font(.mono(.caption)).foregroundStyle(.paperDim)
       }
       .frame(width: width)
     }

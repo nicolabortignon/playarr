@@ -105,7 +105,7 @@ public struct DownloadButton: View {
     switch phase {
     case .notDownloaded: AnyShapeStyle(.background)
     case .downloading: AnyShapeStyle(.tint)
-    case .downloaded: AnyShapeStyle(.green)
+    case .downloaded: AnyShapeStyle(.success)
     }
   }
 
@@ -114,7 +114,7 @@ public struct DownloadButton: View {
     switch phase {
     case .notDownloaded: Capsule().fill(.tint)
     case .downloading: ProgressRing(fraction: phase.fraction, lineWidth: 2).padding(1)
-    case .downloaded: Capsule().strokeBorder(.green.opacity(0.35), lineWidth: 1)
+    case .downloaded: Capsule().strokeBorder(.success.opacity(0.35), lineWidth: 1)
     }
   }
 

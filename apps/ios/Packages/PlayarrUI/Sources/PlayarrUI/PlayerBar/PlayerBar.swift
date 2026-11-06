@@ -53,7 +53,7 @@ struct PlayerBar: View {
         Button { session.router.open(.album(track.albumId)) } label: {
           VStack(alignment: .leading, spacing: 2) {
             Text(track.title).font(.subheadline).essentialLineLimit()
-            Text(track.artistName).font(.caption).foregroundStyle(.muted).essentialLineLimit()
+            Text(track.artistName).font(.caption).foregroundStyle(.paperDim).essentialLineLimit()
           }
           .frame(minHeight: 44, alignment: .leading)
           .contentShape(Rectangle())
@@ -93,7 +93,7 @@ struct PlayerBar: View {
       Image(systemName: column.systemImage).frame(width: 44, height: 44).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .foregroundStyle(open ? AnyShapeStyle(theme.accent.color) : AnyShapeStyle(.muted))
+    .foregroundStyle(open ? AnyShapeStyle(theme.accent.color) : AnyShapeStyle(.paperDim))
     .pointerHover()
     .accessibilityLabel(column.title)
     .accessibilityAddTraits(open ? .isSelected : [])

@@ -10,8 +10,10 @@ import Testing
   }
 
   @Test func brightensSecondaryTextWithMoreContrast() {
-    #expect(Muted.opacity(.standard) == 0.7)
-    #expect(Muted.opacity(.increased) == 0.85)
+    #expect(PaperDim.opacity(.standard) == 0.7)
+    #expect(PaperDim.opacity(.increased) == 0.85)
+    #expect(Muted.opacity(.standard) == 0.5)
+    #expect(Muted.opacity(.increased) == 0.65)
   }
 
   @Test func tapsTheSameForTheSameKindOfThing() {

@@ -16,7 +16,7 @@ public struct TrackMetadataSheet: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 28) {
           if let error = model.error, model.metadata == nil {
-            Text("Couldn’t load this song’s metadata: \(error)").foregroundStyle(.red)
+            Text("Couldn’t load this song’s metadata: \(error)").foregroundStyle(.danger)
           } else if let m = model.metadata {
             content(m)
           } else {
@@ -95,7 +95,7 @@ public struct TrackMetadataSheet: View {
       .disabled(model.rematching != nil)
       if busy && !lidarr { SlowLookup(what: "this album") }
       if let outcome = model.outcomes[c.fileId] {
-        Text(outcome.text).font(.sans(.footnote)).foregroundStyle(outcome.isError ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+        Text(outcome.text).font(.sans(.footnote)).foregroundStyle(outcome.isError ? AnyShapeStyle(.danger) : AnyShapeStyle(.secondary))
       }
     }
     .padding(.top, 8)

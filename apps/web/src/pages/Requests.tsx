@@ -68,7 +68,7 @@ function RequestRow({ request: r }: { request: AlbumRequest }) {
   };
   const body = (
     <>
-      <Cover src={r.coverUrl} size={64} alt="" label={r.title} className="size-16 shrink-0 rounded-[4px]" />
+      <Cover src={r.coverUrl} size={64} alt="" label={r.title} className="size-16 shrink-0 rounded-cover" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[15px] text-paper">{r.title}</div>
         <div className="truncate text-[13px] text-muted">{r.artistName}</div>

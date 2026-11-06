@@ -20,7 +20,7 @@ public struct MixPointsSheet: View {
             Text(model.track.artistName).font(.sans(.subheadline)).foregroundStyle(.secondary).lineLimit(1)
           }
           if let error = model.error {
-            Text("Couldn’t load this song’s mix points: \(error)").foregroundStyle(.red)
+            Text("Couldn’t load this song’s mix points: \(error)").foregroundStyle(.danger)
           } else if let editor = model.editor {
             editorView(editor)
           } else if model.loaded {
@@ -63,7 +63,7 @@ public struct MixPointsSheet: View {
     }
     card(editor, .mixIn, label: "Mix in", hint: "Where the song is fully in")
     card(editor, .mixOut, label: "Mix out", hint: "Where the song starts to give way")
-    if let error = model.saveError { Text(error).font(.sans(.footnote)).foregroundStyle(.red) }
+    if let error = model.saveError { Text(error).font(.sans(.footnote)).foregroundStyle(.danger) }
     Button("Reset") { Task { await model.reset() } }
       .disabled(!editor.anySet || model.saving)
   }

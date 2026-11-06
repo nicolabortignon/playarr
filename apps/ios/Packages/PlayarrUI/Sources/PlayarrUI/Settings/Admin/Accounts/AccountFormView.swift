@@ -27,7 +27,7 @@ struct AccountFormView: View {
       Section {
         TextField("Name", text: $form.name).accessibilityIdentifier("account.name")
         TextField("Username", text: $form.username).adminPlainField().accessibilityIdentifier("account.username")
-        if let problem = form.usernameProblem { Text(problem).font(.footnote).foregroundStyle(.red) }
+        if let problem = form.usernameProblem { Text(problem).font(.footnote).foregroundStyle(.danger) }
       }
       Section("Role") {
         Picker("Role", selection: $form.role) {

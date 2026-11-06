@@ -147,7 +147,7 @@ public struct StatsForNerdsOverlay: View {
   @ViewBuilder private func value(_ value: NerdStats.Row.Value) -> some View {
     switch value {
     case .text(let text): Text(text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-    case .error(let text): Text(text).foregroundStyle(.red)
+    case .error(let text): Text(text).foregroundStyle(.danger)
     case .energy(let strip): PhraseEnergyStrip(strip: strip)
     }
   }

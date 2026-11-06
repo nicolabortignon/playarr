@@ -163,7 +163,7 @@ function YearInReview() {
         to={`/settings/listening?range=${year}`}
         className="group relative flex items-center gap-5 overflow-hidden rounded-xl border border-line bg-ink-900 p-5 transition hover:border-paper/20 md:p-7"
       >
-        {top && <Cover src={top.artist.imageUrl} size={160} alt="" className="size-24 shrink-0 rounded-[4px] md:size-32" />}
+        {top && <Cover src={top.artist.imageUrl} size={160} alt="" className="size-24 shrink-0 rounded-cover md:size-32" />}
         <div className="min-w-0">
           <div className="font-mono text-[11px] tracking-[0.2em] text-accent uppercase">Year in review</div>
           <div className="mt-1 font-display text-3xl text-paper md:text-5xl">Your {year} in music</div>
@@ -238,7 +238,7 @@ function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl
             className={`group relative -ml-16 block w-40 animate-rise transition duration-500 ease-out-expo hover:z-20 hover:-translate-y-3 hover:rotate-0 2xl:w-52 ${poses[i]}`}
             style={{ animationDelay: `${150 + i * 90}ms` }}
           >
-            <Cover src={a.coverUrl} size={208} alt={a.title} eager className="rounded-[4px] shadow-[0_30px_60px_-15px_rgb(0_0_0/0.9)] ring-1 ring-paper/10" />
+            <Cover src={a.coverUrl} size={208} alt={a.title} eager className="rounded-cover shadow-cover-hero ring-1 ring-paper/10" />
           </Link>
         ))}
       </div>

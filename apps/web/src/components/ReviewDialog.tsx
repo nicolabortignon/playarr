@@ -51,7 +51,7 @@ export function ReviewDialog({ sourceId, onClose }: { sourceId: number | null; o
       <SavedNote saved={saved} />
       {error && !groups ? (
         <div className="space-y-3 p-5" role="alert">
-          <p className="text-[15px] text-red-300/90">Couldn’t load the albums to review: {(error as Error).message}</p>
+          <p className="text-[15px] text-danger">Couldn’t load the albums to review: {(error as Error).message}</p>
           <button type="button" onClick={() => void refetch()} disabled={isFetching} className={SECONDARY}>
             {isFetching && <Loader2 className="size-4 animate-spin" />} Try again
           </button>
@@ -94,11 +94,11 @@ function SavedNote({ saved }: { saved: Saved | null }) {
       aria-live="polite"
       className={cn(
         'flex items-center gap-2 border-b border-line px-5 py-2 text-[13px]',
-        saved.state === 'error' ? 'bg-red-500/10 text-red-200' : 'text-paper-dim',
+        saved.state === 'error' ? 'bg-danger/10 text-danger' : 'text-paper-dim',
       )}
     >
       {saved.state === 'saving' && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" />}
-      {saved.state === 'done' && <Check className="size-3.5 shrink-0 text-emerald-400" />}
+      {saved.state === 'done' && <Check className="size-3.5 shrink-0 text-success" />}
       {saved.state === 'error' && <AlertCircle className="size-3.5 shrink-0" />}
       <span className="min-w-0 truncate">
         {saved.state === 'saving' && `Saving: ${saved.text}…`}
@@ -171,7 +171,7 @@ function ReviewGroupView({
         <span className="shrink-0 font-mono text-[12px] text-muted">{remaining} to review</span>
       </div>
       {group.notFound && (
-        <p className="-mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-300/25 px-2.5 py-1 font-mono text-[11px] tracking-wider text-amber-200/90 uppercase">
+        <p className="-mt-3 inline-flex items-center gap-1.5 rounded-full border border-warning/25 px-2.5 py-1 font-mono text-[11px] tracking-wider text-warning uppercase">
           <AlertCircle className="size-3.5" /> Not found on MusicBrainz
         </p>
       )}

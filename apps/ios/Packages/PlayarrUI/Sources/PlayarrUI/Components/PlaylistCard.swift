@@ -11,7 +11,7 @@ struct PlaylistCard: View {
       VStack(alignment: .leading, spacing: 6) {
         PlaylistCover(cover: playlist.cover, points: width, name: playlist.name)
         Text(playlist.name).font(.sans(.subheadline)).essentialLineLimit()
-        Text(subtitle).font(.mono(.caption)).foregroundStyle(.muted).essentialLineLimit()
+        Text(subtitle).font(.mono(.caption)).foregroundStyle(.paperDim).essentialLineLimit()
       }
       .frame(width: width)
     }

@@ -26,8 +26,8 @@ export function PlayerBar() {
           {track ? (
             <>
               <button type="button" onClick={() => open(true)} aria-label="Open now playing" className="group relative shrink-0">
-                <Cover src={track.coverUrl} size={56} alt={track.albumTitle} className="size-14 rounded-[3px] shadow-lg ring-1 ring-paper/5" />
-                <span className="absolute inset-0 grid place-items-center rounded-[3px] bg-black/50 opacity-0 transition group-hover:opacity-100">
+                <Cover src={track.coverUrl} size={56} alt={track.albumTitle} className="size-14 rounded-cover shadow-lg ring-1 ring-paper/5" />
+                <span className="absolute inset-0 grid place-items-center rounded-cover bg-black/50 opacity-0 transition group-hover:opacity-100">
                   <Maximize2 className="size-4" />
                 </span>
               </button>
