@@ -118,6 +118,29 @@ describe('stripAlbum', () => {
   });
 });
 
+describe('Library search', () => {
+  const library = async () => {
+    const store = new CatalogStore(freshDb());
+    const a = store.addSource('lidarr', 'Lidarr');
+    const lib = new Library(store, () => [{ id: a, source: ok }], log);
+    await lib.refresh();
+    return lib;
+  };
+
+  it('offers near matches, marked as such, when nothing matches as typed', async () => {
+    const found = await (await library()).search('massive atack');
+    expect(found.near).toBe(true);
+    expect(found.artists.map((a) => a.name)).toEqual(['Massive Attack']);
+    expect(found.albums.map((a) => a.title)).toEqual(['Mezzanine']);
+  });
+
+  it('keeps to what matches as typed when something does', async () => {
+    const found = await (await library()).search('angel');
+    expect(found.near).toBeUndefined();
+    expect(found.tracks.map((t) => t.title)).toEqual(['Angel']);
+  });
+});
+
 describe('library views', () => {
   it('shows only the songs with a copy in the view’s sources, and their albums and artists', async () => {
     const { library, lidarr, cc } = await twoSources();

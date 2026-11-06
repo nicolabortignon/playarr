@@ -96,6 +96,8 @@ export interface SearchResults {
   artists: Artist[];
   albums: Album[];
   tracks: Track[];
+  /** Nothing matched as typed: these are a letter or two away ("radiohed" finds Radiohead). */
+  near?: boolean;
 }
 
 export interface LibraryStats {

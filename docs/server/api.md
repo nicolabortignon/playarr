@@ -27,7 +27,7 @@ Every route the Playarr server answers, grouped by what it's for, with who may c
 | `GET /api/health` | Lidarr reachable? music files readable? library stats (only when signed in), whether requests are on for the caller | open |
 | `GET /api/artists`, `/api/artists/:id`, `/api/artists/:id/tracks` | artists, one artist, an artist's songs | signed in |
 | `GET /api/albums?sort=&limit=`, `/api/albums/random`, `/api/albums/:id`, `/api/tracks/random` | albums (by title, artist, year or added), random albums or songs, one album | signed in |
-| `GET /api/search?q=` | artists, albums, songs and playlists in the library | signed in |
+| `GET /api/search?q=` | artists, albums, songs and playlists in the library; when nothing matches as typed, what's a letter or two away, with `near: true` | signed in |
 | `GET /api/tracks/:id/metadata` | everything about a song (Show metadata); file paths only for admins | signed in |
 | `GET /api/tracks/:id/lyrics` | lyrics: `.lrc`, tags or LRCLIB | signed in |
 | `POST /api/files/:fileId/rematch` | match a folder file again, or ask Lidarr to refresh the artist | admin |

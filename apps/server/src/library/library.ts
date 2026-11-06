@@ -2,7 +2,7 @@ import type { Album, AlbumDetail, AlbumSort, Artist, ArtistDetail, LibraryStats,
 import { buildCatalog, type Catalog, type FileRecord, type LidarrAlbumRef } from '../catalog/build.ts';
 import type { CatalogRows, CatalogStore } from '../catalog/store.ts';
 import type { CatalogSource } from '../catalog/types.ts';
-import { albumKey, normalize, primaryArtist, scoreMatch } from './search.ts';
+import { albumKey, normalize, primaryArtist, scoreMatch, scoreNearMatch } from './search.ts';
 
 export type { FileRecord, LidarrAlbumRef };
 
@@ -173,19 +173,28 @@ export abstract class LibraryView {
     const q = normalize(query);
     if (!q) return { artists: [], albums: [], tracks: [] };
 
-    const rank = <T>(items: Iterable<T>, fields: (item: T) => string[]) =>
+    const rank = <T>(items: Iterable<T>, fields: (item: T) => string[], score = scoreMatch) =>
       [...items]
-        .map((item) => ({ item, score: Math.max(...fields(item).map((f) => scoreMatch(q, f))) }))
+        .map((item) => ({ item, score: Math.max(...fields(item).map((f) => score(q, f))) }))
         .filter((r) => r.score > 0)
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
         .map((r) => r.item);
 
-    return {
+    const found: SearchResults = {
       artists: rank(snap.artists.values(), (a) => [a.name]),
       albums: rank(snap.albums.values(), (a) => [a.title, `${a.artistName} ${a.title}`]).map(stripAlbum),
       tracks: rank(snap.tracks, (t) => [t.title, `${t.artistName} ${t.title}`]),
     };
+    if (found.artists.length || found.albums.length || found.tracks.length) return found;
+
+    // Nothing as typed: what's a letter or two away, for a typo ("radiohed"). Only then, as it reads every name.
+    const near: SearchResults = {
+      artists: rank(snap.artists.values(), (a) => [a.name], scoreNearMatch),
+      albums: rank(snap.albums.values(), (a) => [`${a.artistName} ${a.title}`], scoreNearMatch).map(stripAlbum),
+      tracks: rank(snap.tracks, (t) => [`${t.artistName} ${t.title}`], scoreNearMatch),
+    };
+    return near.artists.length || near.albums.length || near.tracks.length ? { ...near, near: true } : found;
   }
 }
 
