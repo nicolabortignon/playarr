@@ -4,6 +4,7 @@ import { CatalogStore } from '../catalog/store.ts';
 import { twoSources } from '../accounts/testAccess.ts';
 import { CC_REC, freshDb, mezzanine, MP3 } from '../catalog/testFixtures.ts';
 import type { CatalogSource, SourceSync } from '../catalog/types.ts';
+import { coverArtArchive, remoteArtUrl } from '../discover/art.ts';
 import { CoverColorStore } from './coverColorStore.ts';
 import { Library, stripAlbum } from './library.ts';
 
@@ -210,6 +211,23 @@ describe('library views', () => {
   it('lists the covers whose colors can be read, once each, newest albums first', async () => {
     const { library } = await twoSources();
     expect(library.coverImages().map((image) => image.key)).toEqual(['copy/9100/5000000', 'album/70/0']);
+  });
+
+  it('colors an album by its MusicBrainz cover, and knows that cover as one of its own', async () => {
+    const colors = new CoverColorStore(freshDb());
+    const cover = coverArtArchive('rg-1', 500);
+    await colors.offer(`remote/${cover}`, await png('#0000ff'));
+    const store = new CatalogStore(freshDb());
+    const lidarr = store.addSource('lidarr', 'Lidarr');
+    // Mezzanine has no picture in Lidarr: its cover is the Cover Art Archive's.
+    const library = new Library(store, () => [{ id: lidarr, source: ok }], log, colors);
+    await library.refresh();
+    const album = (await library.album(70))!;
+    expect(album.coverUrl).toBe(remoteArtUrl(cover));
+    expect(album).toMatchObject({ coverColor: '#0000ff', coverAccent: '#6e6ef7' });
+    expect(library.coverImages()).toEqual([{ key: `remote/${cover}`, kind: 'remote', url: cover }]);
+    expect(library.hasCover(`remote/${cover}`)).toBe(true);
+    expect(library.hasCover(`remote/${coverArtArchive('rg-1')}`)).toBe(false); // the smaller one Discover shows
   });
 
   it('plays the best copy the view’s sources have', async () => {

@@ -2,6 +2,7 @@ import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
 import type { FileRecord } from '../catalog/build.ts';
 import { FLAC, freshDb } from '../catalog/testFixtures.ts';
+import { coverArtArchive, remoteArtUrl } from '../discover/art.ts';
 import { COVER_COLORS_VERSION, CoverColorStore, coverImage, type CoverImage } from './coverColorStore.ts';
 
 const png = (color: string) => sharp({ create: { width: 64, height: 64, channels: 3, background: color } }).png().toBuffer();
@@ -10,6 +11,10 @@ const BLUE = { color: '#0000ff', accent: '#6e6ef7' };
 const file = (id: number, size = 1000, sourceId = 2): FileRecord => ({ id, sourceId, path: `/music/${id}.flac`, size, format: FLAC });
 const lidarr = (albumId: number): CoverImage => ({ key: `album/${albumId}/0`, kind: 'lidarr', albumId, version: '0' });
 const copy = (id: number, sourceId: number): CoverImage => ({ key: `copy/${id}/1000`, kind: 'copy', file: file(id, 1000, sourceId), embedded: false });
+const remote = (releaseGroup: string): CoverImage => {
+  const url = coverArtArchive(releaseGroup, 500);
+  return { key: `remote/${url}`, kind: 'remote', url };
+};
 
 describe('coverImage', () => {
   it('knows Lidarr’s covers by album and version, folder pictures by file and size', () => {
@@ -20,10 +25,16 @@ describe('coverImage', () => {
     expect(coverImage('/art/copy/9000?embedded=1', files)?.key).toBe('copy/9000/4321/embedded');
   });
 
-  it('has nothing to read for remote covers and files it doesn’t know', () => {
+  it('knows an album’s MusicBrainz cover by its URL, as the art route writes it', () => {
+    const cover = coverArtArchive('rg-1', 500);
+    expect(coverImage(remoteArtUrl(cover), new Map())).toEqual({ key: `remote/${cover}`, kind: 'remote', url: cover });
+  });
+
+  it('has nothing to read for files it doesn’t know, nor remote pictures the art route wouldn’t fetch', () => {
     const files = new Map([[9000, file(9000)]]);
-    expect(coverImage('/art/remote?url=https%3A%2F%2Fcoverartarchive.org%2Frelease-group%2Fx%2Ffront-500', files)).toBeUndefined();
     expect(coverImage('/art/copy/9001', files)).toBeUndefined();
+    expect(coverImage(`/art/remote?url=${encodeURIComponent('https://example.com/cover.jpg')}`, files)).toBeUndefined();
+    expect(coverImage('/art/remote?url=%E0%A4%A', files)).toBeUndefined();
     expect(coverImage(undefined, files)).toBeUndefined();
   });
 });
@@ -114,6 +125,24 @@ describe('CoverColorStore', () => {
     expect(colors.get('album/1/0')).toEqual({ color: '#111111' });
     await colors.fill([lidarr(1)], async () => png('#0000ff'));
     expect(colors.get('album/1/0')).toEqual(BLUE);
+  });
+
+  it('reads remote covers one at a time, beside the others two at a time', async () => {
+    const colors = new CoverColorStore(freshDb());
+    const blue = await png('#0000ff');
+    const reading = { remote: 0, here: 0 };
+    const most = { remote: 0, here: 0 };
+    const read = vi.fn(async (image: CoverImage) => {
+      const lane = image.kind === 'remote' ? 'remote' : 'here';
+      most[lane] = Math.max(most[lane], ++reading[lane]);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      reading[lane]--;
+      return blue;
+    });
+    await colors.fill([remote('rg-1'), remote('rg-2'), remote('rg-3'), lidarr(1), lidarr(2), lidarr(3), lidarr(4)], read);
+    expect(read).toHaveBeenCalledTimes(7);
+    expect(most).toEqual({ remote: 1, here: 2 });
+    expect(colors.get(remote('rg-3').key)).toEqual(BLUE);
   });
 
   it('runs one fill at a time, the newest asked for next', async () => {

@@ -1,22 +1,30 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { FileRecord } from '../catalog/build.ts';
+import { isAllowedRemote } from '../discover/art.ts';
 import { readCoverColors, type CoverColors } from './coverColors.ts';
 
 /** Goes up when covers would give other colors (coverColors.ts changed): those read before are read again. */
 export const COVER_COLORS_VERSION = 1;
 /** A cover found to have no picture is looked at again after a day: its file may have one by then. */
 const RETRY_MS = 86_400_000;
-/** Covers read at once by the background fill. */
+/** Covers on this server's disks or Lidarr's read at once by the background fill. */
 const AT_ONCE = 2;
-/** Covers of one source failing in a row after which a fill leaves the rest of them for the next (a NAS that's away). */
+/**
+ * Covers of one source failing in a row after which a fill leaves the rest of them for the next (a NAS that's away, the
+ * Cover Art Archive refusing). Remote covers count as one source.
+ */
 const GIVE_UP_AFTER = 5;
 /** Images from the art routes waiting to be read; past this, the background fill gets to them. */
 const MAX_WAITING = 16;
 
-/** An album cover whose colors can be read, Lidarr's or a folder file's picture; `key` identifies the image. */
+/**
+ * An album cover whose colors can be read: Lidarr's, a folder file's picture, or the MusicBrainz cover (Cover Art
+ * Archive) of an album without either; `key` identifies the image.
+ */
 export type CoverImage =
   | { key: string; kind: 'lidarr'; albumId: number; version: string }
-  | { key: string; kind: 'copy'; file: FileRecord; embedded: boolean };
+  | { key: string; kind: 'copy'; file: FileRecord; embedded: boolean }
+  | { key: string; kind: 'remote'; url: string };
 
 /**
  * Reads a cover for its colors: the image; null when there's no picture (looked at again after a day); undefined when
@@ -28,11 +36,14 @@ export type CoverReader = (image: CoverImage) => Promise<Buffer | null | undefin
 export const lidarrCoverKey = (albumId: number, version: string) => `album/${albumId}/${version}`;
 /** What identifies a folder file's picture: the file and its size, which re-tagging changes (the art cache keys it so too). */
 export const copyCoverKey = (fileId: number, size: number, embedded: boolean) => `copy/${fileId}/${size}${embedded ? '/embedded' : ''}`;
+/** What identifies a remote cover: its URL (as `new URL()` writes it, like the art route). */
+export const remoteCoverKey = (url: string) => `remote/${url}`;
 
 /**
- * The image behind an album's cover URL (catalog/build.ts): Lidarr's cover (`/art/album/:id/cover?v=`) or a folder file's
- * picture (`/art/copy/:id`, `?embedded=1`). undefined for remote covers (`/art/remote`), whose colors aren't read, and
- * for a file `files` doesn't have.
+ * The image behind a library album's cover URL (catalog/build.ts): Lidarr's cover (`/art/album/:id/cover?v=`), a folder
+ * file's picture (`/art/copy/:id`, `?embedded=1`), or the MusicBrainz cover of an album without either
+ * (`/art/remote?url=`, only from hosts the art route fetches from). Only for library albums: Discover's and search's
+ * remote covers never come here. undefined for a file `files` doesn't have.
  */
 export function coverImage(url: string | undefined, files: ReadonlyMap<number, FileRecord>): CoverImage | undefined {
   const lidarr = url?.match(/^\/art\/album\/(\d+)\/cover(?:\?v=(\d+))?$/);
@@ -41,6 +52,16 @@ export function coverImage(url: string | undefined, files: ReadonlyMap<number, F
     const version = /^\d{1,20}$/.test(lidarr[2] ?? '') ? lidarr[2]! : '0';
     const albumId = Number(lidarr[1]);
     return { key: lidarrCoverKey(albumId, version), kind: 'lidarr', albumId, version };
+  }
+  const remote = url?.match(/^\/art\/remote\?url=([^&]+)$/);
+  if (remote) {
+    let target: URL;
+    try {
+      target = new URL(decodeURIComponent(remote[1]!));
+    } catch {
+      return undefined;
+    }
+    return isAllowedRemote(target) ? { key: remoteCoverKey(target.href), kind: 'remote', url: target.href } : undefined;
   }
   const copy = url?.match(/^\/art\/copy\/(\d+)(\?embedded=1)?$/);
   const file = copy ? files.get(Number(copy[1])) : undefined;
@@ -126,8 +147,9 @@ export class CoverColorStore {
 
   /**
    * Read the colors of the covers that have none (nor an older version's, nor no picture a day ago), in the order given
-   * (newest albums first), two at a time, in the background. Runs after each library refresh; what's read is kept, so
-   * after a restart it goes on where it stopped. A fill asked for while one runs follows it.
+   * (newest albums first), in the background: two at a time, and remote covers one at a time beside them (the Cover
+   * Art Archive is someone else's service). Runs after each library refresh; what's read is kept, so after a restart it
+   * goes on where it stopped. A fill asked for while one runs follows it.
    */
   async fill(images: CoverImage[], read: CoverReader): Promise<void> {
     if (this.filling) {
@@ -139,23 +161,29 @@ export class CoverColorStore {
       const todo = images.filter((image) => this.due(image.key));
       const started = Date.now();
       const failures = new Map<string, number>();
-      const sourceOf = (image: CoverImage) => (image.kind === 'copy' ? `source ${image.file.sourceId}` : 'lidarr');
-      let next = 0;
+      const sourceOf = (image: CoverImage) => (image.kind === 'copy' ? `source ${image.file.sourceId}` : image.kind);
       let done = 0;
-      const worker = async () => {
-        while (next < todo.length) {
-          const image = todo[next++]!;
-          const source = sourceOf(image);
-          if ((failures.get(source) ?? 0) >= GIVE_UP_AFTER || !this.due(image.key)) continue;
-          try {
-            if (await this.read(image.key, () => read(image))) done++;
-            failures.set(source, 0);
-          } catch {
-            failures.set(source, (failures.get(source) ?? 0) + 1);
+      const lane = (covers: CoverImage[], workers: number) => {
+        let next = 0;
+        const worker = async () => {
+          while (next < covers.length) {
+            const image = covers[next++]!;
+            const source = sourceOf(image);
+            if ((failures.get(source) ?? 0) >= GIVE_UP_AFTER || !this.due(image.key)) continue;
+            try {
+              if (await this.read(image.key, () => read(image))) done++;
+              failures.set(source, 0);
+            } catch {
+              failures.set(source, (failures.get(source) ?? 0) + 1);
+            }
           }
-        }
+        };
+        return Array.from({ length: workers }, worker);
       };
-      await Promise.all(Array.from({ length: AT_ONCE }, worker));
+      await Promise.all([
+        ...lane(todo.filter((image) => image.kind !== 'remote'), AT_ONCE),
+        ...lane(todo.filter((image) => image.kind === 'remote'), 1),
+      ]);
       if (done) this.deps.log?.info(`Cover colors: ${done} of ${todo.length} covers read in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     } finally {
       this.filling = false;

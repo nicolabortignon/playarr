@@ -41,11 +41,11 @@ export interface Album {
   coverUrl?: string;
   /**
    * The cover's dominant color, `#rrggbb`: what it reads as from afar, for the space a loading cover takes. Present
-   * once the server has read the cover, even a gray one. Not for remote covers (`/art/remote`).
+   * once the server has read the cover (Lidarr's, a folder file's, or its Cover Art Archive fallback), even a gray one.
    */
   coverColor?: string;
   /**
-   * The vivid accent the cover gives, `#rrggbb`, picked as the web's `extractAccent` picks it (lifted until it's
+   * The vivid accent the cover gives, `#rrggbb`, picked as the apps pick theirs (the web's `accentOf`; lifted until it's
    * legible on the dark app). Absent when the cover has no color to give (a gray or black-and-white one), or hasn't been
    * read yet (no `coverColor`).
    */

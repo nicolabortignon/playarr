@@ -59,6 +59,11 @@ export abstract class LibraryView {
     return [...images.values()];
   }
 
+  /** Whether this image (a `coverImage` key) is the cover of an album here, without waiting for the library. */
+  hasCover(key: string): boolean {
+    return this.current()?.albumsByCover.has(key) ?? false;
+  }
+
   /** A cover was just read: the albums it's the cover of, and their songs, take its colors at once. */
   colorCover(key: string, colors: CoverColors | undefined) {
     for (const album of this.existing()?.albumsByCover.get(key) ?? []) paint(album, colors);

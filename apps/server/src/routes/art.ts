@@ -9,7 +9,7 @@ import { copyCover } from '../catalog/folderArt.ts';
 import type { FolderFs } from '../catalog/folderFs.ts';
 import { fetchRemoteImage, isAllowedRemote } from '../discover/art.ts';
 import { libraryOf, sourcesOf } from '../accounts/rights.ts';
-import { copyCoverKey, lidarrCoverKey, type CoverColorStore, type CoverReader } from '../library/coverColorStore.ts';
+import { copyCoverKey, lidarrCoverKey, remoteCoverKey, type CoverColorStore, type CoverReader } from '../library/coverColorStore.ts';
 import type { Library } from '../library/library.ts';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
 
@@ -135,15 +135,16 @@ export class LocalArt {
 }
 
 /**
- * Serves Lidarr artwork (resized to WebP, cached), folder files' artwork and allowlisted remote artwork. Album covers
- * in hand (an original fetched, or a variant from the cache) go to `colors` to be read, after the answer's on its way.
+ * Serves Lidarr artwork (resized to WebP, cached), folder files' artwork and allowlisted remote artwork. Library albums'
+ * covers in hand (an original fetched, or a variant from the cache) go to `colors` to be read, after the answer's on its
+ * way; Discover's and search's remote covers don't.
  */
 export function artRoutes(
   app: FastifyInstance,
   deps: {
     art: LocalArt;
     cacheDir: string;
-    library: Pick<Library, 'file' | 'hasArtwork'> & Partial<Pick<Library, 'view'>>;
+    library: Pick<Library, 'file' | 'hasArtwork' | 'hasCover'> & Partial<Pick<Library, 'view'>>;
     files: FileResolver;
     folders: { get(sourceId: number): FolderFs | undefined };
     colors?: Pick<CoverColorStore, 'offer'>;
@@ -165,7 +166,8 @@ export function artRoutes(
     return { body, mime: 'image/webp' };
   }
 
-  // Artwork for music that isn't in the library (Cover Art Archive, Lidarr's image cache, fanart.tv).
+  // Artwork for music that isn't in the library (Cover Art Archive, Lidarr's image cache, fanart.tv), and the
+  // MusicBrainz cover of a library album that has no other.
   app.get<{ Querystring: { url?: string; size?: string; wide?: string } }>('/art/remote', async (req, reply) => {
     let target: URL;
     try {
@@ -177,12 +179,17 @@ export function artRoutes(
     const requested = Number(req.query.size);
     const size = requested > 0 ? (SIZES.find((s) => s >= requested) ?? SIZES.at(-1)) : undefined;
     const wide = req.query.wide === '1';
-    const key = createHash('sha1').update(`remote/${target.href}/${size ?? 'orig'}/${wide}`).digest('hex');
-    const file = join(dir, key);
+    const file = join(dir, remoteArtFile(target.href, size, wide));
+    // Only a library album's cover is read for its colors.
+    const colorKey = remoteCoverKey(target.href);
+    const offerLibraryCover = (image: Buffer) => {
+      if (deps.library.hasCover(colorKey)) offerCover(colorKey, image);
+    };
 
     try {
       const cached = await readFile(file);
       const mime = (await readFile(`${file}.mime`, 'utf8').catch(() => null)) ?? 'image/webp';
+      offerLibraryCover(cached);
       return reply.header('Cache-Control', 'public, max-age=2592000').type(mime).send(cached);
     } catch {
       // cache miss
@@ -190,6 +197,7 @@ export function artRoutes(
     try {
       const original = await fetchRemoteImage(target.href);
       if (!original) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
+      offerLibraryCover(original.body);
       const out = size
         ? {
             body: await sharp(original.body)
@@ -305,27 +313,64 @@ function copyArtFile(fileId: number, fileSize: number, size: number | undefined,
   return createHash('sha1').update(`copy/${fileId}/${fileSize}/${size ?? 'orig'}${embedded ? '/embedded' : ''}`).digest('hex');
 }
 
+/** The art cache's name for a remote image at a size (undefined: as it is), cropped square or kept `wide`. */
+function remoteArtFile(url: string, size: number | undefined, wide: boolean): string {
+  return createHash('sha1').update(`remote/${url}/${size ?? 'orig'}/${wide}`).digest('hex');
+}
+
+/**
+ * Remote covers the background fill fetches start at least this far apart, one at a time: the Cover Art Archive is
+ * someone else's service, and nothing else here limits how often it's asked (the MusicBrainz queue is for its API).
+ */
+const REMOTE_GAP_MS = 1000;
+
 /**
  * Reads album covers for CoverColorStore's background fill, asking as little as it can: Lidarr's original only if
  * it's on disk (`LocalArt.warm` fetches them; a cover not there yet waits for a later fill); a folder file's picture
- * from the art cache when a page had it drawn, else from the file, wherever its folder is.
+ * or a remote cover from the art cache when a page had it drawn, else from the file, wherever its folder is, or from
+ * the remote host, gently (`remoteGapMs`).
  */
 export function coverReader(deps: {
   art: Pick<LocalArt, 'onDisk'>;
   cacheDir: string;
   files: Pick<FileResolver, 'resolve'>;
   folders: { get(sourceId: number): FolderFs | undefined };
+  remoteGapMs?: number;
 }): CoverReader {
   const dir = join(deps.cacheDir, 'art');
+  const sizes = [...SIZES, undefined];
+  const fromCache = async (names: string[]) => {
+    for (const name of names) {
+      const body = await readFile(join(dir, name)).catch(() => null);
+      if (body) return body;
+    }
+    return null;
+  };
+  const gap = deps.remoteGapMs ?? REMOTE_GAP_MS;
+  let lastFetch = -Infinity;
+  let turn: Promise<unknown> = Promise.resolve();
+  const fetchGently = (url: string) => {
+    const fetched = turn.then(async () => {
+      const wait = lastFetch + gap - Date.now();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      lastFetch = Date.now();
+      return fetchRemoteImage(url);
+    });
+    turn = fetched.catch(() => {});
+    return fetched;
+  };
   return async (image) => {
     if (image.kind === 'lidarr') {
       return (await deps.art.onDisk({ kind: 'album', id: image.albumId, type: 'cover', version: image.version }))?.body;
     }
-    const { file, embedded } = image;
-    for (const size of [...SIZES, undefined]) {
-      const body = await readFile(join(dir, copyArtFile(file.id, file.size, size, embedded))).catch(() => null);
-      if (body) return body;
+    if (image.kind === 'remote') {
+      const cached = await fromCache(sizes.map((size) => remoteArtFile(image.url, size, false)));
+      // A remote host's 404 is a cover without a picture (null), looked at again after a day.
+      return cached ?? (await fetchGently(image.url))?.body ?? null;
     }
+    const { file, embedded } = image;
+    const cached = await fromCache(sizes.map((size) => copyArtFile(file.id, file.size, size, embedded)));
+    if (cached) return cached;
     let path: string;
     try {
       path = deps.files.resolve(file).path;
