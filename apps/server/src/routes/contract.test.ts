@@ -12,6 +12,7 @@ import type {
   DiscoverArtist,
   DiscoverArtistDetail,
   DiscoverResults,
+  FavoriteTrack,
   ListenBrainzInfo,
   Lyrics,
   MixDetail,
@@ -210,6 +211,24 @@ describe('contract fixtures', () => {
       ['playlists', '/api/playlists'],
       ['recommendations', `/api/playlists/${created.json().id}/recommendations`],
     ], owner);
+  });
+
+  it('puts a favorite taken back where it was', async () => {
+    const { db, library } = await catalog();
+    const app = Fastify();
+    actAs(app, [account(1, { role: 'admin', canRequest: true })]);
+    const owner = asAccount(1);
+    favoriteRoutes(app, { favorites: new Favorites(db), library });
+    const put = (recordingId: string, payload?: object) => app.inject({ method: 'PUT', url: `/api/favorites/${recordingId}`, headers: owner, ...(payload ? { payload } : {}) });
+    expect((await put(ANGEL)).statusCode).toBe(204);
+    // Risingson, un-hearted and hearted again: back at the time it was first favorited, so after Angel.
+    expect((await put(RISINGSON, { favoritedAt: '2026-01-02T03:04:05.000Z' })).statusCode).toBe(204);
+    const list = (await app.inject({ method: 'GET', url: '/api/favorites', headers: owner })).json() as FavoriteTrack[];
+    expect(list.map((t) => [t.recordingId, t.favoritedAt])).toEqual([
+      [ANGEL, expect.any(String)],
+      [RISINGSON, '2026-01-02T03:04:05.000Z'],
+    ]);
+    for (const favoritedAt of ['yesterday', '2999-01-01T00:00:00.000Z', 12]) expect((await put(RISINGSON, { favoritedAt })).statusCode).toBe(400);
   });
 
   it('discover and requests', async () => {

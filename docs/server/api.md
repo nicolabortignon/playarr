@@ -55,7 +55,7 @@ Details in [streaming-and-art.md](streaming-and-art.md) and [../mixing.md](../mi
 
 | method and path | purpose | who |
 |---|---|---|
-| `GET /api/favorites`; `PUT\|DELETE /api/favorites/:recordingId` | the account's favorites | signed in |
+| `GET /api/favorites`; `PUT\|DELETE /api/favorites/:recordingId` | the account's favorites; `PUT` takes an optional `{ favoritedAt }` (an ISO time, not in the future) to put a favorite taken back where it was | signed in |
 | `GET\|POST /api/playlists`; `GET\|PATCH\|DELETE /api/playlists/:id` | the account's playlists and those shared with everyone; only the owner changes one | signed in |
 | `POST /api/playlists/:id/items`, `DELETE /api/playlists/:id/items/:itemId`, `PUT /api/playlists/:id/order` | add, remove and reorder songs | signed in |
 | `POST /api/playlists/holding` | `{ recordingIds }` → `{ holding: { [playlistId]: n } }`: how many of those songs each of the account's own playlists already holds, for Add to playlist's ticks | signed in |

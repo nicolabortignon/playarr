@@ -140,8 +140,9 @@ export const api = {
     request<AlbumRequest>('/api/requests', { method: 'POST', body: JSON.stringify(ref) }),
   removeRequest: (mbid: string) => request<void>(`/api/requests/${mbid}`, { method: 'DELETE' }),
   favorites: () => get<FavoriteTrack[]>('/api/favorites'),
-  addFavorite: (recordingId: string) =>
-    request<void>(`/api/favorites/${encodeURIComponent(recordingId)}`, { method: 'PUT' }),
+  /** `favoritedAt`: when it was first favorited, putting a favorite taken back where it was in the list. */
+  addFavorite: (recordingId: string, favoritedAt?: string) =>
+    request<void>(`/api/favorites/${encodeURIComponent(recordingId)}`, { method: 'PUT', ...(favoritedAt ? { body: JSON.stringify({ favoritedAt }) } : {}) }),
   removeFavorite: (recordingId: string) =>
     request<void>(`/api/favorites/${encodeURIComponent(recordingId)}`, { method: 'DELETE' }),
   playlists: () => get<PlaylistSummary[]>('/api/playlists'),

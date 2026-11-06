@@ -82,6 +82,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 ### Taking things back
 
 - **Taking something out of a list** happens at once, with Undo in the toast: "Removed “Teardrop” from “Late night”", "Removed “X” from the queue", "Removed “X” from Requests", "Removed “X” from this device", "Stopped sharing “X”".
+- **Un-hearting** takes a song out of Favorites: on the Favorites page, where it leaves the list in view, it says so with Undo ("Removed “Teardrop” from Favorites"). Hearted again, with Undo or the heart, a song goes back where it was in Favorites, not to the top: the time it was first favorited goes with it.
 - **When the server can't undo it** (a request forgotten can't be asked for again once the album has arrived), the item hides at once and the removal waits until the Undo has gone.
 - **Losing something for good asks first**: the question names what goes ("Delete “Late night”?", "Remove 312 songs from this device?", "Remove Sam?"), the words under it say what goes and what stays, and the button is the danger verb ("Delete", "Remove", "Sign out"). On the web it's a dialog with Cancel focused; on iOS 26 a popover from the control that asked (a tap beside it cancels).
 

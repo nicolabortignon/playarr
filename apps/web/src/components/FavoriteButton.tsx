@@ -1,8 +1,10 @@
 import type { Track } from '@playarr/shared';
 import { Heart } from 'lucide-react';
 import { useState } from 'react';
+import { useMatch } from 'react-router';
 import { cn } from '../lib/cn';
 import { useIsFavorite, useToggleFavorite } from '../lib/queries';
+import { toastWithUndo } from '../lib/toast';
 
 interface FavoriteButtonProps {
   track: Track;
@@ -15,6 +17,8 @@ interface FavoriteButtonProps {
 export function FavoriteButton({ track, size = 'sm', reveal, className }: FavoriteButtonProps) {
   const favorite = useIsFavorite(track.recordingId);
   const toggle = useToggleFavorite();
+  // On Favorites, un-hearting takes the song out of the list in view: with Undo (docs/design.md, Taking things back).
+  const onFavorites = useMatch('/favorites') !== null;
   const [popping, setPopping] = useState(false);
   // An icon button (docs/design.md, Controls): 44 to tap on touch screens, 36 with a mouse; Now Playing's is 48.
   const box = { sm: 'size-11 pointer-fine:size-9', md: 'size-11 pointer-fine:size-9', lg: 'size-12' }[size];
@@ -33,6 +37,7 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
         e.stopPropagation();
         if (!favorite) setPopping(true);
         toggle.mutate({ track, favorite: !favorite });
+        if (favorite && onFavorites) toastWithUndo(`Removed “${track.title}” from Favorites`, () => toggle.mutate({ track, favorite: true }));
       }}
       className={cn(
         'grid shrink-0 place-items-center rounded-full transition hover:bg-paper/8',

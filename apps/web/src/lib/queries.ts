@@ -209,20 +209,34 @@ export const useIsFavorite = (recordingId: string | undefined) =>
     select: (favs) => !!recordingId && favs.some((f) => f.recordingId === recordingId),
   }).data ?? false;
 
+/**
+ * When each song un-hearted since the page opened had first been favorited: hearted again (or with Undo), it goes back
+ * where it was in Favorites, newest first, rather than to the top.
+ */
+const unhearted = new Map<string, string>();
+
 /** Add/remove a favorite with an optimistic update, so the heart responds instantly. */
 export function useToggleFavorite() {
   const client = useQueryClient();
   return useMutation({
+    // After onMutate: a song hearted again sends the time it was first favorited.
     mutationFn: ({ track, favorite }: { track: Track; favorite: boolean }) =>
-      favorite ? api.addFavorite(track.recordingId) : api.removeFavorite(track.recordingId),
+      favorite ? api.addFavorite(track.recordingId, unhearted.get(track.recordingId)) : api.removeFavorite(track.recordingId),
     onMutate: async ({ track, favorite }) => {
       await client.cancelQueries({ queryKey: ['favorites'] });
       const previous = client.getQueryData<FavoriteTrack[]>(['favorites']);
+      const since = previous?.find((t) => t.recordingId === track.recordingId)?.favoritedAt;
+      if (!favorite && since) unhearted.set(track.recordingId, since);
+      const favoritedAt = favorite ? (unhearted.get(track.recordingId) ?? new Date().toISOString()) : undefined;
       client.setQueryData<FavoriteTrack[]>(['favorites'], (old = []) => {
         const rest = old.filter((t) => t.recordingId !== track.recordingId);
-        return favorite ? [{ ...track, favoritedAt: new Date().toISOString() }, ...rest] : rest;
+        if (!favoritedAt) return rest;
+        return [{ ...track, favoritedAt }, ...rest].sort((a, b) => b.favoritedAt.localeCompare(a.favoritedAt));
       });
       return { previous };
+    },
+    onSuccess: (_data, { track, favorite }) => {
+      if (favorite) unhearted.delete(track.recordingId);
     },
     onError: (err, _vars, ctx) => {
       client.setQueryData(['favorites'], ctx?.previous);

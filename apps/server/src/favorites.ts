@@ -30,14 +30,15 @@ export class Favorites {
     return (this.db.prepare('SELECT recording_id FROM favorites WHERE account_id = ?').all(account) as { recording_id: string }[]).map((r) => r.recording_id);
   }
 
-  add(account: number, track: Track) {
+  /** `at`: when it was first favorited, for one put back where it was (else now). */
+  add(account: number, track: Track, at = new Date().toISOString()) {
     this.db
       .prepare(
         `INSERT INTO favorites (account_id, recording_id, track_id, title, artist_name, album_title, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (account_id, recording_id) DO NOTHING`,
       )
-      .run(account, track.recordingId, track.id, track.title, track.artistName, track.albumTitle, new Date().toISOString());
+      .run(account, track.recordingId, track.id, track.title, track.artistName, track.albumTitle, at);
   }
 
   remove(account: number, recordingId: string) {
