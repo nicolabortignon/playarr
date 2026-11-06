@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { api, sized } from '../lib/api';
 import { cn } from '../lib/cn';
 import { usePlaylistMutations } from '../lib/queries';
+import { Button } from './Button';
 import { Dialog } from './Dialog';
 
 const STYLES: { layout: CoverLayout; label: string }[] = [
@@ -45,21 +46,17 @@ function Picker({ playlist, onClose }: { playlist: PlaylistDetail; onClose: () =
         ))}
       </div>
       <div className="mt-5 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => setVariant((v) => v + 1)}
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-paper/15 px-4 text-paper transition hover:border-paper/35 hover:bg-paper/5"
-        >
-          <Dices className="size-4" /> Shuffle
-        </button>
-        <button
-          type="button"
-          disabled={setCover.isPending}
+        <Button icon={<Dices />} onClick={() => setVariant((v) => v + 1)}>
+          Shuffle
+        </Button>
+        <Button
+          variant="primary"
+          icon={<Check />}
+          pending={setCover.isPending}
           onClick={() => setCover.mutate({ id: playlist.id, layout: chosen, variant }, { onSuccess: onClose })}
-          className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 font-medium text-accent-ink transition hover:brightness-110 disabled:opacity-50"
         >
-          {setCover.isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Use this
-        </button>
+          Use this
+        </Button>
       </div>
     </div>
   );

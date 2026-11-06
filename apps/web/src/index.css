@@ -29,6 +29,8 @@
   /* A cover on a shelf or in a grid, and a page's own cover. */
   --shadow-cover: 0 12px 32px -12px rgb(0 0 0 / 0.8);
   --shadow-cover-hero: 0 30px 70px -20px rgb(0 0 0 / 0.9);
+  /* The accent's glow under a large primary button (Play, Feeling lucky). */
+  --shadow-glow: 0 10px 40px -12px var(--accent);
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
@@ -133,6 +135,72 @@ body::after {
 
 @utility tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * At least 44 px to tap on touch screens, whatever size a control is drawn (docs/design.md, Controls): an invisible
+ * box centered on it takes the taps. The control must be positioned (relative, absolute…).
+ */
+@utility tap-target {
+  @media (pointer: coarse) {
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
+/*
+ * The action row (components/ActionRow.tsx) never wraps. As its container narrows, Shuffle drops its words (step 1),
+ * then the page's own action (step 2), then the gaps close up and Play drops its icon (step 3). Where each step starts
+ * depends on what the row holds, which it says in data-layout:
+ *   default  Play, Shuffle, Download, ⋯: an album, a playlist, Favorites
+ *   action   the same with the page's own action, the widest being a partial album's "Request the rest": a mix too
+ *   short    Play, Shuffle, ⋯: an artist
+ * The widths are the fonts' own (Play 134 px, as wide as "Resume", 106 without its icon; Shuffle 123; "Request the
+ * rest" 190; icon buttons 48; gaps 12, then 8), with a little to spare: at its narrowest a row with an action is 330 px,
+ * which fits a 375 px phone.
+ */
+@custom-variant row-step-1 {
+  @container action-row (width < 25rem) {
+    &:where([data-layout='default'] *) {
+      @slot;
+    }
+  }
+  @container action-row (width < 38rem) {
+    &:where([data-layout='action'] *) {
+      @slot;
+    }
+  }
+  @container action-row (width < 21.5rem) {
+    &:where([data-layout='short'] *) {
+      @slot;
+    }
+  }
+}
+@custom-variant row-step-2 {
+  @container action-row (width < 33rem) {
+    &:where([data-layout='action'] *) {
+      @slot;
+    }
+  }
+}
+@custom-variant row-step-3 {
+  @container action-row (width < 20.5rem) {
+    &:where([data-layout='default'] *) {
+      @slot;
+    }
+  }
+  @container action-row (width < 24rem) {
+    &:where([data-layout='action'] *) {
+      @slot;
+    }
+  }
 }
 
 /*

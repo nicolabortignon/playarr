@@ -349,7 +349,7 @@ describe('Playarr web against live server', () => {
       await within(section).findByRole('heading', { name: 'Already in your library' }, { timeout: 15_000 });
       within(section).getByRole('heading', { name: 'Not in your library yet' });
       // Missing songs get request buttons (not clicked: that would really ask Lidarr to download).
-      expect(within(section).getAllByRole('button', { name: /Request|In library|Search again|Retry/ }).length).toBeGreaterThan(0);
+      expect(within(section).getAllByRole('button', { name: /Request|In library|Try again/ }).length).toBeGreaterThan(0);
 
       const [addFirst] = within(section).getAllByRole('button', { name: /^Add .* to playlist$/ });
       const label = addFirst!.getAttribute('aria-label')!;

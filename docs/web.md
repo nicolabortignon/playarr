@@ -11,7 +11,7 @@ For the DJ mix pipeline (analysis, plans, rendered transitions, live mixes) see 
 From `apps/web/package.json`:
 
 - React 19, React Router 7, TypeScript 7, Vite 8;
-- Tailwind CSS 4 with our own components (menus, dialogs, sliders; no component library), lucide icons, Motion for animation;
+- Tailwind CSS 4 with our own components (buttons, fields, choices, menus, dialogs, sliders; no component library), lucide icons, Motion for animation;
 - TanStack Query 5 for server data, persisted to IndexedDB with `idb-keyval`;
 - Zustand 5 for the player, preferences and other client state;
 - `vite-plugin-pwa` in `injectManifest` mode, with Workbox 7 modules, for our own service worker;
@@ -26,7 +26,17 @@ From `apps/web/package.json`:
 - **Outside the shell**: `/sign-in`, `/redeem` (choose a password from a setup code) and `/setup` (claim a new server), with no player.
 - **Inside `AppShell`**: Home, Artists, Albums, an artist, an album, Favorites, Library and Playlists load with the app. Everything else is lazy-loaded on first open: Search, Downloads, Stats, Mixes, a mix, a playlist, Queue, Requests, Discover (`/discover/artists/:mbid`, `/discover/artist`), Settings (`/settings/:panel?`) and Not found. The service worker precaches those chunks, so later opens are instant.
 
-Pages are in `src/pages`, shared pieces in `src/components`. Long grids show a screenful at a time (`lib/useIncremental.ts`: 48 items, then 48 more as the end comes within 1500 px). Covers load four at a time, on-screen ones first (`lib/imageQueue.ts`).
+Pages are in `src/pages`, shared pieces in `src/components`. Pages build their controls from the shared ones, as [design.md](design.md) describes them (Controls):
+
+- `Button`: primary, secondary, ghost or danger; large (48), regular (40) or small (32); an optional leading icon, a pending state, and with `to`, a link drawn the same;
+- `IconButton`: round, always named; 48 and outlined in an action row, else 44 to tap on touch screens and 36 with a mouse;
+- `TextField`: the label above a 44 px field, an optional hint under it;
+- `Choice`: the mono capitals pills, a radio group that scrolls sideways on a phone rather than wrapping;
+- `ActionRow`: Play, Shuffle, the page's own action, Download and ⋯ on album, playlist, mix, Favorites and artist pages. While what the page started is playing (the album's songs, or a queue whose "Playing from" is the page), Play says Pause and Resume, keeping the width of its widest word. The row never wraps: CSS container queries (`row-step-*` in `index.css`) drop Shuffle's words, then the action's, as it narrows.
+
+Controls drawn smaller than 44 px take that much to tap on touch screens through the `tap-target` utility in `index.css`.
+
+Long grids show a screenful at a time (`lib/useIncremental.ts`: 48 items, then 48 more as the end comes within 1500 px). Covers load four at a time, on-screen ones first (`lib/imageQueue.ts`).
 
 ## 3. Layout
 

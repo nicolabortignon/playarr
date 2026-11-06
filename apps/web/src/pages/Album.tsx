@@ -1,10 +1,10 @@
-import { ListEnd, ListMusic, ListPlus, Mic2, Pause, Play, Shuffle } from 'lucide-react';
+import { ListEnd, ListMusic, ListPlus, Mic2 } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router';
+import { ActionRow } from '../components/ActionRow';
 import { AlbumCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
-import { RequestRest } from '../components/Discover';
+import { RequestButton, useRestRequest } from '../components/Discover';
 import { FormatBadge } from '../components/FormatBadge';
-import { Menu } from '../components/Menu';
 import { BackButton, ErrorState, SectionHeader, Shelf, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { useCoverAccent } from '../lib/color';
@@ -13,7 +13,6 @@ import { useAlbum, useArtist } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
-import { DownloadButton } from '../components/DownloadButton';
 
 export function AlbumPage() {
   const id = Number(useParams().id);
@@ -26,6 +25,7 @@ export function AlbumPage() {
   const toggle = usePlayer((s) => s.toggle);
   const navigate = useNavigate();
   const openPicker = useUI((s) => s.openPlaylistPicker);
+  const rest = useRestRequest(album);
 
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !album) return <AlbumSkeleton />;
@@ -80,40 +80,26 @@ export function AlbumPage() {
           </div>
         </header>
 
-        {/* Wraps on phones: Request (two pills on a partial album) goes to its own line, ⋯ stays in reach. */}
-        <div className="mt-8 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            aria-label={`${isCurrent && playing ? 'Pause' : isCurrent ? 'Resume' : 'Play'} ${album.title}`}
-            onClick={() => (isCurrent ? toggle() : playTracks(album.tracks, 0, { shuffle: false, source: albumSource(album) }))}
-            className="inline-flex h-12 items-center gap-2 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-12px_var(--accent)] transition hover:brightness-110 active:scale-[0.98]"
-          >
-            {isCurrent && playing ? <Pause className="size-5 fill-current" /> : <Play className="size-5 fill-current" />}
-            {isCurrent && playing ? 'Pause' : isCurrent ? 'Resume' : 'Play'}
-          </button>
-          <button
-            type="button"
-            aria-label={`Shuffle ${album.title}`}
-            onClick={() => playTracks(album.tracks, 0, { shuffle: true, source: albumSource(album) })}
-            className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/15 px-5 text-paper transition hover:border-paper/35 hover:bg-paper/5"
-          >
-            <Shuffle className="size-[18px]" /> Shuffle
-          </button>
-          <Menu
-            className="size-12 border border-paper/15 text-paper"
-            items={[
+        <ActionRow
+          className="mt-8"
+          title={album.title}
+          state={isCurrent ? (playing ? 'playing' : 'paused') : 'idle'}
+          onPlay={() => (isCurrent ? toggle() : playTracks(album.tracks, 0, { shuffle: false, source: albumSource(album) }))}
+          onShuffle={() => playTracks(album.tracks, 0, { shuffle: true, source: albumSource(album) })}
+          action={rest && <RequestButton size="large" album={rest.album} availability={rest.availability} />}
+          download={{
+            item: { key: `album:${album.id}`, title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl, href: `/albums/${album.id}` },
+            tracks: album.tracks,
+          }}
+          menu={{
+            items: [
               { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(album.tracks, 'next') },
               { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(album.tracks, 'end') },
               { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker(album.tracks) },
               { label: 'Go to artist', icon: Mic2, onSelect: () => navigate(`/artists/${album.artistId}`) },
-            ]}
-          />
-          <DownloadButton
-            item={{ key: `album:${album.id}`, title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl, href: `/albums/${album.id}` }}
-            tracks={album.tracks}
-          />
-          <RequestRest album={album} />
-        </div>
+            ],
+          }}
+        />
 
         <div className="mt-8 -mx-3 max-w-5xl md:mt-10">
           <TrackList tracks={album.tracks} missing={album.missingTracks} showDiscs={album.discCount > 1} source={albumSource(album)} />

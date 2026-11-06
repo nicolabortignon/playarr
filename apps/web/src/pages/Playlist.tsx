@@ -1,8 +1,10 @@
 import type { CoverLayout, PlaylistCoverInfo, PlaylistItem } from '@playarr/shared';
-import { Disc3, GripVertical, Info, ListEnd, ListPlus, Lock, Mic2, Palette, Pencil, Play, Shuffle, Trash2, Users, X } from 'lucide-react';
+import { Disc3, GripVertical, Info, ListEnd, ListPlus, Lock, Mic2, Palette, Pencil, Trash2, Users, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { ActionRow, usePlayState } from '../components/ActionRow';
+import { Button } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { Dialog } from '../components/Dialog';
 import { Equalizer } from '../components/Equalizer';
@@ -18,7 +20,6 @@ import { usePlaylist, usePlaylistMutations, useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { queueTracks } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
-import { DownloadButton } from '../components/DownloadButton';
 import { Tempo } from '../components/Tempo';
 
 export function PlaylistPage() {
@@ -26,6 +27,8 @@ export function PlaylistPage() {
   const { data: playlist, error, isPending, refetch } = usePlaylist(id);
   const mutations = usePlaylistMutations();
   const playTracks = usePlayer((s) => s.playTracks);
+  const toggle = usePlayer((s) => s.toggle);
+  const playState = usePlayState(`/playlists/${id}`);
   const navigate = useNavigate();
   const [items, setItems] = useState<PlaylistItem[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -122,33 +125,22 @@ export function PlaylistPage() {
         </div>
       </header>
 
-      <div className="mt-8 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          disabled={!playable.length}
-          onClick={() => playTracks(playable, 0, { shuffle: false, source: { label: playlist.name, href: `/playlists/${id}` } })}
-          aria-label={`Play ${playlist.name}`}
-          className="inline-flex h-12 items-center gap-2 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-12px_var(--accent)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
-        >
-          <Play className="size-5 fill-current" /> Play
-        </button>
-        <button
-          type="button"
-          disabled={!playable.length}
-          onClick={() => playTracks(playable, 0, { shuffle: true, source: { label: playlist.name, href: `/playlists/${id}` } })}
-          aria-label={`Shuffle ${playlist.name}`}
-          className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/15 px-5 text-paper transition hover:border-paper/35 hover:bg-paper/5 disabled:opacity-40"
-        >
-          <Shuffle className="size-[18px]" /> Shuffle
-        </button>
-        <DownloadButton
-          item={{ key: `playlist:${id}`, title: playlist.name, subtitle: 'Playlist', coverUrl: playlist.cover.url, href: `/playlists/${id}` }}
-          tracks={playable}
-        />
-        <Menu
-          className="size-12 border border-paper/15 text-paper"
-          label="Playlist actions"
-          items={[
+      <ActionRow
+        className="mt-8"
+        title={playlist.name}
+        disabled={!playable.length}
+        state={playState}
+        onPlay={() =>
+          playState !== 'idle' ? toggle() : playTracks(playable, 0, { shuffle: false, source: { label: playlist.name, href: `/playlists/${id}` } })
+        }
+        onShuffle={() => playTracks(playable, 0, { shuffle: true, source: { label: playlist.name, href: `/playlists/${id}` } })}
+        download={{
+          item: { key: `playlist:${id}`, title: playlist.name, subtitle: 'Playlist', coverUrl: playlist.cover.url, href: `/playlists/${id}` },
+          tracks: playable,
+        }}
+        menu={{
+          label: 'Playlist actions',
+          items: [
             ...(mine ? [{ label: 'Rename', icon: Pencil, onSelect: () => setEditing(true) }] : []),
             ...(playable.length
               ? [
@@ -165,9 +157,9 @@ export function PlaylistPage() {
                   { label: 'Delete playlist', icon: Trash2, onSelect: () => setConfirmDelete(true) },
                 ]
               : []),
-          ]}
-        />
-      </div>
+          ],
+        }}
+      />
 
       {items.length === 0 ? (
         <p className="mt-12 max-w-md text-sm text-muted">
@@ -200,24 +192,19 @@ export function PlaylistPage() {
             “{playlist.name}” will be deleted. The songs stay in your library. This can’t be undone.
           </p>
           <div className="mt-6 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="h-10 rounded-lg border border-line px-4 text-paper transition hover:bg-paper/5"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
+            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
+            <Button
+              variant="danger"
+              pending={mutations.destroy.isPending}
+              pendingLabel="Deleting…"
               onClick={() =>
                 mutations.destroy.mutate(id, {
                   onSuccess: () => navigate('/playlists', { replace: true }),
                 })
               }
-              className="h-10 rounded-lg bg-danger/90 px-4 font-medium text-ink-950 transition hover:bg-danger"
             >
               Delete
-            </button>
+            </Button>
           </div>
         </div>
       </Dialog>
@@ -349,9 +336,9 @@ function CoverNote({ cover, onNewCover }: { cover: PlaylistCoverInfo; onNewCover
               The playlist has changed a lot since this cover was drawn. <span className="text-accent underline-offset-2 hover:underline">New cover</span>
             </button>
           ) : (
-            <button type="button" onClick={onNewCover} className="mt-2 font-mono text-[11px] tracking-[0.15em] text-accent uppercase hover:underline">
+            <Button variant="ghost" size="small" icon={<Palette />} onClick={onNewCover} className="mt-2 -ml-3">
               New cover
-            </button>
+            </Button>
           )}
         </>
       )}
@@ -397,12 +384,10 @@ function EditDetails({
         className="w-full resize-none rounded-md border border-line bg-ink-900/60 p-2 text-[15px] text-paper-dim placeholder:text-muted focus:border-accent focus:outline-none"
       />
       <div className="flex gap-2">
-        <button type="button" onClick={save} className="h-9 rounded-full bg-accent px-4 text-sm font-medium text-accent-ink">
+        <Button variant="primary" onClick={save}>
           Save
-        </button>
-        <button type="button" onClick={onCancel} className="h-9 rounded-full border border-line px-4 text-sm text-paper">
-          Cancel
-        </button>
+        </Button>
+        <Button onClick={onCancel}>Cancel</Button>
       </div>
     </div>
   );

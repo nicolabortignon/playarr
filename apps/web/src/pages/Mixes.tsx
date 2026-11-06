@@ -1,5 +1,5 @@
 import { SlidersHorizontal } from 'lucide-react';
-import { Link } from 'react-router';
+import { Button } from '../components/Button';
 import { MixCard } from '../components/Mixes';
 import { ErrorState, Skeleton } from '../components/Section';
 import { useMixes } from '../lib/queries';
@@ -11,12 +11,9 @@ export function MixesPage() {
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Made for you" count={mixes?.length}>
-        <Link
-          to="/settings/mixes"
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-line px-4 text-[14px] text-paper transition hover:bg-paper/5"
-        >
-          <SlidersHorizontal className="size-4" /> Tune your mixes
-        </Link>
+        <Button to="/settings/mixes" icon={<SlidersHorizontal />}>
+          Tune your mixes
+        </Button>
       </PageTitle>
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />

@@ -26,7 +26,8 @@ export function SleepTimer({ className }: { className?: string }) {
   return (
     <Menu
       label={label ? `Sleep timer: ${label}` : 'Sleep timer'}
-      className={cn('h-9 w-auto min-w-9 px-2.5 text-paper max-md:h-11 max-md:min-w-11', label && 'text-accent', className)}
+      // Round until it counts down; then as wide as the time left.
+      className={cn('w-auto min-w-11 px-2.5 text-paper pointer-fine:w-auto pointer-fine:min-w-9', label && 'text-accent', className)}
       trigger={
         <span className="flex items-center gap-1.5">
           <Moon className="size-[18px]" />

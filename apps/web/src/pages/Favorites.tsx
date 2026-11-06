@@ -1,15 +1,20 @@
-import { Heart, Play, Shuffle } from 'lucide-react';
+import { Heart, ListEnd, ListMusic, ListPlus } from 'lucide-react';
+import { ActionRow, usePlayState } from '../components/ActionRow';
 import { ErrorState, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
 import { formatDuration, plural } from '../lib/format';
 import { useFavorites } from '../lib/queries';
+import { useUI } from '../lib/ui';
+import { queueTracks } from '../player/actions';
 import { usePlayer } from '../player/store';
 import { PageTitle } from './Albums';
-import { DownloadButton } from '../components/DownloadButton';
 
 export function FavoritesPage() {
   const { data: favorites, error, isPending, refetch } = useFavorites();
   const playTracks = usePlayer((s) => s.playTracks);
+  const toggle = usePlayer((s) => s.toggle);
+  const playState = usePlayState(FAVORITES.href);
+  const openPicker = useUI((s) => s.openPlaylistPicker);
   const total = favorites?.reduce((sum, t) => sum + t.duration, 0) ?? 0;
 
   return (
@@ -35,26 +40,24 @@ export function FavoritesPage() {
       )}
       {favorites && favorites.length > 0 && (
         <>
-          <div className="-mt-4 mb-8 flex flex-wrap items-center gap-3 md:-mt-6">
-            <button
-              type="button"
-              onClick={() => playTracks(favorites, 0, { shuffle: false, source: FAVORITES })}
-              className="inline-flex h-12 items-center gap-2 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-12px_var(--accent)] transition hover:brightness-110 active:scale-[0.98]"
-            >
-              <Play className="size-5 fill-current" /> Play
-            </button>
-            <button
-              type="button"
-              onClick={() => playTracks(favorites, 0, { shuffle: true, source: FAVORITES })}
-              className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/15 px-5 text-paper transition hover:border-paper/35 hover:bg-paper/5"
-            >
-              <Shuffle className="size-[18px]" /> Shuffle
-            </button>
-            <DownloadButton item={{ key: 'favorites', title: 'Favorites', subtitle: 'Your favorite songs', href: '/favorites' }} tracks={favorites} />
-            <span className="ml-1 font-mono text-[12px] text-muted">
-              {plural(favorites.length, 'song')} · {formatDuration(total)}
-            </span>
-          </div>
+          <p className="-mt-4 type-meta text-muted md:-mt-6">
+            {plural(favorites.length, 'song')} · {formatDuration(total)}
+          </p>
+          <ActionRow
+            className="mt-6 mb-8"
+            title="Favorites"
+            state={playState}
+            onPlay={() => (playState !== 'idle' ? toggle() : playTracks(favorites, 0, { shuffle: false, source: FAVORITES }))}
+            onShuffle={() => playTracks(favorites, 0, { shuffle: true, source: FAVORITES })}
+            download={{ item: { key: 'favorites', title: 'Favorites', subtitle: 'Your favorite songs', href: '/favorites' }, tracks: favorites }}
+            menu={{
+              items: [
+                { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(favorites, 'next') },
+                { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(favorites, 'end') },
+                { label: 'Add to playlist…', icon: ListMusic, onSelect: () => openPicker(favorites) },
+              ],
+            }}
+          />
           <div className="-mx-3">
             <TrackList tracks={favorites} variant="mixed" source={FAVORITES} />
           </div>

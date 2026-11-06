@@ -2,12 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import { plural } from '../lib/format';
 import { useListenBrainz, useListenBrainzAction } from '../lib/queries';
+import { Button } from './Button';
 import { SettingsSection, Switch } from './SettingsControls';
-
-const INPUT =
-  'h-11 w-full rounded-lg border border-line bg-ink-900 px-3 text-[15px] text-paper outline-none transition focus:border-accent';
-const BUTTON =
-  'inline-flex h-9 items-center gap-2 rounded-full border border-line px-4 text-[13px] text-paper transition hover:bg-paper/5 disabled:opacity-40';
+import { TextField } from './TextField';
 
 /** Settings → Mixes → ListenBrainz: send what's played to a ListenBrainz account. */
 export function ListenBrainzSection() {
@@ -39,25 +36,24 @@ export function ListenBrainzSection() {
     >
       {!data.connected ? (
         <form onSubmit={submit} className="space-y-3">
-          <label className="block">
-            <span className="mb-1.5 block text-[13px] text-paper-dim">
-              Your user token, from{' '}
-              <a href="https://listenbrainz.org/settings/" target="_blank" rel="noreferrer" className="text-accent hover:underline">
-                listenbrainz.org/settings
-              </a>
-            </span>
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              className={INPUT}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
-          <button type="submit" disabled={!token.trim() || connect.isPending} className={BUTTON}>
-            {connect.isPending ? 'Checking…' : 'Connect'}
-          </button>
+          <TextField
+            label={
+              <>
+                Your user token, from{' '}
+                <a href="https://listenbrainz.org/settings/" target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                  listenbrainz.org/settings
+                </a>
+              </>
+            }
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <Button type="submit" variant="primary" disabled={!token.trim()} pending={connect.isPending} pendingLabel="Checking…">
+            Connect
+          </Button>
         </form>
       ) : (
         <>
@@ -80,13 +76,13 @@ export function ListenBrainzSection() {
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             {data.earlier > 0 && (
-              <button type="button" disabled={earlier.isPending} onClick={() => earlier.mutate(undefined)} className={BUTTON}>
+              <Button disabled={earlier.isPending} onClick={() => earlier.mutate(undefined)}>
                 Also send {plural(data.earlier, 'earlier play')}
-              </button>
+              </Button>
             )}
-            <button type="button" disabled={disconnect.isPending} onClick={() => disconnect.mutate(undefined)} className={BUTTON}>
+            <Button disabled={disconnect.isPending} onClick={() => disconnect.mutate(undefined)}>
               Disconnect
-            </button>
+            </Button>
           </div>
         </>
       )}

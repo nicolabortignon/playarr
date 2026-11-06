@@ -2,6 +2,7 @@ import { Dices, Pause, Play } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { Link } from 'react-router';
+import { Button, IconButton } from '../components/Button';
 import { AlbumCard, ArtistCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { MixCard } from '../components/Mixes';
@@ -103,14 +104,9 @@ export function HomePage() {
           kicker="Pulled from the crates"
           title="Rediscover"
           action={
-            <button
-              type="button"
-              onClick={() => setSeed((s) => s + 1)}
-              aria-label="Reshuffle"
-              className="grid size-9 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper"
-            >
-              <Dices className={`size-[18px] transition-transform duration-500 ${rolling ? 'rotate-180' : ''}`} />
-            </button>
+            <IconButton label="Reshuffle" onClick={() => setSeed((s) => s + 1)}>
+              <Dices className={cn('size-4.5 transition-transform duration-500', rolling && 'rotate-180')} />
+            </IconButton>
           }
         />
         <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 md:gap-x-6 lg:grid-cols-4 xl:grid-cols-6">
@@ -260,16 +256,18 @@ function LuckyButton() {
     }
   };
   return (
-    <button
-      type="button"
+    // While the songs are picked the sparkles say so; the button stays lit rather than dimming.
+    <Button
+      variant="primary"
+      size="large"
+      icon={<Twinkle on={picking} />}
       onClick={() => void press()}
       disabled={picking}
       aria-busy={picking}
-      className="inline-flex h-12 items-center gap-2.5 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-10px_var(--accent)] transition hover:brightness-110 active:scale-[0.98] disabled:cursor-progress"
+      className="disabled:cursor-progress disabled:opacity-100"
     >
-      <Twinkle on={picking} />
       Feeling lucky
-    </button>
+    </Button>
   );
 }
 

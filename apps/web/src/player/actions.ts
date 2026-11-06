@@ -40,3 +40,7 @@ export function queueTracks(tracks: Track[], mode: 'next' | 'end') {
 export async function queueAlbum(id: number, mode: 'next' | 'end') {
   queueTracks(await albumTracks(id), mode);
 }
+
+export async function queueArtist(id: number, mode: 'next' | 'end') {
+  queueTracks(await artistTracks(id), mode);
+}

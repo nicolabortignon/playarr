@@ -18,12 +18,12 @@ afterEach(() => {
 
 const album = { mbid: 'rg-1', artistName: 'Massive Attack', albumTitle: 'Mezzanine' };
 
-function renderButton(availability: Parameters<typeof RequestButton>[0]['availability']) {
+function renderButton(availability: Parameters<typeof RequestButton>[0]['availability'], size?: 'small' | 'large') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <RequestButton album={album} availability={availability} />
+        <RequestButton album={album} availability={availability} size={size} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -49,5 +49,41 @@ describe('RequestButton', () => {
     renderButton({ state: 'available', albumId: 5 });
     expect(screen.getByRole('button', { name: /in library/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^request/i })).toBeNull();
+  });
+
+  it('shows how a request is going as a status, not a button', () => {
+    for (const [availability, status] of [
+      [{ state: 'searching' }, 'Searching'],
+      [{ state: 'downloading', progress: 0.42 }, '42%'],
+      [{ state: 'importing' }, 'Importing'],
+    ] as const) {
+      renderButton(availability);
+      expect(screen.getByText(status)).toBeTruthy();
+      expect(screen.queryByRole('button')).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('offers to try again when Lidarr found nothing or the request failed', async () => {
+    const request = vi.spyOn(api, 'requestAlbum').mockReturnValue(new Promise(() => {}));
+    renderButton({ state: 'failed', message: 'No release found' });
+    const retry = screen.getByRole('button', { name: 'Try again' });
+    expect(retry.title).toBe('No release found');
+    fireEvent.click(retry);
+    await waitFor(() => expect(request).toHaveBeenCalledWith(album));
+    // While it's asked for, it says so, and there's nothing to press twice.
+    expect(await screen.findByText('Requesting…')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+    cleanup();
+    renderButton({ state: 'waiting' });
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('is a partial album’s own action in its row, pending while it’s asked for', async () => {
+    vi.spyOn(api, 'requestAlbum').mockReturnValue(new Promise(() => {}));
+    renderButton({ state: 'none' }, 'large');
+    fireEvent.click(screen.getByRole('button', { name: 'Request the rest' }));
+    const pending = (await screen.findByRole('button', { name: 'Requesting…' })) as HTMLButtonElement;
+    expect(pending.disabled).toBe(true);
   });
 });

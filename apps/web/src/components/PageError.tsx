@@ -2,6 +2,7 @@ import { RotateCw } from 'lucide-react';
 import { useEffect } from 'react';
 import { useLocation, useNavigate, useRouteError } from 'react-router';
 import { isStaleBuild, reloadIntoNewBuild } from '../lib/staleBuild';
+import { Button } from './Button';
 import { ErrorState } from './Section';
 
 /**
@@ -36,13 +37,9 @@ function Updated() {
     <div className="mx-auto mt-24 max-w-md px-5 text-center" role="alert">
       <div className="font-display text-3xl text-paper">Playarr was updated.</div>
       <p className="mt-3 text-sm text-muted">Reload to open this page in the new version.</p>
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        className="mt-6 inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110"
-      >
-        <RotateCw className="size-4" /> Reload
-      </button>
+      <Button variant="primary" icon={<RotateCw />} onClick={() => window.location.reload()} className="mt-6">
+        Reload
+      </Button>
     </div>
   );
 }

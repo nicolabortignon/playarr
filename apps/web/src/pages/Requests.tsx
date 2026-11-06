@@ -2,6 +2,7 @@ import type { AlbumRequest } from '@playarr/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { Link } from 'react-router';
+import { IconButton } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { RequestButton } from '../components/Discover';
 import { ErrorState, Skeleton } from '../components/Section';
@@ -93,17 +94,16 @@ function RequestRow({ request: r }: { request: AlbumRequest }) {
       ) : (
         <div className="flex min-w-0 flex-1 items-center gap-4">{body}</div>
       )}
-      <RequestButton album={{ mbid: r.mbid, artistName: r.artistName, albumTitle: r.title }} availability={r.availability} size="sm" />
+      <RequestButton album={{ mbid: r.mbid, artistName: r.artistName, albumTitle: r.title }} availability={r.availability} />
       {canRemove && (
-        <button
-          type="button"
-          aria-label={`Remove ${r.title} from this list`}
+        <IconButton
+          label={`Remove ${r.title} from this list`}
           title="Remove from this list (doesn’t change Lidarr)"
           onClick={remove}
-          className="grid size-8 shrink-0 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
+          className="pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
         >
           <X className="size-4" />
-        </button>
+        </IconButton>
       )}
     </li>
   );

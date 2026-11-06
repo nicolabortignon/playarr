@@ -14,7 +14,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 | Text | `text-paper` (#ece6dc) | `.paper` (the system's label white) | titles, row titles, paragraphs |
 | Secondary text | `text-paper-dim` (#b8b0a3) | `.paperDim` (white 70 %, 85 % with Increase Contrast) | the artist under a title, descriptions |
 | Muted | `text-muted` (#857d71) | `.muted` (white 50 %, 65 % with Increase Contrast) | kickers, times, counts, hints |
-| Line | `border-line` (paper at 8 %) | `.line` (white at 8 %) | hairlines, a secondary button's outline |
+| Line | `border-line` (paper at 8 %) | `.line` (white at 8 %) | hairlines, panel borders, unselected choices |
 | Accent | `accent`, with `accent-ink` on it (from the cover playing) | `theme.accent` | the one primary action on a screen, the playing song, links |
 | Danger | `danger` (#f87171), with `ink-950` on it | `.danger` (system red) | errors, Delete |
 | Success | `success` (#34d399) | `.success` (system green) | downloaded, saved, connected |
@@ -43,6 +43,33 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 - **Radii:** covers and thumbnails 4 (`rounded-cover`, `Radius.cover`); panels and cards 12 (`rounded-panel`, `Radius.panel`); dialogs and sheets 16 (`rounded-dialog`, `Radius.dialog`); pills and round buttons are full (`rounded-full`, `Capsule`/`Circle`).
 - **Cover shadows:** a cover on a shelf or in a grid (`shadow-cover`, `.coverShadow(.shelf)`); a page's own cover and Now Playing's (`shadow-cover-hero`, `.coverShadow(.hero)`).
+- **Glow:** a large primary button (Play, Feeling lucky) glows with the accent (`shadow-glow`).
+
+## Controls
+
+- **Buttons are actions**, always capsules, labeled in sentence case in Schibsted Grotesk medium, with an optional leading icon. Web: `Button`, `IconButton`. iOS: `.buttonStyle(.pill(_:size:))`.
+  - **Primary:** filled with the accent, `accent-ink` label. The one main action on a screen: Play, Feeling lucky, Try again, Save.
+  - **Secondary:** a 1 px outline of paper at 15 % (35 % and a paper-at-5 % fill on hover or press), paper label. Shuffle, New mix, Back home, Cancel.
+  - **Ghost:** no outline, `paper-dim` label, a paper-at-5 % fill on hover or press. Lesser actions inside a panel.
+  - **Danger:** filled with `danger`, `ink-950` label. Delete, Remove account.
+- **Sizes:** large 48 (a page's action row, Feeling lucky, an empty page's action), regular 40 (dialogs, panels, error states), small 32 (inside a card or a row, such as Request). Icons are 20, 18 and 16. Whatever the visual size, the tap target is at least 44 (on the web on touch screens, through the `tap-target` utility; on iOS always).
+- **States:** disabled at 40 % opacity. Pending says its verb with an ellipsis ("Requesting…"), and is disabled meanwhile.
+- **Icon buttons** are round and always have an accessible name: 48 in an action row (outlined); otherwise 44 to tap on touch and 36 with a mouse on the web, 44 on iOS (plain).
+- **Choices** are the mono capitals pills (Albums' sort, Stats' ranges, Transitions, Keep up to, Motion). Web: `Choice`. Selected is filled with paper and an ink label; the rest are outlined with `line` and a `muted` label. A row of choices never wraps on a phone; it scrolls sideways.
+- **Statuses** that do nothing when tapped (Searching, Importing, 42 %, a format) are badges (`type-badge`), not buttons.
+- **Text fields:** web `TextField`. The label sits above, the field is 44 tall, radius 12, `ink-850` with a `line` border, and the accent ring when focused.
+
+### The action row
+
+Album, playlist, mix, Favorites and artist pages, on both apps, in this order:
+
+1. **Play:** primary, large. As wide as its widest label (Play, Pause, Resume), so playing or pausing moves nothing.
+2. **Shuffle:** secondary, large.
+3. **The page's own action**, when it has one (New mix; Request the rest of a partial album): secondary, large.
+4. **Download:** an outlined icon button whose ring fills as songs arrive and ends in a tick in `success`. Not on artist pages.
+5. **⋯:** an outlined icon button.
+
+The row never wraps. When it doesn't fit, Shuffle and then the page's action drop their words and become icon buttons, keeping their names; last, the gaps close up and Play drops its icon, but keeps its word.
 
 ## Icons
 

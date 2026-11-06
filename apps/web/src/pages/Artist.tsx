@@ -1,7 +1,9 @@
 import type { Album } from '@playarr/shared';
-import { Play, Shuffle } from 'lucide-react';
+import { ListEnd, ListPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useParams } from 'react-router';
+import { ActionRow, usePlayState } from '../components/ActionRow';
+import { Button } from '../components/Button';
 import { AlbumCard } from '../components/Cards';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
@@ -11,7 +13,8 @@ import { artistHero } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { useArtist, useDiscoverArtist } from '../lib/queries';
-import { playArtist } from '../player/actions';
+import { playArtist, queueArtist } from '../player/actions';
+import { usePlayer } from '../player/store';
 import { gridItem, GRID } from './Albums';
 
 function groupAlbums(albums: Album[]) {
@@ -66,14 +69,9 @@ function NotInLibrary({ artistMbid, owned }: { artistMbid: string; owned: Album[
       <section className="mb-14 max-w-md">
         <SectionHeader title="Not in your library" />
         <p className="text-sm text-paper-dim">Couldn’t load the rest of this artist’s albums from MusicBrainz right now.</p>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          disabled={isFetching}
-          className="mt-4 rounded-full border border-line px-4 py-2 font-mono text-[11px] tracking-wider text-paper uppercase transition hover:border-paper/30 disabled:opacity-50"
-        >
-          {isFetching ? 'Retrying…' : 'Try again'}
-        </button>
+        <Button size="small" className="mt-4" onClick={() => void refetch()} pending={isFetching} pendingLabel="Trying again…">
+          Try again
+        </Button>
       </section>
     );
   }
@@ -98,6 +96,8 @@ export function ArtistPage() {
   const { data: artist, error, isPending, refetch } = useArtist(id);
   const [logoFailed, setLogoFailed] = useState(false);
   const [bioOpen, setBioOpen] = useState(false);
+  const toggle = usePlayer((s) => s.toggle);
+  const playState = usePlayState(`/artists/${id}`);
 
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (isPending || !artist) {
@@ -152,25 +152,22 @@ export function ArtistPage() {
               {artist.name}
             </h1>
           )}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void playArtist(artist.id)}
-              className="inline-flex h-12 items-center gap-2 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-12px_var(--accent)] transition hover:brightness-110 active:scale-[0.98]"
-            >
-              <Play className="size-5 fill-current" /> Play
-            </button>
-            <button
-              type="button"
-              onClick={() => void playArtist(artist.id, { shuffle: true })}
-              className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/20 bg-ink-900/30 px-5 text-paper backdrop-blur transition hover:border-paper/40"
-            >
-              <Shuffle className="size-[18px]" /> Shuffle
-            </button>
-            <span className="ml-1 font-mono text-[12px] text-paper-dim/80">
-              {plural(artist.albumCount, 'album')} · {plural(artist.trackCount, 'track')}
-            </span>
-          </div>
+          <p className="mt-3 type-meta text-paper-dim">
+            {plural(artist.albumCount, 'album')} · {plural(artist.trackCount, 'track')}
+          </p>
+          <ActionRow
+            className="mt-6"
+            title={artist.name}
+            state={playState}
+            onPlay={() => (playState !== 'idle' ? toggle() : void playArtist(artist.id))}
+            onShuffle={() => void playArtist(artist.id, { shuffle: true })}
+            menu={{
+              items: [
+                { label: 'Play next', icon: ListPlus, onSelect: () => void queueArtist(artist.id, 'next') },
+                { label: 'Add to queue', icon: ListEnd, onSelect: () => void queueArtist(artist.id, 'end') },
+              ],
+            }}
+          />
         </div>
       </section>
 
@@ -196,13 +193,9 @@ export function ArtistPage() {
             <p className={cn('text-[15px] leading-relaxed whitespace-pre-line text-paper-dim/90', !bioOpen && 'line-clamp-5')}>
               {artist.overview}
             </p>
-            <button
-              type="button"
-              onClick={() => setBioOpen((o) => !o)}
-              className="mt-3 font-mono text-[11px] tracking-[0.15em] text-accent uppercase hover:underline"
-            >
+            <Button variant="ghost" size="small" onClick={() => setBioOpen((o) => !o)} aria-expanded={bioOpen} className="mt-3 -ml-3.5">
               {bioOpen ? 'Less' : 'Read more'}
-            </button>
+            </Button>
           </section>
         )}
       </div>

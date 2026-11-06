@@ -14,6 +14,7 @@ import { forgetMixMap } from '../player/mixMaps';
 import { currentTrack, useClock, usePlayer } from '../player/store';
 import { refreshUpcomingTransition } from '../player/transitions';
 import { BarTicks, beatGrid, EnergyNumbers, PhraseColumns, PhraseReadout, phrasesAndBars } from './EnergyStrip';
+import { Button } from './Button';
 import { Dialog } from './Dialog';
 import type { MenuItem } from './Menu';
 
@@ -269,16 +270,11 @@ function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: Cu
       )}
 
       <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          disabled={!anySet || save.isPending}
-          onClick={reset}
-          className="h-11 rounded-lg px-4 text-paper-dim transition hover:bg-paper/[0.06] hover:text-paper disabled:opacity-40"
-        >
+        <Button variant="ghost" disabled={!anySet || save.isPending} onClick={reset}>
           Reset
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="primary"
           disabled={!changed || save.isPending}
           onClick={() =>
             save.mutate(points, {
@@ -288,10 +284,9 @@ function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: Cu
               },
             })
           }
-          className="h-11 rounded-lg bg-accent px-5 font-medium text-accent-ink transition hover:brightness-110 disabled:opacity-40"
         >
           Save
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -308,14 +303,9 @@ function PointCard({ label, hint, time, byHand, onPlay }: { label: string; hint:
         <div className="text-xl text-paper tabular">{formatTime(time)}</div>
         <div className="truncate text-[12px] text-muted">{hint}</div>
       </div>
-      <button
-        type="button"
-        onClick={onPlay}
-        className="flex h-11 shrink-0 items-center gap-2 rounded-full border border-line px-3 text-[13px] text-paper-dim transition hover:bg-paper/[0.06] hover:text-paper"
-      >
-        <Play className="size-3.5 fill-current" aria-hidden />
+      <Button size="small" icon={<Play className="fill-current" />} onClick={onPlay}>
         Play from {label.toLowerCase()}
-      </button>
+      </Button>
     </div>
   );
 }

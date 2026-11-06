@@ -6,8 +6,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 're
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { useReview, useReviewAction } from '../lib/queries';
+import { Button } from './Button';
 import { Dialog } from './Dialog';
 import { SlowLookup } from './SlowLookup';
+import { fieldClass, TextField } from './TextField';
 
 /** What happened to the last album the user decided on, shown above the next one. */
 type Saved = { id: number; text: string; state: 'saving' | 'done' | 'error'; error?: string };
@@ -52,9 +54,9 @@ export function ReviewDialog({ sourceId, onClose }: { sourceId: number | null; o
       {error && !groups ? (
         <div className="space-y-3 p-5" role="alert">
           <p className="text-[15px] text-danger">Couldn’t load the albums to review: {(error as Error).message}</p>
-          <button type="button" onClick={() => void refetch()} disabled={isFetching} className={SECONDARY}>
-            {isFetching && <Loader2 className="size-4 animate-spin" />} Try again
-          </button>
+          <Button variant="primary" onClick={() => void refetch()} pending={isFetching}>
+            Try again
+          </Button>
         </div>
       ) : !groups ? (
         <div className="space-y-3 p-5" aria-busy="true" aria-label="Loading albums to review">
@@ -67,9 +69,9 @@ export function ReviewDialog({ sourceId, onClose }: { sourceId: number | null; o
         <div className="space-y-4 p-5">
           <p className="text-[15px] text-paper-dim">Nothing left to review.</p>
           <div className="flex justify-end">
-            <button type="button" onClick={onClose} className={PRIMARY}>
+            <Button variant="primary" onClick={onClose}>
               Done
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -78,13 +80,6 @@ export function ReviewDialog({ sourceId, onClose }: { sourceId: number | null; o
     </Dialog>
   );
 }
-
-const PRIMARY =
-  'inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition disabled:opacity-50';
-const FIELD =
-  'h-10 w-full min-w-0 rounded-lg border border-line bg-ink-900 px-3 text-[14px] text-paper outline-none focus:border-accent';
-const SECONDARY =
-  'inline-flex h-10 items-center gap-2 rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5 disabled:opacity-50';
 
 function SavedNote({ saved }: { saved: Saved | null }) {
   if (!saved) return null;
@@ -248,13 +243,12 @@ function ReviewGroupView({
       )}
 
       <form onSubmit={search} className="space-y-2">
-        <div className="flex flex-wrap items-end gap-2">
-          <input value={artist} disabled={searching} onChange={(e) => setArtist(e.target.value)} aria-label="Artist" placeholder="Artist" className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-ink-900 px-3 text-[14px] text-paper outline-none focus:border-accent disabled:opacity-60" />
-          <input value={album} disabled={searching} onChange={(e) => setAlbum(e.target.value)} aria-label="Album" placeholder="Album" className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-ink-900 px-3 text-[14px] text-paper outline-none focus:border-accent disabled:opacity-60" />
-          <button type="submit" disabled={searching || !artist.trim() || !album.trim()} className={SECONDARY}>
-            {searching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
-            {searching ? 'Searching…' : 'Search'}
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <TextField label="Artist" hideLabel value={artist} disabled={searching} onChange={(e) => setArtist(e.target.value)} placeholder="Artist" className="min-w-0 flex-1" />
+          <TextField label="Album" hideLabel value={album} disabled={searching} onChange={(e) => setAlbum(e.target.value)} placeholder="Album" className="min-w-0 flex-1" />
+          <Button type="submit" icon={<Search />} disabled={!artist.trim() || !album.trim()} pending={searching} pendingLabel="Searching…">
+            Search
+          </Button>
         </div>
         <SlowLookup active={searching} what="albums with these names" />
       </form>
@@ -265,17 +259,11 @@ function ReviewGroupView({
             Used instead of what the files say, for this album only. The files themselves aren’t changed.
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase">Artist</span>
-              <input value={artist} onChange={(e) => setArtist(e.target.value)} className={FIELD} />
-            </label>
-            <label className="space-y-1">
-              <span className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase">Album</span>
-              <input value={album} onChange={(e) => setAlbum(e.target.value)} className={FIELD} />
-            </label>
+            <TextField label="Artist" value={artist} onChange={(e) => setArtist(e.target.value)} />
+            <TextField label="Album" value={album} onChange={(e) => setAlbum(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <span className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase">Songs</span>
+            <span className="block type-small text-muted">Songs</span>
             {group.files.map((f) => (
               <label key={f.rel} className="flex items-center gap-2">
                 <span className="w-7 shrink-0 text-right font-mono text-[12px] text-muted tabular">{f.trackNumber || ''}</span>
@@ -283,47 +271,40 @@ function ReviewGroupView({
                   value={titles[f.rel] ?? ''}
                   onChange={(e) => setTitles((t) => ({ ...t, [f.rel]: e.target.value }))}
                   aria-label={`Title of ${f.rel.split('/').pop()}`}
-                  className={FIELD}
+                  className={fieldClass}
                 />
               </label>
             ))}
           </div>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setFixing(false)} className={SECONDARY}>
-              Cancel
-            </button>
-            <button type="submit" disabled={!canRename} className={PRIMARY}>
-              <Check className="size-4" /> Save names
-            </button>
+            <Button onClick={() => setFixing(false)}>Cancel</Button>
+            <Button type="submit" variant="primary" icon={<Check />} disabled={!canRename}>
+              Save names
+            </Button>
           </div>
         </form>
       )}
 
       <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4">
         {!fixing && (
-          <button type="button" disabled={searching} onClick={() => setFixing(true)} className={cn(SECONDARY, 'mr-auto')}>
-            <PencilLine className="size-4" /> Fix names
-          </button>
+          <Button icon={<PencilLine />} disabled={searching} onClick={() => setFixing(true)} className="mr-auto">
+            Fix names
+          </Button>
         )}
-        <button
-          type="button"
-          disabled={searching}
-          onClick={() => decide(group, { groupKey: group.groupKey, releaseId: null }, `${yourAlbum} left unmatched`)}
-          className={SECONDARY}
-        >
+        <Button disabled={searching} onClick={() => decide(group, { groupKey: group.groupKey, releaseId: null }, `${yourAlbum} left unmatched`)}>
           Leave unmatched
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="primary"
+          icon={<Check />}
           disabled={searching || !candidate}
           onClick={() =>
             candidate &&
             decide(group, { groupKey: group.groupKey, releaseId: candidate.releaseId }, `${candidate.title} · ${candidate.artistName}`)
           }
-          className={PRIMARY}
         >
-          <Check className="size-4" /> Use this album
-        </button>
+          Use this album
+        </Button>
       </div>
     </motion.div>
   );

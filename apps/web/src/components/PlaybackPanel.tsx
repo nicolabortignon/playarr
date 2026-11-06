@@ -4,7 +4,8 @@ import { CROSSFADES, usePrefs, type Transitions } from '../lib/prefs';
 import { useLocked } from '../lib/queries';
 import { canSetVolume } from '../player/decks';
 import { OfflineStorage } from './OfflineStorage';
-import { AwayNotice, PillGroup, SettingsSection, Switch } from './SettingsControls';
+import { Choice } from './Choice';
+import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
 
 /** What player/useKeyboardShortcuts.ts does. */
 const SHORTCUTS: { keys: string[][]; action: string }[] = [
@@ -85,11 +86,11 @@ export function PlaybackPanel() {
           />
           <div className="py-3">
             <div className="mb-3 text-[15px] text-paper">Transitions</div>
-            <PillGroup label="Transitions" options={transitionOptions} value={shown} onChange={setTransitions} disabled={locked} />
+            <Choice label="Transitions" options={transitionOptions} value={shown} onChange={setTransitions} disabled={locked} />
             {shown === 'crossfade' && (
               <>
                 <p className="mt-3 mb-3 text-[13px] text-muted">Fades each song into the next. Never between songs of an album played in order.</p>
-                <PillGroup label="Crossfade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} disabled={locked} />
+                <Choice label="Crossfade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} disabled={locked} />
               </>
             )}
             {shown === 'dj' && (
@@ -98,7 +99,7 @@ export function PlaybackPanel() {
                   Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on. Songs that can’t be
                   mixed on the beat fade into each other for this long:
                 </p>
-                <PillGroup label="Fade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} disabled={locked} />
+                <Choice label="Fade length" options={CROSSFADE_LENGTHS} value={crossfade} onChange={setCrossfade} disabled={locked} />
                 <p className="mt-3 text-[13px] text-muted">
                   How many songs are ready for DJ mix, and analysing the rest now:{' '}
                   <Link to="/settings/analysis" className="text-paper-dim underline underline-offset-2 hover:text-paper">

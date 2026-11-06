@@ -1,21 +1,16 @@
 import type { Account, AccountRole, DeviceSetting, ListedAccount, SetupCode } from '@playarr/shared';
 import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash2, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { signOut } from '../lib/accounts';
 import { api, type AccountInput } from '../lib/api';
-import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { useAccountAction, useAccountList, useAccountSessions, useMe, useServerInfo, useSources } from '../lib/queries';
 import { toast } from '../lib/toast';
+import { Button, IconButton } from './Button';
 import { Dialog } from './Dialog';
 import { SettingsSection } from './SettingsControls';
-
-const INPUT =
-  'h-10 w-full rounded-lg border border-line bg-ink-900 px-3 text-[15px] text-paper outline-none transition focus:border-accent';
-const BUTTON =
-  'inline-flex h-10 items-center gap-2 rounded-full border border-line px-4 text-[14px] text-paper transition hover:bg-paper/5 disabled:opacity-40';
-const ICON = 'grid size-9 shrink-0 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper';
+import { TextField } from './TextField';
 const LOADING = <div aria-busy="true" className="h-40 max-w-prose animate-pulse rounded-lg bg-paper/5" />;
 
 /** Settings → Accounts: who signs in to this server and what each may hear and change; your name and devices. */
@@ -40,9 +35,7 @@ function ClaimServer() {
       title="Set up this server"
       description="Nobody has a password here yet, so anyone on your home network can listen and change settings. Choose the owner’s username and password to turn sign-in on; then add an account for everyone else."
     >
-      <Link to="/setup" className={BUTTON}>
-        Set up the owner’s account
-      </Link>
+      <Button to="/setup">Set up the owner’s account</Button>
     </SettingsSection>
   );
 }
@@ -57,17 +50,17 @@ function You({ me }: { me: Account }) {
   };
   return (
     <SettingsSection title="You" description={`Signed in as ${me.username}${me.role === 'admin' ? ', an admin' : ''}.`}>
-      <form onSubmit={save} className="flex max-w-md gap-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Your name" maxLength={40} className={INPUT} />
-        <button type="submit" disabled={!name.trim() || name.trim() === me.name || rename.isPending} className={cn(BUTTON, 'shrink-0')}>
+      <form onSubmit={save} className="flex max-w-md items-center gap-2">
+        <TextField label="Your name" hideLabel value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className="min-w-0 flex-1" />
+        <Button type="submit" variant="primary" disabled={!name.trim() || name.trim() === me.name} pending={rename.isPending}>
           Save
-        </button>
+        </Button>
       </form>
       <h3 className="mt-6 mb-1 text-[13px] text-muted">Signed in on</h3>
       <Devices accountId={me.id} />
-      <button type="button" onClick={() => void signOut().then(() => navigate('/sign-in', { replace: true }))} className={cn(BUTTON, 'mt-5')}>
-        <LogOut className="size-4" /> Sign out on this device
-      </button>
+      <Button icon={<LogOut />} onClick={() => void signOut().then(() => navigate('/sign-in', { replace: true }))} className="mt-5">
+        Sign out on this device
+      </Button>
     </SettingsSection>
   );
 }
@@ -90,9 +83,9 @@ function Devices({ accountId }: { accountId: number }) {
             <span className="block text-[12px] text-muted">Last used {new Date(s.lastSeenAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
           </span>
           {!s.current && (
-            <button type="button" aria-label={`Sign out ${s.device}`} onClick={() => end.mutate(s.id)} className={ICON}>
+            <IconButton label={`Sign out ${s.device}`} onClick={() => end.mutate(s.id)}>
               <LogOut className="size-4" />
-            </button>
+            </IconButton>
           )}
         </li>
       ))}
@@ -163,24 +156,24 @@ function Everyone({ me }: { me: Account }) {
               <span className="block truncate text-[12px] text-muted">{summary(a, sourceNames)}</span>
               <span className="block truncate text-[12px] text-muted">{activity(a)}</span>
             </span>
-            <button type="button" aria-label={`Edit ${a.name}`} onClick={() => setEditing(a)} className={ICON}>
+            <IconButton label={`Edit ${a.name}`} onClick={() => setEditing(a)}>
               <Pencil className="size-4" />
-            </button>
-            <button type="button" aria-label={`Devices of ${a.name}`} onClick={() => setDevices(a)} className={ICON}>
+            </IconButton>
+            <IconButton label={`Devices of ${a.name}`} onClick={() => setDevices(a)}>
               <Smartphone className="size-4" />
-            </button>
-            <button type="button" aria-label={`New setup code for ${a.name}`} onClick={() => reset.mutate(a)} className={ICON}>
+            </IconButton>
+            <IconButton label={`New setup code for ${a.name}`} onClick={() => reset.mutate(a)}>
               <KeyRound className="size-4" />
-            </button>
-            <button type="button" aria-label={`Remove ${a.name}`} onClick={() => setRemoving(a)} className={ICON}>
+            </IconButton>
+            <IconButton label={`Remove ${a.name}`} onClick={() => setRemoving(a)}>
               <Trash2 className="size-4" />
-            </button>
+            </IconButton>
           </li>
         ))}
       </ul>
-      <button type="button" onClick={() => setAdding(true)} className={cn(BUTTON, 'mt-5')}>
-        <UserPlus className="size-4" /> Add account
-      </button>
+      <Button icon={<UserPlus />} onClick={() => setAdding(true)} className="mt-5">
+        Add account
+      </Button>
 
       <Dialog open={adding} onClose={() => setAdding(false)} title="Add account">
         {adding && <AccountForm submitLabel="Add" busy={create.isPending} onSubmit={(input) => create.mutate(input)} />}
@@ -202,17 +195,10 @@ function Everyone({ me }: { me: Account }) {
         <div className="space-y-5 p-5">
           <p className="text-[15px] text-paper-dim">Their listening history, mixes, favorites and playlists are deleted, and every device they’re signed in on is signed out.</p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setRemoving(null)} className={BUTTON}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={remove.isPending}
-              onClick={() => removing && remove.mutate(removing)}
-              className="inline-flex h-10 items-center rounded-full bg-danger/90 px-5 text-[14px] font-medium text-ink-950 transition hover:bg-danger disabled:opacity-40"
-            >
+            <Button onClick={() => setRemoving(null)}>Cancel</Button>
+            <Button variant="danger" pending={remove.isPending} pendingLabel="Removing…" onClick={() => removing && remove.mutate(removing)}>
               Remove
-            </button>
+            </Button>
           </div>
         </div>
       </Dialog>
@@ -239,14 +225,17 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
   const check = 'size-4 accent-[var(--accent)]';
   return (
     <form onSubmit={submit} className="space-y-5 p-5">
-      <label className="block text-[13px] text-muted">
-        Name
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required className={cn(INPUT, 'mt-1')} />
-      </label>
-      <label className="block text-[13px] text-muted">
-        Username
-        <input value={username} onChange={(e) => setUsername(e.target.value)} maxLength={32} required autoCapitalize="none" autoCorrect="off" spellCheck={false} className={cn(INPUT, 'mt-1')} />
-      </label>
+      <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />
+      <TextField
+        label="Username"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        maxLength={32}
+        required
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+      />
       <fieldset className="space-y-2">
         <legend className="mb-1 text-[13px] text-muted">Role</legend>
         <label className="flex items-center gap-2 text-[15px] text-paper">
@@ -295,9 +284,9 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
         )}
       </fieldset>
       <div className="flex justify-end">
-        <button type="submit" disabled={busy || !name.trim() || !username.trim()} className="inline-flex h-10 items-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110 disabled:opacity-40">
+        <Button type="submit" variant="primary" disabled={!name.trim() || !username.trim()} pending={busy}>
           {submitLabel}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -317,11 +306,11 @@ function SetupCodeView({ setup }: { setup: SetupCode }) {
         {new Date(setup.expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}.
       </p>
       <p className="font-mono text-3xl tracking-[0.3em] text-paper">{setup.code}</p>
-      <div className="flex gap-2">
-        <input readOnly value={setup.link} aria-label="Setup link" onFocus={(e) => e.target.select()} className={INPUT} />
-        <button type="button" onClick={copy} className={cn(BUTTON, 'shrink-0')}>
-          <Copy className="size-4" /> Copy
-        </button>
+      <div className="flex items-center gap-2">
+        <TextField label="Setup link" hideLabel readOnly value={setup.link} onFocus={(e) => e.target.select()} className="min-w-0 flex-1" />
+        <Button icon={<Copy />} onClick={copy}>
+          Copy
+        </Button>
       </div>
     </div>
   );

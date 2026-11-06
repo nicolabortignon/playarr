@@ -47,7 +47,7 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
             </div>
           </Link>
           {/* Only some of it is here: the rest can be asked for without opening the album. */}
-          {canRequestRest(album) && <RequestRest album={album} size="sm" className="mt-2" />}
+          {canRequestRest(album) && <RequestRest album={album} className="mt-2" />}
           {/* The play button sits on the cover (a square as wide as the card), whatever is shown below it. */}
           <div className="pointer-events-none absolute inset-x-0 top-0 aspect-square">
             <button

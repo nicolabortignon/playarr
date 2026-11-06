@@ -4,6 +4,7 @@ import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
+import { Button } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { Equalizer } from '../components/Equalizer';
 import { FavoriteButton } from '../components/FavoriteButton';
@@ -44,13 +45,9 @@ export function QueuePage() {
   return (
     <div className="max-w-4xl px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Queue">
-        <button
-          type="button"
-          onClick={() => openPicker([track, ...upcoming])}
-          className="inline-flex h-9 items-center gap-2 rounded-full border border-line px-4 font-mono text-[11px] tracking-wider text-paper-dim uppercase transition hover:border-paper/30 hover:text-paper"
-        >
-          <ListPlus className="size-4" /> Save as playlist
-        </button>
+        <Button icon={<ListPlus />} onClick={() => openPicker([track, ...upcoming])}>
+          Save as playlist
+        </Button>
       </PageTitle>
 
       <section className="mb-12">
@@ -91,9 +88,9 @@ export function QueuePage() {
             Up next{upcoming.length > 0 && ` · ${plural(upcoming.length, 'track')} · ${formatDuration(total)}`}
           </div>
           {upcoming.length > 0 && (
-            <button type="button" onClick={() => clearWithUndo(upcomingIds)} className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase hover:text-paper">
+            <Button variant="ghost" size="small" onClick={() => clearWithUndo(upcomingIds)}>
               Clear
-            </button>
+            </Button>
           )}
         </div>
         {upcoming.length === 0 ? (

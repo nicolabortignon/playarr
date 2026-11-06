@@ -1,11 +1,12 @@
 import type { ListeningStats, StatsRange } from '@playarr/shared';
 import { Play } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router';
+import { Button } from '../components/Button';
 import { AlbumCard } from '../components/Cards';
 import { ColumnChart } from '../components/ColumnChart';
 import { Cover } from '../components/Cover';
 import { ErrorState, Skeleton } from '../components/Section';
-import { PillGroup } from '../components/SettingsControls';
+import { Choice } from '../components/Choice';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
 import { useListeningStats } from '../lib/queries';
@@ -54,7 +55,14 @@ export function ListeningStatsView() {
     <div>
       {isYear(range) && <h2 className="mb-6 font-display text-4xl text-paper md:text-5xl">Your {range}</h2>}
       <div className="mb-10">
-        <PillGroup label="Period" options={options} value={range} onChange={(r) => setParams({ range: r }, { replace: true })} />
+        <Choice
+          label="Period"
+          options={options}
+          value={range}
+          onChange={(r) => setParams({ range: r }, { replace: true })}
+          // On a phone the row scrolls from one edge of the screen to the other.
+          className="-mx-5 px-5 md:-mx-1.5 md:px-1.5"
+        />
       </div>
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
@@ -144,8 +152,9 @@ function Report({ stats }: { stats: ListeningStats }) {
       <section>
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <h2 className="font-display text-3xl text-paper">Top songs</h2>
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            icon={<Play className="fill-current" />}
             onClick={() =>
               playTracks(
                 stats.topTracks.map((t) => t.track),
@@ -153,10 +162,9 @@ function Report({ stats }: { stats: ListeningStats }) {
                 { shuffle: false, source: { label: year ? `Your top songs of ${stats.range}` : 'Your top songs', href: `${STATS_PATH}?range=${stats.range}` } },
               )
             }
-            className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110"
           >
-            <Play className="size-4 fill-current" /> Play them
-          </button>
+            Play them
+          </Button>
         </div>
         <ol className="grid gap-x-8 gap-y-1 md:grid-cols-2">
           {stats.topTracks.map(({ track, plays }, i) => (

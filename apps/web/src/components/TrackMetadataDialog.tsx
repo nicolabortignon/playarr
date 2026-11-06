@@ -1,11 +1,12 @@
 import type { AudioFormat, FileTags, TrackCopyMetadata, TrackMetadata } from '@playarr/shared';
-import { Check, Copy, ExternalLink, Loader2, Play, RefreshCw } from 'lucide-react';
+import { Check, Copy, ExternalLink, Play, RefreshCw } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { useRematchFile, useTrackMetadata } from '../lib/queries';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
+import { Button } from './Button';
 import { Dialog } from './Dialog';
 import { SlowLookup } from './SlowLookup';
 
@@ -182,15 +183,9 @@ function RematchButton({ copy: c }: { copy: TrackCopyMetadata }) {
   };
   return (
     <div className="mt-3 space-y-2">
-      <button
-        type="button"
-        onClick={run}
-        disabled={rematch.isPending}
-        className="inline-flex h-8 items-center gap-2 rounded-full border border-line px-3.5 text-[13px] text-paper transition hover:bg-paper/5 disabled:opacity-60"
-      >
-        {rematch.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-        {rematch.isPending ? (lidarr ? 'Asking Lidarr…' : 'Matching…') : lidarr ? 'Refresh in Lidarr' : 'Match again on MusicBrainz'}
-      </button>
+      <Button size="small" icon={<RefreshCw />} onClick={run} pending={rematch.isPending} pendingLabel={lidarr ? 'Asking Lidarr…' : 'Matching…'}>
+        {lidarr ? 'Refresh in Lidarr' : 'Match again on MusicBrainz'}
+      </Button>
       {!lidarr && <SlowLookup active={rematch.isPending} what="this album" />}
       {outcome && (
         <p role="status" className={cn('text-[13px]', outcome.error ? 'text-danger' : 'text-paper-dim')}>

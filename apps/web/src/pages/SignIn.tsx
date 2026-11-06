@@ -1,19 +1,14 @@
-import { useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Button } from '../components/Button';
 import { Wordmark } from '../components/Nav';
+import { TextField } from '../components/TextField';
 import { deviceName, signedIn, switchTo, useAccounts } from '../lib/accounts';
 import type { SignInResponse } from '@playarr/shared';
 import { api, ApiError } from '../lib/api';
 import { elsewhere, publicAddress, signInThere } from '../lib/publicAddress';
 import { useServerInfo } from '../lib/queries';
 import { queryClient } from '../lib/queryClient';
-
-const INPUT =
-  'mt-1 h-11 w-full rounded-lg border border-line bg-ink-900 px-3 text-[15px] text-paper outline-none transition placeholder:text-muted focus:border-accent';
-const PRIMARY =
-  'inline-flex h-11 w-full items-center justify-center rounded-full bg-accent px-5 font-medium text-accent-ink transition hover:brightness-110 disabled:opacity-40';
-const SECONDARY =
-  'inline-flex h-11 w-full items-center justify-center rounded-full border border-line px-5 text-[15px] text-paper transition hover:bg-paper/5 disabled:opacity-40';
 
 /** Where to go after signing in: a page of this app, never another site. */
 const safeNext = (raw: string | null) => (raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : '/');
@@ -28,15 +23,6 @@ function AuthLayout({ title, subtitle, children }: { title: string; subtitle?: s
         <div className="mt-8">{children}</div>
       </div>
     </main>
-  );
-}
-
-function Field({ label, ...input }: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <label className="block text-[13px] text-muted">
-      {label}
-      <input {...input} className={INPUT} />
-    </label>
   );
 }
 
@@ -117,9 +103,9 @@ export function SignInPage() {
         <p className="text-[15px] text-paper-dim">
           Nobody has set up this server yet. Choose the owner’s username and password, from your home network, to turn sign-in on.
         </p>
-        <Link to="/setup" className={`${PRIMARY} mt-6`}>
+        <Button to="/setup" variant="primary" size="large" className="mt-6 w-full">
           Set up the owner’s account
-        </Link>
+        </Button>
       </AuthLayout>
     );
   }
@@ -136,9 +122,9 @@ export function SignInPage() {
       {!adding && stored.length > 0 && (
         <div className="mb-8 space-y-2">
           {stored.map((a) => (
-            <button
+            <Button
               key={a.accountId}
-              type="button"
+              size="large"
               disabled={busy}
               onClick={() =>
                 void run(async () => {
@@ -146,21 +132,21 @@ export function SignInPage() {
                   done();
                 })
               }
-              className={SECONDARY}
+              className="w-full"
             >
               Continue as {a.name}
-            </button>
+            </Button>
           ))}
           <p className="pt-2 text-center text-[13px] text-muted">or sign in to another account</p>
         </div>
       )}
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
-        <Field label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
+        <TextField label="Username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
+        <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
         <Problem error={error} />
-        <button type="submit" disabled={busy || !username.trim() || !password} className={PRIMARY}>
+        <Button type="submit" variant="primary" size="large" disabled={busy || !username.trim() || !password} className="w-full">
           Sign in
-        </button>
+        </Button>
       </form>
       <p className="mt-6 text-[13px] text-muted">
         Got a setup code?{' '}
@@ -194,13 +180,13 @@ export function RedeemPage() {
   return (
     <AuthLayout title="Choose your password" subtitle={server?.name}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Setup code" value={code} onChange={(e) => setCode(e.target.value)} autoCapitalize="characters" autoComplete="one-time-code" spellCheck={false} required />
-        <Field label="New password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />
-        <Field label="Repeat it" type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" required />
+        <TextField label="Setup code" value={code} onChange={(e) => setCode(e.target.value)} autoCapitalize="characters" autoComplete="one-time-code" spellCheck={false} required />
+        <TextField label="New password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />
+        <TextField label="Repeat it" type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" required />
         <Problem error={error} />
-        <button type="submit" disabled={busy || !code.trim() || !password} className={PRIMARY}>
+        <Button type="submit" variant="primary" size="large" disabled={busy || !code.trim() || !password} className="w-full">
           Choose password
-        </button>
+        </Button>
       </form>
       <p className="mt-6 text-[13px] text-muted">
         At least 8 characters. Already chosen one?{' '}
@@ -229,9 +215,9 @@ export function SetupPage() {
     return (
       <AuthLayout title="Already set up" subtitle={server.name}>
         <p className="text-[15px] text-paper-dim">This server has an owner. Sign in, or ask an admin for a setup code.</p>
-        <Link to="/sign-in" className={`${PRIMARY} mt-6`}>
+        <Button to="/sign-in" variant="primary" size="large" className="mt-6 w-full">
           Sign in
-        </Link>
+        </Button>
       </AuthLayout>
     );
   }
@@ -253,14 +239,14 @@ export function SetupPage() {
         You’re the owner: your listening so far stays yours, and you can add an account for everyone else afterwards.
       </p>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Your name" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />
-        <Field label="Username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} required />
-        <Field label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />
-        <Field label="Repeat it" type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" required />
+        <TextField label="Your name" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />
+        <TextField label="Username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={32} required />
+        <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />
+        <TextField label="Repeat it" type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" required />
         <Problem error={error} />
-        <button type="submit" disabled={busy || !name.trim() || !username.trim() || !password} className={PRIMARY}>
+        <Button type="submit" variant="primary" size="large" disabled={busy || !name.trim() || !username.trim() || !password} className="w-full">
           Set up Playarr
-        </button>
+        </Button>
       </form>
     </AuthLayout>
   );

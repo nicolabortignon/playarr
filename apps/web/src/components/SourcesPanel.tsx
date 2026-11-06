@@ -21,17 +21,13 @@ import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural, formatWait } from '../lib/format';
 import { useFolderAccess, useFolderListing, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
+import { Button, IconButton } from './Button';
+import { Choice } from './Choice';
 import { Dialog } from './Dialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { ReviewDialog } from './ReviewDialog';
-import { AwayNotice, Field } from './SettingsControls';
-
-const INPUT =
-  'h-11 w-full rounded-lg border border-line bg-ink-900 px-3 text-[15px] text-paper outline-none transition focus:border-accent';
-const PRIMARY =
-  'inline-flex h-10 items-center justify-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition disabled:opacity-50';
-const SECONDARY =
-  'inline-flex h-10 items-center justify-center gap-2 rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5 disabled:opacity-50';
+import { AwayNotice } from './SettingsControls';
+import { TextField } from './TextField';
 
 /** Settings → Sources: where the library comes from, in priority order. */
 export function SourcesPanel() {
@@ -83,9 +79,9 @@ export function SourcesPanel() {
       </Reorder.Group>
 
       {canEdit && (
-        <button type="button" onClick={() => setEditing('new')} className={cn(SECONDARY, 'mt-6')}>
-          <Plus className="size-4" /> Add source
-        </button>
+        <Button icon={<Plus />} onClick={() => setEditing('new')} className="mt-6">
+          Add source
+        </Button>
       )}
 
       {canEdit && data.sources.some((s) => s.kind === 'folder') && <MatchingSection />}
@@ -165,24 +161,24 @@ function SourceRow({
       </div>
       {canEdit && (
         <div className="flex items-center gap-1">
-          <IconButton label="Rescan" onClick={() => actions.rescan.mutate(s.id)} disabled={s.syncing}>
+          <IconButton label="Rescan" title="Rescan" onClick={() => actions.rescan.mutate(s.id)} disabled={s.syncing}>
             {s.syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           </IconButton>
           {s.kind === 'folder' && (
-            <IconButton label="Match again" onClick={() => actions.rematch.mutate(s.id)} disabled={actions.rematch.isPending}>
+            <IconButton label="Match again" title="Match again" onClick={() => actions.rematch.mutate(s.id)} disabled={actions.rematch.isPending}>
               <RotateCw className="size-4" />
             </IconButton>
           )}
           {s.kind === 'folder' && (
             // Shown even when the folder isn't writable: the dialog explains why nothing can move.
-            <IconButton label="Organize files" onClick={onOrganize}>
+            <IconButton label="Organize files" title="Organize files" onClick={onOrganize}>
               <FolderTree className="size-4" />
             </IconButton>
           )}
-          <IconButton label="Edit" onClick={onEdit}>
+          <IconButton label="Edit" title="Edit" onClick={onEdit}>
             <Pencil className="size-4" />
           </IconButton>
-          <IconButton label="Remove" onClick={remove}>
+          <IconButton label="Remove" title="Remove" onClick={remove}>
             <Trash2 className="size-4" />
           </IconButton>
         </div>
@@ -302,20 +298,22 @@ function MatchingSection() {
               },
             });
           }}
-          className="flex gap-2"
+          className="flex items-center gap-2"
         >
-          <input
+          <TextField
+            label="AcoustID key"
+            hideLabel
+            mono
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            aria-label="AcoustID key"
             placeholder="AcoustID application key"
             autoComplete="off"
             spellCheck={false}
-            className={cn(INPUT, 'font-mono')}
+            className="min-w-0 flex-1"
           />
-          <button type="submit" disabled={!key || save.isPending} className={PRIMARY}>
+          <Button type="submit" variant="primary" disabled={!key} pending={save.isPending}>
             Save
-          </button>
+          </Button>
         </form>
       ) : (
         <div className="flex items-center gap-3 text-[14px]">
@@ -326,31 +324,6 @@ function MatchingSection() {
         </div>
       )}
     </section>
-  );
-}
-
-function IconButton({
-  label,
-  onClick,
-  disabled,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      disabled={disabled}
-      className="grid size-9 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper disabled:opacity-50"
-    >
-      {children}
-    </button>
   );
 }
 
@@ -454,39 +427,23 @@ function LidarrForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
 
   return (
     <form onSubmit={save} className="space-y-4 p-5">
-      <Field label="Name">
-        <input value={name} onChange={(e) => setName(e.target.value)} className={INPUT} required maxLength={80} />
-      </Field>
-      <Field label="URL">
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="http://192.168.1.10:8686"
-          className={INPUT}
-          required
+      <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} />
+      <TextField label="URL" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.1.10:8686" required />
+      {replacingKey ? (
+        <TextField
+          label="API key"
+          hint="In Lidarr: Settings → General → Security"
+          mono
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          required={!keySaved}
+          placeholder={keySaved ? 'New API key' : undefined}
         />
-      </Field>
-      <Field label="API key" hint="In Lidarr: Settings → General → Security">
-        {replacingKey ? (
-          <input
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            className={cn(INPUT, 'font-mono')}
-            autoComplete="off"
-            spellCheck={false}
-            required={!keySaved}
-            placeholder={keySaved ? 'New API key' : undefined}
-          />
-        ) : (
-          <div className="flex h-11 items-center gap-3">
-            <span className="font-mono text-[13px] text-paper-dim">Saved</span>
-            <button type="button" onClick={() => setReplacingKey(true)} className="text-[13px] text-accent hover:underline">
-              Replace
-            </button>
-          </div>
-        )}
-      </Field>
+      ) : (
+        <Saved label="API key" hint="In Lidarr: Settings → General → Security" onReplace={() => setReplacingKey(true)} />
+      )}
       {source && (
         <label className="flex items-center gap-2 text-sm text-paper-dim">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Use this source
@@ -504,12 +461,12 @@ function LidarrForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
         </p>
       )}
       <div className="flex justify-end gap-2 pt-2">
-        <button type="button" onClick={runTest} disabled={test === 'running' || !url} className={SECONDARY}>
+        <Button onClick={runTest} disabled={!url} pending={test === 'running'} pendingLabel="Testing…">
           Test
-        </button>
-        <button type="submit" disabled={pending} className={PRIMARY}>
-          {pending ? 'Saving…' : 'Save'}
-        </button>
+        </Button>
+        <Button type="submit" variant="primary" pending={pending} pendingLabel="Saving…">
+          Save
+        </Button>
       </div>
     </form>
   );
@@ -603,104 +560,88 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
 
   return (
     <form onSubmit={save} className="space-y-4 p-5">
-      <div role="radiogroup" aria-label="Where the folder is" className="flex gap-6 border-b border-line">
-        {ACCESS.map((a) => {
+      <Choice
+        label="Where the folder is"
+        options={ACCESS.map((a) => {
           const off = a.id === 'smb' && smbOff && savedAccess !== 'smb';
-          return (
-            <button
-              key={a.id}
-              type="button"
-              role="radio"
-              aria-checked={access === a.id}
-              disabled={off}
-              title={off ? SMB_OFF : undefined}
-              onClick={() => chooseAccess(a.id)}
-              className={cn(
-                '-mb-px border-b-2 pb-2.5 text-[15px] whitespace-nowrap transition-colors disabled:opacity-40 disabled:hover:text-paper-dim/70',
-                access === a.id ? 'border-accent text-paper' : 'border-transparent text-paper-dim/70 hover:text-paper',
-              )}
-            >
-              {a.label}
-            </button>
-          );
+          return { value: a.id, label: a.label, disabled: off, title: off ? SMB_OFF : undefined };
         })}
-      </div>
+        value={access}
+        onChange={chooseAccess}
+      />
       {smb && smbOff && <p className="text-[13px] text-danger">{SMB_OFF}.</p>}
       {remote && (
         <div className="space-y-4">
           <div className="flex gap-3">
-            <div className="min-w-0 flex-1">
-              <Field label="Host">
-                <input
-                  value={host}
-                  onChange={(e) => setHost(e.target.value)}
-                  placeholder="192.168.1.10"
-                  className={INPUT}
-                  autoComplete="off"
-                  spellCheck={false}
-                  required
-                />
-              </Field>
-            </div>
-            <div className="w-28 shrink-0">
-              <Field label="Port">
-                <input
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={port}
-                  onChange={(e) => setPort(Number(e.target.value) || defaultPort(access))}
-                  className={INPUT}
-                  required
-                />
-              </Field>
-            </div>
+            <TextField
+              label="Host"
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder="192.168.1.10"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              className="min-w-0 flex-1"
+            />
+            <TextField
+              label="Port"
+              type="number"
+              min={1}
+              max={65535}
+              value={port}
+              onChange={(e) => setPort(Number(e.target.value) || defaultPort(access))}
+              required
+              className="w-28 shrink-0"
+            />
           </div>
-          <Field label="User" hint={smb ? 'guest for guest access' : undefined}>
-            <input value={user} onChange={(e) => setUser(e.target.value)} className={INPUT} autoComplete="off" spellCheck={false} required />
-          </Field>
-          <Field label="Password" hint={smb ? 'Leave empty for guest access' : 'Optional with a key file or ssh-agent'}>
-            {replacingPassword ? (
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={INPUT}
-                autoComplete="new-password"
-                placeholder={passwordSaved ? 'New password' : undefined}
-              />
-            ) : (
-              <div className="flex h-11 items-center gap-3">
-                <span className="font-mono text-[13px] text-paper-dim">Saved</span>
-                <button type="button" onClick={() => setReplacingPassword(true)} className="text-[13px] text-accent hover:underline">
-                  Replace
-                </button>
-              </div>
-            )}
-          </Field>
-          {smb ? (
-            <Field label="Domain" hint="Optional">
-              <input
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="WORKGROUP"
-                className={INPUT}
-                autoComplete="off"
-                spellCheck={false}
-                maxLength={100}
-              />
-            </Field>
+          <TextField
+            label="User"
+            hint={smb ? 'guest for guest access' : undefined}
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            required
+          />
+          {replacingPassword ? (
+            <TextField
+              label="Password"
+              hint={smb ? 'Leave empty for guest access' : 'Optional with a key file or ssh-agent'}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+              placeholder={passwordSaved ? 'New password' : undefined}
+            />
           ) : (
-            <Field label="Key file on the server" hint="Optional: a private key on the Playarr server">
-              <input
-                value={keyPath}
-                onChange={(e) => setKeyPath(e.target.value)}
-                placeholder="~/.ssh/id_ed25519"
-                className={cn(INPUT, 'font-mono')}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </Field>
+            <Saved
+              label="Password"
+              hint={smb ? 'Leave empty for guest access' : 'Optional with a key file or ssh-agent'}
+              onReplace={() => setReplacingPassword(true)}
+            />
+          )}
+          {smb ? (
+            <TextField
+              label="Domain"
+              hint="Optional"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              placeholder="WORKGROUP"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={100}
+            />
+          ) : (
+            <TextField
+              label="Key file on the server"
+              hint="Optional: a private key on the Playarr server"
+              mono
+              value={keyPath}
+              onChange={(e) => setKeyPath(e.target.value)}
+              placeholder="~/.ssh/id_ed25519"
+              autoComplete="off"
+              spellCheck={false}
+            />
           )}
           <div className="flex items-center justify-between gap-3">
             <p className="text-[13px] text-muted">
@@ -708,15 +649,15 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
                 ? 'Playarr reads the share with rclone. Song analysis and fingerprints run on this server.'
                 : 'SSH also runs song analysis and fingerprints on that machine. SFTP only reads files.'}
             </p>
-            <button type="button" onClick={connect} disabled={!host.trim() || !user.trim()} className={cn(SECONDARY, 'shrink-0')}>
+            <Button onClick={connect} disabled={!host.trim() || !user.trim()}>
               Connect
-            </button>
+            </Button>
           </div>
         </div>
       )}
       {(!remote || browsing) && (
         <div>
-          <span className="mb-1.5 block font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Folder</span>
+          <span className="mb-1.5 block type-small text-muted">Folder</span>
           {remote ? (
             <FolderBrowser
               key={browsing!.attempt}
@@ -730,15 +671,7 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
           )}
         </div>
       )}
-      <Field label="Name">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={path?.split('/').pop() || 'Music'}
-          className={INPUT}
-          maxLength={80}
-        />
-      </Field>
+      <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder={path?.split('/').pop() || 'Music'} maxLength={80} />
       {source && (
         <label className="flex items-center gap-2 text-sm text-paper-dim">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Use this source
@@ -746,11 +679,27 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
       )}
       <p className="text-[13px] text-muted">Playarr only reads this folder. Songs appear after the first scan.</p>
       <div className="flex justify-end pt-2">
-        <button type="submit" disabled={!pathOk || pending} className={PRIMARY}>
-          {pending ? 'Saving…' : 'Save'}
-        </button>
+        <Button type="submit" variant="primary" disabled={!pathOk} pending={pending} pendingLabel="Saving…">
+          Save
+        </Button>
       </div>
     </form>
+  );
+}
+
+/** A secret the server keeps (an API key, a password): never shown, only replaced. */
+function Saved({ label, hint, onReplace }: { label: string; hint?: string; onReplace: () => void }) {
+  return (
+    <div>
+      <span className="mb-1.5 block type-small text-muted">{label}</span>
+      <div className="flex h-11 items-center gap-3">
+        <span className="type-meta text-paper-dim">Saved</span>
+        <button type="button" onClick={onReplace} className="type-small text-accent hover:underline">
+          Replace
+        </button>
+      </div>
+      {hint && <span className="mt-1.5 block type-small text-muted">{hint}</span>}
+    </div>
   );
 }
 

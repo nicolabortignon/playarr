@@ -3,12 +3,12 @@ import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { sized } from '../lib/api';
-import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { useShallow } from 'zustand/react/shallow';
 import { useCurrentTrack, usePlayer } from '../player/store';
+import { IconButton } from './Button';
 import { Cover } from './Cover';
 import { FavoriteButton } from './FavoriteButton';
 import { OfflineMark } from './OfflineMark';
@@ -102,9 +102,9 @@ function Sheet() {
 
       <div className="relative mx-auto flex h-full max-w-6xl flex-col px-6 pt-[max(env(safe-area-inset-top),1rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)] md:px-12">
         <header className="flex h-14 shrink-0 touch-none items-center justify-between" onPointerDown={(e) => controls.start(e)}>
-          <button type="button" aria-label="Close now playing" onClick={close} className="grid size-10 place-items-center rounded-full text-paper transition hover:bg-paper/10">
+          <IconButton label="Close now playing" onClick={close} className="text-paper">
             <ChevronDown className="size-6" />
-          </button>
+          </IconButton>
           <div className="min-w-0 px-4 text-center">
             <div className="font-mono text-[10px] tracking-[0.25em] text-paper-dim/70 uppercase">Playing from</div>
             <button type="button" onClick={() => go(source?.href ?? `/albums/${track.albumId}`)} className="block max-w-full truncate text-[13px] text-paper hover:underline">
@@ -113,18 +113,9 @@ function Sheet() {
           </div>
           <div className="flex items-center">
             <SleepTimer />
-            <button
-              type="button"
-              aria-label="Lyrics"
-              aria-pressed={lyricsOpen}
-              onClick={() => setLyrics(!lyricsOpen)}
-              className={cn(
-                'grid size-10 place-items-center rounded-full transition hover:bg-paper/10 max-md:size-11',
-                lyricsOpen ? 'text-accent' : 'text-paper',
-              )}
-            >
+            <IconButton label="Lyrics" aria-pressed={lyricsOpen} onClick={() => setLyrics(!lyricsOpen)} className={lyricsOpen ? 'text-accent' : 'text-paper'}>
               <Quote className="size-5" />
-            </button>
+            </IconButton>
             <Menu
               className="text-paper"
               items={[

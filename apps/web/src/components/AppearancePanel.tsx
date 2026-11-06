@@ -2,7 +2,8 @@ import { Check } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { ACCENTS, usePrefs, type AccentPref, type MotionPref } from '../lib/prefs';
 import { useLocked } from '../lib/queries';
-import { AwayNotice, PillGroup, radioKeys, SettingsSection, Switch } from './SettingsControls';
+import { Choice, radioKeys } from './Choice';
+import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
 
 const ACCENT_NAMES: Record<(typeof ACCENTS)[number], string> = {
   '#ff7a1a': 'Orange',
@@ -38,7 +39,7 @@ export function AppearancePanel() {
       </SettingsSection>
 
       <SettingsSection title="Motion" description="System follows this device’s setting for reduced motion. Reduced keeps animations to a minimum; Full always plays them.">
-        <PillGroup label="Motion" options={MOTION_OPTIONS} value={motion} onChange={setMotion} disabled={locked} />
+        <Choice label="Motion" options={MOTION_OPTIONS} value={motion} onChange={setMotion} disabled={locked} />
       </SettingsSection>
 
       <SettingsSection title="Audio format">

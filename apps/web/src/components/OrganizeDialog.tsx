@@ -3,6 +3,7 @@ import { ArrowRight, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { plural } from '../lib/format';
 import { useOrganizeActions, useOrganizePlan } from '../lib/queries';
+import { Button } from './Button';
 import { Dialog } from './Dialog';
 
 /** Settings → Sources → Organize files: review proposed moves, apply some or all, undo. */
@@ -151,14 +152,15 @@ function OrganizeBody({
       )}
       {moves.length > 0 && (
         <div className="flex justify-end border-t border-line pt-4">
-          <button
-            type="button"
-            disabled={chosen.size === 0 || actions.apply.isPending}
+          <Button
+            variant="primary"
+            disabled={chosen.size === 0}
+            pending={actions.apply.isPending}
+            pendingLabel="Moving…"
             onClick={() => actions.apply.mutate([...chosen])}
-            className="inline-flex h-10 items-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink disabled:opacity-50"
           >
-            {actions.apply.isPending ? 'Moving…' : `Move ${plural(chosen.size, 'file')}`}
-          </button>
+            {`Move ${plural(chosen.size, 'file')}`}
+          </Button>
         </div>
       )}
     </div>

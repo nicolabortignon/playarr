@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
+import { Button } from '../components/Button';
 import { DiscoverAlbumCard } from '../components/Discover';
 import { BackButton, ErrorState, SectionHeader, Skeleton } from '../components/Section';
 import { SimilarArtists } from '../components/SimilarArtists';
@@ -71,13 +72,9 @@ export function DiscoverArtistPage() {
         {artist.overview && (
           <div className="mt-6 max-w-2xl">
             <p className={cn('text-[15px] leading-relaxed text-paper-dim/90', !bioOpen && 'line-clamp-3')}>{artist.overview}</p>
-            <button
-              type="button"
-              onClick={() => setBioOpen((o) => !o)}
-              className="mt-2 font-mono text-[11px] tracking-[0.15em] text-accent uppercase hover:underline"
-            >
+            <Button variant="ghost" size="small" onClick={() => setBioOpen((o) => !o)} aria-expanded={bioOpen} className="mt-2 -ml-3.5">
               {bioOpen ? 'Less' : 'Read more'}
-            </button>
+            </Button>
           </div>
         )}
       </section>
@@ -113,14 +110,9 @@ export function DiscoverArtistPage() {
           <div className="max-w-md">
             <p className="text-sm text-paper-dim">Couldn’t load the discography from MusicBrainz right now.</p>
             <p className="mt-1 font-mono text-[11px] text-muted">{artist.discographyError}</p>
-            <button
-              type="button"
-              onClick={() => void refetch()}
-              disabled={isFetching}
-              className="mt-4 rounded-full border border-line px-4 py-2 font-mono text-[11px] tracking-wider text-paper uppercase transition hover:border-paper/30 disabled:opacity-50"
-            >
-              {isFetching ? 'Retrying…' : 'Try again'}
-            </button>
+            <Button size="small" className="mt-4" onClick={() => void refetch()} pending={isFetching} pendingLabel="Trying again…">
+              Try again
+            </Button>
           </div>
         ) : (
           !artist.albums.length && <p className="text-muted">MusicBrainz lists no albums or EPs for this artist.</p>

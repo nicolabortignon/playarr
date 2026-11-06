@@ -44,6 +44,7 @@ The changes:
 - **No wrapping on phones:** choices that wrap on a phone scroll sideways in one row instead (today Stats' ranges take two rows, and Keep up to puts "10 GB" alone on a second row).
 - **The focus ring:** `index.css:103-107` sets `border-radius: 4px` on every `:focus-visible` outside any layer. That beats Tailwind's layered `rounded-full`, so a round button focused from the keyboard becomes a rounded square. Move the rule into `@layer base`, or drop the radius so the element keeps its own.
 - **Done when** no page builds a button from classes, and a grep finds no `red-[0-9]`/`emerald-[0-9]` outside `index.css`.
+- *Web done 2026-11-06: `Button`, `IconButton`, `TextField` and `Choice` (components/), used by every page, panel and dialog; dialog buttons are capsules; Request buttons say what they do in sentence case, and non-tappable states are badges. Player controls, sliders, menu items, tiles and inline text actions keep their own markup.*
 
 ## 3. One action row for everything you can play — S
 
@@ -64,6 +65,7 @@ The standard:
   5. **⋯**.
 - Feeling lucky uses the primary style, at the same size on both apps.
 - **Done when** the tours show the same row on those five pages on each platform, and playing an album moves nothing.
+- *Web done 2026-11-06: `ActionRow` on the album, playlist, mix, Favorites and artist pages; Play is as wide as Resume; the row narrows in three steps by container queries (index.css, `row-step-*`) and never wraps.*
 
 ## 4. One page header — S–M
 

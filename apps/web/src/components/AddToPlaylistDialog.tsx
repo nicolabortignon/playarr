@@ -4,8 +4,10 @@ import { useNavigate } from 'react-router';
 import { plural } from '../lib/format';
 import { usePlaylistMutations, usePlaylists } from '../lib/queries';
 import { useUI } from '../lib/ui';
+import { Button } from './Button';
 import { Dialog } from './Dialog';
 import { PlaylistCover } from './PlaylistCover';
+import { TextField } from './TextField';
 
 /** Global "Add to playlist" picker; opened via useUI().openPlaylistPicker(tracks). */
 export function AddToPlaylistDialog() {
@@ -48,22 +50,19 @@ function Picker() {
   return (
     <div className="p-2">
       {creating ? (
-        <form onSubmit={submit} className="flex gap-2 p-3">
-          <input
+        <form onSubmit={submit} className="flex items-center gap-2 p-3">
+          <TextField
+            label="Playlist name"
+            hideLabel
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Playlist name"
-            aria-label="Playlist name"
             maxLength={100}
-            className="h-11 min-w-0 flex-1 rounded-lg border border-line bg-ink-900 px-3 text-paper placeholder:text-muted focus:border-accent focus:outline-none"
+            className="min-w-0 flex-1"
           />
-          <button
-            type="submit"
-            disabled={!name.trim() || create.isPending}
-            className="h-11 rounded-lg bg-accent px-4 font-medium text-accent-ink transition hover:brightness-110 disabled:opacity-40"
-          >
+          <Button type="submit" variant="primary" disabled={!name.trim()} pending={create.isPending}>
             Create
-          </button>
+          </Button>
         </form>
       ) : (
         <button

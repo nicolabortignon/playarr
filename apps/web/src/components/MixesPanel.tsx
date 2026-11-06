@@ -5,9 +5,11 @@ import { Link } from 'react-router';
 import { ApiError } from '../lib/api';
 import { plural } from '../lib/format';
 import { useClearHistory, useIsMember, useMixSettings, useSaveMixSettings } from '../lib/queries';
+import { Button } from './Button';
 import { Dialog } from './Dialog';
 import { ListenBrainzSection } from './ListenBrainzSection';
-import { AwayNotice, PillGroup, SettingsSection, Switch } from './SettingsControls';
+import { Choice } from './Choice';
+import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
 
 /** Every kind of mix, as Settings names and explains it. */
 const KINDS: { kind: MixKind; label: string; description: string }[] = [
@@ -48,13 +50,7 @@ function TimeZone({ current, onChange }: { current?: string; onChange?: (tz: str
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[15px] text-paper">{current ?? 'The server’s'}</span>
         {onChange && here && here !== current && (
-          <button
-            type="button"
-            onClick={() => onChange(here)}
-            className="inline-flex h-9 items-center rounded-full border border-line px-4 text-[13px] text-paper transition hover:bg-paper/5"
-          >
-            Use this device’s ({here})
-          </button>
+          <Button onClick={() => onChange(here)}>Use this device’s ({here})</Button>
         )}
       </div>
       <p className="mt-1 text-[13px] text-muted">When hours, days and Mondays begin for everyone’s mixes.</p>
@@ -110,23 +106,23 @@ export function MixesPanel() {
       <SettingsSection title="How they’re made">
         <div className="space-y-6">
           <TimeZone current={data.timeZone} onChange={readOnly ? undefined : (timeZone) => change({ timeZone })} />
-          <PillGroup
+          <Choice
             label="Songs per mix"
             options={LENGTHS}
             value={data.length}
             onChange={(length) => change({ length: length as MixSettings['length'] })}
             disabled={readOnly}
           />
-          <PillGroup label="Discovery Weekly" options={ADVENTURE} value={adventure.value} onChange={(adventurous) => change({ adventurous })} disabled={readOnly} />
-          <PillGroup
+          <Choice label="Discovery Weekly" options={ADVENTURE} value={adventure.value} onChange={(adventurous) => change({ adventurous })} disabled={readOnly} />
+          <Choice
             label="Blast from the past: not heard for"
             options={BLAST}
             value={data.blastDays}
             onChange={(blastDays) => change({ blastDays: blastDays as MixSettings['blastDays'] })}
             disabled={readOnly}
           />
-          <PillGroup label="Genre mixes" options={COUNTS} value={data.genreMixes} onChange={(genreMixes) => change({ genreMixes })} disabled={readOnly} />
-          <PillGroup label="Decade mixes" options={COUNTS} value={data.decadeMixes} onChange={(decadeMixes) => change({ decadeMixes })} disabled={readOnly} />
+          <Choice label="Genre mixes" options={COUNTS} value={data.genreMixes} onChange={(genreMixes) => change({ genreMixes })} disabled={readOnly} />
+          <Choice label="Decade mixes" options={COUNTS} value={data.decadeMixes} onChange={(decadeMixes) => change({ decadeMixes })} disabled={readOnly} />
         </div>
       </SettingsSection>
 
@@ -147,14 +143,9 @@ export function MixesPanel() {
           <p className="text-sm text-paper-dim">
             {data.history.plays ? `${plural(data.history.plays, 'song')} played${since ? ` since ${since}` : ''}` : 'Nothing played yet'}
           </p>
-          <button
-            type="button"
-            disabled={!data.history.plays || clear.isPending}
-            onClick={() => setConfirmClear(true)}
-            className="inline-flex h-9 items-center gap-2 rounded-full border border-line px-4 text-[13px] text-paper transition hover:bg-paper/5 disabled:opacity-40"
-          >
-            <Trash2 className="size-4" /> Clear history
-          </button>
+          <Button icon={<Trash2 />} disabled={!data.history.plays || clear.isPending} onClick={() => setConfirmClear(true)}>
+            Clear history
+          </Button>
         </div>
       </SettingsSection>
 
@@ -177,20 +168,10 @@ export function MixesPanel() {
             Every song played is forgotten, and the mixes start learning again from scratch. Favorites and playlists stay.
           </p>
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmClear(false)}
-              className="inline-flex h-10 items-center rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => clear.mutate(undefined, { onSettled: () => setConfirmClear(false) })}
-              className="inline-flex h-10 items-center rounded-full bg-danger/90 px-5 text-[14px] font-medium text-ink-950 transition hover:bg-danger"
-            >
+            <Button onClick={() => setConfirmClear(false)}>Cancel</Button>
+            <Button variant="danger" pending={clear.isPending} onClick={() => clear.mutate(undefined, { onSettled: () => setConfirmClear(false) })}>
               Clear history
-            </button>
+            </Button>
           </div>
         </div>
       </Dialog>

@@ -2,8 +2,8 @@ import type { AlbumSort } from '@playarr/shared';
 import { useSearchParams } from 'react-router';
 import type { CSSProperties, ReactNode } from 'react';
 import { AlbumCard } from '../components/Cards';
+import { Choice } from '../components/Choice';
 import { ErrorState, Skeleton } from '../components/Section';
-import { cn } from '../lib/cn';
 import { useAlbums } from '../lib/queries';
 import { useIncremental } from '../lib/useIncremental';
 
@@ -49,23 +49,14 @@ export function AlbumsPage() {
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Albums" count={data?.length}>
-        <div role="radiogroup" aria-label="Sort albums" className="scrollbar-none -mx-5 flex gap-1.5 overflow-x-auto overflow-y-hidden px-5 md:mx-0 md:px-0">
-          {SORTS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              role="radio"
-              aria-checked={sort === s.value}
-              onClick={() => setParams(s.value === 'artist' ? {} : { sort: s.value }, { replace: true })}
-              className={cn(
-                'h-8 shrink-0 rounded-full border px-3.5 font-mono text-[11px] tracking-wider uppercase transition',
-                sort === s.value ? 'border-accent bg-accent text-accent-ink' : 'border-line text-paper-dim hover:border-paper/25',
-              )}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <Choice
+          label="Sort albums"
+          options={SORTS}
+          value={sort}
+          onChange={(v) => setParams(v === 'artist' ? {} : { sort: v }, { replace: true })}
+          // On a phone the row scrolls from one edge of the screen to the other.
+          className="-mx-5 px-5 md:-mx-1.5 md:px-1.5"
+        />
       </PageTitle>
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />

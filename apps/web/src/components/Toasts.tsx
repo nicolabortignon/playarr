@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '../lib/cn';
 import { useToasts, type Toast } from '../lib/toast';
+import { Button } from './Button';
 
 const BOX = 'pointer-events-auto max-w-md rounded-lg border px-4 py-2.5 text-left text-sm shadow-2xl shadow-black/50 backdrop-blur-xl';
 const TONES: Record<Toast['tone'], string> = {
@@ -61,23 +62,19 @@ function ActionToast({
     >
       <span>{toast.message}</span>
       <span className="ml-auto flex shrink-0 gap-1">
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="small"
           onClick={() => {
             dismiss();
             action.run();
           }}
-          className="rounded-full px-3 py-1 font-mono text-[11px] tracking-wider text-accent uppercase transition hover:bg-accent/10"
         >
           {action.label}
-        </button>
-        <button
-          type="button"
-          onClick={dismiss}
-          className="rounded-full px-3 py-1 font-mono text-[11px] tracking-wider text-muted uppercase transition hover:text-paper"
-        >
+        </Button>
+        <Button variant="ghost" size="small" onClick={dismiss}>
           Later
-        </button>
+        </Button>
       </span>
     </motion.div>
   );

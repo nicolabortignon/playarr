@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn';
+import { IconButton } from './Button';
 
 /** What a dialog focuses as it opens: the first field, slider or button, skipping Close and options not chosen. */
 const FIRST_FOCUS = [
@@ -73,14 +74,10 @@ export function Dialog({
           >
             <header className="flex items-center justify-between border-b border-line px-5 py-4">
               <h2 className="font-display text-2xl leading-none text-paper">{title}</h2>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={onClose}
-                className="grid size-9 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper"
-              >
+              {/* 44 to tap on touch screens without making the header taller. */}
+              <IconButton label="Close" onClick={onClose} className="pointer-coarse:-my-1">
                 <X className="size-5" />
-              </button>
+              </IconButton>
             </header>
             <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto">{children}</div>
           </motion.div>

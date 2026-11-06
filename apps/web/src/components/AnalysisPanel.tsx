@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ApiError, type AnalysisKind, type AnalysisProgress } from '../lib/api';
 import { useAnalysisProgress, useIsMember, useMixSettings, useRunAnalysis, useSaveMixSettings } from '../lib/queries';
+import { Button } from './Button';
 import { Dialog } from './Dialog';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
 
@@ -9,9 +10,6 @@ const count = (n: number) => n.toLocaleString('en');
 const songs = (n: number) => `${count(n)} ${n === 1 ? 'song' : 'songs'}`;
 
 const AUDIO_OFF = 'Audio analysis is off on this server (set ANALYSIS=on in its .env).';
-
-const SECONDARY_BUTTON =
-  'inline-flex h-10 items-center justify-center rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5 disabled:opacity-50';
 
 /** What's under way: the songs being analysed and waiting, for each queue. */
 function queueText(p: AnalysisProgress): string | null {
@@ -104,9 +102,9 @@ function Analysis({
         <div className="mt-3 flex flex-wrap gap-2">
           {/* Also while songs are under way: the server queues only those not waiting already. */}
           {left > 0 && (
-            <button type="button" className={SECONDARY_BUTTON} disabled={run.isPending} onClick={() => run.mutate({ kind })}>
+            <Button disabled={run.isPending} onClick={() => run.mutate({ kind })}>
               {`${verb} the ${count(left)} of ${songs(of)} left`}
-            </button>
+            </Button>
           )}
           <AskFirst
             label={again.label}
@@ -139,24 +137,17 @@ function AskFirst({
   const [asking, setAsking] = useState(false);
   return (
     <>
-      <button type="button" className={SECONDARY_BUTTON} disabled={busy} onClick={() => setAsking(true)}>
+      <Button disabled={busy} onClick={() => setAsking(true)}>
         {label}
-      </button>
+      </Button>
       <Dialog open={asking} onClose={() => setAsking(false)} title={question}>
         <div className="space-y-5 p-5">
           <p className="text-[15px] text-paper-dim">{explain}</p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setAsking(false)} className={SECONDARY_BUTTON}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => onConfirm(() => setAsking(false))}
-              className="inline-flex h-10 items-center rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110 disabled:opacity-50"
-            >
+            <Button onClick={() => setAsking(false)}>Cancel</Button>
+            <Button variant="primary" disabled={busy} onClick={() => onConfirm(() => setAsking(false))}>
               {label}
-            </button>
+            </Button>
           </div>
         </div>
       </Dialog>

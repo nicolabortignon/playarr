@@ -1,8 +1,10 @@
 import { ChevronLeft, ChevronRight, RotateCw } from 'lucide-react';
 import { useEffect, useRef, type PointerEvent, type ReactNode, type RefObject } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { cn } from '../lib/cn';
 import { nearestEdge, scrollForPoint } from '../lib/shelfScroll';
 import { KeepMounted } from '../lib/viewport';
+import { Button, IconButton } from './Button';
 
 export function SectionHeader({ title, kicker, to, action }: { title: string; kicker?: string; to?: string; action?: ReactNode }) {
   return (
@@ -165,20 +167,11 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
       <p className="mt-3 text-sm text-muted">{error instanceof Error ? error.message : 'Unknown error'}</p>
       <div className="mt-6 flex justify-center gap-3">
         {onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="inline-flex h-10 items-center gap-2 rounded-full bg-accent px-5 text-[14px] font-medium text-accent-ink transition hover:brightness-110"
-          >
-            <RotateCw className="size-4" /> Try again
-          </button>
+          <Button variant="primary" icon={<RotateCw />} onClick={onRetry}>
+            Try again
+          </Button>
         )}
-        <Link
-          to="/"
-          className="inline-flex h-10 items-center rounded-full border border-line px-5 text-[14px] text-paper transition hover:bg-paper/5"
-        >
-          Back home
-        </Link>
+        <Button to="/">Back home</Button>
       </div>
     </div>
   );
@@ -196,13 +189,8 @@ export function BackButton({ fallback, className }: { fallback: string; classNam
     else navigate(fallback);
   };
   return (
-    <button
-      type="button"
-      onClick={back}
-      aria-label="Back"
-      className={`grid size-10 place-items-center rounded-full bg-ink-950/55 text-paper ring-1 ring-paper/10 md:hidden ${className ?? ''}`}
-    >
+    <IconButton label="Back" onClick={back} className={cn('bg-ink-950/55 text-paper ring-1 ring-paper/10 md:hidden', className)}>
       <ChevronLeft className="size-5" />
-    </button>
+    </IconButton>
   );
 }

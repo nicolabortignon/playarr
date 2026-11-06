@@ -1,11 +1,13 @@
 import type { UpdateInfo, UpdateInterval } from '@playarr/shared';
-import { Loader2, RotateCw } from 'lucide-react';
+import { RotateCw } from 'lucide-react';
 import { useEffect } from 'react';
 import { ApiError } from '../lib/api';
 import { cn } from '../lib/cn';
 import { useCheckForUpdates, useSaveUpdates, useUpdates } from '../lib/queries';
 import { toast } from '../lib/toast';
-import { AwayNotice, PillGroup, SettingsSection, Switch } from './SettingsControls';
+import { Button } from './Button';
+import { Choice } from './Choice';
+import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
 
 const INTERVALS: readonly { value: UpdateInterval; label: string }[] = [
   { value: 15, label: '15 minutes' },
@@ -14,8 +16,6 @@ const INTERVALS: readonly { value: UpdateInterval; label: string }[] = [
   { value: 1440, label: 'Day' },
 ];
 
-const CHECK_BUTTON =
-  'mt-4 inline-flex h-9 items-center gap-2 rounded-full border border-line px-4 text-[13px] text-paper transition hover:bg-paper/5 disabled:opacity-50';
 const LOG =
   'mt-3 max-h-80 overflow-auto rounded-lg border border-line bg-ink-900 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-paper-dim';
 
@@ -65,7 +65,7 @@ export function UpdatesPanel() {
             />
             <div className="mt-2">
               <p className={cn('mb-2 text-[13px] text-muted', !data.enabled && 'opacity-50')}>Check every</p>
-              <PillGroup
+              <Choice
                 label="Check every"
                 options={INTERVALS}
                 value={data.intervalMinutes}
@@ -77,15 +77,15 @@ export function UpdatesPanel() {
 
           <SettingsSection title="Last check">
             <LastCheck info={data} />
-            <button
-              type="button"
+            <Button
+              icon={<RotateCw />}
               onClick={() => check.mutate()}
-              disabled={busy || check.isPending}
-              className={CHECK_BUTTON}
+              pending={busy || check.isPending}
+              pendingLabel={busy ? 'Checking…' : undefined}
+              className="mt-4"
             >
-              {busy || check.isPending ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
-              {busy ? 'Checking…' : 'Check now'}
-            </button>
+              Check now
+            </Button>
             {data.log && (
               <details className="mt-6">
                 <summary className="cursor-pointer text-[13px] text-muted hover:text-paper">Show log</summary>

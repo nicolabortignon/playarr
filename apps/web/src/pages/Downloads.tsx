@@ -1,5 +1,6 @@
 import { Play, Trash2 } from 'lucide-react';
 import { Link } from 'react-router';
+import { IconButton } from '../components/Button';
 import { Cover } from '../components/Cover';
 import { formatBytes, plural } from '../lib/format';
 import { useDownloadState } from '../player/downloads';
@@ -64,18 +65,13 @@ function Row({ download: d }: { download: Download }) {
         type="button"
         aria-label={`Play ${d.title}`}
         onClick={() => playTracks(d.tracks, 0, { shuffle: false, source: { label: d.title, href: d.href } })}
-        className="grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-ink transition hover:brightness-110"
+        className="relative grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-ink transition tap-target hover:brightness-110"
       >
         <Play className="size-4 fill-current" />
       </button>
-      <button
-        type="button"
-        aria-label={`Remove ${d.title} from this device`}
-        onClick={() => void removeDownload(d.key)}
-        className="grid size-10 shrink-0 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper"
-      >
+      <IconButton label={`Remove ${d.title} from this device`} onClick={() => void removeDownload(d.key)}>
         <Trash2 className="size-4" />
-      </button>
+      </IconButton>
     </li>
   );
 }

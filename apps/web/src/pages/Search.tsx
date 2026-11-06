@@ -1,6 +1,7 @@
 import { Search as SearchIcon, X } from 'lucide-react';
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
+import { Button, IconButton } from '../components/Button';
 import { AlbumCard, ArtistCard } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { DiscoverAlbumCard, DiscoverArtistCard, DiscoverTrackRow, RequestsPill } from '../components/Discover';
@@ -47,17 +48,16 @@ export function SearchPage() {
             className="h-16 w-full border-b border-line bg-transparent pr-10 pl-10 font-display text-3xl text-paper placeholder:text-ink-600 focus:border-accent focus:outline-none md:h-20 md:pl-14 md:text-5xl [&::-webkit-search-cancel-button]:hidden"
           />
           {q && (
-            <button
-              type="button"
-              aria-label="Clear search"
+            <IconButton
+              label="Clear search"
               onClick={() => {
                 setParams({}, { replace: true });
                 input.current?.focus();
               }}
-              className="absolute right-0 grid size-9 place-items-center rounded-full text-muted hover:text-paper"
+              className="absolute right-0"
             >
               <X className="size-5" />
-            </button>
+            </IconButton>
           )}
           <span
             className="absolute bottom-0 left-0 h-px bg-accent transition-all duration-500 ease-out-expo"
@@ -108,13 +108,9 @@ export function SearchPage() {
                   <TrackList tracks={allTracks ? data.tracks : data.tracks.slice(0, 6)} variant="mixed" />
                 </div>
                 {!allTracks && data.tracks.length > 6 && (
-                  <button
-                    type="button"
-                    onClick={() => setAllTracks(true)}
-                    className="mt-2 font-mono text-[11px] tracking-[0.15em] text-accent uppercase hover:underline"
-                  >
+                  <Button variant="ghost" size="small" onClick={() => setAllTracks(true)} className="mt-2">
                     Show all {data.tracks.length} tracks
-                  </button>
+                  </Button>
                 )}
               </section>
             )}

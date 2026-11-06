@@ -2,6 +2,7 @@ import { MoreHorizontal, type LucideIcon } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn';
+import { IconButton } from './Button';
 
 export interface MenuItem {
   label: string;
@@ -13,11 +14,14 @@ export interface MenuItem {
 export function Menu({
   items,
   label = 'More actions',
+  size,
   className,
   trigger,
 }: {
   items: MenuItem[];
   label?: string;
+  /** Large and outlined in a page's action row; else 44 to tap on touch screens, 36 with a mouse. */
+  size?: 'regular' | 'large';
   className?: string;
   /** What the button shows, in place of ⋯. */
   trigger?: ReactNode;
@@ -76,21 +80,20 @@ export function Menu({
 
   return (
     <>
-      <button
+      <IconButton
         ref={btn}
-        type="button"
-        aria-label={label}
+        label={label}
+        size={size}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={(e) => {
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        // 44 px to tap on phones; 36 px with a mouse.
-        className={cn('grid size-9 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper max-md:size-11', className)}
+        className={className}
       >
-        {trigger ?? <MoreHorizontal className="size-[18px]" />}
-      </button>
+        {trigger ?? <MoreHorizontal className={size === 'large' ? 'size-5' : 'size-4.5'} />}
+      </IconButton>
       {open &&
         createPortal(
           <div

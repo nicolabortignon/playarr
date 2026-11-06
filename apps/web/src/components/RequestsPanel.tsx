@@ -1,13 +1,14 @@
 import type { RequestSettingsInfo, RequestSettingsPatch } from '@playarr/shared';
-import { ChevronDown, Loader2, RotateCw, TriangleAlert } from 'lucide-react';
+import { ChevronDown, RotateCw, TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router';
 import { ApiError } from '../lib/api';
 import { formatBytes } from '../lib/format';
 import { useRequestSettings, useSaveRequestSettings } from '../lib/queries';
-import { AwayNotice, Field, SettingsSection, Switch } from './SettingsControls';
+import { cn } from '../lib/cn';
+import { Button } from './Button';
+import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
+import { fieldClass, TextField } from './TextField';
 
-const SELECT =
-  'h-11 w-full appearance-none truncate rounded-lg border border-line bg-ink-900 pr-9 pl-3 text-[15px] text-paper outline-none transition focus:border-accent disabled:opacity-50';
 const DEFAULT_LABEL = 'Lidarr’s default';
 
 /** Settings → Requests: whether people can request albums, and what Lidarr does with them. For everyone. */
@@ -81,21 +82,16 @@ function Destination({
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           <span>Couldn’t get the choices from Lidarr{info.error ? `: ${info.error}` : '.'}</span>
         </p>
-        <button
-          type="button"
-          onClick={retry}
-          disabled={retrying}
-          className="mt-3 inline-flex h-9 items-center gap-2 rounded-full border border-line px-4 text-[13px] text-paper transition hover:bg-paper/5 disabled:opacity-50"
-        >
-          {retrying ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />} Retry
-        </button>
+        <Button size="small" icon={<RotateCw />} onClick={retry} pending={retrying} pendingLabel="Trying again…" className="mt-3">
+          Try again
+        </Button>
       </div>
     );
   }
   const { rootFolders, qualityProfiles, metadataProfiles } = info.options;
   return (
     <div className="space-y-4">
-      <Choice
+      <SelectField
         label="Root folder"
         value={info.rootFolderPath}
         options={rootFolders.map((r) => ({
@@ -104,13 +100,13 @@ function Destination({
         }))}
         onChange={(v) => onChange({ rootFolderPath: v ?? null })}
       />
-      <Choice
+      <SelectField
         label="Quality profile"
         value={info.qualityProfileId}
         options={qualityProfiles.map((p) => ({ value: p.id, label: p.name }))}
         onChange={(v) => onChange({ qualityProfileId: v ?? null })}
       />
-      <Choice
+      <SelectField
         label="Metadata profile"
         value={info.metadataProfileId}
         options={metadataProfiles.map((p) => ({ value: p.id, label: p.name }))}
@@ -124,7 +120,7 @@ function Destination({
 }
 
 /** A select whose first option means "nothing chosen here". */
-function Choice<T extends string | number>({
+function SelectField<T extends string | number>({
   label,
   value,
   options,
@@ -138,7 +134,7 @@ function Choice<T extends string | number>({
   // A choice Lidarr no longer has still shows, so it's clear why the default is used.
   const missing = value !== undefined && !options.some((o) => o.value === value);
   return (
-    <Field label={label}>
+    <TextField label={label}>
       <span className="relative block">
         <select
           value={value === undefined ? '' : String(value)}
@@ -147,7 +143,7 @@ function Choice<T extends string | number>({
             const picked = options.find((o) => String(o.value) === raw);
             onChange(picked?.value ?? (missing && raw === String(value) ? value : undefined));
           }}
-          className={SELECT}
+          className={cn(fieldClass, 'appearance-none truncate pr-9')}
         >
           <option value="">{DEFAULT_LABEL}</option>
           {missing && <option value={String(value)}>{`${typeof value === 'number' ? `#${value}` : value} (no longer in Lidarr)`}</option>}
@@ -159,7 +155,7 @@ function Choice<T extends string | number>({
         </select>
         <ChevronDown aria-hidden className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted" />
       </span>
-    </Field>
+    </TextField>
   );
 }
 

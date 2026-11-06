@@ -43,7 +43,8 @@ export function Transport({ size = 'md' }: { size?: 'md' | 'lg' }) {
   const skip = cn('grid place-items-center rounded-full text-paper transition hover:scale-105 active:scale-95', big ? 'size-14' : 'size-10');
 
   return (
-    <div className={cn('flex items-center', big ? 'justify-between' : 'gap-3')}>
+    // Above the seek bar under it, whose box to tap reaches up on touch screens: a tap on a button stays the button's.
+    <div className={cn('relative z-10 flex items-center', big ? 'justify-between' : 'gap-3')}>
       <button
         type="button"
         aria-label="Shuffle"

@@ -1,5 +1,6 @@
 import { ArrowDownToLine, ChartColumn, ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
+import { IconButton } from '../components/Button';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { SectionHeader } from '../components/Section';
 import { plural } from '../lib/format';
@@ -32,13 +33,9 @@ export function LibraryPage() {
   return (
     <div className="max-w-3xl px-5 pt-8 md:px-10 md:pt-14">
       <PageTitle title="Library">
-        <Link
-          to="/settings"
-          aria-label="Settings"
-          className="grid size-10 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper md:hidden"
-        >
+        <IconButton to="/settings" label="Settings" className="md:hidden">
           <Settings className="size-5" />
-        </Link>
+        </IconButton>
       </PageTitle>
       <nav className="-mx-2 mb-12">
         {rows.map(({ to, label, icon: Icon, detail }) => (

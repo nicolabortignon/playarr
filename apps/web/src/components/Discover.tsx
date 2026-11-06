@@ -1,28 +1,31 @@
 import type { Album, AlbumRef, Availability, DiscoverAlbum, DiscoverArtist, DiscoverTrack } from '@playarr/shared';
 import { Check, Clock, Download, Loader2, Play, RotateCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useRef, type CSSProperties, type MouseEvent } from 'react';
+import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { albumHref, artistHref, titleKey } from '../lib/links';
 import { useRequestAlbum, useRequests, useRequestsEnabled } from '../lib/queries';
 import { useDelayedFlag } from '../lib/useDelayedFlag';
+import { rowActionWords, RowAction } from './ActionRow';
+import { Button } from './Button';
 import { Cover } from './Cover';
 import { InlineLink } from './InlineLink';
 
 /**
- * One control for every state of an album that may not be in the library yet:
- * Request → Searching → 42% → Importing → In library.
+ * One control for every state of an album that may not be in the library yet: Request → Requesting… → Searching →
+ * 42% → Importing → In library. What can be pressed is a button; what only says how it's going is a badge. Small in
+ * cards and rows; large as a partial album's own action in its action row.
  */
 export function RequestButton({
   album,
   availability,
-  size = 'md',
+  size = 'small',
   className,
 }: {
   album: AlbumRef;
   availability: Availability;
-  size?: 'sm' | 'md';
+  size?: 'small' | 'large';
   className?: string;
 }) {
   const request = useRequestAlbum();
@@ -30,11 +33,7 @@ export function RequestButton({
   const requestsOn = useRequestsEnabled();
   // Finding an album can wait on MusicBrainz (about one request per second): say so after a moment.
   const slow = useDelayedFlag(request.isPending, 2000);
-  const pill = cn(
-    'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full font-mono uppercase tracking-wider transition',
-    size === 'sm' ? 'h-7 px-2.5 text-[10px]' : 'h-8 px-3.5 text-[11px]',
-  );
-  const base = cn(pill, className);
+  const large = size === 'large';
   const stop = (fn: () => void) => (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -46,102 +45,139 @@ export function RequestButton({
   // Progress on earlier requests still shows, and "In library" still links to the album.
   if (!requestsOn && !request.isPending && (state === 'none' || state === 'waiting' || state === 'failed')) return null;
 
-  if (request.isPending) {
-    return (
-      <span
-        title={slow ? 'Finding this album on MusicBrainz, which answers about one request per second' : undefined}
-        className={cn(base, 'border border-line text-paper-dim')}
+  const lookingUp = 'Finding this album on MusicBrainz, which answers about one request per second';
+  // Asking (again): a small button in a card (Request is the card's main action, Try again isn't), the page's own
+  // action in a partial album's row (named by its words).
+  const offer = (label: string, icon: ReactNode, title?: string) =>
+    large ? (
+      <RowAction
+        icon={icon}
+        onClick={ask}
+        title={request.isPending ? (slow ? lookingUp : undefined) : title}
+        pending={request.isPending}
+        pendingLabel={slow ? 'Looking up…' : 'Requesting…'}
+        className={className}
       >
-        <Loader2 className="size-3 animate-spin" /> {slow ? 'Looking up' : 'Requesting'}
-      </span>
+        {label}
+      </RowAction>
+    ) : (
+      <Button size="small" variant={label === 'Request' ? 'primary' : 'secondary'} icon={icon} onClick={ask} title={title} className={className}>
+        {label}
+      </Button>
+    );
+
+  if (request.isPending) {
+    if (large) return offer('Request the rest', <Download />);
+    return (
+      <StatusBadge
+        icon={<Loader2 className="animate-spin" />}
+        title={slow ? lookingUp : undefined}
+        className={cn('border-line text-paper-dim', className)}
+      >
+        {slow ? 'Looking up…' : 'Requesting…'}
+      </StatusBadge>
     );
   }
   // Some of its songs are already here: say how many (opening the album), and offer the rest.
-  if (state === 'partial') {
+  if (state === 'partial' && !large) {
     const have = availability.have ?? 0;
     // How long the album is may be unknown (folder files without a track total): then just how many are here.
     const total = availability.total;
     const summary = total ? `${have} of ${total} songs in your library` : `${have} ${have === 1 ? 'song' : 'songs'} in your library`;
     return (
       <span className={cn('inline-flex shrink-0 items-center gap-1.5', className)}>
-        <button
-          type="button"
+        <Button
+          size="small"
           title={summary}
           aria-label={`${summary}: open the album`}
           onClick={stop(() => albumId && navigate(`/albums/${albumId}`))}
-          className={cn(pill, 'border border-success/30 text-success tabular hover:bg-success/10')}
+          labelClassName="tabular"
         >
           {total ? `${have}/${total}` : `${have} here`}
-        </button>
+        </Button>
         {requestsOn && (
-          <button
-            type="button"
-            title="Request the whole album"
-            onClick={ask}
-            className={cn(pill, 'bg-accent text-accent-ink hover:brightness-110 active:scale-95')}
-          >
-            <Download className="size-3" /> Request
-          </button>
+          <Button size="small" variant="primary" icon={<Download />} title="Request the whole album" onClick={ask}>
+            Request
+          </Button>
         )}
       </span>
     );
   }
+  // The badges' words go with the page's action when the action row narrows; the spinner stays.
+  const words = large ? rowActionWords : undefined;
   switch (state) {
     case 'available':
+      if (large) return null;
       return (
-        <button
-          type="button"
-          onClick={stop(() => albumId && navigate(`/albums/${albumId}`))}
-          className={cn(base, 'border border-success/30 text-success hover:bg-success/10')}
-        >
-          <Check className="size-3" /> In library
-        </button>
+        <Button size="small" icon={<Check className="text-success" />} onClick={stop(() => albumId && navigate(`/albums/${albumId}`))} className={className}>
+          In library
+        </Button>
       );
     case 'searching':
       return (
-        <span title={message} className={cn(base, 'border border-accent/40 text-accent')}>
-          <Loader2 className="size-3 animate-spin" /> Searching
-        </span>
+        <StatusBadge icon={<Loader2 className="animate-spin" />} title={message ?? 'Searching'} wordsClassName={words} className={className}>
+          Searching
+        </StatusBadge>
       );
     case 'downloading': {
       const pct = Math.round((progress ?? 0) * 100);
       return (
-        <span
-          title={message}
-          className={cn(base, 'relative overflow-hidden border border-accent/40 text-accent')}
-          style={{ '--pct': `${pct}%` } as CSSProperties}
-        >
-          <span className="absolute inset-y-0 left-0 w-(--pct) bg-accent/15 transition-[width] duration-700" />
-          <Download className="relative size-3" />
-          <span className="relative tabular">{pct}%</span>
-        </span>
+        <StatusBadge icon={<Download />} title={message} className={className} fill={pct}>
+          <span className="tabular">{pct}%</span>
+        </StatusBadge>
       );
     }
     case 'importing':
       return (
-        <span title={message} className={cn(base, 'border border-accent/40 text-accent')}>
-          <Loader2 className="size-3 animate-spin" /> Importing
-        </span>
+        <StatusBadge icon={<Loader2 className="animate-spin" />} title={message ?? 'Importing'} wordsClassName={words} className={className}>
+          Importing
+        </StatusBadge>
       );
     case 'waiting':
-      return (
-        <button type="button" title={message} onClick={ask} className={cn(base, 'border border-line text-paper-dim hover:border-paper/30 hover:text-paper')}>
-          <Clock className="size-3" /> Search again
-        </button>
-      );
+      return offer('Try again', <Clock />, message);
     case 'failed':
-      return (
-        <button type="button" title={message} onClick={ask} className={cn(base, 'border border-danger/40 text-danger hover:bg-danger/10')}>
-          <TriangleAlert className="size-3" /> Retry
-        </button>
-      );
+      return offer('Try again', <TriangleAlert className="text-danger" />, message);
     default:
-      return (
-        <button type="button" onClick={ask} className={cn(base, 'bg-accent text-accent-ink hover:brightness-110 active:scale-95')}>
-          <Download className="size-3" /> Request
-        </button>
-      );
+      return large ? offer('Request the rest', <Download />) : offer('Request', <Download />);
   }
+}
+
+/**
+ * How a request is going (Requesting…, Searching, 42%, Importing): nothing happens when it's tapped, so it's a badge,
+ * not a button. As tall as a small button, so a card doesn't move as it turns from one into the other.
+ */
+function StatusBadge({
+  icon,
+  title,
+  fill,
+  wordsClassName,
+  className,
+  children,
+}: {
+  icon: ReactNode;
+  title?: string;
+  /** How far along it is, in percent, filled in behind it. */
+  fill?: number;
+  wordsClassName?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        'relative inline-flex h-8 shrink-0 items-center gap-1.5 overflow-hidden rounded-full border border-accent/40 px-3 type-badge text-accent',
+        className,
+      )}
+      style={fill === undefined ? undefined : ({ '--pct': `${fill}%` } as CSSProperties)}
+    >
+      {fill !== undefined && <span className="absolute inset-y-0 left-0 w-(--pct) bg-accent/15 transition-[width] duration-700" />}
+      <span aria-hidden className="relative grid shrink-0 place-items-center *:size-3">
+        {icon}
+      </span>
+      <span className={cn('relative', wordsClassName)}>{children}</span>
+    </span>
+  );
 }
 
 export function DiscoverAlbumCard({
@@ -197,7 +233,6 @@ export function DiscoverAlbumCard({
       <RequestButton
         album={{ mbid: album.mbid, artistName: album.artistName, albumTitle: album.title }}
         availability={album.availability}
-        size="sm"
         className="mt-2.5"
       />
     </div>
@@ -240,7 +275,7 @@ export function DiscoverTrackRow({ track }: { track: DiscoverTrack }) {
       <span className="hidden font-mono text-[13px] text-muted tabular md:block">
         {track.duration ? formatTime(track.duration) : ''}
       </span>
-      <RequestButton album={track.album} availability={track.availability} size="sm" />
+      <RequestButton album={track.album} availability={track.availability} />
     </li>
   );
 }
@@ -281,12 +316,16 @@ export function canRequestRest(album: Album): boolean {
   return album.albumType !== 'Loose' && (album.trackCount < album.totalTrackCount || !!album.mayBeIncomplete);
 }
 
-/** Only some of a library album is here: ask Lidarr for the whole of it, then show how that's going. */
-export function RequestRest({ album, size, className }: { album: Album; size?: 'sm' | 'md'; className?: string }) {
+/**
+ * Asking for the rest of a partial library album: the request to show (its progress, or the offer), or null when
+ * there's nothing to show (the album is whole, what was asked for has arrived, or nothing can be asked for).
+ */
+export function useRestRequest(album: Album | undefined): { album: AlbumRef; availability: Availability } | null {
   const { data: requests } = useRequests();
-  if (!canRequestRest(album)) return null;
+  const requestsOn = useRequestsEnabled();
+  if (!album || !canRequestRest(album)) return null;
   // Albums known only from their tags have no MusicBrainz id: the server finds them by artist and title,
-  // and their request is recognised the same way.
+  // and their request is recognized the same way.
   const request = requests?.find(
     (r) =>
       (album.mbid && r.mbid === album.mbid) ||
@@ -294,12 +333,13 @@ export function RequestRest({ album, size, className }: { album: Album; size?: '
   );
   const availability = request?.availability ?? { state: 'none' as const };
   if (availability.state === 'available') return null;
-  return (
-    <RequestButton
-      album={{ ...(album.mbid ? { mbid: album.mbid } : {}), artistName: album.artistName, albumTitle: album.title }}
-      availability={availability}
-      size={size}
-      className={className}
-    />
-  );
+  // Without Lidarr, or with requests off: nothing to offer, though an earlier request still shows how it's going.
+  if (!requestsOn && (availability.state === 'none' || availability.state === 'waiting' || availability.state === 'failed')) return null;
+  return { album: { ...(album.mbid ? { mbid: album.mbid } : {}), artistName: album.artistName, albumTitle: album.title }, availability };
+}
+
+/** Only some of a library album is here: ask Lidarr for the whole of it, then show how that's going (in a card). */
+export function RequestRest({ album, className }: { album: Album; className?: string }) {
+  const rest = useRestRequest(album);
+  return rest && <RequestButton album={rest.album} availability={rest.availability} className={className} />;
 }

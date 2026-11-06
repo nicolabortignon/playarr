@@ -12,7 +12,7 @@ import { useCurrentTrack, usePlayer } from '../player/store';
 import { useTransition, type UpcomingResult } from '../player/transitions';
 import { Dialog } from './Dialog';
 import { BarTicks, EnergyNumbers, PhraseColumns, PhraseReadout, phrasesAndBars, type BarTick, type PhraseColumn } from './EnergyStrip';
-import { PillGroup } from './SettingsControls';
+import { Choice } from './Choice';
 
 /** Keys this unsure aren't worth showing: they'd be a guess. */
 const MIN_KEY_CONFIDENCE = 0.3;
@@ -168,7 +168,7 @@ function Sheet({ from, to, a, b, upcoming, mixMode }: { from: Track; to: Track; 
 
       <section>
         <h3 className="mb-2 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Mixing for this queue</h3>
-        <PillGroup label="Mixing for this queue" options={MIX_MODES} value={mixMode} onChange={setMixMode} />
+        <Choice label="Mixing for this queue" options={MIX_MODES} value={mixMode} onChange={setMixMode} />
         <p className="mt-2 text-[13px] text-muted">{MIX_MODES.find((m) => m.value === mixMode)?.hint}</p>
       </section>
     </div>

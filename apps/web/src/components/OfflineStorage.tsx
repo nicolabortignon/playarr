@@ -2,7 +2,9 @@ import { HardDriveDownload } from 'lucide-react';
 import { formatBytes, plural } from '../lib/format';
 import { Link } from 'react-router';
 import { canKeepOffline, clearOffline, keptBytes, OFFLINE_LIMITS, setOfflineLimit, splitKept, useOffline, useWorkerReady } from '../player/offline';
-import { PillGroup, SettingsSection } from './SettingsControls';
+import { Button } from './Button';
+import { Choice } from './Choice';
+import { SettingsSection } from './SettingsControls';
 
 const LIMIT_OPTIONS = OFFLINE_LIMITS.map((value) => ({ value, label: value ? formatBytes(value) : 'Off' }));
 
@@ -70,20 +72,16 @@ export function OfflineStorage({ className }: { className?: string }) {
 
           <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
             <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Keep up to</span>
-            <PillGroup
+            <Choice
               label="Space for songs on this device"
               options={LIMIT_OPTIONS}
               value={limit}
               onChange={(value) => void setOfflineLimit(value)}
             />
             {(count > 0 || downloads > 0) && (
-              <button
-                type="button"
-                onClick={() => void clearOffline()}
-                className="ml-auto font-mono text-[11px] tracking-[0.15em] text-muted uppercase transition hover:text-paper"
-              >
+              <Button variant="ghost" size="small" className="ml-auto" onClick={() => void clearOffline()}>
                 Remove all
-              </button>
+              </Button>
             )}
           </div>
         </>

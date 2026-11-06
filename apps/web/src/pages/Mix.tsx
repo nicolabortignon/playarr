@@ -1,6 +1,6 @@
-import { BookmarkPlus, ListEnd, ListPlus, Loader2, Play, RefreshCw, Shuffle } from 'lucide-react';
+import { BookmarkPlus, ListEnd, ListPlus, RefreshCw } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
-import { Menu } from '../components/Menu';
+import { ActionRow, RowAction, usePlayState } from '../components/ActionRow';
 import { MixCover } from '../components/Mixes';
 import { BackButton, ErrorState, Skeleton } from '../components/Section';
 import { TrackList } from '../components/TrackList';
@@ -8,7 +8,6 @@ import { formatDuration, plural } from '../lib/format';
 import { useMix, useRegenerateMix, useSaveMix } from '../lib/queries';
 import { queueTracks } from '../player/actions';
 import { usePlayer } from '../player/store';
-import { DownloadButton } from '../components/DownloadButton';
 
 /** A generated mix: why these songs, when it changes, and the songs. */
 export function MixPage() {
@@ -17,6 +16,8 @@ export function MixPage() {
   const regenerate = useRegenerateMix(key);
   const save = useSaveMix(key);
   const playTracks = usePlayer((s) => s.playTracks);
+  const toggle = usePlayer((s) => s.toggle);
+  const playState = usePlayState(`/mixes/${key}`);
   const navigate = useNavigate();
 
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
@@ -57,42 +58,25 @@ export function MixPage() {
         </div>
       </header>
 
-      <div className="mt-8 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          disabled={!mix.tracks.length}
-          onClick={() => playTracks(mix.tracks, 0, { shuffle: false, source })}
-          aria-label={`Play ${mix.title}`}
-          className="inline-flex h-12 items-center gap-2 rounded-full bg-accent pr-6 pl-5 font-medium text-accent-ink shadow-[0_10px_40px_-12px_var(--accent)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
-        >
-          <Play className="size-5 fill-current" /> Play
-        </button>
-        <button
-          type="button"
-          disabled={!mix.tracks.length}
-          onClick={() => playTracks(mix.tracks, 0, { shuffle: true, source })}
-          aria-label={`Shuffle ${mix.title}`}
-          className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/15 px-5 text-paper transition hover:border-paper/35 hover:bg-paper/5 disabled:opacity-40"
-        >
-          <Shuffle className="size-[18px]" /> Shuffle
-        </button>
-        <button
-          type="button"
-          disabled={regenerate.isPending}
-          onClick={() => regenerate.mutate()}
-          className="inline-flex h-12 items-center gap-2 rounded-full border border-paper/15 px-5 text-paper transition hover:border-paper/35 hover:bg-paper/5 disabled:opacity-60"
-        >
-          {regenerate.isPending ? <Loader2 className="size-[18px] animate-spin" /> : <RefreshCw className="size-[18px]" />}
-          {regenerate.isPending ? 'Mixing…' : 'New mix'}
-        </button>
-        <DownloadButton
-          item={{ key: `mix:${mix.key}`, title: mix.title, subtitle: 'Mix', coverUrl: mix.covers[0], href: `/mixes/${mix.key}` }}
-          tracks={mix.tracks}
-        />
-        <Menu
-          className="size-12 border border-paper/15 text-paper"
-          label="Mix actions"
-          items={[
+      <ActionRow
+        className="mt-8"
+        title={mix.title}
+        disabled={!mix.tracks.length}
+        state={playState}
+        onPlay={() => (playState !== 'idle' ? toggle() : playTracks(mix.tracks, 0, { shuffle: false, source }))}
+        onShuffle={() => playTracks(mix.tracks, 0, { shuffle: true, source })}
+        action={
+          <RowAction icon={<RefreshCw />} pending={regenerate.isPending} pendingLabel="Mixing…" onClick={() => regenerate.mutate()}>
+            New mix
+          </RowAction>
+        }
+        download={{
+          item: { key: `mix:${mix.key}`, title: mix.title, subtitle: 'Mix', coverUrl: mix.covers[0], href: `/mixes/${mix.key}` },
+          tracks: mix.tracks,
+        }}
+        menu={{
+          label: 'Mix actions',
+          items: [
             {
               label: 'Save as playlist',
               icon: BookmarkPlus,
@@ -101,9 +85,9 @@ export function MixPage() {
             },
             { label: 'Play next', icon: ListPlus, onSelect: () => queueTracks(mix.tracks, 'next') },
             { label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks(mix.tracks, 'end') },
-          ]}
-        />
-      </div>
+          ],
+        }}
+      />
 
       <div className="mt-8 -mx-3 max-w-5xl">
         <TrackList tracks={mix.tracks} variant="mixed" source={source} />

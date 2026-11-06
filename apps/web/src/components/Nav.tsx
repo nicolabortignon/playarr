@@ -4,6 +4,7 @@ import { NavLink, useLocation } from 'react-router';
 import { cn } from '../lib/cn';
 import { activeRequestCount, usePlaylists, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
+import { IconButton } from './Button';
 
 type NavItem = { to: string; label: string; icon: LucideIcon };
 
@@ -192,15 +193,10 @@ function SidebarPlaylists() {
         >
           Playlists
         </NavLink>
-        <button
-          type="button"
-          aria-label="New playlist"
-          title="New playlist"
-          onClick={() => openPicker([])}
-          className="grid size-7 place-items-center rounded-full text-muted transition hover:bg-paper/8 hover:text-paper"
-        >
+        {/* Taller than the heading's line: the negative margins keep the line as it is. */}
+        <IconButton label="New playlist" title="New playlist" onClick={() => openPicker([])} className="-my-1 pointer-coarse:-my-2">
           <Plus className="size-4" />
-        </button>
+        </IconButton>
       </div>
       {playlists?.map((p) => (
         <NavLink

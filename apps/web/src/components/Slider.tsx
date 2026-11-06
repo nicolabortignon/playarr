@@ -93,7 +93,8 @@ export function Slider({
       onPointerCancel={() => setDrag(null)}
       onPointerLeave={() => setHover(null)}
       onKeyDown={onKeyDown}
-      className={cn('group relative flex h-5 cursor-pointer touch-none items-center select-none', className)}
+      // On touch screens a taller box than it looks takes the taps: 44 px, the line drawn the same.
+      className={cn('group relative flex h-5 cursor-pointer touch-none items-center select-none tap-target', className)}
     >
       <div ref={trackRef} className="relative h-[3px] w-full rounded-full bg-paper/12 transition-[height] group-hover:h-[5px]">
         <div className="absolute inset-y-0 left-0 rounded-full bg-paper/12" style={{ width: `${bufPct}%` }} />

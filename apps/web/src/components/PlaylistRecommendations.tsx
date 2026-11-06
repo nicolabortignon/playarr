@@ -5,6 +5,7 @@ import { cn } from '../lib/cn';
 import { albumHref, artistHref } from '../lib/links';
 import { usePlaylistMutations, usePlaylistRecommendations } from '../lib/queries';
 import { usePlayer } from '../player/store';
+import { Button } from './Button';
 import { Cover } from './Cover';
 import { RequestButton } from './Discover';
 import { InlineLink } from './InlineLink';
@@ -37,14 +38,9 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
         kicker="From ListenBrainz"
         title="Songs like these"
         action={
-          <button
-            type="button"
-            onClick={newMix}
-            disabled={isFetching}
-            className="inline-flex h-9 items-center gap-2 rounded-full border border-paper/15 px-3.5 font-mono text-[11px] tracking-[0.15em] text-paper-dim uppercase transition hover:border-paper/35 hover:text-paper disabled:opacity-60"
-          >
-            <Dices className={cn('size-4', isFetching && 'animate-spin')} /> New mix
-          </button>
+          <Button size="small" icon={<Dices className={cn(isFetching && 'animate-spin')} />} onClick={newMix} disabled={isFetching}>
+            New mix
+          </Button>
         }
       />
 
@@ -81,8 +77,9 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
                 index={i}
                 onPlay={() => rec.track && playTracks([rec.track], 0, { shuffle: false })}
                 action={
-                  <button
-                    type="button"
+                  <Button
+                    size="small"
+                    icon={<Plus />}
                     aria-label={`Add ${rec.title} to playlist`}
                     disabled={add.isPending}
                     onClick={(e) => {
@@ -92,10 +89,9 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
                         { onSuccess: () => setAdded((s) => new Set(s).add(rec.recordingId)) },
                       );
                     }}
-                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-paper/20 px-2.5 font-mono text-[10px] tracking-wider text-paper uppercase transition hover:border-accent hover:text-accent active:scale-95 disabled:opacity-50"
                   >
-                    <Plus className="size-3" /> Add
-                  </button>
+                    Add
+                  </Button>
                 }
               />
             ))}
@@ -109,18 +105,14 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
                 key={rec.recordingId}
                 rec={rec}
                 index={i}
-                action={rec.album && rec.availability && <RequestButton album={rec.album} availability={rec.availability} size="sm" />}
+                action={rec.album && rec.availability && <RequestButton album={rec.album} availability={rec.availability} />}
               />
             ))}
             {missing.length > MISSING_PREVIEW && (
               <li>
-                <button
-                  type="button"
-                  onClick={() => setShowAll((s) => !s)}
-                  className="mt-1 rounded-full px-3 py-1.5 font-mono text-[11px] tracking-[0.15em] text-muted uppercase transition hover:text-paper"
-                >
+                <Button variant="ghost" size="small" onClick={() => setShowAll((s) => !s)} className="mt-1">
                   {showAll ? 'Show fewer' : `Show all ${missing.length}`}
-                </button>
+                </Button>
               </li>
             )}
           </Group>
