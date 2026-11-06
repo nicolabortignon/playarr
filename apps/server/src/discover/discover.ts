@@ -139,7 +139,9 @@ export class Discover {
     const rgs = groups.status === 'fulfilled' ? groups.value : [];
     if (!lookup && !rgs.length) throw new Error('Artist not found');
 
-    const name = lookup?.artistName ?? creditName(rgs[0]?.['artist-credit']);
+    // Without Lidarr, the name MusicBrainz credits this artist with (the first group may be a collaboration).
+    const credited = rgs.flatMap((rg) => rg['artist-credit'] ?? []).find((c) => c.artist.id === mbid);
+    const name = lookup?.artistName ?? credited?.artist.name ?? creditName(rgs[0]?.['artist-credit']);
     const albums = await Promise.all(
       rgs
         .filter((rg) => ['Album', 'EP'].includes(rg['primary-type'] ?? ''))

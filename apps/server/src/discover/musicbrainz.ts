@@ -151,10 +151,13 @@ export class MusicBrainz {
     ).then((r) => r['release-group']);
   }
 
-  /** An artist's albums and EPs (singles would drown them out). Browse returns up to 100 per page. */
+  /**
+   * An artist's albums and EPs (singles would drown them out), with their artist credits. Only release groups with
+   * an official release, as MusicBrainz's own pages list them: bootlegs stay out. Browse returns up to 100 per page.
+   */
   artistReleaseGroups(artistMbid: string, signal?: AbortSignal) {
     return this.get<{ 'release-groups': MbReleaseGroup[] }>(
-      `/release-group?artist=${encodeURIComponent(artistMbid)}&type=album|ep&limit=100`,
+      `/release-group?artist=${encodeURIComponent(artistMbid)}&type=album|ep&release-group-status=website-default&inc=artist-credits&limit=100`,
       signal,
     ).then((r) => r['release-groups']);
   }

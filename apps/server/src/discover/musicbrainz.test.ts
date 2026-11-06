@@ -55,3 +55,14 @@ describe('MusicBrainz queue status', () => {
     }
   });
 });
+
+describe("MusicBrainz's discography of an artist", () => {
+  it('asks for credits, and only for groups with an official release', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ 'release-groups': [] })));
+    await new MusicBrainz('Playarr-test').artistReleaseGroups('a74b1b7f-71a5-4011-9441-d0b5e4122711');
+    const url = new URL(String(fetch.mock.calls[0]![0]));
+    expect(url.searchParams.get('inc')).toBe('artist-credits');
+    expect(url.searchParams.get('release-group-status')).toBe('website-default');
+    expect(url.searchParams.get('type')).toBe('album|ep');
+  });
+});
