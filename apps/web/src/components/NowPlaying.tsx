@@ -1,11 +1,12 @@
 import { ChevronDown, ListMusic, Quote } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import { sized } from '../lib/api';
 import { useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
+import { useColumnLayout } from '../lib/useMediaQuery';
 import { playUpcoming } from '../player/actions';
 import { useCurrentTrack, usePlayer } from '../player/store';
 import { IconButton } from './Button';
@@ -42,13 +43,20 @@ function Sheet() {
   const controls = useDragControls();
   const sheet = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const columnFits = useColumnLayout();
   const close = () => setOpen(false);
   const go = (to: string) => {
     close();
     void navigate(to);
   };
+  // The queue beside the page where there's room for it (as the iPad app does), else the Queue page.
+  const openQueue = () => {
+    if (!columnFits) return go('/queue');
+    close();
+    useUI.getState().setSideColumn('queue');
+  };
   // The one song menu, for the song playing: no Play next or Add to queue; Open queue is this place's own.
-  const menu = useSongMenu(track, { playing: true, go, own: [{ label: 'Open queue', icon: ListMusic, onSelect: () => go('/queue') }] });
+  const menu = useSongMenu(track, { playing: true, go, own: [{ label: 'Open queue', icon: ListMusic, onSelect: openQueue }] });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -69,6 +77,8 @@ function Sheet() {
       role="dialog"
       aria-modal
       aria-label="Now playing"
+      // iPhone Safari 26 draws its translucent status bar and toolbar in this background color, as the topmost fixed
+      // element at those edges (the film grain sits below it, index.css), rather than letting the page show through.
       className="fixed inset-0 z-50 overflow-hidden bg-ink-950"
       initial={{ y: '100%' }}
       animate={{ y: 0 }}
@@ -95,7 +105,10 @@ function Sheet() {
           className="pointer-events-none absolute inset-0 h-full w-full scale-150 object-cover blur-[90px] saturate-150"
         />
       </AnimatePresence>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_0%,rgb(10_9_8/0.5)_55%,rgb(10_9_8/0.92)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_0%,color-mix(in_oklab,var(--color-ink-950)_50%,transparent)_55%,color-mix(in_oklab,var(--color-ink-950)_92%,transparent)_100%)]" />
+      {/* The art fades into the ink of the bars around it: Safari's status bar and toolbar, or the installed app's. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[calc(env(safe-area-inset-top)+3rem)] bg-gradient-to-b from-ink-950 to-transparent md:hidden" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[calc(env(safe-area-inset-bottom)+3rem)] bg-gradient-to-t from-ink-950 to-transparent md:hidden" />
 
       <div className="relative mx-auto flex h-full max-w-6xl flex-col px-6 pt-[max(env(safe-area-inset-top),1rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)] md:px-12">
         <header className="flex h-14 shrink-0 touch-none items-center justify-between" onPointerDown={(e) => controls.start(e)}>
@@ -151,7 +164,7 @@ function Sheet() {
                   key={track.id}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="font-display text-[1.75rem] leading-[1.1] text-balance text-paper md:text-5xl"
+                  className="font-display text-3xl leading-[1.1] text-balance text-paper md:text-5xl"
                 >
                   {track.title}
                 </motion.h2>
@@ -169,7 +182,7 @@ function Sheet() {
               <Transport size="lg" />
               <TransitionView className="self-center" />
             </div>
-            <UpNext go={go} onNavigate={close} />
+            <UpNext go={go} onOpenQueue={openQueue} />
           </div>
         </div>
       </div>
@@ -178,7 +191,7 @@ function Sheet() {
 }
 
 /** The next few songs, on wide screens: the queue's rows, compact, with the same menu. */
-function UpNext({ go, onNavigate }: { go: (to: string) => void; onNavigate: () => void }) {
+function UpNext({ go, onOpenQueue }: { go: (to: string) => void; onOpenQueue: () => void }) {
   const ids = usePlayer(useShallow((s) => s.order.slice(s.pos + 1)));
   const queue = usePlayer((s) => s.queue);
   const shown = ids.slice(0, 4);
@@ -188,9 +201,9 @@ function UpNext({ go, onNavigate }: { go: (to: string) => void; onNavigate: () =
     <div className="hidden md:block">
       <div className="mb-2 flex items-center justify-between">
         <span className="type-kicker text-muted">Up next</span>
-        <Link to="/queue" onClick={onNavigate} className="type-kicker text-muted hover:text-paper">
+        <button type="button" onClick={onOpenQueue} className="type-kicker text-muted hover:text-paper">
           Queue
-        </Link>
+        </button>
       </div>
       <ol className="-mx-2">
         {shown.map((queueIndex, i) => {

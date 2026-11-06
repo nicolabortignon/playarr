@@ -1,3 +1,9 @@
+/**
+ * Your listening: a page of its own, in Library and the account menu (no longer a Settings panel: /settings/listening
+ * redirects here).
+ */
+export const STATS_PATH = '/stats';
+
 /** Where an artist or album name leads, given whatever ids are known. */
 interface ArtistRef {
   artistId?: number;

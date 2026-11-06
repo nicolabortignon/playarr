@@ -2,10 +2,16 @@ import type { FavoriteTrack } from '@playarr/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
+import { isTyping, noteKeyPress } from '../lib/keyboard';
 import { useToggleFavorite } from '../lib/queries';
+import { useUI } from '../lib/ui';
 import { currentTrack, useClock, usePlayer } from './store';
 
-/** Space play/pause · ←/→ seek 10s · Shift+←/→ prev/next · ↑/↓ volume · M mute · S shuffle · L favorite · / search */
+/**
+ * Space play/pause · ←/→ seek 10s · Shift+←/→ prev/next · ↑/↓ volume · M mute · S shuffle · L favorite · / search ·
+ * ? these shortcuts (components/Shortcuts.tsx lists them). A key pressed outside a field also tells that there's a
+ * keyboard here (lib/keyboard.ts).
+ */
 export function useKeyboardShortcuts() {
   const navigate = useNavigate();
   const client = useQueryClient();
@@ -13,10 +19,11 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      noteKeyPress(e);
       // A control already used the key (e.g. arrows moving between radio options in Settings).
       if (e.defaultPrevented) return;
       const target = e.target as HTMLElement;
-      if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (isTyping(target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const p = usePlayer.getState();
       const clock = useClock.getState();
@@ -67,6 +74,12 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           navigate('/search');
           break;
+        case '?': {
+          e.preventDefault();
+          const ui = useUI.getState();
+          ui.setShortcuts(!ui.shortcutsOpen);
+          break;
+        }
       }
     };
     window.addEventListener('keydown', onKey);

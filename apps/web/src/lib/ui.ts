@@ -1,12 +1,21 @@
 import type { Track } from '@playarr/shared';
 import { create } from 'zustand';
 
+/** What the column beside the page holds, at desktop widths (components/SideColumn.tsx), as on the iPad app. */
+export type SideColumnView = 'queue' | 'lyrics';
+
 interface UIState {
   nowPlayingOpen: boolean;
   setNowPlaying: (open: boolean) => void;
   /** Now Playing shows the words in place of the cover. */
   lyricsOpen: boolean;
   setLyrics: (open: boolean) => void;
+  /** The column beside the page, wide enough: the queue or the words of the song playing; null while it's closed. */
+  sideColumn: SideColumnView | null;
+  setSideColumn: (view: SideColumnView | null) => void;
+  /** The keyboard shortcuts, over everything (`?`). */
+  shortcutsOpen: boolean;
+  setShortcuts: (open: boolean) => void;
   /** Songs waiting to be added by the "Add to playlist" dialog; [] = just create a playlist. */
   playlistPicker: Track[] | null;
   openPlaylistPicker: (tracks: Track[]) => void;
@@ -26,6 +35,10 @@ export const useUI = create<UIState>()((set) => ({
   setNowPlaying: (nowPlayingOpen) => set({ nowPlayingOpen }),
   lyricsOpen: false,
   setLyrics: (lyricsOpen) => set({ lyricsOpen }),
+  sideColumn: null,
+  setSideColumn: (sideColumn) => set({ sideColumn }),
+  shortcutsOpen: false,
+  setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
   playlistPicker: null,
   openPlaylistPicker: (tracks) => set({ playlistPicker: tracks.filter((t) => t.recordingId) }),
   closePlaylistPicker: () => set({ playlistPicker: null }),

@@ -1,29 +1,16 @@
 import { Fragment } from 'react';
 import { Link } from 'react-router';
+import { useHasKeyboard } from '../lib/keyboard';
 import { CROSSFADES, usePrefs, type Transitions } from '../lib/prefs';
 import { useLocked } from '../lib/queries';
 import { canSetVolume } from '../player/decks';
 import { OfflineStorage } from './OfflineStorage';
 import { Choice } from './Choice';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
-
-/** What player/useKeyboardShortcuts.ts does. */
-const SHORTCUTS: { keys: string[][]; action: string }[] = [
-  { keys: [['Space']], action: 'Play or pause' },
-  { keys: [['←'], ['→']], action: 'Back or ahead 10 seconds' },
-  { keys: [['Shift', '←'], ['Shift', '→']], action: 'Previous or next song' },
-  { keys: [['↑'], ['↓']], action: 'Volume up or down' },
-  { keys: [['M']], action: 'Mute or unmute' },
-  { keys: [['S']], action: 'Shuffle on or off' },
-  { keys: [['L']], action: 'Add the song playing to Favorites, or remove it' },
-  { keys: [['/']], action: 'Search' },
-];
+import { Keys, SHORTCUT_SIDES } from './Shortcuts';
 
 /** Lengths offered once Crossfade is chosen: 0 seconds would just be Off. */
 const CROSSFADE_LENGTHS = CROSSFADES.filter((s) => s > 0).map((s) => ({ value: s, label: `${s} s` }));
-
-const KBD =
-  'inline-flex h-6 min-w-6 items-center justify-center rounded border border-line bg-ink-800 px-1.5 font-mono text-[11px] tracking-wider text-paper-dim uppercase';
 
 /** Settings → Playback: for this device, unless an admin has locked it for this account (then read-only). */
 export function PlaybackPanel() {
@@ -39,6 +26,8 @@ export function PlaybackPanel() {
   const levelVolume = usePrefs((s) => s.levelVolume);
   const setLevelVolume = usePrefs((s) => s.setLevelVolume);
   const settable = canSetVolume();
+  // Only where there's a keyboard to press them on (lib/keyboard.ts): not on a phone, nor a tablet without one.
+  const keyboard = useHasKeyboard();
   // A device that can't fade plays a saved Crossfade without a gap, so show it as Off there.
   // DJ mix stays: its transitions are mixed before they reach the device, no volume needed.
   const shown: Transitions = !settable && transitions === 'crossfade' ? 'off' : transitions;
@@ -113,28 +102,27 @@ export function PlaybackPanel() {
         </div>
       </SettingsSection>
       <OfflineStorage />
-      <SettingsSection title="Keyboard shortcuts" description="They work anywhere in Playarr, except while you’re typing.">
-        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-3">
-          {SHORTCUTS.map(({ keys, action }) => (
-            <Fragment key={action}>
-              <dt className="flex flex-wrap items-center gap-1.5">
-                {keys.map((combo, i) => (
-                  <Fragment key={combo.join('+')}>
-                    {i > 0 && <span className="text-[12px] text-muted">or</span>}
-                    {combo.map((key, j) => (
-                      <Fragment key={key}>
-                        {j > 0 && <span className="text-[12px] text-muted">+</span>}
-                        <kbd className={KBD}>{key}</kbd>
-                      </Fragment>
-                    ))}
-                  </Fragment>
-                ))}
-              </dt>
-              <dd className="text-[14px] text-paper-dim">{action}</dd>
-            </Fragment>
-          ))}
-        </dl>
-      </SettingsSection>
+      {keyboard && (
+        <SettingsSection
+          title="Keyboard shortcuts"
+          description={
+            <>
+              They work anywhere in Playarr, except while you’re typing. Press <Keys keys={[['?']]} /> to see them over any page.
+            </>
+          }
+        >
+          <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-3">
+            {SHORTCUT_SIDES.flatMap(({ shortcuts }) => shortcuts).map(({ keys, action }) => (
+              <Fragment key={action}>
+                <dt>
+                  <Keys keys={keys} />
+                </dt>
+                <dd className="type-small text-paper-dim">{action}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        </SettingsSection>
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { SongRow } from '../components/SongRow';
 import { Choice } from '../components/Choice';
 import { cn } from '../lib/cn';
 import { plural } from '../lib/format';
+import { STATS_PATH } from '../lib/links';
 import { useListeningStats } from '../lib/queries';
 import { usePlayer } from '../player/store';
 import { GRID } from './Albums';
@@ -33,10 +34,7 @@ const number = (n: number) => n.toLocaleString();
 export const minutesLabel = (m: number) => (m < 60 ? `${m} min` : `${number(Math.floor(m / 60))} h${m % 60 ? ` ${m % 60} min` : ''}`);
 const isYear = (r: string) => /^\d{4}$/.test(r);
 
-/** Where Your listening lives: Settings → Your listening. */
-export const STATS_PATH = '/settings/listening';
-
-/** Your listening as its own page (older links to /stats). */
+/** Your listening: what you played most, and when (Library → Your listening, or the account menu). */
 export function StatsPage() {
   return (
     <div className="px-5 pt-8 pb-16 md:px-10 md:pt-14">
@@ -177,7 +175,7 @@ function Report({ stats }: { stats: ListeningStats }) {
         </div>
         {/* Two columns only where a song row fits whole in each: narrower, the titles would lose to the numbers. Columns
             of minmax(0, 1fr), so a long title is cut short rather than widening the list past the screen. */}
-        <ol className="-mx-3 grid grid-cols-1 gap-x-8 xl:grid-cols-2">
+        <ol className="-mx-3 grid grid-cols-1 gap-x-8 page-xl:grid-cols-2">
           {stats.topTracks.map(({ track, plays }, i) => (
             <SongRow
               key={track.id}
@@ -211,7 +209,7 @@ function Report({ stats }: { stats: ListeningStats }) {
 
       <section>
         <h2 className="mb-6 type-section-title text-paper">When you listen</h2>
-        <div className={cn('grid gap-10', year ? 'lg:grid-cols-[2fr_1fr]' : 'md:grid-cols-[2fr_1fr]')}>
+        <div className={cn('grid gap-10', year ? 'page-lg:grid-cols-[2fr_1fr]' : 'md:grid-cols-[2fr_1fr]')}>
           <ColumnChart title="By hour of the day" values={stats.hours} labels={HOURS} ticks={(i) => i % 6 === 0} format={minutesLabel} />
           <ColumnChart title="By day of the week" values={stats.weekdays} labels={WEEKDAYS} format={minutesLabel} />
         </div>

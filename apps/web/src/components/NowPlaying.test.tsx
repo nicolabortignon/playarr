@@ -1,7 +1,7 @@
 import type { Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
@@ -64,6 +64,36 @@ describe('Now Playing', () => {
     expect(s.order.slice(s.pos + 1).map((i) => s.queue[i]!.title)).toEqual(['Song 3', 'Song 2']);
     fireEvent.click(screen.getByRole('button', { name: 'Play Song 2' }));
     expect(usePlayer.getState().pos).toBe(2);
+  });
+});
+
+describe('Now Playing’s Open queue', () => {
+  const room = (column: boolean) =>
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(min-width: 1280px)' && column, media: query, addEventListener() {}, removeEventListener() {} }));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('opens the queue beside the page where there’s room, closing Now Playing', () => {
+    room(true);
+    useUI.setState({ sideColumn: null });
+    wrap(<NowPlaying />);
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open queue' }));
+    expect(useUI.getState()).toMatchObject({ sideColumn: 'queue', nowPlayingOpen: false });
+  });
+
+  it('opens the Queue page where there isn’t', () => {
+    room(false);
+    useUI.setState({ sideColumn: null });
+    const router = createMemoryRouter([{ path: '*', element: <NowPlaying /> }], { initialEntries: ['/albums/1'] });
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open queue' }));
+    expect(router.state.location.pathname).toBe('/queue');
+    expect(useUI.getState()).toMatchObject({ sideColumn: null, nowPlayingOpen: false });
   });
 });
 

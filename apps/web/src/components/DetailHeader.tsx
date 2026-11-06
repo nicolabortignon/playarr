@@ -7,8 +7,8 @@ import { Skeleton } from './States';
  * first screen of a 375 px phone (with a two-line title and meta line, under the mini player); from md it sits beside
  * the text. An artist's picture is a smaller circle.
  */
-const COVER = 'mx-auto w-[min(64vw,256px)] shrink-0 md:mx-0 md:w-48 lg:w-60 xl:w-72';
-const ROUND = 'mx-auto w-[min(40vw,160px)] shrink-0 md:mx-0 md:w-40 lg:w-48';
+const COVER = 'mx-auto w-[min(64vw,256px)] shrink-0 md:mx-0 md:w-48 page-lg:w-60 page-xl:w-72';
+const ROUND = 'mx-auto w-[min(40vw,160px)] shrink-0 md:mx-0 md:w-40 page-lg:w-48';
 
 /**
  * The header of everything you can play (album, playlist, mix, Favorites, artist), in one order: the cover, a kicker
@@ -49,7 +49,7 @@ export function DetailHeader({
 }) {
   return (
     <header className={className}>
-      <div className="flex flex-col gap-5 md:flex-row md:items-end md:gap-8 lg:gap-10">
+      <div className="flex flex-col gap-5 md:flex-row md:items-end md:gap-8 page-lg:gap-10">
         {cover && <div className={cn(round ? ROUND : COVER, 'animate-rise')}>{cover}</div>}
         <div className="min-w-0 flex-1 animate-rise [animation-delay:80ms]">
           <div className="type-kicker text-muted">{kicker}</div>
@@ -88,7 +88,7 @@ export function joinMeta(...parts: ReactNode[]): ReactNode[] {
 export function DetailHeaderSkeleton({ round }: { round?: boolean }) {
   return (
     <div aria-busy="true">
-      <div className="flex flex-col gap-5 md:flex-row md:items-end md:gap-8 lg:gap-10">
+      <div className="flex flex-col gap-5 md:flex-row md:items-end md:gap-8 page-lg:gap-10">
         <Skeleton className={cn(round ? ROUND : COVER, 'aspect-square', round && 'rounded-full')} />
         <div className="min-w-0 flex-1 space-y-3">
           <Skeleton className="h-3 w-24" />

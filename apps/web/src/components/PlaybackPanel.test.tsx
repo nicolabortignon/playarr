@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useKeyboardSeen } from '../lib/keyboard';
 import { usePrefs } from '../lib/prefs';
 import { PlaybackPanel } from './PlaybackPanel';
 
@@ -73,5 +74,34 @@ describe('PlaybackPanel transitions', () => {
     expect(fades.getByRole('radio', { name: '6 s' }).getAttribute('aria-checked')).toBe('true');
     fireEvent.click(fades.getByRole('radio', { name: '12 s' }));
     expect(usePrefs.getState().crossfade).toBe(12);
+  });
+});
+
+describe('PlaybackPanel keyboard shortcuts', () => {
+  const pointer = (fine: boolean) =>
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(any-pointer: fine)' && fine, media: query, addEventListener() {}, removeEventListener() {} }));
+  const shortcuts = () => screen.queryByRole('region', { name: 'Keyboard shortcuts' });
+
+  it('lists them where there’s a keyboard, and how to see them over any page', () => {
+    useKeyboardSeen.setState({ seen: false });
+    pointer(true);
+    view();
+    const list = shortcuts()!;
+    expect(within(list).getByText('Play or pause')).toBeTruthy();
+    expect(within(list).getByText(/to see them over any page/)).toBeTruthy();
+  });
+
+  it('leaves them out on a touch screen with no keyboard', () => {
+    useKeyboardSeen.setState({ seen: false });
+    pointer(false);
+    view();
+    expect(shortcuts()).toBeNull();
+  });
+
+  it('shows them on a touch screen once a keyboard has been used there', () => {
+    useKeyboardSeen.setState({ seen: true });
+    pointer(false);
+    view();
+    expect(shortcuts()).not.toBeNull();
   });
 });

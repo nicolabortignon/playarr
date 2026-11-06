@@ -28,6 +28,7 @@ function renderGreeting() {
     [
       { path: '/', element: <Greeting /> },
       { path: '/settings/:panel?', element: <p>settings</p> },
+      { path: '/stats', element: <p>your listening</p> },
     ],
     { initialEntries: ['/'] },
   );
@@ -49,6 +50,15 @@ describe('Home greeting', () => {
     fireEvent.click(avatar);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Account' }));
     expect(router.state.location.pathname).toBe('/settings/accounts');
+  });
+
+  it('opens Your listening from the avatar’s menu, now that it isn’t a setting', async () => {
+    vi.spyOn(api, 'me').mockResolvedValue(account());
+    const router = renderGreeting();
+    fireEvent.click(await screen.findByRole('button', { name: 'Account and settings' }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Account', 'Your listening', 'Settings']);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Your listening' }));
+    expect(router.state.location.pathname).toBe('/stats');
   });
 
   it('uses the username when the account has no name', async () => {

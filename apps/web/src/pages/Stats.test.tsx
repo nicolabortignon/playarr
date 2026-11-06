@@ -24,6 +24,7 @@ const stats: ListeningStats = {
   days: 90,
   newArtists: 12,
   longestStreak: 9,
+  currentStreak: 0,
   topArtists: [{ artist: { id: 7, name: 'Portishead' } as never, plays: 50, minutes: 200 }],
   topAlbums: [],
   topTracks: [
@@ -61,7 +62,7 @@ describe('Your listening', () => {
     expect(usePlayer.getState().queue[usePlayer.getState().order[usePlayer.getState().pos]!]!.id).toBe(2);
     fireEvent.click(screen.getByRole('button', { name: /Play them/ }));
     expect(usePlayer.getState().queue.map((t) => t.id)).toEqual([1, 2]);
-    expect(usePlayer.getState().source).toEqual({ label: 'Your top songs of 2026', href: '/settings/listening?range=2026' });
+    expect(usePlayer.getState().source).toEqual({ label: 'Your top songs of 2026', href: '/stats?range=2026' });
   });
 
   it('formats minutes, and shows the year in review on Home in December and January', () => {

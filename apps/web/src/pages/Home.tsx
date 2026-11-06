@@ -14,6 +14,7 @@ import { CardSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
 import { cn } from '../lib/cn';
 import { formatDuration } from '../lib/format';
+import { STATS_PATH } from '../lib/links';
 import { useAlbums, useArtists, useFavorites, useHealth, useListeningStats, useMe, useMixes, usePlaylists, useRandomAlbums, useRecentAlbums } from '../lib/queries';
 import { GRID } from './Albums';
 import { FAVORITES } from './Favorites';
@@ -34,7 +35,7 @@ export function HomePage() {
     <div className="px-5 pt-6 md:px-10 md:pt-14">
       <Greeting />
 
-      <section className="relative mb-14 grid items-end gap-10 md:mb-20 xl:grid-cols-[1fr_auto]">
+      <section className="relative mb-14 grid items-end gap-10 md:mb-20 page-xl:grid-cols-[1fr_auto]">
         <div className="animate-rise">
           <p className="max-w-md type-body leading-relaxed text-paper-dim">
             {lib ? (
@@ -168,14 +169,14 @@ function YearInReview() {
   return (
     <section className="mb-14">
       <Link
-        to={`/settings/listening?range=${year}`}
+        to={`${STATS_PATH}?range=${year}`}
         className="group relative flex items-center gap-5 overflow-hidden rounded-xl border border-line bg-ink-900 p-5 transition hover:border-paper/20 md:p-7"
       >
         {top && <ArtistAvatar name={top.artist.name} src={top.artist.imageUrl} size={128} className="size-24 shrink-0 md:size-32" />}
         <div className="min-w-0">
           <div className="type-kicker text-muted">Year in review</div>
           <div className="mt-1 font-display text-3xl text-paper md:text-5xl">Your {year} in music</div>
-          <p className="mt-2 text-[14px] text-paper-dim">
+          <p className="mt-2 type-body text-paper-dim">
             {data.minutes.toLocaleString()} minutes{top ? `, most of all ${top.artist.name}` : ''}
           </p>
         </div>
@@ -237,13 +238,13 @@ function CoverStack({ albums }: { albums?: { id: number; title: string; coverUrl
     'rotate-[14deg] -translate-x-16 translate-y-6',
   ];
   return (
-    <div className="hidden xl:block">
+    <div className="hidden page-xl:block">
       <div className="flex justify-end pr-6">
         {albums.map((a, i) => (
           <Link
             key={a.id}
             to={`/albums/${a.id}`}
-            className={`group relative -ml-16 block w-40 animate-rise transition duration-500 ease-out-expo hover:z-20 hover:-translate-y-3 hover:rotate-0 2xl:w-52 ${poses[i]}`}
+            className={`group relative -ml-16 block w-40 animate-rise transition duration-500 ease-out-expo hover:z-20 hover:-translate-y-3 hover:rotate-0 page-2xl:w-52 ${poses[i]}`}
             style={{ animationDelay: `${150 + i * 90}ms` }}
           >
             <Cover src={a.coverUrl} size={208} alt={a.title} eager className="rounded-cover shadow-cover-hero ring-1 ring-paper/10" />
@@ -296,7 +297,7 @@ function ListeningButton() {
             transition={spring}
             className="min-w-0"
           >
-            <span className="block font-mono text-[10px] tracking-[0.2em] text-muted uppercase">Resume</span>
+            <span className="block type-kicker text-muted">Resume</span>
             <span className="block max-w-56 truncate text-sm text-paper">{track.title}</span>
           </motion.span>
         )}

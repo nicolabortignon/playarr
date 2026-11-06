@@ -1,10 +1,12 @@
-import { ArrowDownToLine, ChartColumn, ChevronRight, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
+import { ArrowDownToLine, ChartColumn, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { IconButton } from '../components/Button';
+import { NavRow } from '../components/NavRow';
 import { PageHeader } from '../components/PageHeader';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { SectionHeader } from '../components/Section';
 import { plural } from '../lib/format';
+import { STATS_PATH } from '../lib/links';
 import { useFavorites, useHealth, usePlaylists, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { useOffline } from '../player/offline';
@@ -21,7 +23,7 @@ export function LibraryPage() {
 
   const rows: { to: string; label: string; icon: LucideIcon; detail?: string }[] = [
     { to: '/mixes', label: 'Made for you', icon: Sparkles },
-    { to: '/settings/listening', label: 'Your listening', icon: ChartColumn },
+    { to: STATS_PATH, label: 'Your listening', icon: ChartColumn },
     ...(downloads ? [{ to: '/downloads', label: 'Downloads', icon: ArrowDownToLine, detail: String(downloads) }] : []),
     { to: '/favorites', label: 'Favorites', icon: Heart, detail: favorites ? plural(favorites.length, 'song') : undefined },
     { to: '/artists', label: 'Artists', icon: LibraryIcon, detail: lib ? String(lib.artists) : undefined },
@@ -41,15 +43,8 @@ export function LibraryPage() {
         }
       />
       <nav className="-mx-2 mb-12">
-        {rows.map(({ to, label, icon: Icon, detail }) => (
-          <Link key={to} to={to} className="flex items-center gap-4 rounded-lg px-2 py-3 transition hover:bg-paper/[0.04]">
-            <span className="grid size-11 place-items-center rounded-md bg-ink-800 text-accent">
-              <Icon className="size-5" />
-            </span>
-            <span className="flex-1 text-[17px] text-paper">{label}</span>
-            {detail && <span className="font-mono text-[12px] text-muted">{detail}</span>}
-            <ChevronRight className="size-4 text-muted" />
-          </Link>
+        {rows.map((row) => (
+          <NavRow key={row.to} {...row} />
         ))}
       </nav>
 
@@ -63,20 +58,20 @@ export function LibraryPage() {
           <span className="grid size-14 place-items-center rounded-cover border border-dashed border-paper/25 text-accent">
             <Plus className="size-5" />
           </span>
-          <span className="text-[16px] text-paper">New playlist</span>
+          <span className="type-body text-paper">New playlist</span>
         </button>
         {playlists?.map((p) => (
           <Link key={p.id} to={`/playlists/${p.id}`} className="flex items-center gap-4 rounded-lg px-2 py-2.5 transition hover:bg-paper/[0.04]">
             <PlaylistCover cover={p.cover} size={56} name={p.name} className="size-14 shrink-0 rounded-cover" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[16px] text-paper">{p.name}</span>
-              <span className="block font-mono text-[12px] text-muted">{plural(p.trackCount, 'song')}</span>
+              <span className="block truncate type-body text-paper">{p.name}</span>
+              <span className="block type-meta text-muted">{plural(p.trackCount, 'song')}</span>
             </span>
           </Link>
         ))}
       </div>
 
-      <p className="mt-12 text-sm text-muted">
+      <p className="mt-12 type-small text-muted">
         Songs kept on this device:{' '}
         <Link to="/settings/playback" className="text-accent hover:underline">
           Settings → Playback

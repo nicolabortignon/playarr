@@ -241,6 +241,8 @@ export interface SongRowProps {
    * it, so the title has the room.
    */
   stackOnPhones?: boolean;
+  /** In a column as narrow as a phone at any width (the queue beside the page): laid out as `stackOnPhones` is on one. */
+  narrow?: boolean;
   className?: string;
   style?: CSSProperties;
 }
@@ -263,6 +265,7 @@ export function SongRow({
   reorder,
   compact,
   stackOnPhones,
+  narrow,
   className,
   style,
 }: SongRowProps) {
@@ -272,6 +275,9 @@ export function SongRow({
   const toggle = usePlayer((s) => s.toggle);
   const items = useSongMenu(t, menu);
   const under = subtitle === undefined ? lead === 'cover' && <ArtistAndAlbum track={t} /> : subtitle;
+  // Stacked: the numbers under the title and no heart, on phones only, or everywhere in a narrow column.
+  const stack = narrow ? 'always' : stackOnPhones ? 'phones' : undefined;
+  const besideTitle = stack === 'always' ? 'hidden' : stack === 'phones' ? 'max-sm:hidden' : undefined;
 
   const leadEl =
     lead === 'number' ? (
@@ -315,8 +321,12 @@ export function SongRow({
       titleClassName={current ? 'text-accent' : 'text-paper'}
       badge={<OfflineMark fileId={t.fileId} />}
       subtitle={
-        stackOnPhones ? (
-          <NameAndNumbers name={under || undefined} numbers={numbers ?? formatTime(t.duration)} numbersClassName="tabular sm:hidden" />
+        stack ? (
+          <NameAndNumbers
+            name={under || undefined}
+            numbers={numbers ?? formatTime(t.duration)}
+            numbersClassName={cn('tabular', stack === 'phones' && 'sm:hidden')}
+          />
         ) : (
           under
         )
@@ -324,11 +334,11 @@ export function SongRow({
       trailing={
         <>
           {numbers !== undefined ? (
-            <span className={cn('shrink-0 type-meta text-muted', stackOnPhones && 'max-sm:hidden')}>{numbers}</span>
+            <span className={cn('shrink-0 type-meta text-muted', besideTitle)}>{numbers}</span>
           ) : (
-            <SongTime seconds={t.duration} bpm={bpm} className={cn(stackOnPhones && 'max-sm:hidden')} />
+            <SongTime seconds={t.duration} bpm={bpm} className={besideTitle} />
           )}
-          <FavoriteButton track={t} reveal className={cn('relative z-10', stackOnPhones && 'max-sm:hidden')} />
+          <FavoriteButton track={t} reveal className={cn('relative z-10', besideTitle)} />
         </>
       }
       main={{ label: `${playingHere ? 'Pause' : 'Play'} ${t.title}`, onClick: () => (current ? toggle() : onPlay()) }}

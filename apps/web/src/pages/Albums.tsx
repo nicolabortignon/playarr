@@ -16,7 +16,7 @@ const SORTS: { value: AlbumSort; label: string }[] = [
   { value: 'added', label: 'Recently added' },
 ];
 
-export const GRID = 'grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:gap-x-6 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
+export const GRID = 'grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:gap-x-6 page-lg:grid-cols-4 page-xl:grid-cols-5 page-2xl:grid-cols-6';
 
 /** How many grid cards rise in when a page opens: the first screenful. The rest just appear. */
 const ANIMATED = 18;

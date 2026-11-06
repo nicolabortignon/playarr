@@ -1,5 +1,7 @@
 import type { FolderAccessKind, FolderBrowseRequest, SourceInfo, SourceTestResult } from '@playarr/shared';
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   Folder,
   FolderOpen,
@@ -10,10 +12,10 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  RotateCw,
+  ScanSearch,
   Server,
-  Trash2,
   TriangleAlert,
+  X,
 } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
@@ -21,12 +23,13 @@ import { api } from '../lib/api';
 import { cn } from '../lib/cn';
 import { plural, formatWait } from '../lib/format';
 import { useFolderAccess, useFolderListing, useMatching, useSaveMatching, useSourceActions, useSources } from '../lib/queries';
-import { Button, IconButton } from './Button';
+import { Button } from './Button';
 import { Choice } from './Choice';
 import { ConfirmDialog, Dialog } from './Dialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { ReviewDialog } from './ReviewDialog';
 import { AwayNotice } from './SettingsControls';
+import { DIVIDER, Menu, type MenuEntry } from './Menu';
 import { InlineError } from './States';
 import { TextField } from './TextField';
 
@@ -51,27 +54,36 @@ export function SourcesPanel() {
     const ids = order.map((s) => s.id);
     if (ids.join() !== data.sources.map((s) => s.id).join()) actions.reorder.mutate(ids);
   };
+  /** Move up or Move down, from a source's ⋯: one place, as dragging it there would. */
+  const move = (from: number, by: -1 | 1) => {
+    const next = [...order];
+    const [moved] = next.splice(from, 1);
+    next.splice(from + by, 0, moved!);
+    setOrder(next);
+    actions.reorder.mutate(next.map((s) => s.id));
+  };
 
   return (
     <section>
-      <p className="mb-6 max-w-prose text-sm text-muted">
+      <p className="mb-6 max-w-prose type-small text-muted">
         Where your music comes from. When a song is in more than one place, Playarr plays the best-quality copy; between equal
         copies, the source higher in this list wins.
       </p>
-      {!canEdit && (
-        <AwayNotice />
-      )}
+      {!canEdit && <AwayNotice />}
       {data.sources.length === 0 && (
-        <p className="mb-6 text-[15px] text-paper-dim">No sources yet. Add Lidarr or a folder to start your library.</p>
+        <p className="mb-6 type-body text-paper-dim">No sources yet. Add Lidarr or a folder to start your library.</p>
       )}
 
       <Reorder.Group axis="y" values={order} onReorder={setOrder} as="ol" className="-mx-2">
-        {order.map((s) => (
+        {order.map((s, i) => (
           <SourceRow
             key={s.id}
             source={s}
             canEdit={canEdit}
             onDragEnd={commitOrder}
+            onMove={i > 0 || i < order.length - 1 ? (by) => move(i, by) : undefined}
+            first={i === 0}
+            last={i === order.length - 1}
             onEdit={() => setEditing(s)}
             onReview={() => setReviewing(s.id)}
             onOrganize={() => setOrganizing(s.id)}
@@ -98,10 +110,19 @@ export function SourcesPanel() {
   );
 }
 
+/**
+ * A source, stacked so nothing is cut short on a phone: its name, where it is (wrapping, however long), how many songs
+ * and albums, how complete they are, how it's doing, and how its songs were matched. What can be done with it is in its
+ * ⋯, in words: Sync now, Match again, Organize files, Edit, Move up or down, Remove. Dragged by its handle with a
+ * pointer; the menu moves it from the keyboard.
+ */
 function SourceRow({
   source: s,
   canEdit,
   onDragEnd,
+  onMove,
+  first,
+  last,
   onEdit,
   onReview,
   onOrganize,
@@ -109,6 +130,9 @@ function SourceRow({
   source: SourceInfo;
   canEdit: boolean;
   onDragEnd: () => void;
+  onMove?: (by: -1 | 1) => void;
+  first: boolean;
+  last: boolean;
   onEdit: () => void;
   onReview: () => void;
   onOrganize: () => void;
@@ -122,7 +146,23 @@ function SourceRow({
     : s.settings!.access === 'smb'
       ? `smb://${s.settings!.user}@${s.settings!.host}${s.settings!.path}`
       : `${s.settings!.user}@${s.settings!.host}:${s.settings!.path}`;
-  const details = [where, `${plural(s.songs, 'song')} · ${plural(s.albums, 'album')}`].filter(Boolean).join(' · ');
+  const menu: MenuEntry[] = [
+    // While it syncs, the line under it says so.
+    ...(s.syncing ? [] : [{ label: 'Sync now', icon: RefreshCw, onSelect: () => actions.rescan.mutate(s.id) }]),
+    ...(s.kind === 'folder'
+      ? [
+          { label: 'Match again', icon: ScanSearch, onSelect: () => actions.rematch.mutate(s.id) },
+          // Offered even when the folder isn't writable: the dialog explains why nothing can move.
+          { label: 'Organize files', icon: FolderTree, onSelect: onOrganize },
+        ]
+      : []),
+    { label: 'Edit', icon: Pencil, onSelect: onEdit },
+    DIVIDER,
+    ...(onMove && !first ? [{ label: 'Move up', icon: ArrowUp, onSelect: () => onMove(-1) }] : []),
+    ...(onMove && !last ? [{ label: 'Move down', icon: ArrowDown, onSelect: () => onMove(1) }] : []),
+    DIVIDER,
+    { label: 'Remove', icon: X, onSelect: () => setRemoving(true) },
+  ];
 
   return (
     <Reorder.Item
@@ -131,14 +171,15 @@ function SourceRow({
       dragControls={controls}
       onDragEnd={onDragEnd}
       as="li"
-      className="flex items-center gap-3 rounded-lg bg-ink-900 px-2 py-3"
+      className="flex items-start gap-3 rounded-lg bg-ink-900 px-2 py-3"
     >
       {canEdit && (
+        // For a pointer only: Move up and Move down in ⋯ do the same from the keyboard.
         <span
-          role="button"
-          aria-label={`Drag to reorder ${s.name}`}
+          aria-hidden
+          title="Drag to reorder"
           onPointerDown={(e) => controls.start(e)}
-          className="grid h-9 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing"
+          className="-mr-1 grid h-11 w-6 shrink-0 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing"
         >
           <GripVertical className="size-4" />
         </span>
@@ -147,39 +188,21 @@ function SourceRow({
         {remote ? <Network className="size-5" /> : s.kind === 'folder' ? <FolderOpen className="size-5" /> : <Server className="size-5" />}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-[17px] text-paper">{s.name}</span>
-          {!s.enabled && <span className="font-mono text-[10px] tracking-wider text-muted uppercase">Off</span>}
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1 pt-0.5">
+            <span className="type-body break-words text-paper">{s.name}</span>
+            {!s.enabled && <span className="ml-2 type-badge text-muted">Off</span>}
+          </div>
+          {canEdit && <Menu label={`More for ${s.name}`} items={menu} className="-my-1.5 -mr-1" />}
         </div>
-        <div className="truncate font-mono text-[12px] text-muted">{details}</div>
+        {where && <div className="type-meta break-all text-muted">{where}</div>}
+        <div className="mt-0.5 type-small text-paper-dim">
+          {plural(s.songs, 'song')} · {plural(s.albums, 'album')}
+        </div>
         <AlbumSummary source={s} />
         <SourceStatus source={s} />
         {s.kind === 'folder' && <MatchSummary source={s} canEdit={canEdit} onReview={onReview} />}
       </div>
-      {canEdit && (
-        <div className="flex items-center gap-1">
-          <IconButton label="Rescan" title="Rescan" onClick={() => actions.rescan.mutate(s.id)} disabled={s.syncing}>
-            {s.syncing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-          </IconButton>
-          {s.kind === 'folder' && (
-            <IconButton label="Match again" title="Match again" onClick={() => actions.rematch.mutate(s.id)} disabled={actions.rematch.isPending}>
-              <RotateCw className="size-4" />
-            </IconButton>
-          )}
-          {s.kind === 'folder' && (
-            // Shown even when the folder isn't writable: the dialog explains why nothing can move.
-            <IconButton label="Organize files" title="Organize files" onClick={onOrganize}>
-              <FolderTree className="size-4" />
-            </IconButton>
-          )}
-          <IconButton label="Edit" title="Edit" onClick={onEdit}>
-            <Pencil className="size-4" />
-          </IconButton>
-          <IconButton label="Remove" title="Remove" onClick={() => setRemoving(true)}>
-            <Trash2 className="size-4" />
-          </IconButton>
-        </div>
-      )}
       <ConfirmDialog
         open={removing}
         onClose={() => setRemoving(false)}
@@ -217,11 +240,12 @@ export function AlbumSummary({ source: s }: { source: SourceInfo }) {
           [s.albumsUnknown, 'Unidentified', 'Unidentified'],
         ] as const);
   return (
+    // One line that wraps between counters, never inside one: "On complete albums" doesn't break word by word.
     <ul className="mt-2 flex flex-wrap gap-2" aria-label={s.kind === 'folder' ? 'Songs' : 'Albums'}>
       {counters.map(([n, one, many]) => (
-        <li key={one} className="flex items-baseline gap-1.5 rounded-md bg-ink-800 px-2 py-1">
-          <span className="font-mono text-[14px] text-paper tabular-nums">{n}</span>
-          <span className="text-[12px] text-paper-dim">{n === 1 ? one : many}</span>
+        <li key={one} className="flex items-baseline gap-1.5 rounded-md bg-ink-800 px-2 py-1 whitespace-nowrap">
+          <span className="type-meta text-paper">{n}</span>
+          <span className="type-small text-paper-dim">{n === 1 ? one : many}</span>
         </li>
       ))}
     </ul>
@@ -232,7 +256,7 @@ export function AlbumSummary({ source: s }: { source: SourceInfo }) {
 export function MatchSummary({ source: s, canEdit, onReview }: { source: SourceInfo; canEdit: boolean; onReview: () => void }) {
   if (!s.matched && !s.review && !s.ignored) return null;
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-paper-dim">
+    <div className="mt-1 flex flex-wrap items-center gap-x-2 type-small text-paper-dim">
       <span>{plural(s.matched, 'song')} matched</span>
       {s.review > 0 && (
         <>
@@ -270,9 +294,7 @@ function SourceStatus({ source: s }: { source: SourceInfo }) {
             ? [`Synced ${new Date(s.lastSyncAt).toLocaleString()}`, 'text-muted']
             : ['Not synced yet', 'text-muted'];
   return (
-    <div className={cn('mt-0.5 truncate text-[12px]', tone)} title={text}>
-      {text}
-    </div>
+    <div className={cn('mt-1 type-small break-words', tone)}>{text}</div>
   );
 }
 
@@ -286,8 +308,8 @@ function MatchingSection() {
   const editing = replacing || !data.acoustid;
   return (
     <section className="mt-12 max-w-prose">
-      <h2 className="mb-2 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Identifying songs</h2>
-      <p className="mb-4 text-sm text-muted">
+      <h2 className="mb-2 type-kicker text-muted">Identifying songs</h2>
+      <p className="mb-4 type-small text-muted">
         Playarr matches folder albums on MusicBrainz by their names, song titles and lengths. For songs whose names don’t help,
         it can identify them by their sound with AcoustID. A free key comes from{' '}
         <a href="https://acoustid.org/new-application" target="_blank" rel="noreferrer" className="text-accent hover:underline">
@@ -296,7 +318,7 @@ function MatchingSection() {
         .
       </p>
       {!data.fingerprints && (
-        <p className="mb-4 text-sm text-paper-dim">Fingerprints need fpcalc (Chromaprint) on the server. The Docker image includes it.</p>
+        <p className="mb-4 type-small text-paper-dim">Fingerprints need fpcalc (Chromaprint) on the server. The Docker image includes it.</p>
       )}
       {editing ? (
         <form
@@ -327,7 +349,7 @@ function MatchingSection() {
           </Button>
         </form>
       ) : (
-        <div className="flex items-center gap-3 text-[14px]">
+        <div className="flex items-center gap-3 type-body">
           <span className="font-mono text-paper-dim">AcoustID key saved</span>
           <button type="button" onClick={() => setReplacing(true)} className="text-accent hover:underline">
             Replace
@@ -401,8 +423,8 @@ function KindOption({
     >
       <span className="grid size-11 shrink-0 place-items-center rounded-md bg-ink-800 text-accent">{icon}</span>
       <span>
-        <span className="block text-[16px] text-paper">{title}</span>
-        <span className="block text-[13px] text-muted">{detail}</span>
+        <span className="block type-body text-paper">{title}</span>
+        <span className="block type-small text-muted">{detail}</span>
       </span>
     </button>
   );
@@ -456,17 +478,17 @@ function LidarrForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
         <Saved label="API key" hint="In Lidarr: Settings → General → Security" onReplace={() => setReplacingKey(true)} />
       )}
       {source && (
-        <label className="flex items-center gap-2 text-sm text-paper-dim">
+        <label className="flex items-center gap-2 type-small text-paper-dim">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Use this source
         </label>
       )}
       {test === 'running' && (
-        <p className="flex items-center gap-2 text-sm text-muted">
+        <p className="flex items-center gap-2 type-small text-muted">
           <Loader2 className="size-4 animate-spin" /> Connecting…
         </p>
       )}
       {test && test !== 'running' && (
-        <p className={cn('flex items-center gap-2 text-sm', test.ok ? 'text-success' : 'text-danger')}>
+        <p className={cn('flex items-center gap-2 type-small', test.ok ? 'text-success' : 'text-danger')}>
           {test.ok ? <Check className="size-4" /> : <TriangleAlert className="size-4" />}
           {test.ok ? `Connected to Lidarr ${test.version ?? ''}` : test.error}
         </p>
@@ -655,7 +677,7 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
             />
           )}
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[13px] text-muted">
+            <p className="type-small text-muted">
               {smb
                 ? 'Playarr reads the share with rclone. Song analysis and fingerprints run on this server.'
                 : 'SSH also runs song analysis and fingerprints on that machine. SFTP only reads files.'}
@@ -684,11 +706,11 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
       )}
       <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder={path?.split('/').pop() || 'Music'} maxLength={80} />
       {source && (
-        <label className="flex items-center gap-2 text-sm text-paper-dim">
+        <label className="flex items-center gap-2 type-small text-paper-dim">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Use this source
         </label>
       )}
-      <p className="text-[13px] text-muted">Playarr only reads this folder. Songs appear after the first scan.</p>
+      <p className="type-small text-muted">Playarr only reads this folder. Songs appear after the first scan.</p>
       <div className="flex justify-end pt-2">
         <Button type="submit" variant="primary" disabled={!pathOk} pending={pending} pendingLabel="Saving…">
           Save
@@ -734,7 +756,7 @@ function FolderBrowser({
   const canGoUp = data && data.path !== null && (data.parent !== null || !remote);
   return (
     <div className="overflow-hidden rounded-lg border border-line">
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2 font-mono text-[12px] text-paper-dim">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 type-meta text-paper-dim">
         {canGoUp && (
           <button
             type="button"
@@ -755,7 +777,7 @@ function FolderBrowser({
             <button
               type="button"
               onClick={() => setAt(f.path)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[14px] text-paper hover:bg-paper/5"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left type-body text-paper hover:bg-paper/5"
             >
               <Folder className="size-4 shrink-0 text-muted" />
               <span className="truncate">{f.name}</span>
@@ -763,14 +785,14 @@ function FolderBrowser({
           </li>
         ))}
         {data && data.folders.length === 0 && !data.emptyRoot && (
-          <li className="px-3 py-2 text-[13px] text-muted">{rootLabel && data.path === '/' ? 'No shares found.' : 'No folders inside.'}</li>
+          <li className="px-3 py-2 type-small text-muted">{rootLabel && data.path === '/' ? 'No shares found.' : 'No folders inside.'}</li>
         )}
         {data?.emptyRoot && (
-          <li className="space-y-1.5 px-3 py-2 text-[13px] text-muted">
+          <li className="space-y-1.5 px-3 py-2 type-small text-muted">
             <p className="text-paper-dim">Nothing is shared with Playarr at {data.path} yet.</p>
             <p>
               In Docker, Playarr only sees the host folders you mount inside {data.path}. Mount them read-only in a compose.override.yaml
-              next to compose.yaml, for example <code className="font-mono text-[12px] text-paper-dim">/volume2:{data.path}/volume2:ro</code>,
+              next to compose.yaml, for example <code className="type-meta text-paper-dim">/volume2:{data.path}/volume2:ro</code>,
               then restart Playarr.
             </p>
           </li>
@@ -779,10 +801,10 @@ function FolderBrowser({
       {error && <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} className="px-3 py-2" />}
       {data?.path && !(rootLabel && data.path === '/') && (
         <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2">
-          <span className="text-[12px] text-muted">
+          <span className="type-small text-muted">
             {plural(data.audioFiles, 'audio file')} here{value === data.path ? ' · selected' : ''}
           </span>
-          <button type="button" onClick={() => onChange(data.path!)} className="text-[13px] text-accent hover:underline">
+          <button type="button" onClick={() => onChange(data.path!)} className="type-small text-accent hover:underline">
             Use this folder
           </button>
         </div>

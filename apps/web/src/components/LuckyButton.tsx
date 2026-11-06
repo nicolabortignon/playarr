@@ -7,9 +7,18 @@ import { Button } from './Button';
 
 /**
  * Feeling lucky: 15 songs put together now, a new set at every press. The sparkles twinkle while they're picked. On
- * Home, and as the action that fills an empty queue, Made for you or Your listening.
+ * Home, as the action that fills an empty queue, Made for you or Your listening, and in the player bar while nothing plays.
  */
-export function LuckyButton({ className }: { className?: string }) {
+export function LuckyButton({
+  variant = 'primary',
+  size = 'large',
+  className,
+}: {
+  /** Primary and large on a page; secondary and regular in the idle player bar, beside Resume. */
+  variant?: 'primary' | 'secondary';
+  size?: 'large' | 'regular';
+  className?: string;
+}) {
   const [picking, setPicking] = useState(false);
   const press = async () => {
     setPicking(true);
@@ -24,9 +33,9 @@ export function LuckyButton({ className }: { className?: string }) {
   return (
     // While the songs are picked the sparkles say so; the button stays lit rather than dimming.
     <Button
-      variant="primary"
-      size="large"
-      icon={<Twinkle on={picking} />}
+      variant={variant}
+      size={size}
+      icon={<Twinkle on={picking} small={size !== 'large'} />}
       onClick={() => void press()}
       disabled={picking}
       aria-busy={picking}
@@ -50,9 +59,9 @@ const STARS = [
  * Feeling lucky's sparkles: still at rest; while the songs are picked, each star in turn swells, turns a little and
  * shrinks away (the big one only dims), then comes back, like light catching glitter.
  */
-function Twinkle({ on }: { on: boolean }) {
+function Twinkle({ on, small }: { on: boolean; small?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" className="size-5 overflow-visible" aria-hidden>
+    <svg viewBox="0 0 24 24" className={cn('overflow-visible', small ? 'size-4.5' : 'size-5')} aria-hidden>
       {STARS.map((s, i) => (
         <g key={i} transform={`translate(${s.x} ${s.y}) scale(${s.r})`}>
           <motion.path

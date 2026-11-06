@@ -24,7 +24,7 @@ From `apps/web/package.json`:
 `src/routes.tsx` defines the routes; `src/main.tsx` creates the browser router and the query client provider.
 
 - **Outside the shell**: `/sign-in`, `/redeem` (choose a password from a setup code) and `/setup` (claim a new server), with no player.
-- **Inside `AppShell`**: Home, Artists, Albums, an artist, an album, Favorites, Library and Playlists load with the app. Everything else is lazy-loaded on first open: Search, Downloads, Stats, Mixes, a mix, a playlist, Queue, Requests, Discover (`/discover/artists/:mbid`, `/discover/artist`), Settings (`/settings/:panel?`) and Not found. The service worker precaches those chunks, so later opens are instant.
+- **Inside `AppShell`**: Home, Artists, Albums, an artist, an album, Favorites, Library and Playlists load with the app. Everything else is lazy-loaded on first open: Search, Downloads, Stats, Mixes, a mix, a playlist, Queue, Requests, Discover (`/discover/artists/:mbid`, `/discover/artist`), Settings (`/settings/:panel?`) and Not found. The service worker precaches those chunks, so later opens are instant. `/settings/listening`, where Your listening used to be, opens `/stats` with the period it named (`ListeningMoved`).
 
 Pages are in `src/pages`, shared pieces in `src/components`. Pages build their controls from the shared ones, as [design.md](design.md) describes them (Controls):
 
@@ -37,8 +37,9 @@ Pages are in `src/pages`, shared pieces in `src/components`. Pages build their c
 - `DetailHeader`: the header of everything you can play (an album, a playlist, a mix, Favorites, an artist, a MusicBrainz artist), in one order: cover, kicker, title, one meta line (`joinMeta` puts the dots between its parts), then the action row. On a phone the cover sits above the text at `min(64vw, 256px)`, so Play shows on the first screen; an artist's picture is a smaller circle. A playlist's or mix's cover leaves its name off there (`titled={false}`), since the title is beside it. `DetailHeaderSkeleton` has its shape while the page loads;
 - `FormatBadge`: a format in a few words (`formatBadge`, `lib/format.ts`): the codec alone when it's ordinary (lossy at 256 kbps or more, lossless at CD quality: "MP3", "FLAC"), else with what sets it apart ("MP3 · 128 kbps", "FLAC · 24/96"), Hi-Res in the accent; its title has everything (`formatDetails`). In the player bar, Now Playing, the queue and on albums;
 - `NameAndNumbers`: a name and the numbers about it (Stats' rankings, the queue's rows on a phone, Downloads) on one line when both fit, else the numbers go under the name, which is only cut short once they have a line of their own;
-- `AccountMenu`: the account's initial in a circle of the accent, beside Home's greeting ("Hi, Alex."), opening Account and Settings;
-- `SongRow` (`components/SongRow.tsx`): a song in every list (an album, a playlist, the queue, Now Playing's Up next, Favorites, mixes, search, Your listening's top songs). Its number on its album's page, else its cover; title in `type-body`, the artist and album (linked) in `type-small`; then the time (`type-meta`, after the tempo when it's measured), ♥ and ⋯, in that order. The song playing has the accent and an equalizer; pressing it pauses or resumes. `compact` is Now Playing's denser Up next, `numbers` another number in the time's place (Your listening's plays), `stackOnPhones` the phone layout of the queue and Your listening (no ♥, the length or that number under the title). It's built on `ListRow`, the one row (also Downloads, songs beyond the library, a playlist's suggestions): the title is the row's own button or link, stretched over the row by its `::after`, so the row presses as one while the handle, links, ♥ and ⋯ sit above it as buttons of their own. Every row of a list is one height (60 with a thumbnail; 52 with a number, 60 on touch screens), a missing song's included;
+- `AccountMenu`: the account's initial in a circle of the accent, beside Home's greeting ("Hi, Alex."), opening Account, Your listening and Settings;
+- `NavRow`: a row that opens a page, in a list of places to go (Library's, Settings' on a phone): the page's glyph in a tile, its name, a number about it, a chevron;
+- `SongRow` (`components/SongRow.tsx`): a song in every list (an album, a playlist, the queue, Now Playing's Up next, Favorites, mixes, search, Your listening's top songs). Its number on its album's page, else its cover; title in `type-body`, the artist and album (linked) in `type-small`; then the time (`type-meta`, after the tempo when it's measured), ♥ and ⋯, in that order. The song playing has the accent and an equalizer; pressing it pauses or resumes. `compact` is Now Playing's denser Up next, `numbers` another number in the time's place (Your listening's plays), `stackOnPhones` the phone layout of the queue and Your listening (no ♥, the length or that number under the title), `narrow` that layout at any width (the queue in the column beside the page). It's built on `ListRow`, the one row (also Downloads, songs beyond the library, a playlist's suggestions): the title is the row's own button or link, stretched over the row by its `::after`, so the row presses as one while the handle, links, ♥ and ⋯ sit above it as buttons of their own. Every row of a list is one height (60 with a thumbnail; 52 with a number, 60 on touch screens), a missing song's included;
 - `Menu`: ⋯ and its popover, with lines (`DIVIDER`) between groups. A row or a card opens the same menu on a right-click, a long press (500 ms, on touch screens) or the keyboard's menu key (`lib/contextMenu.ts`); a long press doesn't also play or open, and a link inside a row keeps the browser's own menu for a mouse. Opened from the keyboard, its first item takes the focus; from a pointer, the menu does. A card mounts its `ContextMenu` only once asked;
 - `components/menus.ts`: the menus, one list each. `useSongMenu`: Play next · Add to queue · Add to playlist… · Start radio · Go to album (not on the album's own page) · Go to artist · Show metadata · Edit mix points (DJ mix on), then after a line the place's own actions (Move up, Move down, Remove from playlist or queue; Open queue in Now Playing, where the song playing has no Play next or Add to queue). `upNextMenu`: Up next's Play next moves the song up rather than queueing it again. `useAlbumMenu` and `usePlaylistMenu`: Play next · Add to queue · Add to playlist… (an album's Go to artist; a playlist's owner's Rename, New cover…, Share, Delete after a line), the same on the page's ⋯ and on its card, which puts Play and Shuffle first;
 - `AlbumCard`, `ArtistCard` (`components/Cards.tsx`): one width on every shelf (`SHELF_CARD`, `components/Section.tsx`), the grid's columns elsewhere (`GRID`, `pages/Albums.tsx`). An artist is a circle with the name below it (`ArtistTile`, also for artists beyond the library): their photo, else their best album cover (the server's pick), else a vinyl monogram (`ArtistAvatar`).
@@ -47,14 +48,21 @@ Controls drawn smaller than 44 px take that much to tap on touch screens through
 
 **Add to playlist** (`components/AddToPlaylistDialog.tsx`) lists the account's own playlists with a tick on those that already hold the songs, a dash on those holding some (`POST /api/playlists/holding`), and adds to every playlist chosen at once. **Play next and Add to queue** confirm with a toast naming the song ("“Teardrop” plays next", "3 songs play next", "Added “Teardrop” to the queue"); its Undo takes them back out of the queue. An Undo toast goes after 6 s, but not while it's pointed at or focused (`toastWithUndo`, `lib/toast.ts`).
 
-**Taking things back.** Taking something out of a list happens at once, with an Undo toast: Remove from queue (Undo puts the song back before the one that followed it), Remove from playlist (the song goes back after the one before it; the server adds it again and moves it, so a song no longer in the library, which can't be added, has no Undo), Stop sharing, removing a download (Undo puts it back as it was; songs that made room meanwhile download again) and removing a request. A request's removal waits for its Undo to pass before the server forgets it (`toastWithUndo`'s `done`), as asking Lidarr again couldn't bring back an album that has arrived. Losing something for good asks first in a `ConfirmDialog` (`components/Dialog.tsx`) that names what goes, with Cancel focused and a danger button: deleting a playlist, removing an account or a source, signing a device out, a new setup code (the old one, and the password, stop working), clearing the listening history, and Remove all on this device ("Remove 312 songs from this device?").
+**Taking things back.** Taking something out of a list happens at once, with an Undo toast: Remove from queue (Undo puts the song back before the one that followed it), Remove from playlist (the song goes back after the one before it; the server adds it again and moves it, so a song no longer in the library, which can't be added, has no Undo), Stop sharing, removing a download (Undo puts it back as it was; songs that made room meanwhile download again), removing a recent search or clearing them, and removing a request. A request's removal waits for its Undo to pass before the server forgets it (`toastWithUndo`'s `done`), as asking Lidarr again couldn't bring back an album that has arrived. Losing something for good asks first in a `ConfirmDialog` (`components/Dialog.tsx`) that names what goes, with Cancel focused and a danger button: deleting a playlist, removing an account or a source, signing a device out, a new setup code (the old one, and the password, stop working), a new invite link for someone whose link this device doesn't have (the one they have stops working), clearing the listening history, and Remove all on this device ("Remove 312 songs from this device?").
 
 **Empty, loading and error** (`components/States.tsx`), one way each:
 
-- `EmptyState`: a list with nothing in it: an icon, one line in the app's voice ("Songs you heart land here."), sometimes a quieter second line, and the action that fills the page as a large primary button (a link, a button, or `'lucky'` for Feeling lucky). On Albums and Artists (Settings → Sources for an admin), an artist without albums, Playlists, Favorites, Downloads (and why it can't download over plain HTTP), Queue, Requests (what's possible on this server: Lidarr missing or requests off, for an admin with where to change it), Made for you, Search's "Not in your crates.", Your listening and an empty playlist;
+- `EmptyState`: a list with nothing in it: an icon, one line in the app's voice ("Songs you heart land here."), sometimes a quieter second line, and the action that fills the page as a large primary button (a link, a button, or `'lucky'` for Feeling lucky). On Albums and Artists (Settings → Sources for an admin), an artist without albums, Playlists, Favorites, Downloads (and why it can't download over plain HTTP), Queue, Requests (what's possible on this server: Lidarr missing or requests off, for an admin with where to change it), Made for you, Search's "Not in your crates." (below), Your listening and an empty playlist;
 - `CardSkeleton` (`CardSkeletons` for a grid's first screen) and `SongRowsSkeleton`: placeholders the size of the real card or row, its text lines included, in the same grid or list, so nothing moves when the page arrives; detail pages add rows under `DetailHeaderSkeleton`;
 - `ErrorState`: a page that couldn't load: "Something skipped.", what went wrong, Try again and Back home;
 - `InlineError`: part of a page, a panel or a dialog that couldn't load or save: a danger icon, what happened and why, and Try again when there's a retry ("Trying again…").
+
+**Search** (`pages/Search.tsx`) never ends at nothing:
+
+- Empty, it offers this account's recent searches on this device (`lib/recentSearches.ts`), newest first: each a tap to search again, with × to take it off the list, and Clear for all of them, both at once with Undo. Then artists to try. A search counts once one of its results is opened or played, once it's been left alone for 2.5 s, or with Enter; never a single letter. The same words count once, whatever their capitals, accents or spaces, and a search that only carries on from the newest takes its place (it was typed on the way). Eight are kept.
+- The library's results come first. When `/api/search` answers `near: true` (nothing matched as typed), a line says these are close, not exact: "Nothing called “mezanine”. These come close:".
+- Beyond the library, in a section of its own headed "Not in your library", whenever there's something there or on its way: Lidarr's search where there's Lidarr, else MusicBrainz's, with Deezer for songs (`/api/discover/search`, asked 450 ms after typing stops). Request shows only where requesting is possible (`RequestButton`), and nothing takes its place otherwise. Plan 6 §7's "Ask {owner}" waits on requests that remember who asked.
+- Nothing in the library: "Not in your crates.", and what's out there under it. Nothing anywhere either: what to try (the spelling, fewer words), New search (back to the recent searches, the field ready to type in) and artists to try.
 
 Long grids show a screenful at a time (`lib/useIncremental.ts`: 48 items, then 48 more as the end comes within 1500 px). Covers load four at a time, on-screen ones first (`lib/imageQueue.ts`).
 
@@ -63,17 +71,21 @@ Long grids show a screenful at a time (`lib/useIncremental.ts`: 48 items, then 4
 `components/AppShell.tsx` mounts only one layout, chosen by `useDesktopLayout()` (Tailwind's `md`, **768 px**). The hidden layout would still poll and re-render.
 
 - **Phones** get a bottom tab bar (Home · Search · Library · Queue) with a mini player above it. Library collects Made for you, Your listening, Downloads, Favorites, Artists, Albums, Requests, Settings and playlists. Now Playing opens full screen and closes with a drag down.
-- **Desktop** gets a left sidebar (Home, Search, Made for you, Artists, Albums, Favorites, Downloads, Queue, then Requests, playlists and Settings) and a player bar at the bottom.
+- **Desktop** gets a left sidebar (Home, Search, Made for you, Artists, Albums, Favorites, Downloads, Queue, then Requests, playlists and Settings) and a player bar at the bottom. With nothing playing (a device that hasn't played anything yet: the queue is kept), the bar offers the album heard last, on any device (`useRecentAlbums`), with Resume to play it from the start, and Feeling lucky; with no history, Feeling lucky alone.
 
-Both share Now Playing, Stats for nerds, the Add to playlist, metadata and mix-points dialogs, toasts and the audio engine.
+Both share Now Playing, Stats for nerds, the keyboard shortcuts, the Add to playlist, metadata and mix-points dialogs, toasts and the audio engine.
 
-**Keyboard shortcuts** (`player/useKeyboardShortcuts.ts`, listed in Settings → Playback) are ignored while typing or with ⌘, Ctrl or Alt held:
+**The queue and lyrics column** (`components/SideColumn.tsx`). From 1280 px (`useColumnLayout`), the bar's Queue and Lyrics, and Now Playing's Queue, open a 340 px column beside the page, as on the iPad app, with a switch at its top between the two; pressed again, they close it. The page makes room for it, and its grids and headers follow the page's width rather than the window's: AppShell makes the page area a `page` container, and pages use `page-lg:`, `page-xl:` and `page-2xl:` (`index.css`), which are lg, xl and 2xl exactly while nothing is beside the page. Narrower, Queue opens the Queue page (kept for phones and narrow windows) and Lyrics opens Now Playing on the words.
+
+**Now Playing in iPhone Safari** reaches under the status bar and the toolbar. Safari 26 paints its translucent bars in the color of the topmost fixed element at each edge (fixed elements themselves stop at the bars): while Now Playing is open, that's its sheet's ink-950, into which its art fades at both ends. The film grain over the page (`body::after`) sits at z-index 35, under the player bars, the tab bar, Now Playing and dialogs: with no color of its own, on top it would let the page show through the bars.
+
+**Keyboard shortcuts** (`player/useKeyboardShortcuts.ts`; the list is `SHORTCUT_SIDES`, `components/Shortcuts.tsx`) are ignored while typing or with ⌘, Ctrl or Alt held. Settings → Playback lists them only where there's a keyboard (`useHasKeyboard`, `lib/keyboard.ts`): a mouse or trackpad (`any-pointer: fine`), or a key pressed outside a field, which the device remembers; a phone or a tablet without one never shows them. `?` shows them over any page, set out as the back of a sleeve lists its songs (Side A · Playing, Side B · Getting around), until Escape:
 
 - Space: play or pause;
 - ←/→: seek 10 s; Shift+←/→: previous or next song;
 - ↑/↓: volume;
 - M: mute; S: shuffle; L: add the song playing to Favorites, or take it out;
-- `/`: Search.
+- `/`: Search; `?`: the shortcuts.
 
 In a list, Tab reaches each song as a button: Enter or Space plays it, the menu key (or Shift+F10) opens its menu, and its ♥, ⋯ and drag handle are buttons of their own. On a playlist's or the queue's handle, ↑ and ↓ move the song, as dragging does (and Move up and Move down in its menu). The mini player is an "Open now playing" button beside its ♥, Play and Next. A playlist's owner renames it from the pencil beside its title, or from ⋯ → Rename.
 
@@ -98,10 +110,12 @@ The app opens with the last data on screen and refreshes it in the background. P
 | `usePrefs` (`lib/prefs.ts`) | Settings → Playback and Appearance: accent, motion, format badges, count plays, autoplay, transitions (off / crossfade / DJ mix), crossfade length, even volume, Stats for nerds | `playarr.prefs` (unknown values cleaned on load) |
 | `useOffline` (`player/offline.ts`) | Songs kept on the device, downloads, the size limit, the download in progress | `playarr.offline` (not the progress) |
 | `useAccounts` (`lib/accounts.ts`) | Accounts signed in on this device, with their session tokens | `playarr.accounts` (written by hand) |
-| `useUI` (`lib/ui.ts`) | Now Playing and lyrics open, open dialogs | no |
+| `useUI` (`lib/ui.ts`) | Now Playing and lyrics open, the column beside the page, the shortcuts, open dialogs | no |
+| `useRecentSearches` (`lib/recentSearches.ts`) | Recent searches, by account | `playarr.recentSearches` |
+| `useKeyboardSeen` (`lib/keyboard.ts`) | Whether a key was pressed outside a field | `playarr.keyboard` |
 | `useLevels`, `useTransition`, `useJoins`, `useDownloadState`, `useSleep`, `useToasts` | Even-volume levels, the transition for the current pair, join measurements, download failures this session, the sleep timer, toasts | no |
 
-Play reports waiting to be sent are kept in `playarr.pendingPlays`.
+Play reports waiting to be sent are kept in `playarr.pendingPlays`. Invite links made on this device are kept in `playarr.invites` until they expire (`lib/invites.ts`), to copy again: the server keeps only a hash of each setup code, so it can't hand one out twice.
 
 **Per-device preferences** are the `usePrefs` values. An admin can lock Playback or Appearance for an account (`useLocked`, from `/api/auth/me`). The panel then shows read-only.
 
@@ -187,16 +201,24 @@ That fetches the page's data, its header image, and for an album, its artist too
 
 ## 10. Settings panels
 
-`pages/Settings.tsx` has nine tabs, and each says who it applies to:
+`pages/Settings.tsx` puts the panels in groups, named and ordered as the iOS app's (`useSettingsGroups`): **This device** (Playback, Appearance), then for an admin **Server** (Sources, Accounts, Made for you, Analysis, Requests, Updates). A member gets **Your account** (Accounts and Made for you: their name and devices, their mixes and ListenBrainz) before **Server** (Sources, Analysis, Requests, Updates), which they can read but not change.
+
+- **On a phone**, `/settings` is that list (`NavRow`s, each group's scope under it, the app's version at the foot). A row opens its panel under its own name, with Settings above it to go back: back in history when it came from the list, else to the list.
+- **Wider**, the panels are tabs in the same order, a line between the groups, Playback open at `/settings`. When they don't all fit, the strip fades at the side with more, with an arrow there for a mouse (a finger swipes), and keeps the open tab in view.
+
+Each panel says who it applies to:
 
 | Panel | Scope |
 |---|---|
-| Sources | Server-wide; editable by admins (before setup, from the home network) |
-| Playback | This device: transitions, crossfade, even volume, autoplay, counting plays, songs kept on the device, the shortcuts |
-| Accounts | Server-wide: who signs in and what each account may hear and change |
-| Your listening | Your account's stats and ListenBrainz |
-| Made for you, Analysis, Requests, Updates | Server-wide ("These settings apply to everyone") |
+| Playback | This device: transitions, crossfade, even volume, autoplay, counting plays, songs kept on the device, the shortcuts (where there's a keyboard) |
 | Appearance | This device: accent, motion, format badges |
+| Sources | Server-wide; editable by admins (before setup, from the home network) |
+| Accounts | Server-wide: who signs in and what each account may hear and change |
+| Made for you, Analysis, Requests, Updates | Server-wide ("These settings apply to everyone"); Made for you also has ListenBrainz |
+
+Your listening isn't a setting: it's at `/stats`, in Library and the account menu.
+
+**Sources** are a stack of cards, the same on a phone: the name, where it is (the whole path, broken anywhere rather than cut short), its songs and albums and how complete they are, how it's doing (syncing, matching, its last sync, an error) and how its songs were matched. What can be done with one is in its ⋯, in words ("More for Music"): Sync now, Match again and Organize files (a folder's), Edit, then Move up and Move down (the order sources win in, as dragging the handle does), then Remove. **Accounts** name their actions too (⋯: Edit, Devices, New setup code, then Remove); someone invited who hasn't set up yet is "Invited · not set up yet", with Copy invite link (the link this device made, else a new one after asking) and New code beside them.
 
 Device settings live in `usePrefs` and `useOffline`; server-wide ones go through `/api/settings/*` (see [server/api.md](server/api.md)).
 
@@ -218,6 +240,6 @@ Each run replaces the screens (`screenshots/` is gitignored). A full run takes a
 
 - `pnpm web:screens tablet` (or `SCREENS=tablet`) takes one device. `--shots album,queue` takes only those shots, where `album` also takes `album-2`, `album-playing`…, and walks only the pages they need. `--no-build` serves the last build.
 - It needs Xcode's simulators; it makes the two when they're missing, on the newest iOS. The first run needs musicbrainz.org and coverartarchive.org. The library is kept in `.cache/web-screens/`, with the build and the server's log.
-- Widths over 1032 px need a desktop browser. Headless Chrome would do, but it can't start inside Claude's sandbox.
+- Widths over 1032 px: the tablet's `player-idle` and `queue-column` shots widen Safari's layout to 1440 px through the viewport tag (an `eval` step), and the iPad draws it scaled down; the next `go` puts it back. A desktop browser would do better, but headless Chrome can't start inside Claude's sandbox.
 
 The native iOS app is separate: see [ios/README.md](ios/README.md).

@@ -1,4 +1,4 @@
-import type { RouteObject } from 'react-router';
+import { Navigate, useLocation, type RouteObject } from 'react-router';
 import { AppShell } from './components/AppShell';
 import { AppError, PageError } from './components/PageError';
 import { AlbumPage } from './pages/Album';
@@ -9,6 +9,13 @@ import { FavoritesPage } from './pages/Favorites';
 import { HomePage } from './pages/Home';
 import { LibraryPage } from './pages/Library';
 import { PlaylistsPage } from './pages/Playlists';
+import { STATS_PATH } from './lib/links';
+
+/** Your listening was a Settings panel: its old links (a period chosen, ?range=2025, included) open its own page. */
+export function ListeningMoved() {
+  const { search } = useLocation();
+  return <Navigate to={`${STATS_PATH}${search}`} replace />;
+}
 
 /*
  * The pages inside the shell. The ones used every day load with the app. The rest (search, a playlist with its
@@ -35,6 +42,7 @@ const pages: RouteObject[] = [
   { path: 'requests', lazy: () => import('./pages/Requests').then((m) => ({ Component: m.RequestsPage })) },
   { path: 'discover/artists/:mbid', lazy: () => import('./pages/DiscoverArtist').then((m) => ({ Component: m.DiscoverArtistPage })) },
   { path: 'discover/artist', lazy: () => import('./pages/FindArtist').then((m) => ({ Component: m.FindArtistPage })) },
+  { path: 'settings/listening', element: <ListeningMoved /> },
   { path: 'settings/:panel?', lazy: () => import('./pages/Settings').then((m) => ({ Component: m.SettingsPage })) },
   { path: '*', lazy: () => import('./pages/NotFound').then((m) => ({ Component: m.NotFoundPage })) },
 ];

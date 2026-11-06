@@ -19,8 +19,13 @@ export function lineAt(lines: { at: number }[], time: number): number {
   return found;
 }
 
-/** Now Playing → Lyrics: the words of the song playing, following along when they're timed. */
-export function LyricsView({ track, className }: { track: Track; className?: string }) {
+/** How large the words are: Now Playing's, or the column beside the page (components/SideColumn.tsx). */
+export type LyricsSize = 'large' | 'column';
+
+const LINE: Record<LyricsSize, string> = { large: 'text-2xl md:text-3xl', column: 'text-xl' };
+
+/** Now Playing → Lyrics, or the Lyrics column beside the page: the words of the song playing, following along when they're timed. */
+export function LyricsView({ track, size = 'large', className }: { track: Track; size?: LyricsSize; className?: string }) {
   const { data, isPending, isError } = useLyrics(track.id);
   return (
     <div className={cn('relative h-full min-h-0 w-full', className)}>
@@ -37,10 +42,10 @@ export function LyricsView({ track, className }: { track: Track; className?: str
       ) : data.instrumental ? (
         <Notice>Instrumental</Notice>
       ) : data.synced ? (
-        <Synced lines={data.synced} source={data.source} />
+        <Synced lines={data.synced} source={data.source} size={size} />
       ) : (
         <div className="h-full overflow-y-auto overscroll-contain py-8 [mask-image:linear-gradient(transparent,black_6%,black_94%,transparent)]">
-          <p className="font-display text-2xl leading-snug whitespace-pre-line text-paper md:text-3xl">{data.plain}</p>
+          <p className={cn('font-display leading-snug whitespace-pre-line text-paper', LINE[size])}>{data.plain}</p>
           <Credit source={data.source} />
         </div>
       )}
@@ -48,7 +53,7 @@ export function LyricsView({ track, className }: { track: Track; className?: str
   );
 }
 
-function Synced({ lines, source }: { lines: NonNullable<Lyrics['synced']>; source: Lyrics['source'] }) {
+function Synced({ lines, source, size }: { lines: NonNullable<Lyrics['synced']>; source: Lyrics['source']; size: LyricsSize }) {
   const current = useClock((s) => lineAt(lines, s.time));
   const box = useRef<HTMLDivElement>(null);
   /** Following pauses for a few seconds after scrolling by hand. */
@@ -77,7 +82,8 @@ function Synced({ lines, source }: { lines: NonNullable<Lyrics['synced']>; sourc
               onClick={() => useClock.getState().seek(line.at)}
               aria-current={i === current || undefined}
               className={cn(
-                'text-left font-display text-2xl leading-snug transition-[color,opacity] duration-300 md:text-[2rem]',
+                'text-left font-display leading-snug transition-[color,opacity] duration-300',
+                LINE[size],
                 i === current ? 'text-paper' : i < current ? 'text-paper/35 hover:text-paper/70' : 'text-paper/55 hover:text-paper/80',
               )}
             >
@@ -93,7 +99,7 @@ function Synced({ lines, source }: { lines: NonNullable<Lyrics['synced']>; sourc
 
 function Credit({ source }: { source: Lyrics['source'] }) {
   return (
-    <p className="mt-8 font-mono text-[10px] tracking-[0.2em] text-muted uppercase">
+    <p className="mt-8 type-kicker text-muted">
       {source === 'lrclib' ? (
         <>
           Lyrics from{' '}

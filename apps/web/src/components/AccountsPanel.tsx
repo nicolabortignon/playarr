@@ -3,12 +3,14 @@ import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash2, UserPlus } from 'lu
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { signOut } from '../lib/accounts';
+import { forgetInvite, inviteFor, rememberInvite } from '../lib/invites';
 import { api, type AccountInput } from '../lib/api';
 import { plural } from '../lib/format';
 import { useAccountAction, useAccountList, useAccountSessions, useMe, useServerInfo, useSources } from '../lib/queries';
 import { toast } from '../lib/toast';
-import { Button, IconButton } from './Button';
+import { Button } from './Button';
 import { ConfirmDialog, Dialog } from './Dialog';
+import { DIVIDER, Menu, type MenuEntry } from './Menu';
 import { InlineError } from './States';
 import { SettingsSection } from './SettingsControls';
 import { TextField } from './TextField';
@@ -94,12 +96,12 @@ function Devices({ accountId }: { accountId: number }) {
                 {s.device}
                 {s.current && <span className="ml-2 type-small text-muted">this device</span>}
               </span>
-              <span className="block text-[12px] text-muted">Last used {new Date(s.lastSeenAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              <span className="block type-small text-muted">Last used {new Date(s.lastSeenAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
             </span>
             {!s.current && (
-              <IconButton label={`Sign out ${s.device}`} onClick={() => setEnding(s)}>
-                <LogOut className="size-4" />
-              </IconButton>
+              <Button size="small" variant="ghost" icon={<LogOut />} aria-label={`Sign out ${s.device}`} onClick={() => setEnding(s)}>
+                Sign out
+              </Button>
             )}
           </li>
         ))}
@@ -118,9 +120,15 @@ const DEVICE_SETTINGS: { setting: DeviceSetting; label: string }[] = [
 function summary(a: Account, sourceNames: Map<number, string>): string {
   const library = a.sources === null ? 'every source' : a.sources.length ? a.sources.map((id) => sourceNames.get(id) ?? `source ${id}`).join(', ') : 'no sources';
   const locked = DEVICE_SETTINGS.filter(({ setting }) => a.locked?.includes(setting)).map(({ label }) => label);
-  return [a.username, a.role, a.canRequest ? 'can request albums' : '', library, locked.length ? `${locked.join(' and ')} locked` : '', a.hasPassword ? '' : 'not set up yet']
+  return [a.username, a.role, a.canRequest ? 'can request albums' : '', library, locked.length ? `${locked.join(' and ')} locked` : '']
     .filter(Boolean)
     .join(' · ');
+}
+
+/** Put a setup link on the clipboard; where there's none to use (plain HTTP), or it says no, `fallback` shows it to copy by hand. */
+function copyLink(link: string, done: string, fallback: () => void) {
+  if (!navigator.clipboard) return fallback();
+  navigator.clipboard.writeText(link).then(() => toast(done), fallback);
 }
 
 /** What removing an account takes with it, by name and number. */
@@ -146,7 +154,10 @@ function Everyone({ me }: { me: Account }) {
   const [removing, setRemoving] = useState<Account | null>(null);
   const [code, setCode] = useState<{ account: Account; setup: SetupCode } | null>(null);
   const [resetting, setResetting] = useState<Account | null>(null);
+  // Copy invite link for an invite this device can't copy: a new one, after asking.
+  const [inviting, setInviting] = useState<Account | null>(null);
   const create = useAccountAction((input: AccountInput) => api.createAccount(input), (created) => {
+    rememberInvite(created.account.id, created.setup);
     setAdding(false);
     setCode(created);
   });
@@ -154,17 +165,39 @@ function Everyone({ me }: { me: Account }) {
   const reset = useAccountAction(
     (a: Account) => api.resetAccount(a.id).then((setup) => ({ account: a, setup })),
     (made) => {
+      rememberInvite(made.account.id, made.setup);
       setResetting(null);
+      setInviting(null);
       setCode(made);
     },
   );
   const remove = useAccountAction(
     (a: Account) => api.deleteAccount(a.id),
     () => {
+      if (removing) forgetInvite(removing.id);
       if (removing?.id === me.id) void signOut().then(() => navigate('/sign-in', { replace: true }));
       setRemoving(null);
     },
   );
+  /** The invite made on this device goes on the clipboard; without one, a new one is offered. */
+  const copyInvite = (a: Account) => {
+    const invite = inviteFor(a.id);
+    if (!invite) return setInviting(a);
+    copyLink(invite.link, `Copied ${a.name}’s invite link`, () => setCode({ account: a, setup: invite }));
+  };
+  /** An account's actions, in words (docs/design.md, Rows, menus and toasts): Remove last, after a line. */
+  const actionsFor = (a: Account): MenuEntry[] => [
+    { label: 'Edit', icon: Pencil, onSelect: () => setEditing(a) },
+    // Someone invited who never set up has no devices; their new code is beside them.
+    ...(a.hasPassword
+      ? [
+          { label: 'Devices', icon: Smartphone, onSelect: () => setDevices(a) },
+          { label: 'New setup code', icon: KeyRound, onSelect: () => setResetting(a) },
+        ]
+      : []),
+    DIVIDER,
+    { label: 'Remove', icon: Trash2, onSelect: () => setRemoving(a) },
+  ];
 
   if (error) return <InlineError className="mt-12" error={error} />;
   if (!accounts) return LOADING;
@@ -177,27 +210,30 @@ function Everyone({ me }: { me: Account }) {
     >
       <ul className="divide-y divide-line">
         {accounts.map((a) => (
-          <li key={a.id} className="flex items-center gap-1 py-2">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate type-body text-paper">
-                {a.name}
-                {a.id === me.id && <span className="ml-2 type-small text-muted">you</span>}
-              </span>
-              <span className="block truncate text-[12px] text-muted">{summary(a, sourceNames)}</span>
-              <span className="block truncate text-[12px] text-muted">{activity(a)}</span>
-            </span>
-            <IconButton label={`Edit ${a.name}`} onClick={() => setEditing(a)}>
-              <Pencil className="size-4" />
-            </IconButton>
-            <IconButton label={`Devices of ${a.name}`} onClick={() => setDevices(a)}>
-              <Smartphone className="size-4" />
-            </IconButton>
-            <IconButton label={`New setup code for ${a.name}`} onClick={() => setResetting(a)}>
-              <KeyRound className="size-4" />
-            </IconButton>
-            <IconButton label={`Remove ${a.name}`} onClick={() => setRemoving(a)}>
-              <Trash2 className="size-4" />
-            </IconButton>
+          <li key={a.id} className="py-3">
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="type-body break-words text-paper">
+                  {a.name}
+                  {a.id === me.id && <span className="ml-2 type-small text-muted">you</span>}
+                </div>
+                {/* Never set up: an invite, not an account with nothing played yet. */}
+                {!a.hasPassword && <div className="type-small text-paper-dim">Invited · not set up yet</div>}
+                <div className="type-small break-words text-muted">{summary(a, sourceNames)}</div>
+                {a.hasPassword && <div className="type-small text-muted">{activity(a)}</div>}
+              </div>
+              <Menu label={`More for ${a.name}`} items={actionsFor(a)} className="-my-1.5" />
+            </div>
+            {!a.hasPassword && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="small" icon={<Copy />} onClick={() => copyInvite(a)}>
+                  Copy invite link
+                </Button>
+                <Button size="small" variant="ghost" icon={<KeyRound />} onClick={() => setResetting(a)}>
+                  New code
+                </Button>
+              </div>
+            )}
           </li>
         ))}
       </ul>
@@ -238,6 +274,20 @@ function Everyone({ me }: { me: Account }) {
         ) : (
           <p>The code {resetting?.name} was given before stops working.</p>
         )}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={!!inviting}
+        onClose={() => setInviting(null)}
+        title={`New invite link for ${inviting?.name ?? ''}?`}
+        confirmLabel="Make a new link"
+        pendingLabel="Making one…"
+        pending={reset.isPending}
+        onConfirm={() => inviting && reset.mutate(inviting)}
+      >
+        <p>
+          Playarr keeps no copy of an invite once it’s made, and this device has none for {inviting?.name}: copying a link means making a new one, and
+          the link or code {inviting?.name} has now stops working.
+        </p>
       </ConfirmDialog>
       <ConfirmDialog
         open={!!removing}
@@ -342,11 +392,7 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
 
 /** A new or reset account's one-time code, and the link that fills it in. */
 function SetupCodeView({ setup }: { setup: SetupCode }) {
-  const copy = () =>
-    void navigator.clipboard?.writeText(setup.link).then(
-      () => toast('Link copied'),
-      () => toast('Couldn’t copy: select the link instead', 'error'),
-    );
+  const copy = () => copyLink(setup.link, 'Link copied', () => toast('Couldn’t copy: select the link instead', 'error'));
   return (
     <div className="space-y-4 p-5">
       <p className="type-body text-paper-dim">

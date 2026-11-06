@@ -99,12 +99,17 @@ body {
   font-feature-settings: 'ss01', 'cv11';
 }
 
-/* Film grain: barely-there texture so large dark areas don't look flat. */
+/*
+ * Film grain: barely-there texture so large dark areas don't look flat. Over the page and the sidebar, but under the
+ * player bars, the tab bar, Now Playing and everything above them (z-index 40 and up): iPhone Safari 26 paints its
+ * translucent status bar and toolbar in the color of the topmost fixed element at that edge, and the grain, having no
+ * color, would let the page show through them instead of the tab bar or Now Playing.
+ */
 body::after {
   content: '';
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 35;
   pointer-events: none;
   opacity: 0.05;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -212,6 +217,28 @@ body::after {
     &:where([data-layout='action'] *) {
       @slot;
     }
+  }
+}
+
+/*
+ * Breakpoints for what's on a page, by the page's own width rather than the window's (AppShell makes the page area
+ * the `page` container). While nothing sits beside the page they're lg, xl and 2xl exactly, the sidebar taking 240 px
+ * of the window (1024 → 784, 1280 → 1040, 1536 → 1296); while the queue column is open (components/SideColumn.tsx)
+ * the page is narrower, and so are its grids and headers.
+ */
+@custom-variant page-lg {
+  @container page (width >= 49rem) {
+    @slot;
+  }
+}
+@custom-variant page-xl {
+  @container page (width >= 65rem) {
+    @slot;
+  }
+}
+@custom-variant page-2xl {
+  @container page (width >= 81rem) {
+    @slot;
   }
 }
 

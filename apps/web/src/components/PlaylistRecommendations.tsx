@@ -160,7 +160,7 @@ function Row({ rec, index, onPlay, action }: { rec: RecommendedTrack; index: num
       }
       trailing={
         <>
-          <span className="hidden w-56 shrink-0 truncate type-small text-muted lg:block" title={rec.because && `Similar to ${rec.because}`}>
+          <span className="hidden w-56 shrink-0 truncate type-small text-muted page-lg:block" title={rec.because && `Similar to ${rec.because}`}>
             {rec.because && (
               <>
                 <span className="type-badge">like</span> <span className="text-paper-dim">{rec.because}</span>

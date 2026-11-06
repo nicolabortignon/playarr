@@ -67,6 +67,8 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 - **Toasts:** what happened, naming the song in curly quotes ("“Teardrop” plays next", "3 songs play next"), with Undo where it can be taken back. A toast with Undo stays 6 seconds, longer while it's hovered or focused. At most three show at once, and a repeat replaces the one before it.
 - **Add to playlist** ticks the playlists that already hold all the songs (a dash for some), and adds to several at once.
 - **Cards:** one width on every shelf (web `SHELF_CARD`). An artist is a circle with the name below: their photo, else their best album cover, else a vinyl monogram.
+- **A place to go** (Library's rows, Settings on a phone) is one row: the place's icon on a tile, its name, a chevron (web `NavRow`).
+- **A ⋯ menu says its actions in words**, each with its icon: a source's Sync now · Match again · Organize files · Edit · Move up · Move down, then Remove; an account's the same way. Never a row of icon-only buttons for things that change the server.
 - **The "on this device" mark** is for songs the listener downloaded (with an album, a playlist, a mix or Favorites). Songs only loaded ahead as you listen get no mark: the mark means you can count on it being there.
 
 ### Taking things back
@@ -149,6 +151,16 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 | Remove (from a list) | `X` | `xmark` |
 | Delete (for good) | `Trash2` | `trash` |
 
+## Patterns
+
+- **Recent searches** (on the empty search page, above what to try): the last eight, newest first, kept per account on the device, each with the history icon, searching again on a tap, and × to remove it; Clear removes them all. Both say so with Undo ("Removed “daft punk” from recent searches", "Cleared recent searches"). A search counts once a result is opened or played, Enter is pressed, or the words sit still for 2.5 s; never one letter, and words that only extend the newest search replace it.
+- **Beyond the library**, under the library's results whenever there's anything: "Not in your library" with a kicker naming where it's from ("Lidarr · MusicBrainz · Deezer"), and Request only where requesting is possible.
+- **Settings:** on a phone, a grouped list (This device · Your account · Server, members seeing Your account before Server, with "Only an admin can change these."), a line under each group saying what it's for, and the version at the foot; each panel has a back link to Settings. On wider screens, tabs in the same order with a line between groups, fading at the edge (with arrows for a mouse) when they don't fit, the open tab kept in view.
+- **Keyboard shortcuts** show only where there's a keyboard (a fine pointer, or a key pressed outside a field). On the web `?` opens them over any page as a record sleeve: Side A · Playing and Side B · Getting around, numbered A1…, dotted leaders to the keys in `type-badge` keycaps. iPadOS has its own ⌘ overlay, so iOS lists them there instead.
+- **The idle player bar** (desktop and tablet, nothing playing): the album heard last under the kicker "Heard last", Resume as the primary button and Feeling lucky beside it; with no history, "Nothing playing" and Feeling lucky.
+- **The side column** (web from 1280 px, the iPad at regular width): Queue and Lyrics beside any page, 340 wide on `ink-950`. A page lays itself out by its own width, not the window's (web `page-lg`, `page-xl`, `page-2xl`), so it narrows when the column opens.
+- **Fixed layers on the web:** iPhone Safari paints its translucent bars in the color of the topmost fixed element at each edge, so that element has a solid background (the tab bar, Now Playing), and anything without a color of its own (the film grain) stays below them (z-index under 40).
+
 ## Motion
 
 - **Fast, 150 ms:** a press, a hover, a color changing (Tailwind's default; `Motion.fast`).
@@ -169,4 +181,6 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 - **Actions** are sentence case ("Play", "Shuffle", "Feeling lucky"). Mono capitals are for choices (Albums' sort, Stats' ranges) and kickers.
 - **Spelling:** American (decided 2026-11-06): color, favorite, gray, analyzed, leveled, organize, neighbors.
 - **Badges** say only what's worth saying: "MP3", "FLAC", and the details when they're out of the ordinary ("MP3 · 128 kbps", "FLAC · 24/96"). Ordinary is 256 kbps or more, or CD quality (16-bit at 44.1 or 48 kHz). The full details are in the badge's title.
+- **Search** says when results aren't exact: "Nothing called “mezanine”. These come close:". With nothing in the library, "Not in your crates." and "Here's what's out there:"; with nothing anywhere, what to try (the spelling, fewer words) and New search.
+- **Invites:** an account not set up yet is "Invited · not set up yet", with Copy invite link and New code. A link can only be copied on the device that made it (the server keeps only its fingerprint); elsewhere it's "New invite link for Sam?" with "Make a new link", which stops the old one working.
 - **Accent means action:** text in the accent can be tapped.

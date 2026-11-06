@@ -19,3 +19,9 @@ export function useMediaQuery(query: string): boolean {
  * and per-second updates don't run where they can't be seen.
  */
 export const useDesktopLayout = () => useMediaQuery('(min-width: 768px)');
+
+/**
+ * Tailwind's `xl`: room for the queue and lyrics column beside the page (components/SideColumn.tsx), as on the iPad
+ * app. Narrower, the player bar's Queue opens the Queue page and its Lyrics Now Playing's.
+ */
+export const useColumnLayout = () => useMediaQuery('(min-width: 1280px)');

@@ -1,7 +1,8 @@
 import type { Account } from '@playarr/shared';
-import { Settings, UserRound } from 'lucide-react';
+import { ChartColumn, Settings, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
+import { STATS_PATH } from '../lib/links';
 import { Menu } from './Menu';
 
 /** The account's name to greet it by: its display name, else its username. */
@@ -17,7 +18,7 @@ export function AccountAvatar({ name, className }: { name: string; className?: s
   );
 }
 
-/** The account's avatar, opening Account and Settings: the corner button of the iOS app's tabs. */
+/** The account's avatar, opening Account, Your listening and Settings: the corner button of the iOS app's tabs. */
 export function AccountMenu({ account }: { account: Pick<Account, 'name' | 'username'> }) {
   const navigate = useNavigate();
   return (
@@ -26,6 +27,7 @@ export function AccountMenu({ account }: { account: Pick<Account, 'name' | 'user
       trigger={<AccountAvatar name={accountName(account)} />}
       items={[
         { label: 'Account', icon: UserRound, onSelect: () => navigate('/settings/accounts') },
+        { label: 'Your listening', icon: ChartColumn, onSelect: () => navigate(STATS_PATH) },
         { label: 'Settings', icon: Settings, onSelect: () => navigate('/settings') },
       ]}
     />
