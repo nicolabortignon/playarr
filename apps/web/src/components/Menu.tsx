@@ -1,4 +1,4 @@
-import { MoreHorizontal, type LucideIcon } from 'lucide-react';
+import { Ellipsis, type LucideIcon } from 'lucide-react';
 import {
   useEffect,
   useImperativeHandle,
@@ -12,6 +12,7 @@ import {
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn';
 import type { Point } from '../lib/contextMenu';
+import { useOverlay } from '../lib/overlays';
 import { IconButton } from './Button';
 
 export interface MenuItem {
@@ -40,6 +41,8 @@ const EDGE = 8;
 const UNDER_FINGER = 24;
 /** After the finger that opened a menu lifts, how long its items still ignore the click that lifting may send. */
 const LIFT_MS = 300;
+/** A click this soon after Enter or Space on the ⋯ came from those keys. */
+const KEY_CLICK_MS = 1000;
 
 /** The entries to draw: a group may be empty, so no line first, last or twice in a row. */
 function tidy(entries: MenuEntry[]): MenuEntry[] {
@@ -55,14 +58,15 @@ function tidy(entries: MenuEntry[]): MenuEntry[] {
  */
 export function Menu({
   items,
-  label = 'More actions',
+  label,
   size,
   className,
   trigger,
   ref,
 }: {
   items: MenuEntry[];
-  label?: string;
+  /** What it's about, never just "More": "More for “Teardrop”", "More for “Late night”", "More for Sam". */
+  label: string;
   /** Large and outlined in a page's action row; else 44 to tap on touch screens, 36 with a mouse. */
   size?: 'regular' | 'large';
   className?: string;
@@ -72,6 +76,8 @@ export function Menu({
 }) {
   const [open, setOpen] = useState<{ at?: Point; keyboard: boolean } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
+  // When Enter or Space last went down on the ⋯ (0: since then, a pointer did).
+  const keyAt = useRef(0);
   const entries = tidy(items);
   useImperativeHandle(ref, () => ({ open: (at, keyboard = false) => setOpen({ at, keyboard }) }), []);
   if (!entries.length) return null;
@@ -84,14 +90,21 @@ export function Menu({
         size={size}
         aria-haspopup="menu"
         aria-expanded={!!open}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') keyAt.current = Date.now();
+        }}
+        onPointerDown={() => (keyAt.current = 0)}
         onClick={(e) => {
           e.stopPropagation();
-          // A click from the keyboard (Enter, Space) has no pointer behind it: detail is 0.
-          setOpen((o) => (o ? null : { keyboard: e.detail === 0 }));
+          // From the keyboard only when Enter or Space just went down on it: a tap, a click and a click made by a
+          // script or an assistive tool (no pointer, no keys) open it without the focus ring round its first item.
+          const keyboard = e.detail === 0 && Date.now() - keyAt.current < KEY_CLICK_MS;
+          keyAt.current = 0;
+          setOpen((o) => (o ? null : { keyboard }));
         }}
         className={className}
       >
-        {trigger ?? <MoreHorizontal className={size === 'large' ? 'size-5' : 'size-4.5'} />}
+        {trigger ?? <Ellipsis className={size === 'large' ? 'size-5' : 'size-4.5'} />}
       </IconButton>
       {open && (
         <Popover entries={entries} label={label} at={open.at} button={btn.current} keyboard={open.keyboard} onClose={() => setOpen(null)} />
@@ -145,6 +158,8 @@ function Popover({
   const ready = useRef(!at?.touch);
   const close = useRef(onClose);
   close.current = onClose;
+  // On top of whatever it was opened over (a dialog, Now Playing): Escape closes the menu alone.
+  useOverlay(true, () => close.current());
 
   useEffect(() => {
     if (ready.current) return;
@@ -179,25 +194,18 @@ function Popover({
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const dismiss = (e: Event) => {
-      if (e.type === 'keydown') {
-        if ((e as KeyboardEvent).key !== 'Escape') return;
-        // Escape closes the menu alone, not the sheet or dialog it was opened over (they listen on the window).
-        e.stopPropagation();
-      }
       if (e.type === 'pointerdown' && (menu.current?.contains(e.target as Node) || button?.contains(e.target as Node))) return;
       close.current();
     };
     document.addEventListener('pointerdown', dismiss);
-    document.addEventListener('keydown', dismiss);
     window.addEventListener('scroll', dismiss, true);
     window.addEventListener('resize', dismiss);
-    // From the keyboard, the first item; from a pointer, the menu itself (arrows and Escape still work), so a tap
+    // From the keyboard, the first item; from a pointer, the menu itself (the arrows still reach the items), so a tap
     // doesn't draw the focus ring round "Play next".
     if (keyboard) menu.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     else menu.current?.focus({ preventScroll: true });
     return () => {
       document.removeEventListener('pointerdown', dismiss);
-      document.removeEventListener('keydown', dismiss);
       window.removeEventListener('scroll', dismiss, true);
       window.removeEventListener('resize', dismiss);
       // Back where it was opened from, so keyboard users carry on from there: the ⋯ button, else what had the focus.

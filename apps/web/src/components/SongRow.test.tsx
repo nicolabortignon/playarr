@@ -78,7 +78,7 @@ describe('Song rows', () => {
     expect(within(li).getByRole('link', { name: 'Massive Attack' }).getAttribute('href')).toBe('/artists/20');
     expect(within(li).getByRole('link', { name: 'Mezzanine' }).getAttribute('href')).toBe('/albums/10');
     expect(within(li).getByRole('button', { name: 'Add “Song 1” to Favorites' })).toBeTruthy();
-    expect(within(li).getByRole('button', { name: 'More for Song 1' })).toBeTruthy();
+    expect(within(li).getByRole('button', { name: 'More for “Song 1”' })).toBeTruthy();
   });
 
   it('ends with the time, then the heart, then ⋯, as on iOS', () => {
@@ -86,21 +86,21 @@ describe('Song rows', () => {
     const li = row('Song 1');
     const time = within(li).getByText('4:05');
     const heart = within(li).getByRole('button', { name: 'Add “Song 1” to Favorites' });
-    const more = within(li).getByRole('button', { name: 'More for Song 1' });
+    const more = within(li).getByRole('button', { name: 'More for “Song 1”' });
     expect(time.compareDocumentPosition(heart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(heart.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows one song menu, in one order', () => {
     list({ variant: 'mixed' });
-    fireEvent.click(screen.getByRole('button', { name: 'More for Song 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Song 1”' }));
     expect(menuItems()).toEqual(['Play next', 'Add to queue', 'Add to playlist…', 'Start radio', 'Go to album', 'Go to artist', 'Show metadata']);
   });
 
   it('leaves Go to album out on the album’s own page, and adds Edit mix points at the end of the song’s part with DJ mix on', () => {
     usePrefs.setState({ transitions: 'dj' });
     list();
-    fireEvent.click(screen.getByRole('button', { name: 'More for Song 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Song 1”' }));
     expect(menuItems()).toEqual(['Play next', 'Add to queue', 'Add to playlist…', 'Start radio', 'Go to artist', 'Show metadata', 'Edit mix points']);
   });
 

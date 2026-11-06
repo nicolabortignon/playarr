@@ -40,13 +40,13 @@ afterEach(() => {
 describe('Now Playing', () => {
   it('gives the song playing the one song menu, without queueing it again, and Open queue after a line', () => {
     wrap(<NowPlaying />);
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Song 1”' }));
     expect(menuEntries()).toEqual(['Add to playlist…', 'Start radio', 'Go to album', 'Go to artist', 'Show metadata', '—', 'Open queue']);
   });
 
   it('gives Up next’s songs the queue’s menu, and a press plays from there', () => {
     wrap(<NowPlaying />);
-    fireEvent.click(screen.getByRole('button', { name: 'More for Song 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Song 3”' }));
     expect(menuEntries()).toEqual([
       'Play next',
       'Add to queue',
@@ -76,7 +76,7 @@ describe('Now Playing’s Open queue', () => {
     room(true);
     useUI.setState({ sideColumn: null });
     wrap(<NowPlaying />);
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Song 1”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Open queue' }));
     expect(useUI.getState()).toMatchObject({ sideColumn: 'queue', nowPlayingOpen: false });
   });
@@ -90,7 +90,7 @@ describe('Now Playing’s Open queue', () => {
         <RouterProvider router={router} />
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Song 1”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Open queue' }));
     expect(router.state.location.pathname).toBe('/queue');
     expect(useUI.getState()).toMatchObject({ sideColumn: null, nowPlayingOpen: false });

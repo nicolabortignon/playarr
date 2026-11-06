@@ -1,5 +1,5 @@
 import type { PlaylistItem } from '@playarr/shared';
-import { ListMusic, ListPlus, Lock, Palette, Pencil, Trash2, Users, X } from 'lucide-react';
+import { ListMusic, ListPlus, Lock, Palette, Pencil, Trash, Users, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -48,7 +48,7 @@ export function PlaylistPage() {
             playlist?.shared
               ? { label: 'Stop sharing', icon: Lock, onSelect: () => stopSharing() }
               : { label: 'Share with everyone', icon: Users, onSelect: () => mutations.update.mutate({ id, shared: true }) },
-            { label: 'Delete playlist', icon: Trash2, onSelect: () => setConfirmDelete(true) },
+            { label: 'Delete playlist', icon: Trash, onSelect: () => setConfirmDelete(true) },
           ]
         : [],
     },
@@ -201,7 +201,7 @@ export function PlaylistPage() {
             item: { key: `playlist:${id}`, title: playlist.name, subtitle: 'Playlist', coverUrl: playlist.cover.url, href: `/playlists/${id}` },
             tracks: playable,
           }}
-          menu={{ label: 'Playlist actions', items: menu }}
+          menu={{ label: `More for “${playlist.name}”`, items: menu }}
         />
       </DetailHeader>
       {/* What it's about: after the row, so Play comes first on a phone. */}
@@ -308,7 +308,7 @@ function PlaylistRow({
         </>
       }
       reorder={reorder}
-      menu={{ label: `More for ${item.title}`, items: own }}
+      menu={{ label: `More for “${item.title}”`, items: own }}
     />
   );
 }
@@ -328,7 +328,11 @@ function EditDetails({
   const [description, setDescription] = useState(initialDescription);
   const save = () => (name.trim() ? onSave({ name, description }) : onCancel());
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') onCancel();
+    if (e.key === 'Escape') {
+      // Escape is the field's own here (it cancels the rename): nothing under it closes (lib/overlays.ts).
+      e.preventDefault();
+      onCancel();
+    }
     if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) save();
   };
   return (

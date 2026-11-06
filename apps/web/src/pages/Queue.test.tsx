@@ -26,7 +26,7 @@ function renderQueue() {
   );
 }
 
-const openMenu = (title: string) => fireEvent.click(screen.getByRole('button', { name: `More for ${title}` }));
+const openMenu = (title: string) => fireEvent.click(screen.getByRole('button', { name: `More for “${title}”` }));
 /** The menu's items, and its lines as "—". */
 const menuEntries = () => [...screen.getByRole('menu').children].map((c) => (c.getAttribute('role') === 'separator' ? '—' : c.textContent));
 const choose = (label: string) => fireEvent.click(screen.getByRole('menuitem', { name: label }));

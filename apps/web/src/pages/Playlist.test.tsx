@@ -80,7 +80,7 @@ describe('PlaylistPage', () => {
     view(SHARED);
     expect(await screen.findByText('Shared by Nicola')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Playlist actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Road trip”' }));
     expect(screen.queryByRole('menuitem', { name: 'Rename' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Delete playlist' })).toBeNull();
   });
@@ -100,7 +100,7 @@ describe('PlaylistPage', () => {
 
   it('keeps the one song menu on its songs, with the owner’s Move up, Move down and Remove after a line', async () => {
     view(MINE);
-    fireEvent.click(await screen.findByRole('button', { name: 'More for Unfinished Sympathy' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Unfinished Sympathy”' }));
     expect(menuEntries()).toEqual([
       'Play next',
       'Add to queue',
@@ -119,7 +119,7 @@ describe('PlaylistPage', () => {
   it('moves a song from its menu or its handle’s arrow keys, and saves the order', async () => {
     const reorder = vi.spyOn(api, 'reorderPlaylist').mockImplementation(async (_id, itemIds) => ({ ...MINE, items: itemIds.map((i) => MINE.items.find((x) => x.itemId === i)!) }));
     view(MINE);
-    fireEvent.click(await screen.findByRole('button', { name: 'More for Teardrop' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Teardrop”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move down' }));
     await waitFor(() => expect(reorder).toHaveBeenLastCalledWith(5, [2, 1, 3]));
     fireEvent.keyDown(screen.getByRole('button', { name: 'Drag to reorder Safe from Harm' }), { key: 'ArrowUp' });
@@ -128,7 +128,7 @@ describe('PlaylistPage', () => {
 
   it('offers only its songs’ own menu to someone else, and nothing to move', async () => {
     view({ ...MINE, mine: false, shared: true });
-    fireEvent.click(await screen.findByRole('button', { name: 'More for Teardrop' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Teardrop”' }));
     expect(menuEntries()).not.toContain('Move down');
     expect(menuEntries()).not.toContain('Remove from playlist');
     expect(screen.queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
@@ -136,7 +136,7 @@ describe('PlaylistPage', () => {
 
   it('puts the playlist’s own actions after what everything you can play offers', async () => {
     view(MINE);
-    fireEvent.click(await screen.findByRole('button', { name: 'Playlist actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Road trip”' }));
     expect(menuEntries()).toEqual(['Play next', 'Add to queue', 'Add to playlist…', '—', 'Rename', 'New cover…', 'Share with everyone', 'Delete playlist']);
   });
 
@@ -146,7 +146,7 @@ describe('PlaylistPage', () => {
     expect(screen.getByRole('textbox', { name: 'Playlist name' })).toBeTruthy();
     cleanup();
     view(MINE);
-    fireEvent.click(await screen.findByRole('button', { name: 'Playlist actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Road trip”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
     expect(screen.getByRole('textbox', { name: 'Playlist name' })).toBeTruthy();
   });
@@ -155,7 +155,7 @@ describe('PlaylistPage', () => {
     const update = vi.spyOn(api, 'updatePlaylist').mockResolvedValue({ ...SHARED, mine: true, shared: true });
     view({ ...SHARED, mine: true, shared: false });
     expect(await screen.findByRole('button', { name: 'Drag to reorder Sneaky Snitch' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Playlist actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Road trip”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Share with everyone' }));
     await waitFor(() => expect(update).toHaveBeenCalledWith(5, { shared: true }));
   });
@@ -166,7 +166,7 @@ describe('PlaylistPage', () => {
     const add = vi.spyOn(api, 'addToPlaylist').mockResolvedValue({ ...MINE, items: [first, third, { ...second, itemId: 9 }] });
     const reorder = vi.spyOn(api, 'reorderPlaylist').mockResolvedValue({ ...MINE, items: [first, { ...second, itemId: 9 }, third] });
     view(MINE);
-    fireEvent.click(await screen.findByRole('button', { name: 'More for Unfinished Sympathy' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Unfinished Sympathy”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from playlist' }));
     expect(screen.queryByRole('button', { name: 'Play Unfinished Sympathy' })).toBeNull();
     await waitFor(() => expect(lastToast()?.message).toBe('Removed “Unfinished Sympathy” from “Road trip”'));
@@ -179,7 +179,7 @@ describe('PlaylistPage', () => {
   it('removes a song no longer in the library without an Undo, as it can’t be added again', async () => {
     vi.spyOn(api, 'removeFromPlaylist').mockResolvedValue({ ...SHARED, mine: true, items: [] });
     view({ ...SHARED, mine: true });
-    fireEvent.click(await screen.findByRole('button', { name: 'More for Sneaky Snitch' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Sneaky Snitch”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Remove from playlist' }));
     await waitFor(() => expect(lastToast()?.message).toBe('Removed “Sneaky Snitch” from “Road trip”'));
     expect(lastToast()?.action).toBeUndefined();
@@ -188,7 +188,7 @@ describe('PlaylistPage', () => {
   it('stops sharing at once, and Undo shares it again', async () => {
     const update = vi.spyOn(api, 'updatePlaylist').mockImplementation(async (_id, patch) => ({ ...SHARED, mine: true, ...patch }));
     view({ ...SHARED, mine: true, shared: true });
-    fireEvent.click(await screen.findByRole('button', { name: 'Playlist actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Road trip”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Stop sharing' }));
     await waitFor(() => expect(update).toHaveBeenCalledWith(5, { shared: false }));
     await waitFor(() => expect(lastToast()?.message).toBe('Stopped sharing “Road trip”'));
@@ -199,7 +199,7 @@ describe('PlaylistPage', () => {
   it('asks before deleting the playlist, naming what goes and what stays', async () => {
     const destroy = vi.spyOn(api, 'deletePlaylist').mockResolvedValue();
     view(MINE);
-    fireEvent.click(await screen.findByRole('button', { name: 'Playlist actions' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Road trip”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete playlist' }));
     const ask = await screen.findByRole('dialog', { name: 'Delete “Road trip”?' });
     expect(ask.textContent).toContain('Its 3 songs stay in your library.');

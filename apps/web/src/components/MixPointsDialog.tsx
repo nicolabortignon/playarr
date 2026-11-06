@@ -128,7 +128,7 @@ export function MixPointsDialog() {
   const song = useUI((s) => s.mixPointsTrack);
   const close = useUI((s) => s.closeMixPoints);
   return (
-    <Dialog open={song !== null} onClose={close} title="Edit mix points" wide>
+    <Dialog open={song !== null} onClose={close} title="Edit mix points" size="wide">
       {song && <Loader key={song.recordingId} song={song} onSaved={close} />}
     </Dialog>
   );
@@ -139,14 +139,14 @@ function Loader({ song, onSaved }: { song: Track; onSaved: () => void }) {
   const map = data?.[song.recordingId];
   if (error) {
     return (
-      <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} className="p-5">
+      <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching}>
         Couldn’t load this song’s mix points
       </InlineError>
     );
   }
   if (isPending) {
     return (
-      <div className="space-y-3 p-5" aria-busy="true" aria-label="Loading mix points">
+      <div className="space-y-3" aria-busy="true" aria-label="Loading mix points">
         <div className="h-6 w-1/2 animate-pulse rounded bg-paper/5" />
         <div className="h-24 animate-pulse rounded-lg bg-paper/5" />
       </div>
@@ -154,9 +154,9 @@ function Loader({ song, onSaved }: { song: Track; onSaved: () => void }) {
   }
   if (!map) {
     return (
-      <div className="space-y-2 p-5">
+      <div className="space-y-2">
         <SongTitle song={song} />
-        <p className="text-sm text-paper-dim">
+        <p className="type-small text-paper-dim">
           This song hasn’t been analyzed yet, so there are no mix points to move. Playarr measures songs in the background: try again later.
         </p>
       </div>
@@ -168,8 +168,8 @@ function Loader({ song, onSaved }: { song: Track; onSaved: () => void }) {
 function SongTitle({ song }: { song: Track }) {
   return (
     <div className="min-w-0">
-      <div className="truncate text-[19px] text-paper">{song.title}</div>
-      <div className="truncate text-[14px] text-muted">{song.artistName}</div>
+      <div className="truncate type-body text-paper">{song.title}</div>
+      <div className="truncate type-small text-muted">{song.artistName}</div>
     </div>
   );
 }
@@ -235,10 +235,10 @@ function Editor({ song, map, onSaved }: { song: Track; map: MixMap & { cues?: Cu
   };
 
   return (
-    <div ref={root} className="space-y-6 p-5">
+    <div ref={root} className="space-y-6">
       <div className="space-y-2">
         <SongTitle song={song} />
-        <p className="text-sm text-paper-dim">
+        <p className="type-small text-paper-dim">
           {map.bpm > 0
             ? `${Math.round(map.bpm)} BPM. The markers snap to bars: the arrow keys move one bar, with Shift one phrase.`
             : `No steady beat was found in this song, so the markers move by whole seconds (with Shift, ${SECONDS_WITHOUT_BEAT}).`}
@@ -296,11 +296,11 @@ function PointCard({ label, hint, time, byHand, onPlay }: { label: string; hint:
     <div className="flex items-center gap-3 rounded-lg border border-line p-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase">{label}</span>
-          <span className="text-[11px] text-muted">{byHand ? 'Set by hand' : 'Detected'}</span>
+          <span className="type-kicker text-muted">{label}</span>
+          <span className="type-small text-muted">{byHand ? 'Set by hand' : 'Detected'}</span>
         </div>
         <div className="text-xl text-paper tabular">{formatTime(time)}</div>
-        <div className="truncate text-[12px] text-muted">{hint}</div>
+        <div className="truncate type-small text-muted">{hint}</div>
       </div>
       <Button size="small" icon={<Play className="fill-current" />} onClick={onPlay}>
         Play from {label.toLowerCase()}
@@ -345,7 +345,7 @@ function Strip({
   return (
     <figure aria-labelledby={id} className="min-w-0">
       <figcaption id={id} className="mb-2 flex items-baseline justify-between gap-3">
-        <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Energy through the song</span>
+        <span className="type-kicker text-muted">Energy through the song</span>
         {hovered && <PhraseReadout phrase={hovered} />}
       </figcaption>
       <div className="relative select-none" onPointerLeave={() => setHover(null)}>
@@ -364,11 +364,11 @@ function Strip({
         <Marker which="mixIn" label="Mix in" handle="In" time={shown.mixIn} left={at(shown.mixIn)} grid={grid} bounds={bounds} timeAt={timeAt} onMove={onMove} />
         <Marker which="mixOut" label="Mix out" handle="Out" time={shown.mixOut} left={at(shown.mixOut)} grid={grid} bounds={bounds} timeAt={timeAt} onMove={onMove} />
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted tabular" aria-hidden>
+      <div className="mt-1 flex justify-between type-meta text-muted" aria-hidden>
         <span>0:00</span>
         <span>{formatTime(duration)}</span>
       </div>
-      <p className="mt-2 text-[12px] text-muted">
+      <p className="mt-2 type-small text-muted">
         The shaded ends are where this song can overlap the songs before and after it; the dashed lines are the points Playarr found on its own.
       </p>
       {phrases.length > 0 && (
@@ -469,7 +469,7 @@ function Marker({
       </div>
       <div
         className={cn(
-          'pointer-events-auto absolute left-1/2 grid h-6 min-w-10 -translate-x-1/2 cursor-ew-resize place-items-center rounded-full bg-paper px-2 font-mono text-[10px] tracking-[0.1em] text-ink-950 uppercase shadow-md shadow-black/40',
+          'pointer-events-auto absolute left-1/2 grid h-6 min-w-10 -translate-x-1/2 cursor-ew-resize place-items-center rounded-full bg-paper px-2 type-badge text-ink-950 shadow-md shadow-black/40',
           // An invisible 44 px hit area around the handle, filling its row.
           "before:absolute before:-inset-x-2 before:-inset-y-2.5 before:content-['']",
           'group-focus-visible:ring-2 group-focus-visible:ring-accent group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-ink-850',

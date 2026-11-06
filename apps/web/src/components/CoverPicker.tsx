@@ -1,5 +1,5 @@
 import type { CoverLayout, PlaylistCoverInfo, PlaylistDetail } from '@playarr/shared';
-import { Check, Dices, Loader2 } from 'lucide-react';
+import { Check, Dices, LoaderCircle } from 'lucide-react';
 import { useId, useState } from 'react';
 import { api, sized } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -32,7 +32,7 @@ const COVER_STORY: Record<CoverLayout, string> = {
  */
 export function CoverPicker({ playlist, open, onClose }: { playlist: PlaylistDetail; open: boolean; onClose: () => void }) {
   return (
-    <Dialog open={open} onClose={onClose} title="New cover" wide>
+    <Dialog open={open} onClose={onClose} title="New cover" size="wide">
       {/* Remount per opening, so it starts from fresh variations. */}
       {open && <Picker playlist={playlist} onClose={onClose} />}
     </Dialog>
@@ -45,7 +45,7 @@ function Picker({ playlist, onClose }: { playlist: PlaylistDetail; onClose: () =
   const [chosen, setChosen] = useState<CoverLayout>(playlist.cover.layout);
 
   return (
-    <div className="p-4 sm:p-5">
+    <div>
       <p className="mb-4 text-sm text-muted">Drawn from the {playlist.trackCount} songs in this playlist as they are now.</p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
         {STYLES.map(({ layout, label }) => (
@@ -118,7 +118,7 @@ function Candidate({ src, label, selected, onSelect }: { src: string; label: str
         )}
       >
         {/* Some styles simulate for a few seconds; keep the spinner up until they arrive. */}
-        {!loaded && <Loader2 className="absolute inset-0 m-auto size-5 animate-spin text-muted" />}
+        {!loaded && <LoaderCircle className="absolute inset-0 m-auto size-5 animate-spin text-muted" />}
         <img
           src={src}
           alt=""

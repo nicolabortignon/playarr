@@ -121,7 +121,7 @@ export function BarTicks({ bars }: { bars: BarTick[] }) {
 /** "1:04 · 72%": the phrase under the pointer, for the figure's caption. */
 export function PhraseReadout({ phrase }: { phrase: PhraseColumn }) {
   return (
-    <span className="text-[13px] text-paper-dim tabular" aria-live="polite">
+    <span className="type-small text-paper-dim tabular" aria-live="polite">
       <span className="text-paper">{formatTime(phrase.at)}</span> · {Math.round(phrase.energy * 100)}%
     </span>
   );
@@ -142,11 +142,11 @@ export function EnergyNumbers({ caption, rows, extraHeader }: { caption: string;
   return (
     <details className="mt-1">
       {/* 44 px tall to tap (padding, so it keeps its disclosure triangle). */}
-      <summary className="cursor-pointer py-3.5 font-mono text-[10px] leading-4 tracking-[0.15em] text-muted uppercase hover:text-paper">Numbers</summary>
-      <table className="mt-2 w-full text-[13px]">
+      <summary className="cursor-pointer py-3.5 type-kicker leading-4 text-muted hover:text-paper">Numbers</summary>
+      <table className="mt-2 w-full type-small">
         <caption className="sr-only">{caption}</caption>
         <thead>
-          <tr className="border-b border-line text-left font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
+          <tr className="border-b border-line text-left type-kicker text-muted">
             {songs && (
               <th scope="col" className="py-1 font-normal">
                 Song

@@ -127,6 +127,7 @@ The standard:
   - Strokes: 2, 1.75, 2.25 and 1.5 are all in use (`Nav.tsx:104`, `:172`, `FavoriteButton.tsx:47`, `Favorites.tsx:28`).
 - **One map:** the design doc maps each concept to its web glyph (lucide) and its iOS glyph (SF Symbols), so the difference is deliberate. Today previous and next are ⏮ ⏭ on the web and ⏪ ⏩ on iOS, and an artist is a microphone on iOS and books on the web.
 - **Done when** the map exists and both apps follow it.
+- *Web done 2026-11-06: the map is in `docs/design.md` (Icons), with sizes by role and one stroke; the web follows it (Requests are binoculars, artists a microphone, the queue a list, storage a drive), on lucide's current names. iOS to align where the map says so.*
 
 ## 7. One vocabulary — S
 
@@ -174,6 +175,7 @@ The standard:
 - **⋯ labels:** every ⋯ on the web is named "More actions" (`Menu.tsx:15`), so a screen reader hears the same name on every row. iOS says "More for {title}"; the web should too.
 - **iOS sheets:** one detent rule (medium and large for pickers), and Cancel or close always in the same corner.
 - **Done when** one overlay stack decides what Escape closes, and the ⋯ labels match.
+- *Web done 2026-11-06: one stack (`lib/overlays.ts`) decides what Escape closes, menu then dialog then Now Playing; dialogs share one padding, a footer kept in view and three widths; a menu's first item takes the focus only when opened from the keyboard; every ⋯ is "More for “…”". iOS sheets to do.*
 
 ## 10. A web screen tour, and a check that keeps things consistent — S
 
@@ -188,6 +190,7 @@ The standard:
   - iOS: no `Color(red:`, `.system(size:` or literal `cornerRadius` outside `Theme/`.
 - **Done when** each tour runs from one command, and the check fails a page that adds a raw color.
 - *Tour done 2026-11-06: `pnpm web:screens` (scripts/web-screens/, docs/web.md §12): 51 phone and 44 tablet screens in about 6 minutes. The check is `scripts/check-design.mjs`, report-only until the sweeps land.*
+- *Web check enforced 2026-11-06: the web is swept (no raw color or arbitrary text size outside `index.css` and the allow-list) and `pnpm -C apps/web typecheck` runs `check-design --app web`. iOS still counts 22 literal corner radii, 2 `.system(size:)` and 2 `Color(red:)`: its sweep, then enforcement, to do.*
 
 ## Order
 

@@ -71,6 +71,11 @@ describe('Album page header', () => {
     expect(header.queryByText(/added/)).toBeNull();
   });
 
+  it('names its ⋯ for the album, as every ⋯ is named for what it’s about', async () => {
+    const header = within(await renderAlbum(album()));
+    expect(header.getByRole('button', { name: `More for “${album().title}”` }).getAttribute('aria-haspopup')).toBe('menu');
+  });
+
   it('names a live album as one, the kicker saying only what it is', async () => {
     const header = within(await renderAlbum(album({ secondaryTypes: ['Live'] })));
     // An exact match: no year beside it ("Live · 1998" before).

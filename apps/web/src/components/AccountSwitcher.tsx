@@ -29,7 +29,7 @@ export function AccountSwitcher({ className }: { className?: string }) {
   };
 
   return (
-    <div className={cn('flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-muted', className)}>
+    <div className={cn('flex flex-wrap gap-x-3 gap-y-1 type-small text-muted', className)}>
       <span>Not {me.name}?</span>
       {stored
         .filter((a) => a.accountId !== me.id)

@@ -1,5 +1,5 @@
 import type { Album, AlbumRef, Availability, DiscoverAlbum, DiscoverTrack } from '@playarr/shared';
-import { Check, Clock, Download, Loader2, Play, RotateCw, TriangleAlert } from 'lucide-react';
+import { Binoculars, Check, Clock, LoaderCircle, Play, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
@@ -68,10 +68,10 @@ export function RequestButton({
     );
 
   if (request.isPending) {
-    if (large) return offer('Request the rest', <Download />);
+    if (large) return offer('Request the rest', <Binoculars />);
     return (
       <StatusBadge
-        icon={<Loader2 className="animate-spin" />}
+        icon={<LoaderCircle className="animate-spin" />}
         title={slow ? lookingUp : undefined}
         className={cn('border-line text-paper-dim', className)}
       >
@@ -97,7 +97,7 @@ export function RequestButton({
           {total ? `${have}/${total}` : `${have} here`}
         </Button>
         {requestsOn && (
-          <Button size="small" variant="primary" icon={<Download />} title="Request the whole album" onClick={ask}>
+          <Button size="small" variant="primary" icon={<Binoculars />} title="Request the whole album" onClick={ask}>
             Request
           </Button>
         )}
@@ -116,21 +116,22 @@ export function RequestButton({
       );
     case 'searching':
       return (
-        <StatusBadge icon={<Loader2 className="animate-spin" />} title={message ?? 'Searching'} wordsClassName={words} className={className}>
+        <StatusBadge icon={<LoaderCircle className="animate-spin" />} title={message ?? 'Searching'} wordsClassName={words} className={className}>
           Searching
         </StatusBadge>
       );
     case 'downloading': {
       const pct = Math.round((progress ?? 0) * 100);
       return (
-        <StatusBadge icon={<Download />} title={message} className={className} fill={pct}>
+        // Under way like Searching and Importing (Download is the glyph for this device's downloads).
+        <StatusBadge icon={<LoaderCircle className="animate-spin" />} title={message} className={className} fill={pct}>
           <span className="tabular">{pct}%</span>
         </StatusBadge>
       );
     }
     case 'importing':
       return (
-        <StatusBadge icon={<Loader2 className="animate-spin" />} title={message ?? 'Importing'} wordsClassName={words} className={className}>
+        <StatusBadge icon={<LoaderCircle className="animate-spin" />} title={message ?? 'Importing'} wordsClassName={words} className={className}>
           Importing
         </StatusBadge>
       );
@@ -139,7 +140,7 @@ export function RequestButton({
     case 'failed':
       return offer('Try again', <TriangleAlert className="text-danger" />, message);
     default:
-      return large ? offer('Request the rest', <Download />) : offer('Request', <Download />);
+      return large ? offer('Request the rest', <Binoculars />) : offer('Request', <Binoculars />);
   }
 }
 
@@ -297,9 +298,9 @@ export function RequestsPill({ count }: { count: number }) {
   return (
     <Link
       to="/requests"
-      className="inline-flex items-center gap-2 rounded-full border border-accent/40 px-3 py-1.5 font-mono text-[11px] tracking-wider text-accent uppercase transition hover:bg-accent/10"
+      className="inline-flex items-center gap-2 rounded-full border border-accent/40 px-3 py-1.5 type-badge text-accent transition hover:bg-accent/10"
     >
-      <RotateCw className="size-3 animate-spin [animation-duration:2.5s]" />
+      <LoaderCircle className="size-3 animate-spin [animation-duration:2.5s]" />
       {count} {count === 1 ? 'request' : 'requests'} in progress
     </Link>
   );

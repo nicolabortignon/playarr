@@ -1,4 +1,4 @@
-import { BookmarkPlus, RefreshCw } from 'lucide-react';
+import { ListPlus, RefreshCw } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router';
 import { ActionRow, RowAction, usePlayState } from '../components/ActionRow';
 import { DetailHeader, DetailHeaderSkeleton, joinMeta } from '../components/DetailHeader';
@@ -61,14 +61,14 @@ export function MixPage() {
             tracks: mix.tracks,
           }}
           menu={{
-            label: 'Mix actions',
+            label: `More for “${mix.title}”`,
             // What everything you can play offers, then the mix's own action.
             items: [
               ...queueItems(mix.tracks, openPicker),
               DIVIDER,
               {
                 label: 'Save as playlist',
-                icon: BookmarkPlus,
+                icon: ListPlus,
                 // Opens the new playlist, so it's clear what was made and where it lives.
                 onSelect: () => !save.isPending && save.mutate(undefined, { onSuccess: (playlist) => navigate(`/playlists/${playlist.id}`) }),
               },

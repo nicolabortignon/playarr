@@ -28,14 +28,16 @@ const song = (id: number) =>
 const PLAYLISTS = [playlist(1, 'Road trip'), playlist(2, 'Late night'), playlist(3, 'Gym'), playlist(4, 'Sam’s mix', { mine: false, owner: 'Sam' })];
 
 function picker(tracks: Track[]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider client={client}>
       <MemoryRouter>
         <AddToPlaylistDialog />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   act(() => useUI.getState().openPlaylistPicker(tracks));
+  return client;
 }
 
 beforeEach(() => {
@@ -81,6 +83,19 @@ describe('Add to playlist', () => {
       [3, ['rec-1', 'rec-2']],
     ]);
     expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Added 2 songs to “Late night” and “Gym”']);
+  });
+
+  it('asks which playlists hold the songs while it’s open, and afresh at the next opening, not once it has closed', async () => {
+    const client = picker([song(1)]);
+    await screen.findByRole('checkbox', { name: /Road trip/ });
+    await waitFor(() => expect(api.playlistsHolding).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // A playlist changed later (renamed, a song taken out) refreshes what holds what, but not for a picker that's gone.
+    await act(() => client.invalidateQueries({ queryKey: ['playlists-holding'] }));
+    expect(api.playlistsHolding).toHaveBeenCalledTimes(1);
+    act(() => useUI.getState().openPlaylistPicker([song(1)]));
+    await waitFor(() => expect(api.playlistsHolding).toHaveBeenCalledTimes(2));
   });
 
   it('chooses again on a second press, and says which playlists didn’t take the songs', async () => {

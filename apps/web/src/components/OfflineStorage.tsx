@@ -1,4 +1,4 @@
-import { HardDriveDownload } from 'lucide-react';
+import { HardDrive } from 'lucide-react';
 import { useState } from 'react';
 import { formatBytes, plural } from '../lib/format';
 import { Link } from 'react-router';
@@ -27,7 +27,7 @@ export function OfflineStorage({ className }: { className?: string }) {
   return (
     <SettingsSection title="On this device" className={className}>
       {!canKeepOffline ? (
-        <p className="max-w-prose text-sm text-muted">
+        <p className="max-w-prose type-small text-muted">
           Playarr can keep the next songs in your queue on this device, so they start instantly and play without a connection. Browsers only
           allow that on a secure connection: open Playarr over HTTPS (or on localhost) to turn it on.
         </p>
@@ -35,11 +35,11 @@ export function OfflineStorage({ className }: { className?: string }) {
         <>
           <div className="flex items-center gap-4">
             <span className="grid size-11 shrink-0 place-items-center rounded-md bg-ink-800 text-accent">
-              <HardDriveDownload className="size-5" />
+              <HardDrive className="size-5" />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[17px] text-paper">{limit ? plural(count, 'song') : 'Off'}</span>
+                <span className="type-body text-paper">{limit ? plural(count, 'song') : 'Off'}</span>
                 {limit > 0 && (
                   <span className="type-meta text-muted">
                     {formatBytes(used)} of {formatBytes(limit)}
@@ -55,7 +55,7 @@ export function OfflineStorage({ className }: { className?: string }) {
           </div>
 
           {downloads > 0 && (
-            <p className="mt-4 text-sm text-paper-dim">
+            <p className="mt-4 type-small text-paper-dim">
               Plus{' '}
               <Link to="/downloads" className="text-accent hover:underline">
                 {plural(downloads, 'download')}
@@ -63,12 +63,12 @@ export function OfflineStorage({ className }: { className?: string }) {
               ({formatBytes(keptBytes(inDownloads))}), kept until you remove them.
             </p>
           )}
-          <p className="mt-4 max-w-prose text-sm text-muted">
+          <p className="mt-4 max-w-prose type-small text-muted">
             As you listen, the next songs in your queue are saved here, so they start instantly and keep playing without a connection. When
             space runs out, the songs you played longest ago make room.
           </p>
           {!ready && limit > 0 && (
-            <p className="mt-2 max-w-prose text-sm text-paper-dim">
+            <p className="mt-2 max-w-prose type-small text-paper-dim">
               {import.meta.env.DEV
                 ? 'Paused: the dev server runs without the service worker that plays saved songs. Use a production build (pnpm build && pnpm preview).'
                 : 'Starting up: reload Playarr to finish setting up offline songs.'}

@@ -1,5 +1,5 @@
 import type { MixKind, MixSettings } from '@playarr/shared';
-import { Trash2 } from 'lucide-react';
+import { Trash } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { ApiError } from '../lib/api';
@@ -144,7 +144,7 @@ export function MixesPanel() {
           <p className="text-sm text-paper-dim">
             {data.history.plays ? `${plural(data.history.plays, 'song')} played${since ? ` since ${since}` : ''}` : 'Nothing played yet'}
           </p>
-          <Button icon={<Trash2 />} disabled={!data.history.plays || clear.isPending} onClick={() => setConfirmClear(true)}>
+          <Button icon={<Trash />} disabled={!data.history.plays || clear.isPending} onClick={() => setConfirmClear(true)}>
             Clear history
           </Button>
         </div>

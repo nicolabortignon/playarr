@@ -1,5 +1,5 @@
 import type { DiscoverResults } from '@playarr/shared';
-import { History, Search as SearchIcon, SearchX, X } from 'lucide-react';
+import { RotateCcwClock, Search as SearchIcon, SearchX, X } from 'lucide-react';
 import { useDeferredValue, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { Button, IconButton } from '../components/Button';
@@ -356,12 +356,12 @@ function RecentSearches({ account, onPick }: { account: string; onPick: (query: 
         {recents.map((query) => (
           <ListRow
             key={query}
-            lead={<History aria-hidden className="size-4.5 shrink-0 text-muted" />}
+            lead={<RotateCcwClock aria-hidden className="size-4.5 shrink-0 text-muted" />}
             title={query}
             main={{ label: `Search for “${query}”`, onClick: () => onPick(query) }}
             trailing={
               <IconButton label={`Remove “${query}” from recent searches`} onClick={() => remove(query)} className="z-10">
-                <X className="size-4" />
+                <X className="size-4.5" />
               </IconButton>
             }
           />

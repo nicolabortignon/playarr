@@ -1,4 +1,4 @@
-import { Mic2 } from 'lucide-react';
+import { MicVocal } from 'lucide-react';
 import { ArtistCard } from '../components/Cards';
 import { PageHeader } from '../components/PageHeader';
 import { CardSkeletons, ErrorState } from '../components/States';
@@ -15,7 +15,7 @@ export function ArtistsPage() {
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : data && !data.length ? (
-        <EmptyLibrary icon={Mic2} title="Nobody on the roster yet." />
+        <EmptyLibrary icon={MicVocal} title="Nobody on the roster yet." />
       ) : (
         <>
           <div className={GRID}>

@@ -122,7 +122,7 @@ export function ListRow({
           onKeyDown={moveByKey}
           className={cn('relative z-10 -mr-1 grid h-11 w-6 shrink-0 cursor-grab touch-none place-items-center rounded-md text-muted active:cursor-grabbing', REVEAL)}
         >
-          <GripVertical className="size-4" />
+          <GripVertical className="size-4.5" />
         </button>
       )}
       {lead}
@@ -325,6 +325,8 @@ export function SongRow({
           <NameAndNumbers
             name={under || undefined}
             numbers={numbers ?? formatTime(t.duration)}
+            // In the narrow column the row stays two lines: the length keeps to the artist's line.
+            together={stack === 'always'}
             numbersClassName={cn('tabular', stack === 'phones' && 'sm:hidden')}
           />
         ) : (
@@ -342,11 +344,12 @@ export function SongRow({
         </>
       }
       main={{ label: `${playingHere ? 'Pause' : 'Play'} ${t.title}`, onClick: () => (current ? toggle() : onPlay()) }}
-      menu={{ label: `More for ${t.title}`, items }}
+      menu={{ label: `More for “${t.title}”`, items }}
       reorder={reorder}
       current={current}
       compact={compact}
-      className={className}
+      // The narrow column's 340 px: gaps and padding as on a phone, for the words.
+      className={cn(narrow && 'px-2 md:gap-3', className)}
       style={style}
     />
   );

@@ -20,7 +20,8 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
   const box = { sm: 'size-11 pointer-fine:size-9', md: 'size-11 pointer-fine:size-9', lg: 'size-12' }[size];
   // Only until healQueue() has refreshed tracks saved by an older version.
   if (!track.recordingId) return null;
-  const icon = { sm: 'size-4', md: 'size-[18px]', lg: 'size-6' }[size];
+  // A row's and a bar's controls are 18; Now Playing's heart, beside the title, 24 (docs/design.md, Icons).
+  const icon = { sm: 'size-4.5', md: 'size-4.5', lg: 'size-6' }[size];
 
   return (
     <button
@@ -41,11 +42,7 @@ export function FavoriteButton({ track, size = 'sm', reveal, className }: Favori
         className,
       )}
     >
-      <Heart
-        className={cn(icon, favorite && 'fill-current', popping && 'animate-pop')}
-        onAnimationEnd={() => setPopping(false)}
-        strokeWidth={favorite ? 2 : 1.75}
-      />
+      <Heart className={cn(icon, favorite && 'fill-current', popping && 'animate-pop')} onAnimationEnd={() => setPopping(false)} />
     </button>
   );
 }

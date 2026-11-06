@@ -103,7 +103,7 @@ export function HomePage() {
           title="Rediscover"
           action={
             <IconButton label="Reshuffle" onClick={() => setSeed((s) => s + 1)}>
-              <Dices className={cn('size-4.5 transition-transform duration-500', rolling && 'rotate-180')} />
+              <Dices className={cn('size-5 transition-transform duration-500', rolling && 'rotate-180')} />
             </IconButton>
           }
         />
@@ -283,8 +283,8 @@ function ListeningButton() {
       <motion.span layout="position" transition={spring} className="relative grid size-10 shrink-0 place-items-center">
         <Cover src={track.coverUrl} size={36} alt="" className="size-[34px] rounded-full" />
         {playing && <ProgressRing />}
-        <span className="absolute inset-[3px] grid place-items-center rounded-full bg-black/45">
-          {playing ? <Pause className="size-3.5 fill-white text-white" /> : <Play className="size-3.5 translate-x-px fill-white text-white" />}
+        <span className="absolute inset-[3px] grid place-items-center rounded-full bg-ink-950/45">
+          {playing ? <Pause className="size-3.5 fill-paper text-paper" /> : <Play className="size-3.5 translate-x-px fill-paper text-paper" />}
         </span>
       </motion.span>
       <AnimatePresence initial={false} mode="popLayout">
@@ -298,7 +298,7 @@ function ListeningButton() {
             className="min-w-0"
           >
             <span className="block type-kicker text-muted">Resume</span>
-            <span className="block max-w-56 truncate text-sm text-paper">{track.title}</span>
+            <span className="block max-w-56 truncate type-small text-paper">{track.title}</span>
           </motion.span>
         )}
       </AnimatePresence>

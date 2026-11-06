@@ -1,5 +1,5 @@
 import type { Account, AccountRole, DeviceSetting, ListedAccount, SessionInfo, SetupCode } from '@playarr/shared';
-import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash2, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { signOut } from '../lib/accounts';
@@ -196,7 +196,7 @@ function Everyone({ me }: { me: Account }) {
         ]
       : []),
     DIVIDER,
-    { label: 'Remove', icon: Trash2, onSelect: () => setRemoving(a) },
+    { label: 'Remove', icon: Trash, onSelect: () => setRemoving(a) },
   ];
 
   if (error) return <InlineError className="mt-12" error={error} />;
@@ -248,11 +248,7 @@ function Everyone({ me }: { me: Account }) {
         {editing && <AccountForm account={editing} submitLabel="Save" busy={update.isPending} onSubmit={(input) => update.mutate({ id: editing.id, input })} />}
       </Dialog>
       <Dialog open={!!devices} onClose={() => setDevices(null)} title={`${devices?.name ?? ''}’s devices`}>
-        {devices && (
-          <div className="p-5">
-            <Devices accountId={devices.id} />
-          </div>
-        )}
+        {devices && <Devices accountId={devices.id} />}
       </Dialog>
       <Dialog open={!!code} onClose={() => setCode(null)} title={`Setup code for ${code?.account.name ?? ''}`}>
         {code && <SetupCodeView setup={code.setup} />}
@@ -322,7 +318,7 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
   };
   const check = 'size-4 accent-[var(--accent)]';
   return (
-    <form onSubmit={submit} className="space-y-5 p-5">
+    <form onSubmit={submit} className="space-y-5">
       <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />
       <TextField
         label="Username"
@@ -394,7 +390,7 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
 function SetupCodeView({ setup }: { setup: SetupCode }) {
   const copy = () => copyLink(setup.link, 'Link copied', () => toast('Couldn’t copy: select the link instead', 'error'));
   return (
-    <div className="space-y-4 p-5">
+    <div className="space-y-4">
       <p className="type-body text-paper-dim">
         Give them this code or link: they choose their own password with it. It works once, until{' '}
         {new Date(setup.expiresAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}.

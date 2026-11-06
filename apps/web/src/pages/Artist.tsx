@@ -168,7 +168,7 @@ export function ArtistPage() {
         onPlay={() => (playState !== 'idle' ? toggle() : void playArtist(artist.id))}
         onShuffle={() => void playArtist(artist.id, { shuffle: true })}
         // What everything you can play offers (components/menus.ts), all of their songs fetched once chosen.
-        menu={{ items: queueItems(() => artistTracks(artist.id), openPicker) }}
+        menu={{ label: `More for ${artist.name}`, items: queueItems(() => artistTracks(artist.id), openPicker) }}
       />
     </DetailHeader>
   );

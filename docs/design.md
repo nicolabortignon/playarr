@@ -2,6 +2,8 @@
 
 How Playarr looks, on the web and on iOS: every role once, with one name in both apps. A page never holds a raw color, size or radius. When nothing here fits, this page and the shared components change together ([plan 5](plans/2026-11-05-5-ui-consistency.md)).
 
+`scripts/check-design.mjs` keeps it so: the web's `pnpm typecheck` fails on a raw color or an arbitrary text size outside `index.css`, naming the file and line, except where its allow-list says why (the accent choices, a canvas, a cover's pixels, data colors). iOS is counted, not yet enforced.
+
 The tokens live in `apps/web/src/index.css` (`@theme` and the `type-*` utilities) and in iOS's `PlayarrUI/Theme/` (`Palette.swift`, `TypeRole.swift`, `Shape.swift`, `Typography.swift`).
 
 Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbols, and the system's menus and lists. iOS pages share the screen with system menus, sheets, lists and alerts, so iOS text takes the system's white, and danger, success and warning its red, green and yellow. The web's canvas is all Playarr's, so it uses warm ink and paper.
@@ -35,6 +37,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 | Small | `type-small` | `.typeRole(.small)` | 13: row subtitles, secondary lines |
 | Meta | `type-meta` | `.typeRole(.meta)` | DM Mono 12, figures of one width: times, counts |
 | Badge | `type-badge` | `.typeRole(.badge)` | DM Mono 10, capitals, 0.08 em apart |
+| Tab | `type-tab` | (the system's) | Schibsted Grotesk 10, 0.025 em apart: the phone tab bar's labels |
 
 - iOS sizes grow with Dynamic Type; spaced capitals close up at the accessibility sizes.
 - Big numbers (Stats' headline and tiles) are set in Gloock: monospaced or tabular figures give the comma a full cell ("1 , 792").
@@ -62,9 +65,11 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 ## Rows, menus and toasts
 
 - **A song row:** [drag handle] · number or cover · title (`type-body`) over subtitle (`type-small`) · time (`type-meta`) · ♥ · ⋯. Every row in a list is the same height (52 with a number, 60 on touch or with a cover; iOS 60 points, 52 in Up next, without list insets); missing songs are grayed in their place. The song playing has an accent title and the equalizer. With a mouse, ♥ and ⋯ show on hover or focus; on touch they always show. On a phone, the queue and Your listening drop the ♥ and put the numbers under the title.
-- **Accessible names:** on the web a row's own button is "Play {title}" (or "Pause {title}" for the song playing) and its ⋯ is "More for {title}". On iOS VoiceOver reads the row as one element: its content as the label ("2. Sour Times, 4:14"), what a tap does as the hint ("Plays the song"), and the menu's actions as its own, in the menu's order, the heart last; Move up and Move down are among them where songs can be reordered.
+- **Accessible names:** on the web a row's own button is "Play {title}" (or "Pause {title}" for the song playing). Every ⋯ is named for what it's about, never "More actions": "More for “Teardrop”" with curly quotes for a song, an album, a playlist, a mix or a source; without for a person or a place ("More for Sam", "More for Favorites"). On iOS VoiceOver reads the row as one element: its content as the label ("2. Sour Times, 4:14"), what a tap does as the hint ("Plays the song"), and the menu's actions as its own, in the menu's order, the heart last; Move up and Move down are among them where songs can be reordered.
 - **One song menu**, in every list: Play next · Add to queue · Add to playlist… · Start radio · Go to album · Go to artist · Show metadata, then after a line the place's own actions: Move up, Move down, then Remove last. Albums and playlists have one menu each too; a card's menu starts with Play and Shuffle.
-- **How a menu opens:** ⋯, a right-click, a half-second press on touch, or the menu key. With a mouse, links keep the browser's own menu. Escape closes only the menu.
+- **How a menu opens:** ⋯, a right-click, a half-second press on touch, or the menu key. With a mouse, links keep the browser's own menu. Its first item takes the focus only when it was opened from the keyboard (after a tap, no ring around Play next).
+- **Escape closes only what's on top:** a menu, then the dialog it's in, then Now Playing, one at a time. A field that uses Escape itself (renaming a playlist) keeps it.
+- **Dialogs:** one body padding (20), their buttons in a footer that stays in view while the body scrolls, three widths (448, wide 768, wider 896), the first field focused as they open, and a bottom sheet on a phone.
 - **Toasts:** what happened, naming the song in curly quotes ("“Teardrop” plays next", "3 songs play next"), with Undo where it can be taken back. A toast stays 3.5 seconds, an error 7, one with Undo 6, longer while it's hovered or focused (on iOS, while VoiceOver or the pointer is on it). At most three show at once, and a repeat replaces the one before it. On iOS VoiceOver can dismiss one (an action, and the escape gesture), and "Later" is only on toasts that don't go by themselves.
 - **Add to playlist** ticks the playlists that already hold all the songs (a dash for some), and adds to several at once. On iOS the tick (green) or dash (gray) sits on the playlist's cover, and Add is in the sheet's bar.
 - **Cards:** one width on every shelf (web `SHELF_CARD`, 42 % of a phone's width; iOS `ShelfCard.width`, 160 points). An artist is a circle with the name below: their photo, else their best album cover, else a vinyl monogram.
@@ -135,31 +140,136 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 
 ## Icons
 
-- **Sizes by role:** in a menu 16 (web `size-4`), in a toolbar 18 (`size-4.5`), an icon button 20 (`size-5`), a tab 22 (`size-5.5`). iOS uses the same points, growing with Dynamic Type.
-- **One stroke:** lucide's 2 on the web; SF Symbols' regular weight on iOS.
-- **One glyph per concept** on each platform (plan 5 §6 completes the map):
+- **Sizes by role.** A control sizes its own icon (`Button`'s `icon`, a `Menu` item's), so a page hands it the glyph alone. iOS sets symbols by text style, so they grow with Dynamic Type; the system's menus, lists and bars size their own.
 
-| Concept | Web (lucide) | iOS (SF Symbols) |
-|---|---|---|
-| Play next | `ListStart` | `text.line.first.and.arrowtriangle.forward` |
-| Add to queue | `ListEnd` | `text.append` |
-| Add to playlist | `ListPlus` | `music.note.list` |
-| Start radio | `Radio` | `dot.radiowaves.left.and.right` |
-| Go to album | `Disc3` | `square.stack` |
-| Go to artist | `Mic2` | `music.mic` |
-| Show metadata | `Info` | `info.circle` |
-| Move up, down | `ArrowUp`, `ArrowDown` | `arrow.up`, `arrow.down` |
-| Remove (from a list) | `X` | `xmark` |
-| Delete (for good) | `Trash2` | `trash` |
+  | Role | Size | Web | For |
+  |---|---|---|---|
+  | Badge | 12 | `size-3` | inside a badge: a status's spinner, "Not found on MusicBrainz" |
+  | Small text | 14 | `size-3.5` | beside a line of `type-small` or `type-meta`: an inline error, "Disc 1", a link's ↗, the on-this-device mark |
+  | Menu | 16 | `size-4` | menu items, small buttons (32), a place row's chevron, the play glyph on a row's cover |
+  | Toolbar | 18 | `size-4.5` | regular buttons (40), a row's ♥, ⋯ and handle, the sidebar's and Settings' places, the player bar |
+  | Icon button | 20 | `size-5` | round icon buttons, large buttons (48) and the action row, Now Playing's top bar, a place's tile |
+  | Tab | 22 | `size-5.5` | the phone's tab bar |
+  | State | 24 | `size-6` | an empty or error state's ring, the search field, Now Playing's ♥ |
+  | Transport | 28, 32 | `size-7`, `size-8` | Now Playing's previous and next; play and pause in its 72 circle |
+
+- **One stroke:** lucide's own 2 on the web (no page sets `strokeWidth`); SF Symbols' regular weight on iOS. Play, pause, previous and next are filled (`fill-current`, as iOS's `.fill` symbols), and the heart fills for a favorite.
+- **One glyph per concept**, wherever an app shows it, and the same picture in both apps unless the note says why. The web uses lucide's current names, not its old aliases (`House`, not `Home`; `MicVocal`, not `Mic2`; `Ellipsis`, `LoaderCircle`, `CircleAlert`, `Trash`, `RotateCcwClock`). "iOS to align" marks a difference that isn't on purpose.
+
+  | Places | Web (lucide) | iOS (SF Symbols) | Note |
+  |---|---|---|---|
+  | Home | `House` | `house` | |
+  | Search | `Search` | `magnifyingglass` | |
+  | Library (the phone's tab) | `LibraryBig` | `books.vertical` | |
+  | Queue | `List` | `list.bullet` | |
+  | Made for you | `Sparkles` | `sparkles` | |
+  | Artists | `MicVocal` | `music.mic` | |
+  | Albums | `Disc3` | `square.stack` | iOS: Music's own picture for albums |
+  | Favorites | `Heart` | `heart` | |
+  | Downloads | `ArrowDownToLine` | `arrow.down.circle` | iOS to align: `arrow.down.to.line`, as its Download button |
+  | Requests | `Binoculars` | `arrow.down.to.line` in the sidebar, `arrow.down.circle` in Library | iOS to align: `binoculars`; today Requests and Downloads swap arrows |
+  | Playlists, a playlist | `ListMusic` | `music.note.list` | |
+  | Your listening | `ChartColumn` | `chart.bar` | |
+  | Settings | `Settings` | `gearshape` | |
+  | Your account | the avatar, else `UserRound` | `person.crop.circle` | |
+
+  | Playing | Web | iOS | Note |
+  |---|---|---|---|
+  | Play, pause | `Play`, `Pause` | `play.fill`, `pause.fill` | |
+  | Previous, next | `SkipBack`, `SkipForward` | `backward.fill`, `forward.fill` | iOS: Music's, without the bar |
+  | Shuffle | `Shuffle` | `shuffle` | |
+  | Repeat, repeat one | `Repeat`, `Repeat1` | `repeat`, `repeat.1` | |
+  | Lyrics | `Quote` | `quote.bubble` | |
+  | Queue, Open queue | `List` | `list.bullet` | |
+  | Open Now Playing | `Maximize2` | (a tap on the mini player) | |
+  | Close Now Playing | `ChevronDown` | `chevron.down` | |
+  | Volume | `Volume1`, `Volume2`, `VolumeX` | `speaker.wave.1.fill`, `speaker.wave.2.fill`, `speaker.slash.fill` | |
+  | AirPlay, output | none | none yet | iOS: the system's AirPlay button when it comes; browsers offer no picker |
+  | Sleep timer | `Moon` | `moon` | |
+  | Turn off the timer | `AlarmClockOff` | `moon.zzz` | to align: one picture |
+  | Loading | `LoaderCircle`, spinning | the system's spinner | |
+  | The song playing | the equalizer (`Equalizer`) | `waveform`, moving | each app's own animation |
+  | Feeling lucky | `Twinkle` (Playarr's three stars) | `Twinkle` (the same drawing) | |
+  | Edit mix points | `AudioWaveform` | `waveform` | |
+  | A transition | `Blend` | `arrow.triangle.merge` | to align: one picture |
+
+  | Songs and lists | Web | iOS | Note |
+  |---|---|---|---|
+  | ⋯ ("More for “Teardrop”") | `Ellipsis` | `ellipsis` | |
+  | Play next | `ListStart` | `text.line.first.and.arrowtriangle.forward` | |
+  | Add to queue | `ListEnd` | `text.append` | |
+  | Add to playlist…, Save as playlist | `ListPlus` | `music.note.list`; Save as playlist `bookmark` (a mix) and `text.badge.plus` (the queue) | iOS to align: one glyph for adding to a playlist, apart from a playlist's own (`text.badge.plus`, as the web's `ListPlus` beside `ListMusic`) |
+  | Start radio | `Radio` | `dot.radiowaves.left.and.right` | |
+  | Go to album | `Disc3` | `square.stack` | as Albums |
+  | Go to artist | `MicVocal` | `music.mic` | |
+  | Show metadata | `Info` | `info.circle` | |
+  | Favorite | `Heart`, filled when it is | `heart`, `heart.fill`; `heart.slash` for Remove from Favorites in the menu | iOS: the menu has it for VoiceOver |
+  | Move up, down | `ArrowUp`, `ArrowDown` | `arrow.up`, `arrow.down` | |
+  | Drag to reorder | `GripVertical` | the system's reorder control | |
+  | Remove (from a list) | `X` | `xmark` | |
+  | Delete (for good), remove an account or a source | `Trash` | `trash` | |
+  | Rename, Edit | `Pencil` | `pencil` | |
+  | New cover… | `Palette` | `paintpalette` | |
+  | Share with everyone | `Users` | `person.2` | |
+  | Stop sharing | `Lock` | `lock` | |
+  | A disc's heading | `Disc3` | `opticaldisc` | |
+  | Reshuffle, Other suggestions, a cover's Shuffle | `Dices` | `dice` | |
+
+  | Downloads, requests and search | Web | iOS | Note |
+  |---|---|---|---|
+  | Download | `ArrowDownToLine` | `arrow.down.to.line` | |
+  | Downloading | a ring filling in the accent | the ring, with `arrow.down` in it | |
+  | Downloaded | `CircleCheck` in `success` | `checkmark` in `success`, in the ring | |
+  | On this device (a song) | `CircleArrowDown` in the accent | `arrow.down.circle.fill` in the accent | iOS: filled reads better at caption size |
+  | Space on this device | `HardDrive` | `internaldrive` | |
+  | Request | `Binoculars` | `plus` | iOS to align: `binoculars` (it chose a plus to stay apart from Download's arrow, which `binoculars` does too) |
+  | Search again later | `Clock` | `clock` | |
+  | A request that failed | `TriangleAlert` | `exclamationmark.triangle` | |
+  | In your library, Open in your library | `Check`, `ArrowRight` | `checkmark`, `arrow.right` | |
+  | A recent search | `RotateCcwClock` | none yet | |
+  | Nothing found | `SearchX` | none yet | |
+
+  | Settings and admin | Web | iOS | Note |
+  |---|---|---|---|
+  | Playback, Appearance | `AudioLines`, `Palette` | none | iOS: the system's list, without icons |
+  | Sources, Accounts | `FolderOpen`, `Users` | none | |
+  | Made for you, Analysis | `Sparkles`, `AudioWaveform` | none | |
+  | Requests, Updates | `Binoculars`, `CircleArrowUp` | none | |
+  | Tune your mixes | `SlidersHorizontal` | `slider.horizontal.3` | |
+  | Lidarr, a folder, a remote folder | `Server`, `Folder`, `Network` | `server.rack`, `folder`, `network` | |
+  | Sync now | `RefreshCw` | `arrow.clockwise` ("Rescan") | iOS to align: the words, and the glyph as "Do it again" below |
+  | Match again | `ScanSearch` | `arrow.trianglehead.2.clockwise` | iOS to align: `text.magnifyingglass` |
+  | Organize files | `FolderTree` | `folder.badge.gearshape` | to align: one picture |
+  | Fix the names | `PencilLine` | `pencil.line` | |
+  | Add account | `UserPlus` | `person.badge.plus` | |
+  | New setup code | `KeyRound` | `key` | |
+  | Devices | `Smartphone` | (a section) | |
+  | Sign out | `LogOut` | `rectangle.portrait.and.arrow.right` | |
+  | Copy | `Copy` | `doc.on.doc` | |
+  | Open on MusicBrainz | `ExternalLink` | `arrow.up.right.square` | |
+  | Add music (an empty library) | `FolderPlus` | none | |
+
+  | Everywhere | Web | iOS | Note |
+  |---|---|---|---|
+  | New (playlist, source) | `Plus` | `plus` | |
+  | Try again, Reload, Check for updates | `RotateCw` | `arrow.clockwise` | |
+  | Do it again (New mix, Sync now, ask Lidarr again) | `RefreshCw` | `arrow.clockwise` | iOS to align: two arrows round, as `RefreshCw`, apart from Try again's one |
+  | Undo | `Undo2` | `arrow.uturn.backward` | iOS also has it for Jump back in |
+  | Error, warning | `CircleAlert`, `TriangleAlert` | `exclamationmark.circle`, `exclamationmark.triangle` | |
+  | Done, chosen | `Check` | `checkmark` | |
+  | Close | `X` | `xmark` (the system's close) | |
+  | Back, opens a page | `ChevronLeft`, `ChevronRight` | the system's | |
+  | Expand, collapse | `Plus`, `Minus` | `plus`, `minus` | |
+  | Back home | none | `house` | |
 
 ## Patterns
 
 - **Recent searches** (on the empty search page, above what to try): the last eight, newest first, kept per account on the device, each with the history icon, searching again on a tap, and × to remove it; Clear removes them all. Both say so with Undo ("Removed “daft punk” from recent searches", "Cleared recent searches"). A search counts once a result is opened or played, Enter is pressed, or the words sit still for 2.5 s; never one letter, and words that only extend the newest search replace it.
 - **Beyond the library**, under the library's results whenever there's anything: "Not in your library" with a kicker naming where it's from ("Lidarr · MusicBrainz · Deezer"), and Request only where requesting is possible.
-- **Settings:** on a phone, a grouped list (This device · Your account · Server, members seeing Your account before Server, with "Only an admin can change these."), a line under each group saying what it's for, and the version at the foot; each panel has a back link to Settings. On wider screens, tabs in the same order with a line between groups, fading at the edge (with arrows for a mouse) when they don't fit, the open tab kept in view.
-- **Keyboard shortcuts** show only where there's a keyboard (a fine pointer, or a key pressed outside a field). On the web `?` opens them over any page as a record sleeve: Side A · Playing and Side B · Getting around, numbered A1…, dotted leaders to the keys in `type-badge` keycaps. iPadOS has its own ⌘ overlay, so iOS lists them there instead.
+- **Settings:** This device · Your account · Server (members see Your account before Server, with "Only an admin can change these."). Where the page has room (web: the page at least `page-lg`, a 1024 px window), a column of the groups sits beside the open panel, under the Settings title: the groups' names as kickers, each panel's icon and name, the open one lit as the sidebar lights the page you're on, the version at its foot. Every panel is always in view: never a strip that scrolls sideways. The panel's scope is the line above it. Narrower (a phone, a narrow window), the same groups are a list, a line under each saying what it's for and the version at the foot; each panel has a back link to Settings.
+- **Keyboard shortcuts** show only where there's a keyboard (a fine pointer, or a key pressed outside a field). On the web `?` opens them over any page as a record sleeve: Side A · Playing and Side B · Getting around, numbered A1…, dotted leaders to the keys in `type-badge` keycaps, the two sides side by side from 1024 px, a shared modifier written once ("Shift + ← or →"). iPadOS has its own ⌘ overlay, so iOS lists them there instead.
 - **The idle player bar** (desktop and tablet, nothing playing): the album heard last under the kicker "Heard last", Resume as the primary button and Feeling lucky beside it; with no history, "Nothing playing" and Feeling lucky.
-- **The side column** (web from 1280 px, the iPad at regular width): Queue and Lyrics beside any page, 340 wide on `ink-950`. A page lays itself out by its own width, not the window's (web `page-lg`, `page-xl`, `page-2xl`), so it narrows when the column opens.
+- **The side column** (web from 1280 px, the iPad at regular width): Queue and Lyrics beside any page, 340 wide on `ink-950`, the queue headed "Up next" with its counts in `type-meta` and its rows on two lines (the length beside the artist, whose name gives way first). A page lays itself out by its own width, not the window's (web `page-lg`, `page-xl`, `page-2xl`), so it narrows when the column opens.
 - **Fixed layers on the web:** iPhone Safari paints its translucent bars in the color of the topmost fixed element at each edge, so that element has a solid background (the tab bar, Now Playing), and anything without a color of its own (the film grain) stays below them (z-index under 40).
 
 ## Motion

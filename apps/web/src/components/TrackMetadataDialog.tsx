@@ -1,5 +1,5 @@
 import type { FileTags, TrackCopyMetadata, TrackMetadata } from '@playarr/shared';
-import { Check, Copy, ExternalLink, Play, RefreshCw } from 'lucide-react';
+import { Check, Copy, ExternalLink, Play, RefreshCw, ScanSearch } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { formatDetails, formatTime } from '../lib/format';
 import { useRematchFile, useTrackMetadata } from '../lib/queries';
@@ -16,13 +16,13 @@ export function TrackMetadataDialog() {
   const close = useUI((s) => s.closeMetadata);
   const { data, error, isPending, isFetching, refetch } = useTrackMetadata(id);
   return (
-    <Dialog open={id !== null} onClose={close} title="Song metadata" wide>
+    <Dialog open={id !== null} onClose={close} title="Song metadata" size="wide">
       {error ? (
-        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} className="p-5">
+        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching}>
           Couldn’t load this song’s metadata
         </InlineError>
       ) : isPending || !data ? (
-        <div className="space-y-3 p-5" aria-busy="true" aria-label="Loading metadata">
+        <div className="space-y-3" aria-busy="true" aria-label="Loading metadata">
           <div className="h-8 w-2/3 animate-pulse rounded bg-paper/5" />
           <div className="h-40 animate-pulse rounded-lg bg-paper/5" />
           <div className="h-32 animate-pulse rounded-lg bg-paper/5" />
@@ -49,15 +49,15 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
   const type = [m.albumType, ...m.secondaryTypes].filter(Boolean).join(' · ');
   const primary = m.pathsHidden ? undefined : primaryCopy(m.copies);
   return (
-    <div className="space-y-7 p-5">
+    <div className="space-y-7">
       <div className="min-w-0">
-        <div className="text-[19px] text-paper">{m.title}</div>
-        <div className="text-[14px] text-muted">
+        <div className="type-body text-paper">{m.title}</div>
+        <div className="type-small text-muted">
           {m.artistName} · {m.albumTitle}
         </div>
         {primary && <RematchButton key={primary.fileId} copy={primary} />}
         {m.pathsHidden && (
-          <p className="mt-3 text-[13px] text-muted">Matching a song again on MusicBrainz is for admins.</p>
+          <p className="mt-3 type-small text-muted">Matching a song again on MusicBrainz is for admins.</p>
         )}
       </div>
 
@@ -82,7 +82,7 @@ function MetadataView({ meta: m }: { meta: TrackMetadata }) {
 
       <Section title={m.copies.length === 1 ? 'File' : `Files (${m.copies.length})`}>
         {m.pathsHidden && (
-          <p className="mb-3 text-[13px] text-muted">File paths and where sources live are shown to admins only.</p>
+          <p className="mb-3 type-small text-muted">File paths and where sources live are shown to admins only.</p>
         )}
         <div className="space-y-3">
           {m.copies.map((c) => (
@@ -115,11 +115,11 @@ function CopyCard({ copy: c, rematch }: { copy: TrackCopyMetadata; rematch: bool
   return (
     <div className="rounded-lg border border-line p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="text-[15px] text-paper">{c.source.name}</span>
-        {c.source.location && <span className="text-[13px] text-muted">· {c.source.location}</span>}
+        <span className="type-body text-paper">{c.source.name}</span>
+        {c.source.location && <span className="type-small text-muted">· {c.source.location}</span>}
         {c.playing && (
-          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 font-mono text-[10px] tracking-wider text-accent uppercase">
-            <Play className="size-2.5 fill-current" /> Plays
+          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-accent/15 px-2 py-0.5 type-badge text-accent">
+            <Play className="size-3 fill-current" /> Plays
           </span>
         )}
       </div>
@@ -136,7 +136,7 @@ function CopyCard({ copy: c, rematch }: { copy: TrackCopyMetadata; rematch: bool
       {rematch && c.path !== undefined && <RematchButton copy={c} />}
       {c.tags && (
         <details className="mt-3">
-          <summary className="cursor-pointer font-mono text-[11px] tracking-[0.15em] text-muted uppercase hover:text-paper">Tags in the file</summary>
+          <summary className="cursor-pointer type-kicker text-muted hover:text-paper">Tags in the file</summary>
           <div className="mt-2">
             <Rows rows={tagRows(c.tags)} />
           </div>
@@ -183,7 +183,7 @@ function RematchButton({ copy: c }: { copy: TrackCopyMetadata }) {
   };
   return (
     <div className="mt-3 space-y-2">
-      <Button size="small" icon={<RefreshCw />} onClick={run} pending={rematch.isPending} pendingLabel={lidarr ? 'Asking Lidarr…' : 'Matching…'}>
+      <Button size="small" icon={lidarr ? <RefreshCw /> : <ScanSearch />} onClick={run} pending={rematch.isPending} pendingLabel={lidarr ? 'Asking Lidarr…' : 'Matching…'}>
         {lidarr ? 'Refresh in Lidarr' : 'Match again on MusicBrainz'}
       </Button>
       {!lidarr && <SlowLookup active={rematch.isPending} what="this album" />}
@@ -210,7 +210,7 @@ function PathValue({ path }: { path: string }) {
     });
   return (
     <span className="flex items-start gap-2">
-      <code className="min-w-0 flex-1 font-mono text-[12px] break-all text-paper-dim select-all">{path}</code>
+      <code className="min-w-0 flex-1 type-meta break-all text-paper-dim select-all">{path}</code>
       {navigator.clipboard && (
         <button
           type="button"
@@ -227,15 +227,15 @@ function PathValue({ path }: { path: string }) {
 }
 
 function MbId({ id, kind }: { id: string; kind: 'recording' | 'release-group' | 'artist' }) {
-  if (!UUID.test(id)) return <span className="font-mono text-[12px] text-muted">{id} (not on MusicBrainz yet)</span>;
+  if (!UUID.test(id)) return <span className="type-meta text-muted">{id} (not on MusicBrainz yet)</span>;
   return (
     <a
       href={`https://musicbrainz.org/${kind}/${id}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 font-mono text-[12px] break-all text-accent hover:underline"
+      className="inline-flex items-center gap-1 type-meta break-all text-accent hover:underline"
     >
-      {id} <ExternalLink className="size-3 shrink-0" />
+      {id} <ExternalLink className="size-3.5 shrink-0" />
     </a>
   );
 }
@@ -247,7 +247,7 @@ function Meter({ value }: { value: number }) {
       <span className="h-1 w-32 overflow-hidden rounded-full bg-paper/10">
         <span className="block h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
       </span>
-      <span className="font-mono text-[11px] text-muted tabular">{pct}</span>
+      <span className="type-meta text-muted">{pct}</span>
     </span>
   );
 }
@@ -255,7 +255,7 @@ function Meter({ value }: { value: number }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h3 className="mb-3 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">{title}</h3>
+      <h3 className="mb-3 type-kicker text-muted">{title}</h3>
       {children}
     </section>
   );
@@ -263,12 +263,12 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Rows({ rows }: { rows: [string, ReactNode | undefined][] }) {
   return (
-    <dl className="grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+    <dl className="grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-1.5 type-small">
       {rows
         .filter(([, value]) => value !== undefined && value !== '')
         .map(([label, value]) => (
           <div key={label} className="contents">
-            <dt className="font-mono text-[11px] leading-5 tracking-[0.12em] text-muted uppercase">{label}</dt>
+            <dt className="type-kicker leading-5 text-muted">{label}</dt>
             <dd className="min-w-0 break-words text-paper-dim">{value}</dd>
           </div>
         ))}

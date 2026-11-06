@@ -104,7 +104,7 @@ export function Slider({
         />
         <div
           className={cn(
-            'absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-paper shadow-[0_0_0_4px_rgb(0_0_0/0.25)] transition-transform',
+            'absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-paper ring-4 ring-ink-950/25 transition-transform',
             drag !== null ? 'scale-110' : 'scale-0 group-hover:scale-100 group-focus-visible:scale-100',
           )}
           style={{ left: `${pct}%` }}
@@ -112,7 +112,7 @@ export function Slider({
       </div>
       {tooltip && hover !== null && max > 0 && (
         <div
-          className="pointer-events-none absolute -top-7 -translate-x-1/2 rounded bg-ink-700 px-1.5 py-0.5 font-mono text-[11px] text-paper shadow-lg"
+          className="pointer-events-none absolute -top-7 -translate-x-1/2 rounded bg-ink-700 px-1.5 py-0.5 type-meta text-paper shadow-lg"
           style={{ left: `${(hover / max) * 100}%` }}
         >
           {tooltip(hover)}

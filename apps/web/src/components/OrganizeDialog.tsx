@@ -10,9 +10,9 @@ import { Dialog } from './Dialog';
 export function OrganizeDialog({ sourceId, onClose }: { sourceId: number | null; onClose: () => void }) {
   const { data: plan, isPending } = useOrganizePlan(sourceId);
   return (
-    <Dialog open={sourceId !== null} onClose={onClose} title="Organize files" wide>
+    <Dialog open={sourceId !== null} onClose={onClose} title="Organize files" size="wide">
       {isPending || !plan ? (
-        <div className="m-5 h-40 animate-pulse rounded-lg bg-paper/5" />
+        <div className="h-40 animate-pulse rounded-lg bg-paper/5" />
       ) : (
         <OrganizeBody
           key={sourceId}
@@ -63,11 +63,11 @@ function OrganizeBody({
       return next;
     });
 
-  if (reason) return <p className="p-5 text-[15px] text-paper-dim">{reason}</p>;
+  if (reason) return <p className="type-body text-paper-dim">{reason}</p>;
 
   if (!writable) {
     return (
-      <p className="p-5 text-[15px] text-paper-dim">
+      <p className="type-body text-paper-dim">
         Playarr can’t write to this folder, so it can’t move files. In Docker, mount the folder you want organized read-write
         (the broad /host mount stays read-only).
       </p>
@@ -75,13 +75,13 @@ function OrganizeBody({
   }
 
   return (
-    <div className="space-y-5 p-5">
-      <p className="text-sm text-muted">
+    <div className="space-y-5">
+      <p className="type-small text-muted">
         Files move into Artist/Album/NN Title, inside this folder only. Nothing is overwritten, tags aren’t changed, and you can
         undo. Moves Playarr is less sure about start unchecked.
       </p>
       {lastBatch && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-line px-4 py-3 text-sm">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-line px-4 py-3 type-small">
           <span className="text-paper-dim">
             Last change: {plural(lastBatch.files, 'file')} moved {new Date(lastBatch.at).toLocaleString()}
           </span>
@@ -91,15 +91,15 @@ function OrganizeBody({
             onClick={() => actions.undo.mutate(lastBatch.id)}
             className="inline-flex items-center gap-1.5 text-accent hover:underline disabled:opacity-50"
           >
-            <Undo2 className="size-4" /> Undo
+            <Undo2 className="size-3.5" /> Undo
           </button>
         </div>
       )}
       {moves.length === 0 ? (
-        <p className="text-[15px] text-paper-dim">Everything is already where it belongs.</p>
+        <p className="type-body text-paper-dim">Everything is already where it belongs.</p>
       ) : (
         <>
-          <div className="flex items-center justify-between text-[13px] text-muted">
+          <div className="flex items-center justify-between type-small text-muted">
             <span>
               {chosen.size} of {plural(moves.length, 'move')} selected
             </span>
@@ -121,14 +121,14 @@ function OrganizeBody({
                     <li key={m.from}>
                       <label className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-1.5 hover:bg-paper/[0.03]">
                         <input type="checkbox" checked={chosen.has(m.from)} onChange={() => toggle(m.from)} className="mt-1" />
-                        <span className="min-w-0 flex-1 font-mono text-[12px] leading-relaxed">
+                        <span className="min-w-0 flex-1 type-meta leading-relaxed">
                           <span className="block truncate text-muted" title={m.from}>{m.from}</span>
                           <span className="flex items-center gap-1.5 truncate text-paper" title={m.to}>
-                            <ArrowRight className="size-3 shrink-0 text-accent" />
+                            <ArrowRight className="size-3.5 shrink-0 text-accent" />
                             {m.to}
                           </span>
                         </span>
-                        {!m.confident && <span className="shrink-0 font-mono text-[10px] tracking-wider text-muted uppercase">Guess</span>}
+                        {!m.confident && <span className="shrink-0 type-badge text-muted">Guess</span>}
                       </label>
                     </li>
                   ))}
@@ -139,9 +139,9 @@ function OrganizeBody({
         </>
       )}
       {skipped.length > 0 && (
-        <details className="text-[13px] text-muted">
+        <details className="type-small text-muted">
           <summary className="cursor-pointer">{plural(skipped.length, 'file')} can’t move</summary>
-          <ul className="mt-2 space-y-1 font-mono text-[12px]">
+          <ul className="mt-2 space-y-1 type-meta">
             {skipped.map((s) => (
               <li key={s.from}>
                 {s.from} · <span className="text-paper-dim">{s.reason}</span>

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn';
+import { useOverlay } from '../lib/overlays';
 import { Button, IconButton } from './Button';
 
 /** What a dialog focuses as it opens: the first field, slider or button, skipping Close and options not chosen. */
@@ -12,20 +13,28 @@ const FIRST_FOCUS = [
   'button:not([aria-label="Close"]):not([role="radio"][aria-checked="false"])',
 ].join(', ');
 
-/** Modal dialog: a bottom sheet on phones, a centered card on larger screens. */
+/**
+ * Modal dialog: a bottom sheet on phones, a centered card on larger screens. Its body is padded the same in every
+ * dialog (20, as the header), so what goes in it brings no padding of its own; a list whose rows light up on hover pulls
+ * them out by their own padding (`-mx-3` for rows padded `p-3`), so their words stay in line with the title. Escape
+ * closes it when it's on top (lib/overlays.ts): a menu opened in it closes first.
+ */
 export function Dialog({
   open,
   onClose,
   title,
   children,
-  wide,
+  footer,
+  size = 'regular',
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
-  /** A larger card on desktop, for grids. */
-  wide?: boolean;
+  /** Kept in view under the body while it scrolls: the dialog's buttons, or a closing note. */
+  footer?: ReactNode;
+  /** On larger screens: regular (448), wide for grids and tables (768), wider for two columns side by side (896). */
+  size?: 'regular' | 'wide' | 'wider';
 }) {
   const panel = useRef<HTMLDivElement>(null);
   // Callers often pass a new onClose on every render (polling parents re-render every few seconds).
@@ -33,18 +42,14 @@ export function Dialog({
   // it would move focus back to the first field and scroll the dialog to the top.
   const close = useRef(onClose);
   close.current = onClose;
+  useOverlay(open, () => close.current());
 
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
-    window.addEventListener('keydown', onKey);
     // Focus the first control inside (of a group of options, the one chosen), and restore focus when closing.
     requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>(FIRST_FOCUS)?.focus({ preventScroll: true }));
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      previous?.focus?.({ preventScroll: true });
-    };
+    return () => previous?.focus?.({ preventScroll: true });
   }, [open]);
 
   return createPortal(
@@ -69,17 +74,20 @@ export function Dialog({
             transition={{ type: 'spring', damping: 32, stiffness: 380 }}
             className={cn(
               'relative flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-ink-850 pb-[env(safe-area-inset-bottom)] shadow-2xl shadow-black/60 sm:rounded-2xl sm:pb-0',
-              wide ? 'sm:max-w-3xl' : 'sm:max-w-md',
+              { regular: 'sm:max-w-md', wide: 'sm:max-w-3xl', wider: 'sm:max-w-4xl' }[size],
             )}
           >
-            <header className="flex items-center justify-between border-b border-line px-5 py-4">
-              <h2 className="font-display text-2xl leading-none text-paper">{title}</h2>
+            <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+              <h2 className="type-section-title text-paper">{title}</h2>
               {/* 44 to tap on touch screens without making the header taller. */}
               <IconButton label="Close" onClick={onClose} className="pointer-coarse:-my-1">
                 <X className="size-5" />
               </IconButton>
             </header>
-            <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+            <div data-dialog-body className="min-h-0 flex-1 overflow-y-auto p-5">
+              {children}
+            </div>
+            {footer && <footer className="shrink-0 border-t border-line px-5 py-3">{footer}</footer>}
           </motion.div>
         </div>
       )}
@@ -118,7 +126,7 @@ export function ConfirmDialog({
 }) {
   return (
     <Dialog open={open} onClose={onClose} title={title}>
-      <div className="space-y-6 p-5">
+      <div className="space-y-6">
         <div className="space-y-3 type-body text-paper-dim">{children}</div>
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>

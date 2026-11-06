@@ -43,7 +43,7 @@ export interface ActionRowProps {
   /** What the download button keeps on the device; none on an artist's page. */
   download?: { item: Omit<Download, 'tracks' | 'addedAt'>; tracks: Track[] };
   /** ⋯: the page's other actions (components/menus.ts), its own after a line. */
-  menu?: { label?: string; items: MenuEntry[] };
+  menu?: { label: string; items: MenuEntry[] };
   className?: string;
 }
 

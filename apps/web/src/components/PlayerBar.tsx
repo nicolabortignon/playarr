@@ -1,4 +1,4 @@
-import { ListMusic, Maximize2, Play, Quote, SkipForward, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { List, Maximize2, Play, Quote, SkipForward, Volume1, Volume2, VolumeX } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
@@ -34,8 +34,8 @@ export function PlayerBar() {
             <div className="flex min-w-0 items-center gap-3.5">
               <button type="button" onClick={() => open(true)} aria-label="Open now playing" className="group relative shrink-0">
                 <Cover src={track.coverUrl} size={56} alt={track.albumTitle} className="size-14 rounded-cover shadow-lg ring-1 ring-paper/5" />
-                <span className="absolute inset-0 grid place-items-center rounded-cover bg-black/50 opacity-0 transition group-hover:opacity-100">
-                  <Maximize2 className="size-4" />
+                <span className="absolute inset-0 grid place-items-center rounded-cover bg-ink-950/50 opacity-0 transition group-hover:opacity-100">
+                  <Maximize2 className="size-4.5" />
                 </span>
               </button>
               <div className="min-w-0">
@@ -144,7 +144,7 @@ function ColumnButton({ view }: { view: SideColumnView }) {
     useUI.getState().setLyrics(true);
     useUI.getState().setNowPlaying(true);
   };
-  const Icon = queue ? ListMusic : Quote;
+  const Icon = queue ? List : Quote;
   return (
     <button
       type="button"
@@ -172,7 +172,7 @@ function Volume() {
   return (
     <div className="flex w-36 items-center gap-2">
       <button type="button" aria-label={muted ? 'Unmute' : 'Mute'} onClick={toggleMute} className="grid size-9 shrink-0 place-items-center rounded-full text-muted transition hover:text-paper">
-        <Icon className="size-[18px]" />
+        <Icon className="size-4.5" />
       </button>
       <Slider
         label="Volume"
@@ -222,7 +222,7 @@ export function MiniPlayer() {
         <FavoriteButton track={track} size="md" className="relative" />
         <PlayPauseButton size="md" className="bg-transparent text-paper hover:scale-100" />
         <button type="button" aria-label="Next" onClick={() => next()} className="relative grid size-11 shrink-0 place-items-center text-paper">
-          <SkipForward className="size-5 fill-current" />
+          <SkipForward className="size-4.5 fill-current" />
         </button>
         <div className="pointer-events-none absolute inset-x-3 bottom-0 h-[2px] rounded-full bg-paper/10">
           <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />

@@ -1,9 +1,10 @@
-import { ChevronDown, ListMusic, Quote } from 'lucide-react';
+import { ChevronDown, Ellipsis, List, Quote } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
 import { sized } from '../lib/api';
+import { useOverlay } from '../lib/overlays';
 import { useTempos } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { useColumnLayout } from '../lib/useMediaQuery';
@@ -21,15 +22,12 @@ import { SleepTimer } from './SleepTimer';
 import { SongRow } from './SongRow';
 import { TransitionView } from './TransitionView';
 
-/** The modal on top: dialogs are portaled to the end of the page, after Now Playing. */
-function topModal(): Element | undefined {
-  const modals = document.querySelectorAll('[aria-modal]');
-  return modals[modals.length - 1];
-}
-
 export function NowPlaying() {
   const open = useUI((s) => s.nowPlayingOpen);
+  const setOpen = useUI((s) => s.setNowPlaying);
   const track = useCurrentTrack();
+  // Escape closes it when it's on top: a menu or a dialog opened from it (Edit mix points, the next transition) first.
+  useOverlay(open && !!track, () => setOpen(false));
   return <AnimatePresence>{open && track && <Sheet />}</AnimatePresence>;
 }
 
@@ -41,7 +39,6 @@ function Sheet() {
   const source = usePlayer((s) => s.source);
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
-  const sheet = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const columnFits = useColumnLayout();
   const close = () => setOpen(false);
@@ -56,24 +53,17 @@ function Sheet() {
     useUI.getState().setSideColumn('queue');
   };
   // The one song menu, for the song playing: no Play next or Add to queue; Open queue is this place's own.
-  const menu = useSongMenu(track, { playing: true, go, own: [{ label: 'Open queue', icon: ListMusic, onSelect: openQueue }] });
+  const menu = useSongMenu(track, { playing: true, go, own: [{ label: 'Open queue', icon: List, onSelect: openQueue }] });
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // A dialog opened from here (Edit mix points, the next transition) takes its own Escape.
-      if (e.key === 'Escape' && topModal() === sheet.current) close();
-    };
-    window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     return () => {
-      window.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
   }, []);
 
   return (
     <motion.div
-      ref={sheet}
       role="dialog"
       aria-modal
       aria-label="Now playing"
@@ -113,7 +103,7 @@ function Sheet() {
       <div className="relative mx-auto flex h-full max-w-6xl flex-col px-6 pt-[max(env(safe-area-inset-top),1rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)] md:px-12">
         <header className="flex h-14 shrink-0 touch-none items-center justify-between" onPointerDown={(e) => controls.start(e)}>
           <IconButton label="Close now playing" onClick={close} className="text-paper">
-            <ChevronDown className="size-6" />
+            <ChevronDown className="size-5" />
           </IconButton>
           <div className="min-w-0 px-4 text-center">
             {/* Over the cover's blur, where muted would sink into the art: paper-dim (docs/design.md, Color). */}
@@ -127,7 +117,8 @@ function Sheet() {
             <IconButton label="Lyrics" aria-pressed={lyricsOpen} onClick={() => setLyrics(!lyricsOpen)} className={lyricsOpen ? 'text-accent' : 'text-paper'}>
               <Quote className="size-5" />
             </IconButton>
-            <Menu className="text-paper" items={menu} />
+            {/* An icon button of the header, as Close and Lyrics: 20. */}
+            <Menu label={`More for “${track.title}”`} className="text-paper" trigger={<Ellipsis className="size-5" />} items={menu} />
           </div>
         </header>
 

@@ -30,8 +30,8 @@ export function SleepTimer({ className }: { className?: string }) {
       className={cn('w-auto min-w-11 px-2.5 text-paper pointer-fine:w-auto pointer-fine:min-w-9', label && 'text-accent', className)}
       trigger={
         <span className="flex items-center gap-1.5">
-          <Moon className="size-[18px]" />
-          {label && <span className="font-mono text-[11px] tracking-wider whitespace-nowrap uppercase">{label}</span>}
+          <Moon className="size-5" />
+          {label && <span className="type-badge whitespace-nowrap">{label}</span>}
         </span>
       }
       items={items}

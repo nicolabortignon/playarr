@@ -115,7 +115,7 @@ function Overlay({ track }: { track: Track }) {
         dragElastic={0}
         dragConstraints={bounds}
         className={cn(
-          'pointer-events-auto absolute right-2 w-[min(calc(100vw-1rem),360px)] overflow-hidden rounded-lg border border-paper/10 bg-ink-950/85 font-mono text-[11px] leading-[1.5] text-paper-dim shadow-2xl shadow-black/60 backdrop-blur-xl',
+          'pointer-events-auto absolute right-2 w-[min(calc(100vw-1rem),360px)] overflow-hidden rounded-lg border border-paper/10 bg-ink-950/85 type-meta leading-[1.5] text-paper-dim shadow-2xl shadow-black/60 backdrop-blur-xl',
           // Below Now Playing's header on phones; above the player bar on desktop.
           'top-[calc(max(env(safe-area-inset-top),1rem)+3.75rem)] md:top-auto md:right-4 md:bottom-[104px]',
         )}
@@ -124,7 +124,7 @@ function Overlay({ track }: { track: Track }) {
           onPointerDown={(e) => controls.start(e)}
           className="flex h-8 cursor-grab touch-none items-center gap-2 pr-1 pl-2.5 select-none active:cursor-grabbing"
         >
-          <span className="shrink-0 text-[10px] tracking-[0.2em] text-paper uppercase">Stats for nerds</span>
+          <span className="shrink-0 type-kicker text-paper">Stats for nerds</span>
           <BeatDots beat={grid?.beat} />
           <span className="min-w-0 flex-1 truncate text-right text-muted tabular">{open ? '' : summary.join(' · ')}</span>
           <HeaderButton label={open ? 'Collapse' : 'Expand'} expanded={open} onClick={() => setOpen(!open)}>
@@ -450,7 +450,7 @@ function Energy({ map, time }: { map: MixMap; time: number }) {
             </span>
             <span className="shrink-0 tabular">{energy != null ? n2(energy) : '–'}</span>
           </span>
-          <span className="mt-0.5 flex flex-wrap gap-x-3 text-[10px] text-muted">
+          <span className="mt-0.5 flex flex-wrap gap-x-3 text-muted">
             <span>
               <span aria-hidden className="mr-1 inline-block h-2 w-px bg-sky-300" />
               intro ends {at(map.introEnd)}
@@ -472,7 +472,7 @@ const MARKER = 'absolute -top-0.5 -bottom-0.5 w-px';
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-2">
-      <h3 className="mb-0.5 text-[9.5px] tracking-[0.2em] text-accent uppercase">{title}</h3>
+      <h3 className="mb-0.5 type-kicker text-accent">{title}</h3>
       <dl className="grid grid-cols-[5.75rem_minmax(0,1fr)] gap-x-2">{children}</dl>
     </section>
   );

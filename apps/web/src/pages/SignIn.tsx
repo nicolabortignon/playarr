@@ -20,7 +20,7 @@ function AuthLayout({ title, subtitle, children }: { title: string; subtitle?: s
       <div className="w-full max-w-sm">
         <Wordmark />
         <h1 className="mt-8 font-display text-4xl text-paper">{title}</h1>
-        {subtitle && <p className="mt-2 text-[15px] text-muted">{subtitle}</p>}
+        {subtitle && <p className="mt-2 type-body text-muted">{subtitle}</p>}
         <div className="mt-8">{children}</div>
       </div>
     </main>
@@ -68,7 +68,7 @@ function PublicAddress({ publicUrl }: { publicUrl: string | undefined }) {
   const there = elsewhere(publicUrl);
   if (!there || !publicUrl) return null;
   return (
-    <p className="mt-6 text-[13px] text-muted">
+    <p className="mt-6 type-small text-muted">
       This server’s address is{' '}
       <a href={publicUrl} className="text-paper-dim underline underline-offset-2 hover:text-paper">
         {there.host}
@@ -96,7 +96,7 @@ export function SignInPage() {
   if (server?.setup) {
     return (
       <AuthLayout title="Set up Playarr" subtitle={server.name}>
-        <p className="text-[15px] text-paper-dim">
+        <p className="type-body text-paper-dim">
           Nobody has set up this server yet. Choose the owner’s username and password, from your home network, to turn sign-in on.
         </p>
         <Button to="/setup" variant="primary" size="large" className="mt-6 w-full">
@@ -133,7 +133,7 @@ export function SignInPage() {
               Continue as {a.name}
             </Button>
           ))}
-          <p className="pt-2 text-center text-[13px] text-muted">or sign in to another account</p>
+          <p className="pt-2 text-center type-small text-muted">or sign in to another account</p>
         </div>
       )}
       <form onSubmit={submit} className="space-y-4">
@@ -144,7 +144,7 @@ export function SignInPage() {
           Sign in
         </Button>
       </form>
-      <p className="mt-6 text-[13px] text-muted">
+      <p className="mt-6 type-small text-muted">
         Got a setup code?{' '}
         <Link to="/redeem" className="text-paper-dim underline underline-offset-2 hover:text-paper">
           Choose your password
@@ -184,7 +184,7 @@ export function RedeemPage() {
           Choose password
         </Button>
       </form>
-      <p className="mt-6 text-[13px] text-muted">
+      <p className="mt-6 type-small text-muted">
         At least 8 characters. Already chosen one?{' '}
         <Link to="/sign-in" className="text-paper-dim underline underline-offset-2 hover:text-paper">
           Sign in
@@ -210,7 +210,7 @@ export function SetupPage() {
   if (server && !server.setup) {
     return (
       <AuthLayout title="Already set up" subtitle={server.name}>
-        <p className="text-[15px] text-paper-dim">This server has an owner. Sign in, or ask an admin for a setup code.</p>
+        <p className="type-body text-paper-dim">This server has an owner. Sign in, or ask an admin for a setup code.</p>
         <Button to="/sign-in" variant="primary" size="large" className="mt-6 w-full">
           Sign in
         </Button>
@@ -231,7 +231,7 @@ export function SetupPage() {
 
   return (
     <AuthLayout title="Set up Playarr" subtitle={server?.name}>
-      <p className="mb-6 text-[15px] text-paper-dim">
+      <p className="mb-6 type-body text-paper-dim">
         You’re the owner: your listening so far stays yours, and you can add an account for everyone else afterward.
       </p>
       <form onSubmit={submit} className="space-y-4">

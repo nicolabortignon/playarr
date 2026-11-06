@@ -266,13 +266,14 @@ const songsNamed = (tracks: Track[]) => (tracks.length === 1 ? `“${tracks[0]!.
 
 /**
  * For Add to playlist's ticks: how many of these songs each of the account's own playlists already holds, by playlist
- * id (those holding none are left out). Asked afresh each time the picker opens.
+ * id (those holding none are left out). Asked afresh each time the picker opens; while it's closing (`open` false) it
+ * keeps what it has without asking again.
  */
-export const usePlaylistsHolding = (recordingIds: string[]) =>
+export const usePlaylistsHolding = (recordingIds: string[], open = true) =>
   useQuery({
     queryKey: ['playlists-holding', [...new Set(recordingIds)].sort()],
     queryFn: () => api.playlistsHolding(recordingIds),
-    enabled: recordingIds.length > 0,
+    enabled: open && recordingIds.length > 0,
     staleTime: 0,
   });
 

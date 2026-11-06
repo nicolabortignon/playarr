@@ -1,5 +1,5 @@
 import type { Track } from '@playarr/shared';
-import { ArrowDown, ArrowUp, Disc3, Info, ListEnd, ListPlus, ListStart, Mic2, Play, Radio, Shuffle, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Disc3, Info, ListEnd, ListPlus, ListStart, MicVocal, Play, Radio, Shuffle, X } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { toast } from '../lib/toast';
 import { useUI } from '../lib/ui';
@@ -49,12 +49,12 @@ export function useSongMenu(track: Track | undefined, { inAlbum, playing, playNe
     items.push({ label: 'Add to queue', icon: ListEnd, onSelect: () => queueTracks([track], 'end') });
   }
   items.push(
-    // ListPlus, as the queue's Save as playlist: ListMusic is the queue's own glyph (the nav's Queue, Open queue).
+    // ListPlus, as Save as playlist (the queue's, a mix's): ListMusic is a playlist's own glyph (docs/design.md, Icons).
     { label: 'Add to playlist…', icon: ListPlus, onSelect: () => openPicker([track]) },
     { label: 'Start radio', icon: Radio, onSelect: () => void startRadio(track) },
   );
   if (!inAlbum) items.push({ label: 'Go to album', icon: Disc3, onSelect: () => to(`/albums/${track.albumId}`) });
-  items.push({ label: 'Go to artist', icon: Mic2, onSelect: () => to(`/artists/${track.artistId}`) });
+  items.push({ label: 'Go to artist', icon: MicVocal, onSelect: () => to(`/artists/${track.artistId}`) });
   items.push({ label: 'Show metadata', icon: Info, onSelect: () => showMetadata(track.id) }, ...mixPoints);
   return [...items, DIVIDER, ...own];
 }
@@ -108,7 +108,7 @@ export function useAlbumMenu(album: { id: number; artistId: number }, { tracks, 
   return [
     ...(card ? playItems((opts) => playAlbum(album.id, opts)) : []),
     ...queueItems(tracks ?? (() => albumTracks(album.id)), openPicker),
-    { label: 'Go to artist', icon: Mic2, onSelect: () => void navigate(`/artists/${album.artistId}`) },
+    { label: 'Go to artist', icon: MicVocal, onSelect: () => void navigate(`/artists/${album.artistId}`) },
   ];
 }
 

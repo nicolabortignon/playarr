@@ -13,7 +13,7 @@ export function SlowLookup({ active, what, className }: { active: boolean; what:
   if (!shown) return null;
   const queue = data && data.background > 0 && data.queued > 1;
   return (
-    <p role="status" className={cn('flex max-w-prose items-start gap-2.5 text-[13px] leading-relaxed text-muted', className)}>
+    <p role="status" className={cn('flex max-w-prose items-start gap-2.5 type-small leading-relaxed text-muted', className)}>
       <span className="mt-[7px] size-1.5 shrink-0 animate-pulse rounded-full bg-accent" />
       <span>
         Asking MusicBrainz for {what}. It answers about one request per second

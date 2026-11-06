@@ -1,10 +1,10 @@
 import type { ReviewAction, ReviewCandidate, ReviewGroup } from '@playarr/shared';
-import { AlertCircle, Check, Disc3, ExternalLink, Loader2, PencilLine, Search } from 'lucide-react';
+import { Check, CircleAlert, Disc3, ExternalLink, LoaderCircle, PencilLine, Search } from 'lucide-react';
 import { useMutationState } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { cn } from '../lib/cn';
-import { formatTime } from '../lib/format';
+import { formatTime, plural } from '../lib/format';
 import { useReview, useReviewAction } from '../lib/queries';
 import { Button } from './Button';
 import { Dialog } from './Dialog';
@@ -50,22 +50,22 @@ export function ReviewDialog({ sourceId, onClose }: { sourceId: number | null; o
 
   const group = groups?.[0];
   return (
-    <Dialog open={sourceId !== null} onClose={onClose} title="Review matches" wide>
+    <Dialog open={sourceId !== null} onClose={onClose} title="Review matches" size="wide">
       <SavedNote saved={saved} />
       {error && !groups ? (
-        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching} className="p-5">
+        <InlineError error={error} onRetry={() => void refetch()} retrying={isFetching}>
           Couldn’t load the albums to review
         </InlineError>
       ) : !groups ? (
-        <div className="space-y-3 p-5" aria-busy="true" aria-label="Loading albums to review">
+        <div className="space-y-3" aria-busy="true" aria-label="Loading albums to review">
           <div className="h-12 animate-pulse rounded-lg bg-paper/5" />
           <div className="h-16 animate-pulse rounded-lg bg-paper/5" />
           <div className="h-16 animate-pulse rounded-lg bg-paper/5" />
           <div className="h-40 animate-pulse rounded-lg bg-paper/5" />
         </div>
       ) : !group ? (
-        <div className="space-y-4 p-5">
-          <p className="text-[15px] text-paper-dim">Nothing left to review.</p>
+        <div className="space-y-4">
+          <p className="type-body text-paper-dim">Nothing left to review.</p>
           <div className="flex justify-end">
             <Button variant="primary" onClick={onClose}>
               Done
@@ -86,13 +86,14 @@ function SavedNote({ saved }: { saved: Saved | null }) {
       role="status"
       aria-live="polite"
       className={cn(
-        'flex items-center gap-2 border-b border-line px-5 py-2 text-[13px]',
+        // A strip across the top of the dialog, under its header.
+        '-mx-5 -mt-5 mb-5 flex items-center gap-2 border-b border-line px-5 py-2 type-small',
         saved.state === 'error' ? 'bg-danger/10 text-danger' : 'text-paper-dim',
       )}
     >
-      {saved.state === 'saving' && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" />}
+      {saved.state === 'saving' && <LoaderCircle className="size-3.5 shrink-0 animate-spin text-muted" />}
       {saved.state === 'done' && <Check className="size-3.5 shrink-0 text-success" />}
-      {saved.state === 'error' && <AlertCircle className="size-3.5 shrink-0" />}
+      {saved.state === 'error' && <CircleAlert className="size-3.5 shrink-0" />}
       <span className="min-w-0 truncate">
         {saved.state === 'saving' && `Saving: ${saved.text}…`}
         {saved.state === 'done' && `Saved: ${saved.text}`}
@@ -152,20 +153,20 @@ function ReviewGroupView({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="space-y-6 p-5"
+      className="space-y-6"
     >
       <div className="flex items-baseline justify-between gap-4">
         <div className="min-w-0">
-          <div className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Your files say</div>
-          <div className="truncate text-[17px] text-paper">
+          <div className="type-kicker text-muted">Your files say</div>
+          <div className="truncate type-body text-paper">
             {group.albumTitle ?? 'No album'} <span className="text-muted">· {group.artistName}</span>
           </div>
         </div>
-        <span className="shrink-0 font-mono text-[12px] text-muted">{remaining} to review</span>
+        <span className="shrink-0 type-meta text-muted">{remaining} to review</span>
       </div>
       {group.notFound && (
-        <p className="-mt-3 inline-flex items-center gap-1.5 rounded-full border border-warning/25 px-2.5 py-1 font-mono text-[11px] tracking-wider text-warning uppercase">
-          <AlertCircle className="size-3.5" /> Not found on MusicBrainz
+        <p className="-mt-3 inline-flex items-center gap-1.5 rounded-full border border-warning/25 px-2.5 py-1 type-badge text-warning">
+          <CircleAlert className="size-3" /> Not found on MusicBrainz
         </p>
       )}
 
@@ -185,21 +186,21 @@ function ReviewGroupView({
                 )}
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[15px] text-paper">
+                  <span className="block type-body text-paper">
                     {c.title}
                     {c.disambiguation && <span className="text-muted"> ({c.disambiguation})</span>}
                   </span>
-                  <span className="block text-[13px] text-muted">
+                  <span className="block type-small text-muted">
                     {summary(c).join(' · ')}
                     {!c.detailed && <span className="ml-1.5 inline-block h-2.5 w-16 animate-pulse rounded-full bg-paper/10 align-middle" />}
                   </span>
                 </span>
-                <span className="shrink-0 pt-0.5 font-mono text-[12px] text-muted tabular">{Math.round(c.score * 100)}%</span>
+                <span className="shrink-0 pt-0.5 type-meta text-muted">{Math.round(c.score * 100)}%</span>
               </button>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted">
+          <p className="type-small text-muted">
             No albums found on MusicBrainz for these names. Search with other names below (the artist may go by
             another name there), or fix the names yourself.
           </p>
@@ -209,9 +210,9 @@ function ReviewGroupView({
       {candidate && <CandidateDetails candidate={candidate} />}
 
       {candidate && (
-        <table className="w-full text-[14px]">
+        <table className="w-full type-small">
           <thead>
-            <tr className="font-mono text-[11px] tracking-[0.15em] text-muted uppercase">
+            <tr className="type-kicker text-muted">
               <th className="pb-2 text-left font-normal">Your file</th>
               <th className="pb-2 text-left font-normal">On MusicBrainz</th>
             </tr>
@@ -222,12 +223,12 @@ function ReviewGroupView({
               return (
                 <tr key={f.rel} className="border-t border-line">
                   <td className="py-1.5 pr-3 text-paper-dim">
-                    {f.title} <span className="font-mono text-[12px] text-muted">{formatTime(f.duration)}</span>
+                    {f.title} <span className="type-meta text-muted">{formatTime(f.duration)}</span>
                   </td>
                   <td className="py-1.5 text-paper">
                     {t ? (
                       <>
-                        {t.position}. {t.title} <span className="font-mono text-[12px] text-muted">{formatTime(t.duration)}</span>
+                        {t.position}. {t.title} <span className="type-meta text-muted">{formatTime(t.duration)}</span>
                       </>
                     ) : (
                       <span className="text-muted">not on this album</span>
@@ -253,7 +254,7 @@ function ReviewGroupView({
 
       {fixing && (
         <form onSubmit={rename} aria-label="Fix names" className="space-y-3 rounded-lg border border-line p-4">
-          <p className="text-[13px] text-muted">
+          <p className="type-small text-muted">
             Used instead of what the files say, for this album only. The files themselves aren’t changed.
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -264,7 +265,7 @@ function ReviewGroupView({
             <span className="block type-small text-muted">Songs</span>
             {group.files.map((f) => (
               <label key={f.rel} className="flex items-center gap-2">
-                <span className="w-7 shrink-0 text-right font-mono text-[12px] text-muted tabular">{f.trackNumber || ''}</span>
+                <span className="w-7 shrink-0 text-right type-meta text-muted">{f.trackNumber || ''}</span>
                 <input
                   value={titles[f.rel] ?? ''}
                   onChange={(e) => setTitles((t) => ({ ...t, [f.rel]: e.target.value }))}
@@ -339,8 +340,6 @@ function releaseDate(date: string | undefined): string | undefined {
   return value.toLocaleDateString(undefined, { timeZone: 'UTC', year: 'numeric', month: 'short', ...(d ? { day: 'numeric' } : {}) });
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-
 /** The second line of a candidate: who, when, where, on what. */
 function summary(c: ReviewCandidate): string[] {
   const label = c.labels?.find((l) => l.name)?.name;
@@ -351,7 +350,7 @@ function summary(c: ReviewCandidate): string[] {
     label,
     c.format,
     c.type,
-    plural(c.tracks.length, 'track'),
+    plural(c.tracks.length, 'song'),
     c.status && c.status !== 'Official' ? c.status : undefined,
   ].filter((x): x is string => !!x);
 }
@@ -388,12 +387,12 @@ function CandidateDetails({ candidate: c }: { candidate: ReviewCandidate }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 type-small">
           {rows
             .filter(([label, value]) => value || (!c.detailed && DETAIL_ROWS.has(label)))
             .map(([label, value]) => (
               <div key={label} className="contents">
-                <dt className="font-mono text-[11px] leading-5 tracking-[0.12em] text-muted uppercase">{label}</dt>
+                <dt className="type-kicker leading-5 text-muted">{label}</dt>
                 <dd className="min-w-0 break-words text-paper-dim">
                   {value ?? <span className="inline-block h-2.5 w-24 animate-pulse rounded-full bg-paper/10 align-middle" />}
                 </dd>
@@ -401,7 +400,7 @@ function CandidateDetails({ candidate: c }: { candidate: ReviewCandidate }) {
             ))}
         </dl>
         {!c.detailed && (
-          <p role="status" className="mt-2 text-[12px] text-muted">
+          <p role="status" className="mt-2 type-small text-muted">
             Getting this edition’s details from MusicBrainz…
           </p>
         )}
@@ -409,7 +408,7 @@ function CandidateDetails({ candidate: c }: { candidate: ReviewCandidate }) {
           href={`https://musicbrainz.org/release/${encodeURIComponent(c.releaseId)}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-accent hover:underline"
+          className="mt-2 inline-flex items-center gap-1.5 type-small text-accent hover:underline"
         >
           Open on MusicBrainz <ExternalLink className="size-3.5" />
         </a>

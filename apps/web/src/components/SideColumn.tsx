@@ -28,7 +28,7 @@ export function SideColumn() {
       <header className="flex shrink-0 items-center gap-2 px-4 pt-5 pb-4">
         <Choice label="Show in the column" options={VIEWS} value={view} onChange={setView} className="min-w-0 flex-1" />
         <IconButton label="Close queue and lyrics" onClick={() => setView(null)}>
-          <X className="size-4.5" />
+          <X className="size-5" />
         </IconButton>
       </header>
       {view === 'queue' ? (

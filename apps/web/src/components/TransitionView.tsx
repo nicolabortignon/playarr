@@ -134,7 +134,7 @@ function Line({ from, to, mixMode, className }: { from: Track; to: Track; mixMod
         onClick={() => setOpen(true)}
         // 44 px tall to tap, without pushing the transport away.
         className={cn(
-          '-my-2 inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-full text-[13px] text-paper-dim transition hover:text-paper',
+          '-my-2 inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-full type-small text-paper-dim transition hover:text-paper',
           className,
         )}
       >
@@ -152,14 +152,14 @@ function Sheet({ from, to, a, b, upcoming, mixMode }: { from: Track; to: Track; 
   const setMixMode = usePlayer((s) => s.setMixMode);
   const { plan } = upcoming;
   return (
-    <div className="space-y-6 px-5 py-5">
+    <div className="space-y-6">
       <div>
         <p className="font-display text-2xl leading-tight text-paper">{capitalized(upcoming.style)}</p>
-        {upcoming.preparing && <p className="mt-1 font-mono text-[11px] tracking-[0.15em] text-muted uppercase">Getting the mix ready…</p>}
-        <p className="mt-2 text-sm text-paper-dim">{upcoming.why}</p>
+        {upcoming.preparing && <p className="mt-1 type-kicker text-muted">Getting the mix ready…</p>}
+        <p className="mt-2 type-small text-paper-dim">{upcoming.why}</p>
       </div>
 
-      <dl className="space-y-1.5 text-sm">
+      <dl className="space-y-1.5 type-small">
         <SongFacts label="Now" track={from} map={a} />
         <SongFacts label="Next" track={to} map={b} />
       </dl>
@@ -167,9 +167,9 @@ function Sheet({ from, to, a, b, upcoming, mixMode }: { from: Track; to: Track; 
       {plan && a && b && <EnergyAroundTheMix plan={plan} a={{ track: from, map: a }} b={{ track: to, map: b }} />}
 
       <section>
-        <h3 className="mb-2 font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Mixing for this queue</h3>
+        <h3 className="mb-2 type-kicker text-muted">Mixing for this queue</h3>
         <Choice label="Mixing for this queue" options={MIX_MODES} value={mixMode} onChange={setMixMode} />
-        <p className="mt-2 text-[13px] text-muted">{MIX_MODES.find((m) => m.value === mixMode)?.hint}</p>
+        <p className="mt-2 type-small text-muted">{MIX_MODES.find((m) => m.value === mixMode)?.hint}</p>
       </section>
     </div>
   );
@@ -179,7 +179,7 @@ function SongFacts({ label, track, map }: { label: string; track: Track; map?: M
   const facts = [bpmOf(map) && `${bpmOf(map)} BPM`, keyOf(map)].filter(Boolean);
   return (
     <div className="flex min-w-0 items-baseline gap-3">
-      <dt className="w-10 shrink-0 font-mono text-[11px] tracking-[0.15em] text-muted uppercase">{label}</dt>
+      <dt className="w-10 shrink-0 type-kicker text-muted">{label}</dt>
       <dd className="min-w-0 flex-1 truncate text-paper">{track.title}</dd>
       {facts.length > 0 && <dd className="shrink-0 text-paper-dim tabular">{facts.join(' · ')}</dd>}
     </div>
@@ -256,13 +256,13 @@ function EnergyAroundTheMix({ plan, a, b }: { plan: TransitionPlan; a: { track: 
   return (
     <figure aria-labelledby={id} className="min-w-0">
       <figcaption id={id} className="mb-3 flex items-baseline justify-between gap-3">
-        <span className="font-mono text-[11px] tracking-[0.2em] text-muted uppercase">Energy around the mix</span>
+        <span className="type-kicker text-muted">Energy around the mix</span>
         {hovered && <PhraseReadout phrase={hovered} />}
       </figcaption>
       <div className="space-y-3" onPointerLeave={() => setHover(null)}>
         {strips.map((s, i) => (
           <div key={i}>
-            <div className="mb-1 flex items-baseline justify-between gap-3 text-[12px]">
+            <div className="mb-1 flex items-baseline justify-between gap-3 type-small">
               <span className="min-w-0 truncate text-paper-dim">{s.title}</span>
               <span className="shrink-0 text-muted tabular">{s.note}</span>
             </div>
@@ -272,7 +272,7 @@ function EnergyAroundTheMix({ plan, a, b }: { plan: TransitionPlan; a: { track: 
                 className={cn('absolute inset-y-0', s.mix.width > 0 ? 'border-x border-paper/45 bg-paper/[0.08]' : 'w-px bg-paper/50')}
                 style={{ left: `${s.mix.left * 100}%`, width: s.mix.width > 0 ? `${s.mix.width * 100}%` : undefined }}
               >
-                {i === 0 && s.mix.width > 0 && <span className="absolute top-0.5 left-1 font-mono text-[10px] text-paper-dim">mix</span>}
+                {i === 0 && s.mix.width > 0 && <span className="absolute top-0.5 left-1 type-badge text-paper-dim">mix</span>}
               </div>
               <PhraseColumns
                 phrases={s.phrases}

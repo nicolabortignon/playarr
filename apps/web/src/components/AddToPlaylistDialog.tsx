@@ -1,4 +1,4 @@
-import type { PlaylistSummary } from '@playarr/shared';
+import type { PlaylistSummary, Track } from '@playarr/shared';
 import { Check, Minus, Plus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
@@ -14,27 +14,21 @@ import { TextField } from './TextField';
 /** Global "Add to playlist" picker; opened via useUI().openPlaylistPicker(tracks). */
 export function AddToPlaylistDialog() {
   const tracks = useUI((s) => s.playlistPicker);
-  const close = useUI((s) => s.closePlaylistPicker);
-  const open = tracks !== null;
-  const title = !tracks?.length ? 'New playlist' : tracks.length === 1 ? `Add “${tracks[0]!.title}”` : `Add ${tracks.length} songs`;
-
-  return (
-    <Dialog open={open} onClose={close} title={title}>
-      {/* Remount per opening so the form starts fresh. */}
-      {open && <Picker key={tracks.map((t) => t.id).join(',')} />}
-    </Dialog>
-  );
+  // The songs it was opened with, and which opening this is: kept while it closes, so what it shows doesn't change as
+  // it goes, and a new opening starts afresh (a remount, by its key).
+  const [shown, setShown] = useState<{ tracks: Track[]; opening: number } | null>(null);
+  if (tracks && tracks !== shown?.tracks) setShown({ tracks, opening: (shown?.opening ?? 0) + 1 });
+  return shown && <Picker key={shown.opening} tracks={shown.tracks} open={tracks !== null} />;
 }
 
 /**
  * The account's own playlists, each ticked when it already holds the songs (a dash when it holds some of them), to
  * choose one or several and add the songs to all of them at once. Or a new playlist, made with the songs.
  */
-function Picker() {
-  const tracks = useUI((s) => s.playlistPicker) ?? [];
+function Picker({ tracks, open }: { tracks: Track[]; open: boolean }) {
   const close = useUI((s) => s.closePlaylistPicker);
   const { data: playlists } = usePlaylists();
-  const { data: holding } = usePlaylistsHolding(tracks.map((t) => t.recordingId));
+  const { data: holding } = usePlaylistsHolding(tracks.map((t) => t.recordingId), open);
   const { create, addToMany } = usePlaylistMutations();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(!tracks.length);
@@ -43,6 +37,8 @@ function Picker() {
   const mine = playlists?.filter((p) => p.mine) ?? [];
   // What the server counts: each song once, however many times it's in the list.
   const songs = new Set(tracks.map((t) => t.recordingId)).size;
+  const title = !tracks.length ? 'New playlist' : tracks.length === 1 ? `Add “${tracks[0]!.title}”` : `Add ${tracks.length} songs`;
+  const choosing = tracks.length > 0 && mine.length > 0;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -61,8 +57,24 @@ function Picker() {
   const add = () => addToMany.mutate({ ids: chosen, tracks }, { onSuccess: close });
 
   return (
-    <>
-      <div className="p-2">
+    <Dialog
+      open={open}
+      onClose={close}
+      title={title}
+      // Kept in view while the playlists scroll.
+      footer={
+        choosing && (
+          <div className="flex justify-end gap-2">
+            <Button onClick={close}>Cancel</Button>
+            <Button variant="primary" disabled={!chosen.length} pending={addToMany.isPending} pendingLabel="Adding…" onClick={add}>
+              {chosen.length > 1 ? `Add to ${chosen.length} playlists` : 'Add'}
+            </Button>
+          </div>
+        )
+      }
+    >
+      {/* Rows lit on hover reach out by their own padding, so their words line up with the title. */}
+      <div className="-m-3">
         {creating ? (
           <form onSubmit={submit} className="flex items-center gap-2 p-3">
             <TextField
@@ -91,7 +103,7 @@ function Picker() {
           </button>
         )}
 
-        {tracks.length > 0 && mine.length > 0 && (
+        {choosing && (
           <ul aria-label="Your playlists">
             {mine.map((p) => (
               <li key={p.id}>
@@ -101,16 +113,7 @@ function Picker() {
           </ul>
         )}
       </div>
-
-      {tracks.length > 0 && mine.length > 0 && (
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-line bg-ink-850 px-5 py-3">
-          <Button onClick={close}>Cancel</Button>
-          <Button variant="primary" disabled={!chosen.length} pending={addToMany.isPending} pendingLabel="Adding…" onClick={add}>
-            {chosen.length > 1 ? `Add to ${chosen.length} playlists` : 'Add'}
-          </Button>
-        </div>
-      )}
-    </>
+    </Dialog>
   );
 }
 
@@ -153,7 +156,7 @@ function PlaylistChoice({
               all ? 'bg-success text-ink-950' : 'bg-ink-600 text-paper',
             )}
           >
-            {all ? <Check className="size-3.5" strokeWidth={3} /> : <Minus className="size-3.5" strokeWidth={3} />}
+            {all ? <Check className="size-3.5" /> : <Minus className="size-3.5" />}
           </span>
         )}
       </span>
@@ -171,7 +174,7 @@ function PlaylistChoice({
           chosen ? 'border-accent bg-accent text-accent-ink' : 'border-paper/25',
         )}
       >
-        {chosen && <Check className="size-4" strokeWidth={3} />}
+        {chosen && <Check className="size-4" />}
       </span>
     </button>
   );

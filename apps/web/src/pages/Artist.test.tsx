@@ -111,6 +111,8 @@ describe('Artist page', () => {
     expect(header.getByText('2 albums')).toBeTruthy();
     expect(header.getByText('24 songs')).toBeTruthy();
     expect(header.getByRole('button', { name: 'Play Massive Attack' })).toBeTruthy();
+    // A person's name, as accounts', goes without quotes.
+    expect(header.getByRole('button', { name: 'More for Massive Attack' })).toBeTruthy();
   });
 
   it('draws a photo behind the name, and shows an album cover beside it when there’s no photo', async () => {

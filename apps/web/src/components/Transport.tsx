@@ -1,4 +1,4 @@
-import { Loader2, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from 'lucide-react';
+import { LoaderCircle, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { formatTime } from '../lib/format';
 import { useClock, usePlayer } from '../player/store';
@@ -10,7 +10,7 @@ export function PlayPauseButton({ size = 'md', className }: { size?: 'sm' | 'md'
   const hasTrack = usePlayer((s) => s.pos >= 0);
   const loading = useClock((s) => s.loading && playing);
   const dims = { sm: 'size-10', md: 'size-11', lg: 'size-[4.5rem]' }[size];
-  const icon = { sm: 'size-[18px]', md: 'size-5', lg: 'size-8' }[size];
+  const icon = { sm: 'size-4.5', md: 'size-4.5', lg: 'size-8' }[size];
   return (
     <button
       type="button"
@@ -24,7 +24,7 @@ export function PlayPauseButton({ size = 'md', className }: { size?: 'sm' | 'md'
       )}
     >
       {loading ? (
-        <Loader2 className={cn(icon, 'animate-spin')} />
+        <LoaderCircle className={cn(icon, 'animate-spin')} />
       ) : playing ? (
         <Pause className={cn(icon, 'fill-current')} />
       ) : (
@@ -52,15 +52,15 @@ export function Transport({ size = 'md' }: { size?: 'md' | 'lg' }) {
         onClick={() => p().toggleShuffle()}
         className={cn(side, shuffle ? 'text-accent' : 'text-muted')}
       >
-        <Shuffle className={big ? 'size-5' : 'size-4'} />
+        <Shuffle className={big ? 'size-5' : 'size-4.5'} />
         {shuffle && <span className="absolute mt-6 size-1 rounded-full bg-accent" />}
       </button>
       <button type="button" aria-label="Previous" onClick={() => p().prev(useClock.getState().time)} className={skip}>
-        <SkipBack className={cn('fill-current', big ? 'size-7' : 'size-[18px]')} />
+        <SkipBack className={cn('fill-current', big ? 'size-7' : 'size-4.5')} />
       </button>
       <PlayPauseButton size={big ? 'lg' : 'sm'} />
       <button type="button" aria-label="Next" onClick={() => p().next()} className={skip}>
-        <SkipForward className={cn('fill-current', big ? 'size-7' : 'size-[18px]')} />
+        <SkipForward className={cn('fill-current', big ? 'size-7' : 'size-4.5')} />
       </button>
       <button
         type="button"
@@ -68,7 +68,7 @@ export function Transport({ size = 'md' }: { size?: 'md' | 'lg' }) {
         onClick={() => p().cycleRepeat()}
         className={cn(side, repeat !== 'off' ? 'text-accent' : 'text-muted')}
       >
-        {repeat === 'one' ? <Repeat1 className={big ? 'size-5' : 'size-4'} /> : <Repeat className={big ? 'size-5' : 'size-4'} />}
+        {repeat === 'one' ? <Repeat1 className={big ? 'size-5' : 'size-4.5'} /> : <Repeat className={big ? 'size-5' : 'size-4.5'} />}
       </button>
     </div>
   );
@@ -79,7 +79,7 @@ export function SeekBar({ className, compact }: { className?: string; compact?: 
   const duration = useClock((s) => s.duration);
   const buffered = useClock((s) => s.buffered);
   const seek = useClock((s) => s.seek);
-  const timeCls = 'font-mono text-[11px] text-muted tabular';
+  const timeCls = 'type-meta text-muted';
 
   if (compact) {
     return (

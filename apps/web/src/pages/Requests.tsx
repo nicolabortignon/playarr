@@ -1,6 +1,6 @@
 import type { AlbumRequest } from '@playarr/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, Search, Settings, X } from 'lucide-react';
+import { Binoculars, Search, Settings, X } from 'lucide-react';
 import { Link } from 'react-router';
 import { create } from 'zustand';
 import { IconButton } from '../components/Button';
@@ -78,7 +78,7 @@ function NoRequests({ lidarr }: { lidarr: boolean }) {
   if (lidarr && enabled) {
     return (
       <EmptyState
-        icon={Download}
+        icon={Binoculars}
         title="Ask for an album you don’t have."
         hint="Search for it and press Request: it lands in your library once Lidarr finds it."
         action={{ label: 'Search', icon: <Search />, to: '/search' }}
@@ -92,27 +92,27 @@ function NoRequests({ lidarr }: { lidarr: boolean }) {
   if (!lidarr) {
     return admin ? (
       <EmptyState
-        icon={Download}
+        icon={Binoculars}
         title="Requests need a Lidarr source."
         hint="Add one, and you can ask Lidarr for albums you don’t have, right from Search."
         action={{ label: 'Add Lidarr', icon: <Settings />, to: '/settings/sources' }}
       />
     ) : (
-      <EmptyState icon={Download} title="Requests aren’t set up on this server." hint="They need a Lidarr source, which an admin can add." />
+      <EmptyState icon={Binoculars} title="Requests aren’t set up on this server." hint="They need a Lidarr source, which an admin can add." />
     );
   }
   if (me && !me.canRequest) {
-    return <EmptyState icon={Download} title="Your account can’t request albums." hint={admin ? 'Allow it for yourself in Settings → Accounts.' : 'An admin can allow it.'} />;
+    return <EmptyState icon={Binoculars} title="Your account can’t request albums." hint={admin ? 'Allow it for yourself in Settings → Accounts.' : 'An admin can allow it.'} />;
   }
   return admin ? (
     <EmptyState
-      icon={Download}
+      icon={Binoculars}
       title="Requests are turned off."
       hint="Nobody can ask Lidarr for albums until they’re on again."
       action={{ label: 'Turn them on', icon: <Settings />, to: '/settings/requests' }}
     />
   ) : (
-    <EmptyState icon={Download} title="Requests are turned off on this server." hint="An admin can turn them on." />
+    <EmptyState icon={Binoculars} title="Requests are turned off on this server." hint="An admin can turn them on." />
   );
 }
 
@@ -160,7 +160,7 @@ function RequestRow({ request: r }: { request: AlbumRequest }) {
       <div className="min-w-0 flex-1">
         <div className="truncate type-body text-paper">{r.title}</div>
         <div className="truncate type-small text-muted">{r.artistName}</div>
-        <div className="mt-1 truncate font-mono text-[11px] text-muted">
+        <div className="mt-1 truncate type-meta text-muted">
           {message ?? (state === 'available' ? 'Ready to play' : state)} · requested {ago(r.requestedAt)}
         </div>
         {state === 'downloading' && (
@@ -189,7 +189,7 @@ function RequestRow({ request: r }: { request: AlbumRequest }) {
           onClick={remove}
           className="pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
         >
-          <X className="size-4" />
+          <X className="size-4.5" />
         </IconButton>
       )}
     </li>

@@ -37,7 +37,7 @@ export function PlaylistsPage() {
             className="group flex aspect-square animate-rise flex-col items-center justify-center gap-3 rounded-cover border border-dashed border-paper/20 text-paper-dim transition hover:border-accent hover:text-paper"
           >
             <span className="grid size-12 place-items-center rounded-full bg-accent text-accent-ink transition group-hover:scale-105">
-              <Plus className="size-6" />
+              <Plus className="size-5" />
             </span>
             New playlist
           </button>
@@ -92,5 +92,5 @@ export function PlaylistCard({ playlist: p, style, className }: { playlist: Play
 /** The playlist's one menu (components/menus.ts), with Play and Shuffle first; its owner's actions are on its page. */
 function PlaylistCardMenu({ playlist, at, onClose }: { playlist: PlaylistSummary; at: NonNullable<CardMenuAt>; onClose: () => void }) {
   const items = usePlaylistMenu(playlist, { card: true });
-  return <ContextMenu items={items} label={`More for ${playlist.name}`} at={at.at} keyboard={at.keyboard} onClose={onClose} />;
+  return <ContextMenu items={items} label={`More for “${playlist.name}”`} at={at.at} keyboard={at.keyboard} onClose={onClose} />;
 }

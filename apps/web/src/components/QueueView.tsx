@@ -1,5 +1,5 @@
 import type { Track } from '@playarr/shared';
-import { ListMusic, ListPlus } from 'lucide-react';
+import { List, ListPlus } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
@@ -50,7 +50,7 @@ export function QueueView({ narrow }: { narrow?: boolean }) {
   const upcoming = upcomingIds.map((i) => queue[i]!);
   const total = upcoming.reduce((sum, t) => sum + t.duration, 0);
 
-  if (!track) return <EmptyState icon={ListMusic} title="Nothing queued yet." action="lucky" className={narrow ? 'py-10 md:py-10' : undefined} />;
+  if (!track) return <EmptyState icon={List} title="Nothing queued yet." action="lucky" className={narrow ? 'py-10 md:py-10' : undefined} />;
 
   return (
     <>
@@ -99,8 +99,14 @@ export function QueueView({ narrow }: { narrow?: boolean }) {
 
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="type-kicker text-muted">
-            Up next{upcoming.length > 0 && ` · ${plural(upcoming.length, 'song')} · ${formatDuration(total)}`}
+          {/* The kicker, then its numbers as numbers: in the column's 340 px, as spaced capitals they took two lines. */}
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+            <span className="type-kicker text-muted">Up next</span>
+            {upcoming.length > 0 && (
+              <span className="type-meta text-muted">
+                {plural(upcoming.length, 'song')} · {formatDuration(total)}
+              </span>
+            )}
           </div>
           {upcoming.length > 0 && (
             <Button variant="ghost" size="small" onClick={() => clearWithUndo(upcomingIds)}>

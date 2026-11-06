@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
 import type { ComponentPropsWithRef, ReactNode } from 'react';
 import { Link, type LinkProps } from 'react-router';
 import { cn } from '../lib/cn';
@@ -60,7 +60,7 @@ export function Button({ variant = 'secondary', size = 'regular', icon, children
     variant === 'primary' && size === 'large' && 'shadow-glow',
     className,
   );
-  const glyph = pending ? <Loader2 className="animate-spin" /> : icon;
+  const glyph = pending ? <LoaderCircle className="animate-spin" /> : icon;
   const content = (label: ReactNode) => (
     <>
       {glyph && (

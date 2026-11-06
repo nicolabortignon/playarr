@@ -135,7 +135,7 @@ export function InlineError({
   return (
     <div role="alert" className={cn('flex flex-wrap items-center gap-x-4 gap-y-3', className)}>
       <p className="flex min-w-0 items-start gap-2 type-small text-danger">
-        <CircleAlert aria-hidden className="mt-px size-4 shrink-0" />
+        <CircleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
         <span className="min-w-0 break-words">
           {children}
           {children && reason ? ': ' : ''}

@@ -108,10 +108,10 @@ describe('SourcesPanel', () => {
 
   it('puts a source’s actions in its ⋯, in words, Remove last', async () => {
     view();
-    fireEvent.click(await screen.findByRole('button', { name: 'More for Music' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Music”' }));
     expect(menuItems()).toEqual(['Sync now', 'Match again', 'Organize files', 'Edit', 'Move up', 'Remove']);
     fireEvent.keyDown(document, { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: 'More for Lidarr' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Lidarr”' }));
     expect(menuItems()).toEqual(['Sync now', 'Edit', 'Move down', 'Remove']);
   });
 
@@ -119,10 +119,10 @@ describe('SourcesPanel', () => {
     const sync = vi.spyOn(api, 'rescanSource').mockResolvedValue();
     const reorder = vi.spyOn(api, 'reorderSources').mockResolvedValue({ sources: [MUSIC, LIDARR], canEdit: true });
     view();
-    fireEvent.click(await screen.findByRole('button', { name: 'More for Music' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Music”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Sync now' }));
     await waitFor(() => expect(sync.mock.calls[0]?.[0]).toBe(2));
-    fireEvent.click(screen.getByRole('button', { name: 'More for Music' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Music”' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move up' }));
     await waitFor(() => expect(reorder.mock.calls[0]?.[0]).toEqual([2, 1]));
   });

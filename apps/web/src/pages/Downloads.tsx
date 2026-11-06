@@ -73,10 +73,10 @@ function Row({ download: d }: { download: Download }) {
             onClick={() => playTracks(d.tracks, 0, { shuffle: false, source: { label: d.title, href: d.href } })}
             className="relative z-10 grid size-10 shrink-0 place-items-center rounded-full bg-accent text-accent-ink transition tap-target hover:brightness-110"
           >
-            <Play className="size-4 fill-current" />
+            <Play className="size-4.5 fill-current" />
           </button>
           <IconButton label={`Remove ${d.title} from this device`} title="Remove from this device" onClick={() => removeDownloadWithUndo(d)} className="relative z-10">
-            <X className="size-4" />
+            <X className="size-4.5" />
           </IconButton>
         </>
       }

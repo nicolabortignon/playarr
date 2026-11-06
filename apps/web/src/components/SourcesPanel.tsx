@@ -4,18 +4,17 @@ import {
   ArrowUp,
   Check,
   Folder,
-  FolderOpen,
   FolderTree,
   GripVertical,
-  Loader2,
+  LoaderCircle,
   Network,
   Pencil,
   Plus,
   RefreshCw,
   ScanSearch,
   Server,
+  Trash,
   TriangleAlert,
-  X,
 } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
@@ -161,7 +160,8 @@ function SourceRow({
     ...(onMove && !first ? [{ label: 'Move up', icon: ArrowUp, onSelect: () => onMove(-1) }] : []),
     ...(onMove && !last ? [{ label: 'Move down', icon: ArrowDown, onSelect: () => onMove(1) }] : []),
     DIVIDER,
-    { label: 'Remove', icon: X, onSelect: () => setRemoving(true) },
+    // It asks first (the songs leave the library): Delete's glyph, as an account's Remove (docs/design.md, Icons).
+    { label: 'Remove', icon: Trash, onSelect: () => setRemoving(true) },
   ];
 
   return (
@@ -181,11 +181,11 @@ function SourceRow({
           onPointerDown={(e) => controls.start(e)}
           className="-mr-1 grid h-11 w-6 shrink-0 cursor-grab touch-none place-items-center text-muted active:cursor-grabbing"
         >
-          <GripVertical className="size-4" />
+          <GripVertical className="size-4.5" />
         </span>
       )}
       <span className="grid size-11 shrink-0 place-items-center rounded-md bg-ink-800 text-accent">
-        {remote ? <Network className="size-5" /> : s.kind === 'folder' ? <FolderOpen className="size-5" /> : <Server className="size-5" />}
+        {remote ? <Network className="size-5" /> : s.kind === 'folder' ? <Folder className="size-5" /> : <Server className="size-5" />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-2">
@@ -193,7 +193,7 @@ function SourceRow({
             <span className="type-body break-words text-paper">{s.name}</span>
             {!s.enabled && <span className="ml-2 type-badge text-muted">Off</span>}
           </div>
-          {canEdit && <Menu label={`More for ${s.name}`} items={menu} className="-my-1.5 -mr-1" />}
+          {canEdit && <Menu label={`More for “${s.name}”`} items={menu} className="-my-1.5 -mr-1" />}
         </div>
         {where && <div className="type-meta break-all text-muted">{where}</div>}
         <div className="mt-0.5 type-small text-paper-dim">
@@ -381,7 +381,7 @@ function SourceDialog({
       ) : formKind === 'folder' ? (
         <FolderForm key={editing?.id ?? 'new'} source={editing} onDone={onClose} />
       ) : (
-        <div className="space-y-2 p-5">
+        <div className="space-y-2">
           <KindOption
             icon={<Server className="size-5" />}
             title="Lidarr"
@@ -390,7 +390,7 @@ function SourceDialog({
             onClick={() => setKind('lidarr')}
           />
           <KindOption
-            icon={<FolderOpen className="size-5" />}
+            icon={<Folder className="size-5" />}
             title="Folder"
             detail="Music in a folder: on this server, another machine over SSH or SFTP, or an SMB share. Playarr only reads it."
             onClick={() => setKind('folder')}
@@ -459,7 +459,7 @@ function LidarrForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
   };
 
   return (
-    <form onSubmit={save} className="space-y-4 p-5">
+    <form onSubmit={save} className="space-y-4">
       <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} />
       <TextField label="URL" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.1.10:8686" required />
       {replacingKey ? (
@@ -484,12 +484,12 @@ function LidarrForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
       )}
       {test === 'running' && (
         <p className="flex items-center gap-2 type-small text-muted">
-          <Loader2 className="size-4 animate-spin" /> Connecting…
+          <LoaderCircle className="size-3.5 animate-spin" /> Connecting…
         </p>
       )}
       {test && test !== 'running' && (
         <p className={cn('flex items-center gap-2 type-small', test.ok ? 'text-success' : 'text-danger')}>
-          {test.ok ? <Check className="size-4" /> : <TriangleAlert className="size-4" />}
+          {test.ok ? <Check className="size-3.5" /> : <TriangleAlert className="size-3.5" />}
           {test.ok ? `Connected to Lidarr ${test.version ?? ''}` : test.error}
         </p>
       )}
@@ -592,7 +592,7 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
   };
 
   return (
-    <form onSubmit={save} className="space-y-4 p-5">
+    <form onSubmit={save} className="space-y-4">
       <Choice
         label="Where the folder is"
         options={ACCESS.map((a) => {

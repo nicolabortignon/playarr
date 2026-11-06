@@ -280,6 +280,11 @@ body::after {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* The phone's tab bar, under each tab's icon: as small as a badge, in the sans (iOS: the system's tab bar). */
+@utility type-tab {
+  font-size: 10px;
+  letter-spacing: 0.025em;
+}
 
 /*
  * Long grids: the browser skips laying out and painting cards far off screen (it keeps their estimated

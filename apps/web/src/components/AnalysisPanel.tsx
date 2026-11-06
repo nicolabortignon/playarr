@@ -142,7 +142,7 @@ function AskFirst({
         {label}
       </Button>
       <Dialog open={asking} onClose={() => setAsking(false)} title={question}>
-        <div className="space-y-5 p-5">
+        <div className="space-y-5">
           <p className="type-body text-paper-dim">{explain}</p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setAsking(false)}>Cancel</Button>

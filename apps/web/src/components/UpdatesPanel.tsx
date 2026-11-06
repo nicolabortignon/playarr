@@ -18,7 +18,7 @@ const INTERVALS: readonly { value: UpdateInterval; label: string }[] = [
 ];
 
 const LOG =
-  'mt-3 max-h-80 overflow-auto rounded-lg border border-line bg-ink-900 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-paper-dim';
+  'mt-3 max-h-80 overflow-auto rounded-lg border border-line bg-ink-900 p-3 type-meta leading-relaxed whitespace-pre-wrap text-paper-dim';
 
 const short = (sha: string) => sha.slice(0, 7);
 
@@ -42,7 +42,7 @@ export function UpdatesPanel() {
   const busy = data.requested || data.status?.state === 'checking';
   return (
     <div>
-      <p className="mb-10 max-w-prose text-[15px] text-paper-dim">
+      <p className="mb-10 max-w-prose type-body text-paper-dim">
         Playarr downloads the latest version from GitHub, rebuilds itself and restarts. The music keeps playing from your
         device’s cache, and a failed update leaves the running version alone.
       </p>
@@ -65,7 +65,7 @@ export function UpdatesPanel() {
               onChange={(enabled) => save.mutate({ enabled })}
             />
             <div className="mt-2">
-              <p className={cn('mb-2 text-[13px] text-muted', !data.enabled && 'opacity-50')}>Check every</p>
+              <p className={cn('mb-2 type-small text-muted', !data.enabled && 'opacity-50')}>Check every</p>
               <Choice
                 label="Check every"
                 options={INTERVALS}
@@ -89,7 +89,7 @@ export function UpdatesPanel() {
             </Button>
             {data.log && (
               <details className="mt-6">
-                <summary className="cursor-pointer text-[13px] text-muted hover:text-paper">Show log</summary>
+                <summary className="cursor-pointer type-small text-muted hover:text-paper">Show log</summary>
                 <pre className={LOG}>
                   {data.log}
                 </pre>
@@ -108,14 +108,14 @@ function Version({ info }: { info: UpdateInfo }) {
   const running = deployed ?? __APP_REVISION__;
   const upToDate = latest && running ? latest.startsWith(running) || running.startsWith(latest) : undefined;
   return (
-    <div className="space-y-1 text-[15px]">
+    <div className="space-y-1 type-body">
       <p className="text-paper">
         Playarr v{__APP_VERSION__}
-        {__APP_REVISION__ && <span className="font-mono text-[13px] text-muted"> · {__APP_REVISION__}</span>}
+        {__APP_REVISION__ && <span className="type-meta text-muted"> · {__APP_REVISION__}</span>}
       </p>
       {latest && (
         <p className="text-paper-dim">
-          Latest on GitHub: <span className="font-mono text-[13px]">{short(latest)}</span>
+          Latest on GitHub: <span className="type-meta">{short(latest)}</span>
           {upToDate !== undefined && (
             <span className={upToDate ? 'text-muted' : 'text-accent'}>
               {' · '}
@@ -131,14 +131,14 @@ function Version({ info }: { info: UpdateInfo }) {
 function Unavailable({ reason }: { reason?: string }) {
   const notRunning = reason?.includes('update.sh');
   return (
-    <div className="max-w-prose text-[15px] text-paper-dim">
+    <div className="max-w-prose type-body text-paper-dim">
       <p>
         {notRunning
           ? 'The updater isn’t running yet. To start it, run this once in Playarr’s folder on the server:'
           : `${reason ?? 'Automatic updates aren’t available here'}.`}
       </p>
       {notRunning && (
-        <pre className="mt-3 overflow-x-auto rounded-lg border border-line bg-ink-900 px-3 py-2 font-mono text-[13px] text-paper">
+        <pre className="mt-3 overflow-x-auto rounded-lg border border-line bg-ink-900 px-3 py-2 type-meta text-paper">
           sudo sh update.sh
         </pre>
       )}
@@ -149,19 +149,19 @@ function Unavailable({ reason }: { reason?: string }) {
 function LastCheck({ info }: { info: UpdateInfo }) {
   const status = info.status;
   if (status?.state === 'checking' || (info.requested && !status?.lastCheck)) {
-    return <p className="text-[15px] text-paper-dim">Checking for a new version…</p>;
+    return <p className="type-body text-paper-dim">Checking for a new version…</p>;
   }
-  if (!status?.lastCheck) return <p className="text-[15px] text-muted">Not checked yet.</p>;
+  if (!status?.lastCheck) return <p className="type-body text-muted">Not checked yet.</p>;
   const outcome =
     status.state === 'failed' ? (
       <span className="text-danger">{status.error ?? 'The update failed'}</span>
     ) : status.lastUpdate === status.lastCheck && status.deployed ? (
-      <span className="text-paper">Updated to <span className="font-mono text-[13px]">{short(status.deployed)}</span></span>
+      <span className="text-paper">Updated to <span className="type-meta">{short(status.deployed)}</span></span>
     ) : (
       <span className="text-paper">Already up to date</span>
     );
   return (
-    <p className="text-[15px] text-paper-dim">
+    <p className="type-body text-paper-dim">
       <time dateTime={new Date(status.lastCheck * 1000).toISOString()} title={new Date(status.lastCheck * 1000).toLocaleString()}>
         {ago(status.lastCheck)}
       </time>

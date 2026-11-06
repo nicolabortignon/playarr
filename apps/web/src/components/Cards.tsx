@@ -98,7 +98,7 @@ export function AlbumCard({ album, size = 220, style, className }: { album: Albu
 /** The album's one menu (components/menus.ts), with Play and Shuffle first: a card on a touch screen has no Play button. */
 function AlbumCardMenu({ album, at, onClose }: { album: Album; at: NonNullable<CardMenuAt>; onClose: () => void }) {
   const items = useAlbumMenu(album, { card: true });
-  return <ContextMenu items={items} label={`More for ${album.title}`} at={at.at} keyboard={at.keyboard} onClose={onClose} />;
+  return <ContextMenu items={items} label={`More for “${album.title}”`} at={at.at} keyboard={at.keyboard} onClose={onClose} />;
 }
 
 /**

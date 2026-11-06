@@ -222,7 +222,7 @@ describe('Playarr web against live server', () => {
       const album = (await (await fetch('/api/albums/8')).json()) as { title: string; tracks: { title: string }[] };
       renderAt('/albums/8');
       await screen.findByRole('heading', { name: album.title });
-      const [albumMenu] = screen.getAllByRole('button', { name: 'More actions' });
+      const [albumMenu] = screen.getAllByRole('button', { name: `More for “${album.title}”` });
       await act(async () => fireEvent.click(albumMenu!));
       const addItem = await screen.findByRole('menuitem', { name: 'Add to playlist…' });
       await act(async () => fireEvent.click(addItem));

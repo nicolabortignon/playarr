@@ -86,7 +86,7 @@ export function AlbumPage() {
               item: { key: `album:${album.id}`, title: album.title, subtitle: album.artistName, coverUrl: album.coverUrl, href: `/albums/${album.id}` },
               tracks: album.tracks,
             }}
-            menu={{ items: menu }}
+            menu={{ label: `More for “${album.title}”`, items: menu }}
           />
         </DetailHeader>
 

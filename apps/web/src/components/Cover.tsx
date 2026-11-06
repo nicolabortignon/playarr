@@ -105,8 +105,9 @@ function Placeholder({ label }: { label: string }) {
     <div
       className="absolute inset-0 grid place-items-center"
       style={{
+        // The grooves, in the ink tones.
         background:
-          'repeating-radial-gradient(circle at center, #1d1b17 0 2px, #171612 2px 5px), #171612',
+          'repeating-radial-gradient(circle at center, var(--color-ink-800) 0 2px, var(--color-ink-850) 2px 5px), var(--color-ink-850)',
       }}
     >
       <div className="grid aspect-square w-[38%] place-items-center rounded-full bg-accent/90 text-accent-ink">

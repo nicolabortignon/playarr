@@ -81,7 +81,7 @@ describe('mixes', () => {
     fireEvent.click(screen.getByRole('button', { name: /new mix/i }));
     await waitFor(() => expect(regenerate).toHaveBeenCalledWith('vibes'));
     expect(await screen.findByText('Song 3')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Mix actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Vibes of the hour”' }));
     fireEvent.click(await screen.findByText('Save as playlist'));
     await waitFor(() => expect(save).toHaveBeenCalledWith('vibes'));
   });

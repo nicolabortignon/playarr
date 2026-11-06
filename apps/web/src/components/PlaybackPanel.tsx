@@ -107,20 +107,31 @@ export function PlaybackPanel() {
           title="Keyboard shortcuts"
           description={
             <>
-              They work anywhere in Playarr, except while you’re typing. Press <Keys keys={[['?']]} /> to see them over any page.
+              {/* The keycap is taller than the line: it reaches into the lines around it rather than spacing them out. */}
+              They work anywhere in Playarr, except while you’re typing. Press <Keys keys={[['?']]} className="-my-1 align-middle" /> to see them
+              over any page.
             </>
           }
         >
-          <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-3">
-            {SHORTCUT_SIDES.flatMap(({ shortcuts }) => shortcuts).map(({ keys, action }) => (
-              <Fragment key={action}>
-                <dt>
-                  <Keys keys={keys} />
-                </dt>
-                <dd className="type-small text-paper-dim">{action}</dd>
-              </Fragment>
+          {/* In the sleeve's two sides: what a side is about goes without saying in its lines ("Add to Favorites"). One
+              grid for both, so the actions of both sides start at the same line. */}
+          <div className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-6">
+            {SHORTCUT_SIDES.map(({ side, title, shortcuts }) => (
+              <div key={side} className="col-span-2 grid grid-cols-subgrid">
+                <h3 className="col-span-2 mb-3 type-small text-paper">{title}</h3>
+                <dl className="col-span-2 grid grid-cols-subgrid items-center gap-y-3">
+                  {shortcuts.map(({ keys, action }) => (
+                    <Fragment key={action}>
+                      <dt>
+                        <Keys keys={keys} />
+                      </dt>
+                      <dd className="type-small text-paper-dim">{action}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              </div>
             ))}
-          </dl>
+          </div>
         </SettingsSection>
       )}
     </div>

@@ -12,7 +12,7 @@ afterEach(() => {
 
 const track = { id: 1, fileId: 11, title: 'Airbag', recordingId: 'r1' } as Track;
 const download = { item: { key: 'album:7', title: 'OK Computer', href: '/albums/7' }, tracks: [track] };
-const menu = { items: [{ label: 'Play next', icon: ListPlus, onSelect: () => {} }] };
+const menu = { label: 'More for “OK Computer”', items: [{ label: 'Play next', icon: ListPlus, onSelect: () => {} }] };
 
 const row = (props: Partial<ActionRowProps> = {}) => (
   <ActionRow title="OK Computer" state="idle" onPlay={() => {}} onShuffle={() => {}} download={download} menu={menu} {...props} />
@@ -24,7 +24,7 @@ const names = () => screen.getAllByRole('button').map((b) => b.getAttribute('ari
 describe('ActionRow', () => {
   it('holds Play, Shuffle, the page’s own action, Download and ⋯, in that order', () => {
     render(row({ action: <RowAction icon={<RefreshCw />}>New mix</RowAction> }));
-    expect(names()).toEqual(['Play OK Computer', 'Shuffle OK Computer', 'New mix', 'Download OK Computer', 'More actions']);
+    expect(names()).toEqual(['Play OK Computer', 'Shuffle OK Computer', 'New mix', 'Download OK Computer', 'More for “OK Computer”']);
   });
 
   it('plays and shuffles, and neither while there’s nothing to play', () => {

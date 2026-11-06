@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ChartColumn, Disc3, Download, Heart, Library as LibraryIcon, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
+import { ArrowDownToLine, Binoculars, ChartColumn, Disc3, Heart, MicVocal, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { IconButton } from '../components/Button';
 import { NavRow } from '../components/NavRow';
@@ -26,9 +26,9 @@ export function LibraryPage() {
     { to: STATS_PATH, label: 'Your listening', icon: ChartColumn },
     ...(downloads ? [{ to: '/downloads', label: 'Downloads', icon: ArrowDownToLine, detail: String(downloads) }] : []),
     { to: '/favorites', label: 'Favorites', icon: Heart, detail: favorites ? plural(favorites.length, 'song') : undefined },
-    { to: '/artists', label: 'Artists', icon: LibraryIcon, detail: lib ? String(lib.artists) : undefined },
+    { to: '/artists', label: 'Artists', icon: MicVocal, detail: lib ? String(lib.artists) : undefined },
     { to: '/albums', label: 'Albums', icon: Disc3, detail: lib ? String(lib.albums) : undefined },
-    ...(requests?.length ? [{ to: '/requests', label: 'Requests', icon: Download, detail: String(requests.length) }] : []),
+    ...(requests?.length ? [{ to: '/requests', label: 'Requests', icon: Binoculars, detail: String(requests.length) }] : []),
     { to: '/settings', label: 'Settings', icon: Settings },
   ];
 

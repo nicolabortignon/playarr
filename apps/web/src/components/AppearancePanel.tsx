@@ -31,7 +31,7 @@ export function AppearancePanel() {
       {locked && <AwayNotice>Only an admin can change Appearance for your account.</AwayNotice>}
       <SettingsSection title="Accent color">
         <AccentPicker value={accent} onChange={setAccent} disabled={locked} />
-        <p className="mt-3 text-[13px] text-muted">
+        <p className="mt-3 type-small text-muted">
           {accent === 'album'
             ? 'From the album art: the color follows the song playing.'
             : `${accentName(accent)}, whatever is playing.`}
@@ -95,7 +95,7 @@ function AccentPicker({ value, onChange, disabled }: { value: AccentPref; onChan
               disabled && !checked && 'opacity-40',
             )}
           >
-            {checked && <Check aria-hidden className="size-4 text-ink-900" strokeWidth={3} />}
+            {checked && <Check aria-hidden className="size-4 text-ink-900" />}
           </button>
         );
       })}

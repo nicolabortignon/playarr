@@ -36,7 +36,7 @@ export function FavoritesPage() {
             onPlay={() => (playState !== 'idle' ? toggle() : playTracks(songs, 0, { shuffle: false, source: FAVORITES }))}
             onShuffle={() => playTracks(songs, 0, { shuffle: true, source: FAVORITES })}
             download={{ item: { key: 'favorites', title: 'Favorites', subtitle: 'Your favorite songs', href: '/favorites' }, tracks: songs }}
-            menu={{ items: queueItems(songs, openPicker) }}
+            menu={{ label: 'More for Favorites', items: queueItems(songs, openPicker) }}
           />
         )}
       </DetailHeader>
@@ -64,7 +64,7 @@ function FavoritesCover({ className }: { className?: string }) {
         className,
       )}
     >
-      <Heart className="size-[34cqi] fill-paper text-paper" strokeWidth={1.5} />
+      <Heart className="size-[34cqi] fill-paper text-paper" />
     </div>
   );
 }

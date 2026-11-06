@@ -1,4 +1,4 @@
-import { ArrowDownToLine, Disc3, Download, Heart, Home, Library, LibraryBig, ListMusic, Plus, Search, Settings, Sparkles, type LucideIcon } from 'lucide-react';
+import { ArrowDownToLine, Binoculars, Disc3, Heart, House, LibraryBig, List, MicVocal, Plus, Search, Settings, Sparkles, type LucideIcon } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import { cn } from '../lib/cn';
@@ -9,28 +9,28 @@ import { IconButton } from './Button';
 type NavItem = { to: string; label: string; icon: LucideIcon };
 
 const LINKS: NavItem[] = [
-  { to: '/', label: 'Home', icon: Home },
+  { to: '/', label: 'Home', icon: House },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/mixes', label: 'Made for you', icon: Sparkles },
-  { to: '/artists', label: 'Artists', icon: Library },
+  { to: '/artists', label: 'Artists', icon: MicVocal },
   { to: '/albums', label: 'Albums', icon: Disc3 },
   { to: '/favorites', label: 'Favorites', icon: Heart },
   { to: '/downloads', label: 'Downloads', icon: ArrowDownToLine },
-  { to: '/queue', label: 'Queue', icon: ListMusic },
+  { to: '/queue', label: 'Queue', icon: List },
 ];
 
 /** Phones get four roomy tabs; Library gathers playlists, favorites, artists and albums. */
 const MOBILE_LINKS: NavItem[] = [
-  { to: '/', label: 'Home', icon: Home },
+  { to: '/', label: 'Home', icon: House },
   { to: '/search', label: 'Search', icon: Search },
   { to: '/library', label: 'Library', icon: LibraryBig },
-  { to: '/queue', label: 'Queue', icon: ListMusic },
+  { to: '/queue', label: 'Queue', icon: List },
 ];
 
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
-      <span className="relative grid size-7 place-items-center rounded-full bg-[repeating-radial-gradient(circle,#2a2823_0_1px,#161512_1px_3px)] ring-1 ring-paper/10">
+      <span className="relative grid size-7 place-items-center rounded-full bg-[repeating-radial-gradient(circle,var(--color-ink-700)_0_1px,var(--color-ink-850)_1px_3px)] ring-1 ring-paper/10">
         <span className="size-2.5 rounded-full bg-accent shadow-[0_0_12px_var(--accent)]" />
       </span>
       <span className="font-display text-[1.6rem] leading-none tracking-tight text-paper">
@@ -92,22 +92,16 @@ export function Sidebar() {
           ))}
           {(requests?.length ?? 0) > 0 && (
             <Fold open={!folded || onRequests}>
-              <NavLink
-                to="/requests"
-                className={({ isActive }) =>
-                  cn(
-                    'relative flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
-                    !folded && 'mt-4',
-                    isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
-                  )
-                }
-              >
-                <Download className="size-[18px]" strokeWidth={1.75} />
-                Requests
-                {active > 0 && (
-                  <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 font-mono text-[10px] leading-5 text-accent-ink">
-                    {active}
-                  </span>
+              <NavLink to="/requests" className={({ isActive }) => cn(placeLink(isActive), !folded && 'mt-4')}>
+                {({ isActive }) => (
+                  <>
+                    <PlaceLabel icon={Binoculars} label="Requests" current={isActive} />
+                    {active > 0 && (
+                      <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 type-badge leading-5 text-accent-ink">
+                        {active}
+                      </span>
+                    )}
+                  </>
                 )}
               </NavLink>
             </Fold>
@@ -122,12 +116,12 @@ export function Sidebar() {
           to="/settings"
           className={({ isActive }) =>
             cn(
-              '-mx-3 flex h-9 items-center gap-3 rounded-md px-3 text-[14px] transition-colors',
+              '-mx-3 flex h-9 items-center gap-3 rounded-md px-3 type-body transition-colors',
               isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
             )
           }
         >
-          <Settings className="size-[17px]" strokeWidth={1.75} />
+          <Settings className="size-4.5" />
           Settings
         </NavLink>
       </div>
@@ -150,30 +144,34 @@ function Fold({ open, children }: { open: boolean; children: ReactNode }) {
   );
 }
 
-function SidebarLink({ item: { to, label, icon: Icon } }: { item: NavItem }) {
+/**
+ * The look of a link in a column of places (the sidebar's, Settings' beside its panel): the place's glyph and name,
+ * the one you're on lit, with the accent's bar at its edge (`PlaceLabel`).
+ */
+export const placeLink = (current: boolean) =>
+  cn('relative flex h-10 items-center gap-3.5 rounded-md px-3 type-body transition-colors', current ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper');
+
+/** What a link of `placeLink` holds: the accent's bar (on the one you're on), the place's glyph, its name. */
+export function PlaceLabel({ icon: Icon, label, current }: { icon: LucideIcon; label: string; current: boolean }) {
   return (
-    <NavLink
-      to={to}
-      end={to === '/'}
-      className={({ isActive }) =>
-        cn(
-          'group relative flex h-10 items-center gap-3.5 rounded-md px-3 text-[15px] transition-colors',
-          isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <span
-            className={cn(
-              'absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-accent transition-transform duration-300 ease-out-expo',
-              isActive ? 'scale-y-100' : 'scale-y-0',
-            )}
-          />
-          <Icon className="size-[18px]" strokeWidth={isActive ? 2.25 : 1.75} />
-          {label}
-        </>
-      )}
+    <>
+      <span
+        aria-hidden
+        className={cn(
+          'absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-accent transition-transform duration-300 ease-out-expo',
+          current ? 'scale-y-100' : 'scale-y-0',
+        )}
+      />
+      <Icon aria-hidden className="size-4.5 shrink-0" />
+      <span className="min-w-0 truncate">{label}</span>
+    </>
+  );
+}
+
+function SidebarLink({ item: { to, label, icon } }: { item: NavItem }) {
+  return (
+    <NavLink to={to} end={to === '/'} className={({ isActive }) => placeLink(isActive)}>
+      {({ isActive }) => <PlaceLabel icon={icon} label={label} current={isActive} />}
     </NavLink>
   );
 }
@@ -188,14 +186,14 @@ function SidebarPlaylists() {
           to="/playlists"
           end
           className={({ isActive }) =>
-            cn('font-mono text-[11px] tracking-[0.2em] uppercase transition', isActive ? 'text-paper' : 'text-muted hover:text-paper')
+            cn('type-kicker transition', isActive ? 'text-paper' : 'text-muted hover:text-paper')
           }
         >
           Playlists
         </NavLink>
         {/* Taller than the heading's line: the negative margins keep the line as it is. */}
         <IconButton label="New playlist" title="New playlist" onClick={() => openPicker([])} className="-my-1 pointer-coarse:-my-2">
-          <Plus className="size-4" />
+          <Plus className="size-4.5" />
         </IconButton>
       </div>
       {playlists?.map((p) => (
@@ -204,7 +202,7 @@ function SidebarPlaylists() {
           to={`/playlists/${p.id}`}
           className={({ isActive }) =>
             cn(
-              'block truncate rounded-md px-3 py-1.5 text-[14px] transition-colors',
+              'block truncate rounded-md px-3 py-1.5 type-body transition-colors',
               isActive ? 'bg-paper/[0.06] text-paper' : 'text-paper-dim/70 hover:text-paper',
             )
           }
@@ -212,7 +210,7 @@ function SidebarPlaylists() {
           {p.name}
         </NavLink>
       ))}
-      {playlists?.length === 0 && <p className="px-3 text-[13px] text-muted">No playlists yet.</p>}
+      {playlists?.length === 0 && <p className="px-3 type-small text-muted">No playlists yet.</p>}
     </div>
   );
 }
@@ -230,12 +228,12 @@ export function BottomNav() {
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              cn('flex flex-col items-center justify-center gap-1 text-[10px] tracking-wide transition-colors', isActive ? 'text-paper' : 'text-muted')
+              cn('flex flex-col items-center justify-center gap-1 type-tab transition-colors', isActive ? 'text-paper' : 'text-muted')
             }
           >
             {({ isActive }) => (
               <>
-                <Icon className={cn('size-[22px]', isActive && 'text-accent')} strokeWidth={isActive ? 2.25 : 1.75} />
+                <Icon className={cn('size-5.5', isActive && 'text-accent')} />
                 {label}
               </>
             )}
