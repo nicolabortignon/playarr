@@ -4,7 +4,7 @@ Proposed 2026-11-05 from a review of every screen of both apps (how, below); not
 
 **Goal:** the same thing looks, sits and reads the same everywhere, on every page and in both apps. A song row, a Play button, a page header, an empty page or a removal is designed once, written down once and built once per platform. Where iOS and the web differ, the platform is the reason (the tab bar, sheets, SF Symbols), never that the same thing was built twice.
 
-**The rule:** a new screen uses the shared components; when none fits, the component and `docs/design.md` change together. Pages never hold raw colours, sizes or radii.
+**The rule:** a new screen uses the shared components; when none fits, the component and `docs/design.md` change together. Pages never hold raw colors, sizes or radii.
 
 ## How the screens were reviewed
 
@@ -18,7 +18,7 @@ Proposed 2026-11-05 from a review of every screen of both apps (how, below); not
 There is no design doc. The tokens live in `apps/web/src/index.css` (`ink-*`, `paper`, `paper-dim`, `muted`, `line`, `accent`) and in iOS's `Theme/`. iOS has no ink or paper tokens: secondary text is white at 70% in cards and rows (`Muted.swift:12`), and the system `.secondary` on detail pages (`AlbumView.swift:115`, `ArtistView.swift:85`, `PlaylistView.swift:112`).
 
 - `docs/design.md`, one page, covering:
-  - colour roles: surface, text, secondary text, muted, line, accent, danger, success;
+  - color roles: surface, text, secondary text, muted, line, accent, danger, success;
   - the type scale by role: page title, section title, kicker, row title 15, row subtitle 13, meta, badge;
   - radii: covers and thumbnails 4, panels 12, dialogs 16, pills full;
   - two cover shadows;
@@ -75,13 +75,13 @@ The standard:
   - sign-in.
 
   Home has no title at all.
-- **Web, kickers:** four colours (`text-paper-dim/70`, `/80`, `text-muted`, accent) and two trackings.
-- **Home, greeting:** iOS greets ("Hi, Demo.") with the account avatar beside it; the web shows the wordmark over a grey line. Both should greet by name; plan 7 §4 adds the time of day.
+- **Web, kickers:** four colors (`text-paper-dim/70`, `/80`, `text-muted`, accent) and two trackings.
+- **Home, greeting:** iOS greets ("Hi, Demo.") with the account avatar beside it; the web shows the wordmark over a gray line. Both should greet by name; plan 7 §4 adds the time of day.
 - **The standard, both apps:**
   - Tabs and library lists get a large title with its count, and their actions (sort, filter) on the right.
   - Detail pages get, in order: cover, kicker, title, one meta line, then the action row (section 3).
   - The navigation bar shows the title only once the large one has scrolled away.
-  - Kickers use one colour (`muted`) and one tracking.
+  - Kickers use one color (`muted`) and one tracking.
 - **Done when** Albums, Artists, Playlists, Favorites, Downloads, Queue and Library share one header per platform, and no screen shows the same title twice.
 
 ## 5. Rows and cards — M
@@ -99,7 +99,7 @@ The standard:
 - **Artists without a photo** look different in five places:
   - Web Artists page and Home: the name over an album cover, which is hard to read on busy art (Massive Attack on Mezzanine, Arctic Monkeys on AM, Radiohead on In Rainbows).
   - Web Stats and Search: the album cover in a circle.
-  - iOS Artists, Search and the album page's artist line: a grey silhouette.
+  - iOS Artists, Search and the album page's artist line: a gray silhouette.
   - iOS similar artists: a vinyl record with the initial.
 
   Pick one treatment for everywhere: the artist's best album cover, in a circle, with the name **below** it as on album cards. Keep the vinyl monogram for an artist with no cover at all.
@@ -122,15 +122,15 @@ The standard:
   - Search has both "Tracks" and "Songs" headings (`Search.tsx:106`, `:210`) and "Show all N tracks";
   - albums say "3 tracks · 17 min";
   - both apps' search fields say "Artists, albums, tracks", and clearing the queue says "Cleared N tracks".
-- **Favorites** is the noun ("Favorites", "Add to Favorites"). "Songs you love" and "hearted" can stay as flavour in kickers.
+- **Favorites** is the noun ("Favorites", "Add to Favorites"). "Songs you love" and "hearted" can stay as flavor in kickers.
 - **Mixes are "Made for you"** in the nav, "Your mixes" on Home and "Mixes" in Settings. Choose one name for the feature.
 - **Verbs:**
   - Pending verbs end with an ellipsis: "Requesting…", "Looking up…" (`Discover.tsx:55`, `:103`).
   - Retry is always "Try again" (today also "Retry", "Search again" and "Reload").
   - Taking something out of a list is "Remove"; destroying it is "Delete".
-- **Spelling:** the interface mixes them: "Favorites" and "Accent color" beside "analysed", "levelled" and "colour" (in the cover descriptions). Pick one spelling for the interface and sweep both apps and the server's texts (mix descriptions, cover explanations). This one is the owner's call.
+- **Spelling: American**, decided 2026-11-06. The interface mixes them today: "Favorites" and "Accent color" beside "analysed", "levelled" and "colour" (in the cover descriptions). Sweep both apps and the server's texts (mix descriptions, cover explanations) to American: analyzed, leveled, color, organize, favorite.
 - **Badges say what they mean:** "MP3 8" becomes "MP3 · 8 kbps", and the bitrate hides when it's ordinary.
-- **Colour means action:** "Signed in as Demo" at the top of iOS Settings is accent-coloured like a button but does nothing.
+- **Color means action:** "Signed in as Demo" at the top of iOS Settings is accent-colored like a button but does nothing.
 - **Done when** the word list is in `docs/design.md`, and a sweep of both apps and the server's texts matches it.
 
 ## 8. Empty, loading and error: one way each — S–M
@@ -172,7 +172,7 @@ The standard:
 - **A cheap check** in `pnpm typecheck`, or CI:
   - Web: no hex, `rgb(`, `red-`/`emerald-` or `text-[Npx]` outside `index.css` and a short allow-list.
   - iOS: no `Color(red:`, `.system(size:` or literal `cornerRadius` outside `Theme/`.
-- **Done when** each tour runs from one command, and the check fails a page that adds a raw colour.
+- **Done when** each tour runs from one command, and the check fails a page that adds a raw color.
 
 ## Order
 
