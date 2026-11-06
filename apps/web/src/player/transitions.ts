@@ -32,6 +32,11 @@ const GIVE_UP_S = 20;
 const READY_LEAD_S = 1;
 /** After giving up, a jump back this far before the cut-off (a restart) is worth asking again. */
 const RESTART_MARGIN_S = 10;
+/**
+ * The clock can step this little back or ahead without a seek: as a transition takes over from the song, the clock
+ * follows the transition's file, whose time is a few milliseconds off A's own. That's no jump leaving the answer behind.
+ */
+const SETTLE_S = 0.5;
 
 /** What's known of the transition into the next song: the server's answer, or "gave up" (fall back). */
 export type UpcomingResult = TransitionAnswer | { status: 'gave up' };
@@ -300,11 +305,13 @@ function watchUpcomingTransition() {
     // a seek, the slider dragged, or a new song's reset doesn't.
     const listening = !seeked && step > 0 && step <= elapsed * 1.25 + 0.5;
     if (listening) played += step;
+    // A seek or a restart can leave the answer behind; the clock settling as a transition takes over doesn't.
+    const jumped = seeked || (!listening && !(Math.abs(step) <= SETTLE_S));
     lastTime = time;
     lastAt = now;
     const p = pair;
     if (!p) return;
-    if (!listening && outOfStep(p, time)) startOver(p);
+    if (jumped && outOfStep(p, time)) startOver(p);
     else if (!p.ended && tooLate(p)) return giveUp(p, 'late');
     maybeAsk();
   }

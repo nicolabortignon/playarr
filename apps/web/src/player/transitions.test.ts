@@ -424,6 +424,18 @@ describe('giving up and starting over', () => {
     expect(useTransition.getState().ready).toBe(first);
   });
 
+  it('keeps a ready transition as it takes over from the song, the clock stepping a little back without a seek', async () => {
+    transition.mockResolvedValue(ready(170));
+    renderHook(() => useUpcomingTransition());
+    await playTo(169.5);
+    const first = useTransition.getState().ready;
+    // The clock follows the transition's file now, a few milliseconds behind A's own time.
+    await jumpTo(169.46);
+    await playTo(172);
+    expect(useTransition.getState().ready).toBe(first);
+    expect(transition).toHaveBeenCalledTimes(1);
+  });
+
   it('starts over from the new position after a seek past the mix point', async () => {
     transition.mockResolvedValue(ready(170));
     renderHook(() => useUpcomingTransition());
