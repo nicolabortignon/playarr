@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { freshDb } from '../catalog/testFixtures.ts';
 import { Accounts } from './accounts.ts';
-import { hashToken, PROOF_ANSWER, PROOF_ID, Sessions } from './sessions.ts';
+import { hashToken, PROOF_ANSWER, PROOF_ID, SESSION_IDLE_MS, SESSION_MAX_AGE_MS, Sessions } from './sessions.ts';
 import { normalizeCode, SetupCodes } from './setupCodes.ts';
 
 const T0 = Date.parse('2026-11-03T10:00:00Z');
@@ -35,6 +35,42 @@ describe('Sessions', () => {
     expect(sessions.list(1, id).find((s) => s.id === id)).toMatchObject({ device: 'iPhone', platform: 'ios', current: true });    // Device and platform are optional: the web's sign-in may send neither.
     const blank = sessions.create(1, ' ', '');
     expect(sessions.list(1).find((s) => s.id === blank.id)).toMatchObject({ device: 'Unknown device', platform: 'web' });
+  });
+
+  it('ends a session unused for 90 days, and any after a year, however much it was used', () => {
+    const db = freshDb();
+    let now = T0;
+    const sessions = new Sessions(db, () => now);
+    const unused = sessions.create(1, 'Old iPad', 'ios');
+    const daily = sessions.create(1, 'iPhone', 'ios');
+    // The phone is used every day; the iPad never again.
+    for (let day = 1; day < 90; day++) {
+      now = T0 + day * 86_400_000;
+      expect(sessions.resolve(daily.token)).toEqual({ id: daily.id, accountId: 1 });
+    }
+    now = T0 + SESSION_IDLE_MS;
+    expect(sessions.resolve(unused.token)).toBeUndefined();
+    expect(sessions.resolve(daily.token)).toEqual({ id: daily.id, accountId: 1 });
+    // Gone from the list of devices too, and from the database.
+    expect(sessions.list(1).map((s) => s.device)).toEqual(['iPhone']);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM sessions').get()).toEqual({ n: 1 });
+    // Used every day, the phone still signs in again a year after it first did.
+    for (let day = 90; day < 365; day += 30) {
+      now = T0 + day * 86_400_000;
+      expect(sessions.resolve(daily.token)).toBeDefined();
+    }
+    now = T0 + SESSION_MAX_AGE_MS;
+    expect(sessions.resolve(daily.token)).toBeUndefined();
+  });
+
+  it('forgets ended sessions as a device signs in, without asking for them', () => {
+    const db = freshDb();
+    let now = T0;
+    const sessions = new Sessions(db, () => now);
+    sessions.create(1, 'Old iPad', 'ios');
+    now = T0 + SESSION_IDLE_MS + 1;
+    sessions.create(1, 'New iPad', 'ios');
+    expect((db.prepare('SELECT device FROM sessions').all() as { device: string }[]).map((r) => r.device)).toEqual(['New iPad']);
   });
 
   it('writes when a session was last seen at most once a minute', () => {

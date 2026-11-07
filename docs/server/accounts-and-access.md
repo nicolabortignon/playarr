@@ -54,7 +54,7 @@ On an iPhone or iPad, the web's `/redeem` page also offers "Open in the Playarr 
 
 ## 2. Sessions and tokens
 
-`accounts/sessions.ts`. Signing in creates a session: a 256-bit random token (base64url) that the client keeps, stored on the server only as its SHA-256, so a copy of the database signs nobody in. Each session records the device name (up to 80 characters) and platform (up to 20, `web` by default), when it was made and when it was last seen (written at most once a minute). Sessions last until signed out; there's no expiry.
+`accounts/sessions.ts`. Signing in creates a session: a 256-bit random token (base64url) that the client keeps, stored on the server only as its SHA-256, so a copy of the database signs nobody in. Each session records the device name (up to 80 characters) and platform (up to 20, `web` by default), when it was made and when it was last seen (written at most once a minute). A session ends after 90 days unused, and a year after it began however much it's used (`SESSION_IDLE_MS`, `SESSION_MAX_AGE_MS`): the next request with its token gets 401 and the device signs in again. Ended sessions are deleted as they're met, as anyone signs in, and when a list of devices is asked for.
 
 The token travels one of two ways (`credentials` in `auth.ts`):
 
@@ -67,7 +67,7 @@ Each account sees its own devices and can sign any of them out; admins can for e
 
 ### Sign-in limits
 
-`accounts/rateLimit.ts`. Failed sign-ins and failed setup codes count per client address: 10 failures within a sliding 15 minutes, then 429 ("Too many tries") until the oldest ages out. Only addresses count, never usernames, so guessing at someone's username can't lock them out, and a success doesn't clear the count. The address is `req.ip`: the visitor's own behind a proxy trusted with `TRUST_PROXY`, otherwise the socket's. The counts are in memory; a restart forgives. The home-address proof (section 8) has a limit of its own, 30 questions in 15 minutes, which counts every question, answered or not.
+`accounts/rateLimit.ts`. Failed sign-ins and failed setup codes count per client address: 10 failures within a sliding 15 minutes, then 429 ("Too many tries") until the oldest ages out. Only addresses count, never usernames, so guessing at someone's username can't lock them out, and a success doesn't clear the count. The address is `req.ip`: the visitor's own behind a proxy trusted with `TRUST_PROXY`, otherwise the socket's. Beside each address's budget, every address outside the home network shares one: 100 failures among them within 15 minutes, and anyone outside is refused until the oldest ages out, so guessing spread over many addresses is stopped too. Home addresses keep only their own budgets, so someone outside can't lock the household out. Addresses with nothing recent are forgotten every minute or so, and at most 10,000 are remembered. The counts are in memory; a restart forgives. The home-address proof (section 8) has a limit of its own, 30 questions in 15 minutes, which counts every question, answered or not.
 
 ---
 

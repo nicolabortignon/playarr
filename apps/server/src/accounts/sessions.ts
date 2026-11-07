@@ -4,6 +4,11 @@ import type { DatabaseSync } from 'node:sqlite';
 
 /** last_seen_at is written at most this often per session: sessions are read on every request. */
 const TOUCH_EVERY_MS = 60_000;
+const DAY_MS = 86_400_000;
+/** A session unused this long has ended: a device lost or given away stops being signed in on its own. */
+export const SESSION_IDLE_MS = 90 * DAY_MS;
+/** And one this old, used or not: every device signs in again once a year. */
+export const SESSION_MAX_AGE_MS = 365 * DAY_MS;
 
 /** 256 random bits. */
 export const newToken = () => randomBytes(32).toString('base64url');
@@ -35,6 +40,7 @@ export class Sessions {
   ) {}
 
   create(accountId: number, device: string, platform: string): { id: number; token: string } {
+    this.prune();
     const token = newToken();
     const at = new Date(this.now()).toISOString();
     const { lastInsertRowid } = this.db
@@ -45,14 +51,20 @@ export class Sessions {
     return { id, token };
   }
 
-  /** The session a token belongs to, noting that it was seen. */
+  /** The session a token belongs to, noting that it was seen; none for one that has ended (see `ended`), which goes. */
   resolve(token: string): { id: number; accountId: number } | undefined {
     if (!token) return undefined;
-    const row = this.db.prepare('SELECT id, account_id, last_seen_at FROM sessions WHERE token_hash = ?').get(hashToken(token)) as
-      | { id: number; account_id: number; last_seen_at: string }
+    const row = this.db.prepare('SELECT id, account_id, created_at, last_seen_at FROM sessions WHERE token_hash = ?').get(hashToken(token)) as
+      | { id: number; account_id: number; created_at: string; last_seen_at: string }
       | undefined;
     if (!row) return undefined;
     const now = this.now();
+    const lastSeen = Math.max(this.touched.get(row.id) ?? 0, Date.parse(row.last_seen_at));
+    if (this.ended(Date.parse(row.created_at), lastSeen, now)) {
+      this.touched.delete(row.id);
+      this.db.prepare('DELETE FROM sessions WHERE id = ?').run(row.id);
+      return undefined;
+    }
     if (now - (this.touched.get(row.id) ?? Date.parse(row.last_seen_at)) >= TOUCH_EVERY_MS) {
       this.db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').run(new Date(now).toISOString(), row.id);
       this.touched.set(row.id, now);
@@ -83,6 +95,7 @@ export class Sessions {
   }
 
   list(accountId: number, currentId?: number): SessionInfo[] {
+    this.prune();
     const rows = this.db
       .prepare('SELECT id, device, platform, created_at, last_seen_at FROM sessions WHERE account_id = ? ORDER BY last_seen_at DESC, id DESC')
       .all(accountId) as unknown as Row[];
@@ -97,5 +110,19 @@ export class Sessions {
 
   removeAll(accountId: number) {
     this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(accountId);
+  }
+
+  /** Unused for SESSION_IDLE_MS, or begun SESSION_MAX_AGE_MS ago: signed out, to sign in again. */
+  private ended(createdAt: number, lastSeenAt: number, now: number): boolean {
+    return now - lastSeenAt >= SESSION_IDLE_MS || now - createdAt >= SESSION_MAX_AGE_MS;
+  }
+
+  /** Forgets the sessions that have ended, as a sign-in starts and a list of devices is asked for. */
+  prune() {
+    const now = this.now();
+    const idle = new Date(now - SESSION_IDLE_MS).toISOString();
+    const old = new Date(now - SESSION_MAX_AGE_MS).toISOString();
+    const gone = this.db.prepare('DELETE FROM sessions WHERE last_seen_at <= ? OR created_at <= ? RETURNING id').all(idle, old) as { id: number }[];
+    for (const { id } of gone) this.touched.delete(id);
   }
 }
