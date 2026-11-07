@@ -197,10 +197,10 @@ private struct ListeningButton: View {
   var body: some View {
     Button(action: toggle) {
       HStack(spacing: 10) {
-        Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true)
+        Cover(path: track.coverUrl, points: 36, label: track.albumTitle, color: track.coverColor, circle: true)
           .frame(width: 36, height: 36)
           .overlay {
-            if playing { SongRing(player: player).tint(theme.accent.color).padding(-3) }
+            if playing { SongRing(player: player).glidingTint(theme.accent).padding(-3) }
           }
           .overlay {
             Circle().fill(.black.opacity(0.45))
@@ -239,7 +239,7 @@ private struct UpNextButton: View {
   var body: some View {
     Button(action: open) {
       HStack(spacing: 10) {
-        Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true)
+        Cover(path: track.coverUrl, points: 36, label: track.albumTitle, color: track.coverColor, circle: true)
           .frame(width: 36, height: 36)
         VStack(alignment: .leading, spacing: 0) {
           Kicker(text: "Up next")

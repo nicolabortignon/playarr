@@ -17,7 +17,7 @@ struct AlbumView: View {
       if GatefoldRule.applies(verticalSizeClass), let album = model.album.value {
         // Sideways: the cover stays on the left, the rest scrolls beside it, all on the album's wash.
         Gatefold { side in
-          Cover(path: album.coverUrl, points: side, label: album.title).coverShadow(.hero)
+          Cover(path: album.coverUrl, points: side, label: album.title, color: album.coverColor).coverShadow(.hero)
         } page: {
           ScrollView { content(cover: false).padding(.top, 16) }
         }
@@ -75,7 +75,7 @@ struct AlbumView: View {
   /// The cover (unless it's beside the page), what kind of release it is, the title, the meta line and the action row.
   private func header(_ album: AlbumDetail, cover: Bool) -> some View {
     DetailHeader(kicker: model.kicker ?? "Album", overArt: true, showsCover: cover) {
-      Cover(path: album.coverUrl, points: 256, label: album.title)
+      Cover(path: album.coverUrl, points: 256, label: album.title, color: album.coverColor)
     } title: {
       DetailTitle(album.title)
     } meta: {

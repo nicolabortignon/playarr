@@ -17,6 +17,12 @@ public struct RGB: Hashable, Sendable {
     self.init(r: Double((hex >> 16) & 0xff) / 255, g: Double((hex >> 8) & 0xff) / 255, b: Double(hex & 0xff) / 255)
   }
 
+  /// `"#ff7a1a"`, as the server sends a cover's colors (`coverColor`, `coverAccent`); nil for anything else.
+  public init?(css: String?) {
+    guard let css, css.count == 7, css.hasPrefix("#"), let hex = UInt32(css.dropFirst(), radix: 16) else { return nil }
+    self.init(hex: hex)
+  }
+
   public var color: Color { Color(.sRGB, red: r, green: g, blue: b) }
 
   /// Relative luminance (WCAG): 0 for black, 1 for white.

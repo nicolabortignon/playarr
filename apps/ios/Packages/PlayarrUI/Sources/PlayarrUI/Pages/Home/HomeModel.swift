@@ -177,6 +177,7 @@ extension FavoriteTrack {
     Track(
       id: id, recordingId: recordingId, fileId: fileId, albumId: albumId, artistId: artistId, title: title,
       artistName: artistName, albumTitle: albumTitle, trackNumber: trackNumber, discNumber: discNumber,
-      duration: duration, explicit: explicit, format: format, size: size, streamUrl: streamUrl, coverUrl: coverUrl)
+      duration: duration, explicit: explicit, format: format, size: size, streamUrl: streamUrl, coverUrl: coverUrl,
+      coverColor: coverColor, coverAccent: coverAccent)
   }
 }

@@ -109,6 +109,7 @@ struct PlayerTests {
     #expect(player.queue.pos == 1)
     #expect(!player.queue.playing)
     #expect(!player.sleep.endOfSong)
+    #expect(player.sleep.sleptAt != nil)
   }
 
   @Test func theSleepTimerFadesOverItsLastTwentySecondsThenStops() throws {
@@ -120,7 +121,19 @@ struct PlayerTests {
     #expect(abs(player.engine.masterGain - 0.5) < 0.01)
     player.tick(now: start + 60)
     #expect(!player.queue.playing)
-    #expect(player.notice?.text == "Sleep timer: music stopped")
+  }
+
+  @Test func theSleepTimerSaysGoodnightWhenItStopsTheMusicUntilItPlaysAgain() throws {
+    let player = try Player.testing()
+    player.play([song(1)])
+    let start = Date()
+    player.sleep.sleep(minutes: 1, from: start)
+    player.tick(now: start + 60)
+    // Now Playing's moon, or the app's toast where Now Playing is closed: the Player has no toast of its own for it.
+    #expect(player.sleep.sleptAt == start + 60)
+    #expect(player.notice == nil)
+    player.togglePlay()
+    #expect(player.sleep.sleptAt == nil)
   }
 
   @Test func radioCarriesOnWhenTheLastSongStarts() async throws {

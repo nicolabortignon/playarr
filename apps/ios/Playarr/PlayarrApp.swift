@@ -46,11 +46,12 @@ struct PlayarrApp: App {
   /// one over in PLAYARR_UITEST_SERVER and PLAYARR_UITEST_TOKEN), plus `-UITestsDemo` to start signed in
   /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request.
   /// With the demo, `-UITestsOffline` makes the server unreachable, `-UITestsLongQueue` queues 5,000 songs,
-  /// `-UITestsTurnToOpen` turns on Settings → Appearance → Turn to open, and `-UITestsRestore` brings back where the
-  /// last run was (otherwise each run starts on Home).
+  /// `-UITestsTurnToOpen` turns on Settings → Appearance → Turn to open, `-UITestsDJ` DJ mix, and `-UITestsRestore`
+  /// brings back where the last run was (otherwise each run starts on Home).
   /// `-UITestsDownloads` (Debug builds) opens Library → Downloads on made-up downloads (`DownloadsDemoView`).
   /// For the screen tour (Debug builds), `-UITestsSlowFan <times>` slows Feeling lucky's fan of covers down (`CoverFan`),
-  /// and with the demo `-UITestsSlowLucky` has its songs take 8 seconds to come.
+  /// and with the demo `-UITestsSlowLucky` has its songs take 8 seconds to come; with `-UITests`, `-UITestsSlowArt` has
+  /// covers take 4 s to come and `-UITestsTilt` tilts Now Playing's cover, as a phone would.
   static func makeModel() -> AppModel {
     let arguments = ProcessInfo.processInfo.arguments
     if arguments.contains("-UITestsRequests") {
@@ -63,6 +64,8 @@ struct PlayarrApp: App {
       let model = AppModel.demo(api: arguments.contains("-UITestsOffline") ? OfflineAPI() : demoAPI(arguments))
       model.restoresPlace = arguments.contains("-UITestsRestore")
       model.appearance.turnToOpen = arguments.contains("-UITestsTurnToOpen")
+      // -UITestsDJ: DJ mix, the demo's songs mixed on their beats.
+      if arguments.contains("-UITestsDJ") { model.playback.transitions = .dj }
       if arguments.contains("-UITestsLongQueue"), let player = model.session?.player {
         player.play(Demo.manyTracks(5000))
         player.setPlaying(false)

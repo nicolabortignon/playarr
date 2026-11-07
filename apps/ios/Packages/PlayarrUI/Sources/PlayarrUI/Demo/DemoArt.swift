@@ -115,6 +115,11 @@ final class DemoArtProtocol: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
+    #if DEBUG
+      // The screen tour's slow art (`-UITestsSlowArt`): covers keep their loading color long enough to see.
+      let arguments = ProcessInfo.processInfo.arguments
+      if arguments.contains("-UITests"), arguments.contains("-UITestsSlowArt") { Thread.sleep(forTimeInterval: 4) }
+    #endif
     guard let url = request.url, let data = DemoArt.png(for: url),
       let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "image/png"])
     else {

@@ -20,7 +20,7 @@ struct AlbumCard: View {
     let current = session.player.queue.currentTrack?.albumId == album.id
     Button { session.router.open(.album(album.id), from: zoom) } label: {
       VStack(alignment: .leading, spacing: 6) {
-        Cover(path: album.coverUrl, points: width ?? 180, label: album.title)
+        Cover(path: album.coverUrl, points: width ?? 180, label: album.title, color: album.coverColor)
           .coverShadow(.shelf)
           .zoomSource(zoom)
         Text(album.title).typeRole(.body).essentialLineLimit().foregroundStyle(current ? theme.accent.color : .paper)

@@ -114,7 +114,7 @@ struct SongRow: View {
         .frame(width: 32)
       case .cover:
         let side: CGFloat = compact ? 40 : 44
-        Cover(path: track.coverUrl, points: side, label: track.albumTitle)
+        Cover(path: track.coverUrl, points: side, label: track.albumTitle, color: track.coverColor)
           .frame(width: side, height: side)
           .overlay {
             if current {

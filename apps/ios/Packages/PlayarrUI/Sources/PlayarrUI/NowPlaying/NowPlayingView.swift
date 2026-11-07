@@ -54,7 +54,7 @@ struct NowPlayingView: View {
     @Bindable var router = session.router
     ZStack {
       if let track = player.queue.currentTrack {
-        backdrop(track)
+        NowPlayingBackdrop(track: track)
         if layout == .sideways {
           sleeve(model, track: track)
         } else if layout == .pages {
@@ -92,6 +92,8 @@ struct NowPlayingView: View {
           .padding(.horizontal, 24)
           .padding(.vertical, 12)
         }
+        // The sleep timer's end: a moon and "Sleep well", then dark until touched.
+        SleepWell(player: player)
       }
     }
     .offset(y: drag)
@@ -152,18 +154,6 @@ struct NowPlayingView: View {
       cover(track, playing: session.player.queue.playing)
         .gesture(closeGesture)
     }
-  }
-
-  /// The cover itself, blown up and blurred.
-  private func backdrop(_ track: Track) -> some View {
-    ZStack {
-      Color.black
-      Cover(path: track.coverUrl, points: 300).scaleEffect(1.5).blur(radius: 90).opacity(0.55).saturation(1.5)
-      RadialGradient(colors: [.clear, .black.opacity(0.5), .black.opacity(0.92)], center: .top, startRadius: 0, endRadius: 700)
-      // A dark wash over it all, so words stay readable over a bright cover.
-      Color.black.opacity(0.3)
-    }
-    .ignoresSafeArea()
   }
 
   private func header(_ model: NowPlayingModel, track: Track, tail: String? = nil) -> some View {
@@ -275,33 +265,37 @@ struct NowPlayingView: View {
     .accessibilityLabel("More")
   }
 
+  /// The cover as an object: settling back while paused, tilting with the phone (`NowPlayingCover`).
   private func cover(_ track: Track, playing: Bool) -> some View {
-    let reduce = appearance.reduceMotion(system: systemReduceMotion)
-    return Cover(path: track.coverUrl, points: 360, label: track.albumTitle, corner: 8)
-      .coverShadow(.hero)
-      .scaleEffect(playing ? 1 : 0.86)
-      .animation(reduce ? nil : .spring(response: 0.45, dampingFraction: 0.7), value: playing)
+    NowPlayingCover(track: track, playing: playing)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .contentShape(Rectangle())
   }
 
+  /// The title with the heart beside it, and under them the artist and format, which may run on under the heart: as
+  /// the song ends, "Mixing into Teardrop on the next bar" takes their place and needs the room.
   private func song(_ track: Track) -> some View {
-    HStack(alignment: .top) {
-      VStack(alignment: .leading, spacing: 6) {
-        Text(track.title).font(.display(.title)).essentialLineLimit(2)
-        // The format under the artist at the accessibility sizes, so the name wraps rather than being cut.
-        AdaptiveStack(spacing: 8) {
-          Button(track.artistName) { session.actions.goToArtist(track) }
-            .font(.sans(.title3)).foregroundStyle(.secondary).buttonStyle(.plain)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-          FormatBadge(format: track.format)
-        }
+    VStack(alignment: .leading, spacing: 6) {
+      Text(track.title).font(.display(.title)).essentialLineLimit(2)
+        .padding(.trailing, Self.heartRoom)
+      // The format under the artist at the accessibility sizes, so the name wraps rather than being cut. As the song
+      // ends, what comes next over them.
+      AdaptiveStack(spacing: 8) {
+        Button(track.artistName) { session.actions.goToArtist(track) }
+          .buttonStyle(.plain)
+          .multilineTextAlignment(.leading)
+          .fixedSize(horizontal: false, vertical: true)
+        FormatBadge(format: track.format)
       }
-      Spacer()
-      FavoriteButton(track: track)
+      .endOfSongLine(session.player)
+      .font(.sans(.title3)).foregroundStyle(.secondary)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .overlay(alignment: .topTrailing) { FavoriteButton(track: track) }
   }
+
+  /// The heart's room beside the title: its 44 points and a gap.
+  private static let heartRoom: CGFloat = 52
 
   // MARK: iPhone Duo
 

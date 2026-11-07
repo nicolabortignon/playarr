@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// The sleep timer (apps/web/src/player/sleep.ts): stop after a while, fading out over the last 20 s, or when this
-/// song ends.
+/// song ends. Once it has stopped the music, Now Playing says goodnight (`sleptAt`).
 @MainActor @Observable
 public final class SleepTimer {
   public static let fadeSeconds: TimeInterval = 20
@@ -11,17 +11,22 @@ public final class SleepTimer {
   public private(set) var endsAt: Date?
   /// Stop when the song playing ends.
   public private(set) var endOfSong = false
+  /// When the timer last stopped the music, until something wakes the screen (a touch, the music playing again): Now
+  /// Playing shows a moon and "Sleep well", or a toast says it where Now Playing is closed.
+  public private(set) var sleptAt: Date?
 
   public init() {}
 
   public func sleep(minutes: Double, from now: Date = Date()) {
     endsAt = now.addingTimeInterval(minutes * 60)
     endOfSong = false
+    sleptAt = nil
   }
 
   public func sleepAtEndOfSong() {
     endsAt = nil
     endOfSong = true
+    sleptAt = nil
   }
 
   public func cancel() {
@@ -47,6 +52,17 @@ public final class SleepTimer {
     guard endOfSong else { return false }
     cancel()
     return true
+  }
+
+  /// The timer has stopped the music (its time ran out, or the song it waited for ended): time to say goodnight.
+  public func fellAsleep(at now: Date = Date()) {
+    sleptAt = now
+  }
+
+  /// Done with goodnight: a touch, or the music playing again.
+  public func wake() {
+    guard sleptAt != nil else { return }
+    sleptAt = nil
   }
 
   /// "23 min" left, for the timer's button.

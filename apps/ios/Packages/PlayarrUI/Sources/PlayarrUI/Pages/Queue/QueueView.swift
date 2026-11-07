@@ -104,7 +104,7 @@ struct QueueView: View {
 
   private func nowPlaying(_ track: Track) -> some View {
     HStack(spacing: 14) {
-      Cover(path: track.coverUrl, points: 72, label: track.albumTitle).frame(width: 72, height: 72)
+      Cover(path: track.coverUrl, points: 72, label: track.albumTitle, color: track.coverColor).frame(width: 72, height: 72)
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 8) {
           Image(systemName: "waveform")

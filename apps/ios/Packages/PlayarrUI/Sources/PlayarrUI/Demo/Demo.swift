@@ -21,11 +21,18 @@ public enum Demo {
     imageUrl: "/art/album/80/cover", mbid: "art-2")
   public static let artists = [artist, otherArtist]
 
+  /// What the server reads of each album's cover (`coverColor`, `coverAccent`), as it reads the real covers the screen
+  /// tour shows: Mezzanine's beetle on white has no color to give, so it plays in Playarr's orange.
+  static let coverColors: [Int: (color: String, accent: String?)] = [
+    70: ("#f0f0f0", nil), 71: ("#523e2a", "#c68258"), 80: ("#082760", "#3477f4"),
+  ]
+
   static func track(_ id: Int, _ title: String, album: Int, albumTitle: String, artist: Artist, number: Int, disc: Int = 1, duration: Double, format: AudioFormat = flac) -> Track {
     Track(
       id: id, recordingId: "rec-\(id)", fileId: 9000 + id, albumId: album, artistId: artist.id, title: title,
       artistName: artist.name, albumTitle: albumTitle, trackNumber: number, discNumber: disc, duration: duration,
-      explicit: false, format: format, size: 30_000_000, streamUrl: "/stream/\(9000 + id)", coverUrl: "/art/album/\(album)/cover")
+      explicit: false, format: format, size: 30_000_000, streamUrl: "/stream/\(9000 + id)", coverUrl: "/art/album/\(album)/cover",
+      coverColor: coverColors[album]?.color, coverAccent: coverColors[album]?.accent)
   }
 
   public static let mezzanineTracks = [
@@ -47,7 +54,7 @@ public enum Demo {
   public static let mezzanine = AlbumDetail(
     id: 70, title: "Mezzanine", artistId: 7, artistName: "Massive Attack", year: 1998, albumType: "Album",
     secondaryTypes: [], genres: ["trip hop"], duration: 1033, trackCount: 3, totalTrackCount: 5,
-    coverUrl: "/art/album/70/cover", addedAt: when, format: flac, mbid: "rg-70",
+    coverUrl: "/art/album/70/cover", coverColor: coverColors[70]?.color, addedAt: when, format: flac, mbid: "rg-70",
     overview: "Darker and heavier than what came before.", tracks: mezzanineTracks, discCount: 1,
     missingTracks: [
       MissingTrack(recordingId: "rec-702", title: "Teardrop", trackNumber: 3, discNumber: 1, duration: 330),
@@ -56,11 +63,11 @@ public enum Demo {
   public static let protection = AlbumDetail(
     id: 71, title: "Protection", artistId: 7, artistName: "Massive Attack", year: 1994, albumType: "Album",
     secondaryTypes: [], genres: ["trip hop"], duration: 787, trackCount: 2, totalTrackCount: 2,
-    coverUrl: "/art/album/71/cover", addedAt: when, format: flac, tracks: protectionTracks, discCount: 1, missingTracks: [])
+    coverUrl: "/art/album/71/cover", coverColor: coverColors[71]?.color, coverAccent: coverColors[71]?.accent, addedAt: when, format: flac, tracks: protectionTracks, discCount: 1, missingTracks: [])
   public static let dummy = AlbumDetail(
     id: 80, title: "Dummy", artistId: 8, artistName: "Portishead", year: 1994, albumType: "Album",
     secondaryTypes: [], genres: ["trip hop"], duration: 866, trackCount: 3, totalTrackCount: 3,
-    coverUrl: "/art/album/80/cover", addedAt: when, format: hiRes, tracks: dummyTracks, discCount: 2, missingTracks: [])
+    coverUrl: "/art/album/80/cover", coverColor: coverColors[80]?.color, coverAccent: coverColors[80]?.accent, addedAt: when, format: hiRes, tracks: dummyTracks, discCount: 2, missingTracks: [])
   public static let albumDetails = [mezzanine, protection, dummy]
   public static let albums = albumDetails.map(album)
 
@@ -69,7 +76,7 @@ public enum Demo {
     Album(
       id: detail.id, title: detail.title, artistId: detail.artistId, artistName: detail.artistName, year: detail.year,
       albumType: detail.albumType, secondaryTypes: detail.secondaryTypes, genres: detail.genres, duration: detail.duration,
-      trackCount: detail.trackCount, totalTrackCount: detail.totalTrackCount, coverUrl: detail.coverUrl,
+      trackCount: detail.trackCount, totalTrackCount: detail.totalTrackCount, coverUrl: detail.coverUrl, coverColor: detail.coverColor, coverAccent: detail.coverAccent,
       addedAt: detail.addedAt, format: detail.format, mbid: detail.mbid)
   }
 
@@ -101,7 +108,7 @@ public enum Demo {
   public static let favorite = FavoriteTrack(
     id: 701, recordingId: "rec-701", fileId: 9701, albumId: 70, artistId: 7, title: "Risingson",
     artistName: "Massive Attack", albumTitle: "Mezzanine", trackNumber: 2, discNumber: 1, duration: 298,
-    explicit: false, format: flac, size: 30_000_000, streamUrl: "/stream/9701", coverUrl: "/art/album/70/cover",
+    explicit: false, format: flac, size: 30_000_000, streamUrl: "/stream/9701", coverUrl: "/art/album/70/cover", coverColor: coverColors[70]?.color,
     favoritedAt: when)
 
   public static let health = HealthStatus(

@@ -8,7 +8,7 @@ The rules are the web player's (`apps/web/src/player`), ported file for file whe
 
 ## 1. Who does what
 
-- **`Player`** (`Player.swift`, `@MainActor @Observable`): the queue (`QueueState`, a port of the web's `store.ts`) and its 10 Hz clock. Every change goes through a method on it, which edits `queue` and then `sync()`s everything else: the engine, levels, transitions, radio, keep-ahead, Now Playing and the saved queue (`queue.json`, written every 5 s and on close). The 5 s save notes where to resume past `queue`'s observation (`_queue`), since no view shows it: a change to `queue` redraws every view of the queue, and a redraw closes any menu open on one.
+- **`Player`** (`Player.swift`, `@MainActor @Observable`): the queue (`QueueState`, a port of the web's `store.ts`) and its 10 Hz clock. Every change goes through a method on it, which edits `queue` and then `sync()`s everything else: the engine, levels, mix maps, transitions, radio, keep-ahead, Now Playing and the saved queue (`queue.json`, written every 5 s and on close). The 5 s save notes where to resume past `queue`'s observation (`_queue`), since no view shows it: a change to `queue` redraws every view of the queue, and a redraw closes any menu open on one.
 - **`Player.live`** (`PlayerLive.swift`): the player as the app runs it, with `NowPlayingBridge`, `AudioSessionController`, `NetworkMonitor`, the background download session and app-life notifications wired in.
 - **`AudioEngine`** (`AudioEngine.swift`, `@MainActor`): the AVAudioEngine graph and everything placed on its timeline.
 - **`Deck`** (`Deck.swift`): one player node fed from one `PCMSource`.
@@ -84,7 +84,7 @@ With Settings → Playback → Transitions on DJ mix (`PlaybackSettings.transiti
 
   Offline it asks nothing. The pair carries the gains the songs play at, so the server renders at those levels. `kept` and `onPairChange` are hooks for downloads ([offline.md](offline.md)).
 - **`TransitionCoordinator`** downloads a ready answer's file whole, before the mix point, never as it plays. A kept copy comes first, then the stream cache. Its `mixSoon` = 3 s is how long a press of Next waits for a mix already coming.
-- **`MixMapStore`** keeps the songs' mix maps (`POST /api/mix-maps`, 50 to a request). A map counts as fresh for 60 s. What's on screen is asked again every 30 s, 10 times at most, while a map is missing or out of date.
+- **`MixMapStore`** keeps the songs' mix maps (`POST /api/mix-maps`, 50 to a request). A map counts as fresh for 60 s. What's on screen is asked again every 30 s, 10 times at most, while a map is missing or out of date. The Player asks for the song playing's and the next song's whatever the transitions, as each song starts: the accent glides to the next song's color over one beat of it, and the end of a song counts its last bar (§11).
 - **`DJJoin.decide`** picks the join from what's known:
   - **`.transition`**: a ready answer whose file is on the device, more than 1 s before its mix point.
   - **`.cut`**: the server's straight on, as a cut where the songs' sounds end and start.
@@ -152,9 +152,13 @@ The stream cache fetches the plan one file at a time. What plays now and next is
 
 `PlayReportQueue` sends one request at a time. What can't go waits in `pending-plays.json` (at most 300) and is tried again at launch and when the network comes back. "Count what this device plays" off sends nothing.
 
-## 11. The sleep timer
+## 11. The sleep timer and the end of a song
 
 `SleepTimer`: stop after some minutes, fading the bus over the last 20 s, or at the end of the song. With "end of song", nothing is asked and no mix is placed. A mix already placed plays out, and the music pauses where it ends, with the next song shown (`pauseAtMixEnd`).
+
+Once the timer has stopped the music (its time ran out, the song ended, or the mix it let play out did), `sleptAt` says when, until the music plays again or Now Playing is touched (`wake()`). Now Playing then shows a moon and "Sleep well" for 4 s and rests dark (`SleepWell`); where it's closed, the app's toast says "Sleep timer: music stopped". The Player has no toast of its own for it.
+
+**The end of a song** (plan 7 §5, `EndOfSong`). `Player.handoff` says how the song playing gives way to the next: where (the mix's start, a cut, or its end less a crossfade) and whether the two are heard together there (a long blend or a quick mix, not a fade or a cut). It goes by the join the Player has picked, or by the mix the engine has placed, which plays on whatever the join becomes (an answer let go at the mix point). `Player.endOfSongLine` is the player's second line from it: "Next: Teardrop" from 10 s before the handoff, and with a blend "Mixing into Teardrop on the next bar" through the last bar before it (four beats of the song playing, from its mix map; 2 s without one), then "Mixing into Teardrop" until the next song takes over. Where the whole line won't fit (the mini player), the last bar's says "Mixing on the next bar" (`endOfSongWords.short`), the title having been said a moment before; the others are cut short at their end. Nothing with repeat one, at the end of the queue, offline with the next song not on the device, or when the sleep timer stops after this song. The web guesses the same words from the transition it was given (`apps/web/src/player/endOfSong.ts`); the phone knows the join it will play.
 
 ## 12. Previews and the Player lab
 

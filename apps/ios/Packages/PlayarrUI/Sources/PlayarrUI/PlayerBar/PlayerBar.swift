@@ -51,18 +51,13 @@ struct PlayerBar: View {
     // secondary click anywhere on the song, and as VoiceOver's actions on its title.
     let menu = SongMenu.groups(track, place: SongMenu.Place(playing: true), session: session)
     return HStack(spacing: 14) {
-      Button { session.router.nowPlaying = true } label: {
-        Cover(path: track.coverUrl, points: 56, label: track.albumTitle, corner: Radius.cover).frame(width: 56, height: 56)
-      }
-      .buttonStyle(.plain)
-      .pointerHover()
-      .accessibilityLabel("Open now playing")
-      .accessibilityValue("\(track.title), \(track.artistName)")
+      PlayerBarCover(session: session, track: track)
       // One target, 44 points high, for the title and artist: the album, or the artist from its menu.
       Button { session.router.open(.album(track.albumId)) } label: {
         VStack(alignment: .leading, spacing: 2) {
           Text(track.title).typeRole(.body).essentialLineLimit()
-          Text(track.artistName).typeRole(.small).foregroundStyle(.paperDim).essentialLineLimit()
+          PlayerSecondLine(player: session.player, usual: Text(track.artistName))
+            .typeRole(.small).foregroundStyle(.paperDim).essentialLineLimit()
         }
         .frame(minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
@@ -79,6 +74,25 @@ struct PlayerBar: View {
       FavoriteButton(track: track)
     }
     .contextMenu { MenuButtons(groups: menu) }
+  }
+
+  /// The song's cover, opening Now Playing, which grows out of it. VoiceOver hears the song, or what comes next as it
+  /// ends; a view of its own, so the clock moving redraws only it.
+  private struct PlayerBarCover: View {
+    let session: AccountSession
+    let track: Track
+
+    var body: some View {
+      Button { session.router.nowPlaying = true } label: {
+        Cover(path: track.coverUrl, points: 56, label: track.albumTitle, color: track.coverColor, corner: Radius.cover)
+          .frame(width: 56, height: 56)
+          .nowPlayingZoomSource(corner: Radius.cover)
+      }
+      .buttonStyle(.plain)
+      .pointerHover()
+      .accessibilityLabel("Open now playing")
+      .accessibilityValue("\(track.title), \(session.player.endOfSongLine ?? track.artistName)")
+    }
   }
 
   private func controls(_ player: Player) -> some View {

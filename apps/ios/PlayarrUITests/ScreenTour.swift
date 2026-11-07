@@ -337,6 +337,154 @@ final class ScreenTour: XCTestCase {
     }
   }
 
+  /// The demo's welcome on Home, once it has loaded.
+  private let welcome = "8 songs across 3 albums, 45 min of music waiting in your library."
+
+  /// Seeks the song playing to `fraction` of it, with the first seek bar on screen.
+  @MainActor
+  private func seek(to fraction: CGFloat, in container: XCUIElement? = nil) {
+    let slider = (container ?? app).sliders["Seek"].firstMatch
+    guard slider.waitForExistence(timeout: 3) else { return }
+    slider.adjust(toNormalizedSliderPosition: fraction)
+  }
+
+  /// Saves `name` once `text` shows (up to `timeout` seconds), as a line of its own or in a control's value (the mini
+  /// player's), so a line that comes with the music is caught.
+  @MainActor
+  private func shot(_ name: String, when text: String, timeout: TimeInterval = 20) {
+    let shown = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR value ENDSWITH %@", text, ", \(text)")).firstMatch
+    if shown.waitForExistence(timeout: timeout) { shot(name, after: 0.3) }
+  }
+
+  /// Plan 7's moments in the player, on the iPhone (screenshots/iphone-moments/): covers in their own color while they
+  /// load; Now Playing open, paused (its cover settled back), playing again and closed; the accent in another album's
+  /// color; what comes next as a song ends, with DJ mix's words, in Now Playing and the mini player, then on into
+  /// another album; the sleep timer's goodnight; the cover tilted with its sheen (`-UITestsTilt`). A tap waits for the
+  /// animations it starts, so what moves between these (the zoom, Play and Pause, the settling, the glide, the backdrop
+  /// fading to a new cover) is seen by recording the simulator while this runs (`xcrun simctl io <device> recordVideo`).
+  @MainActor
+  func testTheMomentsInThePlayer() throws {
+    try XCTSkipIf(onIPad, "The iPad has its own")
+    try XCTSkipIf(folder?.lastPathComponent == "duo", "On the iPhone and the iPad")
+    guard let upright = folder else { return }
+    folder = upright.deletingLastPathComponent().appending(path: upright.lastPathComponent + "-moments")
+    try? FileManager.default.removeItem(at: folder!)
+    try FileManager.default.createDirectory(at: folder!, withIntermediateDirectories: true)
+
+    // Covers in their own color while they come (each 4 s late).
+    launch(["-UITests", "-UITestsDemo", "-UITestsSlowArt"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 10)
+    shot("01-covers-loading", after: 0.5)
+    app.terminate()
+
+    // Now Playing out of the mini player and back; paused and playing again; then another album's accent.
+    launch(["-UITests", "-UITestsDemo"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 20)
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"], timeout: 10) {
+      tap(tab("Home"), timeout: 10)
+      shot("02-mini-player", after: 4)
+      if tap(app.buttons["Open now playing"], timeout: 10) {
+        shot("03-now-playing", after: 2)
+        if tap(app.buttons["Pause"].firstMatch, timeout: 10) { shot("04-paused", after: 2) }
+        if tap(app.buttons["Play"].firstMatch, timeout: 10) { shot("05-playing-again", after: 2) }
+        if tap(app.buttons["Close now playing"], timeout: 10) { shot("06-closed", after: 2) }
+      }
+      // Protection's copper after Mezzanine's orange.
+      if tap(button(beginningWith: "Protection, Massive Attack"), timeout: 10), tap(app.buttons["Play Protection"], timeout: 10) {
+        shot("07-another-accent", after: 3)
+      }
+    }
+    app.terminate()
+
+    // DJ mix, a queue of every album (Feeling lucky): what comes next, the next bar, then the mix, in Now Playing; then
+    // in the mini player, for the song after.
+    launch(["-UITests", "-UITestsDemo", "-UITestsDJ"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 10)
+    if tap(app.buttons["Feeling lucky"].firstMatch, timeout: 10), tap(app.buttons["Open now playing"], timeout: 10) {
+      // The mix into Risingson is asked for once Angel has played 5 s; it's planned 16 s before Angel's end.
+      Thread.sleep(forTimeInterval: 9)
+      seek(to: 352 / 379)
+      shot("08-next", when: "Next: Risingson")
+      shot("09-mixing-on-the-next-bar", when: "Mixing into Risingson on the next bar")
+      shot("10-mixing", when: "Mixing into Risingson", timeout: 10)
+      Thread.sleep(forTimeInterval: 9)
+      seek(to: 271 / 298)
+      tap(app.buttons["Close now playing"], timeout: 5)
+      shot("11-mini-next", when: "Next: Inertia Creeps")
+      shot("12-mini-next-bar", when: "Mixing into Inertia Creeps on the next bar")
+      shot("13-mini-mixing", when: "Mixing into Inertia Creeps", timeout: 10)
+      // On into another album with Now Playing open (Next mixes on the beat a few seconds later): its cover fades in
+      // over the backdrop, the accent glides.
+      if tap(app.buttons["Open now playing"], timeout: 5), tap(app.buttons["Next"].firstMatch, timeout: 5),
+        app.element("nowPlaying").staticTexts["Protection"].waitForExistence(timeout: 20)
+      {
+        shot("14-another-album", after: 2)
+      }
+    }
+    app.terminate()
+
+    // The sleep timer, at the end of this song: a moon and "Sleep well", then dark until a touch.
+    launch(["-UITests", "-UITestsDemo"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 10)
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"]),
+      tap(app.buttons["Open now playing"]), tap(app.buttons["Sleep timer"].firstMatch), tap(app.buttons["At the end of this song"], timeout: 3)
+    {
+      seek(to: 0.99)
+      shot("15-sleep-well", when: "Sleep well", timeout: 15)
+      shot("16-resting", after: 6)
+      app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+      shot("17-awake", after: 1.5)
+    }
+    app.terminate()
+
+    // The cover tilted as a phone would tilt it (the simulator has no gyroscope), catching its sheen.
+    launch(["-UITests", "-UITestsDemo", "-UITestsTilt"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 10)
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"]),
+      tap(app.buttons["Open now playing"])
+    {
+      shot("18-tilted", after: 2)
+    }
+  }
+
+  /// Plan 7's moments on the iPad, sideways (screenshots/ipad-moments/): Now Playing open from the player bar and
+  /// closed again (recorded, as on the iPhone, to see it grow from the bar's cover), what comes next in the bar as a
+  /// song ends, and the sleep timer's toast where Now Playing is closed.
+  @MainActor
+  func testTheMomentsInThePlayerOnIPad() throws {
+    try XCTSkipUnless(onIPad, "The iPad's")
+    guard let base = folder else { return }
+    folder = base.deletingLastPathComponent().appending(path: base.lastPathComponent + "-moments")
+    try? FileManager.default.removeItem(at: folder!)
+    try FileManager.default.createDirectory(at: folder!, withIntermediateDirectories: true)
+    XCUIDevice.shared.orientation = .landscapeLeft
+    defer { XCUIDevice.shared.orientation = .portrait }
+
+    launch(["-UITests", "-UITestsDemo"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 20)
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"], timeout: 10) {
+      shot("01-playing", after: 2)
+      if tap(app.buttons["Open now playing"].firstMatch, timeout: 10) {
+        shot("02-now-playing", after: 2)
+        if tap(app.buttons["Close now playing"], timeout: 10) { shot("03-closed", after: 2) }
+      }
+      seek(to: 0.975, in: app.element("playerBar"))
+      shot("04-bar-next", when: "Next: Risingson")
+    }
+    app.terminate()
+
+    // The sleep timer at the end of the song, set in Now Playing, which then closes: a toast says goodnight instead.
+    launch(["-UITests", "-UITestsDemo"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 20)
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"], timeout: 10),
+      tap(app.buttons["Open now playing"].firstMatch), tap(app.buttons["Sleep timer"].firstMatch),
+      tap(app.buttons["At the end of this song"], timeout: 3), tap(app.buttons["Close now playing"], timeout: 5)
+    {
+      seek(to: 0.99, in: app.element("playerBar"))
+      shot("05-sleep-toast", when: "Sleep timer: music stopped", timeout: 15)
+    }
+  }
+
   /// A page that couldn't load (`-UITestsOffline`): Home's, and a page's with Back home.
   @MainActor
   func testAPageThatCouldntLoad() throws {
@@ -398,7 +546,16 @@ final class ScreenTour: XCTestCase {
     }
     if tap(app.buttons["Open now playing"].firstMatch) {
       shot("04-now-playing", after: 2)
-      if tap(app.buttons["Lyrics"]) { shot("04b-lyrics") }
+      if tap(app.buttons["Lyrics"]) {
+        shot("04b-lyrics")
+        tap(app.buttons["Lyrics"])
+      }
+      // As the song ends, what comes next in the open line, in the artist's place. Sought upright (19 s before the end):
+      // sideways, the test's drag on the sleeve's seek bar lands anywhere.
+      XCUIDevice.shared.orientation = .portrait
+      seek(to: 0.95)
+      XCUIDevice.shared.orientation = .landscapeLeft
+      shot("04c-now-playing-next", when: "Next: Risingson")
       tap(app.buttons["Close now playing"], timeout: 2)
     }
     if tap(tab("Search")) { shot("07-search") }

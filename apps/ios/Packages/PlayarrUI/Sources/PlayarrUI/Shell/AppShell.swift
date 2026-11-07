@@ -8,17 +8,22 @@ struct AppShell: View {
   let session: AccountSession
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   @Environment(\.scenePhase) private var scenePhase
+  /// Where the player's cover and Now Playing find each other, for the one to grow into the other.
+  @Namespace private var nowPlayingZoom
 
   var body: some View {
     @Bindable var router = session.router
     // The phone's tabs, or the iPad's sidebar and player bar, as wide as the window is.
     AdaptiveShell(session: session)
+    .environment(\.nowPlayingZoom, nowPlayingZoom)
     .nowPlayingCover(isPresented: $router.nowPlaying) {
       // In a stack for its bar, which only the iPhone Duo's cover screen shows (its buttons in the column on the right).
       NavigationStack {
         NowPlayingView(session: session)
           .underTheRail()
       }
+      // Grown out of the player's cover, and shrunk back into it as it closes.
+      .growsFromPlayerCover(in: nowPlayingZoom, reduceMotion: model.appearance.reduceMotion(system: systemReduceMotion))
       // Show metadata and Edit mix points from Now Playing's menu open over it.
       .trackSheets(player: session.player, active: router.nowPlaying)
       .addToPlaylistSheet(session, active: router.nowPlaying)
@@ -36,7 +41,7 @@ struct AppShell: View {
     // Settings → Appearance → Motion: Reduced keeps animations to a minimum, whatever the device says.
     .transaction { if model.appearance.reduceMotion(system: systemReduceMotion) { $0.animation = nil } }
     .environment(\.reducesMotion, model.appearance.reduceMotion(system: systemReduceMotion))
-    .tint(model.theme.accent.color)
+    .glidingTint(model.theme.accent)
     .preferredColorScheme(.dark)
     .environment(session)
     .environment(session.discover)
@@ -44,9 +49,14 @@ struct AppShell: View {
     .environment(model.theme)
     .environment(model.appearance)
     .environment(model.toasts)
-    .task(id: session.player.queue.currentTrack?.coverUrl) {
-      await model.theme.follow(cover: session.player.queue.currentTrack?.coverUrl, images: session.images)
+    // The accent takes the new song's color, over one beat of it (its mix map asked for ahead, as the next song's).
+    .task(id: Theme.Source(session.player.queue.currentTrack)) {
+      let track = session.player.queue.currentTrack
+      let bpm = track.flatMap { session.player.transitions.mixMaps.map($0.recordingId)?.bpm }
+      await model.theme.follow(track, bpm: bpm, images: session.images, reduceMotion: model.appearance.reduceMotion(system: systemReduceMotion))
     }
+    // The sleep timer stopped the music: Now Playing says goodnight where it's open, a toast where it isn't.
+    .sleepWellToast(session.player, nowPlaying: router.nowPlaying, toasts: model.toasts)
     // The lock screen's like button shows whether the song playing is a favorite.
     .onChange(of: session.player.queue.currentTrack.map { session.favorites.isFavorite($0.recordingId) } ?? false, initial: true) { _, liked in
       session.player.nowPlaying?.setLiked(liked)

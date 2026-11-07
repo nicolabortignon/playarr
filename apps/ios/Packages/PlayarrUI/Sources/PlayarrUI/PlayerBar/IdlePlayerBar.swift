@@ -26,7 +26,7 @@ struct IdlePlayerBar: View {
   @ViewBuilder private func heard(_ album: Album?) -> some View {
     if let album {
       HStack(spacing: 14) {
-        Cover(path: album.coverUrl, points: 56, label: album.title, corner: Radius.cover).frame(width: 56, height: 56)
+        Cover(path: album.coverUrl, points: 56, label: album.title, color: album.coverColor, corner: Radius.cover).frame(width: 56, height: 56)
         // One target, 44 points high, for the words: the album's page.
         Button { session.router.open(.album(album.id)) } label: {
           VStack(alignment: .leading, spacing: 2) {

@@ -32,11 +32,12 @@ struct Transport: View {
   }
 }
 
-/// Play or pause; a spinner while the song is loading.
+/// Play or pause, the one turning into the other (plan 7 §1); a spinner while the song is loading.
 struct PlayPauseButton: View {
   let player: Player
   var size: CGFloat = 44
   var filled = true
+  @Environment(\.reducesMotion) private var reducesMotion
 
   var body: some View {
     let playing = player.queue.playing
@@ -46,9 +47,12 @@ struct PlayPauseButton: View {
         if player.loading && playing {
           ProgressView().tint(filled ? Color.black : Color.primary)
         } else {
+          // One shape: the triangle becomes the two bars and back, from wherever it is when pressed again.
           Image(systemName: playing ? "pause.fill" : "play.fill")
             .font(.icon(glyph))
             .foregroundStyle(filled ? Color.black : Color.primary)
+            .contentTransition(reducesMotion ? .identity : .symbolEffect(.replace))
+            .animation(reducesMotion ? nil : .default, value: playing)
         }
       }
       .frame(width: size, height: size)

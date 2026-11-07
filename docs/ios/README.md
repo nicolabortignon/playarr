@@ -89,7 +89,7 @@ Every page is a `Route`, registered once in `shellDestinations(_:)` so tabs and 
 
 - `-UITestsDemo` makes `AppModel.demo()`: signed in as "Demo" to a demo server answered by `DemoAPI` from the `Demo` library (Massive Attack, and Portishead without a photo of their own; three albums, lyrics, a mix, a playlist and a favorite). Nothing is kept: a temporary folder and a `UserDefaults` suite of its own.
 - `DemoState` remembers changes between calls, so tests can heart a song and make, fill, reorder and delete a playlist.
-- `DemoPlayerBackend` and `SilentSource` let the real player run on silence: time moves and songs end with no server and no sound. The demo has no analysis, so DJ mix cuts or plays gapless.
+- `DemoPlayerBackend` and `SilentSource` let the real player run on silence: time moves and songs end with no server and no sound. The demo's songs have made-up mix maps (`Demo+Analysis.swift`); with DJ mix (`-UITestsDJ`) it plans a quick mix 16 s before a song's end, which the phone plays live, as it does when a server's file is late.
 - `DemoArt` draws each cover and artist photo from its address. `make screens` alone puts the albums' real covers in instead, from `PLAYARR_DEMO_COVERS` (see [release.md](release.md)).
 - Variants: `-UITestsRequests` (`DemoRequestsAPI`: Lidarr and an album to request), `-UITestsOffline` (`OfflineAPI`: a server that can't be reached), `-UITestsLongQueue` (5,000 songs queued), `-UITestsManyPlaylists`. The full list is in [conventions.md](conventions.md).
 

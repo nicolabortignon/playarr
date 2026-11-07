@@ -31,6 +31,21 @@ struct SleepTimerTests {
     #expect(!timer.stopsAtSongEnd())
   }
 
+  @Test func saysGoodnightUntilWokenOrSetAgain() {
+    let now = Date(timeIntervalSince1970: 0)
+    let timer = SleepTimer()
+    timer.fellAsleep(at: now)
+    #expect(timer.sleptAt == now)
+    timer.wake()
+    #expect(timer.sleptAt == nil)
+    timer.fellAsleep(at: now)
+    timer.sleep(minutes: 15, from: now)
+    #expect(timer.sleptAt == nil)
+    timer.fellAsleep(at: now)
+    timer.sleepAtEndOfSong()
+    #expect(timer.sleptAt == nil)
+  }
+
   @Test func runsOutOnce() {
     let now = Date(timeIntervalSince1970: 0)
     let timer = SleepTimer()

@@ -77,7 +77,7 @@ struct RecommendationsSection: View {
   private func row(_ recommendation: RecommendedTrack, @ViewBuilder action: () -> some View) -> some View {
     HStack(spacing: 12) {
       Button { model.play(recommendation) } label: {
-        Cover(path: recommendation.coverUrl, points: 44, label: recommendation.albumTitle).frame(width: 44, height: 44)
+        Cover(path: recommendation.coverUrl, points: 44, label: recommendation.albumTitle, color: recommendation.track?.coverColor).frame(width: 44, height: 44)
       }
       .buttonStyle(.plain)
       .disabled(recommendation.track == nil)

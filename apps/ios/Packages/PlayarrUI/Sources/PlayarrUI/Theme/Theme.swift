@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PlayarrAPI
 import SwiftUI
 
 /// The accent colour: Playarr's orange, a fixed colour, or (by default) one taken from the cover of the song playing,
@@ -38,11 +39,54 @@ public final class Theme {
   /// until it reads 4.5:1 on a sheet's row. An accent that reads there already, like Playarr's orange, is unchanged.
   public var listAccent: RGB { AccentColor.legible(accent, on: Self.listRow) }
 
-  /// Follows the song playing: its cover's colour becomes the accent.
-  public func follow(cover path: String?, images: ImageCache?) async {
+  /// What the song playing's accent comes from: when any of it changes, the accent follows the song again.
+  struct Source: Hashable {
+    let coverUrl: String?
+    let coverAccent: String?
+    let coverColor: String?
+
+    init(_ track: Track?) {
+      coverUrl = track?.coverUrl
+      coverAccent = track?.coverAccent
+      coverColor = track?.coverColor
+    }
+  }
+
+  /// How long the accent takes to glide to a new song's color without its tempo (the web's `ACCENT_GLIDE_S`)…
+  public static let glideWithoutTempo = 0.8
+  /// …and with it, one beat, kept between these (a misread tempo shouldn't make it snap or crawl).
+  public static let glideRange = 0.3...1.2
+
+  /// How long the accent glides to a song's color (plan 7 §1): one beat of it when its tempo is known. As the web's
+  /// `accentGlide` (lib/accent.ts).
+  public static func glide(bpm: Double?) -> Double {
+    guard let bpm, bpm > 0 else { return glideWithoutTempo }
+    return min(glideRange.upperBound, max(glideRange.lowerBound, 60 / bpm))
+  }
+
+  /// The accent a cover gives, when the server has read it: its `coverAccent`; .some(nil) when it has and the cover
+  /// has none to give (a `coverColor` without a `coverAccent`: a gray or black-and-white cover, which gets Playarr's
+  /// orange); nil when it hasn't (an older server, a cover not read yet), and the picture is read here. As the web's
+  /// `knownAccent` (lib/color.ts).
+  public static func knownAccent(coverAccent: String?, coverColor: String?) -> RGB?? {
+    if let accent = RGB(css: coverAccent) { return .some(accent) }
+    return coverColor == nil ? nil : .some(nil)
+  }
+
+  /// Follows the song playing (docs/design.md, Moments): its `coverAccent` at once, so the color changes with the song
+  /// before its cover has loaded; read from the cover only where the server hasn't read it. It glides there over one
+  /// beat of the song (`bpm`, its tempo when known, `glide(bpm:)`), at once under Reduce Motion.
+  public func follow(_ track: Track?, bpm: Double?, images: ImageCache?, reduceMotion: Bool) async {
+    let path = track?.coverUrl
     following = path
-    let color = await accent(of: path, images: images)
-    if following == path { coverAccent = color }
+    let color: RGB? =
+      switch Self.knownAccent(coverAccent: track?.coverAccent, coverColor: track?.coverColor) {
+      case .some(let known): known
+      case nil: await accent(of: path, images: images)
+      }
+    guard following == path, color != coverAccent else { return }
+    // The web's CSS `ease`.
+    withAnimation(reduceMotion ? nil : .timingCurve(0.25, 0.1, 0.25, 1, duration: Self.glide(bpm: bpm))) { coverAccent = color }
   }
 
   /// `accent(of:images:)` when the cover has been read already, without waiting: .some(nil) when it has no colour,

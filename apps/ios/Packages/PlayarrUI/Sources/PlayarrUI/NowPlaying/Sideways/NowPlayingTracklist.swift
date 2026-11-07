@@ -123,8 +123,9 @@ struct NowPlayingTracklist: View {
           .essentialLineLimit(2)
           .foregroundStyle(theme.accent.color)
         HStack(spacing: 8) {
-          Button(track.artistName) { session.actions.goToArtist(track) }
-            .font(.sans(.subheadline)).foregroundStyle(.paperDim).buttonStyle(.plain)
+          // As the song ends, what comes next in the artist's place.
+          PlayerSecondLine(player: session.player, usual: Button(track.artistName) { session.actions.goToArtist(track) }.buttonStyle(.plain))
+            .font(.sans(.subheadline)).foregroundStyle(.paperDim)
             .frame(minHeight: 32)
           FormatBadge(format: track.format)
         }

@@ -311,12 +311,14 @@ public final class Player {
       // The sleep timer: the mix played out, and the next song waits here, paused.
       pauseAtMixEnd = nil
       setPlaying(false)
+      sleep.fellAsleep(at: now)
     }
     let volume = queue.muted ? 0 : Float(queue.volume * queue.volume)
     engine.setMasterGain(volume * sleep.gain(at: now))
     if sleep.runsOut(at: now) {
+      // Now Playing says goodnight, or a toast where it's closed (the app's to say: it knows which).
       setPlaying(false)
-      notice = Notice(text: "Sleep timer: music stopped", isError: false)
+      sleep.fellAsleep(at: now)
     }
     if loaded != nil, now.timeIntervalSince(lastSaved) >= 5 {
       // Past the queue's observation (`_queue`, the macro's storage): nothing shows where to resume, and a change to
@@ -341,6 +343,8 @@ public final class Player {
 
   /// Brings the engine, levels, radio, prefetch, Now Playing and the saved queue in line with `queue`.
   private func sync() {
+    // Playing again: the goodnight is over.
+    if queue.playing { sleep.wake() }
     let entry = currentEntry
     if entry != loaded?.entry || (entry != nil && queue.playing && engine.state == .idle) {
       loadCurrent(entry)
@@ -354,6 +358,7 @@ public final class Player {
     }
     updateTransitions()
     updateUpcoming()
+    loadMixMaps()
     loadLevels()
     continueRadio()
     prefetch()
@@ -449,12 +454,18 @@ public final class Player {
         levels: a.gainDb != 0 || gainB != 0 ? .init(a: a.gainDb, b: gainB) : nil)
     }
     transitions.planner.update(wanted: wanted, playing: (a.track.fileId, current.entry.token))
+  }
+
+  /// The mix maps of the song playing and the next, whatever the transitions: the accent glides to the next song's
+  /// color over one beat of it, and the end of a song counts its last bar (`handoff`). With DJ mix the next song's
+  /// join is picked again once they're here.
+  private func loadMixMaps() {
     let maps = transitions.mixMaps
-    if maps.map(a.track.recordingId) == nil || next.map({ maps.map($0.recordingId) == nil }) == true {
-      Task {
-        await maps.load([a.track, next])
-        updateUpcoming()
-      }
+    let songs = [queue.currentTrack, queue.upNext]
+    guard songs.contains(where: { $0.map { maps.map($0.recordingId) == nil } ?? false }) else { return }
+    Task {
+      await maps.load(songs)
+      if settings.transitions == .dj { updateUpcoming() }
     }
   }
 
@@ -500,6 +511,24 @@ public final class Player {
     updateUpcoming()
     return true
   }
+
+  // MARK: The end of a song
+
+  /// How the song playing gives way to the next (`EndOfSong`), by the join the engine has for it or the mix it has
+  /// placed. None when nothing follows it on its own (repeat one, the end of the queue, offline with the next song not
+  /// on this device) or when the sleep timer stops the music after it.
+  public var handoff: EndOfSong.Handoff? {
+    guard !sleep.endOfSong, queue.repeatMode != .one, let current = loaded, let next = upcoming, duration > 0 else { return nil }
+    let mix = engine.mix.flatMap { $0.to == next.item.id ? $0.plan : nil }
+    let bpm = transitions.mixMaps.map(current.item.track.recordingId)?.bpm
+    return EndOfSong.handoff(next: next.item.track, join: next.join, mix: mix, duration: duration, bpm: bpm)
+  }
+
+  /// What the player's second line says as the song playing ends ("Next: Teardrop"), else nil (plan 7 §5).
+  public var endOfSongLine: String? { endOfSongWords?.text }
+
+  /// `endOfSongLine` with what it says where it's short of room (the last bar's "Mixing on the next bar").
+  public var endOfSongWords: EndOfSong.Words? { EndOfSong.words(handoff, time: time) }
 
   private func gainDb(_ track: Track) -> Double {
     levels.gainDb(for: track, in: queue, enabled: settings.levelVolume) ?? 0
@@ -592,7 +621,12 @@ public final class Player {
       tracker.finish(skipped ? .changed : .ended)
       // The sleep timer ends this song: in a mix, the music stops where the mix ends; at a cut, here.
       if sleep.stopsAtSongEnd() {
-        if let mix = engine.mix, mix.to == id { pauseAtMixEnd = mix.end } else { queue.playing = false }
+        if let mix = engine.mix, mix.to == id {
+          pauseAtMixEnd = mix.end
+        } else {
+          queue.playing = false
+          sleep.fellAsleep()
+        }
       }
       tracker.start(joined.item.track)
       queue.next(auto: true)
@@ -606,7 +640,10 @@ public final class Player {
       tracker.finish(.ended)
       queue.next(auto: true)
       // The sleep timer's "end of song": on to the next song, paused, for when you're back.
-      if sleep.stopsAtSongEnd() { queue.playing = false }
+      if sleep.stopsAtSongEnd() {
+        queue.playing = false
+        sleep.fellAsleep()
+      }
       sync()
     case .mixMissed(let id):
       missedMixes.insert(id)
