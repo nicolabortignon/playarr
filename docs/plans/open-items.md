@@ -50,12 +50,9 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - Bold Text: the bundled fonts don't follow it (nothing reads `legibilityWeight`), though phase 10 assumed system fonts would. *(phase 10, found)*
 - Mix colors drawn in Display P3 rather than sRGB (optional; today's washes fit in sRGB). *(phase 6 next steps)*
 - Once in five iPhone runs of `AccessibilityAuditTests`, Now Playing didn't open from the mini player within 5 seconds; it has passed every run since. *(found)*
-- An album partly here, beyond the library, shows both its cover's "3 OF 5" badge and a "3/5" button. *(found)*
 
 ## Tooling
 
-- `.env.example` doesn't list `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID` and `IOS_BUNDLE_ID`, which the iOS release scripts need. *(found)*
-- The web smoke tests pass silently when no server is running (`apps/web/src/smoke.test.tsx` returns early). *(found)*
 
 ## Found while writing the docs
 

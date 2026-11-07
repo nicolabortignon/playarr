@@ -6,7 +6,7 @@ import type { Track } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { healQueue } from './player/healQueue';
 import { useOffline } from './player/offline';
 import { usePlayer } from './player/store';
@@ -14,10 +14,8 @@ import { useToasts } from './lib/toast';
 import { useUI } from './lib/ui';
 import { routes } from './routes';
 
-let reachable = false;
-beforeAll(async () => {
-  reachable = await fetch('/api/health').then((r) => r.ok, () => false);
-});
+// Without a server the whole suite is skipped, and says so, rather than every test passing without looking.
+const reachable = await fetch('/api/health').then((r) => r.ok, () => false);
 
 afterEach(() => {
   cleanup();
@@ -47,7 +45,7 @@ console.error = (...args: unknown[]) => {
   origError(...args);
 };
 
-describe('Playarr web against live server', () => {
+describe.skipIf(!reachable)('Playarr web against live server (pnpm dev:server)', () => {
   it.each([
     ['/', 'Recently added'],
     ['/artists', 'Artists'],
@@ -62,14 +60,12 @@ describe('Playarr web against live server', () => {
     ['/library', 'Library'],
     ['/settings', /Where your music comes from/],
   ] as [string, string | RegExp][])('renders %s', async (path, text) => {
-    if (!reachable) return;
     renderAt(path);
     expect((await screen.findAllByText(text)).length).toBeGreaterThan(0);
     expect(errors.join('\n')).toBe('');
   });
 
   it('renders an artist page with discography', async () => {
-    if (!reachable) return;
     const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];
     const daft = artists.find((a) => a.name === 'Daft Punk') ?? artists[0]!;
     renderAt(`/artists/${daft.id}`);
@@ -79,7 +75,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('searches the library', async () => {
-    if (!reachable) return;
     renderAt('/search?q=daft');
     await screen.findByText('Top result');
     await screen.findByText('One More Time');
@@ -87,7 +82,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('shows music that is not in the library, with request buttons', async () => {
-    if (!reachable) return;
     renderAt('/search?q=massive%20attack');
     await screen.findByRole('heading', { name: /Not in your library/ });
     const buttons = await screen.findAllByRole('button', { name: /Request/ }, { timeout: 20_000 });
@@ -96,7 +90,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('links artist and album names in both search song lists', async () => {
-    if (!reachable) return;
     renderAt('/search?q=teardrop');
 
     // Songs outside the library: every row links its artist; unknown ids go through the name lookup.
@@ -125,7 +118,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('resolves an artist name to their discography and highlights the album', async () => {
-    if (!reachable) return;
     const router = renderAt('/discover/artist?name=Portishead&album=Dummy');
     await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/discover\/artists\/[0-9a-f-]{36}$/), {
       timeout: 15_000,
@@ -145,7 +137,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('renders a discover artist page with a discography', async () => {
-    if (!reachable) return;
     renderAt('/discover/artists/10adbe5e-a2c0-4bf3-8249-2b4cbf6e6ca8'); // Massive Attack
     await screen.findByRole('heading', { name: 'Massive Attack' }, { timeout: 20_000 });
     // Needs MusicBrainz over the internet; when it's unreachable the page must say so, not "no albums".
@@ -156,7 +147,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('hearts a song on an album page and lists it under Favorites', async () => {
-    if (!reachable) return;
     const album = (await (await fetch('/api/albums/8')).json()) as { tracks: { title: string; recordingId: string }[] };
     const song = album.tracks[1]!;
     await fetch(`/api/favorites/${song.recordingId}`, { method: 'DELETE' });
@@ -184,7 +174,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('refreshes queue tracks saved before favorites existed, so the player shows a heart', async () => {
-    if (!reachable) return;
     const album = (await (await fetch('/api/albums/8')).json()) as { tracks: Record<string, unknown>[] };
     // Simulate a queue persisted by an older version: tracks without recordingId.
     const old = album.tracks.slice(0, 3).map(({ recordingId: _r, ...t }) => t) as never[];
@@ -201,7 +190,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('creates a playlist, adds an album to it from the album menu, and shows it', async () => {
-    if (!reachable) return;
     const name = `Smoke test ${Date.now()}`;
 
     let id: number | undefined;
@@ -247,7 +235,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('generates a playlist cover from its songs and explains it', async () => {
-    if (!reachable) return;
     const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];
     const daft = artists.find((a) => a.name === 'Daft Punk');
     if (!daft) return;
@@ -282,7 +269,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('picks a new cover in the picker and pins it; small thumbnails leave the title off', async () => {
-    if (!reachable) return;
     const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];
     const air = artists.find((a) => a.name === 'Air');
     if (!air) return;
@@ -329,7 +315,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('recommends similar songs under a playlist, adds an owned one, and links artists and albums', async () => {
-    if (!reachable) return;
     const artists = (await (await fetch('/api/artists')).json()) as { id: number; name: string }[];
     const seedArtists = artists.filter((a) => ['Daft Punk', 'Moby', 'Air'].includes(a.name));
     const tracks = (
@@ -383,7 +368,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('plays an album, queues, shuffles, and opens Now Playing', async () => {
-    if (!reachable) return;
     const albums = (await (await fetch('/api/albums')).json()) as { id: number; title: string; trackCount: number }[];
     const album = albums.find((a) => a.trackCount > 3)!;
     renderAt(`/albums/${album.id}`);
@@ -424,7 +408,6 @@ describe('Playarr web against live server', () => {
   });
 
   it('marks songs kept on this device in the queue, and shows the space they take', async () => {
-    if (!reachable) return;
     const albums = (await (await fetch('/api/albums')).json()) as { id: number; trackCount: number }[];
     const album = (await (await fetch(`/api/albums/${albums.find((a) => a.trackCount > 3)!.id}`)).json()) as { tracks: Track[] };
     const [first, second, third] = album.tracks as [Track, Track, Track];
