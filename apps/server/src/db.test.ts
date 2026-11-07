@@ -15,6 +15,8 @@ const LATE_FOLDERS_MIGRATION = 19;
 const BUMP_ALBUMS_MIGRATION = 20;
 /** How many migrations ran before the one adding collaborative playlists and who added each song. */
 const COLLABORATIVE_MIGRATION = 25;
+/** How many migrations ran before the one giving requests to everyone who asked (plan 4 §4). */
+const REQUESTS_MIGRATION = 26;
 
 describe('migrate', () => {
   it('creates the catalog tables', () => {
@@ -235,6 +237,36 @@ describe('migrate', () => {
       { id: 2, added_at: '2026-11-03T18:00:00.000Z' },
       { id: 3, added_at: '2026-11-03T18:00:00.000Z' },
     ]);
+  });
+
+  it('gives the requests of before to who asked first, as arrived and seen, and lets requests wait for an admin', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    migrate(db, REQUESTS_MIGRATION);
+    db.exec(`
+      INSERT INTO accounts (id, username, name, role, created_at) VALUES (2, 'sam', 'Sam', 'member', 'now');
+      INSERT INTO album_requests (mbid, keys, lidarr_album_id, title, artist_name, requested_at, command_id, requested_by) VALUES
+        ('rg-1', '["massive attack|mezzanine"]', 41, 'Mezzanine', 'Massive Attack', '2026-11-01T00:00:00.000Z', 7, 2),
+        ('rg-2', '[]', 42, 'Heligoland', 'Massive Attack', '2026-11-02T00:00:00.000Z', NULL, NULL);
+    `);
+    migrate(db);
+    expect(db.prepare('SELECT mbid, keys, lidarr_album_id, command_id, requested_by, status, decided_by, arrived_at FROM album_requests ORDER BY mbid').all()).toEqual([
+      { mbid: 'rg-1', keys: '["massive attack|mezzanine"]', lidarr_album_id: 41, command_id: 7, requested_by: 2, status: 'approved', decided_by: null, arrived_at: '2026-11-01T00:00:00.000Z' },
+      { mbid: 'rg-2', keys: '[]', lidarr_album_id: 42, command_id: null, requested_by: null, status: 'approved', decided_by: null, arrived_at: '2026-11-02T00:00:00.000Z' },
+    ]);
+    // Who asked first asked, and has seen it as it is: nothing that happened before is news.
+    expect(db.prepare('SELECT mbid, account_id, asked_at, seen_at FROM album_request_askers').all()).toEqual([
+      { mbid: 'rg-1', account_id: 2, asked_at: '2026-11-01T00:00:00.000Z', seen_at: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/) },
+    ]);
+    // A request waiting for an admin has no Lidarr album yet; an account may be made to ask first.
+    expect(() =>
+      db.exec(`INSERT INTO album_requests (mbid, keys, title, artist_name, requested_at, status) VALUES ('rg-3', '[]', 'Protection', 'Massive Attack', 'now', 'waiting')`),
+    ).not.toThrow();
+    expect(db.prepare('SELECT ask_first FROM accounts WHERE id = 2').get()).toEqual({ ask_first: 0 });
+    // An account removed takes its asking with it; the request stays, for the admins.
+    db.exec('DELETE FROM accounts WHERE id = 2');
+    expect(db.prepare('SELECT COUNT(*) AS n FROM album_request_askers').get()).toEqual({ n: 0 });
+    expect(db.prepare(`SELECT requested_by FROM album_requests WHERE mbid = 'rg-1'`).get()).toEqual({ requested_by: null });
   });
 });
 

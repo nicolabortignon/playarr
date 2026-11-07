@@ -42,8 +42,10 @@ import type {
   PlayReport,
   Recommendations,
   RematchResult,
+  RequestAccess,
   RequestSettingsInfo,
   RequestSettingsPatch,
+  RequestsSeen,
   ReviewAction,
   ReviewGroup,
   SearchResults,
@@ -81,7 +83,10 @@ export interface AccountInput {
   username: string;
   name: string;
   role: AccountRole;
+  /** May ask for albums (`requestAccess` `on` or `ask`), for servers that predate requestAccess. */
   canRequest: boolean;
+  /** Whether its requests go straight to Lidarr, wait for an admin, or can't be made. */
+  requestAccess: RequestAccess;
   sources: number[] | null;
   /** The device settings this account may not change (ignored for admins). */
   locked?: DeviceSetting[];
@@ -182,6 +187,12 @@ export const api = {
   requestAlbum: (ref: AlbumRef) =>
     request<AlbumRequest>('/api/requests', { method: 'POST', body: JSON.stringify(ref) }, SLOW_MS),
   removeRequest: (mbid: string) => request<void>(`/api/requests/${mbid}`, { method: 'DELETE' }),
+  /** An admin's yes to a request waiting for approval (it goes to Lidarr), or no. */
+  approveRequest: (mbid: string) => request<AlbumRequest>(`/api/requests/${encodeURIComponent(mbid)}/approve`, { method: 'POST' }),
+  declineRequest: (mbid: string) => request<AlbumRequest>(`/api/requests/${encodeURIComponent(mbid)}/decline`, { method: 'POST' }),
+  /** These of the account's requests have been seen as they are: no longer news on Requests' badge. */
+  markRequestsSeen: (mbids: string[]) =>
+    request<void>('/api/requests/seen', { method: 'POST', body: JSON.stringify({ mbids } satisfies RequestsSeen) }),
   favorites: () => get<FavoriteTrack[]>('/api/favorites'),
   /** `favoritedAt`: when it was first favorited, putting a favorite taken back where it was in the list. */
   addFavorite: (recordingId: string, favoritedAt?: string) =>

@@ -1,4 +1,4 @@
-import type { Account, AccountRole, DeviceSetting, ListedAccount } from '@playarr/shared';
+import type { Account, AccountRole, DeviceSetting, ListedAccount, RequestAccess } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
 import { listenBrainzKey } from '../listenbrainz/scrobbler.ts';
 import { hashPassword, verifyPassword } from './password.ts';
@@ -18,6 +18,8 @@ export interface AccountInput {
   name: string;
   role: AccountRole;
   canRequest: boolean;
+  /** How its requests go; when given it decides, and `canRequest` follows from it (true for `on` and `ask`). */
+  requestAccess?: RequestAccess;
   /** null: every source. */
   sources: number[] | null;
   /** The device settings this account may not change (ignored for admins). */
@@ -30,12 +32,14 @@ interface Row {
   name: string;
   role: AccountRole;
   can_request: number;
+  /** With can_request: its requests wait for an admin's approval (ignored for admins). */
+  ask_first: number;
   all_sources: number;
   password_hash: string | null;
   locked: string;
 }
 
-const COLUMNS = 'id, username, name, role, can_request, all_sources, password_hash, locked';
+const COLUMNS = 'id, username, name, role, can_request, ask_first, all_sources, password_hash, locked';
 const DEVICE_SETTINGS: readonly DeviceSetting[] = ['playback', 'appearance'];
 export const MIN_PASSWORD = 8;
 
@@ -118,10 +122,11 @@ export class Accounts {
     const username = this.username(input.username);
     const name = cleanName(input.name);
     const sources = this.checkSources(input.sources);
+    const access = forRole(input.role, input.requestAccess ?? (input.canRequest ? 'on' : 'off'));
     return this.transaction(() => {
       const { lastInsertRowid } = this.db
-        .prepare('INSERT INTO accounts (username, name, role, can_request, all_sources, locked, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(username, name, input.role, input.canRequest ? 1 : 0, sources === null ? 1 : 0, lockedColumn(input.locked), new Date().toISOString());
+        .prepare('INSERT INTO accounts (username, name, role, can_request, ask_first, all_sources, locked, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(username, name, input.role, ...accessColumns(access), sources === null ? 1 : 0, lockedColumn(input.locked), new Date().toISOString());
       const id = Number(lastInsertRowid);
       this.setSources(id, sources);
       return this.get(id)!;
@@ -135,13 +140,13 @@ export class Accounts {
     const name = patch.name === undefined ? row.name : cleanName(patch.name);
     const role = patch.role ?? row.role;
     if (row.role === 'admin' && role !== 'admin' && this.admins() === 1) throw new AccountError('There has to be an admin', 409);
-    const canRequest = patch.canRequest === undefined ? row.can_request : patch.canRequest ? 1 : 0;
+    const access = forRole(role, patch.requestAccess ?? accessAfter(storedAccess(row), patch.canRequest));
     const sources = patch.sources === undefined ? undefined : this.checkSources(patch.sources);
     const locked = patch.locked === undefined ? row.locked : lockedColumn(patch.locked);
     return this.transaction(() => {
       this.db
-        .prepare('UPDATE accounts SET username = ?, name = ?, role = ?, can_request = ?, locked = ? WHERE id = ?')
-        .run(username, name, role, canRequest, locked, id);
+        .prepare('UPDATE accounts SET username = ?, name = ?, role = ?, can_request = ?, ask_first = ?, locked = ? WHERE id = ?')
+        .run(username, name, role, ...accessColumns(access), locked, id);
       if (sources !== undefined) {
         this.db.prepare('UPDATE accounts SET all_sources = ? WHERE id = ?').run(sources === null ? 1 : 0, id);
         this.setSources(id, sources);
@@ -223,12 +228,14 @@ export class Accounts {
     const sources = row.all_sources
       ? null
       : (this.db.prepare('SELECT source_id FROM account_sources WHERE account_id = ? ORDER BY source_id').all(row.id) as { source_id: number }[]).map((r) => r.source_id);
+    const access = forRole(row.role, storedAccess(row));
     return {
       id: row.id,
       username: row.username ?? `account-${row.id}`,
       name: row.name,
       role: row.role,
-      canRequest: !!row.can_request,
+      canRequest: access !== 'off',
+      requestAccess: access,
       sources,
       hasPassword: row.password_hash !== null,
       // An admin may change everything, whatever was ticked while they were a member.
@@ -253,6 +260,35 @@ function cleanName(name: string): string {
   const clean = name.trim().replace(/\s+/g, ' ').slice(0, 40);
   if (!clean) throw new AccountError('An account needs a name');
   return clean;
+}
+
+/** How an account's requests go, as stored. */
+function storedAccess(row: Pick<Row, 'can_request' | 'ask_first'>): RequestAccess {
+  if (!row.can_request) return 'off';
+  return row.ask_first ? 'ask' : 'on';
+}
+
+/**
+ * Asking first is a member's: an admin's requests go straight to Lidarr (they'd approve them anyway), and one made an
+ * admin stops asking first for good, rather than again, unseen, once made a member.
+ */
+function forRole(role: AccountRole, access: RequestAccess): RequestAccess {
+  return role === 'admin' && access === 'ask' ? 'on' : access;
+}
+
+/**
+ * The access after a change that gives only `canRequest` (apps that predate requestAccess): false is `off`; true
+ * keeps `ask` as it is, since such an app shows `ask` as allowed, and turns `off` into `on`.
+ */
+function accessAfter(current: RequestAccess, canRequest: boolean | undefined): RequestAccess {
+  if (canRequest === undefined) return current;
+  if (!canRequest) return 'off';
+  return current === 'off' ? 'on' : current;
+}
+
+/** can_request and ask_first for an access. */
+function accessColumns(access: RequestAccess): [canRequest: number, askFirst: number] {
+  return [access === 'off' ? 0 : 1, access === 'ask' ? 1 : 0];
 }
 
 /** The locked settings as stored: known names, each once, in a fixed order, comma-separated. */

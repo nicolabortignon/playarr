@@ -7,6 +7,7 @@ import type {
   DeviceSetting,
   FavoriteTrack,
   FolderBrowseRequest,
+  LibraryStats,
   ListenBrainzInfo,
   MixDetail,
   MixSettings,
@@ -24,7 +25,7 @@ import type {
 } from '@playarr/shared';
 import { MIX_MAP_VERSION, type MixMap, type MixMapEntry } from '@playarr/mix';
 import { keepPreviousData, queryOptions, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, type AnalysisKind } from './api';
 import { plural } from './format';
 import { queryClient } from './queryClient';
@@ -32,6 +33,29 @@ import { toast } from './toast';
 
 export const useHealth = () =>
   useQuery({ queryKey: ['health'], queryFn: api.health, staleTime: 30_000, refetchInterval: 60_000 });
+
+/** The pages that show the library, asked again once it changes. */
+const LIBRARY_KEYS = ['albums', 'artists', 'artist', 'search', 'discover', 'discover-artist', 'recommendations'];
+
+/** What the library holds, as health counts it: it changes when albums or songs arrive or go, not when a sync finds nothing new. */
+export const libraryContents = (stats: LibraryStats | undefined) => stats && `${stats.albums} ${stats.tracks} ${stats.sizeBytes}`;
+
+/**
+ * The library changed on the server (an album someone else asked for arrived, a source synced): the pages that show it
+ * are asked again. A member's requests are only their own, so it's health, asked every minute, that says so. Mounted
+ * once (AppShell).
+ */
+export function useWatchLibrary() {
+  const client = useQueryClient();
+  const contents = libraryContents(useHealth().data?.library);
+  const previous = useRef<string>(undefined);
+  useEffect(() => {
+    if (!contents) return;
+    const changed = previous.current !== undefined && previous.current !== contents;
+    previous.current = contents;
+    if (changed) for (const key of LIBRARY_KEYS) void client.invalidateQueries({ queryKey: [key] });
+  }, [contents, client]);
+}
 
 /** How busy MusicBrainz is. Polled quickly while lookups wait, slowly otherwise; off when `enabled` is false. */
 export const useMusicBrainzStatus = (enabled = true) =>
@@ -174,30 +198,88 @@ export function useRequests() {
 }
 
 /**
- * When a request becomes playable: refresh the library and say so. Mounted once (AppShell), so the toast
- * and the refresh happen once however many places show requests.
+ * What changed in the requests since the last look: the account's own that became playable, and others' newly waiting
+ * for an admin's answer (only an admin's list holds others'). Nothing counts until there was a list to compare with, so
+ * opening the app with albums already in doesn't announce them; after that, a request first seen already there does.
+ */
+export function requestChanges(
+  previous: ReadonlyMap<string, Pick<AlbumRequest, 'availability' | 'approval'>> | undefined,
+  requests: AlbumRequest[],
+): { landed: AlbumRequest[]; waiting: AlbumRequest[] } {
+  if (!previous) return { landed: [], waiting: [] };
+  return {
+    // The landed refresh the library whoever asked; `mine` is missing from servers that predate it.
+    landed: requests.filter((r) => r.availability.state === 'available' && previous.get(r.mbid)?.availability.state !== 'available'),
+    waiting: requests.filter((r) => r.approval === 'waiting' && r.mine === false && previous.get(r.mbid)?.approval !== 'waiting'),
+  };
+}
+
+/** "Sam asked for “Heligoland”", "2 albums are waiting for your approval". */
+export function waitingMessage(waiting: AlbumRequest[]): string | undefined {
+  if (!waiting.length) return undefined;
+  if (waiting.length > 1) return `${waiting.length} albums are waiting for your approval`;
+  const [request] = waiting as [AlbumRequest];
+  const who = request.askedBy?.[0];
+  return who ? `${who} asked for “${request.title}”` : `“${request.title}” is waiting for your approval`;
+}
+
+/**
+ * When a request becomes playable: refresh the library, and tell whoever asked. When one starts waiting for an admin's
+ * answer: tell the admin. Mounted once (AppShell), so the toasts and the refresh happen once however many places show
+ * requests.
  */
 export function useWatchRequests() {
   const client = useQueryClient();
   const query = useRequests();
-  const previous = useRef<Map<string, AvailabilityState>>(new Map());
+  const previous = useRef<Map<string, AlbumRequest>>(undefined);
   useEffect(() => {
     if (!query.data) return;
-    const landed = query.data.filter(
-      (r) => r.availability.state === 'available' && previous.current.get(r.mbid) !== 'available' && previous.current.size,
-    );
-    previous.current = new Map(query.data.map((r) => [r.mbid, r.availability.state]));
+    const { landed, waiting } = requestChanges(previous.current, query.data);
+    previous.current = new Map(query.data.map((r) => [r.mbid, r]));
     if (landed.length) {
-      for (const key of ['albums', 'artists', 'artist', 'health', 'search', 'discover', 'discover-artist', 'recommendations']) {
-        void client.invalidateQueries({ queryKey: [key] });
-      }
-      toast(landed.length === 1 ? `“${landed[0]!.title}” is ready to play` : `${landed.length} albums are ready to play`);
+      for (const key of [...LIBRARY_KEYS, 'health']) void client.invalidateQueries({ queryKey: [key] });
+      const yours = landed.filter((r) => r.mine !== false);
+      if (yours.length) toast(yours.length === 1 ? `“${yours[0]!.title}” is ready to play` : `${yours.length} albums are ready to play`);
     }
+    const asked = waitingMessage(waiting);
+    if (asked) toast(asked);
   }, [query.data, client]);
 }
 
 export const activeRequestCount = (requests: AlbumRequest[] | undefined) =>
   requests?.filter((r) => ACTIVE.includes(r.availability.state)).length ?? 0;
+
+/**
+ * What the badge on Requests counts: the account's own requests that arrived (or were declined) since it last looked, and
+ * for an admin the requests waiting for their answer (a member's list never holds another's).
+ */
+export const requestNewsCount = (requests: AlbumRequest[] | undefined) =>
+  requests?.filter((r) => r.unseen || (r.approval === 'waiting' && r.mine === false)).length ?? 0;
+
+/** The badge on Requests (the sidebar's, the phone's Library tab and Library's row). */
+export const useRequestNews = () => requestNewsCount(useRequests().data);
+
+/**
+ * Requests open on screen: what's news there has been seen, so it leaves the badge. Returns the ones that were news when
+ * the page saw them, to mark as new for as long as it's open.
+ */
+export function useSeeRequests(requests: AlbumRequest[] | undefined): ReadonlySet<string> {
+  const client = useQueryClient();
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
+  // Once for each set of news: a list asked for again while the mark is on its way still has it.
+  const unseen = requests?.filter((r) => r.unseen).map((r) => r.mbid).join(' ') ?? '';
+  useEffect(() => {
+    if (!unseen) return;
+    const mbids = unseen.split(' ');
+    setFresh((kept) => new Set([...kept, ...mbids]));
+    // A server that can't say what was seen keeps the badge: nothing to tell anyone.
+    void api
+      .markRequestsSeen(mbids)
+      .then(() => client.invalidateQueries({ queryKey: ['requests'] }))
+      .catch(() => {});
+  }, [unseen, client]);
+  return fresh;
+}
 
 export function useRequestAlbum() {
   const client = useQueryClient();
@@ -205,14 +287,39 @@ export function useRequestAlbum() {
     mutationFn: (ref: AlbumRef) => api.requestAlbum(ref),
     onSuccess: (req) => {
       toast(
-        req.availability.state === 'searching'
-          ? `Requested “${req.title}”. Lidarr is searching for it`
-          : `Requested “${req.title}”. Lidarr will search for it on its schedule`,
+        req.approval === 'waiting'
+          ? `Requested “${req.title}”. It goes to Lidarr once an admin approves it`
+          : req.availability.state === 'searching'
+            ? `Requested “${req.title}”. Lidarr is searching for it`
+            : `Requested “${req.title}”. Lidarr will search for it on its schedule`,
       );
       void client.invalidateQueries({ queryKey: ['requests'] });
       void client.invalidateQueries({ queryKey: ['discover'] });
       void client.invalidateQueries({ queryKey: ['discover-artist'] });
       void client.invalidateQueries({ queryKey: ['recommendations'] });
+    },
+    onError: (err) => toast((err as Error).message, 'error'),
+  });
+}
+
+/** An admin's answer to a request waiting for approval: yes sends it to Lidarr, no tells whoever asked. */
+export function useAnswerRequest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ mbid, yes }: { mbid: string; yes: boolean }) => (yes ? api.approveRequest(mbid) : api.declineRequest(mbid)),
+    onSuccess: (req, { yes }) => {
+      toast(
+        !yes
+          ? `Declined “${req.title}”`
+          : req.availability.state === 'searching'
+            ? `Approved “${req.title}”. Lidarr is searching for it`
+            : `Approved “${req.title}”. Lidarr will search for it on its schedule`,
+      );
+      void client.invalidateQueries({ queryKey: ['requests'] });
+      if (yes) {
+        void client.invalidateQueries({ queryKey: ['discover'] });
+        void client.invalidateQueries({ queryKey: ['discover-artist'] });
+      }
     },
     onError: (err) => toast((err as Error).message, 'error'),
   });

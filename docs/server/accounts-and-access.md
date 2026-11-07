@@ -18,7 +18,8 @@ An account (`accounts` table; `Accounts` in `accounts/accounts.ts`) has:
 | `username` | 1 to 32 lowercase letters, digits, dots, dashes or underscores, starting with a letter or digit (`USERNAME` in `username.ts`). Matched in any case. |
 | `name` | the display name, up to 40 characters, whitespace collapsed |
 | `role` | `admin` or `member` |
-| `canRequest` | may request albums through Lidarr ([discover-and-requests.md](discover-and-requests.md)) |
+| `canRequest` | may request albums through Lidarr ([discover-and-requests.md](discover-and-requests.md)): true for `requestAccess` `on` and `ask` alike, so apps that predate `requestAccess` still offer Request |
+| `requestAccess` | how its requests go: `on` (straight to Lidarr), `ask` (each waits for an admin's approval; members only: an admin's own always go straight on, and an account made an admin stops asking first for good) or `off`. Stored as `can_request` with `ask_first`; an app that sends only `canRequest` keeps an account asking first while it may request |
 | `sources` | `null` for every source, or a list of source ids (`account_sources`) |
 | `locked` | device settings a member may not change: `playback`, `appearance` (always empty for admins) |
 | `password_hash` | scrypt, or none (the account can't sign in yet) |
@@ -31,7 +32,7 @@ Rules the service enforces, each with a 409:
 - **The last password stays.** The only account with a password can't have it reset or be removed (`keepAPassword`). With no password left the server would be back in setup mode, where every request is the owner's, from anywhere. Give another account a password first.
 - **The owner comes first.** While in setup mode, accounts can't be created and passwords can't be reset: a setup code redeemed before the owner has a password would end setup mode and lock the owner out.
 
-Removing an account deletes its plays, mixes, favorites, playlists and ListenBrainz token; its sessions, setup codes and source list go with it by foreign key. Songs it added to others' collaborative playlists stay there, no longer saying who added them.
+Removing an account deletes its plays, mixes, favorites, playlists and ListenBrainz token; its sessions, setup codes, source list and its share in requests (`album_request_askers`) go with it by foreign key. Songs it added to others' collaborative playlists stay there, no longer saying who added them. A request nobody else asked for stays on admins' lists.
 
 ### Passwords
 
@@ -115,20 +116,22 @@ Once set up, the home network gives no rights: admins change settings from anywh
 | `requireOwn` | any signed-in account | home network |
 | `requireCanRequest` | accounts that may request | everyone |
 | `requireLocalSetup` | refused (409) | home network |
+| `requestsWaitForApproval` | true for an account that asks an admin first | false |
+| `seesEveryRequest` | admins (everyone else sees their own requests) | everyone (all act as the owner) |
 
 What that means in practice ([api.md](api.md) lists every route):
 
 - **Admins** change settings: sources and folders, matching, requests, updates, how mixes are made, analysis, library refresh, rematching a file, and accounts. Members can read the source list (without connection settings) and Settings → Mixes, and get "Only an admin can change this".
 - **Each account** has its own ListenBrainz link and listening history (`requireOwn`), favorites, playlists (private unless shared with the server; a shared one its owner makes collaborative takes songs from everyone, who add, move and remove them, while the rest stays its owner's), mixes, radio and stats.
 - **Members** may rename themselves (only the name) and see and sign out their own devices.
-- **Requests** need the account's "can request" right; Discover itself is open to every signed-in account.
+- **Requests** need the account's "can request" right; Discover itself is open to every signed-in account. A request belongs to whoever asked: members list and take back their own, admins see everyone's and approve or decline those from accounts that ask first.
 - **File paths** in a song's metadata (Show metadata) appear only for admins.
 
 ### Each account's catalog
 
 An account that hears only some sources gets a `LibraryView` of the catalog: the same catalog built from only the copies in those sources (`library.view(sources)` in `library/library.ts`). A song exists for it when it has a copy there, an album or artist when it has such a song, and a song's `fileId` is the best copy the account may hear. One view is made per distinct set of sources and shared by every account with that set; it rebuilds when the library changes. Routes narrow with `libraryOf(library, req)`, or `visibleRecordings` for lists of recording ids.
 
-This covers the catalog and search, `/stream`, `/art`, `/transitions`, levels, mix maps and cue points, lyrics, metadata, favorites, playlists, mixes, radio, stats and Jump back in. Discover's search and its "in your library" links, and the list of requests, are the whole server's. How the catalog itself is built is in [sources-and-catalog.md](sources-and-catalog.md).
+This covers the catalog and search, `/stream`, `/art`, `/transitions`, levels, mix maps and cue points, lyrics, metadata, favorites, playlists, mixes, radio, stats and Jump back in. Discover's search and its "in your library" links are the whole server's; the list of requests is the account's own (an admin's, everyone's). How the catalog itself is built is in [sources-and-catalog.md](sources-and-catalog.md).
 
 ---
 

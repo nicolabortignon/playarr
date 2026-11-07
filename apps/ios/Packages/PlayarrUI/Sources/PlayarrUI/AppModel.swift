@@ -81,15 +81,15 @@ public final class AppModel {
     }
 
     /// Signed in to the demo library, playing silence: for UI tests (`-UITestsDemo`). Nothing is kept. `requests`: the
-    /// demo with Lidarr and an album to request, as an account that may request (`-UITestsRequests`, `DemoRequestsAPI`).
-    /// `api`: another server to answer (one that can't be reached, for the error states). `scratch`: where its files and
-    /// settings go (a new temporary folder and suite when nil).
-    public static func demo(requests: Bool = false, api custom: (any APISending)? = nil, scratch: Scratch? = nil) -> AppModel {
+    /// demo with Lidarr and an album to request, signed in as a member who may request, one who asks first, or an admin
+    /// (`-UITestsRequests`, `DemoRequestsAPI`). `api`: another server to answer (one that can't be reached, for the
+    /// error states). `scratch`: where its files and settings go (a new temporary folder and suite when nil).
+    public static func demo(requests: DemoRequestsAPI.Asker? = nil, api custom: (any APISending)? = nil, scratch: Scratch? = nil) -> AppModel {
         let id = UUID().uuidString
         let (folder, suite) = scratch ?? (FileManager.default.temporaryDirectory.appending(path: "playarr-demo-\(id)", directoryHint: .isDirectory), "playarr-demo-\(id)")
         let store = ServerStore(directory: folder.appending(path: "store", directoryHint: .isDirectory), secrets: InMemorySecretStore())
-        let account = requests ? DemoRequestsAPI.account : Demo.account
-        let api: any APISending = custom ?? (requests ? DemoRequestsAPI() : DemoAPI())
+        let account = requests?.account ?? Demo.account
+        let api: any APISending = custom ?? (requests.map { DemoRequestsAPI($0) } ?? DemoAPI())
         try? store.signedIn(SignInResponse(token: "demo", account: account), server: Demo.server, at: Demo.baseURL)
         let defaults = UserDefaults(suiteName: suite) ?? .standard
         let model = AppModel(

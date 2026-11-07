@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router';
 import { usePlayerAccent } from '../lib/accent';
 import { usePrefetchOnIntent } from '../lib/prefetch';
-import { useSongMap, useWatchRequests } from '../lib/queries';
+import { useSongMap, useWatchLibrary, useWatchRequests } from '../lib/queries';
 import { cn } from '../lib/cn';
 import { usePrefs, type MotionPref } from '../lib/prefs';
 import { useUI } from '../lib/ui';
@@ -56,6 +56,7 @@ export function AppShell() {
   usePrefetchOnIntent();
   const reducedMotion = useMotionPref();
   useWatchRequests();
+  useWatchLibrary();
   // Only one layout's chrome is mounted: the hidden one would still poll and re-render every second.
   const desktop = useDesktopLayout();
   // The queue and lyrics column, beside the page when the window is wide enough (else Queue opens the Queue page).

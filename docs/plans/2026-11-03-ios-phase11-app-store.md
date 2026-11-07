@@ -186,7 +186,7 @@ Expected: `{"id":"…","name":"…","version":"…","minAppVersion":"…","setup
 
 **3. The demo account.** The user creates it on the real server (Claude can't reach the NAS from its shell; hand over these steps and wait):
 - Make sure the Creative Commons music is a source of its own: Settings → Sources → Add source → a folder holding only Creative Commons albums (CC BY or CC0), named "Creative Commons". Wait for its sync and matching to finish.
-- Settings → Accounts → **Add account**: Name `App Review`, Username `reviewer`, Role **Member**, **Can request albums** off, Library **Only these sources** → tick only **Creative Commons**. Copy the setup link.
+- Settings → Accounts → **Add account**: Name `App Review`, Username `reviewer`, Role **Member**, Requests **Can’t request albums**, Library **Only these sources** → tick only **Creative Commons**. Copy the setup link.
 - Open the setup link in a private window and choose a strong password; keep it in a password manager under "Playarr App Review".
 - Still signed in as `reviewer`, check: Home and Library show only the Creative Commons albums and Search finds nothing else; no Request buttons; Settings → Accounts shows only "You"; Sources, Requests and Updates say only an admin can change them; an album URL from another source answers "not found". Sign that browser session out afterwards (Settings → Accounts → reviewer → Devices).
 

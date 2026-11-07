@@ -2,7 +2,7 @@ import PlayarrAPI
 import SwiftUI
 
 /// The iPad sidebar (apps/web/src/components/Nav.tsx `Sidebar`): the desktop links, Requests while there are some
-/// (with how many are on their way) and your playlists with "+" for a new one, in one list that scrolls, with Settings
+/// (with how many are news) and your playlists with "+" for a new one, in one list that scrolls, with Settings
 /// kept at the foot. Once the links have scrolled away, a bar at the top keeps the one you're on, so the playlists get
 /// the room; back at the top, the links are all there again. Songs dragged onto one of your playlists are added to it;
 /// onto Queue, to the queue.
@@ -74,7 +74,8 @@ struct Sidebar: View {
           }
         }
         if let requests = discover?.requests, showsRequests {
-          link(.requests).badge(requests.activeCount)
+          // What's news there: arrived or declined since the last look, and for an admin what waits for their answer.
+          link(.requests).badge(requests.newsCount)
         }
       }
       Section {

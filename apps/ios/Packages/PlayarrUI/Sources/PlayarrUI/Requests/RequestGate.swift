@@ -10,9 +10,12 @@ public struct RequestGate: Equatable, Sendable {
   public var allowsRequests: Bool
   /// The account may request and withdraw requests (DELETE /api/requests needs only this).
   public var canRequest: Bool
+  /// Its requests wait for an admin to approve them before Lidarr hears of them (Settings → Accounts: "Asks an admin first").
+  public var asksFirst: Bool
 
   public init(health: HealthStatus?, account: Account?) {
     canRequest = account?.canRequest ?? false
+    asksFirst = canRequest && account?.requestAccess == .ask
     hasLidarr = health.map { $0.lidarr != nil } ?? true
     allowsRequests = canRequest && (health?.requests ?? true)
   }

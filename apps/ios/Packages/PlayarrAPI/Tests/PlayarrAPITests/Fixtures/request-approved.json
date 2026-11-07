@@ -1,0 +1,14 @@
+{
+  "mbid": "4d1d6f7b-1111-4222-8333-944455550001",
+  "title": "Heligoland",
+  "artistName": "Massive Attack",
+  "requestedAt": "2026-11-03T12:00:00.000Z",
+  "mine": false,
+  "askedBy": [
+    "Sam"
+  ],
+  "availability": {
+    "state": "searching",
+    "message": "Searching indexers…"
+  }
+}

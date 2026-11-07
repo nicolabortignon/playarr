@@ -1,4 +1,4 @@
-import type { Account, AccountRole, DeviceSetting, ListedAccount, SessionInfo, SetupCode } from '@playarr/shared';
+import type { Account, AccountRole, DeviceSetting, ListedAccount, RequestAccess, SessionInfo, SetupCode } from '@playarr/shared';
 import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
@@ -118,11 +118,22 @@ const DEVICE_SETTINGS: { setting: DeviceSetting; label: string }[] = [
   { setting: 'appearance', label: 'Appearance' },
 ];
 
+/** How an account's requests go, as the form offers it; servers that predate requestAccess say only whether it may. */
+const accessOf = (a: Account): RequestAccess => a.requestAccess ?? (a.canRequest ? 'on' : 'off');
+
+/** The form's choices for requests: an admin's requests always go straight to Lidarr, so only a member asks first. */
+const REQUEST_ACCESS: { access: RequestAccess; label: string; membersOnly?: boolean }[] = [
+  { access: 'on', label: 'Can request albums' },
+  { access: 'ask', label: 'Asks an admin first: each request waits for approval', membersOnly: true },
+  { access: 'off', label: 'Can’t request albums' },
+];
+
 /** "sam · member · can request albums · Creative Commons · Playback locked" */
 function summary(a: Account, sourceNames: Map<number, string>): string {
   const library = a.sources === null ? 'every source' : a.sources.length ? a.sources.map((id) => sourceNames.get(id) ?? `source ${id}`).join(', ') : 'no sources';
   const locked = DEVICE_SETTINGS.filter(({ setting }) => a.locked?.includes(setting)).map(({ label }) => label);
-  return [a.username, a.role, a.canRequest ? 'can request albums' : '', library, locked.length ? `${locked.join(' and ')} locked` : '']
+  const requests = { on: 'can request albums', ask: 'requests need approval', off: '' }[accessOf(a)];
+  return [a.username, a.role, requests, library, locked.length ? `${locked.join(' and ')} locked` : '']
     .filter(Boolean)
     .join(' · ');
 }
@@ -308,15 +319,25 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
   const [name, setName] = useState(account?.name ?? '');
   const [username, setUsername] = useState(account?.username ?? '');
   const [role, setRole] = useState<AccountRole>(account?.role ?? 'member');
-  const [canRequest, setCanRequest] = useState(account?.canRequest ?? true);
+  const [access, setAccess] = useState<RequestAccess>(account ? accessOf(account) : 'on');
   const [everySource, setEverySource] = useState(account ? account.sources === null : true);
   const [picked, setPicked] = useState<number[]>(account?.sources ?? []);
   const [locked, setLocked] = useState<DeviceSetting[]>(account?.locked ?? []);
   const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const allow = (setting: DeviceSetting, may: boolean) => setLocked((l) => (may ? l.filter((x) => x !== setting) : [...l, setting]));
+  // Made an admin, a member who asked first may request (the server takes it so, too).
+  const requestAccess = role === 'admin' && access === 'ask' ? 'on' : access;
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    onSubmit({ username: username.trim(), name: name.trim(), role, canRequest, sources: everySource ? null : picked, locked });
+    onSubmit({
+      username: username.trim(),
+      name: name.trim(),
+      role,
+      canRequest: requestAccess !== 'off',
+      requestAccess,
+      sources: everySource ? null : picked,
+      locked,
+    });
   };
   const check = 'size-4 accent-[var(--accent)]';
   return (
@@ -343,10 +364,15 @@ function AccountForm({ account, submitLabel, busy, onSubmit }: { account?: Accou
           Admin: also changes settings, sources and accounts
         </label>
       </fieldset>
-      <label className="flex items-center gap-2 type-body text-paper">
-        <input type="checkbox" checked={canRequest} onChange={(e) => setCanRequest(e.target.checked)} className={check} />
-        Can request albums
-      </label>
+      <fieldset className="space-y-2">
+        <legend className="mb-1 type-small text-muted">Requests</legend>
+        {REQUEST_ACCESS.filter((choice) => !choice.membersOnly || role === 'member').map((choice) => (
+          <label key={choice.access} className="flex items-center gap-2 type-body text-paper">
+            <input type="radio" name="requests" checked={requestAccess === choice.access} onChange={() => setAccess(choice.access)} className={check} />
+            {choice.label}
+          </label>
+        ))}
+      </fieldset>
       {role === 'member' && (
         <fieldset className="space-y-2">
           <legend className="mb-1 type-small text-muted">May change on their devices</legend>

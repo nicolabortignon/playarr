@@ -225,8 +225,14 @@ public final class AccountsModel {
       library = "every source"
     }
     let locked = AccountFormModel.deviceSettings.filter { account.locked?.contains($0.setting) == true }.map(\.label)
+    let requests: String? =
+      switch AccountFormModel.access(account) {
+      case .on: "can request albums"
+      case .ask: "requests need approval"
+      default: nil
+      }
     return [
-      account.username, account.role.rawValue, account.canRequest ? "can request albums" : nil, library,
+      account.username, account.role.rawValue, requests, library,
       locked.isEmpty ? nil : "\(locked.joined(separator: " and ")) locked",
     ]
       .compactMap { $0 }

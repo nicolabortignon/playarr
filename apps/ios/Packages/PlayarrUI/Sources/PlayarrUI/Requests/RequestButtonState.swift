@@ -1,13 +1,16 @@
 import PlayarrAPI
 
 /// What a Request button shows for an album that may not be in the library yet: one control for every state,
-/// Request → Requesting… → Searching → 42% → Importing → In library (components/Discover.tsx, RequestButton). Pending
-/// verbs end with an ellipsis, and every retry is "Try again" (docs/design.md, "Words").
+/// Request → Requesting… (→ Pending, while an admin hasn't approved it) → Searching → 42% → Importing → In library
+/// (components/Discover.tsx, RequestButton). Pending verbs end with an ellipsis, and every retry is "Try again"
+/// (docs/design.md, "Words").
 public enum RequestButtonState: Equatable, Sendable {
   /// Nothing can be asked for (no Lidarr, requests off, or the account may not request) and nothing is on its way.
   case hidden
   /// Asking the server; `slow` after 2 s ("Looking up…").
   case requesting(slow: Bool)
+  /// The account asked for it, and an admin hasn't answered yet: nothing to press until then ("Pending").
+  case awaitingApproval
   /// Some of its songs are here: "3/12" (or "3 here") opening the album, and Request for the rest when allowed.
   case partial(count: String, summary: String, albumId: Int?, canRequest: Bool)
   case request
@@ -19,8 +22,12 @@ public enum RequestButtonState: Equatable, Sendable {
   case retry(message: String?)
   case inLibrary(albumId: Int?)
 
-  public static func make(_ availability: Availability, allowed: Bool, pending: PendingRequest?) -> RequestButtonState {
+  /// `awaitingApproval`: the account's own request for it waits for an admin (`RequestsModel.awaitsApproval(_:)`), which
+  /// the album's availability doesn't say (to anyone else it's still to be asked for).
+  public static func make(_ availability: Availability, allowed: Bool, pending: PendingRequest?, awaitingApproval: Bool = false) -> RequestButtonState {
     if let pending { return .requesting(slow: pending == .lookingUp) }
+    // Unless the album arrived anyway (from a folder, say): then it's in the library.
+    if awaitingApproval, availability.state != .available { return .awaitingApproval }
     switch availability.state {
     case .available:
       return .inLibrary(albumId: availability.albumId)
@@ -51,6 +58,7 @@ public enum RequestButtonState: Equatable, Sendable {
     switch self {
     case .hidden: ""
     case .requesting(let slow): slow ? "Looking up…" : "Requesting…"
+    case .awaitingApproval: "Pending"
     case .partial(let count, _, _, _): count
     case .request: "Request"
     case .searching: "Searching"
@@ -68,6 +76,7 @@ public enum RequestButtonState: Equatable, Sendable {
   public var help: String? {
     switch self {
     case .requesting(true): "Finding this album on MusicBrainz, which answers about one request per second"
+    case .awaitingApproval: "Waiting for an admin to approve it"
     case .partial(_, let summary, _, _): summary
     case .searching(let message), .importing(let message), .searchAgain(let message), .retry(let message): message
     case .downloading(_, let message): message

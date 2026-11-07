@@ -2,9 +2,10 @@ import PlayarrAPI
 import SwiftUI
 
 /// One control for every state of an album that may not be in the library yet (components/Discover.tsx): Request →
-/// Requesting… (Looking up…) → Searching → 42% → Importing → In library; Try again when Lidarr has found nothing or
-/// failed; "3/12" and Request for an album partly here. What can be tapped is a pill button, what only says how it's
-/// going a `StatusBadge`. Hidden where nothing may be asked for.
+/// Requesting… (Looking up…) → Pending (the account asks an admin first, and they haven't answered) → Searching → 42% →
+/// Importing → In library; Try again when Lidarr has found nothing or failed; "3/12" and Request for an album partly
+/// here. What can be tapped is a pill button, what only says how it's going a `StatusBadge`. Hidden where nothing may be
+/// asked for.
 public struct RequestButton: View {
   /// Where it sits.
   public enum Placement: Equatable, Sendable {
@@ -48,6 +49,16 @@ public struct RequestButton: View {
         StatusBadge(text: state.label, spinning: true, tone: .quiet).help(state.help ?? "")
       } else {
         ask(state, variant: .secondary, systemImage: nil, requests).disabled(true)
+      }
+    case .awaitingApproval:
+      // Waiting for an admin's answer: an hourglass, quiet, as nothing is happening to it yet.
+      if case .actionRow(compact: true) = placement {
+        OutlinedIcon(progress: nil) { Image(systemName: "hourglass").foregroundStyle(.paperDim) }
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel("Pending")
+          .help(state.help ?? "")
+      } else {
+        StatusBadge(text: state.label, systemImage: "hourglass", tone: .quiet).help(state.help ?? "")
       }
     case .partial(let count, let summary, let albumId, let canRequest):
       partial(count: count, summary: summary, albumId: albumId, canRequest: canRequest, requests)

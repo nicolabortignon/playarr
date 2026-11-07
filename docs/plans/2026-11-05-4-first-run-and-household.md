@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; fourth of four (after [robustness and scale]
 
 **Goal:** someone who downloads the app without a server understands it in a minute; an invited member goes from the invite to music in under two minutes; the owner's first steps lead to music, not settings; and the household shares requests and playlists like a family, not a set of strangers.
 
-**Where it stands (2026-11-07):** 1, 3, 5 and 6 done; 2 done but for universal links, which wait for a Playarr domain; 4 under way.
+**Where it stands (2026-11-07):** 1, 3, 4, 5 and 6 done (4 but for web push); 2 done but for universal links, which wait for a Playarr domain.
 
 ## 1. The welcome screen explains itself — S–M — done 2026-11-07
 
@@ -26,7 +26,9 @@ Setup codes link to `https://<server>/redeem?code=` (`apps/server/src/accounts/s
 
 After claiming the server, the owner lands on "Add your music" (Lidarr or a folder) instead of Accounts, then on inviting the household.
 
-## 4. Requests belong to the person who asked — M
+## 4. Requests belong to the person who asked — M — done 2026-11-07, web push to do
+
+*Done on the server and both apps: each request records everyone who asked (`album_request_askers`, the 25th migration in `apps/server/src/db.ts`), so an album asked for by two people is both of theirs. `GET /api/requests` gives a member their own and an admin everyone's, each with `mine`, `askedBy` (names, for admins), `approval` and `unseen`. Settings → Accounts has a third choice, "Asks an admin first: each request waits for approval" (`requestAccess: 'ask'`, members only; `canRequest` stays true, so the apps already on TestFlight still offer Request): such a request waits, shows the member Pending (also in Search and on artist pages), and comes first on an admin's Requests with Approve and Decline (`POST /api/requests/:mbid/approve`, `/decline`). Approved, it goes to Lidarr as any request; declined, the member sees "Declined by Nicola" and removes it. "It's ready": the badge on Requests (iOS's Library tab, Library row and sidebar; the web's sidebar, Library row and Library tab on phones) counts the account's requests that arrived or were declined since it last looked (`POST /api/requests/seen`), and for an admin those waiting for an answer. The toast and iOS's local notification tell only whoever asked, and tell an admin of a request that starts waiting. The demo the UI tests use has the three cases (`-UITestsRequests`, `asks-first`, `admin`). Not built: web push (the web tells only while it's open), so "approved from a notification" is from the iOS notification or the badge.*
 
 Builds on plan 1's requests table.
 - Each request records who asked; members see their own, admins see all.

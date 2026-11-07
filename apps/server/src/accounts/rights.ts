@@ -48,6 +48,15 @@ export async function requireCanRequest(req: FastifyRequest, reply: FastifyReply
   if (!canRequest(req)) return reply.code(403).send({ error: 'Your account can’t request albums' });
 }
 
+/** The account's requests wait for an admin to approve them (Settings → Accounts: "Asks an admin first"). */
+export const requestsWaitForApproval = (req: FastifyRequest): boolean => !!req.auth && !req.auth.setup && req.auth.account.requestAccess === 'ask';
+
+/**
+ * Who sees every request rather than only those they asked for: admins, and everyone before setup (they're all the
+ * owner then) or without accounts.
+ */
+export const seesEveryRequest = (req: FastifyRequest): boolean => byHomeNetwork(req) || req.auth?.account.role === 'admin';
+
 /** The sources the request's account may hear, or null for all of them (and without accounts). */
 export const sourcesOf = (req: FastifyRequest): readonly number[] | null => req.auth?.account.sources ?? null;
 

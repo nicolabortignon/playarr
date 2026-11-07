@@ -23,4 +23,15 @@ import Testing
     request.availability = availability(.downloading, message: "Downloading 2 of 12")
     #expect(RequestRowText.status(request, now: now, locale: english) == "Downloading 2 of 12 · requested 2 hours ago")
   }
+
+  @Test func namesWhoAskedOnAnAdminsList() {
+    let sams = waitingRequest("rg-1", "Heligoland", mine: false, askedBy: ["Sam"])
+    #expect(RequestRowText.status(sams, now: now, locale: english) == "Waiting for approval · requested by Sam 2 hours ago")
+    let shared = albumRequest("rg-2", "Mezzanine", .searching, mine: true, askedBy: ["Sam", "Zoe"])
+    #expect(RequestRowText.requested(shared, now: now, locale: english) == "requested by you, Sam and Zoe 2 hours ago")
+    // The admin's own, asked for by nobody else, and a member's list, which never names anyone.
+    let own = albumRequest("rg-3", "Blue Lines", .searching, mine: true, askedBy: [])
+    #expect(RequestRowText.requested(own, now: now, locale: english) == "requested 2 hours ago")
+    #expect(RequestRowText.requested(albumRequest("rg-4", "Protection", .searching, mine: true), now: now, locale: english) == "requested 2 hours ago")
+  }
 }

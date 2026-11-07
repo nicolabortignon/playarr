@@ -9,18 +9,22 @@ public struct Account: Codable, Hashable, Sendable, Identifiable {
     public var username: String
     public var name: String
     public var role: AccountRole
+    /// May ask for albums: true for `requestAccess` `on` and `ask` alike.
     public var canRequest: Bool
+    /// Whether its requests wait for an admin's approval (`ask`, for members only: an admin's own go straight to Lidarr). Missing from servers older than this field: `canRequest` alone, `on` or `off`.
+    public var requestAccess: RequestAccess?
     public var sources: [Int]?
     public var hasPassword: Bool
     /// The device settings an admin has stopped this account from changing (never an admin's own). Missing from servers older than this field: nothing locked.
     public var locked: [DeviceSetting]?
 
-    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?, hasPassword: Bool, locked: [DeviceSetting]? = nil) {
+    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, requestAccess: RequestAccess? = nil, sources: [Int]?, hasPassword: Bool, locked: [DeviceSetting]? = nil) {
         self.id = id
         self.username = username
         self.name = name
         self.role = role
         self.canRequest = canRequest
+        self.requestAccess = requestAccess
         self.sources = sources
         self.hasPassword = hasPassword
         self.locked = locked
@@ -33,6 +37,7 @@ public struct Account: Codable, Hashable, Sendable, Identifiable {
         try container.encode(name, forKey: .name)
         try container.encode(role, forKey: .role)
         try container.encode(canRequest, forKey: .canRequest)
+        try container.encodeIfPresent(requestAccess, forKey: .requestAccess)
         try container.encode(sources, forKey: .sources)
         try container.encode(hasPassword, forKey: .hasPassword)
         try container.encodeIfPresent(locked, forKey: .locked)
@@ -209,6 +214,7 @@ public struct AlbumRef: Codable, Hashable, Sendable {
     }
 }
 
+/// GET /api/requests: a member gets the requests they asked for, an admin every request, the ones waiting for approval first.
 public struct AlbumRequest: Codable, Hashable, Sendable {
     public var mbid: String
     public var title: String
@@ -216,14 +222,26 @@ public struct AlbumRequest: Codable, Hashable, Sendable {
     public var coverUrl: String?
     public var requestedAt: String
     public var availability: Availability
+    /// The account asking asked for it too. Missing from servers older than this field.
+    public var mine: Bool?
+    /// Only for admins: the other accounts that asked for it, by display name, the first to ask first.
+    public var askedBy: [String]?
+    /// Absent once it has gone to Lidarr (asked for by an account that may request, or approved); `waiting` while an admin hasn't answered, `declined` after one said no.
+    public var approval: RequestApproval?
+    /// One of the account's own that arrived, or was declined, since the account last looked at Requests (`POST /api/requests/seen`).
+    public var unseen: Bool?
 
-    public init(mbid: String, title: String, artistName: String, coverUrl: String? = nil, requestedAt: String, availability: Availability) {
+    public init(mbid: String, title: String, artistName: String, coverUrl: String? = nil, requestedAt: String, availability: Availability, mine: Bool? = nil, askedBy: [String]? = nil, approval: RequestApproval? = nil, unseen: Bool? = nil) {
         self.mbid = mbid
         self.title = title
         self.artistName = artistName
         self.coverUrl = coverUrl
         self.requestedAt = requestedAt
         self.availability = availability
+        self.mine = mine
+        self.askedBy = askedBy
+        self.approval = approval
+        self.unseen = unseen
     }
 }
 
@@ -1137,7 +1155,10 @@ public struct ListedAccount: Codable, Hashable, Sendable, Identifiable {
     public var username: String
     public var name: String
     public var role: AccountRole
+    /// May ask for albums: true for `requestAccess` `on` and `ask` alike.
     public var canRequest: Bool
+    /// Whether its requests wait for an admin's approval (`ask`, for members only: an admin's own go straight to Lidarr). Missing from servers older than this field: `canRequest` alone, `on` or `off`.
+    public var requestAccess: RequestAccess?
     public var sources: [Int]?
     public var hasPassword: Bool
     /// The device settings an admin has stopped this account from changing (never an admin's own). Missing from servers older than this field: nothing locked.
@@ -1145,12 +1166,13 @@ public struct ListedAccount: Codable, Hashable, Sendable, Identifiable {
     public var plays: Int
     public var playlists: Int
 
-    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, sources: [Int]?, hasPassword: Bool, locked: [DeviceSetting]? = nil, plays: Int, playlists: Int) {
+    public init(id: Int, username: String, name: String, role: AccountRole, canRequest: Bool, requestAccess: RequestAccess? = nil, sources: [Int]?, hasPassword: Bool, locked: [DeviceSetting]? = nil, plays: Int, playlists: Int) {
         self.id = id
         self.username = username
         self.name = name
         self.role = role
         self.canRequest = canRequest
+        self.requestAccess = requestAccess
         self.sources = sources
         self.hasPassword = hasPassword
         self.locked = locked
@@ -1165,6 +1187,7 @@ public struct ListedAccount: Codable, Hashable, Sendable, Identifiable {
         try container.encode(name, forKey: .name)
         try container.encode(role, forKey: .role)
         try container.encode(canRequest, forKey: .canRequest)
+        try container.encodeIfPresent(requestAccess, forKey: .requestAccess)
         try container.encode(sources, forKey: .sources)
         try container.encode(hasPassword, forKey: .hasPassword)
         try container.encodeIfPresent(locked, forKey: .locked)
@@ -2466,6 +2489,79 @@ public struct RenderProgress: Codable, Hashable, Sendable {
     }
 }
 
+/// How an account's album requests go: straight to Lidarr, to an admin to approve or decline first, or not at all.
+public enum RequestAccess: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case on
+    case ask
+    case off
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [RequestAccess] = [.on, .ask, .off]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "on": self = .on
+        case "ask": self = .ask
+        case "off": self = .off
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .on: "on"
+        case .ask: "ask"
+        case .off: "off"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+/// Where a request stands with the admins, until it goes to Lidarr: waiting for one to approve or decline it, or declined.
+public enum RequestApproval: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case waiting
+    case declined
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [RequestApproval] = [.waiting, .declined]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "waiting": self = .waiting
+        case "declined": self = .declined
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .waiting: "waiting"
+        case .declined: "declined"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 public struct RequestSettings: Codable, Hashable, Sendable {
     public var enabled: Bool
     /// Run Lidarr's album search right after adding; off leaves it to Lidarr's schedule.
@@ -2566,6 +2662,15 @@ public struct RequestSettingsPatch: Codable, Hashable, Sendable {
         self.rootFolderPath = rootFolderPath
         self.qualityProfileId = qualityProfileId
         self.metadataProfileId = metadataProfileId
+    }
+}
+
+/// POST /api/requests/seen: the requests the account has now seen as they are (every one of its own when absent).
+public struct RequestsSeen: Codable, Hashable, Sendable {
+    public var mbids: [String]?
+
+    public init(mbids: [String]? = nil) {
+        self.mbids = mbids
     }
 }
 

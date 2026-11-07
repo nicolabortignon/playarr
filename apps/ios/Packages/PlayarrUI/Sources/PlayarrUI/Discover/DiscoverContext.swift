@@ -77,13 +77,23 @@ public final class DiscoverContext {
 
   public func refreshHealth() async {
     do {
-      health = try await api.send(API.Server.health())
+      let fresh = try await api.send(API.Server.health())
+      // The library changed (an album someone else asked for arrived, a source synced): what shows it is asked again. A
+      // member's requests are only their own, so it's health that says so (useWatchLibrary).
+      if let before = health?.library.map(Self.contents), let after = fresh.library.map(Self.contents), before != after {
+        invalidate(CacheFamily.landed)
+      }
+      health = fresh
       healthFailed = false
     } catch is CancellationError {
     } catch {
       if health == nil { healthFailed = true }
     }
   }
+
+  /// What the library holds, as health counts it: it changes when albums or songs arrive or go, not when a sync finds
+  /// nothing new (libraryContents).
+  static func contents(_ stats: LibraryStats) -> [Int] { [stats.albums, stats.tracks, stats.sizeBytes] }
 
   public func generation(_ family: CacheFamily) -> Int { generations[family, default: 0] }
 

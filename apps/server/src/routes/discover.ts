@@ -1,8 +1,8 @@
-import type { AlbumRef } from '@playarr/shared';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { AlbumRef, RequestsSeen } from '@playarr/shared';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Discover } from '../discover/discover.ts';
-import { requireCanRequest } from '../accounts/rights.ts';
-import { RequestError, type Requests } from '../discover/requests.ts';
+import { accountId, requireAdmin, requireCanRequest, requestsWaitForApproval, seesEveryRequest } from '../accounts/rights.ts';
+import { RequestError, type Requests, type RequestViewer } from '../discover/requests.ts';
 
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -64,7 +64,10 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
     }
   });
 
-  app.get('/api/requests', () => requests.list());
+  /** A member's own requests; an admin's every request. */
+  const viewer = (req: FastifyRequest): RequestViewer => ({ accountId: accountId(req), everyone: seesEveryRequest(req) });
+
+  app.get('/api/requests', (req) => requests.list(viewer(req)));
 
   app.post<{ Body: Partial<AlbumRef> }>('/api/requests', { onRequest: requireCanRequest }, async (req, reply) => {
     const { mbid, releaseMbid, artistName, albumTitle } = req.body ?? {};
@@ -75,15 +78,48 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
       return reply.code(400).send({ error: 'Provide mbid, or artistName and albumTitle' });
     }
     try {
-      return await requests.request({ mbid, releaseMbid, artistName: artistName ?? '', albumTitle: albumTitle ?? '' }, req.auth?.account.id);
+      return await requests.request(
+        { mbid, releaseMbid, artistName: artistName ?? '', albumTitle: albumTitle ?? '' },
+        req.auth?.account.id,
+        { askFirst: requestsWaitForApproval(req) },
+      );
     } catch (err) {
       req.log.warn({ err, mbid, artistName, albumTitle }, 'album request failed');
       return fail(reply, err);
     }
   });
 
+  // The account has looked at Requests: what arrived or was declined is no longer news (the badge on Requests).
+  app.post<{ Body: RequestsSeen | undefined }>('/api/requests/seen', async (req, reply) => {
+    const mbids: unknown = req.body?.mbids;
+    if (mbids !== undefined && (!Array.isArray(mbids) || mbids.length > 1000 || mbids.some((m) => typeof m !== 'string'))) {
+      return reply.code(400).send({ error: 'mbids is a list of MusicBrainz ids' });
+    }
+    requests.markSeen(accountId(req), mbids as string[] | undefined);
+    return reply.code(204).send();
+  });
+
+  // An admin's answer to a request waiting for approval: yes sends it to Lidarr, no tells whoever asked.
+  app.post<{ Params: { mbid: string } }>('/api/requests/:mbid/approve', { onRequest: requireAdmin }, async (req, reply) => {
+    try {
+      return await requests.approve(req.params.mbid, viewer(req));
+    } catch (err) {
+      req.log.warn({ err, mbid: req.params.mbid }, 'approving a request failed');
+      return fail(reply, err);
+    }
+  });
+
+  app.post<{ Params: { mbid: string } }>('/api/requests/:mbid/decline', { onRequest: requireAdmin }, async (req, reply) => {
+    try {
+      return await requests.decline(req.params.mbid, viewer(req));
+    } catch (err) {
+      return fail(reply, err);
+    }
+  });
+
+  // Off the asker's list (an admin's: off everyone's). Whether there was one to take off, the answer is the same.
   app.delete<{ Params: { mbid: string } }>('/api/requests/:mbid', { onRequest: requireCanRequest }, async (req, reply) => {
-    await requests.remove(req.params.mbid);
+    await requests.remove(req.params.mbid, viewer(req));
     return reply.code(204).send();
   });
 }

@@ -7,8 +7,9 @@ import { api } from '../lib/api';
 import { RequestButton } from './Discover';
 
 beforeEach(() => {
-  // Requests are on, with Lidarr set up.
+  // Requests are on, with Lidarr set up, and the account has asked for nothing.
   vi.spyOn(api, 'health').mockResolvedValue({ ok: true, requests: true, lidarr: { ok: true } } as unknown as HealthStatus);
+  vi.spyOn(api, 'requests').mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -18,15 +19,22 @@ afterEach(() => {
 
 const album = { mbid: 'rg-1', artistName: 'Massive Attack', albumTitle: 'Mezzanine' };
 
-function renderButton(availability: Parameters<typeof RequestButton>[0]['availability'], size?: 'small' | 'large') {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+type Availability = Parameters<typeof RequestButton>[0]['availability'];
+
+/** The button as a page shows it, `client` holding what's been asked for. */
+function buttonIn(client: QueryClient, availability: Availability, size?: 'small' | 'large') {
+  return (
     <QueryClientProvider client={client}>
       <MemoryRouter>
         <RequestButton album={album} availability={availability} size={size} />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function renderButton(availability: Availability, size?: 'small' | 'large') {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return { client, ...render(buttonIn(client, availability, size)) };
 }
 
 describe('RequestButton', () => {
@@ -77,6 +85,39 @@ describe('RequestButton', () => {
     cleanup();
     renderButton({ state: 'waiting' });
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('says Pending for an album the account asked for while an admin hasn’t answered, wherever it shows', async () => {
+    const waiting = (mine: boolean) => [
+      {
+        mbid: 'rg-1',
+        title: 'Mezzanine',
+        artistName: 'Massive Attack',
+        requestedAt: new Date().toISOString(),
+        availability: { state: 'waiting' as const, message: 'Waiting for approval' },
+        approval: 'waiting' as const,
+        mine,
+      },
+    ];
+    vi.spyOn(api, 'requests').mockResolvedValue(waiting(true));
+    // Search knows nothing of it: to anyone else the album is still to be asked for.
+    renderButton({ state: 'none' });
+    expect(await screen.findByText('Pending')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+    cleanup();
+    // An admin sees someone else's waiting: asking for it too is theirs to do.
+    vi.spyOn(api, 'requests').mockResolvedValue(waiting(false));
+    renderButton({ state: 'none' });
+    await waitFor(() => expect(api.requests).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Request' })).toBeTruthy();
+    cleanup();
+    // Arrived anyway (from a folder, say): it's in the library, whatever the request says.
+    vi.spyOn(api, 'requests').mockResolvedValue(waiting(true));
+    const { client, rerender } = renderButton({ state: 'none' });
+    expect(await screen.findByText('Pending')).toBeTruthy();
+    rerender(buttonIn(client, { state: 'available', albumId: 5 }));
+    expect(screen.getByRole('button', { name: /in library/i })).toBeTruthy();
+    expect(screen.queryByText('Pending')).toBeNull();
   });
 
   it('is a partial album’s own action in its row, pending while it’s asked for', async () => {

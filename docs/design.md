@@ -112,6 +112,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
   | Search, nothing anywhere | Not in your crates. | Nothing in your library or beyond it matches “{query}”. Check the spelling, try fewer words, or pick an artist you have. | New search · artists to try |
   | Search, near matches | Nothing called “{query}”. These come close: | | |
   | Requests, none yet | Ask for an album you don’t have. | Search for it and press Request: it lands in your library once Lidarr finds it. | Search |
+  | Requests, none yet, for an account that asks first | Ask for an album you don’t have. | Search for it and press Request: once an admin approves it, it lands in your library when Lidarr finds it. | Search |
   | Requests without Lidarr | Admin: Requests need a Lidarr source. Member: Requests aren’t set up on this server. | Admin: Add one, and you can ask Lidarr for albums you don’t have, right from Search. Member: They need a Lidarr source, which an admin can add. | Admin: Add Lidarr |
   | Requests turned off | Admin: Requests are turned off. Member: Requests are turned off on this server. | Admin: Nobody can ask Lidarr for albums until they’re on again. Member: An admin can turn them on. | Admin: Turn them on |
   | An account that can't request | Your account can’t request albums. | Admin: Allow it for yourself in Settings → Accounts. Member: An admin can allow it. | |
@@ -133,7 +134,8 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 - **In a bar,** Edit is in the text color, like the bar's other words (the accent over a page's colors doesn't always read). On the iPad's sidebar the page you're on has its name in the text color over the highlight and its icon in the accent.
 - **Icon buttons** are round and always have an accessible name: 48 in an action row (outlined); otherwise 44 to tap on touch and 36 with a mouse on the web, 44 on iOS (plain).
 - **Choices** are the mono capitals pills (Albums' sort, Stats' ranges, Transitions, Keep up to, Motion). Web: `Choice`. Selected is filled with paper and an ink label; the rest are outlined with `line` and a `muted` label. A row of choices never wraps on a phone; it scrolls sideways. iOS Settings keeps the system's pickers for these, as its forms do (iOS: `.choice(selected:)` on pages, such as Stats' ranges).
-- **Statuses** that do nothing when tapped (Searching, Importing, 42 %, a format) are badges (`type-badge`), not buttons.
+- **Statuses** that do nothing when tapped (Searching, Importing, 42 %, Pending, a format) are badges (`type-badge`), not buttons.
+- **News counts** (what's new on Requests: arrived or declined since the last look, and for an admin what waits for an answer) are a count in `type-badge` on an accent capsule, in its ink, read as "2 new" (web `NewsBadge`, iOS `NewsBadge`); the system's tab bar and sidebar draw their own (`.badge(_:)`). A news item on the page itself has a dot in the accent, read as "New", while the page stays open.
 - **Text fields:** web `TextField`. The label sits above, the field is 44 tall, radius 12, `ink-850` with a `line` border, and the accent ring when focused.
 
 ### The action row
@@ -237,6 +239,8 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | On this device (a song) | `CircleArrowDown` in the accent | `arrow.down.circle.fill` in the accent | iOS: filled reads better at caption size |
   | Space on this device | `HardDrive` | `internaldrive` | |
   | Request | `Binoculars` | `binoculars`, in the button's own color (black on Request's accent) | |
+  | Pending (waiting for an admin's approval) | `Hourglass` | `hourglass` | a quiet badge: nothing to press until an admin answers |
+  | Approve, Decline (a request) | `Check`, `X` | `checkmark`, `xmark` | Approve primary, Decline secondary, small |
   | Search again later | `Clock` | `clock` | |
   | A request that failed | `TriangleAlert` | `exclamationmark.triangle` | |
   | In your library, Open in your library | `Check`, `ArrowRight` | `checkmark`, `arrow.right` | |

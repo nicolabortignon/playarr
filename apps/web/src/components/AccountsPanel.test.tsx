@@ -65,12 +65,14 @@ describe('AccountsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add account/ }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'App Review' } });
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'reviewer' } });
-    fireEvent.click(screen.getByLabelText('Can request albums')); // on by default for new accounts: off
+    fireEvent.click(screen.getByLabelText('Can’t request albums')); // new accounts may request by default: not this one
     fireEvent.click(screen.getByLabelText('Appearance')); // may change Playback on their devices, not Appearance
     fireEvent.click(screen.getByLabelText('Only these sources'));
     fireEvent.click(await screen.findByLabelText('Creative Commons'));
     fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ username: 'reviewer', name: 'App Review', role: 'member', canRequest: false, sources: [2], locked: ['appearance'] }));
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith({ username: 'reviewer', name: 'App Review', role: 'member', canRequest: false, requestAccess: 'off', sources: [2], locked: ['appearance'] }),
+    );
     expect(await screen.findByText('ABCD2345')).toBeTruthy();
     expect((screen.getByLabelText('Setup link') as HTMLInputElement).value).toBe('http://nas:4000/redeem?code=ABCD2345');
   });
@@ -174,5 +176,32 @@ describe('AccountsPanel, invites and actions', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: 'More for Jo' }));
     expect(menuItems()).toEqual(['Edit', 'Remove']);
+  });
+
+  it('lets an admin make a member ask an admin first, which an admin never does', async () => {
+    const update = vi.spyOn(api, 'updateAccount').mockResolvedValue({ ...JO, requestAccess: 'ask' });
+    everyone();
+    // Jo may request (a server's answer without requestAccess): the form starts there.
+    fireEvent.click(await screen.findByRole('button', { name: 'More for Jo' }));
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Edit' }));
+    expect((screen.getByLabelText('Can request albums') as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByLabelText('Asks an admin first: each request waits for approval'));
+    // An admin's own requests go straight to Lidarr: made one, the choice isn't there and they may request.
+    fireEvent.click(screen.getByLabelText('Admin: also changes settings, sources and accounts'));
+    expect(screen.queryByLabelText('Asks an admin first: each request waits for approval')).toBeNull();
+    expect((screen.getByLabelText('Can request albums') as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByLabelText('Member: listens'));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Edit Jo' })).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(3, expect.objectContaining({ role: 'member', canRequest: true, requestAccess: 'ask' })));
+  });
+
+  it('says in the list whose requests need approval', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue(SERVER);
+    vi.spyOn(api, 'me').mockResolvedValue(NICOLA);
+    vi.spyOn(api, 'accounts').mockResolvedValue([{ ...SAM, canRequest: true, requestAccess: 'ask', plays: 0, playlists: 0 }]);
+    vi.spyOn(api, 'sessions').mockResolvedValue([]);
+    vi.spyOn(api, 'sources').mockResolvedValue({ sources: [CC], canEdit: true });
+    view();
+    expect(await screen.findByText('sam · member · requests need approval · every source')).toBeTruthy();
   });
 });

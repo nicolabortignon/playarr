@@ -18,6 +18,8 @@ struct TabShell: View {
             root(tab).underTheRail().accountMenu().shellDestinations(session)
           }
         }
+        // Requests live in Library on a phone: its tab carries their news (the web's bottom bar too).
+        .badge(tab == .library ? session.discover.requests.newsCount : 0)
       }
     }
     .environment(\.coverZoom, covers)

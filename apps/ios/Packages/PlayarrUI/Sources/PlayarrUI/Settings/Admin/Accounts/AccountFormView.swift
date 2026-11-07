@@ -37,8 +37,15 @@ struct AccountFormView: View {
         .pickerStyle(.inline)
         .labelsHidden()
       }
-      Section {
-        Toggle("Can request albums", isOn: $form.canRequest).accessibilityIdentifier("account.canRequest")
+      Section("Requests") {
+        Picker("Requests", selection: Binding(get: { form.chosenAccess }, set: { form.requestAccess = $0 })) {
+          ForEach(form.requestChoices, id: \.access) { choice in
+            Text(choice.label).tag(choice.access)
+          }
+        }
+        .pickerStyle(.inline)
+        .labelsHidden()
+        .accessibilityIdentifier("account.requests")
       }
       if form.role == .member {
         Section("May change on their devices") {

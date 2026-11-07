@@ -294,10 +294,36 @@ describe('contract fixtures', () => {
       requestedAt: '2026-11-03T12:00:00.000Z',
       availability: { state: 'downloading', progress: 0.4, message: 'Downloading 4 of 11' },
     };
+    // As an admin sees them: one waiting for their answer first (Sam's), then their own, arrived since they last looked,
+    // and one an admin declined.
+    const heligoland = {
+      mbid: '4d1d6f7b-1111-4222-8333-944455550001',
+      title: 'Heligoland',
+      artistName: 'Massive Attack',
+      requestedAt: '2026-11-03T12:00:00.000Z',
+      mine: false,
+      askedBy: ['Sam'],
+    };
+    const waiting: AlbumRequest = { ...heligoland, availability: { state: 'waiting', message: 'Waiting for approval' }, approval: 'waiting' };
+    const arrived: AlbumRequest = { ...request, availability: { state: 'available', albumId: 70 }, mine: true, askedBy: ['Zoe'], unseen: true };
+    const declined: AlbumRequest = {
+      ...waiting,
+      mbid: '4d1d6f7b-1111-4222-8333-944455550002',
+      title: '100th Window',
+      availability: { state: 'failed', message: 'Declined by you' },
+      askedBy: ['Zoe'],
+      approval: 'declined',
+    };
+    const approved: AlbumRequest = { ...heligoland, availability: { state: 'searching', message: 'Searching indexers…' } };
     const app = Fastify();
     discoverRoutes(app, {
       discover: { search: async () => results, artist: async () => detail, similarArtists: async () => [artist], findArtist: async () => ({ mbid: ARTIST_MBID, artistId: 7 }) } as unknown as Discover,
-      requests: { list: async () => [request], request: async () => request, remove: async () => {} } as unknown as Requests,
+      requests: {
+        list: async () => [waiting, arrived, declined],
+        request: async () => request,
+        remove: async () => {},
+        approve: async () => approved,
+      } as unknown as Requests,
     });
     await recordGets(app, [
       ['discover-search', '/api/discover/search?q=massive'],
@@ -307,6 +333,9 @@ describe('contract fixtures', () => {
       ['requests', '/api/requests'],
     ]);
     recordFixture('request-created', await app.inject({ method: 'POST', url: '/api/requests', payload: { mbid: ALBUM_MBID, artistName: 'Massive Attack', albumTitle: 'Mezzanine' } }));
+    const approval = await app.inject({ method: 'POST', url: `/api/requests/${waiting.mbid}/approve` });
+    expect(approval.json()).toMatchObject({ mbid: waiting.mbid, availability: { state: 'searching' }, askedBy: ['Sam'] });
+    recordFixture('request-approved', approval);
   });
 
   it('plays, stats, mixes and ListenBrainz', async () => {

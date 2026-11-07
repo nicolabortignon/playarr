@@ -133,4 +133,11 @@ import Testing
     #expect(NoRequests.cantRequest(admin: true).action == nil)
     #expect(NoRequests.ask.action == .init(title: "Search", systemImage: "magnifyingglass", destination: .search))
   }
+
+  @Test func tellsAnAccountThatAsksFirstThatAnAdminApprovesEachRequest() {
+    let gate = RequestGate(health: health(), account: account(requestAccess: .ask))
+    #expect(NoRequests.of(gate, admin: false) == .askFirst)
+    #expect(NoRequests.askFirst.line.hint == "Search for it and press Request: once an admin approves it, it lands in your library when Lidarr finds it.")
+    #expect(NoRequests.askFirst.action?.destination == .search)
+  }
 }

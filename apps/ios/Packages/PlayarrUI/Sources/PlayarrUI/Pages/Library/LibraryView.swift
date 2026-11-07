@@ -27,8 +27,10 @@ struct LibraryView: View {
         if downloads > 0 { row("Downloads", "arrow.down.to.line", .downloads, detail: String(downloads)) }
         row("Artists", "music.mic", .artists, detail: library.map { String($0.artists) })
         row("Albums", "square.stack", .albums(.artist), detail: library.map { String($0.albums) })
-        if let count = discover?.requests.requests?.count, count > 0 {
-          row("Requests", "binoculars", .requests, detail: String(count)).accessibilityIdentifier("library-requests")
+        if let requests = discover?.requests, let count = requests.requests?.count, count > 0 {
+          // With what's news there: arrived or declined since the last look, and for an admin what waits for an answer.
+          row("Requests", "binoculars", .requests, detail: String(count), news: requests.newsCount)
+            .accessibilityIdentifier("library-requests")
         }
       }
       Section {
@@ -93,7 +95,7 @@ struct LibraryView: View {
     }
   }
 
-  private func row(_ title: String, _ icon: String, _ route: Route, detail: String? = nil) -> some View {
+  private func row(_ title: String, _ icon: String, _ route: Route, detail: String? = nil, news: Int = 0) -> some View {
     NavigationLink(value: route) {
       HStack(spacing: 14) {
         Image(systemName: icon)
@@ -102,6 +104,7 @@ struct LibraryView: View {
           .background(RoundedRectangle(cornerRadius: Radius.tile).fill(Color.secondary.opacity(0.15)))
         Text(title)
         Spacer()
+        NewsBadge(count: news)
         if let detail { Text(detail).font(.mono(.caption)).foregroundStyle(.secondary) }
       }
     }

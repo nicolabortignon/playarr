@@ -1,5 +1,5 @@
 import type { Album, AlbumRef, Availability, DiscoverAlbum, DiscoverTrack } from '@playarr/shared';
-import { Binoculars, Check, Clock, LoaderCircle, Play, TriangleAlert } from 'lucide-react';
+import { Binoculars, Check, Clock, Hourglass, LoaderCircle, Play, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { cn } from '../lib/cn';
@@ -42,7 +42,21 @@ export function RequestButton({
     fn();
   };
   const ask = stop(() => request.mutate(album));
+  const waitingForApproval = useWaitingForApproval(album);
   const { state, progress, message, albumId } = availability;
+  // Asked for, and waiting for an admin's answer: nothing to press until then (unless it arrived anyway).
+  if (waitingForApproval && !request.isPending && state !== 'available') {
+    return (
+      <StatusBadge
+        icon={<Hourglass />}
+        title="Waiting for an admin to approve it"
+        wordsClassName={large ? rowActionWords : undefined}
+        className={cn('border-line text-paper-dim', className)}
+      >
+        Pending
+      </StatusBadge>
+    );
+  }
   // Without Lidarr, or with requests off in Settings, nothing can be asked for: hide every button that would.
   // Progress on earlier requests still shows, and "In library" still links to the album.
   if (!requestsOn && !request.isPending && (state === 'none' || state === 'waiting' || state === 'failed')) return null;
@@ -146,8 +160,24 @@ export function RequestButton({
 }
 
 /**
- * How a request is going (Requesting…, Searching, 42%, Importing): nothing happens when it's tapped, so it's a badge,
- * not a button. As tall as a small button, so a card doesn't move as it turns from one into the other.
+ * Whether the account asked for this album and the request waits for an admin's answer. Search and artist pages know
+ * nothing of it (to anyone else the album is still to be asked for), so it's found in the account's own requests: by
+ * release group, or by artist and title for an album known only by name.
+ */
+function useWaitingForApproval(album: AlbumRef): boolean {
+  const { data: requests } = useRequests();
+  return !!requests?.some(
+    (r) =>
+      r.approval === 'waiting' &&
+      r.mine !== false &&
+      ((album.mbid !== undefined && r.mbid === album.mbid) ||
+        (titleKey(r.artistName) === titleKey(album.artistName) && titleKey(r.title) === titleKey(album.albumTitle))),
+  );
+}
+
+/**
+ * How a request is going (Requesting…, Pending, Searching, 42%, Importing): nothing happens when it's tapped, so it's a
+ * badge, not a button. As tall as a small button, so a card doesn't move as it turns from one into the other.
  */
 function StatusBadge({
   icon,

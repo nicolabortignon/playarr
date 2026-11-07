@@ -15,6 +15,17 @@ import Testing
     #expect(!RequestGate(health: health(lidarr: false, requests: false), account: account()).hasLidarr)
   }
 
+  @Test func knowsWhoseRequestsWaitForApproval() {
+    let asks = RequestGate(health: health(), account: account(requestAccess: .ask))
+    #expect(asks.asksFirst)
+    // It may still ask: the old apps' canRequest stays true.
+    #expect(asks.allowsRequests)
+    #expect(!RequestGate(health: health(), account: account(requestAccess: .on)).asksFirst)
+    #expect(!RequestGate(health: health(), account: account(canRequest: false, requestAccess: .off)).asksFirst)
+    // A server that predates it.
+    #expect(!RequestGate(health: health(), account: account()).asksFirst)
+  }
+
   @Test func hidesNothingTheAccountMayUseBeforeHealthIsKnown() {
     let gate = RequestGate(health: nil, account: account())
     #expect(gate.hasLidarr)

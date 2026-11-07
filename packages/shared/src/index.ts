@@ -324,6 +324,10 @@ export interface DiscoverArtistDetail extends DiscoverArtist {
   discographyError?: string;
 }
 
+/** Where a request stands with the admins, until it goes to Lidarr: waiting for one to approve or decline it, or declined. */
+export type RequestApproval = 'waiting' | 'declined';
+
+/** GET /api/requests: a member gets the requests they asked for, an admin every request, the ones waiting for approval first. */
 export interface AlbumRequest {
   mbid: string;
   title: string;
@@ -331,6 +335,21 @@ export interface AlbumRequest {
   coverUrl?: string;
   requestedAt: string;
   availability: Availability;
+  /** The account asking asked for it too. Missing from servers older than this field. */
+  mine?: boolean;
+  /** Only for admins: the other accounts that asked for it, by display name, the first to ask first. */
+  askedBy?: string[];
+  /** Absent once it has gone to Lidarr (asked for by an account that may request, or approved); `waiting` while an admin
+   *  hasn't answered, `declined` after one said no. */
+  approval?: RequestApproval;
+  /** One of the account's own that arrived, or was declined, since the account last looked at Requests
+   *  (`POST /api/requests/seen`). */
+  unseen?: boolean;
+}
+
+/** POST /api/requests/seen: the requests the account has now seen as they are (every one of its own when absent). */
+export interface RequestsSeen {
+  mbids?: string[];
 }
 
 // ── Playlists ───────────────────────────────────────────────────────────────
@@ -1002,12 +1021,19 @@ export type AccountRole = 'admin' | 'member';
 /** Settings kept on each device that an admin can stop an account from changing. */
 export type DeviceSetting = 'playback' | 'appearance';
 
+/** How an account's album requests go: straight to Lidarr, to an admin to approve or decline first, or not at all. */
+export type RequestAccess = 'on' | 'ask' | 'off';
+
 export interface Account {
   id: number;
   username: string;
   name: string; // display name
   role: AccountRole;
+  /** May ask for albums: true for `requestAccess` `on` and `ask` alike. */
   canRequest: boolean;
+  /** Whether its requests wait for an admin's approval (`ask`, for members only: an admin's own go straight to Lidarr).
+   *  Missing from servers older than this field: `canRequest` alone, `on` or `off`. */
+  requestAccess?: RequestAccess;
   sources: number[] | null; // null = every source
   hasPassword: boolean; // false until set up
   /** The device settings an admin has stopped this account from changing (never an admin's own). Missing from

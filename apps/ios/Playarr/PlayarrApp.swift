@@ -57,7 +57,9 @@ struct PlayarrApp: App {
   #if DEBUG
     /// UI tests launch with `-UITests` (no servers, nothing kept between runs; a dev server's session when the test
     /// hands one over in PLAYARR_UITEST_SERVER and PLAYARR_UITEST_TOKEN), plus `-UITestsDemo` to start signed in
-    /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request.
+    /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request
+    /// (`-UITestsRequests asks-first` as a member whose requests wait for approval, `-UITestsRequests admin` as an admin
+    /// with one to answer).
     /// With the demo, `-UITestsOffline` makes the server unreachable, `-UITestsLongQueue` queues 5,000 songs,
     /// `-UITestsTurnToOpen` turns on Settings → Appearance → Turn to open, `-UITestsDJ` DJ mix, `-UITestsFirstSteps` opens
     /// the owner's first steps, and `-UITestsRestore` brings back where the last run was (otherwise each run starts on
@@ -68,8 +70,8 @@ struct PlayarrApp: App {
     /// levels to keep time with in place of its silence; with `-UITests`, `-UITestsSlowArt` has covers take 4 s to come
     /// and `-UITestsTilt` tilts Now Playing's cover, as a phone would. Nil without any: the live app.
     private static func uiTestModel(_ arguments: [String]) -> AppModel? {
-      if arguments.contains("-UITestsRequests") {
-        let model = AppModel.demo(requests: true)
+      if let asker = DemoRequestsAPI.Asker(arguments: arguments) {
+        let model = AppModel.demo(requests: asker)
         model.restoresPlace = arguments.contains("-UITestsRestore")
         return model
       }

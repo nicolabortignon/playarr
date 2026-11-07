@@ -1,6 +1,6 @@
 import type { Account, AlbumRequest, HealthStatus } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
@@ -91,5 +91,61 @@ describe('Requests', () => {
     remove();
     act(() => useToasts.getState().dismiss(useToasts.getState().toasts[0]!.id));
     await waitFor(() => expect(forget).toHaveBeenCalledWith(OK_COMPUTER.mbid));
+  });
+});
+
+describe('Requests that belong to whoever asked', () => {
+  const HELIGOLAND: AlbumRequest = {
+    mbid: '4d1d6f7b-1111-4222-8333-944455550001',
+    title: 'Heligoland',
+    artistName: 'Massive Attack',
+    requestedAt: '2026-11-05T10:00:00Z',
+    availability: { state: 'waiting', message: 'Waiting for approval' },
+    approval: 'waiting',
+  };
+
+  it('puts Approve and Decline before an admin for what a member asked, saying who asked', async () => {
+    const approve = vi.spyOn(api, 'approveRequest').mockResolvedValue({ ...HELIGOLAND, approval: undefined, availability: { state: 'searching' } });
+    view({ health: WITH_LIDARR, me: ALEX, requests: [{ ...HELIGOLAND, mine: false, askedBy: ['Sam'] }, { ...OK_COMPUTER, mine: true, askedBy: [] }] });
+    expect(await screen.findByText(/^Waiting for approval · requested by Sam /)).toBeTruthy();
+    // The admin's own, asked by nobody else, names nobody.
+    expect(screen.getByText(/^Ready to play · requested \d/)).toBeTruthy();
+    expect(screen.getByText(/those waiting for your approval first/)).toBeTruthy();
+    // Answered, not made to vanish from Sam's list.
+    expect(screen.queryByRole('button', { name: 'Remove Heligoland from this list' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Decline Heligoland' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve Heligoland' }));
+    await waitFor(() => expect(approve).toHaveBeenCalledWith(HELIGOLAND.mbid));
+    await waitFor(() => expect(useToasts.getState().toasts[0]?.message).toBe('Approved “Heligoland”. Lidarr is searching for it'));
+  });
+
+  it('shows a member their request waiting as pending, and one an admin declined, to take off the list', async () => {
+    vi.spyOn(api, 'markRequestsSeen').mockResolvedValue();
+    const declined: AlbumRequest = {
+      ...HELIGOLAND,
+      mbid: '4d1d6f7b-1111-4222-8333-944455550002',
+      title: '100th Window',
+      approval: 'declined',
+      availability: { state: 'failed', message: 'Declined by Alex' },
+      mine: true,
+      unseen: true,
+    };
+    view({ health: WITH_LIDARR, me: { ...SAM, requestAccess: 'ask' }, requests: [{ ...HELIGOLAND, mine: true, unseen: false }, declined] });
+    expect(await screen.findByText('Pending')).toBeTruthy();
+    expect(screen.getByText(/An admin approves each one first/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Approve/ })).toBeNull();
+    expect(screen.getByText(/^Declined by Alex · requested /)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove 100th Window from this list' })).toBeTruthy();
+  });
+
+  it('marks what arrived or was declined since the last look as new, and tells the server it has been seen', async () => {
+    const seen = vi.spyOn(api, 'markRequestsSeen').mockResolvedValue();
+    const arrived: AlbumRequest = { ...OK_COMPUTER, mine: true, unseen: true };
+    view({ health: WITH_LIDARR, me: SAM, requests: [arrived, { ...HELIGOLAND, mine: true, unseen: false }] });
+    await waitFor(() => expect(seen).toHaveBeenCalledWith([OK_COMPUTER.mbid]));
+    // Still marked while the page is open, though the server has been told.
+    const row = screen.getByText('OK Computer').closest('li')!;
+    expect(within(row).getByRole('img', { name: 'New' })).toBeTruthy();
+    expect(within(screen.getByText('Heligoland').closest('li')!).queryByRole('img', { name: 'New' })).toBeNull();
   });
 });

@@ -1,13 +1,47 @@
 [
   {
+    "mbid": "4d1d6f7b-1111-4222-8333-944455550001",
+    "title": "Heligoland",
+    "artistName": "Massive Attack",
+    "requestedAt": "2026-11-03T12:00:00.000Z",
+    "mine": false,
+    "askedBy": [
+      "Sam"
+    ],
+    "availability": {
+      "state": "waiting",
+      "message": "Waiting for approval"
+    },
+    "approval": "waiting"
+  },
+  {
     "mbid": "a9a3d3bd-0c1c-3a6c-8b3f-4b1e3b1f5b7e",
     "title": "Mezzanine",
     "artistName": "Massive Attack",
     "requestedAt": "2026-11-03T12:00:00.000Z",
     "availability": {
-      "state": "downloading",
-      "progress": 0.4,
-      "message": "Downloading 4 of 11"
-    }
+      "state": "available",
+      "albumId": 70
+    },
+    "mine": true,
+    "askedBy": [
+      "Zoe"
+    ],
+    "unseen": true
+  },
+  {
+    "mbid": "4d1d6f7b-1111-4222-8333-944455550002",
+    "title": "100th Window",
+    "artistName": "Massive Attack",
+    "requestedAt": "2026-11-03T12:00:00.000Z",
+    "mine": false,
+    "askedBy": [
+      "Zoe"
+    ],
+    "availability": {
+      "state": "failed",
+      "message": "Declined by you"
+    },
+    "approval": "declined"
   }
 ]

@@ -24,6 +24,24 @@ import Testing
         #expect(try body(API.Accounts.update(id: 2, AccountPatch(name: "Sam"))).keys.sorted() == ["name"])
         let everySource = try body(API.Accounts.update(id: 2, AccountPatch(sources: .some(nil))))
         #expect(everySource["sources"] is NSNull)
+        #expect(try body(API.Accounts.update(id: 2, AccountPatch(requestAccess: .ask))) as? [String: String] == ["requestAccess": "ask"])
+    }
+
+    @Test func sendsWhetherANewAccountAsksFirstBesideWhetherItMayRequest() throws {
+        let sent = try body(API.Accounts.create(username: "sam", name: "Sam", role: .member, canRequest: true, requestAccess: .ask, sources: nil))
+        #expect(sent["canRequest"] as? Bool == true)
+        #expect(sent["requestAccess"] as? String == "ask")
+        // Without it, servers go by canRequest alone.
+        #expect(try body(API.Accounts.create(username: "sam", name: "Sam", role: .member, canRequest: false, sources: nil))["requestAccess"] == nil)
+    }
+
+    @Test func answersAndMarksRequestsByTheirReleaseGroup() throws {
+        #expect(API.Requests.approve(mbid: "rg-1").method == .post)
+        #expect(API.Requests.approve(mbid: "rg-1").path == "/api/requests/rg-1/approve")
+        #expect(API.Requests.decline(mbid: "rg-1").path == "/api/requests/rg-1/decline")
+        let seen = API.Requests.seen(mbids: ["rg-1", "rg-2"])
+        #expect(seen.path == "/api/requests/seen")
+        #expect(try body(seen)["mbids"] as? [String] == ["rg-1", "rg-2"])
     }
 
     @Test func leavesOutOptionalTransitionFields() throws {

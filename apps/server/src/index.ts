@@ -298,7 +298,9 @@ app.log.info(`Sources: ${store.listSources().map((s) => s.name).join(', ') || 'n
 if (accounts.setupMode()) app.log.info('Nobody has set up Playarr yet: open Settings → Accounts from your home network to set the owner’s password');
 
 // Serve the catalog saved by the last run immediately, then sync the sources in the background.
-library.loadStored();
+const catalogStored = library.loadStored();
+// With it, how the requests are doing: one on its way when the server stopped (an update, say) is news when it lands.
+if (catalogStored) requests.lookAtStart().catch((err: unknown) => app.log.warn({ err }, 'looking at the requests failed'));
 library.refresh().catch(() => {});
 library.startAutoRefresh(config.LIBRARY_REFRESH_MINUTES);
 stalls = watchStalls(app.log);

@@ -75,8 +75,10 @@ Details in [streaming-and-art.md](streaming-and-art.md) and [../mixing.md](../mi
 | method and path | purpose | who |
 |---|---|---|
 | `GET /api/discover/search?q=`, `/api/discover/artists/:mbid`, `/api/discover/artists/:mbid/similar`, `/api/discover/artist-lookup?name=` | search beyond the library (Lidarr's metadata search and Deezer), an artist's page, similar artists, find an artist on MusicBrainz by name | signed in |
-| `GET /api/requests` | albums requested through Lidarr, with progress (the whole server's) | signed in |
-| `POST /api/requests`, `DELETE /api/requests/:mbid` | request an album, drop a request | requester |
+| `GET /api/requests` | albums requested through Lidarr, with progress: a member's own; for an admin (and before setup, when all act as the owner) everyone's, those waiting for approval first; each saying whether it's the caller's (`mine`), on an admin's list who else asked (`askedBy`), whether it waits for approval or was declined (`approval`), and whether it arrived or was declined since the caller last looked (`unseen`) | signed in |
+| `POST /api/requests`, `DELETE /api/requests/:mbid` | request an album (held for an admin's approval when the account asks first); take the caller's own off their list (an admin's: off everyone's) | requester |
+| `POST /api/requests/seen` | `{ mbids? }`: the caller has seen these requests' news (every one without `mbids`), 204 | signed in |
+| `POST /api/requests/:mbid/approve`, `/decline` | answer a request waiting for approval: approved, it goes to Lidarr as any request; declined, whoever asked sees it so (409 once it has gone to Lidarr) | admin |
 
 Details in [discover-and-requests.md](discover-and-requests.md).
 
@@ -133,7 +135,7 @@ Anything else that isn't under `/api/`, `/stream/`, `/art/` or `/transitions/` i
 - **Sign-in.** Once any account has a password, every `/api`, `/stream`, `/art` and `/transitions` request needs a session, except finding the server, its health and signing in (the **open** routes above). The app sends a Bearer token, the web an HttpOnly cookie; tokens and setup codes are stored as SHA-256, passwords as scrypt. Failed sign-ins and codes are limited to 10 per 15 minutes per client address (the visitor's, behind a proxy trusted with `TRUST_PROXY`).
 - **No cross-site changes.** Every `/api/` request other than GET, HEAD or OPTIONS must carry `X-Playarr: 1` unless it has a Bearer token (`isFromApp` in `net.ts`).
 - **Rights.** Admins change settings; each account has its own history, ListenBrainz link, favorites and playlists. Before setup, admin actions and claiming the server need the home network: a local address, no proxy in between, and the server addressed by IP or a local name (`LOCAL_HOSTNAMES` for others), against DNS rebinding.
-- **Library access.** Each account hears every source or a chosen list, enforced through a per-account view of the catalog in the catalog and search, streams, art, transitions, levels, mix maps, lyrics, metadata, favorites, playlists, mixes, radio and stats. Discover and the request list are the whole server's.
+- **Library access.** Each account hears every source or a chosen list, enforced through a per-account view of the catalog in the catalog and search, streams, art, transitions, levels, mix maps, lyrics, metadata, favorites, playlists, mixes, radio and stats. Discover is the whole server's; a member's request list holds only the requests they asked for, an admin's everyone's.
 - **Files.** `/stream` serves only file ids the account's catalog knows, never a path from the client. Folder files must lie in their source's folder; Lidarr files, after `PATH_MAP`, in one of its target folders (unchecked when `PATH_MAP` is empty). `/transitions/:file` serves only names the transition service makes.
 - **Secrets.** The Lidarr API key and saved SSH or SMB passwords never reach the client, and a saved key or password is only sent back to the server it was saved for. `/art/remote` fetches only from an allowlist of `https` hosts, on every redirect.
 - **Recovery.** A forgotten owner password is reset on the server host (`reset-password`), never over the network. The last password on the server can't be reset or removed.

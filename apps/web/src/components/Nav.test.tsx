@@ -1,26 +1,61 @@
-import type { PlaylistSummary } from '@playarr/shared';
+import type { AlbumRequest, PlaylistSummary } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
-import { activeLink, Sidebar } from './Nav';
+import { activeLink, BottomNav, Sidebar } from './Nav';
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
 
-function renderSidebar(path: string) {
-  vi.spyOn(api, 'requests').mockResolvedValue([]);
+function renderSidebar(path: string, requests: AlbumRequest[] = [], element = <Sidebar />) {
+  vi.spyOn(api, 'requests').mockResolvedValue(requests);
   vi.spyOn(api, 'playlists').mockResolvedValue([{ id: 1, name: 'Late night', cover: { pending: false } } as PlaylistSummary]);
-  const router = createMemoryRouter([{ path: '*', element: <Sidebar /> }], { initialEntries: [path] });
+  const router = createMemoryRouter([{ path: '*', element }], { initialEntries: [path] });
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }
+
+const request = (mbid: string, patch: Partial<AlbumRequest> = {}): AlbumRequest => ({
+  mbid,
+  title: mbid,
+  artistName: 'Massive Attack',
+  requestedAt: '2026-11-07T10:00:00Z',
+  availability: { state: 'downloading', progress: 0.5 },
+  ...patch,
+});
+
+/** An admin's requests: one of theirs that arrived since they last looked, Sam's waiting for them, two that are no news. */
+const NEWS = [
+  request('arrived', { availability: { state: 'available', albumId: 3 }, mine: true, unseen: true }),
+  request('sams', { availability: { state: 'waiting' }, approval: 'waiting', mine: false, askedBy: ['Sam'] }),
+  request('seen', { availability: { state: 'available', albumId: 4 }, mine: true, unseen: false }),
+  request('on-its-way', { mine: false }),
+];
+
+describe('the badge on Requests', () => {
+  it('counts what arrived since the last look and what waits for an admin’s answer, in the sidebar', async () => {
+    renderSidebar('/albums', NEWS);
+    const link = await screen.findByRole('link', { name: 'Requests 2 new' });
+    expect(link.getAttribute('href')).toBe('/requests');
+  });
+
+  it('is on the phone’s Library tab, where Requests are', async () => {
+    renderSidebar('/', NEWS, <BottomNav />);
+    expect(await screen.findByRole('link', { name: 'Library 2 new' })).toBeTruthy();
+  });
+
+  it('shows nothing when nothing is news, though requests are on their way', async () => {
+    renderSidebar('/albums', [request('on-its-way', { mine: true, unseen: false })]);
+    expect(await screen.findByRole('link', { name: 'Requests' })).toBeTruthy();
+  });
+});
 
 describe('sidebar', () => {
   it('knows which link a page belongs to', () => {

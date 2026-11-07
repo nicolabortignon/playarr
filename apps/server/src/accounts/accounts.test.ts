@@ -14,7 +14,7 @@ const member: AccountInput = { username: 'sam', name: 'Sam', role: 'member', can
 describe('Accounts', () => {
   it('starts with the owner, an admin without a password: setup mode', () => {
     const { accounts } = setup();
-    expect(accounts.list()).toEqual([{ id: 1, username: 'home', name: 'Home', role: 'admin', canRequest: true, sources: null, hasPassword: false, locked: [] }]);
+    expect(accounts.list()).toEqual([{ id: 1, username: 'home', name: 'Home', role: 'admin', canRequest: true, requestAccess: 'on', sources: null, hasPassword: false, locked: [] }]);
     expect(accounts.owner().id).toBe(1);
     expect(accounts.ids()).toEqual([1]);
     expect(accounts.setupMode()).toBe(true);
@@ -24,7 +24,7 @@ describe('Accounts', () => {
     const { accounts, store } = setup();
     const cc = store.addSource('folder', 'Creative Commons');
     const sam = accounts.create({ ...member, username: ' Sam ', name: '  Sam   Smith ', sources: [cc] });
-    expect(sam).toEqual({ id: 2, username: 'sam', name: 'Sam Smith', role: 'member', canRequest: false, sources: [cc], hasPassword: false, locked: [] });
+    expect(sam).toEqual({ id: 2, username: 'sam', name: 'Sam Smith', role: 'member', canRequest: false, requestAccess: 'off', sources: [cc], hasPassword: false, locked: [] });
     expect(() => accounts.create({ ...member, username: 'SAM' })).toThrow('That username is taken');
     expect(() => accounts.create({ ...member, username: 'no spaces' })).toThrow(/username/);
     expect(() => accounts.create({ ...member, username: 'zoe', name: ' ' })).toThrow('An account needs a name');
@@ -56,6 +56,25 @@ describe('Accounts', () => {
     expect(accounts.update(sam.id, { role: 'admin' }).locked).toEqual([]);
     expect(accounts.update(sam.id, { role: 'member' }).locked).toEqual(['appearance']);
     expect(accounts.update(sam.id, { locked: [] }).locked).toEqual([]);
+  });
+
+  it('makes a member ask an admin first, never an admin, and keeps that for apps that only know canRequest', () => {
+    const { accounts } = setup();
+    const sam = accounts.create({ ...member, canRequest: true, requestAccess: 'ask' });
+    // May ask, so apps that predate requestAccess still offer Request.
+    expect(sam).toMatchObject({ canRequest: true, requestAccess: 'ask' });
+    // Made an admin, their requests go straight to Lidarr, and stay so made a member again: nothing they can't see changes.
+    expect(accounts.update(sam.id, { role: 'admin' })).toMatchObject({ canRequest: true, requestAccess: 'on' });
+    expect(accounts.update(sam.id, { role: 'member' })).toMatchObject({ canRequest: true, requestAccess: 'on' });
+    expect(accounts.create({ ...member, username: 'ada', role: 'admin', canRequest: true, requestAccess: 'ask' })).toMatchObject({ requestAccess: 'on' });
+    expect(accounts.update(sam.id, { requestAccess: 'ask' })).toMatchObject({ canRequest: true, requestAccess: 'ask' });
+    // An app that only knows canRequest: still allowed keeps asking first, not allowed is off, allowed again is on.
+    expect(accounts.update(sam.id, { canRequest: true, name: 'Sam S.' })).toMatchObject({ requestAccess: 'ask' });
+    expect(accounts.update(sam.id, { canRequest: false })).toMatchObject({ canRequest: false, requestAccess: 'off' });
+    expect(accounts.update(sam.id, { canRequest: true })).toMatchObject({ canRequest: true, requestAccess: 'on' });
+    // requestAccess decides when both are sent.
+    expect(accounts.update(sam.id, { canRequest: true, requestAccess: 'off' })).toMatchObject({ canRequest: false, requestAccess: 'off' });
+    expect(accounts.create({ ...member, username: 'zoe', canRequest: true })).toMatchObject({ requestAccess: 'on' });
   });
 
   it('checks passwords, and leaves setup mode once one is set', async () => {

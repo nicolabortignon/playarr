@@ -7,12 +7,24 @@ func availability(_ state: AvailabilityState, albumId: Int? = nil, have: Int? = 
   Availability(state: state, albumId: albumId, have: have, total: total, progress: progress, message: message)
 }
 
-func albumRequest(_ mbid: String, _ title: String, _ state: AvailabilityState, albumId: Int? = nil, progress: Double? = nil) -> AlbumRequest {
-  AlbumRequest(mbid: mbid, title: title, artistName: "Massive Attack", requestedAt: "2026-11-03T10:00:00.000Z", availability: availability(state, albumId: albumId, progress: progress))
+func albumRequest(
+  _ mbid: String, _ title: String, _ state: AvailabilityState, albumId: Int? = nil, progress: Double? = nil, mine: Bool? = nil,
+  askedBy: [String]? = nil, approval: RequestApproval? = nil, unseen: Bool? = nil
+) -> AlbumRequest {
+  AlbumRequest(
+    mbid: mbid, title: title, artistName: "Massive Attack", requestedAt: "2026-11-03T10:00:00.000Z",
+    availability: availability(state, albumId: albumId, progress: progress), mine: mine, askedBy: askedBy, approval: approval, unseen: unseen)
 }
 
-func account(canRequest: Bool = true, role: AccountRole = .member) -> Account {
-  Account(id: 2, username: "sam", name: "Sam", role: role, canRequest: canRequest, sources: nil, hasPassword: true)
+/// A request waiting for an admin's answer, as the server says it: someone else's on an admin's list (`mine` false).
+func waitingRequest(_ mbid: String, _ title: String, mine: Bool, askedBy: [String]? = nil) -> AlbumRequest {
+  var request = albumRequest(mbid, title, .waiting, mine: mine, askedBy: askedBy, approval: .waiting)
+  request.availability.message = "Waiting for approval"
+  return request
+}
+
+func account(canRequest: Bool = true, role: AccountRole = .member, requestAccess: RequestAccess? = nil) -> Account {
+  Account(id: 2, username: "sam", name: "Sam", role: role, canRequest: canRequest, requestAccess: requestAccess, sources: nil, hasPassword: true)
 }
 
 func health(lidarr: Bool = true, requests: Bool = true) -> HealthStatus {

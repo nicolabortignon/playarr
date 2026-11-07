@@ -6,6 +6,7 @@
     "name": "Home",
     "role": "admin",
     "canRequest": true,
+    "requestAccess": "on",
     "sources": null,
     "hasPassword": true,
     "locked": []

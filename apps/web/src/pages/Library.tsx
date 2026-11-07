@@ -1,13 +1,15 @@
 import { ArrowDownToLine, Binoculars, ChartColumn, Disc3, Heart, MicVocal, Plus, Settings, Sparkles, type LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { IconButton } from '../components/Button';
+import { NewsBadge } from '../components/Nav';
 import { NavRow } from '../components/NavRow';
 import { PageHeader } from '../components/PageHeader';
 import { PlaylistCover } from '../components/PlaylistCover';
 import { SectionHeader } from '../components/Section';
 import { plural } from '../lib/format';
 import { STATS_PATH } from '../lib/links';
-import { useFavorites, useHealth, usePlaylists, useRequests } from '../lib/queries';
+import { requestNewsCount, useFavorites, useHealth, usePlaylists, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { useOffline } from '../player/offline';
 
@@ -21,14 +23,16 @@ export function LibraryPage() {
   const lib = health?.library;
   const downloads = useOffline((s) => Object.keys(s.pins).length);
 
-  const rows: { to: string; label: string; icon: LucideIcon; detail?: string }[] = [
+  const rows: { to: string; label: string; icon: LucideIcon; detail?: string; badge?: ReactNode }[] = [
     { to: '/mixes', label: 'Made for you', icon: Sparkles },
     { to: STATS_PATH, label: 'Your listening', icon: ChartColumn },
     ...(downloads ? [{ to: '/downloads', label: 'Downloads', icon: ArrowDownToLine, detail: String(downloads) }] : []),
     { to: '/favorites', label: 'Favorites', icon: Heart, detail: favorites ? plural(favorites.length, 'song') : undefined },
     { to: '/artists', label: 'Artists', icon: MicVocal, detail: lib ? String(lib.artists) : undefined },
     { to: '/albums', label: 'Albums', icon: Disc3, detail: lib ? String(lib.albums) : undefined },
-    ...(requests?.length ? [{ to: '/requests', label: 'Requests', icon: Binoculars, detail: String(requests.length) }] : []),
+    ...(requests?.length
+      ? [{ to: '/requests', label: 'Requests', icon: Binoculars, detail: String(requests.length), badge: <NewsBadge count={requestNewsCount(requests)} /> }]
+      : []),
     { to: '/settings', label: 'Settings', icon: Settings },
   ];
 

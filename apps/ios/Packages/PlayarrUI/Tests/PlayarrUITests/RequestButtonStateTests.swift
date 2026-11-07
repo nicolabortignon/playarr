@@ -61,6 +61,18 @@ import Testing
     #expect(!state(availability(.available)).asks)
   }
 
+  @Test func saysPendingWhileAnAdminHasntApprovedTheAccountsRequest() {
+    let pending = RequestButtonState.make(availability(.noneValue), allowed: true, pending: nil, awaitingApproval: true)
+    #expect(pending == .awaitingApproval)
+    #expect(pending.label == "Pending")
+    #expect(pending.help == "Waiting for an admin to approve it")
+    #expect(!pending.asks)
+    // Asked for this moment: still on its way to the server.
+    #expect(RequestButtonState.make(availability(.noneValue), allowed: true, pending: .requesting, awaitingApproval: true).label == "Requesting…")
+    // Arrived anyway (from a folder, say): in the library, whatever the request says.
+    #expect(RequestButtonState.make(availability(.available, albumId: 5), allowed: true, pending: nil, awaitingApproval: true) == .inLibrary(albumId: 5))
+  }
+
   @Test func namesAnAlbumByItsIdElseByArtistAndTitle() {
     #expect(AlbumRef(mbid: "rg-1", artistName: "Massive Attack", albumTitle: "Mezzanine").requestKey == "rg-1")
     #expect(AlbumRef(artistName: "Massive Attack", albumTitle: "Mezzanine (Deluxe)").requestKey == "massive attack|mezzanine")

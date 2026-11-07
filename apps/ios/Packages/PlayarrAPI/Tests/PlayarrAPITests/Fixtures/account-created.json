@@ -5,6 +5,7 @@
     "name": "App Review",
     "role": "member",
     "canRequest": false,
+    "requestAccess": "off",
     "sources": [
       1
     ],

@@ -2,7 +2,7 @@ import { ArrowDownToLine, Binoculars, Disc3, Heart, House, LibraryBig, List, Mic
 import { useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import { cn } from '../lib/cn';
-import { activeRequestCount, usePlaylists, useRequests } from '../lib/queries';
+import { requestNewsCount, usePlaylists, useRequestNews, useRequests } from '../lib/queries';
 import { useUI } from '../lib/ui';
 import { IconButton } from './Button';
 
@@ -52,7 +52,7 @@ export function activeLink(pathname: string, links: NavItem[] = LINKS): NavItem 
  */
 export function Sidebar() {
   const { data: requests } = useRequests();
-  const active = activeRequestCount(requests);
+  const news = requestNewsCount(requests);
   const { pathname } = useLocation();
   const current = activeLink(pathname);
   const onRequests = pathname === '/requests' || pathname.startsWith('/requests/');
@@ -96,11 +96,7 @@ export function Sidebar() {
                 {({ isActive }) => (
                   <>
                     <PlaceLabel icon={Binoculars} label="Requests" current={isActive} />
-                    {active > 0 && (
-                      <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-accent px-1.5 type-badge leading-5 text-accent-ink">
-                        {active}
-                      </span>
-                    )}
+                    <NewsBadge count={news} className="ml-auto" />
                   </>
                 )}
               </NavLink>
@@ -126,6 +122,20 @@ export function Sidebar() {
         </NavLink>
       </div>
     </aside>
+  );
+}
+
+/**
+ * How much on Requests is news: the account's requests that arrived or were declined since it last looked, and for an
+ * admin those waiting for an answer. A screen reader hears it as "3 new".
+ */
+export function NewsBadge({ count, className }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span className={cn('grid min-w-5 place-items-center rounded-full bg-accent px-1.5 type-badge leading-5 text-accent-ink', className)}>
+      <span aria-hidden>{count}</span>
+      <span className="sr-only">{count} new</span>
+    </span>
   );
 }
 
@@ -216,6 +226,8 @@ function SidebarPlaylists() {
 }
 
 export function BottomNav() {
+  // Requests live in Library on a phone: its tab carries their badge.
+  const news = useRequestNews();
   return (
     <nav
       aria-label="Main"
@@ -228,13 +240,15 @@ export function BottomNav() {
             to={to}
             end={to === '/'}
             className={({ isActive }) =>
-              cn('flex flex-col items-center justify-center gap-1 type-tab transition-colors', isActive ? 'text-paper' : 'text-muted')
+              cn('relative flex flex-col items-center justify-center gap-1 type-tab transition-colors', isActive ? 'text-paper' : 'text-muted')
             }
           >
             {({ isActive }) => (
               <>
                 <Icon className={cn('size-5.5', isActive && 'text-accent')} />
                 {label}
+                {/* At the glyph's shoulder, though read after the tab's name. */}
+                {to === '/library' && <NewsBadge count={news} className="absolute top-1 left-1/2 ml-1.5" />}
               </>
             )}
           </NavLink>

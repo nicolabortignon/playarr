@@ -94,8 +94,17 @@ describe('account routes', () => {
   it('lets admins change rights and library access', async () => {
     const { app, cc, sam, admin, as } = await setup();
     const res = await app.inject({ method: 'PATCH', url: `/api/accounts/${sam.id}`, headers: as(admin), payload: { canRequest: true, sources: [cc] } });
-    expect(res.json()).toMatchObject({ canRequest: true, sources: [cc] });
+    expect(res.json()).toMatchObject({ canRequest: true, requestAccess: 'on', sources: [cc] });
     expect((await app.inject({ method: 'PATCH', url: '/api/accounts/1', headers: as(admin), payload: { role: 'member' } })).statusCode).toBe(409);
+  });
+
+  it('lets an admin make a member ask an admin first before a request goes to Lidarr', async () => {
+    const { app, sam, admin, member, as } = await setup();
+    const res = await app.inject({ method: 'PATCH', url: `/api/accounts/${sam.id}`, headers: as(admin), payload: { requestAccess: 'ask' } });
+    expect(res.json()).toMatchObject({ canRequest: true, requestAccess: 'ask' });
+    // Not something a member can change for themselves.
+    expect((await app.inject({ method: 'PATCH', url: `/api/accounts/${sam.id}`, headers: as(member), payload: { requestAccess: 'on' } })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'PATCH', url: `/api/accounts/${sam.id}`, headers: as(admin), payload: { requestAccess: 'later' } })).statusCode).toBe(400);
   });
 
   it('resets an account: signed out everywhere, password gone, a new setup code', async () => {

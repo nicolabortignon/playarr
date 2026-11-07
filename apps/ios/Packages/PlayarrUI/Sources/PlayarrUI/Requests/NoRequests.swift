@@ -6,6 +6,8 @@ import PlayarrAPI
 enum NoRequests: Equatable, Sendable {
   /// Lidarr, and requests on for this account: how to ask for an album.
   case ask
+  /// The same, for an account whose requests wait for an admin's approval.
+  case askFirst
   /// No Lidarr source.
   case needsLidarr(admin: Bool)
   /// This account may not request.
@@ -29,13 +31,17 @@ enum NoRequests: Equatable, Sendable {
   static func of(_ gate: RequestGate, admin: Bool) -> NoRequests {
     if !gate.hasLidarr { return .needsLidarr(admin: admin) }
     if !gate.canRequest { return .cantRequest(admin: admin) }
-    return gate.allowsRequests ? .ask : .turnedOff(admin: admin)
+    guard gate.allowsRequests else { return .turnedOff(admin: admin) }
+    return gate.asksFirst ? .askFirst : .ask
   }
 
   var line: PageLines.Line {
     switch self {
     case .ask:
       PageLines.Line("Ask for an album you don’t have.", "Search for it and press Request: it lands in your library once Lidarr finds it.")
+    case .askFirst:
+      PageLines.Line(
+        "Ask for an album you don’t have.", "Search for it and press Request: once an admin approves it, it lands in your library when Lidarr finds it.")
     case .needsLidarr(true):
       PageLines.Line("Requests need a Lidarr source.", "Add one, and you can ask Lidarr for albums you don’t have, right from Search.")
     case .needsLidarr(false):
@@ -51,7 +57,7 @@ enum NoRequests: Equatable, Sendable {
 
   var action: Action? {
     switch self {
-    case .ask: Action(title: "Search", systemImage: "magnifyingglass", destination: .search)
+    case .ask, .askFirst: Action(title: "Search", systemImage: "magnifyingglass", destination: .search)
     case .needsLidarr(true): Action(title: "Add Lidarr", systemImage: "gearshape", destination: .settings(.sources))
     case .turnedOff(true): Action(title: "Turn them on", systemImage: "gearshape", destination: .settings(.requests))
     default: nil

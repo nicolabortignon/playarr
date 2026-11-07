@@ -13,6 +13,8 @@ const accountInput = z.object({
   name: z.string().trim().min(1).max(40),
   role: z.enum(['admin', 'member']),
   canRequest: z.boolean(),
+  // Apps that predate it send canRequest alone (see Accounts.update).
+  requestAccess: z.enum(['on', 'ask', 'off']).optional(),
   sources: z.array(z.number().int().positive()).max(100).nullable(),
   locked: z.array(z.enum(['playback', 'appearance'])).max(2).optional(),
 });

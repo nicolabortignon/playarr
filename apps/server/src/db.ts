@@ -305,6 +305,43 @@ const MIGRATIONS: Migration[] = [
   // this, all by the playlist's owner, and for an account since removed.
   `ALTER TABLE playlists ADD COLUMN collaborative INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE playlist_items ADD COLUMN added_by INTEGER REFERENCES accounts (id) ON DELETE SET NULL;`,
+  // Requests belong to everyone who asked (plan 4 §4). An account may have to ask an admin first (ask_first, with
+  // can_request): its requests wait (status waiting, then approved or declined, with who decided and when) and have no
+  // Lidarr album until approved, so lidarr_album_id may be empty and the table is made again. arrived_at: when the
+  // album was first seen playable, for "it's ready". album_request_askers: each account that asked, and when it last
+  // looked at Requests (seen_at). The requests of before keep who asked first, count as arrived when asked (Requests
+  // forgets that of any it then finds still on its way) and as seen, so none of them is announced as new.
+  `ALTER TABLE accounts ADD COLUMN ask_first INTEGER NOT NULL DEFAULT 0;
+   CREATE TABLE album_requests_new (
+     mbid            TEXT PRIMARY KEY,
+     keys            TEXT NOT NULL,
+     lidarr_album_id INTEGER,
+     title           TEXT NOT NULL,
+     artist_name     TEXT NOT NULL,
+     cover_url       TEXT,
+     requested_at    TEXT NOT NULL,
+     command_id      INTEGER,
+     requested_by    INTEGER REFERENCES accounts (id) ON DELETE SET NULL,
+     status          TEXT NOT NULL DEFAULT 'approved',
+     decided_by      INTEGER REFERENCES accounts (id) ON DELETE SET NULL,
+     decided_at      TEXT,
+     arrived_at      TEXT
+   );
+   INSERT INTO album_requests_new (mbid, keys, lidarr_album_id, title, artist_name, cover_url, requested_at, command_id, requested_by, arrived_at)
+     SELECT mbid, keys, lidarr_album_id, title, artist_name, cover_url, requested_at, command_id, requested_by, requested_at FROM album_requests;
+   DROP TABLE album_requests;
+   ALTER TABLE album_requests_new RENAME TO album_requests;
+   CREATE TABLE album_request_askers (
+     mbid       TEXT NOT NULL REFERENCES album_requests (mbid) ON DELETE CASCADE,
+     account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+     asked_at   TEXT NOT NULL,
+     seen_at    TEXT,
+     PRIMARY KEY (mbid, account_id)
+   );
+   CREATE INDEX album_request_askers_by_account ON album_request_askers (account_id);
+   INSERT INTO album_request_askers (mbid, account_id, asked_at, seen_at)
+     SELECT mbid, requested_by, requested_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM album_requests
+     WHERE requested_by IN (SELECT id FROM accounts);`,
 ];
 
 /** How many copies made before migrations are kept in `backups/`: the newest. */

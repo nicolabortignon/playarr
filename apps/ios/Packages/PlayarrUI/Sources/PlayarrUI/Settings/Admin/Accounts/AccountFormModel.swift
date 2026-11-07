@@ -10,7 +10,8 @@ public final class AccountFormModel {
   public var name: String
   public var username: String
   public var role: AccountRole
-  public var canRequest: Bool
+  /// How its requests go: straight to Lidarr, waiting for an admin's approval (members only), or not at all.
+  public var requestAccess: RequestAccess
   public var everySource: Bool
   public private(set) var picked: [Int]
   /// The device settings it may not change (asked for members only).
@@ -28,11 +29,32 @@ public final class AccountFormModel {
     name = account?.name ?? ""
     username = account?.username ?? ""
     role = account?.role ?? .member
-    canRequest = account?.canRequest ?? true
+    requestAccess = account.map(Self.access) ?? .on
     everySource = account.map { $0.sources == nil } ?? true
     picked = account?.sources ?? []
     locked = account?.locked ?? []
   }
+
+  /// How an account's requests go, as the form offers it; servers that predate `requestAccess` say only whether it may.
+  static func access(_ account: Account) -> RequestAccess {
+    if let access = account.requestAccess, RequestAccess.allCases.contains(access) { return access }
+    return account.canRequest ? .on : .off
+  }
+
+  /// The form's choices for requests (AccountsPanel.tsx `REQUEST_ACCESS`).
+  public static let requestChoices: [(access: RequestAccess, label: String)] = [
+    (.on, "Can request albums"),
+    (.ask, "Asks an admin first: each request waits for approval"),
+    (.off, "Can’t request albums"),
+  ]
+
+  /// The choices for this role: an admin's requests always go straight to Lidarr, so only a member asks first.
+  public var requestChoices: [(access: RequestAccess, label: String)] {
+    Self.requestChoices.filter { role == .member || $0.access != .ask }
+  }
+
+  /// What's chosen, as the role allows it: asking first is a member's, so an admin asked to ask first just requests.
+  public var chosenAccess: RequestAccess { role == .admin && requestAccess == .ask ? .on : requestAccess }
 
   /// The device settings an admin can stop a member from changing, as the form names them.
   public static let deviceSettings: [(setting: DeviceSetting, label: String)] = [(.playback, "Playback"), (.appearance, "Appearance")]
@@ -70,9 +92,12 @@ public final class AccountFormModel {
     everySource ? nil : sources.map(\.id).filter(picked.contains) + picked.filter { id in !sources.contains { $0.id == id } }
   }
 
-  /// POST /api/accounts.
+  /// POST /api/accounts: whether it may request, which servers older than `requestAccess` go by, beside how.
   public var createEndpoint: Endpoint<CreatedAccount> {
-    API.Accounts.create(username: cleanUsername, name: name.trimmed, role: role, canRequest: canRequest, sources: chosenSources, locked: chosenLocked)
+    let access = chosenAccess
+    return API.Accounts.create(
+      username: cleanUsername, name: name.trimmed, role: role, canRequest: access != .off, requestAccess: access,
+      sources: chosenSources, locked: chosenLocked)
   }
 
   /// PATCH /api/accounts/:id with only what changed; nil when nothing did.
@@ -82,7 +107,9 @@ public final class AccountFormModel {
     if cleanUsername != account.username { patch.username = cleanUsername }
     if name.trimmed != account.name { patch.name = name.trimmed }
     if role != account.role { patch.role = role }
-    if canRequest != account.canRequest { patch.canRequest = canRequest }
+    let access = chosenAccess
+    if access != Self.access(account) { patch.requestAccess = access }
+    if (access != .off) != account.canRequest { patch.canRequest = access != .off }
     if chosenSources != account.sources { patch.sources = .some(chosenSources) }
     if chosenLocked != (account.locked ?? []) { patch.locked = chosenLocked }
     return patch == AccountPatch() ? nil : patch

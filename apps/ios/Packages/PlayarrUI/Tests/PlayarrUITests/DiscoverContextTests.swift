@@ -38,6 +38,29 @@ import Testing
     #expect(!context.gate.hasLidarr)
   }
 
+  @Test func asksForTheLibraryAgainOnceHealthSaysItChanged() async {
+    let api = FakeAPI()
+    var forwarded: [CacheFamily] = []
+    let context = context(api) { forwarded += $0 }
+    func libraryHealth(albums: Int, tracks: Int, refreshedAt: String) -> HealthStatus {
+      var status = health()
+      status.library = LibraryStats(artists: 10, albums: albums, tracks: tracks, durationSeconds: 3600, sizeBytes: tracks * 1000, refreshedAt: refreshedAt)
+      return status
+    }
+    api.on(.get, "/api/health", libraryHealth(albums: 100, tracks: 1200, refreshedAt: "2026-11-07T10:00:00Z"))
+    await context.refreshHealth()
+    #expect(forwarded.isEmpty)
+    // Synced again, nothing new.
+    api.on(.get, "/api/health", libraryHealth(albums: 100, tracks: 1200, refreshedAt: "2026-11-07T10:15:00Z"))
+    await context.refreshHealth()
+    #expect(forwarded.isEmpty)
+    // An album someone else asked for arrived.
+    api.on(.get, "/api/health", libraryHealth(albums: 101, tracks: 1212, refreshedAt: "2026-11-07T10:30:00Z"))
+    await context.refreshHealth()
+    #expect(forwarded == CacheFamily.landed)
+    #expect(context.generation(.albums) == 1)
+  }
+
   @Test func marksAnswersStaleHereAndInTheApp() {
     var forwarded: [CacheFamily] = []
     let context = context(FakeAPI()) { forwarded += $0 }

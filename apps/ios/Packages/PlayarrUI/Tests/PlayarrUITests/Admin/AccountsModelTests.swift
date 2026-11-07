@@ -59,18 +59,21 @@ import Testing
     let model = AccountsModel(api: api)
     await model.load()
     let form = AccountFormModel(account: nil, sources: model.sources)
-    #expect(form.canRequest && form.everySource && form.role == .member)
+    #expect(form.requestAccess == .on && form.everySource && form.role == .member)
     form.name = "App Review"
     form.username = "Reviewer!"
     #expect(form.usernameProblem == AccountFormModel.usernameRule && !form.canSubmit)
     form.username = " Reviewer "
-    form.canRequest = false
+    form.requestAccess = .off
     form.everySource = false
     form.toggle(Self.creativeCommons)
     let reviewer = Account(id: 3, username: "reviewer", name: "App Review", role: .member, canRequest: false, sources: [2], hasPassword: false)
     api.on(.post, "/api/accounts", CreatedAccount(account: reviewer, setup: Self.setup))
     #expect(await model.create(form))
-    #expect(api.bodies(.post, "/api/accounts") == [#"{"canRequest":false,"locked":[],"name":"App Review","role":"member","sources":[2],"username":"reviewer"}"#])
+    #expect(
+      api.bodies(.post, "/api/accounts") == [
+        #"{"canRequest":false,"locked":[],"name":"App Review","requestAccess":"off","role":"member","sources":[2],"username":"reviewer"}"#
+      ])
     #expect(model.setupShown?.setup.code == "ABCD2345")
     #expect(model.accounts?.map(\.id) == [1, 2, 3])
     // Whether it's set up is a line of its own ("Invited · not set up yet"), not part of the summary.
@@ -99,16 +102,64 @@ import Testing
     #expect(form.patch == nil)
     #expect(await model.update(form))
     #expect(api.calls(.patch, "/api/accounts/2").isEmpty)
-    form.canRequest = true
+    form.requestAccess = .on
     form.everySource = false
     form.toggle(Self.creativeCommons)
     var changed = Self.sam
     changed.canRequest = true
+    changed.requestAccess = .on
     changed.sources = [2]
     api.on(.patch, "/api/accounts/2", changed)
     #expect(await model.update(form))
-    #expect(api.bodies(.patch, "/api/accounts/2") == [#"{"canRequest":true,"sources":[2]}"#])
+    #expect(api.bodies(.patch, "/api/accounts/2") == [#"{"canRequest":true,"requestAccess":"on","sources":[2]}"#])
     #expect(model.accounts?.last?.sources == [2])
+  }
+
+  @Test func makesAMemberAskAnAdminFirst() async {
+    var sam = Self.sam
+    sam.canRequest = true
+    sam.requestAccess = .on
+    let form = AccountFormModel(account: sam, sources: [])
+    #expect(form.requestChoices.map(\.access) == [.on, .ask, .off])
+    form.requestAccess = .ask
+    // It may still ask, which servers older than requestAccess go by: only how changes.
+    #expect(form.patch == AccountPatch(requestAccess: .ask))
+    var asking = sam
+    asking.requestAccess = .ask
+    #expect(AccountFormModel(account: asking, sources: []).requestAccess == .ask)
+    #expect(AccountsModel(api: api).summary(asking) == "sam · member · requests need approval · every source")
+    form.requestAccess = .off
+    #expect(form.patch == AccountPatch(canRequest: false, requestAccess: .off))
+  }
+
+  @Test func onlyAMemberAsksFirst() async {
+    let form = AccountFormModel(account: nil, sources: [])
+    form.name = "Jo"
+    form.username = "jo"
+    form.requestAccess = .ask
+    form.role = .admin
+    // An admin's requests always go straight to Lidarr.
+    #expect(form.requestChoices.map(\.access) == [.on, .off])
+    #expect(form.chosenAccess == .on)
+    let model = AccountsModel(api: api)
+    let jo = Account(id: 3, username: "jo", name: "Jo", role: .admin, canRequest: true, requestAccess: .on, sources: nil, hasPassword: false)
+    api.on(.post, "/api/accounts", CreatedAccount(account: jo, setup: Self.setup))
+    #expect(await model.create(form))
+    #expect(api.bodies(.post, "/api/accounts") == [#"{"canRequest":true,"locked":[],"name":"Jo","requestAccess":"on","role":"admin","sources":null,"username":"jo"}"#])
+    // A member made an admin doesn't keep asking first.
+    var asking = Self.sam
+    asking.canRequest = true
+    asking.requestAccess = .ask
+    let promoted = AccountFormModel(account: asking, sources: [])
+    promoted.role = .admin
+    #expect(promoted.patch == AccountPatch(role: .admin, requestAccess: .on))
+  }
+
+  @Test func readsAServerThatPredatesAskingFirst() {
+    // Only canRequest: on or off.
+    #expect(AccountFormModel(account: Self.nicola, sources: []).requestAccess == .on)
+    #expect(AccountFormModel(account: Self.sam, sources: []).requestAccess == .off)
+    #expect(AccountsModel(api: api).summary(Self.nicola) == "nicola · admin · can request albums · every source")
   }
 
   @Test func locksWhatAMemberMayChangeOnTheirDevices() {

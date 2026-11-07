@@ -52,6 +52,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("artist-lookup", ArtistMatch.self),
         Contract("requests", [AlbumRequest].self),
         Contract("request-created", AlbumRequest.self),
+        Contract("request-approved", AlbumRequest.self),
         // Favorites and playlists
         Contract("favorites", [FavoriteTrack].self),
         Contract("playlists", [PlaylistSummary].self),
