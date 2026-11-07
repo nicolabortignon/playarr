@@ -65,6 +65,26 @@ import Testing
     #expect(tilt.lean == CoverTilt.Lean())
   }
 
+  @Test func theTiltLastsUntilTheLastCoverThatTiltsHasGone() {
+    let tilt = CoverTilt()
+    // Now Playing open over an album page: two covers tilting.
+    tilt.start()
+    tilt.start()
+    tilt.turn(by: (x: 0, y: 0, z: 0), at: 0, orientation: .portrait)
+    tilt.turn(by: (x: 0, y: 40 * .pi / 180, z: 0), at: 0.1, orientation: .portrait)
+    tilt.stop()
+    #expect(tilt.lean.h > 0.4)
+    tilt.stop()
+    #expect(tilt.lean == CoverTilt.Lean())
+    // A stop too many doesn't leave the next cover without the gyroscope.
+    tilt.stop()
+    tilt.start()
+    tilt.turn(by: (x: 0, y: 0, z: 0), at: 1, orientation: .portrait)
+    tilt.turn(by: (x: 0, y: 40 * .pi / 180, z: 0), at: 1.1, orientation: .portrait)
+    tilt.stop()
+    #expect(tilt.lean == CoverTilt.Lean())
+  }
+
   @Test func aPhoneLyingStillLeavesTheCoverAlone() {
     let tilt = CoverTilt()
     var time = 0.0

@@ -437,13 +437,13 @@ final class ScreenTour: XCTestCase {
     }
     app.terminate()
 
-    // The cover tilted as a phone would tilt it (the simulator has no gyroscope), catching its sheen.
+    // The covers tilted as a phone would tilt them (the simulator has no gyroscope), catching their sheen: the album
+    // page's, then Now Playing's.
     launch(["-UITests", "-UITestsDemo", "-UITestsTilt"])
     _ = app.staticTexts[welcome].waitForExistence(timeout: 10)
-    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"]),
-      tap(app.buttons["Open now playing"])
-    {
-      shot("18-tilted", after: 2)
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10) {
+      shot("18-album-tilted", after: 2)
+      if tap(app.buttons["Play Mezzanine"]), tap(app.buttons["Open now playing"]) { shot("18b-tilted", after: 2) }
     }
   }
 

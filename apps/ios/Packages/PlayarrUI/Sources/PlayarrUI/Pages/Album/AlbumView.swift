@@ -18,6 +18,7 @@ struct AlbumView: View {
         // Sideways: the cover stays on the left, the rest scrolls beside it, all on the album's wash.
         Gatefold { side in
           Cover(path: album.coverUrl, points: side, label: album.title, color: album.coverColor).coverShadow(.hero)
+            .tiltsWithPhone(corner: Radius.cover, active: !session.router.nowPlaying)
         } page: {
           ScrollView { content(cover: false).padding(.top, 16) }
         }
@@ -75,7 +76,9 @@ struct AlbumView: View {
   /// The cover (unless it's beside the page), what kind of release it is, the title, the meta line and the action row.
   private func header(_ album: AlbumDetail, cover: Bool) -> some View {
     DetailHeader(kicker: model.kicker ?? "Album", overArt: true, showsCover: cover) {
+      // Tilting with the phone, as Now Playing's does; not while Now Playing is open over the page.
       Cover(path: album.coverUrl, points: 256, label: album.title, color: album.coverColor)
+        .tiltsWithPhone(corner: Radius.cover, active: !session.router.nowPlaying)
     } title: {
       DetailTitle(album.title)
     } meta: {

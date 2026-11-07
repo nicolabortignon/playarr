@@ -49,7 +49,9 @@ private struct GrowsFromPlayerCover: ViewModifier {
       if reduceMotion {
         content
       } else {
-        content.navigationTransition(.zoom(sourceID: NowPlayingZoom.source, in: namespace))
+        // The zoom only opens and closes it: the system's own drag to close it (a shrinking card) would be a second way
+        // to close it beside Now Playing's slide down, depending on where the finger lands.
+        content.navigationTransition(.zoom(sourceID: NowPlayingZoom.source, in: namespace)).interactiveDismissDisabled()
       }
     #else
       content

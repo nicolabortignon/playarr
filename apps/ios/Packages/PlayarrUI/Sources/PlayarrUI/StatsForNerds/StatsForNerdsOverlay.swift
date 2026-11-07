@@ -135,7 +135,8 @@ public struct StatsForNerdsOverlay: View {
     .frame(height: 36)
     .contentShape(Rectangle())
     .gesture(
-      DragGesture()
+      // On the window: measured in the panel, which moves with the finger, each step would take back part of the last.
+      DragGesture(coordinateSpace: .global)
         .onChanged { drag in
           let start = dragStart ?? offset
           dragStart = start

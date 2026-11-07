@@ -133,8 +133,11 @@ struct NowPlayingView: View {
     #endif
   }
 
+  /// Swiping down closes it, the page following the finger (`drag`). Measured on the window: in the page, which moves
+  /// with the finger, each step would take back part of the last, and the page went two steps down and one back up on
+  /// every frame.
   private var closeGesture: some Gesture {
-    DragGesture()
+    DragGesture(coordinateSpace: .global)
       .onChanged { drag = max(0, $0.translation.height) * 0.9 }
       .onEnded { value in
         if NowPlayingModel.closes(translation: value.translation.height, velocity: value.velocity.height) {
@@ -273,7 +276,8 @@ struct NowPlayingView: View {
   }
 
   /// The title with the heart beside it, and under them the artist and format, which may run on under the heart: as
-  /// the song ends, "Mixing into Teardrop on the next bar" takes their place and needs the room.
+  /// the song ends, "Mixing into Teardrop on the next bar" takes their place and needs the room. Swiping down on it
+  /// closes Now Playing, as on the cover and the header.
   private func song(_ track: Track) -> some View {
     VStack(alignment: .leading, spacing: 6) {
       Text(track.title).font(.display(.title)).essentialLineLimit(2)
@@ -292,6 +296,8 @@ struct NowPlayingView: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .overlay(alignment: .topTrailing) { FavoriteButton(track: track) }
+    .contentShape(Rectangle())
+    .gesture(closeGesture)
   }
 
   /// The heart's room beside the title: its 44 points and a gap.
@@ -436,7 +442,8 @@ struct NowPlayingView: View {
       .offset(x: swipe)
       .onTapGesture { staged ? wake() : setStaged(true) }
       .gesture(
-        DragGesture()
+        // On the window, as `closeGesture`: the page moves down with the finger.
+        DragGesture(coordinateSpace: .global)
           .onChanged { value in
             if abs(value.translation.width) > abs(value.translation.height) {
               // Follows the finger, harder to pull the further it goes.

@@ -1,17 +1,23 @@
 import Foundation
 import Observation
+import SwiftUI
 
 #if os(iOS)
   import CoreMotion
   import UIKit
 #endif
 
-/// Now Playing's cover tilting with the phone (plan 7 §3; docs/design.md, Moments): up to 2° each way, as a card held
-/// a little behind the glass would. The phone's turning comes from its gyroscope and is let go over a second and a
-/// half, so however the phone is held the cover comes to rest flat, and turning it tips the cover the other way for a
-/// moment. The web tilts it toward a mouse instead.
+/// Covers tilting with the phone, Now Playing's and the album page's (plan 7 §3; docs/design.md, Moments): up to 2°
+/// each way, as a card held a little behind the glass would. The phone's turning comes from its gyroscope and is let
+/// go over a second and a half, so however the phone is held the cover comes to rest flat, and turning it tips the
+/// cover the other way for a moment. One for the app (`shared`), read while any cover that tilts is on screen
+/// (`tiltsWithPhone`): the phone has one gyroscope, and Core Motion wants one manager reading it. The web tilts Now
+/// Playing's cover toward a mouse instead.
 @MainActor @Observable
 final class CoverTilt {
+  /// The app's: every cover that tilts leans the same way, with the same phone.
+  static let shared = CoverTilt()
+
   /// How far the cover leans, −1…1 of `maxDegrees`: its right edge (`h`) and its top edge (`v`) toward you.
   struct Lean: Equatable, Sendable {
     var h = 0.0
@@ -42,8 +48,10 @@ final class CoverTilt {
   /// screen), each turn let go over `settle`.
   @ObservationIgnored private var turned = (x: 0.0, y: 0.0, z: 0.0)
   @ObservationIgnored private var lastUpdate: TimeInterval?
+  /// Covers on screen that tilt (`start()`, `stop()`): the gyroscope reads while there's one.
+  @ObservationIgnored private var holders = 0
   #if os(iOS)
-    /// Made when the cover first shows: a view's `@State` makes a tilt each time it's redrawn, and keeps only the first.
+    /// Made when a cover first tilts.
     @ObservationIgnored private var motion: CMMotionManager?
   #endif
 
@@ -79,8 +87,11 @@ final class CoverTilt {
     if next == Lean() ? lean != next : max(abs(next.h - lean.h), abs(next.v - lean.v)) >= Self.unseen { lean = next }
   }
 
-  /// Follows the phone while the cover shows, 60 times a second; nothing where there's no gyroscope (the simulator).
+  /// A cover that tilts came on screen: from the first, the phone is followed 60 times a second; nothing where there's
+  /// no gyroscope (the simulator).
   func start() {
+    holders += 1
+    guard holders == 1 else { return }
     #if DEBUG
       // The screen tour's tilt, which the simulator can't give: a fixed lean to see the sheen by.
       if ProcessInfo.processInfo.arguments.contains("-UITests"), ProcessInfo.processInfo.arguments.contains("-UITestsTilt") {
@@ -97,7 +108,11 @@ final class CoverTilt {
     #endif
   }
 
+  /// A cover that tilts went: with the last, the gyroscope stops and the lean goes flat.
   func stop() {
+    guard holders > 0 else { return }
+    holders -= 1
+    guard holders == 0 else { return }
     #if os(iOS)
       motion?.stopDeviceMotionUpdates()
     #endif
@@ -130,4 +145,52 @@ final class CoverTilt {
       }
     }
   #endif
+}
+
+extension View {
+  /// Tilts with the phone (`CoverTilt`), catching a faint sheen on the edge that comes toward you: a cover whose
+  /// corners are `corner`. Only while it's on screen, the app is in front and it's `active` (false where something
+  /// covers it, as Now Playing does the page under it); still under Reduce Motion.
+  func tiltsWithPhone(corner: CGFloat, active: Bool = true) -> some View {
+    modifier(TiltsWithPhone(corner: corner, active: active))
+  }
+}
+
+private struct TiltsWithPhone: ViewModifier {
+  let corner: CGFloat
+  let active: Bool
+  @Environment(\.reducesMotion) private var reducesMotion
+  @Environment(\.scenePhase) private var scenePhase
+  /// Whether this cover is following the phone (`CoverTilt.start()`), so each start has its stop.
+  @State private var holding = false
+
+  func body(content: Content) -> some View {
+    let wanted = active && scenePhase == .active && !reducesMotion
+    let lean = holding ? CoverTilt.shared.lean : CoverTilt.Lean()
+    content
+      .overlay { Self.sheen(lean).clipShape(RoundedRectangle(cornerRadius: corner)) }
+      .rotation3DEffect(.degrees(-lean.h * CoverTilt.maxDegrees), axis: (x: 0, y: 1, z: 0))
+      .rotation3DEffect(.degrees(-lean.v * CoverTilt.maxDegrees), axis: (x: 1, y: 0, z: 0))
+      // The gyroscope only while the cover can be seen: the music plays on with the screen off, and so would it.
+      .onAppear { hold(wanted) }
+      .onChange(of: wanted) { _, on in hold(on) }
+      .onDisappear { hold(false) }
+  }
+
+  private func hold(_ on: Bool) {
+    guard on != holding else { return }
+    holding = on
+    on ? CoverTilt.shared.start() : CoverTilt.shared.stop()
+  }
+
+  /// A soft light on the edge leaning toward you, as strong as the lean: paper at 22 % fading out (the web's).
+  private static func sheen(_ lean: CoverTilt.Lean) -> some View {
+    EllipticalGradient(
+      colors: [Color.paper.opacity(0.22), .clear], center: UnitPoint(x: 0.5 + 0.5 * lean.h, y: 0.5 - 0.5 * lean.v),
+      startRadiusFraction: 0, endRadiusFraction: 0.75
+    )
+    .opacity(lean.amount)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
 }
