@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; fourth of four (after [robustness and scale]
 
 **Goal:** someone who downloads the app without a server understands it in a minute; an invited member goes from the invite to music in under two minutes; the owner's first steps lead to music, not settings; and the household shares requests and playlists like a family, not a set of strangers.
 
-**Where it stands (2026-11-07):** 2 done, but for universal links, which wait for a Playarr domain; the rest not started.
+**Where it stands (2026-11-07):** 2 done, but for universal links, which wait for a Playarr domain; 3 done on the web; the rest not started.
 
 ## 1. The welcome screen explains itself — S–M
 
@@ -18,7 +18,9 @@ The iOS welcome offers only "Add a server" (`SignIn/WelcomeView.swift`). Add:
 
 Setup codes link to `https://<server>/redeem?code=` (`apps/server/src/accounts/setupCodes.ts`), which opens the web page; the app only understands `playarr://redeem`. The redeem page gets "Open in the Playarr app" (the `playarr://` link, with the server address) and an App Store link; later, universal links (`apple-app-site-association` served by the server) so the https link opens the app directly.
 
-## 3. The owner's first steps — S
+## 3. The owner's first steps — S — done on the web 2026-11-07
+
+*Done on the web: claiming opens Settings → Sources as the first of two steps ("Add your music"), which leads on to Settings → Accounts ("Invite your household") and then Home (`FirstSteps`). The iOS app's claim comes next.*
 
 After claiming the server, the owner lands on "Add your music" (Lidarr or a folder) instead of Accounts, then on inviting the household.
 

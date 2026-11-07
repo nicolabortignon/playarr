@@ -2,6 +2,7 @@ import { Smartphone } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
+import { FIRST_STEPS } from '../components/FirstSteps';
 import { Wordmark } from '../components/Nav';
 import { InlineError } from '../components/States';
 import { TextField } from '../components/TextField';
@@ -246,9 +247,10 @@ export function SetupPage() {
     e.preventDefault();
     void run(async () => {
       if (password !== again) throw new Error('The passwords don’t match');
-      // Claimed at home (setup works only there); with a public address, everyone signs in there afterwards.
+      // Claimed at home (setup works only there); with a public address, everyone signs in there afterwards. Then the
+      // first steps: the music, then the household.
       await finish(await api.setup({ username: username.trim(), name: name.trim(), password, device: deviceName(), platform: 'web' }), () =>
-        navigate('/settings/accounts', { replace: true }),
+        navigate(FIRST_STEPS.music, { replace: true }),
       );
     });
   };

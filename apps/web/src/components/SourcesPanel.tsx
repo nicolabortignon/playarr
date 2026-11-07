@@ -28,6 +28,7 @@ import { ConfirmDialog, Dialog } from './Dialog';
 import { OrganizeDialog } from './OrganizeDialog';
 import { ReviewDialog } from './ReviewDialog';
 import { AwayNotice } from './SettingsControls';
+import { FirstSteps } from './FirstSteps';
 import { DIVIDER, Menu, type MenuEntry } from './Menu';
 import { InlineError } from './States';
 import { TextField } from './TextField';
@@ -64,6 +65,7 @@ export function SourcesPanel() {
 
   return (
     <section>
+      <FirstSteps step="music" ready={data.sources.length > 0} />
       <p className="mb-6 max-w-prose type-small text-muted">
         Where your music comes from. When a song is in more than one place, Playarr plays the best-quality copy; between equal
         copies, the source higher in this list wins.

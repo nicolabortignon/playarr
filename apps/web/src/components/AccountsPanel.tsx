@@ -10,6 +10,7 @@ import { useAccountAction, useAccountList, useAccountSessions, useMe, useServerI
 import { toast } from '../lib/toast';
 import { Button } from './Button';
 import { ConfirmDialog, Dialog } from './Dialog';
+import { FirstSteps } from './FirstSteps';
 import { DIVIDER, Menu, type MenuEntry } from './Menu';
 import { InlineError } from './States';
 import { SettingsSection } from './SettingsControls';
@@ -26,6 +27,7 @@ export function AccountsPanel() {
   if (!me) return <InlineError error={error ?? 'Sign in to see your account.'} />;
   return (
     <div>
+      {me.role === 'admin' && <FirstSteps step="household" />}
       <You me={me} />
       {me.role === 'admin' && <Everyone me={me} />}
     </div>

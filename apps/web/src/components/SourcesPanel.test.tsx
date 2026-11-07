@@ -1,6 +1,7 @@
 import type { SourceInfo } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
 import { AlbumSummary, MatchSummary, SourcesPanel } from './SourcesPanel';
@@ -89,16 +90,32 @@ describe('SourcesPanel', () => {
     settings: { path: '/volume2/music/a very long folder name that a phone would cut short', access: 'local' },
   } as SourceInfo;
 
-  function view() {
-    vi.spyOn(api, 'sources').mockResolvedValue({ sources: [LIDARR, MUSIC], canEdit: true });
+  function view(path = '/settings/sources', sources = [LIDARR, MUSIC]) {
+    vi.spyOn(api, 'sources').mockResolvedValue({ sources, canEdit: true });
     vi.spyOn(api, 'matching').mockResolvedValue({ acoustid: false, fingerprints: true } as never);
     render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <SourcesPanel />
-      </QueryClientProvider>,
+      <MemoryRouter initialEntries={[path]}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <SourcesPanel />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
   }
   const menuItems = () => within(screen.getByRole('menu')).getAllByRole('menuitem').map((item) => item.textContent);
+
+  it('leads the owner on to inviting the household once there’s music, as their first step after claiming', async () => {
+    view('/settings/sources?first', []);
+    expect(await screen.findByRole('heading', { name: 'Add your music' })).toBeTruthy();
+    expect(screen.getByText('First steps · 1 of 2')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Skip for now' }).getAttribute('href')).toBe('/settings/accounts?first');
+    cleanup();
+    view('/settings/sources?first');
+    expect((await screen.findByRole('link', { name: 'Next: invite your household' })).getAttribute('href')).toBe('/settings/accounts?first');
+    cleanup();
+    view();
+    await screen.findByText(MUSIC.settings!.path!);
+    expect(screen.queryByText('Add your music')).toBeNull();
+  });
 
   it('shows where a source is in full, and its counts', async () => {
     view();

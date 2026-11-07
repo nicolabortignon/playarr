@@ -22,9 +22,9 @@ afterEach(() => {
   useToasts.setState({ toasts: [] });
 });
 
-const view = () =>
+const view = (path = '/settings/accounts') =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <QueryClientProvider client={queryClient}>
         <AccountsPanel />
       </QueryClientProvider>
@@ -32,6 +32,18 @@ const view = () =>
   );
 
 describe('AccountsPanel', () => {
+  it('leads the owner on to listening after inviting the household, their second first step', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue(SERVER);
+    vi.spyOn(api, 'me').mockResolvedValue(NICOLA);
+    vi.spyOn(api, 'accounts').mockResolvedValue([{ ...NICOLA, plays: 0, playlists: 0 }]);
+    vi.spyOn(api, 'sessions').mockResolvedValue([]);
+    vi.spyOn(api, 'sources').mockResolvedValue({ sources: [CC], canEdit: true });
+    view('/settings/accounts?first');
+    expect(await screen.findByRole('heading', { name: 'Invite your household' })).toBeTruthy();
+    expect(screen.getByText('First steps · 2 of 2')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Start listening' }).getAttribute('href')).toBe('/');
+  });
+
   it('lets an admin add an account and shows its setup code and link', async () => {
     vi.spyOn(api, 'server').mockResolvedValue(SERVER);
     vi.spyOn(api, 'me').mockResolvedValue(NICOLA);

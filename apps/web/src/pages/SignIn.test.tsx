@@ -29,6 +29,7 @@ function renderAt(path: string) {
       { path: '/setup', element: <SetupPage /> },
       { path: '/albums', element: <p>Albums page</p> },
       { path: '/settings/accounts', element: <p>Accounts settings</p> },
+      { path: '/settings/sources', element: <p>Sources settings</p> },
       { path: '/', element: <p>Home page</p> },
     ],
     { initialEntries: [path] },
@@ -110,7 +111,7 @@ describe('sign-in pages', () => {
     expect(screen.queryByRole('link', { name: 'Open in the Playarr app' })).toBeNull();
   });
 
-  it('sets up the owner’s account, then opens Settings → Accounts', async () => {
+  it('sets up the owner’s account, then opens Settings → Sources as the first step', async () => {
     vi.spyOn(api, 'server').mockResolvedValue({ ...SERVER, setup: true });
     const setup = vi.spyOn(api, 'setup').mockResolvedValue({ token: 'tok-1', account: NICOLA });
     vi.spyOn(api, 'switchAccount').mockResolvedValue(NICOLA);
@@ -120,7 +121,7 @@ describe('sign-in pages', () => {
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct horse' } });
     fireEvent.change(screen.getByLabelText('Repeat it'), { target: { value: 'correct horse' } });
     fireEvent.click(screen.getByRole('button', { name: 'Set up Playarr' }));
-    expect(await screen.findByText('Accounts settings')).toBeTruthy();
+    expect(await screen.findByText('Sources settings')).toBeTruthy();
     expect(setup).toHaveBeenCalledWith(expect.objectContaining({ username: 'nicola', name: 'Nicola', password: 'correct horse' }));
   });
 

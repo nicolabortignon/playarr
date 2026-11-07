@@ -23,7 +23,7 @@ From `apps/web/package.json`:
 
 `src/routes.tsx` defines the routes; `src/main.tsx` creates the browser router and the query client provider.
 
-- **Outside the shell**: `/sign-in`, `/redeem` (choose a password from a setup code) and `/setup` (claim a new server), with no player.
+- **Outside the shell**: `/sign-in`, `/redeem` (choose a password from a setup code; on an iPhone or iPad, open it in the app instead) and `/setup` (claim a new server), with no player. Claiming leads into the owner's first steps (`FirstSteps`): Settings → Sources as `?first` to add their music, then Settings → Accounts to invite the household, then Home.
 - **Inside `AppShell`**: Home, Artists, Albums, an artist, an album, Favorites, Library and Playlists load with the app. Everything else is lazy-loaded on first open: Search, Downloads, Stats, Mixes, a mix, a playlist, Queue, Requests, Discover (`/discover/artists/:mbid`, `/discover/artist`), Settings (`/settings/:panel?`) and Not found. The service worker precaches those chunks, so later opens are instant. `/settings/listening`, where Your listening used to be, opens `/stats` with the period it named (`ListeningMoved`).
 
 Pages are in `src/pages`, shared pieces in `src/components`. Pages build their controls from the shared ones, as [design.md](design.md) describes them (Controls):
