@@ -417,8 +417,7 @@ describe('EncodedStreams', () => {
     const all = streams({ idleMs: 10_000 });
     const enc = encoder();
     const job = all.job('a', 1, layout(), enc.open);
-    job.attach();
-    job.detach();
+    job.detach(job.attach());
     vi.advanceTimersByTime(9_999);
     expect(job.state).toBe('running');
     vi.advanceTimersByTime(1);
@@ -444,6 +443,131 @@ describe('EncodedStreams', () => {
     await job.started;
     await Promise.resolve();
     expect(all.job('a', 1, layout(), enc.open)).not.toBe(job);
+  });
+
+  it('forgets an encode that failed partway, and no longer counts it', async () => {
+    const all = streams();
+    const enc = encoder();
+    const job = all.job('a', 1, layout(), enc.open);
+    await grow(job, enc.sources[0]!, 43);
+    enc.sources[0]!.destroy(new Error('ffmpeg: the share went away'));
+    await settle();
+    expect(job.state).toBe('failed');
+    expect(all.counts().running).toBe(0);
+    expect(all.job('a', 1, layout(), enc.open)).not.toBe(job);
+  });
+
+  /** A minute-long song's stream: seven fragments, of 43 frames and then 431. */
+  const minute = () => streamLayout('aac', 128, 60 * 44_100);
+
+  /** Until the pipes have handed on what was written to them. */
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  /** The encoder hands `job` `count` more frames: its next fragment. */
+  async function grow(job: EncodeJob, source: PassThrough, count: number) {
+    const before = job.produced;
+    source.write(frames(count, job.made));
+    await settle();
+    expect(job.produced).toBeGreaterThan(before);
+  }
+
+  /** A whole stream as an encode that keeps everything makes it. */
+  async function untrimmed(l: StreamLayout): Promise<Buffer> {
+    const source = new PassThrough();
+    const job = new EncodeJob('reference', l, null);
+    job.run(source);
+    source.end(frames(l.samples));
+    return collect(job.read(0, l.total - 1));
+  }
+
+  /** The size of a finished stream laid out so. */
+  async function finishedSize(l: StreamLayout): Promise<number> {
+    const enc = encoder();
+    const job = streams({ cacheBytes: 1e9 }).job('probe', null, l, enc.open);
+    await finish(job, enc.sources[0]!);
+    return job.bytes;
+  }
+
+  it('counts what encodes under way hold against what it keeps: finished streams make way for them', async () => {
+    const small = await finishedSize(layout());
+    const all = streams({ cacheBytes: small * 2 + 100 });
+    const enc = encoder();
+    const kept = all.job('kept', 1, layout(), enc.open);
+    await finish(kept, enc.sources[0]!);
+    const playing = all.job('playing', 1, minute(), enc.open);
+    // Its reader is at its start: nothing it holds can be let go.
+    playing.attach(0);
+    await grow(playing, enc.sources[1]!, 43);
+    expect(all.held()).toBe(small + playing.bytes);
+    await grow(playing, enc.sources[1]!, 431);
+    expect(all.held()).toBe(playing.bytes);
+    expect(all.job('kept', 1, layout(), enc.open)).not.toBe(kept);
+  });
+
+  it('lets go of what an encode’s readers are past once it holds more than its share, and still hands on every byte', async () => {
+    const l = minute();
+    const all = streams({ cacheBytes: 60_000 });
+    const enc = encoder();
+    const job = all.job('a', 1, l, enc.open);
+    const source = enc.sources[0]!;
+    const reader = job.attach(0);
+    await grow(job, source, 43);
+    await grow(job, source, 431);
+    await grow(job, source, 431);
+    // Over its share, but its reader needs all of it.
+    expect(job.bytes).toBe(job.produced);
+    const start = await collect(job.read(0, job.produced - 1, undefined, reader));
+    await grow(job, source, 431);
+    expect(job.bytes).toBe(l.init.length + job.produced - start.length);
+    expect(all.held()).toBeLessThanOrEqual(60_000);
+    source.end(frames(l.samples - job.made, job.made));
+    const rest = await collect(job.read(start.length, l.total - 1, undefined, reader));
+    expect(Buffer.concat([start, rest]).equals(await untrimmed(l))).toBe(true);
+    job.detach(reader);
+    // It isn't kept, missing its start.
+    expect(all.held()).toBe(0);
+    expect(all.job('a', 1, l, enc.open)).not.toBe(job);
+  });
+
+  it('starts another encode for a reader who wants what the first has let go of, which goes on for its own', async () => {
+    const l = minute();
+    const all = streams({ cacheBytes: 60_000 });
+    const enc = encoder();
+    const first = all.job('a', 1, l, enc.open);
+    const reader = first.attach(0);
+    await grow(first, enc.sources[0]!, 43);
+    await grow(first, enc.sources[0]!, 431);
+    const past = (await collect(first.read(0, first.produced - 1, undefined, reader))).length;
+    await grow(first, enc.sources[0]!, 431);
+    // What's kept, and a look at the init segment, are read from the first encode; the song's start isn't there.
+    expect(all.job('a', 1, l, enc.open, { from: past, to: l.total - 1 })).toBe(first);
+    expect(all.job('a', 1, l, enc.open, { from: 0, to: 1 })).toBe(first);
+    const second = all.job('a', 2, l, enc.open, { from: 0, to: l.total - 1 });
+    expect(second).not.toBe(first);
+    expect(all.counts().running).toBe(2);
+    const secondReader = second.attach(0);
+    enc.sources[1]!.end(frames(l.samples));
+    expect((await collect(second.read(0, l.total - 1, undefined, secondReader))).equals(await untrimmed(l))).toBe(true);
+    // The first goes on for its reader.
+    enc.sources[0]!.end(frames(l.samples - first.made, first.made));
+    const rest = await collect(first.read(past, l.total - 1, undefined, reader));
+    expect(rest.equals((await untrimmed(l)).subarray(past))).toBe(true);
+  });
+
+  it('doesn’t keep a finished stream that would push out the others', async () => {
+    const small = await finishedSize(layout());
+    const longer = streamLayout('aac', 128, 5 * 44_100);
+    const big = await finishedSize(longer);
+    // Room for both, but the longer one is over half of it.
+    const all = streams({ cacheBytes: big * 2 - 1 });
+    expect(small + big).toBeLessThanOrEqual(big * 2 - 1);
+    const enc = encoder();
+    const kept = all.job('kept', 1, layout(), enc.open);
+    await finish(kept, enc.sources[0]!);
+    const notKept = all.job('not kept', 1, longer, enc.open);
+    await finish(notKept, enc.sources[1]!);
+    expect(all.job('kept', 1, layout(), enc.open)).toBe(kept);
+    expect(all.job('not kept', 1, longer, enc.open)).not.toBe(notKept);
   });
 
   it('keeps finished streams up to its size, the least recently read going first', async () => {

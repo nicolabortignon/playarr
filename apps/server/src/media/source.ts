@@ -213,6 +213,9 @@ export function ffmpegEncodedStream(ffmpeg: string, input: string, opts: EncodeO
   return ffmpegStream(ffmpeg, ffmpegEncodeArgs(input, opts), opts);
 }
 
+/** An ffmpeg asked to stop that's still running after this long is killed outright. */
+const KILL_AFTER_MS = 1000;
+
 /** ffmpeg's stdout as a stream that fails if ffmpeg does, and stops ffmpeg as soon as it's closed. */
 function ffmpegStream(ffmpeg: string, args: string[], opts: { priority?: 'low' | 'normal'; signal?: AbortSignal }): Readable {
   const child = spawn(ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'], signal: opts.signal });
@@ -226,7 +229,16 @@ function ffmpegStream(ffmpeg: string, args: string[], opts: { priority?: 'low' |
     if (code === 0) out.end();
     else out.destroy(new Error(`ffmpeg: ${stderr.trim() || `exit code ${code}`}`));
   });
-  out.on('close', () => child.exitCode === null && child.kill());
+  out.on('close', () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    // ffmpeg finishes the write it's in before it heeds SIGTERM, and with nobody reading (an encode paused ahead of
+    // its listeners) that write never ends: closing the pipe ends it (ffmpeg ignores SIGPIPE, and stops on the error).
+    child.stdout.destroy();
+    child.kill();
+    const kill = setTimeout(() => child.exitCode === null && child.signalCode === null && child.kill('SIGKILL'), KILL_AFTER_MS);
+    kill.unref();
+    child.once('exit', () => clearTimeout(kill));
+  });
   return out;
 }
 

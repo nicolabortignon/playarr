@@ -105,11 +105,15 @@ export const signInRedirect = {
 };
 
 /**
- * How long a request may take, answer and all: long enough for a slow connection, short enough that one that hung
- * (a dead spot the browser still counts as online) fails, to be tried again or reported, rather than waiting for good.
+ * How long a request may wait for the server to answer: long enough for a slow connection, short enough that one
+ * that hung (a dead spot the browser still counts as online) fails, to be tried again or reported, rather than
+ * waiting for good. Once it answers, a long answer (the whole library) takes as long as it takes.
  */
 export const TIMEOUT_MS = 15_000;
-/** Calls the server takes its time over: checking a source, organizing files, asking MusicBrainz or Lidarr, making a mix. */
+/**
+ * Calls the server takes its time over: checking a source, organizing files, asking MusicBrainz or Lidarr, making a
+ * mix, looking up lyrics online.
+ */
 export const SLOW_MS = 120_000;
 
 async function request<T>(path: string, init: RequestInit = {}, timeout = TIMEOUT_MS): Promise<T> {
@@ -134,6 +138,7 @@ async function request<T>(path: string, init: RequestInit = {}, timeout = TIMEOU
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       },
     });
+    clearTimeout(timer);
     if (!res.ok) {
       // Signed out (or never signed in) on a server with accounts. The sign-in calls answer 401 themselves.
       if (res.status === 401 && !path.startsWith('/api/auth/')) signInRedirect.go();
@@ -271,7 +276,7 @@ export const api = {
   endSession: (id: number, sessionId: number) => request<SessionInfo[]>(`/api/accounts/${id}/sessions/${sessionId}`, { method: 'DELETE' }),
   stats: (range: StatsRange) => get<ListeningStats>(`/api/stats?range=${range}`),
   recentAlbums: () => get<Album[]>('/api/plays/recent-albums'),
-  lyrics: (trackId: number) => get<{ lyrics: Lyrics | null }>(`/api/tracks/${trackId}/lyrics`).then((r) => r.lyrics),
+  lyrics: (trackId: number) => get<{ lyrics: Lyrics | null }>(`/api/tracks/${trackId}/lyrics`, undefined, SLOW_MS).then((r) => r.lyrics),
   levels: (ids: string[]) => request<Record<string, TrackLevel>>('/api/levels', { method: 'POST', body: JSON.stringify({ ids }) }),
   /**
    * `from` into `to` (catalog song ids). `position`: where `from` is now, so the plan doesn't start in

@@ -232,14 +232,20 @@ type Wake = () => void;
 /**
  * One stream being encoded, or encoded: its bytes so far, handed to everyone reading it, each from the byte
  * they ask for. Its encoder is paused once it's READ_AHEAD past where anyone is reading, so a stream listened to
- * over a slow connection is encoded as it's heard rather than all at once.
+ * over a slow connection is encoded as it's heard rather than all at once. Short of memory, it lets go of the
+ * fragments all its readers are past (see trim).
  */
 export class EncodeJob {
-  /** Bytes made so far: the init segment, then a fragment at a time. */
-  private chunks: Buffer[];
+  /** Bytes made so far: the init segment, then a fragment at a time; null for a fragment let go (see trim). */
+  private chunks: (Buffer | null)[];
   /** Where each chunk ends. */
   private ends: number[];
   produced: number;
+  /** The first fragment still kept (1 while none has been let go), and where in the stream it starts. */
+  private firstKept = 1;
+  private keptFrom: number;
+  /** Bytes kept in memory: the init segment and the fragments not let go. */
+  private retained: number;
   state: 'running' | 'done' | 'failed' = 'running';
   error?: Error;
   /** The stream ended early: the declared length couldn't hold the rest. */
@@ -250,12 +256,15 @@ export class EncodeJob {
   readonly started: Promise<void>;
   private markStarted!: () => void;
   private waiting = new Set<Wake>();
-  private readers = 0;
+  /** The readers attached (see attach): the encoder runs while there are any. */
+  private readers = new Set<symbol>();
+  /** The byte each reader, and each read under way, needs next: what they're all past may be let go (see trim). */
+  private positions = new Map<symbol, number>();
   /** The furthest byte anyone reading has got to. */
   private furthest = 0;
   private source?: Readable;
   private paused = false;
-  private listeners: { idle?: () => void; busy?: () => void; done?: () => void } = {};
+  private listeners: { idle?: () => void; busy?: () => void; done?: () => void; failed?: () => void; grew?: () => void } = {};
   /** When it was last read from: the least recently read finished streams go first. */
   usedAt = Date.now();
 
@@ -268,21 +277,31 @@ export class EncodeJob {
   ) {
     this.chunks = [layout.init];
     this.ends = [layout.init.length];
-    this.produced = layout.init.length;
+    this.produced = this.keptFrom = this.retained = layout.init.length;
     this.started = new Promise((resolve) => (this.markStarted = resolve));
   }
 
-  on(event: 'idle' | 'busy' | 'done', listener: () => void) {
+  on(event: 'idle' | 'busy' | 'done' | 'failed' | 'grew', listener: () => void) {
     this.listeners[event] = listener;
   }
 
-  /** Bytes of the finished stream kept in memory (the padding isn't). */
+  /** Bytes of the stream kept in memory (the padding isn't). */
   get bytes(): number {
-    return this.produced;
+    return this.retained;
+  }
+
+  /** Every byte made is still kept: the stream can be kept for whoever asks next. */
+  get whole(): boolean {
+    return this.keptFrom === this.layout.init.length;
+  }
+
+  /** Bytes `from` to `to` are kept, or still to be made: a read of them can start here. */
+  serves(from: number, to: number): boolean {
+    return this.whole || to < this.layout.init.length || from >= this.keptFrom;
   }
 
   get idle(): boolean {
-    return this.readers === 0;
+    return this.readers.size === 0;
   }
 
   /** Encode from `source` (ffmpeg's output), making fragments as its samples arrive. */
@@ -308,10 +327,12 @@ export class EncodeJob {
       samples = [];
       this.chunks.push(bytes);
       this.produced += bytes.length;
+      this.retained += bytes.length;
       this.ends.push(this.produced);
       this.markStarted();
       this.wakeAll();
       this.pace();
+      this.listeners.grew?.();
     };
     source.on('data', (chunk: Buffer) => {
       if (this.state !== 'running') return;
@@ -339,17 +360,39 @@ export class EncodeJob {
     source.once('error', (err: Error) => this.fail(err));
   }
 
-  /** A reader starts: the encoder runs while anyone reads (see detach). */
-  attach() {
-    this.readers++;
+  /**
+   * A reader starts, at byte `from`: the encoder runs while anyone reads (see detach), and what the reader still
+   * needs is kept for it. Pass what this returns to read and detach.
+   */
+  attach(from = 0): symbol {
+    const reader = Symbol('reader');
+    this.readers.add(reader);
+    this.positions.set(reader, from);
     this.usedAt = Date.now();
-    if (this.readers === 1) this.listeners.busy?.();
+    if (this.readers.size === 1) this.listeners.busy?.();
+    return reader;
   }
 
-  detach() {
-    this.readers = Math.max(0, this.readers - 1);
+  detach(reader: symbol) {
+    if (!this.readers.delete(reader)) return;
+    this.positions.delete(reader);
     this.usedAt = Date.now();
-    if (this.readers === 0) this.listeners.idle?.();
+    if (this.readers.size === 0) this.listeners.idle?.();
+  }
+
+  /**
+   * Let go of the fragments every reader is past (memory is short); with nobody reading, of all of them. A reader
+   * coming later for them needs another encode (see serves). The init segment stays: every player reads it first.
+   */
+  trim() {
+    const needed = this.positions.size ? Math.min(...this.positions.values()) : this.produced;
+    let i = this.firstKept;
+    for (; i < this.chunks.length && this.ends[i]! <= needed; i++) {
+      this.retained -= this.chunks[i]!.length;
+      this.chunks[i] = null;
+    }
+    this.firstKept = i;
+    this.keptFrom = this.ends[i - 1]!;
   }
 
   /** Stop encoding: nobody wants the rest. */
@@ -378,6 +421,7 @@ export class EncodeJob {
     this.source?.destroy();
     this.markStarted();
     this.wakeAll();
+    this.listeners.failed?.();
   }
 
   private wakeAll() {
@@ -417,8 +461,11 @@ export class EncodeJob {
       else lo = mid + 1;
     }
     for (let i = lo; i < this.chunks.length && from <= to; i++) {
-      const chunkStart = this.ends[i]! - this.chunks[i]!.length;
-      const piece = this.chunks[i]!.subarray(from - chunkStart, Math.min(this.chunks[i]!.length, to - chunkStart + 1));
+      const chunk = this.chunks[i];
+      // A reader attached at its first byte keeps it (see trim): this is a read nobody attached.
+      if (!chunk) throw new Error('That part of the stream is no longer kept');
+      const chunkStart = i === 0 ? 0 : this.ends[i - 1]!;
+      const piece = chunk.subarray(from - chunkStart, Math.min(chunk.length, to - chunkStart + 1));
       out.push(piece);
       from += piece.length;
     }
@@ -435,48 +482,57 @@ export class EncodeJob {
 
   /**
    * Bytes `from` to `to` (inclusive) of the stream as they're made: the encoded audio, then the free box. Fails
-   * if the encode does before they're made. `signal` stops the reading (the listener went away).
+   * if the encode does before they're made. `signal` stops the reading (the listener went away). `reader` is
+   * the one attach returned: what it still needs is kept as it reads (a read without one keeps it while it runs).
    */
-  async *read(from: number, to: number, signal?: AbortSignal): AsyncGenerator<Buffer> {
+  async *read(from: number, to: number, signal?: AbortSignal, reader?: symbol): AsyncGenerator<Buffer> {
     const total = this.layout.total;
     to = Math.min(to, total - 1);
-    while (from <= to) {
-      signal?.throwIfAborted();
-      this.usedAt = Date.now();
-      if (from < this.produced) {
-        for (const piece of this.slice(from, Math.min(to, this.produced - 1))) {
-          from += piece.length;
-          yield piece;
+    const at = reader && this.readers.has(reader) ? reader : Symbol('read');
+    try {
+      while (from <= to) {
+        this.positions.set(at, from);
+        signal?.throwIfAborted();
+        this.usedAt = Date.now();
+        if (from < this.produced) {
+          for (const piece of this.slice(from, Math.min(to, this.produced - 1))) {
+            from += piece.length;
+            yield piece;
+          }
+          this.reached(from);
+          continue;
         }
-        this.reached(from);
-        continue;
+        if (this.state === 'done') {
+          // The free box, in pieces of a size a response is happy with.
+          const end = Math.min(to, from + 64 * 1024 - 1);
+          yield this.padding(from, end);
+          from = end + 1;
+          continue;
+        }
+        if (this.state === 'failed') throw this.error ?? new Error('The encode failed');
+        // The last bytes are zeros whatever the stream holds: a look at the end of the file needn't wait.
+        if (from >= total - TAIL_ZEROS) {
+          yield Buffer.alloc(to - from + 1);
+          return;
+        }
+        await new Promise<void>((resolve, reject) => {
+          const wake = () => {
+            signal?.removeEventListener('abort', abort);
+            resolve();
+          };
+          const abort = () => {
+            this.waiting.delete(wake);
+            reject(signal!.reason);
+          };
+          this.waiting.add(wake);
+          signal?.addEventListener('abort', abort, { once: true });
+          this.reached(from);
+        });
       }
-      if (this.state === 'done') {
-        // The free box, in pieces of a size a response is happy with.
-        const end = Math.min(to, from + 64 * 1024 - 1);
-        yield this.padding(from, end);
-        from = end + 1;
-        continue;
-      }
-      if (this.state === 'failed') throw this.error ?? new Error('The encode failed');
-      // The last bytes are zeros whatever the stream holds: a look at the end of the file needn't wait.
-      if (from >= total - TAIL_ZEROS) {
-        yield Buffer.alloc(to - from + 1);
-        return;
-      }
-      await new Promise<void>((resolve, reject) => {
-        const wake = () => {
-          signal?.removeEventListener('abort', abort);
-          resolve();
-        };
-        const abort = () => {
-          this.waiting.delete(wake);
-          reject(signal!.reason);
-        };
-        this.waiting.add(wake);
-        signal?.addEventListener('abort', abort, { once: true });
-        this.reached(from);
-      });
+    } finally {
+      if (at === reader) {
+        if (this.readers.has(at)) this.positions.set(at, from);
+      } else this.positions.delete(at);
     }
   }
 }
@@ -488,11 +544,15 @@ const IDLE_MS = 10_000;
 
 /**
  * Every encoded stream: one encode per stream, shared by everyone reading it, at most `maxRunning` at once and
- * `maxPerAccount` for any one account; finished streams kept in memory up to `cacheBytes`, the least recently
- * read going first.
+ * `maxPerAccount` for any one account. What they hold stays within `cacheBytes`: finished streams are kept for
+ * whoever asks next, the least recently read going first, and past that, encodes let go of what their readers
+ * are past (see fit).
  */
 export class EncodedStreams {
+  /** The encode a request for each stream joins. */
   private running = new Map<string, EncodeJob>();
+  /** Every encode under way: the ones above, and ones that let go of a start a later reader needed (see job). */
+  private active = new Set<EncodeJob>();
   private finished = new Map<string, EncodeJob>();
   private idleTimers = new Map<EncodeJob, ReturnType<typeof setTimeout>>();
 
@@ -510,15 +570,25 @@ export class EncodedStreams {
   /** How many streams are being encoded, in all and for each account. */
   counts(): { running: number; byAccount: Map<number | null, number> } {
     const byAccount = new Map<number | null, number>();
-    for (const job of this.running.values()) byAccount.set(job.account, (byAccount.get(job.account) ?? 0) + 1);
-    return { running: this.running.size, byAccount };
+    for (const job of this.active) byAccount.set(job.account, (byAccount.get(job.account) ?? 0) + 1);
+    return { running: this.active.size, byAccount };
+  }
+
+  /** Bytes held by finished streams kept and by encodes under way. */
+  held(): number {
+    let bytes = 0;
+    for (const job of this.finished.values()) bytes += job.bytes;
+    for (const job of this.active) bytes += job.bytes;
+    return bytes;
   }
 
   /**
    * The stream for `key`: the one being encoded or kept, else a new encode from `open()` (ffmpeg's output), if
    * the limits allow it. Throws EncodeBusyError when they don't, once streams nobody is reading have made room.
+   * `range` is the bytes the caller is about to read: an encode that has let go of them isn't joined but
+   * replaced by a new one, and goes on for its own readers.
    */
-  job(key: string, account: number | null, layout: StreamLayout, open: () => Readable): EncodeJob {
+  job(key: string, account: number | null, layout: StreamLayout, open: () => Readable, range = { from: 0, to: 0 }): EncodeJob {
     const kept = this.finished.get(key);
     if (kept) {
       // Most recently read last.
@@ -527,16 +597,16 @@ export class EncodedStreams {
       return kept;
     }
     const running = this.running.get(key);
-    if (running) return running;
+    if (running?.serves(range.from, range.to)) return running;
     if (!this.roomFor(account)) throw new EncodeBusyError('Too many songs are being encoded right now: try again in a moment');
     const job = new EncodeJob(key, layout, account, this.opts.readAhead);
     this.running.set(key, job);
+    this.active.add(job);
     job.on('idle', () => this.idleSoon(job));
     job.on('busy', () => this.cancelIdle(job));
     job.on('done', () => this.done(job));
-    job.started.then(() => {
-      if (job.state === 'failed') this.forget(job);
-    });
+    job.on('failed', () => this.forget(job));
+    job.on('grew', () => this.fit());
     try {
       job.run(open());
     } catch (err) {
@@ -558,7 +628,7 @@ export class EncodedStreams {
       return running < this.opts.maxRunning && (byAccount.get(account) ?? 0) < this.opts.maxPerAccount;
     };
     if (fits()) return true;
-    const idle = [...this.running.values()].filter((j) => j.idle).sort((a, b) => a.usedAt - b.usedAt);
+    const idle = [...this.active].filter((j) => j.idle).sort((a, b) => a.usedAt - b.usedAt);
     for (const job of idle) {
       const accountFull = (this.counts().byAccount.get(account) ?? 0) >= this.opts.maxPerAccount;
       if (accountFull && job.account !== account) continue;
@@ -591,6 +661,7 @@ export class EncodedStreams {
 
   private forget(job: EncodeJob) {
     this.cancelIdle(job);
+    this.active.delete(job);
     if (this.running.get(job.key) === job) this.running.delete(job.key);
   }
 
@@ -600,18 +671,46 @@ export class EncodedStreams {
     else if (job.layout.codec === 'aac' && job.made < job.layout.samples) {
       this.opts.log?.warn({ key: job.key, made: job.made, expected: job.layout.samples }, 'the encoder made fewer frames than the stream declared');
     }
+    // Not kept: a stream that has let go of its start, or one that would push out all the others (an hour's mix).
+    // What its readers are past is let go of now.
+    if (!this.keepable(job)) return job.trim();
     this.finished.set(job.key, job);
-    let bytes = [...this.finished.values()].reduce((sum, j) => sum + j.bytes, 0);
+    this.fit();
+  }
+
+  /** A stream that can be kept once it's finished: it has all its bytes, and they'd fit in half of what's kept. */
+  private keepable(job: EncodeJob): boolean {
+    return job.whole && job.bytes <= this.opts.cacheBytes / 2;
+  }
+
+  /**
+   * What's held within cacheBytes. Encodes that won't be kept once finished let go of what their readers are past
+   * first (it goes then anyway), then the least recently read finished streams go, then every encode over its
+   * share lets go of what its readers are past. Bytes a reader still needs are held whatever it takes.
+   */
+  private fit() {
+    const budget = this.opts.cacheBytes;
+    let bytes = this.held();
+    if (bytes <= budget) return;
+    for (const job of this.active) {
+      if (this.keepable(job)) continue;
+      bytes -= job.bytes;
+      job.trim();
+      bytes += job.bytes;
+    }
     for (const [key, kept] of this.finished) {
-      if (bytes <= this.opts.cacheBytes) break;
+      if (bytes <= budget) return;
       this.finished.delete(key);
       bytes -= kept.bytes;
     }
+    if (bytes <= budget) return;
+    const share = budget / this.active.size;
+    for (const job of this.active) if (job.bytes > share) job.trim();
   }
 
   /** Stop every encode (the server is closing). */
   close() {
-    for (const job of [...this.running.values()]) this.stopJob(job);
+    for (const job of [...this.active]) this.stopJob(job);
     this.finished.clear();
   }
 }

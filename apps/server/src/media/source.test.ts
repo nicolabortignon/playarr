@@ -211,4 +211,52 @@ describe('ffmpegPcmStream', () => {
       t.cleanup();
     }
   });
+
+  /** Whether the process `pid` is still running. */
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('stops an ffmpeg stuck writing to a pipe nobody reads, which SIGTERM alone never does', async () => {
+    const t = tempDir();
+    const pidFile = join(t.dir, 'pid');
+    // As ffmpeg handles signals: SIGTERM waits for the write under way, SIGPIPE is ignored and a failed write ends it.
+    const ffmpeg = fakeFfmpeg(`trap '' TERM PIPE; echo $$ > '${pidFile}'; while :; do printf '%065536d' 0 || exit 1; done`);
+    try {
+      const stream = ffmpegEncodedStream(ffmpeg.bin, '/music/a.flac', { codec: 'aac', kbps: 128, skipSamples: 0, leadSamples: 1088, samples: 2000 });
+      await new Promise((resolve) => stream.once('data', resolve));
+      // Nobody reads on (an encode paused ahead of its listeners): the pipe fills and ffmpeg's write blocks.
+      stream.pause();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      stream.destroy();
+      await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 500 });
+    } finally {
+      ffmpeg.cleanup();
+      t.cleanup();
+    }
+  });
+
+  it('kills an ffmpeg that won’t stop when asked', async () => {
+    const t = tempDir();
+    const pidFile = join(t.dir, 'pid');
+    const ffmpeg = fakeFfmpeg(`trap '' TERM PIPE; echo $$ > '${pidFile}'; printf 'start'; exec sleep 30`);
+    try {
+      const stream = ffmpegPcmStream(ffmpeg.bin, '/music/a.flac', OPTS);
+      await new Promise((resolve) => stream.once('data', resolve));
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      stream.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(alive(pid)).toBe(true); // asked, given a moment
+      await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 2000 });
+    } finally {
+      ffmpeg.cleanup();
+      t.cleanup();
+    }
+  });
 });

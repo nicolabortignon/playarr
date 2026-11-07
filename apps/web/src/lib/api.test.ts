@@ -71,6 +71,47 @@ describe('request', () => {
     await organizing;
   });
 
+  it('waits for a long answer once the server has answered, however long it takes', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    // Answered at once; the answer itself comes in over 20 s (a big library on a slow connection), stopping if the request is.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(stream) {
+            const stopped = () => stream.error(init.signal!.reason);
+            init.signal!.addEventListener('abort', stopped);
+            setTimeout(() => {
+              init.signal!.removeEventListener('abort', stopped);
+              stream.enqueue(new TextEncoder().encode('[]'));
+              stream.close();
+            }, 20_000);
+          },
+        });
+        return new Response(body, { status: 200 });
+      }),
+    );
+    const favorites = api.favorites();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(favorites).resolves.toEqual([]);
+  });
+
+  it('waits for lyrics as for the calls the server takes its time over: it may look them up online', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const signals = hangs();
+    const lyrics = expect(api.lyrics(1)).rejects.toMatchObject({ status: 0 });
+    await vi.advanceTimersByTimeAsync(119_999);
+    expect(signals[0]!.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await lyrics;
+  });
+
   it('leaves nothing waiting once answered', async () => {
     vi.useFakeTimers();
     onTestFinished(() => {

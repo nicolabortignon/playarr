@@ -215,6 +215,8 @@ export class RcloneMediaSource implements MediaSource {
     const out = new PassThrough();
     this.urlFor(path).then(
       (url) => {
+        // The listener went while rclone was starting: no ffmpeg for nobody.
+        if (out.destroyed) return;
         const decoded = run(url);
         decoded.on('error', (err) => out.destroy(err));
         out.on('close', () => decoded.destroy());

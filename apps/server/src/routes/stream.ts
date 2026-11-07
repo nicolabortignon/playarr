@@ -276,20 +276,29 @@ export function streamRoutes(
       const account = req.auth?.account?.id ?? null;
       let job: EncodeJob;
       try {
-        job = deps.encoded.job(`${file.id}:${etag}`, account, layout, () =>
-          encode(path, { codec, kbps, ...encodeInput(layout, start, !seeksInexactly(file.format)), ...(gain ? { gainDb: gain } : {}), priority: 'normal' }),
+        job = deps.encoded.job(
+          `${file.id}:${etag}`,
+          account,
+          layout,
+          () => encode(path, { codec, kbps, ...encodeInput(layout, start, !seeksInexactly(file.format)), ...(gain ? { gainDb: gain } : {}), priority: 'normal' }),
+          { from, to },
         );
       } catch (err) {
         if (!(err instanceof EncodeBusyError)) throw err;
         return reply.code(503).header('Retry-After', '5').send({ error: err.message });
       }
-      job.attach();
+      // Attached at once: what this request reads from is kept for it from here on.
+      const reader = job.attach(from);
       // The first fragment, or the encode's failure, before answering: a file that can't be encoded gets an error,
       // not a stream that stops. A range within the init segment (a player's first look) needs neither.
       if (to >= layout.init.length) {
-        const ready = await Promise.race([job.started.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), FIRST_FRAGMENT_MS).unref())]);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const ready = await Promise.race([
+          job.started.then(() => true),
+          new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), FIRST_FRAGMENT_MS).unref())),
+        ]).finally(() => clearTimeout(timer));
         if (!ready || (job.state === 'failed' && job.produced === layout.init.length)) {
-          job.detach();
+          job.detach(reader);
           req.log.warn({ err: job.error, path }, 'a song couldn’t be encoded');
           return reply.code(502).send({ error: ready ? `This song couldn’t be encoded: ${job.error?.message ?? 'unknown error'}` : 'Encoding this song took too long' });
         }
@@ -315,7 +324,7 @@ export function streamRoutes(
         });
       void (async () => {
         try {
-          for await (const piece of job.read(from, to, stop.signal)) {
+          for await (const piece of job.read(from, to, stop.signal, reader)) {
             if (out.destroyed) return;
             if (!out.write(piece)) await drained();
           }
@@ -324,7 +333,7 @@ export function streamRoutes(
           if (!stop.signal.aborted) req.log.warn({ err, path }, 'an encoded stream broke off');
           out.destroy(err as Error);
         } finally {
-          job.detach();
+          job.detach(reader);
         }
       })();
       return reply.send(out);

@@ -29,17 +29,18 @@ export interface StreamChoice {
 /**
  * Where to play a song from, `at` seconds into it: a copy kept on this device if one will do (offline any;
  * online one as good as wanted), else the server's stream at the quality songs play at here: the song's
- * own file, or its encoded stream from `at` on. Even volume: on a desktop Web Audio's gain, elsewhere the
- * levelled stream (encoded at High and Normal, uncompressed at Original).
+ * own file, or its encoded stream from `at` on (not when `encode` is false: its encoded stream wouldn't play
+ * just now). Even volume: on a desktop Web Audio's gain, elsewhere the levelled stream (encoded at High and
+ * Normal, uncompressed at Original).
  */
-export function chooseStream(t: Track, s: QueueState, at = 0): StreamChoice {
+export function chooseStream(t: Track, s: QueueState, at = 0, encode = true): StreamChoice {
   const graph = graphGain(t, s);
   const withGraph = graph !== undefined ? { graph } : {};
   const quality = playQuality();
   const kept = keptCopy(t, quality);
   if (kept) return { url: kept, offset: 0, ...withGraph };
   const baked = streamGain(t, s);
-  if (encodes(t, quality) && !unencoded.has(t.fileId)) {
+  if (encode && encodes(t, quality) && !unencoded.has(t.fileId)) {
     const kbps = QUALITY_KBPS[quality];
     const url = encodedUrl(t, kbps, { start: at, ...(baked !== undefined ? { gainDb: baked } : {}) });
     return { url, offset: encodedOffset(at), encoded: kbps, ...(baked !== undefined ? { baked } : {}), ...withGraph };

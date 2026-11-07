@@ -269,11 +269,8 @@ export function AudioEngine() {
   const overlapTimer = useRef<ReturnType<typeof setInterval>>(undefined);
   /** Transition files that wouldn't play: not tried again. */
   const failedBridges = useRef(new Set<string>());
-  /**
-   * A song's stream getting going again after it broke off (see recover): where in the song it broke off, its
-   * quick tries so far, and what's waited on meanwhile.
-   */
-  const recovery = useRef<{ fileId: number; time: number; tries: number; cancel?: () => void } | null>(null);
+  /** A song's stream getting going again after it broke off (see recover). */
+  const recovery = useRef<Recovery | null>(null);
   /** Songs in a row that wouldn't play (see moveOn). */
   const failures = useRef(0);
   /** The playing deck last seen moving on (see the watchdog): its song time, and when (performance.now()). */
@@ -312,10 +309,10 @@ export function AudioEngine() {
    * device, or the server's stream at the quality songs play at here, the song's own file or its encoded
    * stream (which starts at `at`: its offset). Even volume: on a desktop Web Audio's gain on the way out, up
    * as well as down; elsewhere the song's levelled stream once its level is known, turned in the audio itself.
-   * Answers where the file starts in the song.
+   * Answers where the file starts in the song. `encode` false: not its encoded stream this time (see chooseStream).
    */
-  function load(deck: HTMLAudioElement, t: Track, at = 0): number {
-    const choice = chooseStream(t, usePlayer.getState(), at);
+  function load(deck: HTMLAudioElement, t: Track, at = 0, encode = true): number {
+    const choice = chooseStream(t, usePlayer.getState(), at, encode);
     loaded.current.set(deck, t);
     deck.dataset.fileId = String(t.fileId);
     if (choice.offset) deck.dataset.offset = String(choice.offset);
@@ -337,8 +334,8 @@ export function AudioEngine() {
   }
 
   /** Load a song into a deck at `time` in it (see load). */
-  function loadAt(deck: HTMLAudioElement, t: Track, time: number) {
-    const offset = load(deck, t, time);
+  function loadAt(deck: HTMLAudioElement, t: Track, time: number, encode = true) {
+    const offset = load(deck, t, time, encode);
     if (time > 0) setTimeOnLoad(deck, Math.max(0, time - offset));
   }
 
@@ -1994,7 +1991,7 @@ export function AudioEngine() {
           if (pressAwaits.current && !pressAwaits.current.bridging) return pressGoesThrough();
           const m = bridging();
           if (m) return seekInBridge(m, s.seekRequest.time);
-          if (seekSong(deck, s.seekRequest.time) && usePlayer.getState().playing) void play(deck);
+          if (!recoverAt(deck, s.seekRequest.time) && seekSong(deck, s.seekRequest.time) && usePlayer.getState().playing) void play(deck);
           updatePosition();
         }
       }),
@@ -2159,8 +2156,13 @@ export function AudioEngine() {
       const t = loaded.current.get(deck);
       if (!isActive(e)) {
         // A stream the server makes for this player (levelled, encoded) that won't play for the next song: its own
-        // file when its turn comes. The next song didn't load: it loads again the usual way then.
-        if (t && navigator.onLine && deck.error?.code !== MEDIA_ERR_NETWORK) unmade(deck, t);
+        // file when its turn comes, if the server refused it (one that never started may not have reached it: see
+        // refusedOrNot). The next song didn't load: it loads again the usual way then.
+        if (t && navigator.onLine && deck.error?.code !== MEDIA_ERR_NETWORK) {
+          const unmake = unmaking(deck, t);
+          if (!neverStarted(deck)) unmake();
+          else void statusOf(deck).then((status) => status !== null && status >= 400 && unmake());
+        }
         if (deck.getAttribute('src') !== silentClip()) delete deck.dataset.fileId;
         return;
       }
@@ -2170,44 +2172,116 @@ export function AudioEngine() {
     },
   };
 
-  /** A stream the server made for this player won't play for this song: it plays its own file from now on. */
-  function unmade(deck: HTMLAudioElement, t: Track): boolean {
+  /**
+   * Marking the stream the server made for this player (levelled, encoded, a remainder file) as one that won't play
+   * for this song, which then plays its own file from now on, for when the deck may hold something else. Answers
+   * whether it was made for the player.
+   */
+  function unmaking(deck: HTMLAudioElement, t: Track): () => boolean {
     const remainder = offsetOf(deck) > 0 && deck.dataset.encoded === undefined;
-    if (deck.dataset.levelled !== undefined && !remainder) levelledStreamFailed(t);
-    if (deck.dataset.encoded !== undefined) encodedStreamFailed(t);
-    return remainder || deck.dataset.levelled !== undefined || deck.dataset.encoded !== undefined;
+    const levelled = deck.dataset.levelled !== undefined;
+    const encoded = deck.dataset.encoded !== undefined;
+    return () => {
+      if (levelled && !remainder) levelledStreamFailed(t);
+      if (encoded) encodedStreamFailed(t);
+      return remainder || levelled || encoded;
+    };
   }
+
+  /** A stream the server made for this player won't play for this song: it plays its own file from now on. */
+  const unmade = (deck: HTMLAudioElement, t: Track) => unmaking(deck, t)();
+
+  /**
+   * A stream the server made for this player that never started: browsers say its source isn't supported
+   * whether the server refused it, was busy, or was never reached (MEDIA_ERR_SRC_NOT_SUPPORTED).
+   */
+  const neverStarted = (deck: HTMLAudioElement) =>
+    deck.error?.code === MEDIA_ERR_SRC_NOT_SUPPORTED && (offsetOf(deck) > 0 || deck.dataset.levelled !== undefined || deck.dataset.encoded !== undefined);
 
   /**
    * The song playing stopped loading, or won't play. Offline, it waits where it is for the network (see
-   * waitForNetwork). A stream the server makes for this player that won't play (a levelled stream whose song
-   * is being measured again, an encoded one the server can't make, a remainder file its cache let go) gives
-   * way to the song's own file, from the same point. A stream that broke off is asked for again from where
-   * it stopped, after a moment, longer each time (RETRY_DELAYS_MS), and for as long as the server can't be
-   * reached at all; one the server serves that still won't play, or a song that won't play at all, gives way
-   * to the next song.
+   * waitForNetwork). A stream that broke off is asked for again (see retry). A stream the server makes for this
+   * player that won't play (a levelled stream whose song is being measured again, an encoded one the server
+   * can't make, a remainder file its cache let go) gives way to the song's own file, from the same point; one
+   * that never started is asked about first (see refusedOrNot). A song that won't play at all gives way to the
+   * next song (see giveUp).
    */
   function recover(deck: HTMLAudioElement, t: Track) {
     const time = songTime(deck);
     if (!navigator.onLine) return waitForNetwork(deck, t, time);
-    const brokeOff = deck.error?.code === MEDIA_ERR_NETWORK;
-    if (!brokeOff && unmade(deck, t)) return reload(deck, t, time);
+    if (deck.error?.code === MEDIA_ERR_NETWORK) return retry(deck, t, time);
+    if (neverStarted(deck)) return refusedOrNot(deck, t, time);
+    if (unmade(deck, t)) return reload(deck, t, time);
+    giveUp(deck, t, time);
+  }
+
+  /**
+   * A stream that broke off is asked for again from where it stopped, after a moment, longer each time
+   * (RETRY_DELAYS_MS); out of quick tries, the server's asked why (see giveUp).
+   */
+  function retry(deck: HTMLAudioElement, t: Track, time: number) {
     const r = recoveryFor(t, time);
-    if (brokeOff && r.tries < RETRY_DELAYS_MS.length) return retryLater(deck, t, time, RETRY_DELAYS_MS[r.tries++]!);
-    // Out of quick tries, or it won't play at all: what does the server say?
+    if (r.tries < RETRY_DELAYS_MS.length) return retryLater(deck, t, time, RETRY_DELAYS_MS[r.tries++]!);
+    giveUp(deck, t, time);
+  }
+
+  /**
+   * A stream made for this player that never started: the server is asked about it. Not reached, it broke off
+   * (see retry). Refused (an HTTP error), it won't be made for this song: its own file from now on (see
+   * unmade). Served, it wouldn't play just now (the server was busy encoding others, or this encode failed):
+   * its own file this time.
+   */
+  function refusedOrNot(deck: HTMLAudioElement, t: Track, time: number) {
+    const unmake = unmaking(deck, t);
+    const encoded = deck.dataset.encoded !== undefined;
+    whenAnswered(deck, t, recoveryFor(t, time), statusOf(deck), (status) => {
+      if (status === null) return retry(deck, t, time);
+      if (status < 400 && encoded) return reload(deck, t, time, false);
+      unmake();
+      reload(deck, t, time);
+    });
+  }
+
+  /**
+   * Out of quick tries, or it won't play at all: what does the server say? Out of reach (a dead spot that still
+   * counts as online, the server restarting), on trying until it answers; otherwise the next song, saying why.
+   */
+  function giveUp(deck: HTMLAudioElement, t: Track, time: number) {
+    whenAnswered(deck, t, recoveryFor(t, time), whyNot(deck), (reason) => {
+      if (reason === null) return retryLater(deck, t, time, UNREACHABLE_RETRY_MS);
+      moveOn(reason);
+    });
+  }
+
+  /** The recovery waits on the server's answer (what comes after calls it off), then goes on with it if the song still plays. */
+  function whenAnswered<T>(deck: HTMLAudioElement, t: Track, r: Recovery, answer: Promise<T>, then: (answer: T) => void) {
     useClock.setState({ loading: true });
     let calledOff = false;
     r.cancel = () => {
       r.cancel = undefined;
       calledOff = true;
     };
-    void whyNot(deck).then((reason) => {
+    void answer.then((a) => {
       if (calledOff || !stillPlays(deck, t) || recovery.current !== r) return;
       r.cancel = undefined;
-      // Out of reach (a dead spot that still counts as online, the server restarting): on trying until it answers.
-      if (reason === null) return retryLater(deck, t, time, UNREACHABLE_RETRY_MS);
-      moveOn(reason);
+      then(a);
     });
+  }
+
+  /**
+   * A seek while the song's stream is waited on (it broke off): it's asked for again from there, now, or once the
+   * connection is back, rather than from where it broke off. True if it was.
+   */
+  function recoverAt(deck: HTMLAudioElement, time: number): boolean {
+    const r = recovery.current;
+    const t = loaded.current.get(deck);
+    if (!r?.cancel || !t || r.fileId !== t.fileId) return false;
+    if (!navigator.onLine) waitForNetwork(deck, t, time);
+    else {
+      recoveryFor(t, time);
+      reload(deck, t, time);
+    }
+    return true;
   }
 
   /**
@@ -2224,10 +2298,10 @@ export function AudioEngine() {
   /** The deck playing `t` still does: nothing else has been played meanwhile. */
   const stillPlays = (deck: HTMLAudioElement, t: Track) => active() === deck && loaded.current.get(deck)?.fileId === t.fileId;
 
-  /** The song again from `time`, playing if the player is. */
-  function reload(deck: HTMLAudioElement, t: Track, time: number) {
+  /** The song again from `time`, playing if the player is (`encode` false: not from its encoded stream, this time). */
+  function reload(deck: HTMLAudioElement, t: Track, time: number, encode = true) {
     switching.current = true;
-    loadAt(deck, t, time);
+    loadAt(deck, t, time, encode);
     if (usePlayer.getState().playing) void play(deck);
   }
 
@@ -2290,8 +2364,11 @@ export function AudioEngine() {
     p.nextNow();
   }
 
+  /** What the deck plays won't play (it's no song of the queue's): the next song, saying why, unless one played meanwhile. */
   async function moveOnFrom(deck: HTMLAudioElement) {
-    moveOn((await whyNot(deck)) ?? 'Cannot reach the Playarr server');
+    const src = deck.getAttribute('src');
+    const reason = (await whyNot(deck)) ?? 'Cannot reach the Playarr server';
+    if (active() === deck && deck.getAttribute('src') === src) moveOn(reason);
   }
 
   /**
@@ -2413,12 +2490,45 @@ function updatePositionState(position: number, duration: number, playbackRate: n
   }
 }
 
-/** MediaError codes: the stream broke off, or the file couldn't be decoded. */
+/**
+ * A song's stream getting going again after it broke off: where in the song it broke off, its quick tries so far,
+ * and calling off what's waited on meanwhile.
+ */
+interface Recovery {
+  fileId: number;
+  time: number;
+  tries: number;
+  cancel?: () => void;
+}
+
+/**
+ * MediaError codes: the stream broke off, the file couldn't be decoded, or the source isn't supported (which is
+ * also what a stream that never started gets, refused or out of reach).
+ */
 const MEDIA_ERR_NETWORK = 2;
 const MEDIA_ERR_DECODE = 3;
+const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
 
 /** The server not answering why a stream failed within this long counts as out of reach. */
 const WHY_NOT_MS = 10_000;
+
+/** A look at what `audio` plays: its first two bytes, or for an encoded stream its headers (a GET would start encoding it). */
+const look = (audio: HTMLAudioElement, signal: AbortSignal) =>
+  fetch(audio.src, audio.dataset.encoded !== undefined ? { method: 'HEAD', signal } : { headers: { Range: 'bytes=0-1' }, signal });
+
+/** The HTTP status a look at what `audio` plays gets (see look); null when the server can't be reached. */
+async function statusOf(audio: HTMLAudioElement): Promise<number | null> {
+  if (!audio.src) return null;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), WHY_NOT_MS);
+  try {
+    return (await look(audio, abort.signal)).status;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** <audio> errors carry little detail, so ask the server why the stream failed; null when it can't be reached. */
 async function whyNot(audio: HTMLAudioElement): Promise<string | null> {
@@ -2427,7 +2537,7 @@ async function whyNot(audio: HTMLAudioElement): Promise<string | null> {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), WHY_NOT_MS);
   try {
-    const res = await fetch(audio.src, { headers: { Range: 'bytes=0-1' }, signal: abort.signal });
+    const res = await look(audio, abort.signal);
     if (!res.ok) return ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'Playback failed';
     // The file is there: its stream kept breaking off, it's damaged, or the browser can't play its format.
     if (code === MEDIA_ERR_NETWORK) return 'The song kept stopping loading: the Playarr server or the network is too busy';

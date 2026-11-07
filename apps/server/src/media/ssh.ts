@@ -183,13 +183,19 @@ export class SshExecMediaSource implements MediaSource {
     const out = new PassThrough();
     this.shell.exec(`${nice}${shellQuote(this.ffmpeg)} ${args}`).then(
       (channel) => {
+        // The listener went (or the work was called off) before ffmpeg started on the host: nothing to hand on.
+        if (out.destroyed || opts.signal?.aborted) return void channel.close();
         let err = '';
         const abort = () => channel.close();
         opts.signal?.addEventListener('abort', abort, { once: true });
         out.on('close', () => channel.close());
         channel.stderr.on('data', (d: Buffer) => (err = (err + d).slice(-2000)));
-        // Held back while the reader is (an encoded stream far enough ahead of its listeners pauses).
-        channel.on('data', (d: Buffer) => !out.write(d) && channel.pause());
+        // Held back while the reader is (an encoded stream far enough ahead of its listeners pauses); a reader gone
+        // for good stops ffmpeg rather than holding it back.
+        channel.on('data', (d: Buffer) => {
+          if (out.destroyed) return void channel.close();
+          if (!out.write(d)) channel.pause();
+        });
         out.on('drain', () => channel.resume());
         channel.on('close', (code: number | null) => {
           opts.signal?.removeEventListener('abort', abort);

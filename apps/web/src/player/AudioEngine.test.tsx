@@ -779,17 +779,114 @@ describe('AudioEngine', () => {
       expect(fake(a).time).toBe(150);
     });
 
-    it('goes on from the song’s own file, from where it was, when its encoded stream won’t play', async () => {
+    /** The server answers every request so (or can't be reached, when the answer rejects). */
+    function server(answer: () => Promise<Response>) {
+      const fetchMock = vi.fn(answer);
+      vi.stubGlobal('fetch', fetchMock);
+      onTestFinished(() => {
+        vi.unstubAllGlobals();
+      });
+      return fetchMock;
+    }
+    const unreachable = () => Promise.reject(new TypeError('Failed to fetch'));
+
+    it('goes on from the song’s own file, from where it was and from then on, when the server won’t make its encoded stream', async () => {
       quality({ wifiQuality: 'normal' });
+      const fetchMock = server(async () => new Response(null, { status: 404 }));
       const [a] = await start([flac(97), flac(98)]);
       expect(src(a)).toBe('/stream/97/aac?kbps=128');
       await at(a, 50);
       await breakOff(a, 4);
+      // Asked about without starting an encode.
+      expect(fetchMock).toHaveBeenCalledWith(new URL('/stream/97/aac?kbps=128#broken', location.href).href, expect.objectContaining({ method: 'HEAD' }));
       expect(src(a)).toBe('/stream/97');
       a.dispatchEvent(new Event('loadedmetadata'));
       expect(fake(a).time).toBe(50);
       expect(fake(a).paused).toBe(false);
       expect(useClock.getState().error).toBeNull();
+      cleanup();
+      const [again] = await start([flac(97)]);
+      expect(src(again)).toBe('/stream/97');
+    });
+
+    it('plays the song’s own file just this once when its encoded stream didn’t start though the server serves it (it was busy)', async () => {
+      quality({ wifiQuality: 'normal' });
+      server(async () => new Response(null, { status: 200 }));
+      const [a] = await start([flac(92), flac(93)]);
+      await at(a, 50);
+      await breakOff(a, 4);
+      expect(src(a)).toBe('/stream/92');
+      a.dispatchEvent(new Event('loadedmetadata'));
+      expect(fake(a).time).toBe(50);
+      cleanup();
+      const [again] = await start([flac(92)]);
+      expect(src(again)).toBe('/stream/92/aac?kbps=128');
+    });
+
+    it('asks again for an encoded stream that didn’t start while the server couldn’t be reached, rather than giving it up', async () => {
+      quality({ wifiQuality: 'normal' });
+      server(unreachable);
+      const [a] = await start([flac(94), flac(96)]);
+      await at(a, 50);
+      await breakOff(a, 4);
+      expect(src(a)).toBe('/stream/94/aac?kbps=128#broken');
+      expect(useClock.getState().loading).toBe(true);
+      await wait(1000);
+      expect(src(a)).toBe(`/stream/94/aac?kbps=128&start=${50 * 44_100}`);
+      expect(now()).toBe(94);
+    });
+
+    it('gives the next song its own file when the server won’t make its encoded stream, not when it couldn’t be reached', async () => {
+      quality({ wifiQuality: 'normal' });
+      const refused = async () => new Response(null, { status: 404 });
+      for (const [answer, id, then] of [
+        [unreachable, 74, '/stream/74/aac?kbps=128'],
+        [refused, 76, '/stream/76'],
+      ] as const) {
+        server(answer);
+        const [a, b] = await start([flac(id - 1), flac(id)]);
+        await at(a, 175);
+        expect(src(b)).toBe(`/stream/${id}/aac?kbps=128`);
+        await breakOff(b, 4);
+        await at(a, 199.99);
+        await end(a);
+        expect(now()).toBe(id);
+        expect([a, b].map(src)).toContain(then);
+        cleanup();
+      }
+    });
+
+    it('asks the server why an encoded stream keeps breaking off without starting an encode', async () => {
+      quality({ wifiQuality: 'normal' });
+      const fetchMock = server(async () => new Response(null, { status: 200 }));
+      const [a] = await start([flac(1), flac(2)]);
+      await at(a, 50);
+      // Asked for again, the stream from 50 s plays a moment after its start is loaded.
+      slow.set(a, 100);
+      for (const delay of [1000, 3000, 8000]) {
+        await breakOff(a);
+        await wait(delay);
+        a.dispatchEvent(new Event('loadedmetadata'));
+        await wait(100);
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+      await breakOff(a);
+      expect(fetchMock).toHaveBeenCalledWith(new URL(`/stream/1/aac?kbps=128&start=${50 * 44_100}#broken`, location.href).href, expect.objectContaining({ method: 'HEAD' }));
+      expect(now()).toBe(2);
+    });
+
+    it('keeps a seek made while a stream that broke off waits to be asked for again', async () => {
+      quality({ wifiQuality: 'normal' });
+      const [a] = await start([flac(1), flac(2)]);
+      await at(a, 50);
+      await breakOff(a);
+      await act(async () => useClock.getState().seek(120));
+      await settle();
+      expect(src(a)).toBe(`/stream/1/aac?kbps=128&start=${120 * 44_100}`);
+      // The wait for asking again from where it broke off is over: nothing takes the song back there.
+      await wait(10_000);
+      expect(src(a)).toBe(`/stream/1/aac?kbps=128&start=${120 * 44_100}`);
+      expect(fake(a).paused).toBe(false);
     });
 
     it('plays a copy kept on this device at least as good as the quality wanted, and offline any copy', async () => {
