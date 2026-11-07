@@ -91,6 +91,8 @@ import Testing
 
   @Test func anAlbumCardOnItsArtistsPageSaysWhatItIsInPlaceOfTheirName() {
     #expect(AlbumCard.subtitle(album(have: 3, total: 11), onArtistPage: false) == "Massive Attack · 3 of 11")
+    // A member can't do anything about the rest.
+    #expect(AlbumCard.subtitle(album(have: 3, total: 11), onArtistPage: false, showsMissing: false) == "Massive Attack")
     var ep = album(type: "EP")
     ep.year = 2019
     #expect(AlbumCard.subtitle(ep, onArtistPage: true) == "EP · 2019")

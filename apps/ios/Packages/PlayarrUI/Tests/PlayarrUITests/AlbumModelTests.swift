@@ -17,6 +17,14 @@ import Testing
     #expect(titles == ["Angel", "Risingson", "(Teardrop)", "Inertia Creeps", "(Exchange)"])
   }
 
+  @Test func leavesTheMissingSongsOutForAMemberAndSaysMoreAreOnRequest() {
+    let rows = AlbumModel.rows(Demo.mezzanine, missing: false)
+    #expect(rows.allSatisfy { if case .missing = $0 { false } else { true } })
+    #expect(rows.count == 3)
+    #expect(AlbumModel.moreOnRequest(Demo.mezzanine) == "2 more songs on request")
+    #expect(AlbumModel.moreOnRequest(Demo.protection) == nil)
+  }
+
   @Test func headsEachDiscWhenThereAreSeveral() {
     let rows = AlbumModel.rows(Demo.dummy)
     #expect(rows.first == .disc(1))

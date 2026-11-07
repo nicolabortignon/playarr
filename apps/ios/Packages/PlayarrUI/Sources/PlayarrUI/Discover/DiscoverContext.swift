@@ -44,6 +44,10 @@ public final class DiscoverContext {
 
   public var gate: RequestGate { RequestGate(health: health, account: account) }
 
+  /// Whether an album's missing songs show (grayed in the list, "3 of 11" on its card): to an admin, who can fill them
+  /// in. A member sees what's here, and that there's more on request when they can ask for it (plan 4 §6).
+  public var showsMissing: Bool { account.role != .member }
+
   /// The account changed on the server (its rights, say).
   public func update(_ account: Account) { self.account = account }
 

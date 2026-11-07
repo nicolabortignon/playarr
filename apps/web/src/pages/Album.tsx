@@ -11,7 +11,7 @@ import { ErrorState, SongRowsSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
 import { useCoverAccent } from '../lib/accent';
 import { formatDuration, plural, releaseKind } from '../lib/format';
-import { useAlbum, useArtist } from '../lib/queries';
+import { useAlbum, useArtist, useRequestsEnabled, useShowsMissing } from '../lib/queries';
 import { ALBUM_COVER_SIZE } from '../lib/prefetch';
 import { useAlbumCoverName } from '../lib/viewTransitions';
 import { useCurrentTrack, usePlayer } from '../player/store';
@@ -28,6 +28,8 @@ export function AlbumPage() {
   const playTracks = usePlayer((s) => s.playTracks);
   const toggle = usePlayer((s) => s.toggle);
   const rest = useRestRequest(album);
+  const showsMissing = useShowsMissing();
+  const requestsOn = useRequestsEnabled();
   const menu = useAlbumMenu({ id, artistId: album?.artistId ?? Number.NaN }, { tracks: album?.tracks });
   // Opened from a cover, that cover grows into this one; going back, it shrinks home (plan 7 §1).
   const coverName = useAlbumCoverName(id);
@@ -105,7 +107,11 @@ export function AlbumPage() {
         </DetailHeader>
 
         <div className="mt-8 -mx-3 max-w-5xl md:mt-10">
-          <TrackList tracks={album.tracks} missing={album.missingTracks} showDiscs={album.discCount > 1} source={albumSource(album)} />
+          <TrackList tracks={album.tracks} missing={showsMissing ? album.missingTracks : undefined} showDiscs={album.discCount > 1} source={albumSource(album)} />
+          {/* A member doesn't see the missing songs; one who can ask for them reads how many more there are. */}
+          {!showsMissing && requestsOn && album.missingTracks.length > 0 && (
+            <p className="mt-3 px-3 type-small text-muted">{plural(album.missingTracks.length, 'more song')} on request</p>
+          )}
         </div>
 
         {album.overview && (

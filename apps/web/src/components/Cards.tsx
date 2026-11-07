@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 import { cn } from '../lib/cn';
 import { useContextMenu, type Point } from '../lib/contextMenu';
 import { plural, releaseKind } from '../lib/format';
+import { useShowsMissing } from '../lib/queries';
 import { useGrowingCover } from '../lib/viewTransitions';
 import { useNearScreen } from '../lib/viewport';
 import { playAlbum } from '../player/actions';
@@ -58,6 +59,7 @@ export function AlbumCard({
   const menu = useCardMenu(ref);
   // Opening the album grows this cover into its page; going back shrinks it home (plan 7 §1).
   const cover = useGrowingCover(album.id, ref);
+  const showsMissing = useShowsMissing();
 
   return (
     <div ref={ref} className={cn('group relative animate-rise long-press', className)} style={near ? style : { ...style, height }} {...menu.events}>
@@ -80,7 +82,7 @@ export function AlbumCard({
                 {[
                   onArtistPage ? releaseKind(album.albumType, album.secondaryTypes) : album.artistName,
                   album.year,
-                  album.trackCount < album.totalTrackCount && `${album.trackCount} of ${album.totalTrackCount}`,
+                  showsMissing && album.trackCount < album.totalTrackCount && `${album.trackCount} of ${album.totalTrackCount}`,
                 ]
                   .filter(Boolean)
                   .join(' · ')}

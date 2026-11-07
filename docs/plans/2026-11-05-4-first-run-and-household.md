@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; fourth of four (after [robustness and scale]
 
 **Goal:** someone who downloads the app without a server understands it in a minute; an invited member goes from the invite to music in under two minutes; the owner's first steps lead to music, not settings; and the household shares requests and playlists like a family, not a set of strangers.
 
-**Where it stands (2026-11-07):** 2 done, but for universal links, which wait for a Playarr domain; 3 done on the web; the rest not started.
+**Where it stands (2026-11-07):** 2 and 6 done, but for universal links, which wait for a Playarr domain; 3 done on the web; the rest not started.
 
 ## 1. The welcome screen explains itself — S–M
 
@@ -36,7 +36,9 @@ Builds on plan 1's requests table.
 
 Shared playlists can only be changed by their owner (`apps/server/src/playlists.ts`). An owner can make a playlist collaborative: anyone it's shared with can add, remove and reorder songs; changes show who added what.
 
-## 6. Small things members notice — S
+## 6. Small things members notice — S — done 2026-11-07
+
+*Done: only an admin sees an album's missing songs (grayed in the list, "3 of 5" on its card); a member who can ask for them reads "2 more songs on request" under the list, on both apps. The artist page without a photo (a compact header) and Now Playing's way into the queue came with plans 5 to 7.*
 
 - "2 missing" on album pages is owner-speak: members see nothing, or "more on request" when they can request.
 - The artist page's empty photo band when there's no photo.

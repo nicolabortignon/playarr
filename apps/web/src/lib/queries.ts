@@ -885,6 +885,12 @@ export const useMe = () => useQuery({ queryKey: ['me'], queryFn: api.me, retry: 
 /** Signed in as a member: the server's settings are shown, but only an admin may change them. */
 export const useIsMember = () => useMe().data?.role === 'member';
 
+/**
+ * Whether an album's missing songs show (grayed in the list, "3 of 11" on its card): to an admin, who can fill them
+ * in. A member sees what's here, and that there's more on request when they can ask for it (plan 4 §6).
+ */
+export const useShowsMissing = () => !useIsMember();
+
 /** An admin has stopped this account from changing this device setting (Settings → Accounts). */
 export const useLocked = (setting: DeviceSetting) => useMe().data?.locked?.includes(setting) ?? false;
 

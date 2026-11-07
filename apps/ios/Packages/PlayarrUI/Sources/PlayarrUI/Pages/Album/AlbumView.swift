@@ -107,7 +107,8 @@ struct AlbumView: View {
     }
   }
 
-  /// The songs by number, missing ones grayed in their place, a heading before each disc when there are several.
+  /// The songs by number, missing ones grayed in their place (to an admin; a member who can ask for them reads how
+  /// many more are on request), a heading before each disc when there are several.
   private var songs: some View {
     VStack(alignment: .leading, spacing: 0) {
       ForEach(model.rows) { row in
@@ -123,6 +124,9 @@ struct AlbumView: View {
         case .missing(let missing):
           MissingSongRow(title: missing.title, lead: .number(missing.trackNumber), duration: missing.duration)
         }
+      }
+      if let more = model.moreOnRequest {
+        Text(more).typeRole(.small).foregroundStyle(.muted).padding(.top, 12)
       }
     }
     .padding(.horizontal, 20)

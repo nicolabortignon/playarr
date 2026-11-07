@@ -52,7 +52,18 @@ final class AlbumModel {
 
   var rows: [Row] {
     guard let album = album.value else { return [] }
-    return Self.rows(album)
+    return Self.rows(album, missing: session.discover.showsMissing)
+  }
+
+  /// "2 more songs on request", under the songs: for a member who can ask for the rest, who doesn't see the missing
+  /// songs in the list (`DiscoverContext.showsMissing`).
+  var moreOnRequest: String? {
+    guard let album = album.value, !session.discover.showsMissing, session.discover.gate.allowsRequests else { return nil }
+    return Self.moreOnRequest(album)
+  }
+
+  static func moreOnRequest(_ album: AlbumDetail) -> String? {
+    album.missingTracks.isEmpty ? nil : "\(Format.plural(album.missingTracks.count, "more song")) on request"
   }
 
   /// What it is: "Album", "EP", "Live album" (`Format.releaseKind`).
@@ -100,12 +111,14 @@ final class AlbumModel {
     session.player.play(album.tracks, startAt: index, source: source)
   }
 
-  /// The album's songs and missing songs in disc and track order, with a header before each disc when there are several.
-  static func rows(_ album: AlbumDetail) -> [Row] {
+  /// The album's songs and (with `missing`) missing songs in disc and track order, with a header before each disc when
+  /// there are several.
+  static func rows(_ album: AlbumDetail, missing: Bool = true) -> [Row] {
+    let gaps = missing ? album.missingTracks : []
     let songs: [(disc: Int, number: Int, row: Row)] =
       album.tracks.enumerated().map { ($1.discNumber, $1.trackNumber, .track($1, index: $0)) }
-      + album.missingTracks.map { ($0.discNumber, $0.trackNumber, .missing($0)) }
-    let sorted = album.missingTracks.isEmpty ? songs : songs.sorted { ($0.disc, $0.number) < ($1.disc, $1.number) }
+      + gaps.map { ($0.discNumber, $0.trackNumber, .missing($0)) }
+    let sorted = gaps.isEmpty ? songs : songs.sorted { ($0.disc, $0.number) < ($1.disc, $1.number) }
     var rows: [Row] = []
     var disc: Int?
     for song in sorted {

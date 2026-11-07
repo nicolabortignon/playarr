@@ -745,7 +745,8 @@ final class ScreenTour: XCTestCase {
     if onIPad { XCUIDevice.shared.orientation = .landscapeLeft }
     defer { XCUIDevice.shared.orientation = .portrait }
     launch(["-UITests", "-UITestsRequests"])
-    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10) { shot("21-album-request") }
+    // As a member who can request: the card doesn't say how much is here, and the page says how much more can be asked for.
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998"].firstMatch, timeout: 10) { shot("21-album-request") }
     let search = onIPad ? app.descendants(matching: .any)["sidebar.search"].firstMatch : tab("Search")
     guard tap(search) else { return }
     let field = app.searchFields.firstMatch

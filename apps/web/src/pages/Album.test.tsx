@@ -38,6 +38,7 @@ const artist: ArtistDetail = {
 beforeEach(() => {
   vi.spyOn(api, 'artist').mockResolvedValue(artist);
   vi.spyOn(api, 'requests').mockResolvedValue([]);
+  vi.spyOn(api, 'me').mockResolvedValue({ id: 1, username: 'nicola', name: 'Nicola', role: 'admin', canRequest: true, sources: null, hasPassword: true });
   vi.spyOn(api, 'health').mockResolvedValue({ ok: true, requests: true, lidarr: { ok: true } } as unknown as HealthStatus);
 });
 
@@ -87,5 +88,35 @@ describe('Album page header', () => {
     expect(header.getByText('9 songs')).toBeTruthy();
     expect(header.queryByText(/missing/)).toBeNull();
     expect(header.getByRole('button', { name: 'Request the rest' })).toBeTruthy();
+  });
+
+  it('lists the missing songs to an admin; a member reads how many more are on request, or nothing', async () => {
+    const TRACK = { id: 1, title: 'Angel', trackNumber: 1, discNumber: 1, duration: 379, artistName: 'Massive Attack' } as AlbumDetail['tracks'][number];
+    const gaps = album({
+      trackCount: 1,
+      totalTrackCount: 3,
+      tracks: [TRACK],
+      missingTracks: [
+        { recordingId: 'rec-2', title: 'Risingson', trackNumber: 2, discNumber: 1, duration: 298 },
+        { recordingId: 'rec-3', title: 'Teardrop', trackNumber: 3, discNumber: 1, duration: 330 },
+      ],
+    });
+    const me = vi.mocked(api.me);
+    await renderAlbum(gaps);
+    expect(await screen.findByText('Teardrop')).toBeTruthy();
+    expect(screen.queryByText(/on request/)).toBeNull();
+    cleanup();
+
+    me.mockResolvedValue({ id: 2, username: 'sam', name: 'Sam', role: 'member', canRequest: true, sources: null, hasPassword: true });
+    await renderAlbum(gaps);
+    expect(await screen.findByText('2 more songs on request')).toBeTruthy();
+    expect(screen.queryByText('Teardrop')).toBeNull();
+    cleanup();
+
+    vi.spyOn(api, 'health').mockResolvedValue({ ok: true, requests: false, lidarr: { ok: true } } as unknown as HealthStatus);
+    await renderAlbum(gaps);
+    await screen.findByText('Angel');
+    expect(screen.queryByText(/on request/)).toBeNull();
+    expect(screen.queryByText('Teardrop')).toBeNull();
   });
 });

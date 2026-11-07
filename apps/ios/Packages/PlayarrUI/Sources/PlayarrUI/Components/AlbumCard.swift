@@ -39,12 +39,13 @@ struct AlbumCard: View {
   }
 
   /// "Massive Attack · 1998 · 3 of 11", or on the artist's page "Album · 1998 · 3 of 11".
-  var subtitle: String { Self.subtitle(album, onArtistPage: onArtistPage) }
+  var subtitle: String { Self.subtitle(album, onArtistPage: onArtistPage, showsMissing: session.discover.showsMissing) }
 
-  static func subtitle(_ album: Album, onArtistPage: Bool) -> String {
+  /// `showsMissing`: how much of the album is here ("3 of 11"), which only an admin can do anything about (plan 4 §6).
+  static func subtitle(_ album: Album, onArtistPage: Bool, showsMissing: Bool = true) -> String {
     var parts = [onArtistPage ? Format.releaseKind(album.albumType, album.secondaryTypes) : album.artistName]
     if let year = album.year { parts.append(String(year)) }
-    if album.trackCount < album.totalTrackCount { parts.append("\(album.trackCount) of \(album.totalTrackCount)") }
+    if showsMissing, album.trackCount < album.totalTrackCount { parts.append("\(album.trackCount) of \(album.totalTrackCount)") }
     return parts.joined(separator: " · ")
   }
 }
