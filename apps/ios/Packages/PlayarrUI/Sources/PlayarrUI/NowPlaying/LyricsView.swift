@@ -1,3 +1,4 @@
+import PlayarrPlayer
 import PlayarrAPI
 import SwiftUI
 
@@ -6,6 +7,8 @@ import SwiftUI
 struct LyricsView: View {
   var centred = false
   @State private var model: LyricsModel
+  /// The synced line being sung (`LineFollower`): -1 before the first.
+  @State private var current = -1
   @Environment(AccountSession.self) private var session
   @Environment(AppearanceSettings.self) private var appearance
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -51,9 +54,7 @@ struct LyricsView: View {
   }
 
   private func synced(_ lines: [Lyrics.SyncedItem], source: Lyrics.Source) -> some View {
-    let times = lines.map(\.at)
-    let current = LyricsModel.lineAt(times, time: session.player.time)
-    return ScrollViewReader { proxy in
+    ScrollViewReader { proxy in
       ScrollView {
         VStack(alignment: alignment, spacing: 14) {
           ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
@@ -85,6 +86,7 @@ struct LyricsView: View {
         withAnimation(reduce ? nil : .smooth) { proxy.scrollTo(max(0, line), anchor: .center) }
       }
     }
+    .background(LineFollower(times: lines.map(\.at), player: session.player, current: $current))
   }
 
   private func notice(_ text: String) -> some View {
@@ -110,5 +112,17 @@ struct LyricsCredit: View {
     .font(.mono(.caption2))
     .tracking(2)
     .foregroundStyle(.secondary)
+  }
+}
+
+/// Follows the song's clock for the synced lyrics, apart from them: the line being sung changes a few times a minute and
+/// the clock 10 times a second, and only this empty view is made again with the clock (plan 3 §2).
+private struct LineFollower: View {
+  let times: [Double]
+  let player: Player
+  @Binding var current: Int
+
+  var body: some View {
+    Color.clear.onChange(of: LyricsModel.lineAt(times, time: player.time), initial: true) { _, line in current = line }
   }
 }

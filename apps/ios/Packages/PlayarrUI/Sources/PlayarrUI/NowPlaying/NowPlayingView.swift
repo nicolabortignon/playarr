@@ -384,7 +384,6 @@ struct NowPlayingView: View {
   /// which get the full height. In the stage the deck and header fade and the cover grows into the deck's room.
   private func sleeve(_ model: NowPlayingModel, track: Track) -> some View {
     let player = session.player
-    let tracklist = Tracklist(queue: player.queue, transitions: player.settings.transitions, crossfade: player.settings.crossfade, autoplay: player.settings.autoplay)
     return GeometryReader { geometry in
       let record = NowPlayingLayout.recordWidth(
         width: geometry.size.width, height: geometry.size.height, deck: staged ? 0 : NowPlayingLayout.deckHeight,
@@ -399,7 +398,7 @@ struct NowPlayingView: View {
         .frame(width: record)
         VStack(spacing: 4) {
           if !staged {
-            sleeveHeader(model, track: track, tail: tracklist.left(elapsed: player.time), short: tracklist.timeLeft(elapsed: player.time))
+            sleeveHeader(model, track: track)
               .transition(.opacity)
           }
           if session.router.lyrics {
@@ -428,28 +427,14 @@ struct NowPlayingView: View {
 
   /// The back's one line: close, where the songs come from with the time left, the sleep timer, lyrics, AirPlay and more.
   /// `short`: the time left alone, where the whole of `tail` won't fit.
-  private func sleeveHeader(_ model: NowPlayingModel, track: Track, tail: String?, short: String?) -> some View {
-    let name = model.playingFrom ?? ""
-    return HStack(spacing: 4) {
+  private func sleeveHeader(_ model: NowPlayingModel, track: Track) -> some View {
+    HStack(spacing: 4) {
       Button { session.router.nowPlaying = false } label: { Image(systemName: "chevron.down").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
         .accessibilityLabel("Close now playing")
         .keyboardShortcut(.cancelAction)
-      Button { if let route = model.playingFromRoute { session.router.go(route) } } label: {
-        VStack(alignment: .leading, spacing: 1) {
-          Kicker(text: "Playing from", overArt: true)
-          // "Mezzanine · 3 songs · 17 min left", the time left after the name, quieter; short of room, "Mezzanine · 17
-          // min left", then the name alone, rather than a figure cut short.
-          ViewThatFits(in: .horizontal) {
-            Self.playingFrom(name, tail)
-            Self.playingFrom(name, short)
-            Self.playingFrom(name, nil)
-          }
-        }
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
+      PlayingFromButton(name: model.playingFrom ?? "", player: session.player) {
+        if let route = model.playingFromRoute { session.router.go(route) }
       }
-      .accessibilityLabel("Playing from \(name)")
-      .accessibilityValue(tail ?? "")
       Spacer(minLength: 8)
       SleepTimerMenu(player: session.player)
       lyricsButton
@@ -459,11 +444,6 @@ struct NowPlayingView: View {
     .buttonStyle(.plain)
   }
 
-  /// "Mezzanine · 17 min left" on one line, what follows the name quieter.
-  private static func playingFrom(_ name: String, _ tail: String?) -> some View {
-    Text("\(name)\(Text(tail.map { " · \($0)" } ?? "").foregroundStyle(.paperDim))")
-      .font(.sans(.subheadline)).lineLimit(1)
-  }
 
   /// The cover, as big as the record's column allows above the deck: swipe down to close, left or right for the next
   /// or previous song, tap for the stage.
@@ -513,5 +493,41 @@ struct NowPlayingView: View {
     } else {
       withAnimation(.easeInOut(duration: 0.6)) { staged = on }
     }
+  }
+}
+
+/// Sideways Now Playing's "Playing from Mezzanine · 3 songs · 17 min left": a view of its own, the only part of the
+/// page that reads the clock, so the rest isn't made again 10 times a second (plan 3 §2).
+private struct PlayingFromButton: View {
+  let name: String
+  let player: Player
+  let action: () -> Void
+
+  var body: some View {
+    let tracklist = Tracklist(
+      queue: player.queue, transitions: player.settings.transitions, crossfade: player.settings.crossfade, autoplay: player.settings.autoplay)
+    let tail = tracklist.left(elapsed: player.time)
+    Button(action: action) {
+      VStack(alignment: .leading, spacing: 1) {
+        Kicker(text: "Playing from", overArt: true)
+        // "Mezzanine · 3 songs · 17 min left", the time left after the name, quieter; short of room, "Mezzanine · 17
+        // min left", then the name alone, rather than a figure cut short.
+        ViewThatFits(in: .horizontal) {
+          line(tail)
+          line(tracklist.timeLeft(elapsed: player.time))
+          line(nil)
+        }
+      }
+      .frame(minHeight: 44)
+      .contentShape(Rectangle())
+    }
+    .accessibilityLabel("Playing from \(name)")
+    .accessibilityValue(tail ?? "")
+  }
+
+  /// "Mezzanine · 17 min left" on one line, what follows the name quieter.
+  private func line(_ tail: String?) -> some View {
+    Text("\(name)\(Text(tail.map { " · \($0)" } ?? "").foregroundStyle(.paperDim))")
+      .font(.sans(.subheadline)).lineLimit(1)
   }
 }
