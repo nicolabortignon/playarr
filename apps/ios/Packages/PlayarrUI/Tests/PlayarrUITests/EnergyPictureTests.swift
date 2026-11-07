@@ -23,6 +23,38 @@ struct EnergyPictureTests {
     #expect(bars.filter(\.phrase).count == 5)
   }
 
+  @Test func underTheSeekBarTheSongsPhrasesSpanTheWholeSong() {
+    // Placed over the player's duration (a second longer than the map's here), else the map's.
+    let phrases = EnergyPicture.songPhrases(map, duration: 41)
+    #expect(phrases.map(\.at) == [0.5, 16.5, 24.5, 32.5])
+    #expect(abs(phrases[1].left - 16.5 / 41) < 1e-12)
+    #expect(abs(phrases[1].width - 8.0 / 41) < 1e-12)
+    #expect(abs(EnergyPicture.songPhrases(map, duration: 0)[1].left - 16.5 / 40) < 1e-12)
+    // Nothing to draw for a song not analyzed or without a beat: the strip keeps its room, empty.
+    var beatless = map
+    beatless.bpm = 0
+    #expect(EnergyPicture.songPhrases(nil, duration: 40).isEmpty)
+    #expect(EnergyPicture.songPhrases(beatless, duration: 40).isEmpty)
+  }
+
+  @Test func scrubbingTicksWhereTheIntroEndsTheDropLandsAndTheOutroStarts() {
+    var song = map
+    song.firstDrop = 16.5
+    #expect(EnergyPicture.sectionBoundaries(song, duration: 40) == [8.5, 16.5, 32.5])
+    #expect(EnergyPicture.section(0, boundaries: [8.5, 16.5, 32.5]) == 0)
+    #expect(EnergyPicture.section(8.5, boundaries: [8.5, 16.5, 32.5]) == 1)
+    #expect(EnergyPicture.section(20, boundaries: [8.5, 16.5, 32.5]) == 2)
+    #expect(EnergyPicture.section(39, boundaries: [8.5, 16.5, 32.5]) == 3)
+    // A drop where the intro ends ticks once; no intro (a cold start) or no outro isn't a boundary.
+    song.firstDrop = 8.8
+    #expect(EnergyPicture.sectionBoundaries(song, duration: 40) == [8.5, 32.5])
+    song.introEnd = 0
+    song.firstDrop = nil
+    song.outroStart = 40
+    #expect(EnergyPicture.sectionBoundaries(song, duration: 40).isEmpty)
+    #expect(EnergyPicture.sectionBoundaries(nil, duration: 40).isEmpty)
+  }
+
   @Test func theNextSongRunsAtItsAverageRateThroughTheMix() {
     let plan = TransitionPlan(
       style: .long, aStart: 100, bStart: 10, length: 20, bResume: 30.4, switchAt: 10, bRate: [.init(at: 0, value: 1.02)],

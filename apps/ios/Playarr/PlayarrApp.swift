@@ -1,6 +1,7 @@
 import AppIntents
 import Foundation
 import PlayarrAPI
+import PlayarrPlayer
 import PlayarrUI
 import SwiftUI
 
@@ -50,8 +51,9 @@ struct PlayarrApp: App {
   /// brings back where the last run was (otherwise each run starts on Home).
   /// `-UITestsDownloads` (Debug builds) opens Library → Downloads on made-up downloads (`DownloadsDemoView`).
   /// For the screen tour (Debug builds), `-UITestsSlowFan <times>` slows Feeling lucky's fan of covers down (`CoverFan`),
-  /// and with the demo `-UITestsSlowLucky` has its songs take 8 seconds to come; with `-UITests`, `-UITestsSlowArt` has
-  /// covers take 4 s to come and `-UITestsTilt` tilts Now Playing's cover, as a phone would.
+  /// and with the demo `-UITestsSlowLucky` has its songs take 8 seconds to come and `-UITestsPulse` gives the bars
+  /// made-up levels to keep time with in place of its silence; with `-UITests`, `-UITestsSlowArt` has covers take 4 s
+  /// to come and `-UITestsTilt` tilts Now Playing's cover, as a phone would.
   static func makeModel() -> AppModel {
     let arguments = ProcessInfo.processInfo.arguments
     if arguments.contains("-UITestsRequests") {
@@ -66,6 +68,10 @@ struct PlayarrApp: App {
       model.appearance.turnToOpen = arguments.contains("-UITestsTurnToOpen")
       // -UITestsDJ: DJ mix, the demo's songs mixed on their beats.
       if arguments.contains("-UITestsDJ") { model.playback.transitions = .dj }
+      #if DEBUG
+        // -UITestsPulse: the demo plays silence, which its bars would rest at; made-up levels have them keep time.
+        if arguments.contains("-UITestsPulse") { model.session?.player.pulse.makeUp(BandLevels(bass: 0.9, middle: 0.75, treble: 0.6)) }
+      #endif
       if arguments.contains("-UITestsLongQueue"), let player = model.session?.player {
         player.play(Demo.manyTracks(5000))
         player.setPlaying(false)

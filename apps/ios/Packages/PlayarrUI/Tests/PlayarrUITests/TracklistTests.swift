@@ -97,7 +97,10 @@ import Testing
     #expect(list(queue(mix, pos: 0, from: "/mixes/vibes"), autoplay: true).end == "Then: more like these")
     #expect(list(queue(mix, pos: 0, from: "/mixes/vibes", repeatMode: .all), autoplay: true).end == "Then from the top")
     #expect(list(queue(mix, pos: 0, from: "/mixes/vibes")).left(elapsed: 100) == "3 songs · 18 min left")
+    // Short of room in the sleeve's header (AirPlay beside it): the time alone.
+    #expect(list(queue(mix, pos: 0, from: "/mixes/vibes")).timeLeft(elapsed: 100) == "18 min left")
     #expect(list(QueueState()).left(elapsed: 0) == nil)
+    #expect(list(QueueState()).timeLeft(elapsed: 0) == nil)
     #expect(list(QueueState()).range.isEmpty)
   }
 }

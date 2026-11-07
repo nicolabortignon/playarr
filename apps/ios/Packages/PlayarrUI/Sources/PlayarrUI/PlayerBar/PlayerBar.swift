@@ -4,12 +4,13 @@ import SwiftUI
 
 /// The bar along the bottom of the iPad layout (apps/web/src/components/PlayerBar.tsx `PlayerBar`): the song (its
 /// cover opens Now Playing, its title the album, a long press its menu) and the heart; the transport and the seek bar;
-/// the format, the queue and lyrics columns, and the volume. With nothing playing, what to play instead
+/// the format, the queue and lyrics columns, AirPlay and the volume. With nothing playing, what to play instead
 /// (`IdlePlayerBar`). At the accessibility text sizes the three parts stack.
 struct PlayerBar: View {
   let session: AccountSession
   @Environment(Theme.self) private var theme
   @Environment(\.dynamicTypeSize) private var typeSize
+  @Environment(\.colorSchemeContrast) private var contrast
 
   var body: some View {
     let player = session.player
@@ -76,16 +77,15 @@ struct PlayerBar: View {
     .contextMenu { MenuButtons(groups: menu) }
   }
 
-  /// The song's cover, opening Now Playing, which grows out of it. VoiceOver hears the song, or what comes next as it
-  /// ends; a view of its own, so the clock moving redraws only it.
+  /// The song's cover (both songs' during a DJ blend), opening Now Playing, which grows out of it. VoiceOver hears the
+  /// song, or what comes next as it ends; a view of its own, so the clock moving redraws only it.
   private struct PlayerBarCover: View {
     let session: AccountSession
     let track: Track
 
     var body: some View {
       Button { session.router.nowPlaying = true } label: {
-        Cover(path: track.coverUrl, points: 56, label: track.albumTitle, color: track.coverColor, corner: Radius.cover)
-          .frame(width: 56, height: 56)
+        PlayerCover(player: session.player, track: track, points: 56)
           .nowPlayingZoomSource(corner: Radius.cover)
       }
       .buttonStyle(.plain)
@@ -103,6 +103,9 @@ struct PlayerBar: View {
       ForEach(SideColumn.allCases, id: \.self) { column in
         columnButton(column)
       }
+      // Where the music plays, this iPad or a speaker: quiet as the columns' buttons, in the accent while it plays elsewhere.
+      AirPlayButton(tint: .white.opacity(PaperDim.opacity(contrast)), activeTint: theme.accent.color)
+        .frame(width: 44, height: 44)
       VolumeControl(player: player)
     }
   }

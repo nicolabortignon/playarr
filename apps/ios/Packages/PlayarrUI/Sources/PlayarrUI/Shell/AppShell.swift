@@ -74,6 +74,10 @@ struct AppShell: View {
         Task { await model.refreshAccount() }
       }
     }
+    // The engine's meter listens only while the bars and the glow can be seen moving (plan 7 §2).
+    .onChange(of: scenePhase == .active && !model.appearance.reduceMotion(system: systemReduceMotion), initial: true) { _, on in
+      session.player.metering = on
+    }
     #if os(iOS)
       // Settings → Appearance → Turn to open: turning the phone on its side with a song queued opens Now Playing,
       // straight into the sleeve (off by default, since every page turns too).

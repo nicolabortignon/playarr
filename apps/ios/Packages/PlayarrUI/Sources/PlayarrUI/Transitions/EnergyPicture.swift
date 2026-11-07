@@ -1,5 +1,6 @@
 import Foundation
 import PlayarrAPI
+import PlayarrPlayer
 
 /// Songs' energy per 16-beat phrase as columns over their bar lines: what the transition sheet draws around the mix
 /// and Stats for nerds draws for the whole song. As apps/web/src/components/EnergyStrip.tsx and TransitionView.tsx.
@@ -74,9 +75,32 @@ public enum EnergyPicture {
   }
 
   /// How long both songs sound together from the start of the mix: until A has faded out, else the plan's beats.
-  public static func overlap(_ plan: TransitionPlan, bpmA: Double) -> Double {
-    if plan.aGain.contains(where: { $0.value > 0 }) { return plan.aGain.silentFrom(limit: plan.length) }
-    return bpmA > 0 && plan.beats > 0 ? min(plan.beats * 60 / bpmA, plan.length) : plan.length
+  public static func overlap(_ plan: TransitionPlan, bpmA: Double) -> Double { Blend.overlap(plan, bpmA: bpmA) }
+
+  /// The song's phrases across the whole song, for the strip under Now Playing's seek bar (plan 7 §6): placed over
+  /// `duration` (the player's, else the map's). None for a song without a map or a beat.
+  public static func songPhrases(_ map: MixMapEntry?, duration: Double) -> [Phrase] {
+    guard let map else { return [] }
+    let span = duration > 0 ? duration : map.duration
+    return span > 0 ? phrasesAndBars(map, clock: { $0 }, from: 0, to: span).phrases : []
+  }
+
+  /// Where scrubbing ticks (plan 7 §6): the song's section boundaries in its mix map, where the intro ends, the first
+  /// drop lands and the outro starts, in order. One at the very start or end isn't a boundary, and two within a second
+  /// of each other (a drop where the intro ends) tick once.
+  public static func sectionBoundaries(_ map: MixMapEntry?, duration: Double) -> [Double] {
+    guard let map else { return [] }
+    let end = duration > 0 ? duration : map.duration
+    let marks = [map.introEnd, map.firstDrop, map.outroStart].compactMap { $0 }.filter { $0 > 0.5 && $0 < end - 0.5 }.sorted()
+    return marks.reduce(into: []) { kept, mark in
+      if let last = kept.last, mark - last < 1 { return }
+      kept.append(mark)
+    }
+  }
+
+  /// Which section `time` is in: how many of the boundaries it's at or past.
+  public static func section(_ time: Double, boundaries: [Double]) -> Int {
+    boundaries.count { $0 <= time }
   }
 
   /// Where the next song's moments fall on the picture's clock (0: the start of the mix): stretched to A's tempo

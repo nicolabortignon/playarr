@@ -83,6 +83,9 @@ public final class AudioEngine {
   private var configurationWatch: Task<Void, Never>?
   /// The deck and segment whose first scheduled block each report's headroom is read from.
   private var reportSources: [MixReport.Kind: (deck: Deck, id: UUID)] = [:]
+  /// Where the meter's readings go while it listens (`meter(into:)`), and whether its tap is on the main mixer.
+  private var metered: Pulse?
+  private var meterTapped = false
 
   /// `makeSource` opens a song's audio from a frame (44.1 kHz) on. `manualRendering` renders offline, for tests.
   public init(tuning: Tuning = Tuning(), manualRendering: Bool = false, makeSource: @escaping @MainActor (EngineItem, Int64) -> any PCMSource) throws {
@@ -208,6 +211,31 @@ public final class AudioEngine {
   public func setMasterGain(_ gain: Float) { bus.outputVolume = max(0, min(1, gain)) }
   public var masterGain: Float { bus.outputVolume }
 
+  /// The meter on what's heard (plan 7 §2, `BandMeter`): a tap on the main mixer, what goes out, its readings into
+  /// `pulse`, while something on screen keeps time with the music; nil takes it off, and then it costs nothing.
+  public func meter(into pulse: Pulse?) {
+    metered = pulse
+    tapMeter()
+  }
+
+  private func tapMeter() {
+    let mixer = engine.mainMixerNode
+    if meterTapped {
+      mixer.removeTap(onBus: 0)
+      meterTapped = false
+    }
+    guard let pulse = metered, !engine.isInManualRenderingMode else { return }
+    // The shortest buffers a tap takes are a tenth of a second's: each gives six readings.
+    mixer.installTap(onBus: 0, bufferSize: 4096, format: nil, block: Self.meterBlock(MeterTap(), pulse: pulse))
+    meterTapped = true
+  }
+
+  /// The tap's block, made outside the main actor: AVFoundation calls it on a thread of its own, where a closure made
+  /// on the main actor would trap.
+  nonisolated static func meterBlock(_ tap: MeterTap, pulse: Pulse) -> AVAudioNodeTapBlock {
+    { buffer, time in tap.hear(buffer, at: time, into: pulse) }
+  }
+
   // MARK: Reading
 
   /// The current sample of the epoch.
@@ -216,6 +244,12 @@ public final class AudioEngine {
       lastNow = max(0, p.sampleTime)
     }
     return lastNow
+  }
+
+  /// When the engine last rendered, on the host's clock in seconds: where `now` and `position` stood then (`Pulse`).
+  public var renderHost: Double? {
+    guard let t = decks[0].node.lastRenderTime, t.isHostTimeValid else { return nil }
+    return AVAudioTime.seconds(forHostTime: t.hostTime)
   }
 
   public var currentItem: EngineItem? { current?.segment.flatMap { items[$0.id] } }
@@ -590,7 +624,9 @@ public final class AudioEngine {
   }
 
   private func configurationChanged() {
-    // The output changed (rate, channels): AVAudioEngine stopped itself. Start over from here.
+    // The output changed (rate, channels): AVAudioEngine stopped itself. The meter listens again at the new rate, and
+    // the music starts over from here.
+    if metered != nil { tapMeter() }
     guard current != nil else { return }
     reloadCurrent()
   }

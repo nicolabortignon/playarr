@@ -249,18 +249,6 @@ struct ControlGap: View {
   }
 }
 
-/// The song playing: its waveform, moving while it plays (still with Reduce Motion).
-private struct Equalizer: View {
-  let playing: Bool
-  @Environment(\.reducesMotion) private var reducesMotion
-
-  var body: some View {
-    Image(systemName: "waveform")
-      .symbolEffect(.variableColor.iterative, isActive: playing && !reducesMotion)
-      .accessibilityHidden(true)
-  }
-}
-
 /// A song row dragged onto one of your playlists or the queue (iPad).
 private struct SongDrag: ViewModifier {
   let track: Track

@@ -7,6 +7,8 @@
   @MainActor
   public final class AudioSessionController: AudioSessionControlling {
     private var observers: [any NSObjectProtocol] = []
+    /// Read again as the output changes (AirPods, AirPlay), not on every tick.
+    public private(set) var outputLatency: Double = 0
 
     public init(onEvent: @escaping @MainActor (SessionEvent) -> Void) {
       let center = NotificationCenter.default
@@ -18,7 +20,10 @@
       for name in names {
         // Delivered on the main queue, as asked.
         observers.append(
-          center.addObserver(forName: name, object: session, queue: .main) { note in
+          center.addObserver(forName: name, object: session, queue: .main) { [weak self] note in
+            if note.name == AVAudioSession.routeChangeNotification {
+              MainActor.assumeIsolated { self?.outputLatency = AVAudioSession.sharedInstance().outputLatency }
+            }
             guard let event = SessionEvent(note) else { return }
             MainActor.assumeIsolated { onEvent(event) }
           })
@@ -33,6 +38,7 @@
       let session = AVAudioSession.sharedInstance()
       try session.setCategory(.playback, mode: .default)
       try session.setActive(true)
+      outputLatency = session.outputLatency
     }
   }
 

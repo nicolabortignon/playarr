@@ -88,6 +88,48 @@ struct PlayerTransitionTests {
     #expect(backend.plays.withLock { $0.first?.skipped } == true)
   }
 
+  @Test func aQuickMixShowsBothSongsFromItsStartUntilTheFirstHasFadedOut() async throws {
+    let fixtures = MixFixtures.all
+    backend.mixMapTable.withLock { $0 = ["rec-1": fixtures.song("steady"), "rec-2": fixtures.song("close")] }
+    let player = try player()
+    player.play([a, b])
+    try await play(player, for: 3)
+    player.next()
+    guard case .mix(let plan)? = player.upcoming?.join else {
+      Issue.record("no mix: \(String(describing: player.upcoming?.join))")
+      return
+    }
+    let overlap = Blend.overlap(plan, bpmA: fixtures.song("steady").bpm)
+    try #require(overlap > plan.switchAt + 0.5)
+    try await play(player, for: plan.aStart - player.time - 0.3)
+    #expect(player.blend == nil)  // not yet
+    try await play(player, for: 0.5)
+    #expect(player.blend?.from.id == 1)
+    #expect(player.blend?.to.id == 2)
+    #expect(player.blend?.plan == plan)
+    // Past the switch the next song is the one playing, and both still show until the first has faded out.
+    try await play(player, for: plan.switchAt)
+    #expect(player.queue.pos == 1)
+    #expect(player.blend?.from.id == 1)
+    #expect(player.blend?.to.id == 2)
+    try await play(player, for: overlap - plan.switchAt)
+    #expect(player.blend == nil)
+  }
+
+  @Test func theClockAsItsHeardFollowsTheSongAndStopsWithIt() async throws {
+    let player = try player()
+    player.play([a, b])
+    try await play(player, for: 2)
+    let playing = player.pulse.frame()
+    #expect(playing.playing)
+    #expect(abs(playing.time - player.time) < 0.2)
+    player.setPlaying(false)
+    player.tick()
+    #expect(!player.pulse.frame().playing)
+    player.seek(to: 10)
+    #expect(player.pulse.frame().time == 10)
+  }
+
   @Test func pressedAgainWhileItWaitsTheSongChangesAtOnce() async throws {
     let fixtures = MixFixtures.all
     backend.mixMapTable.withLock { $0 = ["rec-1": fixtures.song("steady"), "rec-2": fixtures.song("close")] }

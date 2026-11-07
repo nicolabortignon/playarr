@@ -485,6 +485,117 @@ final class ScreenTour: XCTestCase {
     }
   }
 
+  /// Presses the energy strip under Now Playing's seek bar at `fraction` of the song.
+  @MainActor
+  private func pressStrip(at fraction: CGFloat) {
+    stripPoint(at: fraction)?.tap()
+  }
+
+  /// The point on the energy strip under Now Playing's seek bar at `fraction` of the song: the strip keeps to the slider
+  /// thumb's travel, `SeekBar.thumbInset` in from each end. VoiceOver doesn't see the strip, so it's found from the
+  /// slider over it (Now Playing's: the iPad's player bar under it has one too), in the slider's own fractions, which
+  /// XCUITest turns with the screen, where an offset in points stays the portrait screen's.
+  @MainActor
+  private func stripPoint(at fraction: CGFloat) -> XCUICoordinate? {
+    let slider = app.element("nowPlaying").sliders["Seek"].firstMatch
+    guard slider.waitForExistence(timeout: 3) else { return nil }
+    let frame = slider.frame
+    let x = (18.5 + fraction * (frame.width - 37)) / frame.width
+    return slider.coordinate(withNormalizedOffset: CGVector(dx: x, dy: (frame.height + 14) / frame.height))
+  }
+
+  /// Plan 7's moments that keep time with the music, on the iPhone (screenshots/iphone-time/): the bars on the song
+  /// playing's row and Now Playing's glow following the beat (the demo plays silence, so `-UITestsPulse` gives the bars
+  /// made-up levels), the energy strip under the seek bar, a press on it seeking there, the sleeve's deck with its strip
+  /// and AirPlay in its header; with DJ mix, a blend's two covers in the mini player and "Mixing into" under Now
+  /// Playing's transport once the next song has taken over. What moves (the bars, the glow, the strip lit as it's
+  /// dragged, the covers cross-fading) is seen by recording the simulator while this runs.
+  @MainActor
+  func testKeepingTimeWithTheMusic() throws {
+    try XCTSkipIf(onIPad, "The iPad has its own")
+    try XCTSkipIf(folder?.lastPathComponent == "duo", "On the iPhone and the iPad")
+    guard let upright = folder else { return }
+    folder = upright.deletingLastPathComponent().appending(path: upright.lastPathComponent + "-time")
+    try? FileManager.default.removeItem(at: folder!)
+    try FileManager.default.createDirectory(at: folder!, withIntermediateDirectories: true)
+
+    launch(["-UITests", "-UITestsDemo", "-UITestsPulse"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 20)
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"], timeout: 10) {
+      shot("01-album-bars", after: 2)
+      if tap(app.buttons["Open now playing"], timeout: 10) {
+        shot("02-strip-and-glow", after: 3)
+        // Dragged from a fifth of the way to past the middle, held there a moment (recorded), then let go there.
+        if let from = stripPoint(at: 0.2), let to = stripPoint(at: 0.6) {
+          from.press(forDuration: 0.3, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 1.5)
+          shot("03-dragged-on-the-strip", after: 1)
+        }
+        pressStrip(at: 0.85)
+        shot("04-pressed-on-the-strip", after: 1)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        shot("05-sideways", after: 2.5)
+        XCUIDevice.shared.orientation = .portrait
+        shot("06-upright-again", after: 2)
+      }
+    }
+    app.terminate()
+
+    // DJ mix through a queue of every album (Feeling lucky): the blend into Risingson in the mini player; then, with Now
+    // Playing open, the blend into Inertia Creeps once it has taken over.
+    launch(["-UITests", "-UITestsDemo", "-UITestsDJ", "-UITestsPulse"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 10)
+    if tap(app.buttons["Feeling lucky"].firstMatch, timeout: 10), tap(app.buttons["Open now playing"], timeout: 10) {
+      // The mix into Risingson is asked for once Angel has played 5 s; it's planned 16 s before Angel's end.
+      Thread.sleep(forTimeInterval: 9)
+      seek(to: 352 / 379)
+      tap(app.buttons["Close now playing"], timeout: 5)
+      shot("07-mini-blend", when: "Mixing into Risingson", timeout: 20)
+      shot("08-mini-blend-later", after: 1.2)
+      Thread.sleep(forTimeInterval: 9)
+      if tap(app.buttons["Open now playing"], timeout: 5) {
+        seek(to: 271 / 298)
+        let title = app.element("nowPlaying").staticTexts["Inertia Creeps"]
+        if title.waitForExistence(timeout: 30) { shot("09-mixing-line", after: 0.2) }
+      }
+    }
+  }
+
+  /// Plan 7's moments that keep time with the music on the iPad, sideways (screenshots/ipad-time/): the player bar with
+  /// AirPlay beside the volume, Now Playing's energy strip and glow with AirPlay at the top, and a DJ blend's two covers
+  /// in the bar (`-UITestsPulse`, `-UITestsDJ`, as on the iPhone).
+  @MainActor
+  func testKeepingTimeWithTheMusicOnIPad() throws {
+    try XCTSkipUnless(onIPad, "The iPad's")
+    guard let base = folder else { return }
+    folder = base.deletingLastPathComponent().appending(path: base.lastPathComponent + "-time")
+    try? FileManager.default.removeItem(at: folder!)
+    try FileManager.default.createDirectory(at: folder!, withIntermediateDirectories: true)
+    XCUIDevice.shared.orientation = .landscapeLeft
+    defer { XCUIDevice.shared.orientation = .portrait }
+
+    launch(["-UITests", "-UITestsDemo", "-UITestsPulse"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 20)
+    if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10), tap(app.buttons["Play Mezzanine"], timeout: 10) {
+      shot("01-bar", after: 2)
+      if tap(app.buttons["Open now playing"].firstMatch, timeout: 10) {
+        shot("02-now-playing", after: 3)
+        pressStrip(at: 0.85)
+        shot("03-pressed-on-the-strip", after: 1)
+        tap(app.buttons["Close now playing"], timeout: 10)
+      }
+    }
+    app.terminate()
+
+    launch(["-UITests", "-UITestsDemo", "-UITestsDJ", "-UITestsPulse"])
+    _ = app.staticTexts[welcome].waitForExistence(timeout: 20)
+    if tap(app.buttons["Feeling lucky"].firstMatch, timeout: 10) {
+      Thread.sleep(forTimeInterval: 9)
+      seek(to: 352 / 379, in: app.element("playerBar"))
+      shot("04-bar-blend", when: "Mixing into Risingson", timeout: 20)
+      shot("05-bar-blend-later", after: 1.2)
+    }
+  }
+
   /// A page that couldn't load (`-UITestsOffline`): Home's, and a page's with Back home.
   @MainActor
   func testAPageThatCouldntLoad() throws {

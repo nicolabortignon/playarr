@@ -3,10 +3,10 @@ import PlayarrPlayer
 import SwiftUI
 
 /// Now Playing, over everything (apps/web/src/components/NowPlaying.tsx): swipe down to close, "Playing from", the
-/// sleep timer, the ⋯ menu, the cover (or lyrics), the song, the seek bar and the transport, then Lyrics, AirPlay and
-/// Up next in a row, as Apple Music has them. On an iPad, the cover beside the song with Up next, lyrics at the top;
-/// on a phone held sideways, the sleeve: the cover with its deck on the left, the tracklist on the right
-/// (docs/ios/layouts.md).
+/// sleep timer, the ⋯ menu, the cover (or lyrics), the song, the seek bar over the song's energy and the transport,
+/// then Lyrics, AirPlay and Up next in a row, as Apple Music has them. On an iPad, the cover beside the song with Up
+/// next, lyrics and AirPlay at the top; on a phone held sideways, the sleeve: the cover with its deck on the left, the
+/// tracklist on the right (docs/ios/layouts.md).
 struct NowPlayingView: View {
   let session: AccountSession
   @Environment(Theme.self) private var theme
@@ -72,9 +72,9 @@ struct NowPlayingView: View {
                 artwork(track)
                 VStack(spacing: 24) {
                   song(track)
-                  SeekBar(player: player)
+                  SeekBar(player: player, energy: true)
                   Transport(player: player)
-                  TransitionLine(player: player)
+                  MixLine(player: player)
                   UpNextPreview(session: session)
                 }
                 .frame(maxWidth: 480)
@@ -82,9 +82,9 @@ struct NowPlayingView: View {
             } else {
               if upNext { upNextPanel() } else { artwork(track) }
               song(track)
-              SeekBar(player: player)
+              SeekBar(player: player, energy: true)
               Transport(player: player)
-              TransitionLine(player: player)
+              MixLine(player: player)
               extras
             }
             Spacer(minLength: 0)
@@ -99,7 +99,7 @@ struct NowPlayingView: View {
     .offset(y: drag)
     .toolbar {
       if underTheRail, let track = player.queue.currentTrack {
-        ToolbarItemGroup(placement: .primaryAction) { trailingButtons(track, lyrics: layout != .upright) }
+        ToolbarItemGroup(placement: .primaryAction) { trailingButtons(track, extras: layout != .upright) }
       }
     }
     #if os(iOS)
@@ -181,20 +181,29 @@ struct NowPlayingView: View {
       .layoutPriority(1)
       HStack(spacing: 0) {
         Spacer(minLength: 0)
-        if !underTheRail { trailingButtons(track, lyrics: layout != .upright) }
+        if !underTheRail { trailingButtons(track, extras: layout != .upright) }
       }
       .frame(maxWidth: .infinity)
     }
     .buttonStyle(.plain)
   }
 
-  /// The sleep timer, lyrics (where the row under the transport hasn't got them) and ⋯: at the right of the top row, or
-  /// in the bar on the Duo's cover screen.
+  /// The sleep timer, lyrics and AirPlay (where there's no row under the transport for them: the iPad, the Duo open)
+  /// and ⋯: at the right of the top row, or in the bar on the Duo's cover screen.
   @ViewBuilder
-  private func trailingButtons(_ track: Track, lyrics: Bool) -> some View {
+  private func trailingButtons(_ track: Track, extras: Bool) -> some View {
     SleepTimerMenu(player: session.player)
-    if lyrics { lyricsButton }
+    if extras {
+      lyricsButton
+      airPlay
+    }
     moreMenu(track)
+  }
+
+  /// Where the music plays, this device or a speaker (the system's AirPlay button): in the accent while it plays elsewhere.
+  private var airPlay: some View {
+    AirPlayButton(tint: .paper, activeTint: theme.accent.color)
+      .frame(width: 44, height: 44)
   }
 
   /// Lyrics in the cover's place (sideways, the tracklist's), or back.
@@ -219,8 +228,7 @@ struct NowPlayingView: View {
     HStack {
       lyricsButton
       Spacer()
-      AirPlayButton(tint: .paper, activeTint: theme.accent.color)
-        .frame(width: 44, height: 44)
+      airPlay
       Spacer()
       Button {
         upNext.toggle()
@@ -268,12 +276,24 @@ struct NowPlayingView: View {
     .accessibilityLabel("More")
   }
 
-  /// The cover as an object: settling back while paused, tilting with the phone (`NowPlayingCover`).
+  /// The cover as an object: settling back while paused, tilting with the phone (`NowPlayingCover`), the accent's glow
+  /// breathing behind it with the music (`BeatGlow`). Another album's cover comes in from 92 %, faded in, the last one
+  /// gone at once (the web's spring, damping 22, stiffness 180); there at once under Reduce Motion.
   private func cover(_ track: Track, playing: Bool) -> some View {
-    NowPlayingCover(track: track, playing: playing)
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .contentShape(Rectangle())
+    let still = appearance.reduceMotion(system: systemReduceMotion)
+    return ZStack {
+      NowPlayingCover(track: track, playing: playing)
+        .background { BeatGlow(player: session.player, track: track, playing: playing) }
+        .id(track.albumId)
+        .transition(still ? .identity : .asymmetric(insertion: .scale(scale: Self.arrivingScale).combined(with: .opacity), removal: .identity))
+    }
+    .animation(still ? nil : .interpolatingSpring(mass: 1, stiffness: 180, damping: 22), value: track.albumId)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .contentShape(Rectangle())
   }
+
+  /// Where another album's cover comes in from (the web's).
+  private static let arrivingScale = 0.92
 
   /// The title with the heart beside it, and under them the artist and format, which may run on under the heart: as
   /// the song ends, "Mixing into Teardrop on the next bar" takes their place and needs the room. Swiping down on it
@@ -318,9 +338,9 @@ struct NowPlayingView: View {
           .contentShape(Rectangle())
           .gesture(closeGesture)
         song(track)
-        SeekBar(player: session.player)
+        SeekBar(player: session.player, energy: true)
         Transport(player: session.player)
-        TransitionLine(player: session.player)
+        MixLine(player: session.player)
         UpNextPreview(session: session)
         Spacer(minLength: 0)
       }
@@ -345,7 +365,7 @@ struct NowPlayingView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       VStack(spacing: 16) {
         song(track)
-        SeekBar(player: session.player)
+        SeekBar(player: session.player, energy: true)
         Transport(player: session.player)
         UpNextPreview(session: session)
         Spacer(minLength: 0)
@@ -379,7 +399,7 @@ struct NowPlayingView: View {
         .frame(width: record)
         VStack(spacing: 4) {
           if !staged {
-            sleeveHeader(model, track: track, tail: tracklist.left(elapsed: player.time))
+            sleeveHeader(model, track: track, tail: tracklist.left(elapsed: player.time), short: tracklist.timeLeft(elapsed: player.time))
               .transition(.opacity)
           }
           if session.router.lyrics {
@@ -406,30 +426,43 @@ struct NowPlayingView: View {
     .onChange(of: voiceOver) { _, on in if on { wake() } }
   }
 
-  /// The back's one line: close, where the songs come from with the time left, the sleep timer, lyrics and more.
-  private func sleeveHeader(_ model: NowPlayingModel, track: Track, tail: String?) -> some View {
-    HStack(spacing: 4) {
+  /// The back's one line: close, where the songs come from with the time left, the sleep timer, lyrics, AirPlay and more.
+  /// `short`: the time left alone, where the whole of `tail` won't fit.
+  private func sleeveHeader(_ model: NowPlayingModel, track: Track, tail: String?, short: String?) -> some View {
+    let name = model.playingFrom ?? ""
+    return HStack(spacing: 4) {
       Button { session.router.nowPlaying = false } label: { Image(systemName: "chevron.down").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
         .accessibilityLabel("Close now playing")
         .keyboardShortcut(.cancelAction)
       Button { if let route = model.playingFromRoute { session.router.go(route) } } label: {
         VStack(alignment: .leading, spacing: 1) {
           Kicker(text: "Playing from", overArt: true)
-          // "Mezzanine · 3 songs · 17 min left": the time left after the name, quieter.
-          Text("\(model.playingFrom ?? "")\(Text(tail.map { " · \($0)" } ?? "").foregroundStyle(.paperDim))")
-            .font(.sans(.subheadline)).lineLimit(1)
+          // "Mezzanine · 3 songs · 17 min left", the time left after the name, quieter; short of room, "Mezzanine · 17
+          // min left", then the name alone, rather than a figure cut short.
+          ViewThatFits(in: .horizontal) {
+            Self.playingFrom(name, tail)
+            Self.playingFrom(name, short)
+            Self.playingFrom(name, nil)
+          }
         }
         .frame(minHeight: 44)
         .contentShape(Rectangle())
       }
-      .accessibilityLabel("Playing from \(model.playingFrom ?? "")")
+      .accessibilityLabel("Playing from \(name)")
       .accessibilityValue(tail ?? "")
       Spacer(minLength: 8)
       SleepTimerMenu(player: session.player)
       lyricsButton
+      airPlay
       moreMenu(track)
     }
     .buttonStyle(.plain)
+  }
+
+  /// "Mezzanine · 17 min left" on one line, what follows the name quieter.
+  private static func playingFrom(_ name: String, _ tail: String?) -> some View {
+    Text("\(name)\(Text(tail.map { " · \($0)" } ?? "").foregroundStyle(.paperDim))")
+      .font(.sans(.subheadline)).lineLimit(1)
   }
 
   /// The cover, as big as the record's column allows above the deck: swipe down to close, left or right for the next

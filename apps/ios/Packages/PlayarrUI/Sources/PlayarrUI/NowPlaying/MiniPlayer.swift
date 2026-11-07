@@ -18,9 +18,8 @@ struct MiniPlayer: View {
         Button { session.router.nowPlaying = true } label: {
           HStack(spacing: 12) {
             // The cover, round, ringed by how far into the song it is (filling clockwise from the top), rather than a bar
-            // along the glass's edge: the accessory's own inset kept a bar off its bottom.
-            Cover(path: track.coverUrl, points: Self.cover, label: track.albumTitle, color: track.coverColor, circle: true)
-              .frame(width: Self.cover, height: Self.cover)
+            // along the glass's edge: the accessory's own inset kept a bar off its bottom. During a DJ blend, both songs'.
+            PlayerCover(player: player, track: track, points: Self.cover, circle: true)
               .nowPlayingZoomSource(corner: Self.cover / 2)
               .padding(4)
               .overlay {

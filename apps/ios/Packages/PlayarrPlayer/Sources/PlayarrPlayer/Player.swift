@@ -38,6 +38,17 @@ public final class Player {
   public let sleep = SleepTimer()
   /// DJ mix: the transition into the next song, its file, the songs' mix maps.
   public let transitions: TransitionCoordinator
+  /// Keeping time with the music (plan 7 §2): the song's clock as it's heard and what the engine's meter hears, for
+  /// the now-playing bars, Now Playing's glow and a blend's covers.
+  public let pulse = Pulse()
+  /// A DJ blend being heard: both songs together, from the start of the transition until the song being left has faded
+  /// out of it. The player's cover shows both, and Now Playing says "Mixing into Teardrop".
+  public private(set) var blend: Blend?
+  /// While something on screen can keep time with the music (the app active, motion not reduced), the engine's meter
+  /// listens to what's heard; otherwise it's off and costs nothing.
+  public var metering = false {
+    didSet { if metering != oldValue { engine.meter(into: metering ? pulse : nil) } }
+  }
 
   @ObservationIgnored public private(set) var engine: AudioEngine
   @ObservationIgnored public var nowPlaying: NowPlayingBridge?
@@ -216,6 +227,8 @@ public final class Player {
     seekedSinceTick = true
     engine.seek(to: seconds)
     time = seconds
+    // The bars and the glow wait at the new place until the music plays from it.
+    pulse.setClock(songTime: seconds, engineTime: 0, at: Pulse.hostNow(), playing: false, latency: session?.outputLatency ?? 0)
     showNowPlaying()
   }
 
@@ -307,6 +320,11 @@ public final class Player {
     if engine.state == .playing { tracker.tick(time) } else { tracker.pause() }
     transitions.planner.clock(time, seeked: seekedSinceTick)
     seekedSinceTick = false
+    let latency = session?.outputLatency ?? 0
+    pulse.setClock(
+      songTime: time, engineTime: EngineFormat.seconds(engine.now), at: engine.renderHost ?? Pulse.hostNow(),
+      playing: loaded != nil && engine.state == .playing, latency: latency)
+    updateBlend(latency: latency)
     if let end = pauseAtMixEnd, engine.now >= end {
       // The sleep timer: the mix played out, and the next song waits here, paused.
       pauseAtMixEnd = nil
@@ -530,6 +548,27 @@ public final class Player {
   /// `endOfSongLine` with what it says where it's short of room (the last bar's "Mixing on the next bar").
   public var endOfSongWords: EndOfSong.Words? { EndOfSong.words(handoff, time: time) }
 
+  /// The blend being heard (`blend`): a blend or a quick mix the engine plays, from its start, as heard, until the
+  /// song being left has faded out of it; the songs are the ones it started with, across the switch.
+  private func updateBlend(latency: Double) {
+    var heard: Blend?
+    if let mix = engine.mix, Blend.isBlend(mix.plan) {
+      let songs: (from: Track, to: Track)? =
+        if let blend, blend.into == mix.to, blend.plan == mix.plan {
+          (blend.from, blend.to)
+        } else if let next = upcoming, next.item.id == mix.to, let current = loaded {
+          (current.item.track, next.item.track)
+        } else {
+          nil
+        }
+      let t = EngineFormat.seconds(engine.now - mix.start) - latency
+      if let songs, t >= 0, t < Blend.overlap(mix.plan, bpmA: transitions.mixMaps.map(songs.from.recordingId)?.bpm ?? 0) {
+        heard = Blend(from: songs.from, to: songs.to, plan: mix.plan, start: EngineFormat.seconds(mix.start), into: mix.to)
+      }
+    }
+    if heard != blend { blend = heard }
+  }
+
   private func gainDb(_ track: Track) -> Double {
     levels.gainDb(for: track, in: queue, enabled: settings.levelVolume) ?? 0
   }
@@ -669,6 +708,7 @@ public final class Player {
     engine.stop()
     engine = fresh
     engine.onEvent = { [weak self] in self?.handle($0) }
+    if metering { engine.meter(into: pulse) }
     loaded = nil
     queue.startAt = at
     sync()

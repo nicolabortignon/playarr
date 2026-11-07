@@ -106,17 +106,15 @@ struct NowPlayingTracklist: View {
     }
   }
 
-  /// The song playing: two lines, the title in Gloock, its artist, format and heart, and a level meter that moves
+  /// The song playing: two lines, the title in Gloock, its artist, format and heart, and the bars that keep time with it
   /// while it plays.
   private func openLine(_ line: Tracklist.Line) -> some View {
     let track = line.track
     let playing = session.player.queue.playing
     return HStack(alignment: .center, spacing: 12) {
-      Image(systemName: "waveform")
-        .symbolEffect(.variableColor.iterative, isActive: playing && !reducesMotion)
+      Equalizer(playing: playing)
         .foregroundStyle(theme.accent.color)
         .frame(width: 32)
-        .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 4) {
         Text(track.title)
           .font(.display(size: staged ? 34 : 22))

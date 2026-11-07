@@ -131,9 +131,14 @@ public struct Tracklist: Equatable, Sendable {
 
   /// "7 songs · 38 min left", counting from the song playing, `elapsed` seconds into it.
   public func left(elapsed: Double) -> String? {
+    guard let time = timeLeft(elapsed: elapsed) else { return nil }
+    return "\(Format.plural(queue.order.count - queue.pos, "song")) · \(time)"
+  }
+
+  /// "38 min left": `left` where there's room only for the time.
+  public func timeLeft(elapsed: Double) -> String? {
     guard queue.pos >= 0, queue.pos < queue.order.count else { return nil }
-    let songs = queue.order.count - queue.pos
     let seconds = (queue.pos..<queue.order.count).reduce(0.0) { $0 + (song(at: $1)?.duration ?? 0) } - elapsed
-    return "\(Format.plural(songs, "song")) · \(Format.duration(max(0, seconds))) left"
+    return "\(Format.duration(max(0, seconds))) left"
   }
 }

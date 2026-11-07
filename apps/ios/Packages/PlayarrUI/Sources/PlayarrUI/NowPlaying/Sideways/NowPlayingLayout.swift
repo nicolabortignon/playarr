@@ -29,10 +29,10 @@ public enum NowPlayingLayout: Equatable, Sendable {
     return compactHeight ? .sideways : .upright
   }
 
-  /// The deck under the sleeve's cover (the seek bar, then shuffle, previous, play or pause, next and repeat): the room
-  /// it takes, so the cover is as large as what's left.
+  /// The deck under the sleeve's cover (the seek bar over the song's energy, then shuffle, previous, play or pause, next
+  /// and repeat): the room it takes, so the cover is as large as what's left.
   public static let deckWidth: CGFloat = 264
-  public static let deckHeight: CGFloat = 108
+  public static let deckHeight: CGFloat = 132
 
   /// The record's column: as wide as the cover can be once the deck under it has its height (`deck`: 0 in the stage,
   /// where the deck is gone and the cover grows), at least as wide as the deck, at most 42% of the width (36% at the

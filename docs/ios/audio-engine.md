@@ -14,6 +14,7 @@ The rules are the web player's (`apps/web/src/player`), ported file for file whe
 - **`Deck`** (`Deck.swift`): one player node fed from one `PCMSource`.
 - **`TrackSource`** (`TrackSource.swift`, an actor): a song's audio from any frame.
 - **`StreamCache`** (`StreamCache.swift`, an actor): song files on disk.
+- **`Pulse`** (`Pulse.swift`) and **`BandMeter`** (`BandMeter.swift`): the music's clock as it's heard and the meter on what goes out, for what keeps time with the music (§12).
 
 Decoding happens in the sources' actors. Blocks reach the main actor as `PCMBlock` (two `[Float]`, `PCMBlock.swift`). The render thread runs none of our code: it only plays buffers already scheduled.
 
@@ -22,7 +23,7 @@ Decoding happens in the sources' actors. Blocks reach the main actor as `PCMBloc
 ```
 Deck A ─ mixer ┐
 Deck B ─ mixer ├─ bus mixer ─ EQ (bypassed) ─ peak limiter ─ main mixer ─ out
-Transition ─ mixer ┘
+Transition ─ mixer ┘                                             └─ tap: the meter, while it listens (§12)
 ```
 
 - Every node plays `EngineFormat.av`: 44.1 kHz stereo Float32 (`EngineFormat.swift`). Songs at other rates or widths are converted as they're decoded. 44.1 kHz is also the rate of the server's levelled WAV, so an engine frame is a frame of that stream. The main mixer converts to the hardware rate.
@@ -139,7 +140,9 @@ The stream cache fetches the plan one file at a time. What plays now and next is
 - **Interruption ended**: resume only if the system says `shouldResume` and music was playing. That's a new epoch from where it was.
 - **Old device unavailable** (headphones out, a speaker gone): pause.
 - **Media services reset**: a new engine, playing on from where it was.
-- **Output changed** (`AVAudioEngineConfigurationChange`, which stops the engine): the engine reloads the current song where it is.
+- **Output changed** (`AVAudioEngineConfigurationChange`, which stops the engine): the engine reloads the current song where it is, and the meter's tap goes on again at the new rate.
+
+It also keeps `outputLatency` (read when it activates and as the route changes): how long after it's played the music is heard, which what keeps time with the music subtracts (§12).
 
 ## 10. Play reports
 
@@ -160,11 +163,22 @@ Once the timer has stopped the music (its time ran out, the song ended, or the m
 
 **The end of a song** (plan 7 §5, `EndOfSong`). `Player.handoff` says how the song playing gives way to the next: where (the mix's start, a cut, or its end less a crossfade) and whether the two are heard together there (a long blend or a quick mix, not a fade or a cut). It goes by the join the Player has picked, or by the mix the engine has placed, which plays on whatever the join becomes (an answer let go at the mix point). `Player.endOfSongLine` is the player's second line from it: "Next: Teardrop" from 10 s before the handoff, and with a blend "Mixing into Teardrop on the next bar" through the last bar before it (four beats of the song playing, from its mix map; 2 s without one), then "Mixing into Teardrop" until the next song takes over. Where the whole line won't fit (the mini player), the last bar's says "Mixing on the next bar" (`endOfSongWords.short`), the title having been said a moment before; the others are cut short at their end. Nothing with repeat one, at the end of the queue, offline with the next song not on the device, or when the sleep timer stops after this song. The web guesses the same words from the transition it was given (`apps/web/src/player/endOfSong.ts`); the phone knows the join it will play.
 
-## 12. Previews and the Player lab
+## 12. Keeping time with the music
+
+Plan 7 §2: the now-playing bars, Now Playing's glow and a DJ blend's covers follow the music (`Pulse.swift`, `BandMeter.swift`; the web's `player/pulse.ts` and `blend.ts`, rule for rule).
+
+- **The beat.** `SongBeat` is a song's grid from its mix map, only where `gridStable` (a wandering tempo, or a beat too unsure to go by, would drift off it): seconds per beat, the first bar (`firstBeat + downbeatOffset × 60/bpm`) and each phrase's energy. From it come the bars' heights (0.22 at rest, plus 0.78 × level × (0.4 + 0.6 × the beat's lift), the lift up in 30 ms and falling away with exponent 3.2 for the bass and 1.6 for the middle, the treble's on half beats) and the glow's breath (fullest on each bar's downbeat, smooth both ways).
+- **The meter.** While `Player.metering` is on (the app active and motion not reduced: `AppShell` sets it), a tap on the main mixer (`AudioEngine.meter(into:)`) reads what goes out. Mixed to one channel, it's read as the web's `AnalyserNode` reads it: an FFT of 1024 with a Blackman window, smoothed 0.55 reading to reading, on a scale from −100 to −30 dB, averaged over the bass (40–200 Hz), the middle (200 Hz–2 kHz) and the treble (2–10 kHz). Each band reads against a slowly falling peak: a 24.5 dB range under a peak falling 1.4 dB a second, never below −68.5 dB, so the volume set doesn't matter. A tap's buffers are at least a tenth of a second long, so each gives six readings, one per sixtieth of a second of music, stamped with the host time of its sound. The tap's block is made outside the main actor: AVFoundation calls it on a thread of its own. Off, there's no tap.
+- **The clock as it's heard.** `Pulse` can be read at any moment from any thread, since SwiftUI may draw an animation's frames off the main thread. The Player's tick sets it: the song's time and the engine's at the engine's last render (`renderHost`), whether it plays, and the session's `outputLatency` (§9: a few milliseconds on the speaker, a fifth of a second on AirPods, a couple of seconds over AirPlay). A frame is the song's time moved on from the tick, less that latency, with the last reading heard by then; none once the last is a quarter of a second old, so the bars settle when the music stops.
+- **A blend you can see.** `Player.blend` is set while the engine plays a blend or a quick mix (`engine.mix`), from its start, as heard, until the song being left has faded out of it (`Blend.overlap`), and keeps the two songs it started with across the switch. The player's cover shows both, each as present as its gain in the plan (`Blend.shares`), and Now Playing says "Mixing into Teardrop".
+- **The takeover's clock.** The web's transition planner once gave up on a mix because its clock stepped back a few milliseconds as a transition took over (its elements get in step there). Here the clock comes from the one sample clock through the whole transition (A's time from the mix's start, B's from `MixSequence.bTimeAt`), so it doesn't settle; `TransitionPlanner` has the same half-second tolerance anyway (`settle`), with a test.
+- **The demo** plays silence, which the bars would rest at: `-UITestsPulse` (Debug builds) gives them made-up levels instead (`Pulse.makeUp`), for the screen tour.
+
+## 13. Previews and the Player lab
 
 Edit mix points' "Play from" plays 8 s (`Player.previewSeconds`) on a second engine while the queue waits paused (`PreviewSession`). Previews are never reported. Debug builds have a Player lab in Settings (`PlayarrUI/PlayerLabView.swift`): play an album by id and watch the decks, buffer and gains.
 
-## 13. Stats for nerds
+## 14. Stats for nerds
 
 Settings → Appearance → Stats for nerds shows a panel over the app: `PlayarrUI/StatsForNerds/` (`StatsForNerdsOverlay`, `NerdStats`, a port of the web's `StatsForNerds.tsx`). Its groups are Song, Playback, Rhythm, Structure, Loudness, Sound and Next. In Playback, there are no `<audio>` elements to show, so it shows:
 
@@ -172,6 +186,6 @@ Settings → Appearance → Stats for nerds shows a panel over the app: `Playarr
 - each deck's decoded and scheduled seconds;
 - each changeover's `MixReport`: the way it was made, the timeline sample, and how far ahead it was scheduled.
 
-## 14. Tests
+## 15. Tests
 
 `swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrPlayer`. Engine tests render the real graph offline on the Mac (`AudioEngine(manualRendering: true)`). DJ joins are checked to the sample with a tag channel (`Support/TransitionFiles.swift`). Session code is `#if os(iOS)`, and its decisions (`SessionPolicy`) are tested on the Mac.

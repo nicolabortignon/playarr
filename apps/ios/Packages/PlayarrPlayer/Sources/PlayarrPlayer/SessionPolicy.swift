@@ -46,4 +46,8 @@ public struct SessionPolicy: Sendable {
 public protocol AudioSessionControlling: AnyObject {
   /// Category `.playback`, active: plays with the screen locked and the silent switch on.
   func activate() throws
+  /// How long after it's played the music is heard, in seconds (`AVAudioSession.outputLatency`): a few milliseconds
+  /// on the speaker, a fifth of a second on AirPods, a couple of seconds over AirPlay. The bars and the glow keep time
+  /// with what's heard.
+  var outputLatency: Double { get }
 }

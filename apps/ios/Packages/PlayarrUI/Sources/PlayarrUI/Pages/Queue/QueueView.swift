@@ -10,7 +10,6 @@ struct QueueView: View {
   var narrow = false
   @Environment(Theme.self) private var theme
   @State private var reordered = 0
-  @Environment(\.reducesMotion) private var reducesMotion
   @Environment(\.horizontalSizeClass) private var sizeClass
   #if os(iOS)
     @State private var editMode: EditMode = .inactive
@@ -107,9 +106,7 @@ struct QueueView: View {
       Cover(path: track.coverUrl, points: 72, label: track.albumTitle, color: track.coverColor).frame(width: 72, height: 72)
       VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 8) {
-          Image(systemName: "waveform")
-            .symbolEffect(.variableColor.iterative, isActive: session.player.queue.playing && !reducesMotion)
-            .accessibilityHidden(true)
+          Equalizer(playing: session.player.queue.playing)
           Text(track.title).font(.sans(.headline)).essentialLineLimit()
             .accessibilityLabel("Now playing: \(track.title)")
           OfflineMark(store: session.player.downloads, fileId: track.fileId)
