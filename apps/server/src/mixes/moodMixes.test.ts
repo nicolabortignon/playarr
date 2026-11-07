@@ -57,7 +57,7 @@ type Kind = keyof typeof KINDS | 'skit' | 'interlude' | 'live' | 'christmas';
 
 const SPECIALS: Record<'skit' | 'interlude' | 'live' | 'christmas', Archetype> = {
   skit: { ...KINDS.lofi, tags: ['hip hop'], title: 'Skit', duration: 45 },
-  interlude: { ...KINDS.ambient, title: 'Interlude' },
+  interlude: { ...KINDS.ambient, title: 'Interlude', duration: 95 },
   live: { ...KINDS.jazzBallad, title: 'Autumn Leaves (Live at the Village Vanguard)' },
   christmas: { ...KINDS.jazzBallad, title: 'Have Yourself a Merry Little Christmas' },
 };

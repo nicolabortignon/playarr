@@ -413,7 +413,7 @@ function genre(ctx: Making, rng: Rng, param?: string): Made | null {
  */
 function energy(ctx: Making, rng: Rng): Made | null {
   const { songs, lanes } = moodPick(ctx, rng, {
-    fits: (s) => s.energy! >= 0.7 && (s.shape?.sustain ?? 1) >= 0.45 && s.calm < 0.5,
+    fits: (s) => s.energy! >= 0.7 && (s.shape?.sustain ?? 1) >= 0.6 && s.calm < 0.5,
     guess: (s) => s.energy !== undefined && s.energy >= 0.62 && s.calm < 0.3,
     fit: (s) => 0.6 * (s.energy ?? 0.62) + 0.25 * (s.groove ?? UNKNOWN_GROOVE) + 0.15 * s.mood,
   });
@@ -433,8 +433,8 @@ function energy(ctx: Making, rng: Rng): Made | null {
 function chill(ctx: Making, rng: Rng): Made | null {
   const { songs, lanes } = moodPick(ctx, rng, {
     fits: (s) =>
-      !s.traits.live && s.track.duration >= 90 && s.energy! >= 0.15 && s.energy! <= 0.6 && s.tension < 0.4 && s.mood >= 0.35 && (s.shape?.surgeDb ?? 0) <= 5,
-    guess: (s) => !s.traits.live && s.track.duration >= 90 && (s.calm >= 0.4 || (s.families.chill ?? 0) >= 0.4) && s.tension < 0.3,
+      !s.traits.live && lasts(s, 90) && s.energy! >= 0.15 && s.energy! <= 0.6 && s.tension < 0.4 && s.mood >= 0.35 && (s.shape?.surgeDb ?? 0) <= 5,
+    guess: (s) => !s.traits.live && lasts(s, 90) && (s.calm >= 0.4 || (s.families.chill ?? 0) >= 0.4) && s.tension < 0.3,
     fit: (s) =>
       0.25 * near(s.energy ?? CHILL_ENERGY, CHILL_ENERGY, 0.25) +
       0.3 * (s.groove ?? UNKNOWN_GROOVE) +
@@ -464,8 +464,8 @@ const CALM_ENERGY = 0.3;
  */
 function winddown(ctx: Making, rng: Rng): Made | null {
   const { songs, lanes } = moodPick(ctx, rng, {
-    fits: (s) => !s.traits.live && s.track.duration >= 100 && s.energy! <= 0.3 && s.tension < 0.3 && (s.shape?.surgeDb ?? 0) <= 7,
-    guess: (s) => !s.traits.live && s.track.duration >= 100 && (s.calm >= 0.5 || (s.energy !== undefined && s.energy <= CALM_ENERGY)) && s.tension < 0.2,
+    fits: (s) => !s.traits.live && lasts(s, 100) && s.energy! <= 0.3 && s.tension < 0.3 && (s.shape?.surgeDb ?? 0) <= 7,
+    guess: (s) => !s.traits.live && lasts(s, 100) && (s.calm >= 0.5 || (s.energy !== undefined && s.energy <= CALM_ENERGY)) && s.tension < 0.2,
     fit: (s) =>
       0.45 * (1 - (s.energy ?? CALM_ENERGY)) +
       0.2 * (s.steadiness ?? 0.5) +
@@ -495,14 +495,14 @@ function focus(ctx: Making, rng: Rng): Made | null {
   const { songs, lanes } = moodPick(ctx, rng, {
     fits: (s) =>
       !s.traits.live &&
-      s.track.duration >= 120 &&
+      lasts(s, 120) &&
       s.vocals <= FOCUS_VOCALS &&
       (s.steadiness ?? 0.5) >= 0.5 &&
       s.energy! >= 0.05 &&
       s.energy! <= 0.7 &&
       s.tension < 0.5 &&
       (s.shape?.surgeDb ?? 0) <= 8,
-    guess: (s) => !s.traits.live && s.track.duration >= 120 && s.vocals <= 0.3 && s.tension < 0.4,
+    guess: (s) => !s.traits.live && lasts(s, 120) && s.vocals <= 0.3 && s.tension < 0.4,
     fit: (s) => 0.4 * (1 - s.vocals) + 0.35 * (s.steadiness ?? 0.4) + 0.25 * near(s.energy ?? FOCUS_ENERGY, FOCUS_ENERGY, 0.4),
   });
   const wordless = songs.filter((s) => s.vocals <= 0.2).length >= songs.length * 0.9;
@@ -580,6 +580,11 @@ function pickLanes(ctx: MixContext, pool: Song[], rng: Rng): StyleFamily[] {
     lanes.push(top.splice(i === -1 ? top.length - 1 : i, 1)[0]![0]);
   }
   return lanes;
+}
+
+/** Whether a song runs at least this long (one whose length isn't known yet does). */
+function lasts(song: Song, seconds: number): boolean {
+  return !song.track.duration || song.track.duration >= seconds;
 }
 
 /** 1 at `target`, falling to 0 at `width` either side. */

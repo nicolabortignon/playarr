@@ -11,7 +11,7 @@ import type { LocalTime } from './time.ts';
 
 /** How a song's level moves over time: from its mix map's phrase energy, else its loudness envelope. */
 export interface SongShape {
-  /** Share of the song's middle at full tilt: within 3 dB of its loudest. */
+  /** Share of the song's middle at full tilt: within 6 dB of its loudest. */
   sustain: number;
   /** How much its level moves over its middle, in dB (standard deviation). */
   swingDb: number;
@@ -42,8 +42,9 @@ export interface SongSound {
   gridStable?: boolean;
 }
 
-/** A phrase this much quieter than the loudest (3 dB) still counts as full tilt. */
-const FULL_TILT = 10 ** (-3 / 20);
+/** A phrase this much quieter than the loudest (6 dB, a verse under its chorus) still counts as full tilt; a breakdown doesn't. */
+const FULL_TILT_DB = 6;
+const FULL_TILT = 10 ** (-FULL_TILT_DB / 20);
 /** Phrase energies this low are as good as silence: their rises are measured from here. */
 const QUIETEST = 0.05;
 
@@ -75,7 +76,7 @@ export function shapeOfEnvelope(envelope: number[]): SongShape | undefined {
   let surge = 0;
   // Two points apart: the envelope is smoothed, so a jump shows over about two points (eight to ten seconds).
   for (let i = 2; i < middle.length; i++) surge = Math.max(surge, middle[i]! - middle[i - 2]!);
-  return { sustain: middle.filter((v) => v >= loudest - 3).length / middle.length, swingDb: deviation(middle), surgeDb: surge };
+  return { sustain: middle.filter((v) => v >= loudest - FULL_TILT_DB).length / middle.length, swingDb: deviation(middle), surgeDb: surge };
 }
 
 /** What sound analysis measured, on its own scales, or nothing for a song not measured (or measured silent). */
@@ -274,7 +275,7 @@ export function vocalsOf(title: string, tags: [string, number][], families: Part
 
 /** What a song should never be picked for. */
 export interface Traits {
-  /** An intro, interlude, outro or skit, or under a minute long; spoken word, comedy, an audiobook. Never in a picked mix. */
+  /** A short intro, interlude, outro or skit, or under a minute long; spoken word, stand-up, an audiobook. Never in a picked mix. */
   filler: boolean;
   /** Recorded live: applause and crowd break a calm or focused mix. */
   live: boolean;
@@ -282,24 +283,35 @@ export interface Traits {
   christmas: boolean;
 }
 
-const FILLER_TITLE = /^(intro|outro|interlude)\b|\b(interlude|skit)\b|^\s*(intro|outro)\s*$/i;
-const LIVE_TITLE = /[([]\s*live\b|\s-\s+live\b|\blive (at|from|in)\b|\b(en vivo|ao vivo)\b/i;
+const FILLER_TITLE = /^(intro|outro|interlude)\b|\b(interlude|skit)\b/i;
+/** An "Intro" this long is a song of its own (M83's runs five minutes): only shorter ones are filler. */
+const LONGEST_FILLER = 150;
+/** "(Live)", "(Live at …)", "[Live]", "- Live …": not "Live Forever" or "Live in the Moment". */
+const LIVE_TITLE = /[([]\s*live\b|\s-\s+live\b|[([]\s*(en vivo|ao vivo)\b/i;
 const CHRISTMAS_TITLE =
   /\b(christmas|xmas|santa claus|jingle bells?|sleigh ride|silent night|rudolph|mistletoe|let it snow|winter wonderland|feliz navidad|deck the halls|o holy night|frosty the snowman)\b/i;
-const NOT_SONGS = ['spoken word', 'comedy', 'stand-up', 'audiobook', 'podcast', 'white noise'];
+/** Not "comedy": that's Weird Al too. */
+const NOT_SONGS = ['spoken word', 'stand-up', 'standup', 'audiobook', 'podcast', 'white noise'];
 /** A tag this heavy (next to the song's strongest) says what the song is, rather than what its artist sometimes makes. */
 const TELLING_TAG = 0.5;
+/** A Christmas tag must be about this heavy: an artist with one Christmas album isn't a Christmas artist. */
+const CHRISTMAS_TAG = 0.8;
 /** Under this many seconds a track is a sketch, an intro or a skit, not a song to pick. */
 export const SHORTEST_SONG = 60;
 
-/** What the title, length and tags say a song is. */
+/** What the title, length and tags say a song is. A length of 0 is one not known yet: it doesn't make a song short. */
 export function traitsOf(title: string, duration: number, tags: [string, number][]): Traits {
   const strongest = Math.max(0, ...tags.map(([, w]) => w));
-  const telling = tags.filter(([, w]) => w >= strongest * TELLING_TAG).map(([t]) => t.toLowerCase());
+  const heavier = (share: number) => tags.filter(([, w]) => w >= strongest * share).map(([t]) => t.toLowerCase());
+  const telling = heavier(TELLING_TAG);
+  const short = duration > 0 && duration < SHORTEST_SONG;
   return {
-    filler: duration < SHORTEST_SONG || FILLER_TITLE.test(title) || telling.some((t) => NOT_SONGS.some((n) => t.includes(n))),
+    filler:
+      short ||
+      (FILLER_TITLE.test(title) && (!duration || duration < LONGEST_FILLER)) ||
+      telling.some((t) => NOT_SONGS.some((n) => t.includes(n))),
     live: LIVE_TITLE.test(title) || telling.some((t) => t === 'live'),
-    christmas: CHRISTMAS_TITLE.test(title) || telling.some((t) => t.includes('christmas') || t === 'xmas'),
+    christmas: CHRISTMAS_TITLE.test(title) || heavier(CHRISTMAS_TAG).some((t) => t.includes('christmas') || t === 'xmas'),
   };
 }
 

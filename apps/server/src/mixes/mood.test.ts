@@ -44,7 +44,7 @@ describe('a song’s shape', () => {
     expect(flat.swingDb).toBeCloseTo(0, 6);
     expect(flat.surgeDb).toBeCloseTo(0, 6);
     const rising = shapeOfEnvelope(Array.from({ length: 48 }, (_, i) => i / 47))!;
-    expect(rising.sustain).toBeLessThan(0.1);
+    expect(rising.sustain).toBeLessThan(0.2);
     expect(rising.surgeDb).toBeGreaterThan(1.5);
   });
 });
@@ -72,18 +72,25 @@ describe('singing', () => {
 });
 
 describe('what a song should never be picked for', () => {
-  it('knows intros, interludes, skits and sketches under a minute, but not songs named like them', () => {
-    expect(traitsOf('Intro', 200, []).filler).toBe(true);
-    expect(traitsOf('Interlude (Rain)', 200, []).filler).toBe(true);
-    expect(traitsOf('Phone Call Skit', 200, []).filler).toBe(true);
+  it('knows short intros, interludes, skits and sketches under a minute, but not songs named like them', () => {
+    expect(traitsOf('Intro', 100, []).filler).toBe(true);
+    expect(traitsOf('Interlude (Rain)', 90, []).filler).toBe(true);
+    expect(traitsOf('Phone Call Skit', 70, []).filler).toBe(true);
     expect(traitsOf('Happiness', 45, []).filler).toBe(true);
     expect(traitsOf('Introduction to the Blues', 200, []).filler).toBe(false);
     expect(traitsOf('Sketches of Spain', 200, []).filler).toBe(false);
+    // M83's "Intro" is a five-minute song.
+    expect(traitsOf('Intro', 322, []).filler).toBe(false);
   });
 
-  it('knows spoken word and comedy by their telling tags, not by a passing one', () => {
-    expect(traitsOf('Track 3', 300, [['comedy', 1], ['stand-up', 0.8]]).filler).toBe(true);
+  it('doesn’t take a song whose length isn’t known yet for a short one', () => {
+    expect(traitsOf('Happiness', 0, []).filler).toBe(false);
+  });
+
+  it('knows spoken word and stand-up by their telling tags, not by a passing one, and comedy songs are songs', () => {
+    expect(traitsOf('Track 3', 300, [['stand-up comedy', 1], ['spoken word', 0.8]]).filler).toBe(true);
     expect(traitsOf('Track 3', 300, [['hip hop', 1], ['spoken word', 0.2]]).filler).toBe(false);
+    expect(traitsOf('White & Nerdy', 170, [['comedy', 1], ['parody', 0.9], ['hip hop', 0.6]]).filler).toBe(false);
   });
 
   it('knows live recordings, but not songs about living', () => {
@@ -91,11 +98,13 @@ describe('what a song should never be picked for', () => {
     expect(traitsOf('Roxanne - Live', 260, []).live).toBe(true);
     expect(traitsOf('Live Forever', 276, []).live).toBe(false);
     expect(traitsOf('Live and Let Die', 192, []).live).toBe(false);
+    expect(traitsOf('Live in the Moment', 236, []).live).toBe(false);
   });
 
-  it('knows Christmas songs, and when they’re in season', () => {
+  it('knows Christmas songs, and when they’re in season, but not every song of an artist with one Christmas album', () => {
     expect(traitsOf('Last Christmas', 260, []).christmas).toBe(true);
     expect(traitsOf('Song', 260, [['christmas', 1]]).christmas).toBe(true);
+    expect(traitsOf('Fantasy', 240, [['pop', 1], ['r&b', 0.8], ['christmas', 0.4]]).christmas).toBe(false);
     expect(traitsOf('Santa Monica', 260, []).christmas).toBe(false);
     expect(christmasSeason({ month: 11, day: 23 })).toBe(false);
     expect(christmasSeason({ month: 11, day: 24 })).toBe(true);

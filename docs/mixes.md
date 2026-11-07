@@ -32,7 +32,7 @@ Mixes are made from the last 365 days of an account's plays, its favourites and 
 
 - **Style**: ListenBrainz tags (section 7), folded into style families by `apps/server/src/analysis/styles.ts`; without tags, the album's genres, else the artist's.
 - **Energy** (0–1): where sound analysis has run, where the song stands among the library's measured songs for intensity: loudness next to music of its time, busyness, the beat's strength and tempo, and brightness (`mood.ts`). Otherwise estimated from the style families (metal high, classical low), less a little for calm tags. Unknown without either.
-- **Mood, tension, singing, groove and steadiness**: from the key, the tags, the title, lyrics that were looked up, the beat and the phrase-by-phrase shape of the song. **Traits** say what's never picked (intros, interludes, skits, anything under a minute, spoken word), what's recorded live, and what's a Christmas song. What each is and how it's read: [plans/2026-11-07-8-mood-mixes.md](plans/2026-11-07-8-mood-mixes.md).
+- **Mood, tension, singing, groove and steadiness**: from the key, the tags, the title, lyrics that were looked up, the beat and the phrase-by-phrase shape of the song. **Traits** say what's never picked (short intros, interludes and skits, anything under a minute, spoken word), what's recorded live, and what's a Christmas song. What each is and how it's read: [plans/2026-11-07-8-mood-mixes.md](plans/2026-11-07-8-mood-mixes.md).
 - **Calm**: from tags (mellow, calm, relaxing…).
 - **Year**: the album's, else ListenBrainz's first release year. **Added**: when its album arrived. **Release date**: only real dates, not bare years.
 - **Tempo and key**: a summary of its mix map from beat analysis, for blending.
@@ -61,7 +61,7 @@ Mixes are made from the last 365 days of an account's plays, its favourites and 
 
 Home shows them in that order (`planMixes`). The four mood mixes (Energy boost, Chill, Deep focus, Wind down) are specified, with the algorithm that matches them, in [plans/2026-11-07-8-mood-mixes.md](plans/2026-11-07-8-mood-mixes.md): each leans to a style or two of the day so it holds together, and songs whose sound isn't measured only fill in when measured ones run short. Common rules:
 
-- Never intros, outros, interludes, skits, anything under a minute, spoken word or comedy (On Repeat keeps what's played most, but not skits). Christmas songs only from 24 November to 6 January, in mixes, radio and Feeling lucky.
+- Never short intros, outros, interludes or skits, anything under a minute, spoken word or stand-up (On Repeat keeps what's played most, but not skits). Christmas songs only from 24 November to 6 January, in mixes, radio and Feeling lucky.
 - A mix made again (a new day, a new draw) leans away from the songs of the one it replaces.
 - At most 2 songs per artist (3 in Blast from the past and Deep cuts), and never the same artist twice in a row where it can be helped.
 - A mix with fewer than 8 songs isn't shown. Songs per mix is a setting (25–100).
