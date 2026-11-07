@@ -36,6 +36,15 @@ services:
       # compose.override.example.yaml.
     ports:
       - "4000:4000"
+    # Healthy while /api/health answers with the database working (what update.sh waits for), not `ok`, which is false
+    # whenever Lidarr or the music can't be reached. The timeout outlasts Lidarr's own 30 s, which the health route
+    # waits on, and the start period leaves a start that migrates the database time to do it.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:4000/api/health | grep -qF '\"database\":{\"ok\":true'"]
+      interval: 30s
+      timeout: 45s
+      retries: 3
+      start_period: 5m
     restart: unless-stopped
 
   # Settings → Updates: rebuilds Playarr from GitHub, its newest release or main, when asked (docker/updater.sh).

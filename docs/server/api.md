@@ -24,7 +24,7 @@ Every route the Playarr server answers, grouped by what it's for, with who may c
 
 | method and path | purpose | who |
 |---|---|---|
-| `GET /api/health` | Lidarr reachable? music files readable? library stats (only when signed in), whether requests are on for the caller | open |
+| `GET /api/health` | Lidarr reachable? music files readable? the database working? library stats (only when signed in), whether requests are on for the caller; why Lidarr or the music can't be reached, and Lidarr's version, only for admins | open |
 | `GET /api/artists?offset=&limit=`, `/api/artists/:id`, `/api/artists/:id/tracks` | artists A to Z (all, or a page), one artist, an artist's songs | signed in |
 | `GET /api/albums?sort=&limit=&offset=`, `/api/albums/random`, `/api/albums/:id`, `/api/tracks/random` | albums by title, artist, year or added (all, the first `limit`, or a page), random albums or songs, one album | signed in |
 | `GET /api/search?q=` | artists, albums, songs and playlists in the library; when nothing matches as typed, what's a letter or two away, with `near: true` | signed in |
@@ -37,6 +37,8 @@ Every route the Playarr server answers, grouped by what it's for, with who may c
 **Pages and ETags.** `/api/albums` and `/api/artists` answer the whole list as they always have (albums with `limit`: the first so many). With `offset`, they answer a page instead: `{ albums, total, version }` (`AlbumPage`) or `{ artists, total, version }` (`ArtistPage`), `limit` items from `offset` (100 unless asked, at most 500; a bad offset is 0), with how many there are in all and the library's version the page was read from (opaque: compare it for equality only). A page whose version isn't the first page's was read after the library changed, so the pages before it may have moved: a client starts again from the first. Both lists, whole or paged, carry a weak `ETag` for the library they were read from (its version in this run of the server, the account's sources, and for albums every cover color read since) with `Cache-Control: private, no-cache`. A request whose `If-None-Match` names it gets a 304 without a body; a refresh that finds nothing new keeps the tags.
 
 Albums and songs, wherever they're answered, carry their cover's colors once the server has read it: `coverColor` (what it reads as from afar, for the space a loading cover takes) and `coverAccent` (the accent the apps would pick from it), as `#rrggbb`. See [streaming-and-art.md](streaming-and-art.md#cover-colors).
+
+**Health.** Everyone gets the same shape: `ok` (Lidarr and the music both reachable), `lidarr.ok` (when there's a Lidarr source), `media.source` and `media.ok`, `requests`, `database`, and `library` once signed in. Lidarr's `version`, and the `error` saying why Lidarr or the music can't be reached, go to admins only (before setup, to the home network), as they can name addresses and paths. `database` is the same for everyone: the updater asks without signing in, and an update waits for `"database":{"ok":true` ([updates-and-deploy.md](updates-and-deploy.md), section 5).
 
 ### Audio and artwork
 
@@ -94,6 +96,7 @@ Details in [../mixes.md](../mixes.md).
 | method and path | purpose | who |
 |---|---|---|
 | `GET /api/server` | server id, name, version, oldest app version, setup mode, public URL; the owner's username in setup mode | open |
+| `GET /api/diagnostics` | what someone helping with a problem asks first (`ServerDiagnostics`, below) | admin |
 | `POST /api/auth/setup` | claim the server: the owner's username and password | setup |
 | `POST /api/auth/sign-in`, `/api/auth/redeem` | sign in; choose a password with a setup code (both rate-limited per address) | open |
 | `POST /api/auth/switch` | make a token this browser's session cookie (authenticates by the token) | open |
@@ -102,6 +105,8 @@ Details in [../mixes.md](../mixes.md).
 | `GET\|POST /api/accounts`, `DELETE /api/accounts/:id`, `POST /api/accounts/:id/reset` | list, create (with a setup code), remove, reset a password; create and reset refused in setup mode | admin |
 | `PATCH /api/accounts/:id` | change an account; members may change their own name only | admin, or own name |
 | `GET /api/accounts/:id/sessions`, `DELETE /api/accounts/:id/sessions/:sessionId` | an account's devices; sign one out | admin, or own account |
+
+**Diagnostics.** `GET /api/diagnostics` answers `ServerDiagnostics`: the server's `version`; its database's `schema` (the migration it has had last, SQLite's `user_version`, and the `latest` this version knows); `node` (Node.js's version, `uptimeSeconds`, and `rssBytes`, `heapUsedBytes` and `heapTotalBytes`); each source's `id`, `kind`, a folder's `access` (local, SSH, SFTP or SMB; nothing else of its settings), `enabled`, `lastSyncAt` and `lastError`; `queues`, counted in memory: analysis (`waiting`, `working`, `loudnessWaiting`, `loudnessWorking`, `tagsWaiting`, as `/api/analysis/progress` counts them), DJ mix transitions waiting and rendering (absent without audio analysis), and songs being encoded; `responses`, the answers since the server started by status class (`status2xx` to `status5xx`); and `stalls`, how many times the stall monitor found the event loop blocked for 500 ms or more, the longest and the last. What can't be read is left out (`schema` and `sources` when the database fails), so it answers when something's wrong.
 
 ### Settings and analysis
 
@@ -132,6 +137,8 @@ Anything else that isn't under `/api/`, `/stream/`, `/art/` or `/transitions/` i
 - **Files.** `/stream` serves only file ids the account's catalog knows, never a path from the client. Folder files must lie in their source's folder; Lidarr files, after `PATH_MAP`, in one of its target folders (unchecked when `PATH_MAP` is empty). `/transitions/:file` serves only names the transition service makes.
 - **Secrets.** The Lidarr API key and saved SSH or SMB passwords never reach the client, and a saved key or password is only sent back to the server it was saved for. `/art/remote` fetches only from an allowlist of `https` hosts, on every redirect.
 - **Recovery.** A forgotten owner password is reset on the server host (`reset-password`), never over the network. The last password on the server can't be reset or removed.
+- **Headers.** Every answer, the web app's files, streams, art and transitions included, carries `X-Content-Type-Options: nosniff` (a browser takes the content type as given, so nothing served runs as a script it wasn't sent as) and `Content-Security-Policy: frame-ancestors 'self'` (only Playarr's own pages may show it in a frame, which is what `X-Frame-Options` did; so Playarr can't be embedded in another site's page, a dashboard's included). Only that directive so far: a full policy waits until it can be checked in a browser, as a wrong one blanks the app. A route that sets either header itself keeps its own (`securityHeaders.ts`).
+- **Request ids and logs.** Every answer carries `X-Request-Id`: the client's own when it sends a sane one (up to 64 letters, digits, `.`, `_` and `-`), otherwise a new UUID. It's the `reqId` on every log line about the request. Every 4xx (at info) and 5xx (at error, with the error and its stack) is logged with that id, the account when someone is signed in, the method, the route as registered (`/api/albums/:id`; a path no route matched by its first segment, `/api/*`), the status and how long it took; never the URL, query, body, headers or tokens (`requestLog.ts`).
 - **Not yet.** Playarr itself speaks plain HTTP; HTTPS needs a reverse proxy in front of it.
 
 ---

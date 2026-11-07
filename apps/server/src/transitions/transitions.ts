@@ -377,6 +377,11 @@ export class Transitions {
     await this.idle();
   }
 
+  /** Renders waiting their turn and under way (one at a time), for diagnostics. */
+  renders(): { waiting: number; working: number } {
+    return { waiting: this.queue.length, working: this.running ? 1 : 0 };
+  }
+
   /** Resolves once nothing is rendering or waiting (tests, shutdown). */
   idle(): Promise<void> {
     if (!this.running && !this.queue.length) return Promise.resolve();

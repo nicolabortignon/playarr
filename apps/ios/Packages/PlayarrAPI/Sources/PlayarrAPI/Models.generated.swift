@@ -1013,10 +1013,12 @@ public struct FolderListing: Codable, Hashable, Sendable {
     }
 }
 
+/// GET /api/health. Everyone hears whether things are fine; the details (Lidarr's version, and why Lidarr or the music can't be reached, which can name addresses and paths) go to admins only.
 public struct HealthStatus: Codable, Hashable, Sendable {
     public var ok: Bool
-    /// Absent when there is no Lidarr source.
+    /// Absent when there is no Lidarr source. `version` and `error` only for admins.
     public var lidarr: Lidarr?
+    /// `error` only for admins.
     public var media: Media
     public var library: LibraryStats?
     /// A Lidarr source is set up and requests are allowed in Settings.
@@ -2734,6 +2736,153 @@ public struct SearchResults: Codable, Hashable, Sendable {
         self.albums = albums
         self.tracks = tracks
         self.near = near
+    }
+}
+
+/// GET /api/diagnostics, for admins: what someone helping with a problem asks first. What a server can't tell (its database unreadable, no DJ mixing) is left out.
+public struct ServerDiagnostics: Codable, Hashable, Sendable {
+    /// Playarr's version, as ServerInfo's.
+    public var version: String
+    /// The database's schema: the migration it has had last (SQLite's user_version), and the latest this version knows.
+    public var schema: Schema?
+    /// Node.js's version, how long the server has been running, and its memory: all of it (rss) and the JavaScript heap.
+    public var node: Node
+    /// The sources, in Settings' order, with when each last synced and why its last sync failed.
+    public var sources: [SourcesItem]?
+    /// Work waiting and under way, where it's cheap to count.
+    public var queues: Queues
+    /// The answers given since the server started, by status class.
+    public var responses: Responses
+    /// Since the server started: how many times the stall monitor found its event loop blocked for 500 ms or more (it looks once a minute), the longest block, and when it last found one.
+    public var stalls: Stalls?
+
+    public init(version: String, schema: Schema? = nil, node: Node, sources: [SourcesItem]? = nil, queues: Queues, responses: Responses, stalls: Stalls? = nil) {
+        self.version = version
+        self.schema = schema
+        self.node = node
+        self.sources = sources
+        self.queues = queues
+        self.responses = responses
+        self.stalls = stalls
+    }
+
+    public struct Schema: Codable, Hashable, Sendable {
+        public var version: Int
+        public var latest: Int
+
+        public init(version: Int, latest: Int) {
+            self.version = version
+            self.latest = latest
+        }
+    }
+
+    public struct Node: Codable, Hashable, Sendable {
+        public var version: String
+        public var uptimeSeconds: Double
+        public var rssBytes: Int
+        public var heapUsedBytes: Int
+        public var heapTotalBytes: Int
+
+        public init(version: String, uptimeSeconds: Double, rssBytes: Int, heapUsedBytes: Int, heapTotalBytes: Int) {
+            self.version = version
+            self.uptimeSeconds = uptimeSeconds
+            self.rssBytes = rssBytes
+            self.heapUsedBytes = heapUsedBytes
+            self.heapTotalBytes = heapTotalBytes
+        }
+    }
+
+    public struct SourcesItem: Codable, Hashable, Sendable, Identifiable {
+        public var id: Int
+        public var kind: SourceKind
+        public var access: FolderAccessKind?
+        public var enabled: Bool
+        public var lastSyncAt: String?
+        public var lastError: String?
+
+        public init(id: Int, kind: SourceKind, access: FolderAccessKind? = nil, enabled: Bool, lastSyncAt: String? = nil, lastError: String? = nil) {
+            self.id = id
+            self.kind = kind
+            self.access = access
+            self.enabled = enabled
+            self.lastSyncAt = lastSyncAt
+            self.lastError = lastError
+        }
+    }
+
+    public struct Queues: Codable, Hashable, Sendable {
+        /// Songs waiting for and under analysis, as AnalysisProgress counts them.
+        public var analysis: Analysis?
+        /// DJ mix transitions waiting to be rendered and rendering (one at a time). Absent without audio analysis.
+        public var transitions: Transitions?
+        /// Songs being encoded for High and Normal quality streams.
+        public var encodes: Encodes?
+
+        public init(analysis: Analysis? = nil, transitions: Transitions? = nil, encodes: Encodes? = nil) {
+            self.analysis = analysis
+            self.transitions = transitions
+            self.encodes = encodes
+        }
+
+        public struct Analysis: Codable, Hashable, Sendable {
+            public var waiting: Int
+            public var working: Int
+            public var loudnessWaiting: Int
+            public var loudnessWorking: Int
+            public var tagsWaiting: Int
+
+            public init(waiting: Int, working: Int, loudnessWaiting: Int, loudnessWorking: Int, tagsWaiting: Int) {
+                self.waiting = waiting
+                self.working = working
+                self.loudnessWaiting = loudnessWaiting
+                self.loudnessWorking = loudnessWorking
+                self.tagsWaiting = tagsWaiting
+            }
+        }
+
+        public struct Transitions: Codable, Hashable, Sendable {
+            public var waiting: Int
+            public var working: Int
+
+            public init(waiting: Int, working: Int) {
+                self.waiting = waiting
+                self.working = working
+            }
+        }
+
+        public struct Encodes: Codable, Hashable, Sendable {
+            public var working: Int
+
+            public init(working: Int) {
+                self.working = working
+            }
+        }
+    }
+
+    public struct Responses: Codable, Hashable, Sendable {
+        public var status2xx: Int
+        public var status3xx: Int
+        public var status4xx: Int
+        public var status5xx: Int
+
+        public init(status2xx: Int, status3xx: Int, status4xx: Int, status5xx: Int) {
+            self.status2xx = status2xx
+            self.status3xx = status3xx
+            self.status4xx = status4xx
+            self.status5xx = status5xx
+        }
+    }
+
+    public struct Stalls: Codable, Hashable, Sendable {
+        public var count: Int
+        public var longestMs: Double
+        public var lastAt: String?
+
+        public init(count: Int, longestMs: Double, lastAt: String? = nil) {
+            self.count = count
+            self.longestMs = longestMs
+            self.lastAt = lastAt
+        }
     }
 }
 

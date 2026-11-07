@@ -1,0 +1,56 @@
+{
+  "version": "0.7.0",
+  "schema": {
+    "version": 40,
+    "latest": 40
+  },
+  "node": {
+    "version": "v24.11.0",
+    "uptimeSeconds": 86400,
+    "rssBytes": 180000000,
+    "heapUsedBytes": 60000000,
+    "heapTotalBytes": 90000000
+  },
+  "sources": [
+    {
+      "id": 1,
+      "kind": "lidarr",
+      "enabled": true,
+      "lastSyncAt": "2026-11-03T12:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "kind": "folder",
+      "access": "ssh",
+      "enabled": true,
+      "lastError": "connect ECONNREFUSED 192.168.1.103:22"
+    }
+  ],
+  "queues": {
+    "analysis": {
+      "waiting": 1200,
+      "working": 2,
+      "loudnessWaiting": 40,
+      "loudnessWorking": 1,
+      "tagsWaiting": 25
+    },
+    "transitions": {
+      "waiting": 2,
+      "working": 1
+    },
+    "encodes": {
+      "working": 0
+    }
+  },
+  "responses": {
+    "status2xx": 0,
+    "status3xx": 0,
+    "status4xx": 2,
+    "status5xx": 0
+  },
+  "stalls": {
+    "count": 3,
+    "longestMs": 1840,
+    "lastAt": "2026-11-03T12:00:00.000Z"
+  }
+}

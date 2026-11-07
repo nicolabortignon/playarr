@@ -5,7 +5,7 @@ import type { Config } from '../config.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { mapPath, type MediaSource } from '../media/index.ts';
-import { canRequest, libraryOf, requireAdmin } from '../accounts/rights.ts';
+import { canRequest, isAdmin, libraryOf, requireAdmin } from '../accounts/rights.ts';
 
 const ALBUM_SORTS: AlbumSort[] = ['title', 'artist', 'year', 'added'];
 
@@ -92,16 +92,19 @@ export function apiRoutes(
     const [lidarrResult, mediaResult] = await probes();
     const lidarrOk = lidarrResult.status === 'fulfilled';
     const mediaOk = mediaResult.status === 'fulfilled';
+    // Everyone hears whether things are fine, in the same shape; why not, and Lidarr's version, only admins: the
+    // errors can name Lidarr's address, the music's path or the host it's read from.
+    const details = isAdmin(req);
     return {
       ok: lidarrOk && mediaOk,
       lidarr: !lidarr.configured
         ? undefined
         : lidarrOk
-          ? { ok: true, version: lidarrResult.value?.version }
-          : { ok: false, error: (lidarrResult.reason as Error).message },
+          ? { ok: true, ...(details ? { version: lidarrResult.value?.version } : {}) }
+          : { ok: false, ...(details ? { error: (lidarrResult.reason as Error).message } : {}) },
       media: mediaOk
         ? { source: media.kind, ok: true }
-        : { source: media.kind, ok: false, error: (mediaResult.reason as Error).message },
+        : { source: media.kind, ok: false, ...(details ? { error: (mediaResult.reason as Error).message } : {}) },
       // What the asker may hear; nothing before signing in.
       library: req.auth === null ? undefined : await libraryOf(library, req).stats(),
       // Request buttons show only to accounts that may use them.

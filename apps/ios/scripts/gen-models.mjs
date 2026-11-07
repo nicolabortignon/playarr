@@ -29,11 +29,11 @@ const SKIP = new Set(['parseRange', 'ByteRange', 'wavFallbackOf']);
 /** Numbers that are whole: what the server stores as SQLite integers or counts. */
 const INTEGERS = new Set([
   'albums', 'albumsComplete', 'albumsIncomplete', 'albumsUnknown', 'analyzed', 'artists', 'audioFiles', 'background', 'batchId', 'beatModel', 'bits', 'channels',
-  'currentStreak', 'days', 'decadeMixes', 'disc', 'discNumber', 'earlier', 'era', 'failed', 'files', 'freeSpace', 'genreMixes',
-  'have', 'hour', 'ignored', 'lastCheck', 'lastUpdate', 'longestStreak', 'loudnessWaiting', 'loudnessWorking', 'matches',
+  'count', 'currentStreak', 'days', 'decadeMixes', 'disc', 'discNumber', 'earlier', 'era', 'failed', 'files', 'freeSpace', 'genreMixes',
+  'have', 'heapTotalBytes', 'heapUsedBytes', 'hour', 'ignored', 'lastCheck', 'lastUpdate', 'latest', 'longestStreak', 'loudnessWaiting', 'loudnessWorking', 'matches',
   'matched', 'matching', 'moved', 'newArtists', 'pending', 'plays', 'playlists', 'port', 'position', 'profile', 'queued', 'ready',
-  'recorded', 'restored', 'review', 'sampleRate', 'sent', 'size', 'sizeBytes', 'songs', 'songsComplete', 'songsIncomplete', 'songsUnknown', 'sources',
-  'tagsWaiting', 'total', 'trackNumber', 'trackTotal', 'tracks', 'variant', 'version', 'waiting', 'weekday',
+  'recorded', 'restored', 'review', 'rssBytes', 'sampleRate', 'sent', 'size', 'sizeBytes', 'songs', 'songsComplete', 'songsIncomplete', 'songsUnknown', 'sources',
+  'status2xx', 'status3xx', 'status4xx', 'status5xx', 'tagsWaiting', 'total', 'trackNumber', 'trackTotal', 'tracks', 'variant', 'version', 'waiting', 'weekday',
   'working', 'year', 'years',
 ]);
 const isIntegerName = (name) => name === 'id' || /(Id|Ids|Count)$/.test(name) || INTEGERS.has(name);

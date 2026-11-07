@@ -29,6 +29,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("setup-code", SetupCode.self),
         Contract("sessions", [SessionInfo].self),
         Contract("health", HealthStatus.self),
+        Contract("diagnostics", ServerDiagnostics.self),
         Contract("musicbrainz-status", MusicBrainzStatus.self),
         // Library and search
         Contract("artists", [Artist].self),

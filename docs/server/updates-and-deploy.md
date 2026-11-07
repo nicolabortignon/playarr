@@ -53,7 +53,7 @@ Configuration comes from environment variables, validated with zod in `apps/serv
 | `SERVER_NAME`, `BONJOUR` | machine name, `on` | What apps call the server, and whether it's advertised as `_playarr._tcp` |
 | `UPDATE_DIR` | unset | The folder shared with the updater (compose sets `/update`) |
 
-`LOG_LEVEL` and `LOG_REQUESTS=1` (read straight from the environment) control logging. The `NAS_*` variables are used only by `deploy.mjs` (section 4); the `REVIEW_*` and `SCREENSHOT_*` ones only by the iOS release scripts (see [../ios/README.md](../ios/README.md)).
+`LOG_LEVEL` and `LOG_REQUESTS=1` (read straight from the environment) control logging. Every 4xx and 5xx answer is logged either way, with its request id, the account and the route ([api.md](api.md#security-in-short)); `LOG_REQUESTS=1` adds Fastify's own lines for every request, URLs and all. The `NAS_*` variables are used only by `deploy.mjs` (section 4); the `REVIEW_*` and `SCREENSHOT_*` ones only by the iOS release scripts (see [../ios/README.md](../ios/README.md)).
 
 ### The database across versions
 
@@ -68,7 +68,7 @@ A database a newer version has used (its `user_version` beyond this version's mi
 - **Build stage**: `node:24-alpine` with python3, make and g++ (for ssh2's optional native helpers) and pnpm 10.32.1. It installs dependencies from the lockfile first, so editing the source doesn't reinstall them. It then runs `pnpm build`, makes a production-only copy of the server with `pnpm deploy --prod`, and copies in the built server, its `assets/` and the web app. It finishes with `chmod -R a+rX` over the output (see the UGOS note in section 4).
 - **Runtime stage**: `node:24-alpine` plus `ffmpeg` (analysis, levelled streams, transitions), `chromaprint` (`fpcalc`, for fingerprints) and `rclone` (SMB folder sources). The server is at `/app/server` and the web app at `/app/web`.
 - **Environment**: `NODE_ENV=production`, `UV_THREADPOOL_SIZE=16` (so file reads and streams don't queue behind image resizing), `HOST=0.0.0.0`, `PORT=4000`, `WEB_DIST=/app/web`, `DATA_DIR=/config`, `CACHE_DIR=/cache`, `FOLDER_ROOTS=/host`, `MEDIA_SOURCE=local`.
-- **Port** 4000, with a `HEALTHCHECK` fetching `/` every 30 s.
+- **Port** 4000, with a `HEALTHCHECK` on `/api/health`, the same as compose.yaml's (section 4).
 
 The image doesn't set a user: compose does.
 
@@ -83,6 +83,8 @@ The image doesn't set a user: compose does.
 - `./update` → `/update`, with `UPDATE_DIR=/update`.
 
 From `.env` it passes `LIDARR_URL`, `LIDARR_API_KEY`, `TZ` (default `Europe/London`), and `PUBLIC_URL`, `TRUST_PROXY` and `SERVER_NAME` (empty means unset).
+
+Its health check, which `docker ps` and the NAS's container list show, asks `/api/health` every 30 s with the image's `wget` and passes while the answer has `"database":{"ok":true`: not `ok`, which is false whenever Lidarr or the music can't be reached. Each check gets 45 s, longer than Lidarr's own 30 s timeout, which the health route waits on. Three failures in a row make the container unhealthy, and failures in the first five minutes don't count, so a start that migrates the database has time to. Docker only reports it: nothing restarts the container for it, and `update.sh` makes its own check (section 5).
 
 **`updater`** is described in section 5.
 

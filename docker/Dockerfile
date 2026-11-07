@@ -40,5 +40,6 @@ ENV NODE_ENV=production \
     FOLDER_ROOTS=/host \
     MEDIA_SOURCE=local
 EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -q -O /dev/null http://127.0.0.1:4000/ || exit 1
+# Healthy while /api/health answers with the database working: the same check as compose.yaml's, which says why.
+HEALTHCHECK --interval=30s --timeout=45s --start-period=5m --retries=3 CMD wget -q -O - http://127.0.0.1:4000/api/health | grep -qF '"database":{"ok":true' || exit 1
 CMD ["node", "--disable-warning=ExperimentalWarning", "server/dist/index.js"]

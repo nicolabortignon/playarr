@@ -79,7 +79,7 @@ Each account sees its own devices and can sign any of them out; admins can for e
 3. **Setup mode**: no valid session needed; `req.auth` is the owner, with no session.
 4. **Otherwise** `req.auth` is null, and a request under `/api/`, `/stream/`, `/art/` or `/transitions/` gets 401 (`{ setup: false }`), unless it's one of the open routes:
 
-`GET /api/server`, `GET /api/health`, `POST /api/auth/sign-in`, `/redeem`, `/setup` and `/switch`, and `GET /api/auth/proof` (section 8). `/api/health` tells an unsigned caller whether Lidarr and the music files are reachable, but not the library's size. The web app's own pages are served to anyone.
+`GET /api/server`, `GET /api/health`, `POST /api/auth/sign-in`, `/redeem`, `/setup` and `/switch`, and `GET /api/auth/proof` (section 8). `/api/health` tells an unsigned caller whether Lidarr, the music files and the database work, but not the library's size; why Lidarr or the music can't be reached, and Lidarr's version, only an admin hears ([api.md](api.md#library)). The web app's own pages are served to anyone.
 
 ---
 

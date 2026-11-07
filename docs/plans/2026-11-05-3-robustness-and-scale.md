@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 **Goal:** Playarr holds up on a collector's library (100k tracks) and in daily use: no stalls on the server's event loop or the iPhone's main thread, nothing lost when storage fills or two tabs are open, sessions and connections that can be trusted, and enough logging to diagnose a user's problem.
 
-**Where it stands (2026-11-07):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §6 done on iOS. The rest not started.
+**Where it stands (2026-11-07):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §4 partly done (the headers, and health's details for admins only); §6 done. The rest not started.
 
 ## 1. Big libraries — M — done 2026-11-07, but for the build in a worker
 
@@ -34,7 +34,9 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 - Live mix reads only the bytes it needs from kept files (`liveMix.ts` `songBytes`).
 - **Done when** a full quota or a second tab never deletes a kept song.
 
-## 4. Sessions, headers and SSH — S–M
+## 4. Sessions, headers and SSH — S–M — partly done 2026-11-07
+
+*Done: every answer carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: frame-ancestors 'self'`, the web app's files, streams, art and transitions included (`securityHeaders.ts`); the rest of a policy waits until it can be checked in a browser, as a wrong one blanks the app. `/api/health` tells everyone whether things are fine, in the same shape as before, and only admins Lidarr's version and why Lidarr or the music can't be reached ([api.md](../server/api.md)). Left: the full policy, sessions, SSH host keys and the login rate limit's global budget.*
 
 - Sessions expire after 90 days unused, with an absolute maximum; signing out clears the service worker's API cache; tokens of accounts not in use aren't kept in localStorage in the clear.
 - A Content-Security-Policy, `X-Content-Type-Options: nosniff` and `frame-ancestors` on every response.
@@ -49,9 +51,9 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 - Timeouts on SSH commands, a size cap on remote images, one retry with backoff for Lidarr calls.
 - A per-source lock shared by refresh and organize.
 
-## 6. Logging and diagnostics — S–M — done on iOS 2026-11-07
+## 6. Logging and diagnostics — S–M — done 2026-11-07
 
-*Done on iOS: `Log` categories, MetricKit's hang and crash reports, and Settings → Copy diagnostics (docs/ios/README.md §6). The server's part is left.*
+*Done on iOS: `Log` categories, MetricKit's hang and crash reports, and Settings → Copy diagnostics (docs/ios/README.md §6). Done on the server: every answer carries `X-Request-Id` (the client's own when it's a sane token), the `reqId` of the request's log lines; every 4xx and 5xx is logged with it, the account and the route as registered, a 5xx with its error and stack, and never the URL, body or tokens (`requestLog.ts`); the admin-only `GET /api/diagnostics` answers the version and schema, Node's version, uptime and memory, each source's last sync and error, the analysis, transition and encoding queues, the answers by status class and the stalls ([api.md](../server/api.md)); and Docker's health check asks `/api/health` for the database working (`docker/compose.yaml`, and the image).*
 
 - iOS: `os.Logger` categories (player, engine, downloads, network, auth); MetricKit for hangs; Settings → "Copy diagnostics".
 - Server: 4xx/5xx logged with request id, account and route; `x-request-id` returned; an admin-only `/api/diagnostics` (versions, queue depths, stalls, last sync per source); the Docker health check on the API.

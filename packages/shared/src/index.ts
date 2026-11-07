@@ -124,10 +124,15 @@ export interface LibraryStats {
   refreshedAt: string;
 }
 
+/**
+ * GET /api/health. Everyone hears whether things are fine; the details (Lidarr's version, and why Lidarr or the music
+ * can't be reached, which can name addresses and paths) go to admins only.
+ */
 export interface HealthStatus {
   ok: boolean;
-  /** Absent when there is no Lidarr source. */
+  /** Absent when there is no Lidarr source. `version` and `error` only for admins. */
   lidarr?: { ok: boolean; version?: string; error?: string };
+  /** `error` only for admins. */
   media: { source: 'none' | 'local' | 'sftp' | 'ssh' | 'smb'; ok: boolean; error?: string };
   library?: LibraryStats;
   /** A Lidarr source is set up and requests are allowed in Settings. */
@@ -137,6 +142,37 @@ export interface HealthStatus {
    * started (docker/update.sh). Absent from servers before it was added.
    */
   database?: { ok: boolean; error?: string };
+}
+
+/**
+ * GET /api/diagnostics, for admins: what someone helping with a problem asks first. What a server can't tell (its
+ * database unreadable, no DJ mixing) is left out.
+ */
+export interface ServerDiagnostics {
+  /** Playarr's version, as ServerInfo's. */
+  version: string;
+  /** The database's schema: the migration it has had last (SQLite's user_version), and the latest this version knows. */
+  schema?: { version: number; latest: number };
+  /** Node.js's version, how long the server has been running, and its memory: all of it (rss) and the JavaScript heap. */
+  node: { version: string; uptimeSeconds: number; rssBytes: number; heapUsedBytes: number; heapTotalBytes: number };
+  /** The sources, in Settings' order, with when each last synced and why its last sync failed. */
+  sources?: { id: number; kind: SourceKind; access?: FolderAccessKind; enabled: boolean; lastSyncAt?: string; lastError?: string }[];
+  /** Work waiting and under way, where it's cheap to count. */
+  queues: {
+    /** Songs waiting for and under analysis, as AnalysisProgress counts them. */
+    analysis?: { waiting: number; working: number; loudnessWaiting: number; loudnessWorking: number; tagsWaiting: number };
+    /** DJ mix transitions waiting to be rendered and rendering (one at a time). Absent without audio analysis. */
+    transitions?: { waiting: number; working: number };
+    /** Songs being encoded for High and Normal quality streams. */
+    encodes?: { working: number };
+  };
+  /** The answers given since the server started, by status class. */
+  responses: { status2xx: number; status3xx: number; status4xx: number; status5xx: number };
+  /**
+   * Since the server started: how many times the stall monitor found its event loop blocked for 500 ms or more (it
+   * looks once a minute), the longest block, and when it last found one.
+   */
+  stalls?: { count: number; longestMs: number; lastAt?: string };
 }
 
 export type AlbumSort = 'title' | 'artist' | 'year' | 'added';

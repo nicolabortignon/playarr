@@ -310,6 +310,9 @@ const MIGRATIONS: Migration[] = [
 /** How many copies made before migrations are kept in `backups/`: the newest. */
 export const BACKUPS_KEPT = 5;
 
+/** The schema this version migrates a database to: how many migrations it knows. */
+export const LATEST_SCHEMA = MIGRATIONS.length;
+
 /**
  * The database in `dataDir`, migrated to this version's schema. One a newer Playarr has used is refused rather than
  * run against; one this version changes is copied into `backups/` first (`backUp`). `version` names the copy.
@@ -333,7 +336,7 @@ export function openDatabase(dataDir: string, version = VERSION): DatabaseSync {
 }
 
 /** Which migration the database has had last (SQLite's user_version): 0 for a new one. */
-function schemaOf(db: DatabaseSync): number {
+export function schemaOf(db: Pick<DatabaseSync, 'prepare'>): number {
   return (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
 }
 

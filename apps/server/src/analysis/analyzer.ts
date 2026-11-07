@@ -228,6 +228,13 @@ export class Analyzer {
       sound: { ready: row.soundReady, failed: row.soundFailed },
       loudness: { ready: row.loudnessReady, failed: row.loudnessFailed },
       tags: { ready: row.tagsReady, songs: row.taggable },
+      ...this.queues(),
+    };
+  }
+
+  /** The queues analysisProgress counts, without its pass over the library: cheap enough for diagnostics. */
+  queues(): { waiting: number; working: number; loudnessWaiting: number; loudnessWorking: number; tagsWaiting: number } {
+    return {
       waiting: this.urgentQueue.size + this.audioQueue.size,
       working: this.running.size,
       loudnessWaiting: this.loudnessJobs.waiting,

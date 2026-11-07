@@ -53,6 +53,9 @@ import { ACOUSTID_KEY, readRequestSettings, settingsRoutes } from './routes/sett
 import { statusRoutes } from './routes/status.ts';
 import { streamRoutes } from './routes/stream.ts';
 import { UpdateBridge } from './update/bridge.ts';
+import { diagnosticsRoutes } from './routes/diagnostics.ts';
+import { logRequests, requestIdOptions } from './requestLog.ts';
+import { securityHeaders } from './securityHeaders.ts';
 import { watchStalls } from './stallMonitor.ts';
 import { History } from './mixes/history.ts';
 import { Mixes } from './mixes/mixes.ts';
@@ -66,7 +69,12 @@ const app = Fastify({
   trustProxy: config.trustProxy,
   logger: { level: process.env.LOG_LEVEL ?? 'info' },
   logController: new LogController({ disableRequestLogging: process.env.LOG_REQUESTS !== '1' }),
+  // Each request's id, on its log lines and its answer: the client's x-request-id when it's a sane token, or a new one.
+  ...requestIdOptions,
 });
+// Every answer: nosniff and frame-ancestors, and its request id. Every 4xx and 5xx logged; the answers counted.
+securityHeaders(app);
+const requestLog = logRequests(app);
 
 // One Lidarr client for the whole server; the Lidarr source in Settings points it at a Lidarr (or not).
 const lidarr = new LidarrClient();
@@ -236,6 +244,9 @@ statusRoutes(app, {
   musicbrainz,
   matching: () => store.listSources().reduce((n, s) => n + matcher.pendingGroups(s.id), 0),
 });
+// The stall monitor starts once the library has loaded (below): its tally from then on.
+let stalls: ReturnType<typeof watchStalls> | undefined;
+diagnosticsRoutes(app, { db, store, analyzer, transitions, encoded, responses: requestLog.counts, stalls: () => stalls?.tally() });
 
 // In production, serve the built web app from the same origin.
 const webDist = config.WEB_DIST
@@ -271,7 +282,7 @@ if (accounts.setupMode()) app.log.info('Nobody has set up Playarr yet: open Sett
 library.loadStored();
 library.refresh().catch(() => {});
 library.startAutoRefresh(config.LIBRARY_REFRESH_MINUTES);
-watchStalls(app.log);
+stalls = watchStalls(app.log);
 
 // Settings → Analysis → In the background: the analysis queue lives in memory, so after a restart (an
 // update, say) the library's backlog is queued again, behind the songs someone is waiting for.
