@@ -2,6 +2,7 @@ import type { Album, AlbumDetail, AlbumPage, AlbumSort, Artist, ArtistDetail, Ar
 import { randomBytes } from 'node:crypto';
 import { buildCatalog, type Catalog, type FileRecord, type LidarrAlbumRef } from '../catalog/build.ts';
 import type { CatalogRows, CatalogStore } from '../catalog/store.ts';
+import { SourceLocks } from '../catalog/sourceLocks.ts';
 import type { CatalogSource } from '../catalog/types.ts';
 import { coverImage, type CoverImage } from './coverColorStore.ts';
 import type { CoverColors } from './coverColors.ts';
@@ -318,6 +319,8 @@ export class Library extends LibraryView {
   /** One view per distinct set of sources, shared by every account with that set. */
   private readonly views = new Map<string, LibraryView>();
   private inflight: Promise<void> | null = null;
+  /** Shared with the organizer: a source's sync and the moving of its files take turns. */
+  readonly sourceLocks = new SourceLocks();
   private timer: NodeJS.Timeout | null = null;
   private refreshTimer: NodeJS.Timeout | null = null;
   private rebuildTimer: NodeJS.Timeout | null = null;
@@ -477,7 +480,7 @@ export class Library extends LibraryView {
     // In Settings order: later sources match their files against what earlier ones reported.
     for (const { id, source } of sources) {
       try {
-        this.store.applySync(id, await source.sync());
+        await this.sourceLocks.run(id, async () => this.store.applySync(id, await source.sync()));
         this.store.setSyncError(id, null);
       } catch (err) {
         this.store.setSyncError(id, (err as Error).message);

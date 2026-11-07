@@ -147,7 +147,7 @@ Names are made safe (`safeSegment`):
 
 - **Local folders only.** For SSH, SFTP and SMB folders the plan says "Organizing works for folders on this server only", and apply and undo answer 409.
 - **Writable.** The folder must be writable (`access(W_OK)`). In Docker the `/host` mount is read-only, so a folder to organize needs its own read-write mount (`docker/compose.override.example.yaml`).
-- **Never during a scan.** Apply and undo are refused (409) while a scan is running, since the scan is writing the file list.
+- **Never during a scan.** Apply and undo are refused (409) while a scan is running, since the scan is writing the file list. A scan of the folder that starts while files are moving waits for the moves to finish (`SourceLocks` in `catalog/sourceLocks.ts`, shared by `Library` and `Organizer`), so it can't write back paths it listed before them.
 - **Never outside the folder.** Both paths must be inside the source's folder, and their real parent folders inside its real path, so a symlinked folder can't lead out.
 - **Never overwrite.** An existing target skips the file, unless it's the same file on a case-insensitive disk.
 - **Rename only.** A failed rename is skipped and reported ("On a different drive" for `EXDEV`, "Not allowed to move it"). Nothing is copied and then deleted.

@@ -4,6 +4,7 @@ import { mkdir, readdir, rename, rmdir } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import { isAudioFile } from './folderSource.ts';
 import { planMoves } from './organize.ts';
+import { SourceLocks } from './sourceLocks.ts';
 import { isInside } from './paths.ts';
 import type { CatalogStore } from './store.ts';
 
@@ -50,7 +51,11 @@ function realAncestor(path: string): string | null {
 
 /** Moves a folder source's files into Artist/Album/NN Title.ext, within the folder, with undo. */
 export class Organizer {
-  constructor(private readonly store: CatalogStore) {}
+  constructor(
+    private readonly store: CatalogStore,
+    /** The library's (Library.sourceLocks): moves wait for a sync of the folder under way, and syncs for them. */
+    private readonly locks = new SourceLocks(),
+  ) {}
 
   plan(sourceId: number): OrganizePlan {
     const { root, local } = this.folder(sourceId);
@@ -60,7 +65,11 @@ export class Organizer {
     return { writable: isWritable(root), moves, skipped, lastBatch };
   }
 
-  async apply(sourceId: number, fromRels: string[]): Promise<OrganizeResult> {
+  apply(sourceId: number, fromRels: string[]): Promise<OrganizeResult> {
+    return this.locks.run(sourceId, () => this.applyNow(sourceId, fromRels));
+  }
+
+  private async applyNow(sourceId: number, fromRels: string[]): Promise<OrganizeResult> {
     const root = this.localRoot(sourceId);
     if (!isWritable(root)) throw new OrganizeError('Playarr can’t write to this folder', 409);
     const wanted = new Set(fromRels);
@@ -103,7 +112,11 @@ export class Organizer {
     return { batchId, moved, skipped };
   }
 
-  async undo(sourceId: number, batchId: number): Promise<{ restored: number; skipped: OrganizeSkip[] }> {
+  undo(sourceId: number, batchId: number): Promise<{ restored: number; skipped: OrganizeSkip[] }> {
+    return this.locks.run(sourceId, () => this.undoNow(sourceId, batchId));
+  }
+
+  private async undoNow(sourceId: number, batchId: number): Promise<{ restored: number; skipped: OrganizeSkip[] }> {
     const root = this.localRoot(sourceId);
     if (!isWritable(root)) throw new OrganizeError('Playarr can’t write to this folder', 409);
     const moves = this.store.movesOf(sourceId, batchId).reverse();

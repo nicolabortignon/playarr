@@ -128,7 +128,7 @@ const matcher = new Matcher({
 });
 sources.useMatcher(matcher);
 // Moves folder files into Artist/Album/NN Title on request (Settings → Sources → Organize files).
-const organizer = new Organizer(store);
+const organizer = new Organizer(store, library.sourceLocks);
 const art = new LocalArt(lidarr, resolve(config.CACHE_DIR, 'art'));
 const media = createMediaSource(config);
 // Lidarr's files through MEDIA_SOURCE + PATH_MAP; folder sources through their own filesystem.
@@ -254,16 +254,29 @@ const webDist = config.WEB_DIST
   : fileURLToPath(new URL('../../web/dist', import.meta.url));
 if (existsSync(webDist)) await serveWebApp(app, webDist);
 
+// Apps on the home network find the server by Bonjour (BONJOUR=off to stop), once it listens.
+let bonjour: ReturnType<typeof advertise> | undefined;
+/** How long requests under way (a song streaming) get once the server is closing, before their connections are cut. */
+const CLOSE_GRACE_MS = 5000;
+let closing = false;
 const shutdown = async () => {
+  if (closing) return;
+  closing = true;
+  app.log.info('Closing');
+  // HTTP first, so nothing new starts: what's under way gets a moment, then its connections are closed. Then the
+  // work in the background, then the sources it reads from, then the database.
+  await bonjour?.stop();
+  const cut = setTimeout(() => app.server.closeAllConnections(), CLOSE_GRACE_MS);
+  cut.unref();
+  await app.close();
+  clearTimeout(cut);
   library.stop();
   encoded.close();
-  await media.close();
-  await folders.closeAll();
-  await bonjour?.stop();
-  await app.close();
   analyzer.close();
   // A render a moment from done is let finish (its file is then complete); one that isn't is cut off.
   await Promise.race([transitions?.idle(), new Promise((resolve) => setTimeout(resolve, 2000).unref())]);
+  await media.close();
+  await folders.closeAll();
   // Shared, so the analyzer leaves it open: closed here, once neither uses it.
   dsp.close();
   beatModel.close();
@@ -271,10 +284,16 @@ const shutdown = async () => {
   process.exit(0);
 };
 process.on('SIGINT', shutdown).on('SIGTERM', shutdown);
+// A crash is logged as the rest is, then the server stops (Docker starts it again). A promise that failed with nobody
+// to hear it is logged, and the server goes on.
+process.on('uncaughtException', (err) => {
+  app.log.fatal({ err }, 'The server crashed');
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => app.log.error({ err: reason }, 'Something failed with nobody to hear it'));
 
 await app.listen({ port: config.PORT, host: config.HOST });
-// Apps on the home network find the server by Bonjour (BONJOUR=off to stop).
-const bonjour = config.BONJOUR === 'on' ? advertise({ port: config.PORT, info: info(), log: app.log }) : undefined;
+bonjour = config.BONJOUR === 'on' ? advertise({ port: config.PORT, info: info(), log: app.log }) : undefined;
 app.log.info(`Sources: ${store.listSources().map((s) => s.name).join(', ') || 'none'} · media source: ${media.kind}`);
 if (accounts.setupMode()) app.log.info('Nobody has set up Playarr yet: open Settings → Accounts from your home network to set the owner’s password');
 

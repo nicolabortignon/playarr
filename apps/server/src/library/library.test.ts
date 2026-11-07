@@ -41,6 +41,29 @@ describe('Library', () => {
     await expect(library.refresh()).rejects.toThrow('Drive not mounted');
   });
 
+  it('syncs a source in turn with the moving of its files (sourceLocks)', async () => {
+    const store = new CatalogStore(freshDb());
+    const a = store.addSource('lidarr', 'Lidarr');
+    let listed!: () => void;
+    const sync = vi.fn(async () => {
+      await new Promise<void>((resolve) => (listed = resolve));
+      return mezzanine();
+    });
+    const library = new Library(store, () => [{ id: a, source: { kind: 'lidarr', sync } }], log);
+    const refreshed = library.refresh();
+    await vi.waitFor(() => expect(sync).toHaveBeenCalled());
+    let moved = false;
+    const moving = library.sourceLocks.run(a, async () => {
+      moved = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(moved).toBe(false);
+    listed();
+    await refreshed;
+    await moving;
+    expect(moved).toBe(true);
+  });
+
   it('reloads from the store without syncing', async () => {
     const store = new CatalogStore(freshDb());
     const a = store.addSource('lidarr', 'Lidarr');

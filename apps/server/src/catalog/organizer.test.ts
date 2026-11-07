@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFil
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Organizer } from './organizer.ts';
+import { SourceLocks } from './sourceLocks.ts';
 import { CatalogStore } from './store.ts';
 import { flacBytes, freshDb, mezzanine, tempDir } from './testFixtures.ts';
 
@@ -86,6 +87,21 @@ describe('Organizer', () => {
     } finally {
       outside.cleanup();
     }
+  });
+
+  it('waits for a sync of the folder under way before moving anything', async () => {
+    const { store, id, dir } = setup();
+    const locks = new SourceLocks();
+    const organizer = new Organizer(store, locks);
+    let synced!: () => void;
+    const syncing = locks.run(id, () => new Promise<void>((resolve) => (synced = resolve)));
+    const moving = organizer.apply(id, ['misc/a.flac']);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(existsSync(join(dir, 'misc/a.flac'))).toBe(true);
+    synced();
+    await syncing;
+    expect(await moving).toMatchObject({ moved: 1 });
+    expect(existsSync(join(dir, 'Massive Attack/Mezzanine/01 Angel.flac'))).toBe(true);
   });
 
   it('undoes a batch', async () => {

@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 **Goal:** Playarr holds up on a collector's library (100k tracks) and in daily use: no stalls on the server's event loop or the iPhone's main thread, nothing lost when storage fills or two tabs are open, sessions and connections that can be trusted, and enough logging to diagnose a user's problem.
 
-**Where it stands (2026-11-07):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §4 partly done (the headers, and health's details for admins only); §6 done. The rest not started.
+**Where it stands (2026-11-07):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §3 under way; §4 partly done (the headers, and health's details for admins only); §5 and §6 done. §7 as we go.
 
 ## 1. Big libraries — M — done 2026-11-07, but for the build in a worker
 
@@ -44,7 +44,9 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 - `/api/health` tells strangers only whether things are fine; the details (Lidarr address, paths) go to admins.
 - Login rate limiting with a global budget beside the per-address one; old entries pruned.
 
-## 5. Shutdown, timeouts and backpressure on the server — S
+## 5. Shutdown, timeouts and backpressure on the server — S — done 2026-11-07
+
+*Done 2026-11-07: shutdown stops Bonjour and HTTP first, cuts connections still open after 5 s, then stops the background work, the sources and the database (`index.ts`); a crash is logged before the server stops, and a promise that failed with nobody to hear it is logged. SSH commands fail when the host hasn't started them within 20 s or they go 60 s without output, or say more than 64 MB (a listing 256 MB, a decode 96 MB, as the local and rclone ones already did); encoded streams over SSH hold ffmpeg back while their reader is behind (plan 2). Remote images and Lidarr's originals stop at 20 MB. A question to Lidarr that didn't reach it, or got 502, 503 or 504, is asked once more a second later. A source's sync and the moving of its files take turns (`SourceLocks`).*
 
 - Shutdown closes HTTP first (forcing connections closed after a timeout), then sources and the database; `bonjour` declared before the handler; crash handlers that log.
 - The SSH decode stream respects backpressure and has a size cap (`media/ssh.ts`).
