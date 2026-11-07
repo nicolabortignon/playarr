@@ -27,7 +27,8 @@ public struct PlayarrCommands: Commands {
   }
 
   private func perform(_ command: KeyCommand) {
-    guard let session = model.session else { return }
+    // The demo tried from the welcome screen has its own model, shown in place of this one.
+    guard let session = (model.trial ?? model).session else { return }
     KeyCommandHandler(session: session).perform(command)
   }
 }

@@ -10,6 +10,15 @@ public struct RootView: View {
     }
 
     public var body: some View {
+        if let trial = model.trial {
+            // Trying it without a server: the demo's own app, until it's left.
+            RootView(model: trial)
+        } else {
+            app
+        }
+    }
+
+    private var app: some View {
         content
             // Text without a font of its own is in the web's (Typography).
             .font(.sans(.body))

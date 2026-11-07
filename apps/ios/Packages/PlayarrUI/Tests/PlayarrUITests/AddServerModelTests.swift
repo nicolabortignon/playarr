@@ -22,6 +22,43 @@ import Testing
         return AppModel(store: store, browser: ServerBrowser(), appVersion: AppVersion("1.0.0"), device: DeviceInfo(name: "Test", platform: "ios"))
     }
 
+    @Test func offersTheDemoUntilThereIsAServerAndLeavesNothingOfIt() async throws {
+        let app = app()
+        let model = AddServerModel(app: app)
+        #expect(model.offersTrial)
+
+        model.tryWithoutServer()
+        let trial = try #require(app.trial)
+        #expect(trial.isTrial)
+        #expect(trial.session?.account == Demo.account)
+        // The demo is its own: nothing of it lands in this app's servers.
+        #expect(app.store.servers.isEmpty)
+
+        // A setting changed in the demo, and the queue it saves on leaving: both thrown away with it.
+        let scratch = try #require(trial.scratch)
+        trial.playback.transitions = .dj
+        #expect(UserDefaults.standard.persistentDomain(forName: scratch.defaults)?.isEmpty == false)
+
+        trial.leavesTrial?()
+        #expect(app.trial == nil)
+        #expect(!app.isTrial)
+        #expect(!FileManager.default.fileExists(atPath: scratch.folder.path))
+        #expect(UserDefaults.standard.persistentDomain(forName: scratch.defaults)?.isEmpty ?? true)
+        #expect(app.playback.transitions != .dj)
+
+        // An invite opened in the demo leaves it for the invite's server.
+        app.tryWithoutServer()
+        app.open(URL(string: "playarr://redeem?server=http%3A%2F%2F\(host)&code=ABCD-EFGH")!)
+        #expect(app.trial == nil)
+        #expect(app.redeemLink != nil)
+        app.redeemLink = nil
+
+        // Adding a server from Accounts, with one already here: no "New to Playarr?".
+        #expect(await model.connect(to: URL(string: "http://\(host)")!))
+        #expect(await model.signIn(username: "sam", password: "correct horse"))
+        #expect(!model.offersTrial)
+    }
+
     @Test func goesToSignInForAServerInUse() async {
         let model = AddServerModel(app: app())
         #expect(await model.connect(to: URL(string: "http://\(host)")!))

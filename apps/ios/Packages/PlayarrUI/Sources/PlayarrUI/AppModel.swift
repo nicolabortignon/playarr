@@ -33,6 +33,21 @@ public final class AppModel {
     public var restoresPlace = true
     /// The app is on screen (a request that lands in the background is a notification instead).
     public var isActive = true
+    /// Trying Playarr without a server (plan 4 §1): the demo library's own model, shown instead of this one until
+    /// it's left (`leaveTrial()`). Nothing of it is kept: its servers, settings and files are its own, thrown away then.
+    public private(set) var trial: AppModel?
+    /// On the demo tried from the welcome screen: the way back to it (the account button's "Leave the demo").
+    public private(set) var leavesTrial: (@MainActor () -> Void)?
+    /// This is the demo tried from the welcome screen, marked as one wherever the account button is.
+    public var isTrial: Bool { leavesTrial != nil }
+    /// Where someone without a server reads how to set one up: the repository's Getting started.
+    public static let setUpURL = URL(string: "https://github.com/nicolabortignon/playarr#getting-started")!
+    public typealias Scratch = (folder: URL, defaults: String)
+    /// The demo's folder and settings suite (`demo()`), thrown away once the demo tried from the welcome screen is left.
+    @ObservationIgnored private(set) var scratch: Scratch?
+    /// "Try it without a server"'s: one folder and suite, emptied each time it starts and is left, so a demo the system
+    /// closed midway leaves nothing behind either.
+    static let trialScratch: Scratch = (FileManager.default.temporaryDirectory.appending(path: "playarr-trial", directoryHint: .isDirectory), "playarr.trial")
 
     @ObservationIgnored private let makeSession: SessionFactory
 
@@ -65,20 +80,48 @@ public final class AppModel {
 
     /// Signed in to the demo library, playing silence: for UI tests (`-UITestsDemo`). Nothing is kept. `requests`: the
     /// demo with Lidarr and an album to request, as an account that may request (`-UITestsRequests`, `DemoRequestsAPI`).
-    /// `api`: another server to answer (one that can't be reached, for the error states).
-    public static func demo(requests: Bool = false, api custom: (any APISending)? = nil) -> AppModel {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let store = ServerStore(directory: directory, secrets: InMemorySecretStore())
+    /// `api`: another server to answer (one that can't be reached, for the error states). `scratch`: where its files and
+    /// settings go (a new temporary folder and suite when nil).
+    public static func demo(requests: Bool = false, api custom: (any APISending)? = nil, scratch: Scratch? = nil) -> AppModel {
+        let id = UUID().uuidString
+        let (folder, suite) = scratch ?? (FileManager.default.temporaryDirectory.appending(path: "playarr-demo-\(id)", directoryHint: .isDirectory), "playarr-demo-\(id)")
+        let store = ServerStore(directory: folder.appending(path: "store", directoryHint: .isDirectory), secrets: InMemorySecretStore())
         let account = requests ? DemoRequestsAPI.account : Demo.account
         let api: any APISending = custom ?? (requests ? DemoRequestsAPI() : DemoAPI())
         try? store.signedIn(SignInResponse(token: "demo", account: account), server: Demo.server, at: Demo.baseURL)
-        let defaults = UserDefaults(suiteName: "playarr-demo-\(UUID().uuidString)") ?? .standard
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
         let model = AppModel(
             store: store, browser: ServerBrowser(), appVersion: .current, device: .current(),
             playback: PlaybackSettings(defaults: defaults), appearance: AppearanceSettings(defaults: defaults),
-            makeSession: { record, model in try AccountSession.demo(record, model: model, api: api) })
+            makeSession: { record, model in
+                try AccountSession.demo(record, model: model, api: api, folder: folder.appending(path: "session", directoryHint: .isDirectory))
+            })
+        model.scratch = (folder, suite)
         model.syncSession()
         return model
+    }
+
+    /// "Try it without a server": the demo library, signed in and playing silence, until `leaveTrial()`.
+    public func tryWithoutServer() {
+        guard trial == nil else { return }
+        Self.forget(Self.trialScratch)
+        let demo = AppModel.demo(scratch: Self.trialScratch)
+        demo.leavesTrial = { [weak self] in self?.leaveTrial() }
+        trial = demo
+    }
+
+    /// Back from the demo to the welcome screen, its session closed and nothing of it kept.
+    public func leaveTrial() {
+        guard let trial else { return }
+        trial.session?.close()
+        if let scratch = trial.scratch { Self.forget(scratch) }
+        self.trial = nil
+    }
+
+    /// Throws away a demo's folder (its queue, downloads and covers) and the settings changed in it.
+    private static func forget(_ scratch: Scratch) {
+        try? FileManager.default.removeItem(at: scratch.folder)
+        UserDefaults.standard.removePersistentDomain(forName: scratch.defaults)
     }
 
     /// Opens the session of the active, signed-in account, closing the one before; none while signed out. An account
@@ -109,9 +152,11 @@ public final class AppModel {
         return "Playarr couldn’t get playback ready on this device: \(error.localizedDescription)"
     }
 
-    /// playarr:// links: redeem a setup code.
+    /// playarr:// links: redeem a setup code, leaving the demo for it.
     public func open(_ url: URL) {
-        if let link = RedeemLink(url) { redeemLink = link }
+        guard let link = RedeemLink(url) else { return }
+        leaveTrial()
+        redeemLink = link
     }
 
     /// Asks the active server who it is: its name may have changed, or it may need a newer app.

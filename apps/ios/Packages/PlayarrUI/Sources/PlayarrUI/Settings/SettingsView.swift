@@ -12,17 +12,26 @@ struct SettingsView: View {
   var body: some View {
     List {
       Section {
-        // A row that opens Accounts, drawn as one: the words in the text color, not the accent, which is for actions
-        // (docs/design.md, Words), and a chevron for where it leads.
-        Button { app.showingAccounts = true } label: {
-          HStack {
-            LabeledContent("Signed in as \(session.account.name)", value: session.serverName)
-            Image(systemName: "chevron.right").font(.sans(.footnote).weight(.semibold)).foregroundStyle(.tertiary)
-              .accessibilityHidden(true)
+        if app.isTrial {
+          // The demo tried from the welcome screen has no accounts to switch to (a server added there would go with
+          // it): what it is, and the way back.
+          LabeledContent("Signed in as \(session.account.name)", value: session.serverName)
+          Button("Leave the demo") { app.leavesTrial?() }
+        } else {
+          // A row that opens Accounts, drawn as one: the words in the text color, not the accent, which is for actions
+          // (docs/design.md, Words), and a chevron for where it leads.
+          Button { app.showingAccounts = true } label: {
+            HStack {
+              LabeledContent("Signed in as \(session.account.name)", value: session.serverName)
+              Image(systemName: "chevron.right").font(.sans(.footnote).weight(.semibold)).foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            }
+            .foregroundStyle(.paper)
           }
-          .foregroundStyle(.paper)
+          .accessibilityHint("Switch accounts or add one")
         }
-        .accessibilityHint("Switch accounts or add one")
+      } footer: {
+        if app.isTrial { Text("A made-up library, kept on this device, whose songs play silence.") }
       }
       ForEach(SettingsGroup.groups(for: role), id: \.title) { group in
         Section {
@@ -83,7 +92,8 @@ struct SettingsPanelView: View {
     case .accounts:
       AccountsPanel(
         api: session.api,
-        signOutHere: { [store = app.store, key = session.key] in await store.signOut(key) },
+        // Signing out of the demo tried from the welcome screen leaves it: there's no server to sign in to again.
+        signOutHere: { [app, key = session.key] in if let leave = app.leavesTrial { leave() } else { await app.store.signOut(key) } },
         accountChanged: { [store = app.store, key = session.key] account in store.update(account, on: key.serverId) },
         // The setup links made on this device, kept for the server (the demo keeps them only while it runs).
         invites: session.client == nil ? InviteStore() : InviteStore(file: InviteStore.file(serverId: session.key.serverId)),

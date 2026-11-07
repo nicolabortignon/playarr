@@ -12,6 +12,7 @@ public struct AddServerFlow: View {
 
     @State private var model: AddServerModel
     @State private var path: [AddServerModel.Step] = []
+    private let theme: Theme
     private let start: Start
     private let onDone: () -> Void
     /// Shown as a sheet: Cancel, in the sheet's corner, puts it away.
@@ -19,6 +20,7 @@ public struct AddServerFlow: View {
 
     public init(app: AppModel, start: Start = .address, onCancel: (() -> Void)? = nil, onDone: @escaping () -> Void = {}) {
         _model = State(initialValue: AddServerModel(app: app))
+        theme = app.theme
         self.start = start
         self.onCancel = onCancel
         self.onDone = onDone
@@ -34,6 +36,8 @@ public struct AddServerFlow: View {
                     }
                 }
         }
+        // System lists, lighter than the page: the accent lifted to read on their rows (Connect, Try it without a server).
+        .tint(theme.listAccent.color)
     }
 
     @ViewBuilder private var root: some View {

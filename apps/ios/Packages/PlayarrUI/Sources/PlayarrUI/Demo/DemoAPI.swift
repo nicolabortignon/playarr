@@ -24,6 +24,8 @@ public struct DemoAPI: APISending {
       answer = Demo.mixMaps(ids)
     } else if let known = answers["\(endpoint.method.rawValue) \(endpoint.path)"] {
       answer = known
+    } else if endpoint.method != .get, Demo.isServerSetting(endpoint.path) {
+      throw Demo.unchanged
     } else {
       throw APIError.server(status: 404, message: "Not found")
     }

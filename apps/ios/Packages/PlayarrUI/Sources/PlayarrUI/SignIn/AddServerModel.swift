@@ -38,6 +38,10 @@ public final class AddServerModel {
     }
 
     public var appVersion: AppVersion { app.appVersion }
+    /// Someone with no server yet (the first screen, not Add a server from Accounts): what Playarr is, how to set one
+    /// up, and the demo to try meanwhile.
+    public var offersTrial: Bool { app.store.servers.isEmpty }
+    public func tryWithoutServer() { app.tryWithoutServer() }
 
     /// Connects to what was typed in the address field.
     @discardableResult

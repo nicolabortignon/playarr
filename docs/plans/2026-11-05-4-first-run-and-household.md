@@ -4,9 +4,11 @@ Agreed 2026-11-05 from the reviews; fourth of four (after [robustness and scale]
 
 **Goal:** someone who downloads the app without a server understands it in a minute; an invited member goes from the invite to music in under two minutes; the owner's first steps lead to music, not settings; and the household shares requests and playlists like a family, not a set of strangers.
 
-**Where it stands (2026-11-07):** 2 and 6 done, but for universal links, which wait for a Playarr domain; 3 done on the web; the rest not started.
+**Where it stands (2026-11-07):** 1 and 6 done; 2 done but for universal links, which wait for a Playarr domain; 3 done on the web; the rest not started.
 
-## 1. The welcome screen explains itself — S–M
+## 1. The welcome screen explains itself — S–M — done 2026-11-07
+
+*Done: while no server is added, "Add a server" starts with "New to Playarr?": what Playarr is, "How to set up a server" (the repository's Getting started) and "Try it without a server", the demo library on silence (`AppModel.tryWithoutServer`). In the demo the account button is a "Demo" badge whose menu says what it is and has "Leave the demo". Every Settings panel shows made-up settings, signing out leaves the demo, and an invite link opened in it leaves it for the invite. Nothing of it is kept: its folder and settings are emptied when it starts and when it's left. App Review's notes mention it. The add-server screens now take the app's accent, like its other lists.*
 
 The iOS welcome offers only "Add a server" (`SignIn/WelcomeView.swift`). Add:
 - "New to Playarr?": what it is, what you need (a server at home), and a link to setting one up.

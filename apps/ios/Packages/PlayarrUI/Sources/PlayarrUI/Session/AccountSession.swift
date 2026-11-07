@@ -100,10 +100,13 @@ public final class AccountSession {
     return session
   }
 
-  /// The demo library (`Demo`), playing silence: for the UI tests, and view-model tests (`offline`: an engine that
-  /// renders only when asked, so no sound device is needed).
-  public static func demo(_ record: AccountRecord, model: AppModel, api: any APISending = DemoAPI(), offline: Bool = false) throws -> AccountSession {
-    let folder = FileManager.default.temporaryDirectory.appending(path: "playarr-demo-\(UUID().uuidString)", directoryHint: .isDirectory)
+  /// The demo library (`Demo`), playing silence: for the UI tests, view-model tests (`offline`: an engine that renders
+  /// only when asked, so no sound device is needed) and "Try it without a server". `folder`: where its queue,
+  /// downloads and covers go (a new temporary one when nil).
+  public static func demo(
+    _ record: AccountRecord, model: AppModel, api: any APISending = DemoAPI(), offline: Bool = false, folder: URL? = nil
+  ) throws -> AccountSession {
+    let folder = folder ?? FileManager.default.temporaryDirectory.appending(path: "playarr-demo-\(UUID().uuidString)", directoryHint: .isDirectory)
     typealias MakeEngine = @MainActor (@escaping @MainActor (EngineItem, Int64) -> any PCMSource) throws -> AudioEngine
     let rendersWhenAsked: MakeEngine = { makeSource in try AudioEngine(manualRendering: true, makeSource: makeSource) }
     let player = try Player(

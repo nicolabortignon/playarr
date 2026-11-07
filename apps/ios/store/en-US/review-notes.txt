@@ -5,6 +5,9 @@ HOW TO SIGN IN
    {{REVIEW_SERVER_URL}}
 2. On "Sign in to …", use the demo account in the Sign-In Information fields (username {{REVIEW_USERNAME}}).
 
+WITHOUT THE SERVER
+If the server can't be reached, "Try it without a server" on "Add a server" opens a made-up library kept on the device. It has every screen, but its songs play silence. "Leave the demo", in the Demo button's menu, goes back.
+
 THE DEMO ACCOUNT
 It is on the developer's own Playarr server. It sees only a folder of Creative Commons albums (CC BY), so everything it plays may be shared. It is a regular member: no admin settings and no requests.
 

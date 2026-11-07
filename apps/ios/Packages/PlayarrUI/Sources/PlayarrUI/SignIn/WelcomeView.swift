@@ -1,13 +1,15 @@
 import PlayarrAPI
 import SwiftUI
 
-/// Add a server: the ones Bonjour finds on the home network, or an address.
+/// Add a server: the ones Bonjour finds on the home network, or an address. Before any server is known, what Playarr
+/// is first, how to set one up, and the demo library to try meanwhile (plan 4 §1).
 struct WelcomeView: View {
     @Bindable var model: AddServerModel
     let onConnected: () -> Void
 
     var body: some View {
         Form {
+            if model.offersTrial { newToPlayarr }
             Section {
                 if model.discovered.isEmpty {
                     Label("Looking for servers on your network…", systemImage: "antenna.radiowaves.left.and.right")
@@ -48,5 +50,21 @@ struct WelcomeView: View {
 
     private func connect() {
         Task { if await model.connect() { onConnected() } }
+    }
+
+    /// What Playarr is and what it needs, how to set a server up, and the demo to look around meanwhile.
+    private var newToPlayarr: some View {
+        Section {
+            Text("Playarr plays your own music from a server you run at home, on a NAS or a computer, with your music in a folder or in Lidarr. The app has no music of its own: it connects to that server.")
+                .foregroundStyle(.paperDim)
+            Link(destination: AppModel.setUpURL) {
+                Label("How to set up a server", systemImage: "arrow.up.right.square")
+            }
+            Button("Try it without a server", systemImage: "play.circle", action: model.tryWithoutServer)
+        } header: {
+            Text("New to Playarr?")
+        } footer: {
+            Text("The demo is a made-up library, kept on this device, whose songs play silence.")
+        }
     }
 }

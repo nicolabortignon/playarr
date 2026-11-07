@@ -25,6 +25,20 @@ import Testing
     #expect(groups.first?.albums.map(\.title) == ["Blue Lines", "100th Window", "Heligoland"])
   }
 
+  @Test func showsEverySettingsPanelButChangesNone() async throws {
+    let api = DemoAPI()
+    #expect(try await api.send(API.Settings.mixes()).history.plays == 312)
+    #expect(try await api.send(API.Settings.listenBrainz()).connected == false)
+    #expect(try await api.send(API.Analysis.progress()).songs == Demo.tracks.count)
+    #expect(try await api.send(API.Settings.requests()).options?.qualityProfiles.count == 2)
+    let updates = try await api.send(API.Settings.updates())
+    #expect(updates.status?.deployed == updates.status?.latest)
+    #expect(try await api.send(API.Server.info()) == Demo.server)
+    // The demo's server stays as it is, and says so.
+    await #expect(throws: Demo.unchanged) { try await api.send(API.Settings.saveUpdates(UpdateSettingsPatch(enabled: false))) }
+    await #expect(throws: Demo.unchanged) { try await api.send(API.Analysis.run(nil)) }
+  }
+
   @Test func saysNotFoundForTheRest() async {
     await #expect(throws: APIError.server(status: 404, message: "Not found")) { try await DemoAPI().send(API.Library.album(id: 1)) }
   }
