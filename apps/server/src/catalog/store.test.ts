@@ -204,6 +204,24 @@ describe('CatalogStore: managing sources', () => {
     expect(store.source(id)).toMatchObject({ name: 'Home', enabled: false, settings: { url: 'http://nas:8686' } });
   });
 
+  it('never gives a deleted copy’s id to another file', () => {
+    const { store, sourceId } = setup();
+    store.applySync(sourceId, mezzanine());
+    // Lidarr drops file 9000, then (its database made again) reports another file as 9000.
+    const dropped = mezzanine();
+    dropped.copies = dropped.copies.filter((c) => c.preferredId !== 9000);
+    store.applySync(sourceId, dropped);
+    const again = mezzanine();
+    again.copies = again.copies.map((c) => (c.preferredId === 9000 ? { ...c, ref: 'new-9000' } : c));
+    store.applySync(sourceId, again);
+    expect(store.load().copies.map((c) => c.id).sort()).toEqual([9001, 9002]);
+    // A source removed and added again gets new ids for its files too.
+    store.removeSource(sourceId);
+    const readded = store.ensureSource('lidarr', 'Lidarr');
+    store.applySync(readded, mezzanine());
+    expect(store.load().copies.every((c) => c.id > 9002)).toBe(true);
+  });
+
   it('removes a source with its copies, keeping catalog rows', () => {
     const store = new CatalogStore(freshDb());
     const id = store.ensureSource('lidarr', 'Lidarr');
@@ -409,7 +427,7 @@ describe('CatalogStore: matching', () => {
     expect(JSON.stringify(store.load().albums[0]!.meta)).not.toContain('metaRank');
   });
 
-  it('moves favorites, playlist entries, analysis and plays when a song gets its real id', () => {
+  it('moves favorites, playlist entries, analysis, mix points and plays when a song gets its real id', () => {
     const db = freshDb();
     const store = new CatalogStore(db);
     const folder = store.addSource('folder', 'Music');
@@ -423,6 +441,7 @@ describe('CatalogStore: matching', () => {
     db.prepare('INSERT INTO playlist_items (playlist_id, position, recording_id, title, artist_name, album_title, added_at) VALUES (1, 0, ?, ?, ?, ?, ?)').run('local:rec-1', 'Angel', 'Massive Attack', 'Mezzanine', now);
     db.prepare('INSERT INTO track_features (recording_id, version, features, analyzed_at) VALUES (?, 1, ?, ?)').run('local:rec-1', '{}', now);
     db.prepare('INSERT INTO plays (recording_id, track_id, played_at, hour, weekday, seconds) VALUES (?, 1, ?, 21, 0, 200)').run('local:rec-1', now);
+    db.prepare('INSERT INTO cue_points (recording_id, mix_in, mix_out, updated_at) VALUES (?, 12.5, 190, ?)').run('local:rec-1', now);
 
     const matched = mezzanine();
     matched.copies = local.copies.map((c, i) => ({ ...c, trackKey: matched.tracks.find((t) => t.recordingId === `rec-${i + 1}`)!.key }));
@@ -433,6 +452,7 @@ describe('CatalogStore: matching', () => {
     expect(one('SELECT recording_id FROM playlist_items').recording_id).toBe('rec-1');
     expect(one('SELECT recording_id FROM track_features').recording_id).toBe('rec-1');
     expect(db.prepare('SELECT recording_id, track_id FROM plays').get()).toEqual({ recording_id: 'rec-1', track_id: null });
+    expect(db.prepare('SELECT recording_id, mix_in, mix_out FROM cue_points').all()).toEqual([{ recording_id: 'rec-1', mix_in: 12.5, mix_out: 190 }]);
   });
 });
 

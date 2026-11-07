@@ -736,7 +736,7 @@ export class CatalogStore {
     return index;
   }
 
-  /** A song got its real id: its favorites, playlist entries, analysis and plays follow it. */
+  /** A song got its real id: its favorites, playlist entries, analysis, mix points and plays follow it. */
   private moveRecording(from: string, to: string) {
     this.sql(
         `INSERT OR IGNORE INTO favorites (account_id, recording_id, track_id, title, artist_name, album_title, created_at)
@@ -751,6 +751,9 @@ export class CatalogStore {
       )
       .run(to, from);
     this.sql('DELETE FROM track_features WHERE recording_id = ?').run(from);
+    // The mix points set by hand (its mix map is measured again: the file it's read from may change with the match).
+    this.sql('UPDATE OR IGNORE cue_points SET recording_id = ? WHERE recording_id = ?').run(to, from);
+    this.sql('DELETE FROM cue_points WHERE recording_id = ?').run(from);
     // Its listening history too, or a matched song would lose its plays to the mixes. (Its track id may
     // change with the match: the history keeps the recording, which is what the mixes go by.)
     this.sql('UPDATE OR IGNORE plays SET recording_id = ?, track_id = NULL WHERE recording_id = ?').run(to, from);
@@ -1094,10 +1097,17 @@ export class CatalogStore {
     return { id, addedAt, wrote: true };
   }
 
-  /** The preferred id if no row has it, else null so AUTOINCREMENT picks one never used before. */
+  /**
+   * The preferred id if no row has it, else null so AUTOINCREMENT picks one never used before. A deleted copy's id is
+   * never given again (retired_copy_ids): a device keeps songs by file id, and would play the old file for the new one.
+   */
   private freeId(table: CatalogTable | 'copies', preferred: number | undefined, taken?: Set<number>): number | null {
     if (preferred === undefined) return null;
     if (taken) return taken.has(preferred) ? null : preferred;
-    return this.sql(`SELECT 1 FROM ${table} WHERE id = ?`).get(preferred) ? null : preferred;
+    const used =
+      table === 'copies'
+        ? 'SELECT 1 FROM copies WHERE id = ?1 UNION ALL SELECT 1 FROM retired_copy_ids WHERE id = ?1'
+        : `SELECT 1 FROM ${table} WHERE id = ?1`;
+    return this.sql(used).get(preferred) ? null : preferred;
   }
 }

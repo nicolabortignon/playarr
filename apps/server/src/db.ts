@@ -295,6 +295,11 @@ const MIGRATIONS: Migration[] = [
      version INTEGER NOT NULL,
      read_at TEXT NOT NULL
    );`,
+  // The ids of copies deleted, never given to another file: a device keeps songs by file id (catalog/store.ts freeId).
+  `CREATE TABLE retired_copy_ids (id INTEGER PRIMARY KEY);
+   CREATE TRIGGER copies_retired AFTER DELETE ON copies BEGIN
+     INSERT OR IGNORE INTO retired_copy_ids (id) VALUES (old.id);
+   END;`,
 ];
 
 /** How many copies made before migrations are kept in `backups/`: the newest. */

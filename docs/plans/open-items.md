@@ -46,14 +46,8 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - Seeking inside a DJ transition abandons the mix rather than seeking within it. *(phase 5)*
 - Sideways Now Playing, parts of the spec not built: the tracklist on the iPad and Duo (they still show four songs of Up next), the stage centring the open line with the time left, the header's actions moving into ⋯ at accessibility sizes, Increase Contrast flattening the backdrop, VoiceOver actions on tracklist lines, Undo after swiping a line away. *(sideways Now Playing spec)*
 - `ScreenTour` shots of the stage, lyrics sideways and a DJ-mix join. *(sideways Now Playing spec)*
-- Bold Text: the bundled fonts don't follow it (nothing reads `legibilityWeight`), though phase 10 assumed system fonts would. *(phase 10, found)*
 - Mix colors drawn in Display P3 rather than sRGB (optional; today's washes fit in sRGB). *(phase 6 next steps)*
 - Once in five iPhone runs of `AccessibilityAuditTests`, Now Playing didn't open from the mini player within 5 seconds; it has passed every run since. *(found)*
 
 ## Tooling
 
-
-## Found while writing the docs
-
-- Hand-set cue points stay on the old id when a folder song is matched to MusicBrainz (`moveRecording` in `apps/server/src/catalog/store.ts` moves favorites, playlist items, sound analysis and plays only), though a comment in `db.ts` says they survive. *(found)*
-- A deleted copy's id can be handed to a new Lidarr copy with the same track-file id (`freeId` in `catalog/store.ts`), which could point a song kept offline at another file. *(found)*
