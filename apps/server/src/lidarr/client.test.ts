@@ -38,3 +38,35 @@ describe('LidarrClient profiles', () => {
     ]);
   });
 });
+
+describe('LidarrClient retries', () => {
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+
+  it('asks a question that didn’t reach Lidarr once more, after a moment', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(json({ version: '3.1.6' }));
+    const client = new LidarrClient('http://lidarr:8686', 'key', 10);
+    await expect(client.systemStatus()).resolves.toEqual({ version: '3.1.6' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks once more when Lidarr can’t answer just then, and says so if it still can’t', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => json({ message: 'Lidarr is starting' }, 503));
+    const client = new LidarrClient('http://lidarr:8686', 'key', 10);
+    await expect(client.artists()).rejects.toMatchObject({ status: 503, message: 'Lidarr is starting' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('never makes a change twice, and doesn’t ask again when the time ran out', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
+    const client = new LidarrClient('http://lidarr:8686', 'key', 10);
+    await expect(client.command('RefreshArtist')).rejects.toThrow('Cannot reach Lidarr at http://lidarr:8686: fetch failed');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockReset().mockRejectedValue(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+    await expect(client.artists()).rejects.toThrow(/Cannot reach Lidarr/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

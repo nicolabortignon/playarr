@@ -97,6 +97,7 @@ Lidarr copies are dated by when Lidarr imported the file. Folder copies are date
 
 - **At most one Lidarr.** The whole server shares one `LidarrClient`, which `SourceManager.active()` points at the first enabled Lidarr source, or leaves unconfigured. A second Lidarr source is refused (409).
 - **Optional.** Without one, Lidarr calls fail fast with 503, and requests and Discover are hidden (`routes/api.ts`).
+- **Asked twice at most.** A question (a GET) that didn't reach Lidarr, or got 502, 503 or 504 (restarting, or a proxy in front of it), is asked once more a second later; one that ran out of time isn't, nor a change (`lidarr/client.ts`).
 - **Seeded from `.env` once.** `LIDARR_URL` and `LIDARR_API_KEY` become a Lidarr source on first start (`seedFromEnv`, flag `sources.seeded_from_env`). After that Settings owns them. A removed source isn't recreated, and the `.env` values are only logged as ignored.
 
 ## 5. Folder sources
@@ -120,7 +121,7 @@ Every folder operation goes through a `FolderFs` (`catalog/folderFs.ts`). `Folde
 | `smb` | `rclone lsjson` | `rclone serve http` on 127.0.0.1 | ffmpeg here, reading the loopback URL | fpcalc here, same | 4 |
 
 - **Remote tags** are read from byte ranges in chunks of at least 64 KB (`readTagsFrom` in `catalog/tags.ts`).
-- **SSH** authenticates with the key file (a path on the Playarr server), else the password, else ssh-agent (`media/ssh.ts`). A host without GNU `find` gets "use SFTP instead".
+- **SSH** authenticates with the key file (a path on the Playarr server), else the password, else ssh-agent (`media/ssh.ts`). A host without GNU `find` gets "use SFTP instead". A command the host hasn't started within 20 s, or that goes 60 s without a word, is stopped and fails, and so is one whose answer passes 64 MB (a listing may hold 256 MB; a decode, 96 MB, as this server's own ffmpeg may): a host gone bad fails the sync rather than holding it for good.
 - **SMB** goes through rclone, not a Node client: the Node SMB clients don't speak signed SMB 3. Connection settings reach rclone only through `RCLONE_SMB_*` environment variables, the password obscured the way rclone expects (`media/rclone.ts`). Paths are `/<share>/<folder>`, and browsing `/` lists the server's shares. Each share gets one `rclone serve http` (`media/rcloneServe.ts`) on a free loopback port with random credentials, read-only, its directory cache 10 s, started on first read. A full listing may take up to 30 minutes, other rclone calls 2. Without rclone (`RCLONE_PATH`), SMB is off and adding one answers 400. **NFS:** mount it on the host and use This server.
 
 ### FOLDER_ROOTS

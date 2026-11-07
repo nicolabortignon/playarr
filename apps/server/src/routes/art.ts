@@ -7,7 +7,7 @@ import { trimCacheDir } from '../cacheDir.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import { copyCover } from '../catalog/folderArt.ts';
 import type { FolderFs } from '../catalog/folderFs.ts';
-import { fetchRemoteImage, isAllowedRemote } from '../discover/art.ts';
+import { fetchRemoteImage, imageBody, isAllowedRemote } from '../discover/art.ts';
 import { libraryOf, sourcesOf } from '../accounts/rights.ts';
 import { copyCoverKey, lidarrCoverKey, remoteCoverKey, type CoverColorStore, type CoverReader } from '../library/coverColorStore.ts';
 import type { Library } from '../library/library.ts';
@@ -78,7 +78,7 @@ export class LocalArt {
       if (kept) return kept;
       const spec = TYPES[`${kind}/${type}`]!;
       const res = await this.lidarr.mediaCover(kind, id, spec.file);
-      const body = Buffer.from(await res.arrayBuffer());
+      const body = await imageBody(res);
       const mime = res.headers.get('content-type') ?? spec.mime;
       await mkdir(this.dir, { recursive: true });
       await writeFile(`${file}.tmp`, body);

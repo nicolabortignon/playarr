@@ -23,6 +23,27 @@ export function coverArtArchive(releaseGroupMbid: string, size: 250 | 500 = 250)
   return `https://images.lidarr.audio/cache/https://coverartarchive.org/release-group/${releaseGroupMbid}/front-${size}`;
 }
 
+/** The most of an image Playarr takes from another server: covers are a few hundred KB, the biggest artist art a few MB. */
+export const IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+
+/** An image response's body, refused past `max` bytes: as its length says, or as it arrives when it doesn't say. */
+export async function imageBody(res: Response, max = IMAGE_MAX_BYTES): Promise<Buffer> {
+  const tooBig = () => new Error(`Image over ${Math.round(max / 1024 / 1024)} MB`);
+  if (Number(res.headers.get('content-length')) > max) {
+    void res.body?.cancel();
+    throw tooBig();
+  }
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  // Leaving the loop early cancels the rest of the download.
+  for await (const chunk of res.body ?? []) {
+    bytes += chunk.byteLength;
+    if (bytes > max) throw tooBig();
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 /** Fetch an allowlisted image, following redirects only to allowlisted hosts. */
 export async function fetchRemoteImage(url: string): Promise<{ body: Buffer; mime: string } | null> {
   let current = new URL(url);
@@ -37,7 +58,7 @@ export async function fetchRemoteImage(url: string): Promise<{ body: Buffer; mim
     if (!res.ok) throw new Error(`Remote art HTTP ${res.status}`);
     const mime = res.headers.get('content-type') ?? 'image/jpeg';
     if (!mime.startsWith('image/')) throw new Error(`Not an image: ${mime}`);
-    return { body: Buffer.from(await res.arrayBuffer()), mime };
+    return { body: await imageBody(res), mime };
   }
   throw new Error('Too many redirects');
 }

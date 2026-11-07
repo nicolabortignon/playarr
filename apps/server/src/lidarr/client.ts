@@ -22,11 +22,19 @@ export class LidarrError extends Error {
   }
 }
 
+/** Lidarr's answers that mean "not now" (restarting, or a proxy in front of it that can't reach it yet). */
+const NOT_NOW = new Set([502, 503, 504]);
+
 export class LidarrClient {
   private baseUrl = '';
   private apiKey = '';
 
-  constructor(baseUrl = '', apiKey = '') {
+  constructor(
+    baseUrl = '',
+    apiKey = '',
+    /** A question that didn't reach Lidarr, or that it couldn't answer just then, is asked once more after this long. */
+    private readonly retryMs = 1000,
+  ) {
     this.configure(baseUrl, apiKey);
   }
 
@@ -40,11 +48,20 @@ export class LidarrClient {
     return !!this.baseUrl && !!this.apiKey;
   }
 
+  /**
+   * A call to Lidarr's API. A question (a GET) that didn't get there, or got "not now", is asked once more after a
+   * moment; one that ran out of time isn't (the caller's time is up), nor a change (it may have been made).
+   */
   private async request(
     path: string,
     init: { method?: string; body?: unknown; timeoutMs?: number } = {},
+    again = (init.method ?? 'GET') === 'GET',
   ): Promise<Response> {
     if (!this.configured) throw new LidarrError('No Lidarr source is set up. Add one in Settings → Sources.', 503);
+    const retry = async () => {
+      await new Promise((resolve) => setTimeout(resolve, this.retryMs));
+      return this.request(path, init, false);
+    };
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
@@ -58,7 +75,12 @@ export class LidarrClient {
         signal: AbortSignal.timeout(init.timeoutMs ?? 30_000),
       });
     } catch (err) {
+      if (again && (err as Error).name !== 'TimeoutError') return retry();
       throw new LidarrError(`Cannot reach Lidarr at ${this.baseUrl}: ${(err as Error).message}`);
+    }
+    if (again && NOT_NOW.has(res.status)) {
+      void res.body?.cancel();
+      return retry();
     }
     if (res.status === 401) throw new LidarrError('Lidarr rejected the API key', 401);
     if (!res.ok) {

@@ -110,6 +110,9 @@ export function parseStat(out: string): { size: number; mtimeMs: number; dir: bo
   return { size: Number(size), mtimeMs: Number(mtime) * 1000, dir: type.join(' ') === 'directory' };
 }
 
+/** The most a folder's listing over SSH may hold. */
+const LISTING_MAX_BYTES = 256 * 1024 * 1024;
+
 export class SshFolderFs implements FolderFs {
   readonly kind = 'ssh' as const;
   readonly concurrency = 3;
@@ -144,6 +147,8 @@ export class SshFolderFs implements FolderFs {
     try {
       const out = await this.shell.run(
         `find ${shellQuote(root)} -mindepth 1 \\( -name '.*' -prune \\) -o -type f -printf '%s\\t%T@\\t%P\\n'`,
+        // A line of about a hundred bytes a file: room for two million or so.
+        { maxBytes: LISTING_MAX_BYTES },
       );
       return parseFindListing(root, out);
     } catch (err) {

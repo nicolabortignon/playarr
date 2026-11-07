@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { PassThrough, type Readable } from 'node:stream';
 import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
-import { ffmpegEncodeArgs, ffmpegPcmArgs, type ByteRange, type EncodeOptions, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
+import { ffmpegEncodeArgs, ffmpegPcmArgs, PCM_MAX_BUFFER, type ByteRange, type EncodeOptions, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
 
 export interface SshOptions {
   host: string;
@@ -65,40 +65,110 @@ export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+/** How long the host may take to start a command, and a command may go without a word, before it's given up on. */
+const START_MS = 20_000;
+const QUIET_MS = 60_000;
+/** The most a command's answer may hold (a file's bytes, a listing). */
+const ANSWER_MAX_BYTES = 64 * 1024 * 1024;
+
+export interface RunOptions {
+  /** Bytes of output past which the command is stopped and fails (default 64 MB). */
+  maxBytes?: number;
+  /** How long it may go without output before it's stopped and fails (default 60 s). */
+  quietMs?: number;
+}
+
 /** Runs commands over a shared SSH connection. */
 export interface Shell {
-  run(command: string): Promise<string>;
-  runBuffer(command: string): Promise<Buffer>;
+  run(command: string, opts?: RunOptions): Promise<string>;
+  runBuffer(command: string, opts?: RunOptions): Promise<Buffer>;
 }
 
 export class SshShell implements Shell {
-  constructor(private readonly conn: SshConnection) {}
+  constructor(
+    private readonly conn: SshConnection,
+    private readonly startMs = START_MS,
+  ) {}
 
+  /** A command started on the host; fails if the host hasn't started it within a while (a connection gone bad). */
   async exec(command: string): Promise<ClientChannel> {
     const client = await this.conn.get();
     return new Promise((resolve, reject) => {
-      client.exec(command, (err, channel) => (err ? reject(err) : resolve(channel)));
-    });
-  }
-
-  async run(command: string): Promise<string> {
-    return (await this.runBuffer(command)).toString('utf8');
-  }
-
-  /** stdout of a command; rejects with stderr on a non-zero exit. */
-  async runBuffer(command: string): Promise<Buffer> {
-    const channel = await this.exec(command);
-    return new Promise((resolve, reject) => {
-      const out: Buffer[] = [];
-      let err = '';
-      channel.on('data', (d: Buffer) => out.push(d));
-      channel.stderr.on('data', (d: Buffer) => (err += d));
-      channel.on('close', (code: number | null) => {
-        if (code === 0) return resolve(Buffer.concat(out));
-        reject(new Error(cleanSshError(err) || `exit code ${code}`));
+      let late = false;
+      const timer = setTimeout(() => {
+        late = true;
+        reject(new Error(`The SSH host didn’t start a command within ${this.startMs / 1000} s`));
+      }, this.startMs);
+      client.exec(command, (err, channel) => {
+        clearTimeout(timer);
+        // Started after all, but given up on: nobody's reading it.
+        if (late) return void channel?.close();
+        if (err) reject(err);
+        else resolve(channel);
       });
     });
   }
+
+  async run(command: string, opts?: RunOptions): Promise<string> {
+    return (await this.runBuffer(command, opts)).toString('utf8');
+  }
+
+  /** stdout of a command; see gather. */
+  async runBuffer(command: string, opts?: RunOptions): Promise<Buffer> {
+    return gather(await this.exec(command), opts);
+  }
+}
+
+/**
+ * What a command on the host writes to stdout, once it exits; rejects with its stderr on a non-zero exit, and stops
+ * it (and rejects) when it goes quiet for too long, says too much, or `signal` calls it off.
+ */
+export function gather(
+  channel: ClientChannel,
+  { maxBytes = ANSWER_MAX_BYTES, quietMs = QUIET_MS, signal }: RunOptions & { signal?: AbortSignal } = {},
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const out: Buffer[] = [];
+    let bytes = 0;
+    let err = '';
+    let done = false;
+    const finish = (settle: () => void) => {
+      if (done) return;
+      done = true;
+      clearTimeout(quiet);
+      signal?.removeEventListener('abort', abort);
+      settle();
+    };
+    // Given up on at once: a host that's gone may never confirm the close.
+    const stop = (why: unknown) => {
+      finish(() => reject(why));
+      channel.close();
+    };
+    const abort = () => stop(signal!.reason);
+    const quietFor = () => setTimeout(() => stop(new Error(`The SSH host stopped answering (nothing for ${quietMs / 1000} s)`)), quietMs);
+    let quiet = quietFor();
+    const heard = () => {
+      if (done) return;
+      clearTimeout(quiet);
+      quiet = quietFor();
+    };
+    if (signal?.aborted) return abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    channel.on('data', (d: Buffer) => {
+      if (done) return;
+      bytes += d.length;
+      if (bytes > maxBytes) return stop(new Error(`The SSH host’s answer was over ${Math.round(maxBytes / 1024 / 1024)} MB`));
+      out.push(d);
+      heard();
+    });
+    channel.stderr.on('data', (d: Buffer) => {
+      err = (err + d).slice(-4000);
+      heard();
+    });
+    channel.on('close', (code: number | null) =>
+      finish(() => (code === 0 ? resolve(Buffer.concat(out)) : reject(new Error(cleanSshError(err) || `exit code ${code}`)))),
+    );
+  });
 }
 
 /** Drop sshd's noise about a missing home directory. */
@@ -151,19 +221,9 @@ export class SshExecMediaSource implements MediaSource {
   async pcm(path: string, opts: PcmOptions): Promise<Buffer> {
     const args = ffmpegPcmArgs(path, opts).map(shellQuote).join(' ');
     const channel = await this.shell.exec(`nice -n 10 ${shellQuote(this.ffmpeg)} ${args}`);
-    const abort = () => channel.close();
-    opts.signal?.addEventListener('abort', abort, { once: true });
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      let err = '';
-      channel.on('data', (d: Buffer) => chunks.push(d));
-      channel.stderr.on('data', (d: Buffer) => (err += d));
-      channel.on('close', (code: number | null) => {
-        opts.signal?.removeEventListener('abort', abort);
-        if (opts.signal?.aborted) return reject(opts.signal.reason);
-        if (code === 0) return resolve(Buffer.concat(chunks));
-        reject(new Error(`ffmpeg: ${cleanSshError(err) || `exit code ${code}`}`));
-      });
+    // At most what this server's own ffmpeg may hand back (local.ts).
+    return gather(channel, { maxBytes: PCM_MAX_BUFFER, ...(opts.signal ? { signal: opts.signal } : {}) }).catch((err: unknown) => {
+      throw opts.signal?.aborted ? opts.signal.reason : new Error(`ffmpeg: ${(err as Error).message}`);
     });
   }
 
