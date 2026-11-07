@@ -227,6 +227,7 @@ export const api = {
   playlistCoverPreview: (id: number, layout: CoverLayout, variant: number) => `/art/playlist/${id}/preview?layout=${layout}&variant=${variant}`,
   playlistRecommendations: (id: number, variant = 0) =>
     get<Recommendations>(`/api/playlists/${id}/recommendations?variant=${variant}`, undefined, SLOW_MS),
+  favoriteRecommendations: (variant = 0) => get<Recommendations>(`/api/favorites/recommendations?variant=${variant}`, undefined, SLOW_MS),
   sources: () => get<SourcesResponse>('/api/settings/sources'),
   addSource: (input: SourceInput) =>
     request<SourceInfo>('/api/settings/sources', { method: 'POST', body: JSON.stringify(input) }, SLOW_MS),

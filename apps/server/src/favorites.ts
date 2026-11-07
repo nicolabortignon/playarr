@@ -30,6 +30,13 @@ export class Favorites {
     return (this.db.prepare('SELECT recording_id FROM favorites WHERE account_id = ?').all(account) as { recording_id: string }[]).map((r) => r.recording_id);
   }
 
+  /** Every song the account has favorited, playable or not, by its title and artist when it was favorited. */
+  songs(account: number): { recordingId: string; title: string; artistName: string }[] {
+    return this.db
+      .prepare('SELECT recording_id AS recordingId, title, artist_name AS artistName FROM favorites WHERE account_id = ?')
+      .all(account) as unknown as { recordingId: string; title: string; artistName: string }[];
+  }
+
   /** `at`: when it was first favorited, for one put back where it was (else now). */
   add(account: number, track: Track, at = new Date().toISOString()) {
     this.db

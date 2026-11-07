@@ -433,7 +433,7 @@ export interface RecommendedTrack {
   artistName: string;
   albumTitle: string;
   coverUrl?: string;
-  /** Title of the playlist song it's most similar to. */
+  /** Title of the song it's most similar to: one of the playlist's, or a favorite. */
   because: string;
   /** Set when the song is in the library: play it or add it directly. */
   track?: Track;

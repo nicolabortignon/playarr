@@ -2306,7 +2306,7 @@ public struct RecommendedTrack: Codable, Hashable, Sendable {
     public var artistName: String
     public var albumTitle: String
     public var coverUrl: String?
-    /// Title of the playlist song it's most similar to.
+    /// Title of the song it's most similar to: one of the playlist's, or a favorite.
     public var because: String
     /// Set when the song is in the library: play it or add it directly.
     public var track: Track?

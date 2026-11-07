@@ -26,10 +26,43 @@ import Testing
     api.on(.post, "/api/playlists/5/items", Listening.playlist(items: [Listening.three[0], Listening.item(4, mysterons)]))
     let recs = await model()
     await recs.load()
+    #expect(recs.addLabel(recs.owned[0]) == "Add Mysterons to playlist")
     await recs.add(recs.owned[0])
     #expect(api.bodies(.post, "/api/playlists/5/items") == [#"{"recordingIds":["rec-800"]}"#])
     #expect(recs.owned.isEmpty)
     #expect(recs.empty)
+    #expect(recs.emptyLine.hasSuffix("Try other suggestions, or add a few more songs."))
+  }
+
+  @Test func heartsASongYouHaveUnderFavoritesAndTakesItOffTheList() async {
+    let mysterons = Demo.dummyTracks[0]
+    api.on(.get, "/api/favorites/recommendations", Recommendations(owned: [recommendation(mysterons, "Mysterons")], missing: [], seedCount: 1))
+    api.on(.put, "/api/favorites/rec-800", json: "")
+    let session = demoSession(api: api)
+    let recs = RecommendationsModel(favoritesOf: session)
+    await recs.load()
+    #expect(recs.addLabel(recs.owned[0]) == "Add Mysterons to Favorites")
+    api.on(.get, "/api/favorites", [FavoriteTrack(mysterons, favoritedAt: "2026-11-07T10:00:00.000Z"), Demo.favorite])
+    await recs.add(recs.owned[0])
+    #expect(api.calls(.put, "/api/favorites/rec-800").count == 1)
+    #expect(session.favorites.isFavorite("rec-800"))
+    #expect(recs.owned.isEmpty)
+    #expect(recs.emptyLine.hasSuffix("Try other suggestions, or heart a few more songs."))
+    #expect(session.toasts.toasts.map(\.message) == ["Added “Mysterons” to Favorites"])
+  }
+
+  @Test func leavesOutASongHeartedMeanwhileAndAsksFavoritesForAnotherSet() async {
+    let risingson = Demo.mezzanineTracks[1]
+    api.on(
+      .get, "/api/favorites/recommendations",
+      Recommendations(owned: [recommendation(risingson, "Risingson"), recommendation(Demo.dummyTracks[0], "Mysterons")], missing: [], seedCount: 2))
+    let session = demoSession(api: api)
+    // Risingson is the demo's favorite: hearted since the set came, with the player's heart say.
+    await session.favorites.load()
+    let recs = RecommendationsModel(favoritesOf: session)
+    await recs.newMix()
+    #expect(api.queries(.get, "/api/favorites/recommendations", "variant") == ["1"])
+    #expect(recs.owned.map(\.title) == ["Mysterons"])
   }
 
   @Test func showsEightMissingSongsUntilAskedForAll() async {

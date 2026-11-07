@@ -1,6 +1,6 @@
 # Discover, requests and recommendations
 
-This is how Playarr looks beyond the library: searching for music you don't have, asking Lidarr to fetch it, listing an artist's missing albums, and suggesting songs for a playlist. The code lives in `apps/server/src/discover` (search, MusicBrainz, ListenBrainz, requests, recommendations), `apps/server/src/lidarr/client.ts`, and the routes in `apps/server/src/routes/discover.ts` and `apps/server/src/routes/playlists.ts`.
+This is how Playarr looks beyond the library: searching for music you don't have, asking Lidarr to fetch it, listing an artist's missing albums, and suggesting songs for a playlist or Favorites. The code lives in `apps/server/src/discover` (search, MusicBrainz, ListenBrainz, requests, recommendations), `apps/server/src/lidarr/client.ts`, and the routes in `apps/server/src/routes/discover.ts`, `apps/server/src/routes/playlists.ts` and `apps/server/src/routes/favorites.ts`.
 
 No source needs a key except Lidarr. Deezer, MusicBrainz and ListenBrainz are public APIs, called from the server only. For the full route list see [api.md](api.md); for who may request albums see [accounts-and-access.md](accounts-and-access.md).
 
@@ -92,13 +92,13 @@ When Lidarr's file count for a request grows, the library refreshes, once each t
 - **Search right away** (`searchOnAdd`, default on).
 - **Root folder, quality profile, metadata profile** for new artists. Each falls back to `.env` (`LIDARR_ROOT_FOLDER`, `LIDARR_QUALITY_PROFILE_ID`, `LIDARR_METADATA_PROFILE_ID`), then the root folder's defaults; a chosen root folder Lidarr no longer has is skipped. Saving `null` clears a choice. The panel lists Lidarr's options with a 5 s timeout.
 
-## 6. "Songs like these": playlist recommendations
+## 6. "Songs like these": recommendations for playlists and Favorites
 
-`GET /api/playlists/:id/recommendations?variant=` (`discover/recommendations.ts`) suggests up to 10 songs you own (Add) and 20 you don't (Request).
+`GET /api/playlists/:id/recommendations?variant=` and `GET /api/favorites/recommendations?variant=` (`discover/recommendations.ts`: `forPlaylist` and `forFavorites`, both through `forSongs`) suggest up to 10 songs you own (Add, which puts a song in the playlist or hearts it) and 20 you don't (Request).
 
-1. **Seeds.** Up to 10 of the playlist's songs: evenly spread for `variant=0`; for "New mix", a seeded shuffle of up to 70% of the songs. Folder songs without a MusicBrainz id are looked up by lead artist and title (score ≥ 90, remembered).
+1. **Seeds.** Up to 10 of the songs. A playlist's are evenly spread for `variant=0`. Favorites' are the 10 favorited last, what you're into now, and only those the account can play now (what Favorites lists). For Other suggestions (`variant` above 0), either takes a seeded shuffle of up to 70% of the songs. Folder songs without a MusicBrainz id are looked up by lead artist and title (score ≥ 90, remembered).
 2. **Similar recordings.** One labs `similar-recordings` call per seed, in parallel (the API takes one seed per call), each cached for 1 h. The dataset is `session_based_days_7500_…`; the older `days_9000` one stopped updating. If every call fails the route answers 502.
-3. **Scoring.** Each seed's scores are divided by its own best, then summed, so songs similar to several playlist songs rise. A song's "Similar to …" names the seed it's closest to. Songs already in the playlist (by id or by lead artist and title) are dropped. A variant multiplies each score by a random 0.5–1.5, so a refresh doesn't always return the same winners.
+3. **Scoring.** Each seed's scores are divided by its own best, then summed, so songs similar to several of the songs rise. A song's "Similar to …" names the seed it's closest to. Songs already in the playlist, or for Favorites every song the account has favorited (playable or not), are dropped, by id or by lead artist and title. A variant multiplies each score by a random 0.5–1.5, so a refresh doesn't always return the same winners.
 4. **Owned or missing.** Owned means the recording id is in the account's library, else artist and title match. Per lead artist (the name before "feat.", "&" or a comma) at most 3 owned and 2 missing songs. Missing songs without a release name are skipped.
 5. **Filling in ids.** One batch call to ListenBrainz's `metadata/recording` adds what similar-recordings leaves out: the lead artist's MusicBrainz id (for links) and the release group, so Request goes straight to Lidarr. Cached 1 h; if it fails, a request falls back to the release id (mapped through MusicBrainz), then the name (section 5).
 

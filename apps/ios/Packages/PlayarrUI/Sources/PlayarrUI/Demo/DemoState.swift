@@ -3,8 +3,8 @@ import PlayarrAPI
 import Synchronization
 
 /// What the demo server remembers between calls: favorites and playlists change, as on a real server, so the UI tests
-/// can heart a song, make a playlist, add to it, reorder it and delete it (`-UITestsDemo`). Mixes, recommendations and
-/// listening stats answer from the demo library.
+/// can heart a song, make a playlist, add to it, reorder it and delete it (`-UITestsDemo`). Mixes, recommendations (a
+/// playlist's and Favorites') and listening stats answer from the demo library.
 final class DemoState: Sendable {
   private struct Library {
     var favorites = [Demo.favorite]
@@ -49,6 +49,10 @@ final class DemoState: Sendable {
     case (.delete, "favorites", 2):
       library.withLock { $0.favorites.removeAll { $0.recordingId == second } }
       return NoBody()
+    case (.get, "favorites", 2) where second == "recommendations":
+      return library.withLock { state in
+        Self.recommendations(leavingOut: Set(state.favorites.map(\.recordingId)), like: state.favorites.first?.title)
+      }
     case (.get, "playlists", 1):
       return library.withLock { $0.playlists.map(Self.summary) }
     case (.post, "playlists", 1):
@@ -99,14 +103,7 @@ final class DemoState: Sendable {
       case (.get, "", 0):
         return playlist
       case (.get, "recommendations", 1):
-        // Songs from the library not in the playlist yet, "like" its first song.
-        let have = Set(playlist.items.map(\.recordingId))
-        let owned = Demo.tracks.filter { !have.contains($0.recordingId) }.prefix(2).map { track in
-          RecommendedTrack(
-            recordingId: track.recordingId, title: track.title, artistName: track.artistName, albumTitle: track.albumTitle,
-            coverUrl: track.coverUrl, because: playlist.items.first?.title ?? "", track: track, artistId: track.artistId)
-        }
-        return Recommendations(owned: Array(owned), missing: [], seedCount: playlist.items.isEmpty ? 0 : 1)
+        return Self.recommendations(leavingOut: Set(playlist.items.map(\.recordingId)), like: playlist.items.first?.title)
       case (.delete, "", 0):
         state.playlists.remove(at: index)
         return NoBody()
@@ -178,6 +175,17 @@ final class DemoState: Sendable {
         url: "/art/playlist/\(id)?v=demo", layout: .currents, variant: 0, frozen: true, stale: false, energy: 0.4, styles: [], analyzed: 0,
         total: 0, pending: false),
       updatedAt: Demo.when, owner: Demo.account.name, shared: shared, mine: true, collaborative: false, canEdit: true, items: [])
+  }
+
+  /// "Songs like these": two songs from the library not among `have` yet, "like" `seed` (the first of a playlist's songs,
+  /// the song hearted last); nothing to start from without one.
+  private static func recommendations(leavingOut have: Set<String>, like seed: String?) -> Recommendations {
+    let owned = Demo.tracks.filter { !have.contains($0.recordingId) }.prefix(2).map { track in
+      RecommendedTrack(
+        recordingId: track.recordingId, title: track.title, artistName: track.artistName, albumTitle: track.albumTitle,
+        coverUrl: track.coverUrl, because: seed ?? "", track: track, artistId: track.artistId)
+    }
+    return Recommendations(owned: Array(owned), missing: [], seedCount: seed == nil ? 0 : 1)
   }
 
   private static func counted(_ playlist: PlaylistDetail) -> PlaylistDetail {

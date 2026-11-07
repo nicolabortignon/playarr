@@ -194,7 +194,7 @@ const requests = new Requests(lidarr, musicbrainz, library, { db, legacyFile: re
   metadataProfileId: config.LIDARR_METADATA_PROFILE_ID,
 });
 const discover = new Discover(lidarr, musicbrainz, library, requests);
-const recommendations = new Recommendations(playlists, requests, musicbrainz);
+const recommendations = new Recommendations(playlists, favorites, requests, musicbrainz);
 
 // Every request's account (req.auth), from a Bearer token or the session cookie; 401 once set up.
 app.decorateRequest('auth', null);
@@ -225,7 +225,7 @@ mixMapRoutes(app, {
 transitionRoutes(app, { transitions, library, unavailableReason: 'DJ mixing needs audio analysis, which is off on this server' });
 lyricsRoutes(app, { lyrics, library });
 discoverRoutes(app, { discover, requests });
-favoriteRoutes(app, { favorites, library });
+favoriteRoutes(app, { favorites, library, recommendations });
 playlistRoutes(app, { playlists, recommendations, covers, library });
 mixRoutes(app, {
   mixes,

@@ -1,5 +1,6 @@
 import type { RecommendedTrack, Recommendations as RecommendationsResult } from '@playarr/shared';
-import { songKey } from '../library/library.ts';
+import type { Favorites } from '../favorites.ts';
+import { songKey, type LibraryView } from '../library/library.ts';
 import { normalize, primaryArtist } from '../library/search.ts';
 import type { Playlists, Viewer } from '../playlists.ts';
 import { remoteArtUrl } from './art.ts';
@@ -17,13 +18,21 @@ const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** How sure a MusicBrainz search must be before a song without an id is taken for its result. */
 const SEARCH_MIN_SCORE = 90;
 
-/** "Songs like these": ListenBrainz similar recordings, pooled across a playlist's songs. */
+/** A song "Songs like these" starts from: one of a playlist's, or a favorite. */
+export interface SeedSong {
+  recordingId: string;
+  title: string;
+  artistName: string;
+}
+
+/** "Songs like these": ListenBrainz similar recordings, pooled across a playlist's songs or an account's favorites. */
 export class Recommendations {
   /** MusicBrainz ids found by name for songs that have none, by artist|title (null: none found). */
   private readonly found = new Map<string, string | null>();
 
   constructor(
     private readonly playlists: Playlists,
+    private readonly favorites: Pick<Favorites, 'list' | 'songs'>,
     private readonly requests: Requests,
     /** Finds a song's MusicBrainz recording by name, for songs known only from their tags. */
     private readonly mb?: { searchRecordings(artistName: string, title: string, signal?: AbortSignal): Promise<{ id: string; score: number }[]> },
@@ -48,10 +57,33 @@ export class Recommendations {
   /** `variant` picks a different random set of seeds (0 = evenly spread through the playlist). */
   async forPlaylist(viewer: Viewer, playlistId: number, variant = 0, signal?: AbortSignal): Promise<RecommendationsResult> {
     const playlist = await this.playlists.get(playlistId, viewer);
-    const library = viewer.library;
-    const songs = uniqueBy(playlist.items, (i) => i.recordingId);
+    return this.forSongs(viewer.library, playlist.items, variant, signal);
+  }
+
+  /**
+   * Songs like the account's favorites, those it can play now (as Favorites lists them), leaving out every song it has
+   * favorited, playable or not. `variant` 0 starts from the 10 favorited last, what it's into now; another picks a random
+   * set, as for a playlist.
+   */
+  async forFavorites(viewer: Viewer, variant = 0, signal?: AbortSignal): Promise<RecommendationsResult> {
+    const songs = await this.favorites.list(viewer.account, viewer.library);
+    return this.forSongs(viewer.library, songs, variant, signal, { newestFirst: true, leaveOut: this.favorites.songs(viewer.account) });
+  }
+
+  /**
+   * Songs like these, those in `library` (owned) and those not (missing), leaving out the songs themselves and those in
+   * `leaveOut`. Up to 10 of the songs are the seeds: for `variant` 0 spread evenly through them, or the first 10 when
+   * they're listed `newestFirst`; any other variant picks a random set and shakes up the ranking.
+   */
+  async forSongs(
+    library: LibraryView,
+    songs: readonly SeedSong[],
+    variant = 0,
+    signal?: AbortSignal,
+    { newestFirst = false, leaveOut = [] }: { newestFirst?: boolean; leaveOut?: readonly SeedSong[] } = {},
+  ): Promise<RecommendationsResult> {
     const random = seededRandom(variant);
-    const picked = pickSeeds(songs, MAX_SEEDS, variant, random);
+    const picked = pickSeeds(uniqueBy(songs, (s) => s.recordingId), MAX_SEEDS, variant, random, newestFirst);
     const resolved = await Promise.all(picked.map(async (s) => ({ ...s, recordingId: await this.recordingMbid(s, signal) })));
     const seeds = resolved.filter((s): s is typeof s & { recordingId: string } => !!s.recordingId);
     const seedTitle = new Map(seeds.map((s) => [s.recordingId, s.title]));
@@ -64,21 +96,22 @@ export class Recommendations {
     }
 
     // Pool: normalize each seed's scores so one seed with huge numbers doesn't drown the rest;
-    // songs similar to several playlist songs accumulate and rise.
-    const inPlaylist = new Set([...playlist.items.map((i) => i.recordingId), ...seeds.map((s) => s.recordingId)]);
-    const inPlaylistByName = new Set(playlist.items.map((i) => songKey(primaryArtist(i.artistName), i.title)));
+    // songs similar to several of the songs accumulate and rise. The songs themselves are left out.
+    const known = [...songs, ...leaveOut];
+    const leftOut = new Set([...known.map((s) => s.recordingId), ...seeds.map((s) => s.recordingId)]);
+    const leftOutByName = new Set(known.map((s) => songKey(primaryArtist(s.artistName), s.title)));
     const pooled = new Map<string, { rec: LbSimilarRecording; score: number; best: number; because: string }>();
     for (const list of lists) {
       const max = Math.max(1, ...list.map((r) => r.score));
       for (const rec of list) {
         const nameKey = songKey(primaryArtist(rec.artist_credit_name), rec.recording_name);
-        if (inPlaylist.has(rec.recording_mbid) || inPlaylistByName.has(nameKey)) continue;
+        if (leftOut.has(rec.recording_mbid) || leftOutByName.has(nameKey)) continue;
         const weight = rec.score / max;
         const entry = pooled.get(nameKey);
         if (!entry) pooled.set(nameKey, { rec, score: weight, best: weight, because: rec.reference_mbid });
         else {
           entry.score += weight;
-          // "Similar to …" names the playlist song it's most similar to.
+          // "Similar to …" names the song it's most similar to.
           if (weight > entry.best) Object.assign(entry, { best: weight, because: rec.reference_mbid });
         }
       }
@@ -109,7 +142,7 @@ export class Recommendations {
       };
       if (track) {
         if (owned.length >= MAX_OWNED || (ownedPerArtist.get(artistKey) ?? 0) >= OWNED_PER_ARTIST) continue;
-        if (inPlaylist.has(track.recordingId) || owned.some((o) => o.track!.id === track.id)) continue;
+        if (leftOut.has(track.recordingId) || owned.some((o) => o.track!.id === track.id)) continue;
         owned.push({ ...base, title: track.title, albumTitle: track.albumTitle, coverUrl: track.coverUrl, track, artistId: track.artistId });
         ownedPerArtist.set(artistKey, (ownedPerArtist.get(artistKey) ?? 0) + 1);
       } else {
@@ -154,7 +187,7 @@ function coverUrl(rec: LbSimilarRecording): string | undefined {
   );
 }
 
-function uniqueBy<T>(items: T[], key: (t: T) => string): T[] {
+function uniqueBy<T>(items: readonly T[], key: (t: T) => string): T[] {
   const seen = new Set<string>();
   return items.filter((i) => (seen.has(key(i)) ? false : (seen.add(key(i)), true)));
 }
@@ -168,10 +201,14 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-/** Evenly spread seeds for variant 0; a seeded shuffle otherwise, so "refresh" gives a new mix. */
-function pickSeeds<T>(items: T[], count: number, variant: number, random: () => number): T[] {
+/**
+ * For variant 0, seeds spread evenly through the items, or the first of them when they're listed newest first; a seeded
+ * shuffle otherwise, so "refresh" gives a new mix.
+ */
+function pickSeeds<T>(items: T[], count: number, variant: number, random: () => number, newestFirst = false): T[] {
   if (items.length <= count && variant === 0) return items;
   if (variant === 0) {
+    if (newestFirst) return items.slice(0, count);
     const step = items.length / count;
     return Array.from({ length: count }, (_, i) => items[Math.floor(i * step)]!);
   }

@@ -11,5 +11,10 @@ extension API {
         public static func remove(recordingId: String) -> Endpoint<NoContent> {
             Endpoint(.delete, "/api/favorites/\(Endpoint<NoContent>.segment(recordingId))")
         }
+
+        /// "Songs like these" under Favorites, as `Playlists.recommendations` under a playlist.
+        public static func recommendations(variant: Int = 0) -> Endpoint<Recommendations> {
+            Endpoint(.get, "/api/favorites/recommendations", query: [.init(name: "variant", value: String(variant))])
+        }
     }
 }

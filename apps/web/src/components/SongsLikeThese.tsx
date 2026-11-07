@@ -1,9 +1,10 @@
-import type { RecommendedTrack } from '@playarr/shared';
+import type { RecommendedTrack, Track } from '@playarr/shared';
 import { Dices, Play, Plus } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { cn } from '../lib/cn';
 import { albumHref, artistHref } from '../lib/links';
-import { usePlaylistMutations, usePlaylistRecommendations } from '../lib/queries';
+import { useFavorites, usePlaylistMutations, useRecommendations, useToggleFavorite, type RecommendationSource } from '../lib/queries';
+import { toast } from '../lib/toast';
 import { usePlayer } from '../player/store';
 import { Button } from './Button';
 import { Cover } from './Cover';
@@ -15,18 +16,21 @@ import { ListRow } from './SongRow';
 
 const MISSING_PREVIEW = 8;
 
-/** "Songs like these" under a playlist: ListenBrainz neighbors, split into owned (add) and missing (request). */
-export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: number; enabled: boolean }) {
+/**
+ * "Songs like these" under a playlist of yours or Favorites: ListenBrainz neighbors, split into owned (Add puts it in the
+ * playlist, or hearts it) and missing (request).
+ */
+export function SongsLikeThese({ source, enabled }: { source: RecommendationSource; enabled: boolean }) {
   const [variant, setVariant] = useState(0);
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
-  const { data, error, isPending, isFetching, refetch } = usePlaylistRecommendations(playlistId, variant, enabled);
-  const { add } = usePlaylistMutations();
+  const { data, error, isPending, isFetching, refetch } = useRecommendations(source, variant, enabled);
+  const add = useAdd(source);
   const playTracks = usePlayer((s) => s.playTracks);
 
   if (!enabled || data?.seedCount === 0) return null;
 
-  const owned = data?.owned.filter((r) => !added.has(r.recordingId)) ?? [];
+  const owned = data?.owned.filter((r) => !added.has(r.recordingId) && !(r.track && add.leaveOut.has(r.track.recordingId))) ?? [];
   const missing = data?.missing ?? [];
   const shownMissing = showAll ? missing : missing.slice(0, MISSING_PREVIEW);
   const others = () => {
@@ -56,7 +60,7 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
 
       {data && !owned.length && !missing.length && (
         <p className="max-w-md text-sm text-muted">
-          ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try other suggestions, or add a few more songs.
+          ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try other suggestions, or {add.more}.
         </p>
       )}
 
@@ -73,14 +77,9 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
                   <Button
                     size="small"
                     icon={<Plus />}
-                    aria-label={`Add ${rec.title} to playlist`}
-                    disabled={add.isPending}
-                    onClick={() => {
-                      add.mutate(
-                        { id: playlistId, tracks: [rec.track!] },
-                        { onSuccess: () => setAdded((s) => new Set(s).add(rec.recordingId)) },
-                      );
-                    }}
+                    aria-label={`Add ${rec.title} to ${add.to}`}
+                    disabled={add.pending}
+                    onClick={() => add.run(rec.track!, () => setAdded((s) => new Set(s).add(rec.recordingId)))}
                   >
                     Add
                   </Button>
@@ -112,6 +111,42 @@ export function PlaylistRecommendations({ playlistId, enabled }: { playlistId: n
       </div>
     </section>
   );
+}
+
+/**
+ * Where Add puts a song you have: into the playlist, or into Favorites with a heart, each saying so in a toast.
+ * `leaveOut`: library songs not to suggest any more; on Favorites, the favorites as they are now, so a song hearted
+ * meanwhile (the player's heart, L) goes too.
+ */
+function useAdd(source: RecommendationSource) {
+  const { add } = usePlaylistMutations();
+  const heart = useToggleFavorite();
+  const favorites = useFavorites(source.kind === 'favorites').data;
+  if (source.kind === 'playlist') {
+    return {
+      to: 'playlist',
+      more: 'add a few more songs',
+      pending: add.isPending,
+      leaveOut: new Set<string>(),
+      run: (track: Track, done: () => void) => add.mutate({ id: source.id, tracks: [track] }, { onSuccess: done }),
+    };
+  }
+  return {
+    to: 'Favorites',
+    more: 'heart a few more songs',
+    pending: heart.isPending,
+    leaveOut: new Set(favorites?.map((f) => f.recordingId)),
+    run: (track: Track, done: () => void) =>
+      heart.mutate(
+        { track, favorite: true },
+        {
+          onSuccess: () => {
+            done();
+            toast(`Added “${track.title}” to Favorites`);
+          },
+        },
+      ),
+  };
 }
 
 function Group({ title, children }: { title: string; children: ReactNode }) {

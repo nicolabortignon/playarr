@@ -14,7 +14,7 @@ How Playarr works today, part by part. The code is the final word; these pages s
 - [server/matching-and-organize.md](server/matching-and-organize.md): identifying folder music on MusicBrainz and AcoustID, the review list, and organizing files.
 - [server/accounts-and-access.md](server/accounts-and-access.md): accounts, sessions, setup mode, rights and per-account library access.
 - [server/streaming-and-art.md](server/streaming-and-art.md): byte-range streams, levelled and lossless WAV, transition files, artwork and lyrics.
-- [server/discover-and-requests.md](server/discover-and-requests.md): searching beyond the library, requesting albums through Lidarr, and playlist recommendations.
+- [server/discover-and-requests.md](server/discover-and-requests.md): searching beyond the library, requesting albums through Lidarr, and the recommendations for playlists and Favorites.
 - [server/playlist-covers.md](server/playlist-covers.md): playlist covers drawn from how the songs sound.
 - [server/updates-and-deploy.md](server/updates-and-deploy.md): the Docker image, configuration, the NAS deployment, automatic updates and the release flow.
 - [server/api.md](server/api.md): every route, grouped, with who may call it.

@@ -16,7 +16,6 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - Lidarr: interactive release picking from inside Playarr. *(PLAN.md roadmap phase 6)*
 - Live library updates through Lidarr's SignalR feed instead of the 10-minute refresh. *(PLAN.md roadmap phase 6)*
 - Last.fm scrobbling (ListenBrainz is done). *(PLAN.md roadmap phase 6)*
-- "Songs like these" recommendations for Favorites, as playlists have. *(PLAN.md roadmap phase 6)*
 - When a song's best copy fails to play, fall back to the next best copy (today `/stream` answers 502/503). *(sources design)*
 - Skip copies on an offline or unreachable source (today they stay in the catalog and fail to play). *(sources design)*
 - Merge and key unmatched folder songs by fingerprint (today they keep `local:<hash>` ids for good). *(sources design, sources phase 3)*

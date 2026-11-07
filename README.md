@@ -42,7 +42,7 @@ Turn on **DJ mix** and Playarr blends each song into the next, on the beat, the 
 - **Search for a song, not a release.** Type "bohemian rhapsody" and Playarr finds the original song, works out which album it's on, and offers to request that album.
 - **See what you already have.** Search results show what's already in the library, ready to play.
 - <img src="docs/images/icons/request.svg" width="16" height="16" alt=""> **Request in one tap.** Playarr asks Lidarr for just that album, not the artist's whole discography, and shows the download's progress until it's ready to play.
-- **Discover from your playlists.** "Songs like these" under each playlist suggests similar music to add or request.
+- **Discover from your playlists and Favorites.** "Songs like these" under each playlist, and under Favorites, suggests similar music to add or request.
 
 Nobody needs a Lidarr account or to know about quality profiles. Lidarr stays an admin tool, and Playarr is where people find and ask for music.
 

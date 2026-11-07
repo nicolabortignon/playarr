@@ -325,7 +325,8 @@ export function useAnswerRequest() {
   });
 }
 
-export const useFavorites = () => useQuery({ queryKey: ['favorites'], queryFn: api.favorites, staleTime: 60_000 });
+/** `enabled` false: whatever is known already, without asking. */
+export const useFavorites = (enabled = true) => useQuery({ queryKey: ['favorites'], queryFn: api.favorites, staleTime: 60_000, enabled });
 
 export const useIsFavorite = (recordingId: string | undefined) =>
   useQuery({
@@ -372,11 +373,14 @@ export function useToggleFavorite() {
   });
 }
 
+/** The songs "Songs like these" starts from: a playlist's, or the account's favorites. */
+export type RecommendationSource = { kind: 'playlist'; id: number } | { kind: 'favorites' };
+
 /** ListenBrainz "songs like these"; `variant` > 0 is a reshuffled mix. Slow-moving, so cache generously. */
-export const usePlaylistRecommendations = (id: number, variant: number, enabled: boolean) =>
+export const useRecommendations = (source: RecommendationSource, variant: number, enabled: boolean) =>
   useQuery({
-    queryKey: ['recommendations', id, variant],
-    queryFn: () => api.playlistRecommendations(id, variant),
+    queryKey: ['recommendations', source.kind === 'playlist' ? source.id : 'favorites', variant],
+    queryFn: () => (source.kind === 'playlist' ? api.playlistRecommendations(source.id, variant) : api.favoriteRecommendations(variant)),
     enabled,
     staleTime: 10 * 60_000,
     placeholderData: keepPreviousData,

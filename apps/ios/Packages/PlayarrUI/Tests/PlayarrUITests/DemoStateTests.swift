@@ -21,6 +21,17 @@ import Testing
     #expect(try await api.send(API.Favorites.list()).map(\.title) == ["Angel", "Risingson", "Inertia Creeps"])
   }
 
+  @Test func suggestsSongsLikeTheFavoritesNotHeartedYet() async throws {
+    let api = DemoAPI()
+    _ = try await api.send(API.Favorites.add(recordingId: "rec-700"))
+    let recommendations = try await api.send(API.Favorites.recommendations())
+    #expect(recommendations.owned.map(\.title) == ["Inertia Creeps", "Protection"])
+    #expect(recommendations.owned.map(\.because) == ["Angel", "Angel"])
+    _ = try await api.send(API.Favorites.remove(recordingId: "rec-700"))
+    _ = try await api.send(API.Favorites.remove(recordingId: "rec-701"))
+    #expect(try await api.send(API.Favorites.recommendations()).seedCount == 0)
+  }
+
   @Test func makesFillsReordersAndDeletesAPlaylist() async throws {
     let api = DemoAPI()
     let made = try await api.send(API.Playlists.create(name: "UI test"))

@@ -12,8 +12,8 @@ import { CoverPicker } from '../components/CoverPicker';
 import type { MenuItem } from '../components/Menu';
 import { moveItems, usePlaylistMenu } from '../components/menus';
 import { PlaylistCover } from '../components/PlaylistCover';
-import { PlaylistRecommendations } from '../components/PlaylistRecommendations';
 import { BackButton } from '../components/Section';
+import { SongsLikeThese } from '../components/SongsLikeThese';
 import { EmptyState, ErrorState, SongRowsSkeleton } from '../components/States';
 import { ArtistAndAlbum, ListRow, SongRow, type RowReorder } from '../components/SongRow';
 import { cn } from '../lib/cn';
@@ -257,7 +257,7 @@ export function PlaylistPage() {
         </Reorder.Group>
       )}
 
-      {canEdit && <PlaylistRecommendations playlistId={id} enabled={items.length > 0} />}
+      {canEdit && <SongsLikeThese source={{ kind: 'playlist', id }} enabled={items.length > 0} />}
 
       <CoverPicker playlist={playlist} open={pickingCover} onClose={() => setPickingCover(false)} />
 

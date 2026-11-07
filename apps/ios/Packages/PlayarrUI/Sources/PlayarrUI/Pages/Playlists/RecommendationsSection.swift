@@ -1,74 +1,106 @@
 import PlayarrAPI
 import SwiftUI
 
-/// "Songs like these" under your own playlist: Add the songs you have, request the albums of the ones you don't (phase
-/// 8's Request button), and each row's artist and album lead on (apps/web/src/components/PlaylistRecommendations.tsx).
-/// Asked for again when a request lands or an album is requested (the `recommendations` family).
+/// "Songs like these" under your own playlist or Favorites: Add the songs you have (to the playlist, or with a heart),
+/// request the albums of the ones you don't (phase 8's Request button), and each row's artist and album lead on
+/// (apps/web/src/components/SongsLikeThese.tsx). Asked for again when a request lands or an album is requested (the
+/// `recommendations` family). A playlist's page is a list, where this is one of its sections; Favorites scrolls a stack,
+/// where it's a block of its own under the songs.
 struct RecommendationsSection: View {
   @State private var model: RecommendationsModel
   @Environment(AccountSession.self) private var session
   @Environment(DiscoverContext.self) private var discover: DiscoverContext?
   @Environment(\.horizontalSizeClass) private var sizeClass
+  /// A section of a `List` (a playlist's page) rather than a block of a stack (Favorites).
+  private let inList: Bool
 
   init(playlist: PlaylistModel) {
     _model = State(initialValue: RecommendationsModel(playlist: playlist))
+    inList = true
+  }
+
+  init(favoritesOf session: AccountSession) {
+    _model = State(initialValue: RecommendationsModel(favoritesOf: session))
+    inList = false
   }
 
   var body: some View {
     Group {
       if !model.hidden {
-        Section {
-          if model.recommendations == nil, model.loading {
-            SongRowsSkeleton(count: 3)
-          } else if let error = model.error, model.recommendations == nil {
-            InlineError("Couldn’t reach ListenBrainz", reason: error) { await model.load() }
-          } else if model.empty {
-            Text("ListenBrainz doesn’t know these songs well enough to suggest anything yet. Try other suggestions, or add a few more songs.")
-              .foregroundStyle(.secondary)
+        if inList {
+          Section { content } header: { header }
+            .opacity(dimmed ? 0.6 : 1)
+        } else {
+          VStack(alignment: .leading, spacing: 0) {
+            header.padding(.bottom, 8)
+            content
           }
-          if !model.owned.isEmpty {
-            Kicker(text: "Already in your library")
-            ForEach(model.owned, id: \.recordingId) { recommendation in
-              row(recommendation) {
-                Button("Add", systemImage: "plus") { Task { await model.add(recommendation) } }
-                  .buttonStyle(.pill(.secondary, size: .small))
-                  .accessibilityLabel("Add \(recommendation.title) to playlist")
-              }
-            }
-          }
-          if !model.missing.isEmpty {
-            Kicker(text: "Not in your library yet")
-            ForEach(model.shownMissing, id: \.recordingId) { recommendation in
-              row(recommendation) {
-                if let album = recommendation.album, let availability = recommendation.availability {
-                  RequestButton(album: album, availability: availability)
-                }
-              }
-            }
-            if let more = model.moreLabel {
-              Button { model.showAll.toggle() } label: {
-                Text(more).font(.mono(.caption)).frame(minHeight: 44).contentShape(Rectangle())
-              }
-              .buttonStyle(.borderless)
-            }
-          }
-        } header: {
-          HStack(alignment: .lastTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-              Kicker(text: "From ListenBrainz")
-              Text("Songs like these").font(.display(.title2)).foregroundStyle(.primary).textCase(nil)
-            }
-            Spacer()
-            // "Mix" means only Made for you's mixes (docs/design.md, Words).
-            Button("Other suggestions", systemImage: "dice") { Task { await model.newMix() } }
-              .disabled(model.loading)
-              .textCase(nil)
-          }
+          .opacity(dimmed ? 0.6 : 1)
         }
-        .opacity(model.loading && model.recommendations != nil ? 0.6 : 1)
       }
     }
     .task(id: discover?.generation(.recommendations) ?? 0) { await model.load() }
+  }
+
+  /// The last set stays on screen, dimmed, while the next one comes.
+  private var dimmed: Bool { model.loading && model.recommendations != nil }
+
+  private var header: some View {
+    HStack(alignment: .lastTextBaseline) {
+      VStack(alignment: .leading, spacing: 2) {
+        Kicker(text: "From ListenBrainz")
+        Text("Songs like these").font(.display(.title2)).foregroundStyle(.primary).textCase(nil)
+          // A list's section header is one already; in a stack it's said as one, as `SectionHeader`'s title is.
+          .accessibilityAddTraits(inList ? [] : .isHeader)
+      }
+      Spacer()
+      // "Mix" means only Made for you's mixes (docs/design.md, Words).
+      Button("Other suggestions", systemImage: "dice") { Task { await model.newMix() } }
+        .disabled(model.loading)
+        .textCase(nil)
+    }
+  }
+
+  @ViewBuilder private var content: some View {
+    if model.recommendations == nil, model.loading {
+      SongRowsSkeleton(count: 3)
+    } else if let error = model.error, model.recommendations == nil {
+      InlineError("Couldn’t reach ListenBrainz", reason: error) { await model.load() }
+    } else if model.empty {
+      Text(model.emptyLine)
+        .foregroundStyle(.secondary)
+    }
+    if !model.owned.isEmpty {
+      group("Already in your library")
+      ForEach(model.owned, id: \.recordingId) { recommendation in
+        row(recommendation) {
+          Button("Add", systemImage: "plus") { Task { await model.add(recommendation) } }
+            .buttonStyle(.pill(.secondary, size: .small))
+            .accessibilityLabel(model.addLabel(recommendation))
+        }
+      }
+    }
+    if !model.missing.isEmpty {
+      group("Not in your library yet")
+      ForEach(model.shownMissing, id: \.recordingId) { recommendation in
+        row(recommendation) {
+          if let album = recommendation.album, let availability = recommendation.availability {
+            RequestButton(album: album, availability: availability)
+          }
+        }
+      }
+      if let more = model.moreLabel {
+        Button { model.showAll.toggle() } label: {
+          Text(more).font(.mono(.caption)).frame(minHeight: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+      }
+    }
+  }
+
+  /// A group's kicker: a row of its own in a list; in a stack, with the room above it a list row would have.
+  private func group(_ title: String) -> some View {
+    Kicker(text: title).padding(.top, inList ? 0 : 16).padding(.bottom, inList ? 0 : 4)
   }
 
   /// The cover and title play a song you have; the artist and album open their pages (or the discography). In the one

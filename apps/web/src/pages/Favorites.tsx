@@ -3,6 +3,7 @@ import { ActionRow, usePlayState } from '../components/ActionRow';
 import { DetailHeader, joinMeta } from '../components/DetailHeader';
 import { useJumpBackIn } from '../components/JumpBackIn';
 import { queueItems } from '../components/menus';
+import { SongsLikeThese } from '../components/SongsLikeThese';
 import { EmptyState, ErrorState, SongRowsSkeleton } from '../components/States';
 import { TrackList } from '../components/TrackList';
 import { cn } from '../lib/cn';
@@ -49,6 +50,7 @@ export function FavoritesPage() {
           <TrackList tracks={favorites} variant="mixed" source={FAVORITES} />
         </div>
       )}
+      <SongsLikeThese source={{ kind: 'favorites' }} enabled={songs.length > 0} />
     </div>
   );
 }

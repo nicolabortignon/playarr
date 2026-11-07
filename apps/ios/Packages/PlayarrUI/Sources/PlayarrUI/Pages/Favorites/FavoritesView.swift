@@ -3,7 +3,7 @@ import PlayarrPlayer
 import SwiftUI
 
 /// Favorites: its header (a heart for a cover, how many songs, the action row: Play, Shuffle, Download, ⋯), then the
-/// songs with their hearts (apps/web/src/pages/Favorites.tsx).
+/// songs with their hearts and "Songs like these" (apps/web/src/pages/Favorites.tsx).
 struct FavoritesView: View {
   let session: AccountSession
 
@@ -31,6 +31,8 @@ struct FavoritesView: View {
                 SongRow(track: track) { session.player.play(tracks, startAt: index, source: FavoritesStore.source) }
               }
             }
+            RecommendationsSection(favoritesOf: session)
+              .padding(.top, 8)
           }
         } else if let error = favorites.error {
           ErrorState(message: error) { await favorites.load() }
