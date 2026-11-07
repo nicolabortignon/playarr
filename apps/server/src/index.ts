@@ -159,6 +159,7 @@ const history = new History(db, library);
 const accounts = new Accounts(db);
 const sessions = new Sessions(db);
 const setupCodes = new SetupCodes(db);
+const lyrics = new LyricsService(db, library, files, { log: app.log });
 const mixes = new Mixes({
   db,
   store,
@@ -170,6 +171,8 @@ const mixes = new Mixes({
   accounts: () => accounts.ids(),
   // Each account's mixes and radio come from the sources it may hear.
   libraryFor: (id) => library.view(accounts.get(id)?.sources ?? null),
+  // Deep focus's undecided songs get their lyrics looked up ahead.
+  lyrics,
 });
 mixes.start();
 const scrobbler = new Scrobbler(db, store, library, { log: app.log, accounts: () => accounts.ids() });
@@ -204,7 +207,7 @@ mixMapRoutes(app, {
   libraryScan: () => readMixSettings(store).analyzeLibrary,
 });
 transitionRoutes(app, { transitions, library, unavailableReason: 'DJ mixing needs audio analysis, which is off on this server' });
-lyricsRoutes(app, { lyrics: new LyricsService(db, library, files, { log: app.log }), library });
+lyricsRoutes(app, { lyrics, library });
 discoverRoutes(app, { discover, requests });
 favoriteRoutes(app, { favorites, library });
 playlistRoutes(app, { playlists, recommendations, covers, library });

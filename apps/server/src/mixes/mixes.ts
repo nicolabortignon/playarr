@@ -6,7 +6,8 @@ import type { CatalogStore } from '../catalog/store.ts';
 import { hash32, Rng } from '../cover/random.ts';
 import { similarRecordings } from '../discover/listenbrainz.ts';
 import type { Library, LibraryView } from '../library/library.ts';
-import { lyricsFacts } from '../lyrics/lyrics.ts';
+import { lyricsFacts, type LyricsService } from '../lyrics/lyrics.ts';
+import { LYRICS_AHEAD_EVERY_MS, lyricsAheadCandidates } from './lyricsAhead.ts';
 import type { Playlists } from '../playlists.ts';
 import { blendOrder, choose, generateMix, luckySeed, planHues, planMixes, spread, tempoAndKey, usable, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
 import type { History } from './history.ts';
@@ -106,8 +107,13 @@ export class Mixes {
       accounts?: () => number[];
       /** The library as each account may hear it (its sources); the whole library without it. */
       libraryFor?: (account: number) => LibraryView;
+      /** Lyrics, looked up ahead for the songs whose singing they'd settle for Deep focus (`lookAheadLyrics`). */
+      lyrics?: Pick<LyricsService, 'forTrack'>;
     },
   ) {}
+
+  /** When lyrics were last looked up ahead. */
+  private lyricsAheadAt = 0;
 
   /** Keep the mixes made in the background: at each new hour, day and week. */
   start(everyMs = CHECK_EVERY_MS) {
@@ -118,6 +124,7 @@ export class Mixes {
         if (!this.storedPlan(account) || !this.isStale(account, tz, new Date())) continue;
         await this.ensure(account, tz, new Date()).catch((err: Error) => this.deps.log?.warn(`Making mixes failed: ${err.message}`));
       }
+      await this.lookAheadLyrics().catch((err: Error) => this.deps.log?.warn(`Looking up lyrics ahead failed: ${err.message}`));
     };
     this.timer = setInterval(check, everyMs);
     this.timer.unref();
@@ -446,6 +453,20 @@ export class Mixes {
       }));
     }
     return calibrateSongs(songs);
+  }
+
+  /**
+   * One song's lyrics looked up ahead, every `LYRICS_AHEAD_EVERY_MS`: the next whose singing they'd settle for Deep
+   * focus (`lyricsAheadCandidates`). The mixes read them once the songs are read again.
+   */
+  async lookAheadLyrics(now = Date.now()): Promise<void> {
+    const lyrics = this.deps.lyrics;
+    if (!lyrics || now - this.lyricsAheadAt < LYRICS_AHEAD_EVERY_MS) return;
+    this.lyricsAheadAt = now;
+    const songs = await this.songs(readMixSettings(this.deps.store), this.deps.library);
+    const rows = this.deps.db.prepare('SELECT recording_id FROM lyrics').all() as { recording_id: string }[];
+    const [next] = lyricsAheadCandidates(songs, new Set(rows.map((r) => r.recording_id)), 1);
+    if (next) await lyrics.forTrack(next.track.id);
   }
 
   /** How many songs lyrics lookups have found something for: what singing is read from. */

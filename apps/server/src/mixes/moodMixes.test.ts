@@ -3,6 +3,7 @@ import type { MixKind, MixSettings, Track } from '@playarr/shared';
 import { describe, expect, it } from 'vitest';
 import type { AudioFeatures } from '../analysis/dsp.ts';
 import { generateMix, usable, type MixContext } from './generators.ts';
+import { lyricsAheadCandidates } from './lyricsAhead.ts';
 import { MIX_DEFAULTS } from './settings.ts';
 import { buildTaste, calibrateSongs, toSong, type Song } from './taste.ts';
 import { localTime } from './time.ts';
@@ -61,7 +62,18 @@ const KINDS = {
   orchestral: { tags: ['orchestral', 'classical'], year: 1990, meanDb: -18, onsets: 2, centroid: 1300, lowShare: 0.25, rangeDb: 27, phrases: CRESCENDO },
   techno: { tags: ['minimal techno', 'techno'], year: 2016, meanDb: -10, onsets: 3.4, centroid: 1200, lowShare: 0.55, rangeDb: 5, bpm: 124, pulse: 0.95, phrases: HIGH },
 } satisfies Record<string, Archetype>;
-type Special = 'skit' | 'interlude' | 'live' | 'liveAlbum' | 'christmas' | 'swell' | 'minorLofi' | 'minorBossa' | 'quietAmbient' | 'quietPiano';
+type Special =
+  | 'skit'
+  | 'interlude'
+  | 'live'
+  | 'liveAlbum'
+  | 'christmas'
+  | 'swell'
+  | 'minorLofi'
+  | 'minorBossa'
+  | 'quietAmbient'
+  | 'quietPiano'
+  | 'downtempo';
 type Kind = keyof typeof KINDS | Special;
 
 const SPECIALS: Record<Special, Archetype> = {
@@ -78,6 +90,8 @@ const SPECIALS: Record<Special, Archetype> = {
   // Never analyzed: only their tags say what they are.
   quietAmbient: { ...KINDS.ambient, tags: ['ambient', 'drone', 'calm'], measured: false },
   quietPiano: { ...KINDS.piano, tags: ['piano', 'neoclassical', 'relaxing'], measured: false },
+  // Bonobo's Black Sands: steady and unhurried, its tags saying neither sung nor not.
+  downtempo: { tags: ['downtempo', 'electronic', 'trip hop'], year: 2010, meanDb: -13, onsets: 2.4, centroid: 1000, lowShare: 0.5, rangeDb: 9, bpm: 98, pulse: 0.8, phrases: STEADY },
 };
 
 const scale = (v: number, lo: number, hi: number) => Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
@@ -333,5 +347,31 @@ describe('mood mixes without measured sound', () => {
     const ctx = context(songs);
     expect(mix('energy', ctx).kinds).toEqual(new Set(['metal']));
     expect(mix('winddown', ctx).kinds).toEqual(new Set(['calm']));
+  });
+});
+
+describe('lyrics looked up ahead', () => {
+  const songs = context([...library(), ...songsOf('downtempo')]).songs;
+  const kind = (s: Song) => kindOf.get(s.track.id)!;
+
+  it('asks first for the steady songs only guessed to be sung, which their lyrics would settle for Deep focus', () => {
+    const picked = lyricsAheadCandidates(songs, new Set(), 100);
+    expect(picked.some((s) => kind(s) === 'downtempo')).toBe(true);
+    // Never what Deep focus wouldn't take by its sound, nor a song whose singing is settled either way.
+    for (const s of picked) {
+      expect(['edm', 'metal', 'punk', 'pop', 'ballad', 'postRock', 'orchestral', 'live', 'liveAlbum', 'skit', 'interlude']).not.toContain(kind(s));
+      expect(s.vocals).toBeGreaterThan(0.25);
+      expect(s.vocals).toBeLessThan(0.8);
+    }
+    // The most undecided first.
+    const doubt = picked.map((s) => Math.abs(s.vocals - 0.5));
+    expect(doubt).toEqual([...doubt].sort((a, b) => a - b));
+  });
+
+  it('leaves out songs already looked up, and gives as many as asked', () => {
+    const downtempo = songs.filter((s) => kind(s) === 'downtempo').map((s) => s.track.recordingId);
+    const picked = lyricsAheadCandidates(songs, new Set(downtempo), 100);
+    expect(picked.some((s) => kind(s) === 'downtempo')).toBe(false);
+    expect(lyricsAheadCandidates(songs, new Set(), 1)).toHaveLength(1);
   });
 });

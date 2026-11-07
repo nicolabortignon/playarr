@@ -510,16 +510,7 @@ const FOCUS_ENERGY = 0.4;
  */
 function focus(ctx: Making, rng: Rng): Made | null {
   const { songs, lanes } = moodPick(ctx, rng, {
-    fits: (s) =>
-      !s.traits.live &&
-      lasts(s, 120) &&
-      s.vocals <= FOCUS_VOCALS &&
-      (s.steadiness ?? 0.5) >= 0.5 &&
-      s.energy! >= 0.05 &&
-      s.energy! <= 0.7 &&
-      s.absolute! <= 0.8 &&
-      s.tension < 0.5 &&
-      (s.shape?.surgeDb ?? 0) <= 8,
+    fits: (s) => s.vocals <= FOCUS_VOCALS && focusSound(s),
     guess: (s) => !s.traits.live && lasts(s, 120) && s.vocals <= 0.3 && s.tension < 0.4,
     fit: (s) => 0.4 * (1 - s.vocals) + 0.35 * (s.steadiness ?? 0.5) + 0.25 * near(s.energy ?? FOCUS_ENERGY, FOCUS_ENERGY, 0.4),
   });
@@ -609,6 +600,26 @@ function pickLanes(ctx: MixContext, pool: Song[], rng: Rng): StyleFamily[] {
 /** How much of a song is of today's lanes, 0 … 1: all of a song in either lane counts in full. */
 function inLanes(song: Song, lanes: StyleFamily[]): number {
   return Math.min(1, lanes.reduce((sum, lane) => sum + (song.families[lane] ?? 0), 0));
+}
+
+/**
+ * A measured song Deep focus would take by its sound, whether or not anyone sings in it: long enough, steady, neither
+ * too still nor too intense, nothing tense, nothing that surges. What the lyrics looked up ahead settle the rest of
+ * (`lyricsAheadCandidates`).
+ */
+export function focusSound(s: Song): boolean {
+  return (
+    !s.traits.live &&
+    lasts(s, 120) &&
+    (s.steadiness ?? 0.5) >= 0.5 &&
+    s.energy !== undefined &&
+    s.energy >= 0.05 &&
+    s.energy <= 0.7 &&
+    s.absolute !== undefined &&
+    s.absolute <= 0.8 &&
+    s.tension < 0.5 &&
+    (s.shape?.surgeDb ?? 0) <= 8
+  );
 }
 
 /** Whether a song runs at least this long (one whose length isn't known yet does). */
