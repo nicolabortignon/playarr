@@ -35,7 +35,7 @@ Configuration comes from environment variables, validated with zod in `apps/serv
 | Variable | Default | What |
 |---|---|---|
 | `PORT`, `HOST` | `4000`, `0.0.0.0` | Where the server listens |
-| `DATA_DIR` | `data` | The SQLite database: accounts, favorites, playlists, history, analysis. Keep and back up |
+| `DATA_DIR` | `data` | The SQLite database: accounts, favorites, playlists, history, analysis. Keep and back up. Copies made before migrations go in `backups/` inside it (see below) |
 | `CACHE_DIR` | `.cache` | Artwork, covers, rendered transitions. Safe to delete |
 | `ART_CACHE_MB`, `TRANSITIONS_CACHE_MB` | `2048`, `1024` | Cache caps, least recently used trimmed first |
 | `WEB_DIST` | `../../web/dist` from the server build | The built web app to serve |
@@ -53,6 +53,12 @@ Configuration comes from environment variables, validated with zod in `apps/serv
 | `UPDATE_DIR` | unset | The folder shared with the updater (compose sets `/update`) |
 
 `LOG_LEVEL` and `LOG_REQUESTS=1` (read straight from the environment) control logging. The `NAS_*` variables are used only by `deploy.mjs` (section 4); the `REVIEW_*` and `SCREENSHOT_*` ones only by the iOS release scripts (see [../ios/README.md](../ios/README.md)).
+
+### The database across versions
+
+Migrations run when the server starts (`openDatabase` in `apps/server/src/db.ts`), each once, tracked with SQLite's `user_version`. Before a start that migrates an existing database, the server copies it with `VACUUM INTO` (consistent even with the database open) to `<DATA_DIR>/backups/playarr-<version>-schema-<n>.db`: the version that's about to migrate it (every commit raises the version, so it names the commit) and the schema it was at. The newest five copies stay. When the copy can't be made (a full disk), the server doesn't start, rather than migrate without one.
+
+A database a newer version has used (its `user_version` beyond this version's migrations) is refused: the server stops, saying which schema it found and where the copies are, instead of running against tables it doesn't know. To go back to an older version, stop the server and put back the copy made before that version's successor migrated: `cp config/backups/playarr-<version>-schema-<n>.db config/playarr.db`, removing `playarr.db-wal` and `playarr.db-shm` beside it.
 
 ## 3. The Docker image
 
@@ -92,7 +98,7 @@ The NAS is a UGREEN DXP2800 running UGOS (Debian 12). Lidarr runs in its own com
 | `.env` (mode 600) | `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR`, `PLAYARR_DIR` (written by the deploy) plus any lines of your own |
 | `src/` | The deployed source (`src/REVISION` holds its commit): the build context |
 | `DEPLOYED`, `LATEST` | The commit running, and the newest on GitHub `main` at the last check |
-| `config/` | The database: keep and back up |
+| `config/` | The database: keep and back up. `config/backups/` holds the copies made before migrations |
 | `cache/` | Artwork, covers, transitions: safe to delete |
 | `update/` | Shared between Playarr and the updater (section 5) |
 

@@ -1,6 +1,9 @@
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { migrate } from './db.ts';
+import { migrate, openDatabase } from './db.ts';
 
 /** How many migrations ran before the one adding listener profiles. */
 const PROFILES_MIGRATION = 15;
@@ -205,5 +208,63 @@ describe('migrate', () => {
       { id: 2, added_at: '2026-11-03T18:00:00.000Z' },
       { id: 3, added_at: '2026-11-03T18:00:00.000Z' },
     ]);
+  });
+});
+
+describe('openDatabase', () => {
+  const folder = () => mkdtempSync(join(tmpdir(), 'playarr-db-'));
+  /** A database at schema `schema`, as an older Playarr left it. */
+  const olderAt = (dir: string, schema: number) => {
+    const db = new DatabaseSync(join(dir, 'playarr.db'));
+    migrate(db, schema);
+    db.close();
+  };
+
+  it('copies a database it migrates into backups/ first, named by the version and the schema it was at', () => {
+    const dir = folder();
+    olderAt(dir, PROFILES_MIGRATION);
+    openDatabase(dir, '0.7.1').close();
+    expect(readdirSync(join(dir, 'backups'))).toEqual([`playarr-0.7.1-schema-${PROFILES_MIGRATION}.db`]);
+    const copy = new DatabaseSync(join(dir, 'backups', `playarr-0.7.1-schema-${PROFILES_MIGRATION}.db`));
+    expect((copy.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(PROFILES_MIGRATION);
+    copy.close();
+  });
+
+  it('makes no copy of a new database, nor of one already up to date', () => {
+    const dir = folder();
+    openDatabase(dir, '0.7.1').close();
+    openDatabase(dir, '0.7.2').close();
+    expect(existsSync(join(dir, 'backups'))).toBe(false);
+  });
+
+  it('keeps the newest five copies, and the first copy a version made', () => {
+    const dir = folder();
+    mkdirSync(join(dir, 'backups'));
+    for (let i = 1; i <= 5; i++) {
+      writeFileSync(join(dir, 'backups', `playarr-0.6.${i}-schema-1.db`), '');
+      utimesSync(join(dir, 'backups', `playarr-0.6.${i}-schema-1.db`), i, i);
+    }
+    writeFileSync(join(dir, 'backups', 'notes.txt'), 'mine');
+    olderAt(dir, ACCOUNTS_MIGRATION);
+    openDatabase(dir, '0.7.1').close();
+    expect(readdirSync(join(dir, 'backups')).sort()).toEqual([
+      'notes.txt',
+      'playarr-0.6.2-schema-1.db',
+      'playarr-0.6.3-schema-1.db',
+      'playarr-0.6.4-schema-1.db',
+      'playarr-0.6.5-schema-1.db',
+      `playarr-0.7.1-schema-${ACCOUNTS_MIGRATION}.db`,
+    ]);
+  });
+
+  it('refuses a database a newer Playarr has used, saying where the copies are', () => {
+    const dir = folder();
+    openDatabase(dir, '0.7.1').close();
+    const db = new DatabaseSync(join(dir, 'playarr.db'));
+    const { user_version: latest } = db.prepare('PRAGMA user_version').get() as { user_version: number };
+    db.exec(`PRAGMA user_version = ${latest + 1}`);
+    db.close();
+    expect(() => openDatabase(dir, '0.7.1')).toThrow(`newer than Playarr 0.7.1 knows (${latest})`);
+    expect(() => openDatabase(dir, '0.7.1')).toThrow(join(dir, 'backups'));
   });
 });

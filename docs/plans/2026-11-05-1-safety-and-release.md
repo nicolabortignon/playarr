@@ -6,7 +6,7 @@ Agreed 2026-11-05 from the iOS, server, web and product reviews. First of four p
 
 Already done: the last password can no longer be reset or removed, which reopened the server in setup mode to anyone (`accounts.ts` `keepAPassword`, 2026-11-05).
 
-**Where it stands (2026-11-06):** 1 and 6 done; 2, 3, 4 and 5 left.
+**Where it stands (2026-11-07):** 1 and 6 done; 2 under way (the copy before migrations and the refusal of a newer database are done); 3, 4 and 5 under way.
 
 ## 1. The web app survives a deploy and a page error — S — done 2026-11-05
 
@@ -26,9 +26,9 @@ Nothing runs the server or web tests before the updater builds `main` (`.github/
 - `.github/workflows/server-web.yml`: typecheck and tests for `packages/*`, `apps/server` and `apps/web` on every push and pull request.
 - The updater deploys only commits whose checks passed on GitHub (or tags, see the next point).
 - Stable and edge: tagged releases are the default channel; following `main` becomes an opt-in setting (Settings → Updates). Owners from the App Store get stable.
-- Before running migrations, `VACUUM INTO /config/backups/playarr-<version>-<sha>.db`, keeping the last 5.
+- Before running migrations, `VACUUM INTO /config/backups/playarr-<version>-<sha>.db`, keeping the last 5. *Done 2026-11-07, named `playarr-<version>-schema-<n>.db`: every commit raises the version, so it names the commit, and the schema says what the copy holds.*
 - `update.sh` tags the running image `playarr:previous` before replacing it and restores it when the new one fails a real health check (`/api/health` with the database answering, not just any JSON).
-- The server refuses to start on a database newer than it knows (`user_version` above its migrations), rather than running against it.
+- The server refuses to start on a database newer than it knows (`user_version` above its migrations), rather than running against it. *Done 2026-11-07.*
 - **Done when** a red commit never reaches the NAS, a failed start rolls back within one update cycle, and a backup exists for every migration run.
 
 ## 3. iOS never sends the token to an address it hasn't verified — M
