@@ -9,9 +9,12 @@ public enum ShellLayout: String, Hashable, Sendable, Codable {
   /// Split View, a small Stage Manager window, an iPad mini held upright) gets the phone's tabs.
   public static let splitMinWidth: CGFloat = 768
 
-  /// `regularWidth` is the window's horizontal size class being regular (always false on an iPhone).
-  public static func choose(regularWidth: Bool, width: CGFloat) -> ShellLayout {
-    regularWidth && width >= splitMinWidth ? .split : .tabs
+  /// `regularWidth`: the window's horizontal size class is regular. `compactHeight`: its vertical one is compact, as
+  /// every iPhone held sideways is. A Plus or Pro Max held sideways is regular in width too, and 956 points wide, but
+  /// it keeps the phone's tabs and its sideways pages, rather than the iPad's sidebar and player bar on a phone's
+  /// height.
+  public static func choose(regularWidth: Bool, compactHeight: Bool = false, width: CGFloat) -> ShellLayout {
+    regularWidth && !compactHeight && width >= splitMinWidth ? .split : .tabs
   }
 
   /// How far up the window's foot a keyboard reaches before the player bar steps aside: a software keyboard takes

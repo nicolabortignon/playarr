@@ -10,12 +10,13 @@ struct AdaptiveShell: View {
   @Environment(AppModel.self) private var app
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var heightClass
   #endif
 
   var body: some View {
     let router = session.router
     GeometryReader { proxy in
-      let wanted = ShellLayout.choose(regularWidth: regularWidth, width: proxy.size.width)
+      let wanted = ShellLayout.choose(regularWidth: regularWidth, compactHeight: compactHeight, width: proxy.size.width)
       Group {
         switch router.layout {
         case .tabs: TabShell(session: session)
@@ -36,6 +37,14 @@ struct AdaptiveShell: View {
       sizeClass == .regular
     #else
       true
+    #endif
+  }
+
+  private var compactHeight: Bool {
+    #if os(iOS)
+      heightClass == .compact
+    #else
+      false
     #endif
   }
 

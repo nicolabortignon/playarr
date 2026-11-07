@@ -13,10 +13,10 @@ Two pure functions choose almost everything, and both are unit-tested:
 
 `AppShell` (`Shell/AppShell.swift`) is the signed-in app. It holds `AdaptiveShell`, presents Now Playing over everything as a full-screen cover, and shows toasts.
 
-`AdaptiveShell` (`Shell/AdaptiveShell.swift`) reads the window's width and horizontal size class and asks `ShellLayout.choose`:
+`AdaptiveShell` (`Shell/AdaptiveShell.swift`) reads the window's width and size classes and asks `ShellLayout.choose`:
 
-- **Split** (the sidebar) when the size class is regular *and* the window is at least 768 points wide (`splitMinWidth`, the web's desktop breakpoint).
-- **Tabs** otherwise: every iPhone upright, and on an iPad Slide Over, a third or half of the screen in Split View, a small Stage Manager window, or an iPad mini upright (744 points).
+- **Split** (the sidebar) when the horizontal size class is regular, the vertical one isn't compact, *and* the window is at least 768 points wide (`splitMinWidth`, the web's desktop breakpoint).
+- **Tabs** otherwise: every iPhone, upright or sideways (a Plus or Pro Max held sideways is regular in width and 956 points wide, but compact in height: it keeps the tabs, the sideways pages and Now Playing's sleeve), and on an iPad Slide Over, a third or half of the screen in Split View, a small Stage Manager window, or an iPad mini upright (744 points).
 
 It switches live as the window is resized. `AppRouter.setLayout(_:)` carries the place across: Home, Search and Queue exist in both; a page opened from Library that has a sidebar item becomes that item with the rest of the stack on top, and back again. The side column closes when the window drops to tabs.
 

@@ -12,6 +12,8 @@ import Testing
     #expect(ShellLayout.choose(regularWidth: true, width: 678) == .tabs)  // half the screen in Split View
     #expect(ShellLayout.choose(regularWidth: false, width: 1000) == .tabs)  // compact: Slide Over, a third
     #expect(ShellLayout.choose(regularWidth: false, width: 402) == .tabs)  // iPhone
+    // An iPhone Pro Max held sideways: regular and wide, but a phone's height.
+    #expect(ShellLayout.choose(regularWidth: true, compactHeight: true, width: 956) == .tabs)
   }
 
   @Test func stepsThePlayerBarAsideOnlyForTheScreensKeyboard() {
