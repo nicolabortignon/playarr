@@ -59,8 +59,9 @@ struct PlayarrApp: App {
     /// hands one over in PLAYARR_UITEST_SERVER and PLAYARR_UITEST_TOKEN), plus `-UITestsDemo` to start signed in
     /// to the demo library, playing silence, or `-UITestsRequests` for the demo with Lidarr and an album to request.
     /// With the demo, `-UITestsOffline` makes the server unreachable, `-UITestsLongQueue` queues 5,000 songs,
-    /// `-UITestsTurnToOpen` turns on Settings → Appearance → Turn to open, `-UITestsDJ` DJ mix, and `-UITestsRestore`
-    /// brings back where the last run was (otherwise each run starts on Home).
+    /// `-UITestsTurnToOpen` turns on Settings → Appearance → Turn to open, `-UITestsDJ` DJ mix, `-UITestsFirstSteps` opens
+    /// the owner's first steps, and `-UITestsRestore` brings back where the last run was (otherwise each run starts on
+    /// Home).
     /// `-UITestsDownloads` opens Library → Downloads on made-up downloads (`DownloadsDemoView`).
     /// For the screen tour, `-UITestsSlowFan <times>` slows Feeling lucky's fan of covers down (`CoverFan`), and with
     /// the demo `-UITestsSlowLucky` has its songs take 8 seconds to come and `-UITestsPulse` gives the bars made-up
@@ -80,6 +81,8 @@ struct PlayarrApp: App {
         if arguments.contains("-UITestsDJ") { model.playback.transitions = .dj }
         // -UITestsPulse: the demo plays silence, which its bars would rest at; made-up levels have them keep time.
         if arguments.contains("-UITestsPulse") { model.session?.player.pulse.makeUp(BandLevels(bass: 0.9, middle: 0.75, treble: 0.6)) }
+        // -UITestsFirstSteps: Settings → Sources as the owner's first step, as claiming the server on this device leaves it.
+        if arguments.contains("-UITestsFirstSteps") { model.session?.router.open(.firstStep(.music)) }
         // -UITestsLongQueue: 5,000 songs queued, paused.
         if arguments.contains("-UITestsLongQueue"), let player = model.session?.player {
           player.play(Demo.manyTracks(5000))

@@ -28,6 +28,7 @@ struct RouteDestination: View {
     case .artists: ArtistsView(session: session)
     case .settings: SettingsView(session: session)
     case .settingsPanel(let panel): SettingsPanelView(panel: panel, session: session)
+    case .firstStep(let step): SettingsPanelView(panel: step.panel, session: session, firstStep: step)
     case .favorites: FavoritesView(session: session)
     case .playlists: PlaylistsView(session: session)
     case .playlist(let id): PlaylistView(id: id, session: session)

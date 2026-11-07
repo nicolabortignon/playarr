@@ -68,6 +68,8 @@ struct SettingsView: View {
 struct SettingsPanelView: View {
   let panel: SettingsPanel
   let session: AccountSession
+  /// Opened as one of the owner's first steps (Sources or Accounts).
+  var firstStep: FirstStep?
   @Environment(AppModel.self) private var app
   @Environment(Theme.self) private var theme
 
@@ -88,7 +90,7 @@ struct SettingsPanelView: View {
       case .playerLab:
         if let client = session.client { PlayerLabView(player: session.player, client: client) }
     #endif
-    case .sources: SourcesPanel(api: session.api, libraryChanged: libraryChanged)
+    case .sources: SourcesPanel(api: session.api, libraryChanged: libraryChanged, firstStep: firstStep)
     case .accounts:
       AccountsPanel(
         api: session.api,
@@ -97,7 +99,7 @@ struct SettingsPanelView: View {
         accountChanged: { [store = app.store, key = session.key] account in store.update(account, on: key.serverId) },
         // The setup links made on this device, kept for the server (the demo keeps them only while it runs).
         invites: session.client == nil ? InviteStore() : InviteStore(file: InviteStore.file(serverId: session.key.serverId)),
-        toast: { [toasts = session.toasts] in toasts.push($0) })
+        toast: { [toasts = session.toasts] in toasts.push($0) }, firstStep: firstStep)
     case .mixes: MixesPanel(api: session.api, isAdmin: isAdmin, mixesChanged: { Task { await session.mixes.load() } })
     case .analysis: AnalysisPanel(api: session.api, isAdmin: isAdmin)
     case .requests: RequestsPanel(api: session.api, isAdmin: isAdmin, requestsChanged: { session.discover.invalidate([.requests, .health]) })

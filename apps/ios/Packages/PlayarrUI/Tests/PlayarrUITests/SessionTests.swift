@@ -110,6 +110,24 @@ import Testing
   }
 }
 
+@MainActor @Suite struct FirstStepsTests {
+  @Test func theOwnersSessionOpensOnAddYourMusicOnce() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let store = ServerStore(directory: directory, secrets: InMemorySecretStore())
+    try store.signedIn(SignInResponse(token: "demo", account: Demo.account), server: Demo.server, at: Demo.baseURL)
+    let model = AppModel(
+      store: store, browser: ServerBrowser(), appVersion: AppVersion("1.0.0"), device: DeviceInfo(name: "Test", platform: "ios"),
+      playback: PlaybackSettings(defaults: UserDefaults(suiteName: UUID().uuidString)!),
+      makeSession: { record, model in try AccountSession.demo(record, model: model, offline: true) })
+    // As a claim leaves it.
+    model.opensFirstSteps = true
+
+    model.syncSession()
+    #expect(model.session?.router.paths[.home] == [.firstStep(.music)])
+    #expect(!model.opensFirstSteps)
+  }
+}
+
 /// A Keychain locked away, as before a device's first unlock.
 private struct UnreadableSecrets: SecretStore {
   func token(for key: String) throws -> String? { throw KeychainError(status: errSecInteractionNotAllowed) }

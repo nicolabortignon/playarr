@@ -102,6 +102,8 @@ import Testing
         // The claim goes to the local address (setup works only from the home network): the fake server
         // answers only there, so this would fail anywhere else.
         #expect(await model.claim(username: "nicola", name: "Nicola", password: "correct horse"))
+        // The owner's session opens on their first steps.
+        #expect(app.opensFirstSteps)
         #expect(app.store.activeServer?.baseURL == URL(string: "https://tracklist.me")!)
         #expect(app.store.activeServer?.localURL == local)
         #expect(app.store.activeClient?.localURL == local)

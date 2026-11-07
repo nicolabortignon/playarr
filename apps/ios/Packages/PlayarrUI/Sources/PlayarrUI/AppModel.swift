@@ -33,6 +33,8 @@ public final class AppModel {
     public var restoresPlace = true
     /// The app is on screen (a request that lands in the background is a notification instead).
     public var isActive = true
+    /// The server was just claimed here: its session opens on the owner's first steps (plan 4 §3), Add your music.
+    var opensFirstSteps = false
     /// Trying Playarr without a server (plan 4 §1): the demo library's own model, shown instead of this one until
     /// it's left (`leaveTrial()`). Nothing of it is kept: its servers, settings and files are its own, thrown away then.
     public private(set) var trial: AppModel?
@@ -141,6 +143,10 @@ public final class AppModel {
                 return
             }
             session = opened
+            if opensFirstSteps {
+                opensFirstSteps = false
+                opened.router.open(.firstStep(.music))
+            }
         } catch {
             sessionFailure = Self.reason(error)
         }

@@ -20,6 +20,8 @@ public enum Route: Hashable, Sendable, Codable {
   case listeningRange(StatsRange)
   case settings
   case settingsPanel(SettingsPanel)
+  /// Settings → Sources or Accounts as one of the owner's first steps after claiming the server: the web's `?first`.
+  case firstStep(FirstStep)
   /// An artist's MusicBrainz discography (phase 8); `album` brings one of its albums into view.
   case discoverArtist(mbid: String, album: String?)
   /// Only a name is known: look it up on MusicBrainz, then show what it leads to (phase 8).
@@ -47,7 +49,14 @@ public enum Route: Hashable, Sendable, Codable {
     case ("downloads", 1): self = .downloads
     case ("settings", 1): self = .settings
     case ("settings", 2):
-      if parts[1] == "listening" { self = query("range").map(Route.listeningRange) ?? .listening } else { self = SettingsPanel(rawValue: parts[1]).map(Route.settingsPanel) ?? .settings }
+      let first = components.queryItems?.contains { $0.name == "first" } == true
+      if parts[1] == "listening" {
+        self = query("range").map(Route.listeningRange) ?? .listening
+      } else if first, let step = [FirstStep.music, .household].first(where: { $0.panel.rawValue == parts[1] }) {
+        self = .firstStep(step)
+      } else {
+        self = SettingsPanel(rawValue: parts[1]).map(Route.settingsPanel) ?? .settings
+      }
     default: return nil
     }
   }

@@ -12,20 +12,24 @@ public struct AccountsPanel: View {
   @State private var resetting: Account?
   /// Copy invite link for someone this device has no link for: asking whether to make a new one.
   @State private var inviting: Account?
+  private let firstStep: FirstStep?
 
-  /// `invites` keeps the setup links this device makes, to copy again; `toast` says what was copied.
+  /// `invites` keeps the setup links this device makes, to copy again; `toast` says what was copied. `firstStep`: opened
+  /// as the owner's first step after claiming the server, "Invite your household".
   public init(
     api: any APISending, signOutHere: @escaping @MainActor () async -> Void, accountChanged: @escaping @MainActor (Account) -> Void = { _ in },
-    invites: InviteStore = InviteStore(), toast: @escaping @MainActor (String) -> Void = { _ in }
+    invites: InviteStore = InviteStore(), toast: @escaping @MainActor (String) -> Void = { _ in }, firstStep: FirstStep? = nil
   ) {
     _model = State(
       initialValue: AccountsModel(
         api: api, signOutHere: signOutHere, accountChanged: accountChanged, invites: invites, copy: Pasteboard.copy, toast: toast))
+    self.firstStep = firstStep
   }
 
   public var body: some View {
     Form {
       if let me = model.me {
+        if let firstStep, model.isAdmin { FirstStepSection(step: firstStep) }
         you(me)
         if model.isAdmin { everyone(me) }
       } else if let error = model.loadError {

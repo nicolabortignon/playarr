@@ -81,8 +81,12 @@ public final class AddServerModel {
         await finish(API.Auth.redeem(code: code.trimmingCharacters(in: .whitespaces).uppercased(), password: password, device: app.device))
     }
 
+    /// Claims the server; the owner's session then opens on their first steps (Add your music, then the household).
     public func claim(username: String, name: String, password: String) async -> Bool {
-        await finish(API.Auth.setup(username: username.trimmingCharacters(in: .whitespaces), name: name.trimmingCharacters(in: .whitespaces), password: password, device: app.device))
+        app.opensFirstSteps = true
+        let claimed = await finish(API.Auth.setup(username: username.trimmingCharacters(in: .whitespaces), name: name.trimmingCharacters(in: .whitespaces), password: password, device: app.device))
+        if !claimed { app.opensFirstSteps = false }
+        return claimed
     }
 
     private func finish(_ endpoint: Endpoint<SignInResponse>) async -> Bool {

@@ -24,16 +24,20 @@ public struct SourcesPanel: View {
   @State private var removing: SourceInfo?
   private let api: any APISending
   private let libraryChanged: @MainActor () -> Void
+  private let firstStep: FirstStep?
 
-  public init(api: any APISending, libraryChanged: @escaping @MainActor () -> Void = {}) {
+  /// `firstStep`: opened as the owner's first step after claiming the server, "Add your music".
+  public init(api: any APISending, libraryChanged: @escaping @MainActor () -> Void = {}, firstStep: FirstStep? = nil) {
     self.api = api
     self.libraryChanged = libraryChanged
+    self.firstStep = firstStep
     _model = State(initialValue: SourcesModel(api: api, libraryChanged: libraryChanged))
     _matching = State(initialValue: MatchingModel(api: api))
   }
 
   public var body: some View {
     List {
+      if let firstStep { FirstStepSection(step: firstStep, ready: !model.sources.isEmpty) }
       Section {
         Text("Where your music comes from. When a song is in more than one place, Playarr plays the best-quality copy; between equal copies, the source higher in this list wins.")
           .font(.footnote)
