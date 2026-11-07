@@ -80,7 +80,7 @@ Long grids show a screenful at a time (`lib/useIncremental.ts`: 48 items, then 4
 
 `components/AppShell.tsx` mounts only one layout, chosen by `useDesktopLayout()` (Tailwind's `md`, **768 px**). The hidden layout would still poll and re-render.
 
-- **Phones** get a bottom tab bar (Home · Search · Library · Queue) with a mini player above it. Library collects Made for you, Your listening, Downloads, Favorites, Artists, Albums, Requests, Settings and playlists. Now Playing opens full screen and closes with a drag down.
+- **Phones** get a bottom tab bar (Home · Search · Library · Queue) with a mini player above it. Library collects Made for you, Your listening, Downloads, Favorites, Artists, Albums, Requests, Settings and playlists. Now Playing opens full screen and closes with a drag down. Swiping its cover sideways plays the next song (left) or the previous one (right), as the iOS app's sideways cover does: the cover follows the finger at 60% and springs back, and past 30% of its width the song changes.
 - **Desktop** gets a left sidebar (Home, Search, Made for you, Artists, Albums, Favorites, Downloads, Queue, then Requests, playlists and Settings) and a player bar at the bottom. With nothing playing (a device that hasn't played anything yet: the queue is kept), the bar offers the album heard last, on any device (`useRecentAlbums`), with Resume to play it from the start, and Feeling lucky; with no history, Feeling lucky alone.
 
 Both share Now Playing, Stats for nerds, the keyboard shortcuts, the Add to playlist, metadata and mix-points dialogs, toasts and the audio engine.

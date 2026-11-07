@@ -1,6 +1,6 @@
 import type { Track } from '@playarr/shared';
 import { Blend, ChevronDown, Ellipsis, List, Moon, Quote } from 'lucide-react';
-import { AnimatePresence, motion, useDragControls, useMotionTemplate, useMotionValue, useSpring } from 'motion/react';
+import { animate, AnimatePresence, motion, useDragControls, useMotionTemplate, useMotionValue, useSpring, type DragControls } from 'motion/react';
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useShallow } from 'zustand/react/shallow';
@@ -16,7 +16,7 @@ import { playUpcoming } from '../player/actions';
 import { useBlend } from '../player/blend';
 import { breath, energyAt, onPulse, songBeat } from '../player/pulse';
 import { useSleep } from '../player/sleep';
-import { useCurrentTrack, usePlayer } from '../player/store';
+import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 import { IconButton } from './Button';
 import { Cover } from './Cover';
 import { FavoriteButton } from './FavoriteButton';
@@ -52,6 +52,7 @@ function Sheet() {
   const source = usePlayer((s) => s.source);
   const playing = usePlayer((s) => s.playing);
   const controls = useDragControls();
+  const swipe = useCoverSwipe(controls);
   const navigate = useNavigate();
   const columnFits = useColumnLayout();
   // Dragged down, it slides away under the finger; leaving for a page, it slides away as the page changes.
@@ -130,18 +131,20 @@ function Sheet() {
           ) : (
             <div
               className="flex h-full min-h-0 w-full touch-none items-center justify-center py-4 [container-type:size]"
-              onPointerDown={(e) => controls.start(e)}
+              {...swipe.handlers}
             >
-              <motion.div
-                key={track.albumId}
-                initial={grewWith === track.albumId ? false : { opacity: 0, scale: 0.92 }}
-                // Paused, the cover settles back (smaller, its shadow softer); playing lifts it again (plan 7 §3).
-                animate={{ opacity: 1, scale: playing ? 1 : PAUSED_SCALE }}
-                transition={{ type: 'spring', damping: 22, stiffness: 180 }}
-                className="relative aspect-square w-[min(100cqw,100cqh,560px)]"
-              >
-                <BeatGlow track={track} playing={playing} />
-                <CoverObject track={track} playing={playing} named={morph} />
+              <motion.div ref={swipe.ref} style={{ x: swipe.x }}>
+                <motion.div
+                  key={track.albumId}
+                  initial={grewWith === track.albumId ? false : { opacity: 0, scale: 0.92 }}
+                  // Paused, the cover settles back (smaller, its shadow softer); playing lifts it again (plan 7 §3).
+                  animate={{ opacity: 1, scale: playing ? 1 : PAUSED_SCALE }}
+                  transition={{ type: 'spring', damping: 22, stiffness: 180 }}
+                  className="relative aspect-square w-[min(100cqw,100cqh,560px)]"
+                >
+                  <BeatGlow track={track} playing={playing} />
+                  <CoverObject track={track} playing={playing} named={morph} />
+                </motion.div>
               </motion.div>
             </div>
           )}
@@ -182,6 +185,62 @@ function Sheet() {
 
 /** How far the cover settles back while the music is paused (as iOS's). */
 const PAUSED_SCALE = 0.86;
+/** How far a finger goes on the cover before it's taken as a swipe sideways or a drag down (px). */
+const SWIPE_DECIDE_PX = 8;
+/** How much of the finger's way the cover follows sideways: harder to pull the further it goes (as iOS's sleeve). */
+const SWIPE_FOLLOW = 0.6;
+/** How much of the cover's width a swipe goes to change the song. */
+const SWIPE_CHANGES = 0.3;
+
+/**
+ * Sideways on the cover for the next or previous song, as the iOS app's sideways cover: the cover follows the finger
+ * and springs back, and past 30% of its width the song changes (left for the next). A drag that goes more down than
+ * sideways moves the sheet instead, to close it, as one from anywhere on the cover did before.
+ */
+function useCoverSwipe(sheet: DragControls) {
+  const x = useMotionValue(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const reduce = useReduceMotion();
+  const gesture = useRef<{ pointer: number; x: number; y: number; sideways?: boolean } | null>(null);
+  const settle = () => (reduce ? x.set(0) : void animate(x, 0, { type: 'spring', damping: 26, stiffness: 300 }));
+  const end = (e: PointerEvent<HTMLElement>, changes: boolean) => {
+    const g = gesture.current;
+    gesture.current = null;
+    if (!g?.sideways || g.pointer !== e.pointerId) return;
+    const dx = e.clientX - g.x;
+    if (changes && Math.abs(dx) > (ref.current?.getBoundingClientRect().width ?? 0) * SWIPE_CHANGES) {
+      if (dx < 0) usePlayer.getState().next();
+      else usePlayer.getState().prev(useClock.getState().time);
+    }
+    settle();
+  };
+  const handlers = {
+    onPointerDown: (e: PointerEvent<HTMLElement>) => {
+      gesture.current = { pointer: e.pointerId, x: e.clientX, y: e.clientY };
+    },
+    onPointerMove: (e: PointerEvent<HTMLElement>) => {
+      const g = gesture.current;
+      if (!g || g.pointer !== e.pointerId) return;
+      const dx = e.clientX - g.x;
+      const dy = e.clientY - g.y;
+      if (g.sideways === undefined) {
+        if (Math.hypot(dx, dy) < SWIPE_DECIDE_PX) return;
+        g.sideways = Math.abs(dx) > Math.abs(dy);
+        if (!g.sideways) {
+          gesture.current = null;
+          sheet.start(e);
+          return;
+        }
+        // Held to the cover while it's swiped, as a touch is anyway, so a mouse leaving it doesn't drop the swipe.
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      }
+      x.set(dx * SWIPE_FOLLOW);
+    },
+    onPointerUp: (e: PointerEvent<HTMLElement>) => end(e, true),
+    onPointerCancel: (e: PointerEvent<HTMLElement>) => end(e, false),
+  };
+  return { x, ref, handlers };
+}
 /** The most the cover tilts towards the pointer, in degrees. */
 const MAX_TILT = 2;
 

@@ -28,7 +28,6 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 ## Web
 
 - Filter albums by genre or format. *(PLAN.md roadmap phase 3)*
-- Swipe left and right on Now Playing for next and previous (dragging down to close is done). *(PLAN.md roadmap phase 4)*
 - iOS standalone PWA quirks: background audio, safe areas, splash screen. *(PLAN.md roadmap phase 4)*
 - Cast and AirPlay through the Remote Playback API. *(PLAN.md roadmap phase 6)*
 - Load-ahead, Cache Storage and downloads have only been tested with unit and smoke tests, never in a real browser. *(PLAN.md decisions log, 2026-10-29)*

@@ -144,6 +144,38 @@ describe('Now Playing’s cover', () => {
     expect(cover().className).toContain('shadow-cover-hero');
   });
 
+  it('swipes sideways for the next or previous song past 30% of its width, and springs back short of it', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 300 } as DOMRect);
+    usePlayer.setState({ queue: [1, 2, 3].map((id) => ({ ...track(id), coverUrl: `/art/album/${id}/cover` })), pos: 1 });
+    wrap(<NowPlaying />);
+    const swipe = (from: number, to: number) => {
+      const area = cover().parentElement!.parentElement!;
+      fireEvent.pointerDown(area, { pointerId: 1, clientX: from, clientY: 300 });
+      fireEvent.pointerMove(area, { pointerId: 1, clientX: (from + to) / 2, clientY: 302 });
+      fireEvent.pointerMove(area, { pointerId: 1, clientX: to, clientY: 304 });
+      fireEvent.pointerUp(area, { pointerId: 1, clientX: to, clientY: 304 });
+    };
+    swipe(250, 180);
+    expect(usePlayer.getState().pos).toBe(1);
+    swipe(250, 100);
+    expect(usePlayer.getState().pos).toBe(2);
+    act(() => useClock.setState({ time: 1 }));
+    swipe(100, 250);
+    expect(usePlayer.getState().pos).toBe(1);
+  });
+
+  it('leaves the song alone for a drag that goes down rather than sideways', () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 300 } as DOMRect);
+    usePlayer.setState({ queue: [1, 2, 3].map((id) => ({ ...track(id), coverUrl: `/art/album/${id}/cover` })) });
+    wrap(<NowPlaying />);
+    const area = cover().parentElement!.parentElement!;
+    fireEvent.pointerDown(area, { pointerId: 1, clientX: 150, clientY: 100 });
+    fireEvent.pointerMove(area, { pointerId: 1, clientX: 160, clientY: 200 });
+    fireEvent.pointerMove(area, { pointerId: 1, clientX: 260, clientY: 210 });
+    fireEvent.pointerUp(area, { pointerId: 1, clientX: 260, clientY: 210 });
+    expect(usePlayer.getState().pos).toBe(0);
+  });
+
   it('tilts towards a mouse and catches its sheen, but not on a touch screen or under Reduce Motion', () => {
     pointer(true);
     wrap(<NowPlaying />);
