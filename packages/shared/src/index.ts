@@ -462,6 +462,14 @@ export type SourceKind = 'lidarr' | 'folder';
 
 export type FolderAccessKind = 'local' | 'ssh' | 'sftp' | 'smb';
 
+/** The key an SSH or SFTP host showed when Playarr first connected (or when an admin last saved the source): a host with another key is refused. */
+export interface SshHostKey {
+  /** The key's type as SSH names it: ssh-ed25519, ecdsa-sha2-nistp256, ssh-rsa… */
+  type: string;
+  /** OpenSSH's SHA-256 fingerprint, as `ssh-keygen -l` shows it: SHA256: and the digest in base64, without padding. */
+  fingerprint: string;
+}
+
 export interface SourceInfo {
   id: number;
   kind: SourceKind;
@@ -481,6 +489,8 @@ export interface SourceInfo {
     privateKeyPath?: string;
     /** SMB: the account's domain (rclone's default is WORKGROUP). */
     domain?: string;
+    /** SSH and SFTP: the host key Playarr trusts for this host and port. Absent until the first connection. */
+    hostKey?: SshHostKey;
   };
   /** Secret fields that have a saved value. The values themselves are never sent. */
   secrets: string[];
@@ -523,7 +533,7 @@ export interface SourceInput {
   kind?: SourceKind;
   name?: string;
   enabled?: boolean;
-  /** Lidarr: url, apiKey. Folder: path, plus access/host/port/user/password for SSH, SFTP or SMB, with privateKeyPath (SSH, SFTP) or domain (SMB); for SMB, `path` is /share/folder. Leaving a secret out keeps the saved one. */
+  /** Lidarr: url, apiKey. Folder: path, plus access/host/port/user/password for SSH, SFTP or SMB, with privateKeyPath (SSH, SFTP) or domain (SMB); for SMB, `path` is /share/folder. Leaving a secret out keeps the saved one, but only for the same server: the saved API key for the same address, the saved password for the same host, port and user (400 otherwise). */
   settings?: {
     url?: string;
     apiKey?: string;
@@ -678,7 +688,7 @@ export interface OrganizeResult {
 /** Browse folders on this server, or over a (possibly unsaved) SSH, SFTP or SMB connection. For SMB, `/` lists the shares. */
 export interface FolderBrowseRequest {
   path?: string;
-  /** A saved source whose connection (and saved password) to use. */
+  /** A saved source whose connection to use: its saved password for the same host, port and user, its host key for the same host and port. */
   id?: number;
   connection?: {
     access: FolderAccessKind;

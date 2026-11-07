@@ -90,6 +90,22 @@ import Testing
     ])
   }
 
+  @Test func showsTheTrustedHostKeyForItsHostAndPortOnly() {
+    var saved = Samples.folder(access: .ssh, secrets: ["password"])
+    saved.settings?.hostKey = SshHostKey(type: "ssh-ed25519", fingerprint: "SHA256:h+3V4ZaskOmtLieLZvA8MNwqXadWb5re2uTK9KWKIL8")
+    let form = FolderFormModel(source: saved, api: api)
+    #expect(form.trustedHostKey.map(SourceText.hostKey) == "SHA256:h+3V4ZaskOmtLieLZvA8MNwqXadWb5re2uTK9KWKIL8 (ED25519)")
+    form.host = " NAS"
+    #expect(form.trustedHostKey != nil)
+    form.port = 2222
+    #expect(form.trustedHostKey == nil)
+    form.port = 22
+    form.host = "other"
+    #expect(form.trustedHostKey == nil)
+    #expect(SourceText.hostKey(SshHostKey(type: "ecdsa-sha2-nistp256", fingerprint: "SHA256:x")) == "SHA256:x (ECDSA)")
+    #expect(SourceText.hostKey(SshHostKey(type: "ssh-rsa", fingerprint: "SHA256:y")) == "SHA256:y (RSA)")
+  }
+
   @Test func offersSMBOnlyWithRclone() async {
     api.on(.get, "/api/settings/folders/access", FolderAccessOptions(smb: false))
     let form = FolderFormModel(source: nil, api: api)

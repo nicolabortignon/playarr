@@ -960,7 +960,7 @@ public struct FolderAccessOptions: Codable, Hashable, Sendable {
 /// Browse folders on this server, or over a (possibly unsaved) SSH, SFTP or SMB connection. For SMB, `/` lists the shares.
 public struct FolderBrowseRequest: Codable, Hashable, Sendable {
     public var path: String?
-    /// A saved source whose connection (and saved password) to use.
+    /// A saved source whose connection to use: its saved password for the same host, port and user, its host key for the same host and port.
     public var id: Int?
     public var connection: Connection?
 
@@ -3132,8 +3132,10 @@ public struct SourceInfo: Codable, Hashable, Sendable, Identifiable {
         public var privateKeyPath: String?
         /// SMB: the account's domain (rclone's default is WORKGROUP).
         public var domain: String?
+        /// SSH and SFTP: the host key Playarr trusts for this host and port. Absent until the first connection.
+        public var hostKey: SshHostKey?
 
-        public init(url: String? = nil, path: String? = nil, access: FolderAccessKind? = nil, host: String? = nil, port: Int? = nil, user: String? = nil, privateKeyPath: String? = nil, domain: String? = nil) {
+        public init(url: String? = nil, path: String? = nil, access: FolderAccessKind? = nil, host: String? = nil, port: Int? = nil, user: String? = nil, privateKeyPath: String? = nil, domain: String? = nil, hostKey: SshHostKey? = nil) {
             self.url = url
             self.path = path
             self.access = access
@@ -3142,6 +3144,7 @@ public struct SourceInfo: Codable, Hashable, Sendable, Identifiable {
             self.user = user
             self.privateKeyPath = privateKeyPath
             self.domain = domain
+            self.hostKey = hostKey
         }
     }
 }
@@ -3150,7 +3153,7 @@ public struct SourceInput: Codable, Hashable, Sendable {
     public var kind: SourceKind?
     public var name: String?
     public var enabled: Bool?
-    /// Lidarr: url, apiKey. Folder: path, plus access/host/port/user/password for SSH, SFTP or SMB, with privateKeyPath (SSH, SFTP) or domain (SMB); for SMB, `path` is /share/folder. Leaving a secret out keeps the saved one.
+    /// Lidarr: url, apiKey. Folder: path, plus access/host/port/user/password for SSH, SFTP or SMB, with privateKeyPath (SSH, SFTP) or domain (SMB); for SMB, `path` is /share/folder. Leaving a secret out keeps the saved one, but only for the same server: the saved API key for the same address, the saved password for the same host, port and user (400 otherwise).
     public var settings: Settings?
 
     public init(kind: SourceKind? = nil, name: String? = nil, enabled: Bool? = nil, settings: Settings? = nil) {
@@ -3241,6 +3244,19 @@ public struct SourcesResponse: Codable, Hashable, Sendable {
     public init(sources: [SourceInfo], canEdit: Bool) {
         self.sources = sources
         self.canEdit = canEdit
+    }
+}
+
+/// The key an SSH or SFTP host showed when Playarr first connected (or when an admin last saved the source): a host with another key is refused.
+public struct SshHostKey: Codable, Hashable, Sendable {
+    /// The key's type as SSH names it: ssh-ed25519, ecdsa-sha2-nistp256, ssh-rsa…
+    public var type: String
+    /// OpenSSH's SHA-256 fingerprint, as `ssh-keygen -l` shows it: SHA256: and the digest in base64, without padding.
+    public var fingerprint: String
+
+    public init(type: String, fingerprint: String) {
+        self.type = type
+        self.fingerprint = fingerprint
     }
 }
 

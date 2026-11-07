@@ -143,4 +143,28 @@ describe('SourcesPanel', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move up' }));
     await waitFor(() => expect(reorder.mock.calls[0]?.[0]).toEqual([2, 1]));
   });
+
+  it('shows the SSH host key Playarr trusts while editing, for that host and port only', async () => {
+    const NAS = {
+      ...folder({}),
+      id: 3,
+      name: 'NAS',
+      settings: {
+        access: 'ssh',
+        host: 'nas',
+        port: 22,
+        user: 'me',
+        path: '/music',
+        hostKey: { type: 'ssh-ed25519', fingerprint: 'SHA256:h+3V4ZaskOmtLieLZvA8MNwqXadWb5re2uTK9KWKIL8' },
+      },
+    } as SourceInfo;
+    vi.spyOn(api, 'folderAccess').mockResolvedValue({ smb: true });
+    vi.spyOn(api, 'browseFolders').mockResolvedValue({ path: '/music', parent: '/', folders: [], audioFiles: 0 });
+    view('/settings/sources', [NAS]);
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “NAS”' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+    expect(await screen.findByText('SHA256:h+3V4ZaskOmtLieLZvA8MNwqXadWb5re2uTK9KWKIL8 (ED25519)')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Port'), { target: { value: '2222' } });
+    expect(screen.queryByText(/SHA256:/)).toBeNull();
+  });
 });

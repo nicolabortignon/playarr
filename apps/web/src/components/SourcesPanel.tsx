@@ -1,4 +1,4 @@
-import type { FolderAccessKind, FolderBrowseRequest, SourceInfo, SourceTestResult } from '@playarr/shared';
+import type { FolderAccessKind, FolderBrowseRequest, SourceInfo, SourceTestResult, SshHostKey } from '@playarr/shared';
 import {
   ArrowDown,
   ArrowUp,
@@ -536,6 +536,8 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
   const [enabled, setEnabled] = useState(source?.enabled ?? true);
   const remote = access !== 'local';
   const smb = access === 'smb';
+  // The SSH host's key Playarr trusts, while the form still points at the host and port it was seen at.
+  const hostKey = remote && !smb && host.trim().toLowerCase() === saved?.host?.toLowerCase() && port === saved?.port ? saved?.hostKey : undefined;
   // Without rclone on the server, SMB can't be chosen for a new folder (a saved one stays editable).
   const smbOff = useFolderAccess().data?.smb === false;
   // What the folder browser connects with: taken when Connect is pressed, so typing doesn't open connections.
@@ -678,6 +680,7 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
               spellCheck={false}
             />
           )}
+          {hostKey && <TrustedHostKey hostKey={hostKey} />}
           <div className="flex items-center justify-between gap-3">
             <p className="type-small text-muted">
               {smb
@@ -719,6 +722,23 @@ function FolderForm({ source, onDone }: { source?: SourceInfo; onDone: () => voi
         </Button>
       </div>
     </form>
+  );
+}
+
+/** "SHA256:… (ED25519)": a host key as `ssh-keygen -l` shows it, to compare with the machine's own. */
+function hostKeyText({ type, fingerprint }: SshHostKey): string {
+  const name = type === 'ssh-ed25519' ? 'ED25519' : type.startsWith('ecdsa-') ? 'ECDSA' : type === 'ssh-rsa' ? 'RSA' : type;
+  return `${fingerprint} (${name})`;
+}
+
+/** The SSH host's key Playarr trusts for this source: a host showing another is refused until the source is saved again. */
+function TrustedHostKey({ hostKey }: { hostKey: SshHostKey }) {
+  return (
+    <div>
+      <span className="mb-1.5 block type-small text-muted">Host key</span>
+      <span className="block type-meta break-all text-paper-dim">{hostKeyText(hostKey)}</span>
+      <span className="mt-1.5 block type-small text-muted">Playarr connects only to a host with this key. If it changes, saving trusts the new one.</span>
+    </div>
   );
 }
 

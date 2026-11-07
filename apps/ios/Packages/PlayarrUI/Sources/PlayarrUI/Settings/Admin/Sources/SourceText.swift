@@ -25,6 +25,18 @@ enum SourceText {
     return [place, counts].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
   }
 
+  /// "SHA256:… (ED25519)": a host key as `ssh-keygen -l` shows it, to compare with the machine's own (SourcesPanel.tsx: hostKeyText).
+  static func hostKey(_ key: SshHostKey) -> String {
+    let name =
+      switch key.type {
+      case "ssh-ed25519": "ED25519"
+      case "ssh-rsa": "RSA"
+      case let type where type.hasPrefix("ecdsa-"): "ECDSA"
+      case let type: type
+      }
+    return "\(key.fingerprint) (\(name))"
+  }
+
   /// How much of its albums a source has (AlbumSummary): Lidarr counts albums; a folder counts its songs, adding
   /// up to all of them, its songs not matched yet unidentified. Nil without albums. In lowercase: the web shows each
   /// as a chip of its own, here they run on in one line ("5 on complete albums · 0 unidentified").

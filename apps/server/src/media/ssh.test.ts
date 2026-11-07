@@ -1,7 +1,9 @@
+import type { SshHostKey } from '@playarr/shared';
 import { PassThrough } from 'node:stream';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { newHostKey, startSshServer, type SshTestServer } from '../testing/sshServer.ts';
 import { PCM_MAX_BUFFER } from './source.ts';
-import { type SshConnection, SshExecMediaSource, SshShell } from './ssh.ts';
+import { HostKeyChangedError, hostKeyOf, SshConnection, SshExecMediaSource, type SshOptions, SshShell } from './ssh.ts';
 
 /** An SSH channel stand-in: what ffmpeg on the host writes comes out of it, and it records being closed. */
 class FakeChannel extends PassThrough {
@@ -114,5 +116,88 @@ describe('SshShell commands', () => {
     channel.write(Buffer.alloc(PCM_MAX_BUFFER + 1));
     await expect(decoded).rejects.toThrow(`ffmpeg: The SSH host’s answer was over ${PCM_MAX_BUFFER / 1024 / 1024} MB`);
     expect(channel.closed).toBe(true);
+  });
+});
+
+const servers: SshTestServer[] = [];
+const connections: SshConnection[] = [];
+
+async function server(opts: Partial<Parameters<typeof startSshServer>[0]> = {}) {
+  const s = await startSshServer({ user: 'me', password: 'pw', ...opts });
+  servers.push(s);
+  return s;
+}
+
+function connect(s: SshTestServer, opts: Partial<SshOptions> = {}) {
+  const conn = new SshConnection({ host: '127.0.0.1', port: s.port, username: 'me', password: 'pw', ...opts });
+  connections.push(conn);
+  return conn;
+}
+
+const passwordsSent = (s: SshTestServer) => s.logins.filter((l) => l.method === 'password').map((l) => l.password);
+
+afterEach(async () => {
+  await Promise.all(connections.splice(0).map((c) => c.close()));
+  await Promise.all(servers.splice(0).map((s) => s.close()));
+});
+
+describe('host keys', () => {
+  it('reads a key’s type and OpenSSH fingerprint, as ssh-keygen -l shows them', () => {
+    const blob = Buffer.from('AAAAC3NzaC1lZDI1NTE5AAAAINKnzcnBei8RHXseW9KMr5lVVnBOHob0Qz5FlDQoIawy', 'base64');
+    expect(hostKeyOf(blob)).toEqual({ type: 'ssh-ed25519', fingerprint: 'SHA256:h+3V4ZaskOmtLieLZvA8MNwqXadWb5re2uTK9KWKIL8' });
+  });
+
+  it('trusts the first key on first use and reports it, once', async () => {
+    const s = await server();
+    const seen: SshHostKey[] = [];
+    const conn = connect(s, { onHostKey: (key) => seen.push(key) });
+    await conn.get();
+    expect(seen).toEqual([{ type: 'ssh-ed25519', fingerprint: s.fingerprint }]);
+    await conn.close();
+    await conn.get(); // reconnecting to the same key isn't news
+    expect(seen).toHaveLength(1);
+    expect(passwordsSent(s)).toEqual(['pw', 'pw']);
+  });
+
+  it('refuses a key other than the trusted one before sending the password, naming both', async () => {
+    const s = await server();
+    const trusted = { type: 'ssh-ed25519', fingerprint: 'SHA256:h+3V4ZaskOmtLieLZvA8MNwqXadWb5re2uTK9KWKIL8' };
+    const conn = connect(s, { hostKey: trusted, howToTrust: 'save it again' });
+    const err = await conn.get().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HostKeyChangedError);
+    expect((err as Error).message).toBe(
+      `The SSH host’s key has changed since Playarr first connected (it was ${trusted.fingerprint}, now ${s.fingerprint}). ` +
+        'If you reinstalled or replaced that machine, save it again; if not, something may be pretending to be it.',
+    );
+    expect(s.connections).toBe(1);
+    expect(s.logins).toEqual([]);
+  });
+
+  it('connects to the trusted key', async () => {
+    const s = await server();
+    const seen: SshHostKey[] = [];
+    await connect(s, { hostKey: { type: 'ssh-ed25519', fingerprint: s.fingerprint }, onHostKey: (key) => seen.push(key) }).get();
+    expect(seen).toEqual([]);
+    expect(passwordsSent(s)).toEqual(['pw']);
+  });
+
+  it('trusts a new key when told to, and reports it', async () => {
+    const s = await server();
+    const seen: SshHostKey[] = [];
+    const old = { type: 'ssh-ed25519', fingerprint: 'SHA256:h+3V4ZaskOmtLieLZvA8MNwqXadWb5re2uTK9KWKIL8' };
+    await connect(s, { hostKey: old, trustNewHostKey: true, onHostKey: (key) => seen.push(key) }).get();
+    expect(seen).toEqual([{ type: 'ssh-ed25519', fingerprint: s.fingerprint }]);
+  });
+
+  it('keeps to the key it first saw: a machine replaced at the same address is refused', async () => {
+    const first = await server();
+    const conn = connect(first);
+    await conn.get();
+    await conn.close();
+    await first.close();
+    servers.splice(servers.indexOf(first), 1);
+    const replaced = await server({ port: first.port, hostKey: newHostKey() });
+    await expect(conn.get()).rejects.toThrow(`it was ${first.fingerprint}, now ${replaced.fingerprint}`);
+    expect(replaced.logins).toEqual([]);
   });
 });

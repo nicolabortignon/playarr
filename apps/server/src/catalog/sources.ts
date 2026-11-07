@@ -1,7 +1,7 @@
-import type { FolderAccessKind, FolderBrowseRequest, FolderListing, SourceInfo, SourceInput, SourceTestResult } from '@playarr/shared';
+import type { FolderAccessKind, FolderBrowseRequest, FolderListing, SourceInfo, SourceInput, SourceTestResult, SshHostKey } from '@playarr/shared';
 import { posix } from 'node:path';
 import { LidarrClient } from '../lidarr/client.ts';
-import type { FolderAccess, FolderSettings } from './folderAccess.ts';
+import type { FolderAccess, FolderSettings, HostKeyHandling } from './folderAccess.ts';
 import { LocalFolderFs, type FolderFs } from './folderFs.ts';
 import { FolderSource, isAudioFile } from './folderSource.ts';
 import { LidarrSource } from './lidarr.ts';
@@ -26,6 +26,12 @@ export class SourceError extends Error {
   ) {
     super(message);
   }
+}
+
+/** What checking a folder on another machine found, for saving with it. */
+export interface Verified {
+  /** SSH and SFTP: the key the host showed, when it isn't the one already saved (the first connection, or a new key trusted). */
+  hostKey?: SshHostKey;
 }
 
 /** Sources as Settings manages them: rows in the database, turned into catalog adapters. */
@@ -135,7 +141,8 @@ export class SourceManager {
       .map((s) => toInfo(s, counts.get(s.id), this.matching(s.id, matchCounts), opts));
   }
 
-  add(input: SourceInput): SourceInfo {
+  /** `verified`: what `verify` found, saved with the source (the host's key). */
+  add(input: SourceInput, verified: Verified = {}): SourceInfo {
     const kind = input.kind ?? 'lidarr';
     let id: number;
     if (kind === 'lidarr') {
@@ -146,7 +153,7 @@ export class SourceManager {
       }
       id = this.store.addSource('lidarr', input.name?.trim() || 'Lidarr', { url: trimUrl(url), apiKey });
     } else if (kind === 'folder') {
-      const settings = this.folderSettings(input.settings);
+      const settings = withHostKey(this.folderSettings(input.settings), verified);
       const path = settings.path!;
       id = this.store.addSource('folder', input.name?.trim() || posix.basename(path) || path, withoutUndefined(settings));
     } else {
@@ -157,13 +164,14 @@ export class SourceManager {
     return this.info(id);
   }
 
-  update(id: number, input: SourceInput): SourceInfo {
+  /** `verified`: what `verify` found, saved with the source (the host's key, trusted anew). */
+  update(id: number, input: SourceInput, verified: Verified = {}): SourceInfo {
     const source = this.store.source(id);
     if (!source) throw new SourceError('Source not found', 404);
     const { url, apiKey } = input.settings ?? {};
     let settings: Record<string, unknown> | undefined;
     if (input.settings && source.kind === 'folder') {
-      settings = withoutUndefined(this.folderSettings(input.settings, source.settings as FolderSettings));
+      settings = withoutUndefined(withHostKey(this.folderSettings(input.settings, source.settings as FolderSettings), verified));
     } else if (input.settings) {
       const saved = source.settings as LidarrSettings;
       // The saved key only ever goes to the server it was saved for: a new address needs its key.
@@ -190,16 +198,21 @@ export class SourceManager {
   /**
    * Before saving a folder on another machine: connect and check the folder is there.
    * With an id, the source's saved settings fill in what the input leaves out. Local folders are checked by add/update.
+   * Over SSH or SFTP, saving trusts the key the host shows now: the first one, or a new one (a reinstalled machine),
+   * which goes back to add/update to be saved. A saved password never goes to a host whose key changed: trusting the
+   * new key then takes the password typed again, so that no save made for another reason sends it to a stranger.
    */
-  async verify(input: SourceInput, id?: number): Promise<void> {
+  async verify(input: SourceInput, id?: number): Promise<Verified> {
     const source = id !== undefined ? this.store.source(id) : undefined;
     if (id !== undefined && !source) throw new SourceError('Source not found', 404);
     const kind = source?.kind ?? input.kind ?? 'lidarr';
-    if (kind !== 'folder' || !input.settings) return;
+    if (kind !== 'folder' || !input.settings) return {};
     const saved = (source?.settings ?? {}) as FolderSettings;
-    if ((input.settings.access ?? saved.access ?? 'local') === 'local') return;
+    if ((input.settings.access ?? saved.access ?? 'local') === 'local') return {};
     const settings = this.folderSettings(input.settings, saved);
-    const fs = this.openFolderFs(settings);
+    const savedPassword = !input.settings.password && !!settings.password && !settings.privateKeyPath;
+    const verified: Verified = {};
+    const fs = this.openFolderFs(settings, { trustNewHostKey: !savedPassword, onHostKey: (key) => (verified.hostKey = key) });
     try {
       await fs.media.check();
       const s = await fs.stat(settings.path!);
@@ -209,6 +222,7 @@ export class SourceManager {
     } finally {
       await fs.close().catch(() => {});
     }
+    return verified;
   }
 
   /** Folders to choose from: on this server (inside FOLDER_ROOTS), or over a (possibly unsaved) SSH, SFTP or SMB connection (at / an SMB server lists its shares). */
@@ -230,12 +244,12 @@ export class SourceManager {
       user,
       port: c.port ?? ((access === 'smb') === wasSmb ? saved.port : undefined) ?? defaultPort(access),
       path,
-      // A saved password only ever goes back to the host and account it was saved for.
-      password: c.password || (host === saved.host && user === saved.user ? saved.password : undefined),
       ...(access === 'smb'
         ? { domain: c.domain?.trim() || (wasSmb ? saved.domain : undefined) }
         : { privateKeyPath: c.privateKeyPath?.trim() || saved.privateKeyPath }),
     };
+    // The saved password and host key, where they may go. Browsing never trusts a new key: saving the source does.
+    Object.assign(settings, fromSaved(settings, saved, c.password));
     const fs = this.openFolderFs(settings);
     try {
       await fs.media.check();
@@ -296,10 +310,10 @@ export class SourceManager {
     return ((s.settings as FolderSettings).access ?? 'local') === 'local' ? new LocalFolderFs() : undefined;
   }
 
-  private openFolderFs(settings: FolderSettings): FolderFs {
+  private openFolderFs(settings: FolderSettings, hostKeys?: HostKeyHandling): FolderFs {
     if (!this.folders) throw new SourceError('Folders on other machines aren’t available', 400);
     try {
-      return this.folders.create(settings);
+      return this.folders.create(settings, hostKeys);
     } catch (err) {
       throw new SourceError((err as Error).message, 400);
     }
@@ -319,18 +333,17 @@ export class SourceManager {
     if (access === 'smb' && clean.split('/').filter(Boolean).length === 0) throw new SourceError('Choose a share', 400);
     // Switching between SSH/SFTP and SMB starts from the new kind's port, not the old one's.
     const wasSmb = saved.access === 'smb';
-    return {
+    const settings: FolderSettings = {
       access,
       host,
       user,
       port: input.port ?? ((access === 'smb') === wasSmb ? saved.port : undefined) ?? defaultPort(access),
       path: clean,
-      // A saved password only ever goes back to the host and account it was saved for.
-      password: input.password || (host === saved.host && user === saved.user ? saved.password : undefined) || undefined,
       ...(access === 'smb'
         ? { domain: (input.domain ?? (wasSmb ? saved.domain : undefined))?.trim() || undefined }
         : { privateKeyPath: (input.privateKeyPath ?? saved.privateKeyPath)?.trim() || undefined }),
     };
+    return { ...settings, ...fromSaved(settings, saved, input.password) };
   }
 
   private checkFolder(path: string): string {
@@ -392,14 +405,39 @@ function toInfo(
 /** Connection settings the browser may see: never a secret. */
 function publicSettings(s: SourceRecord): SourceInfo['settings'] {
   if (s.kind !== 'folder') return { url: (s.settings as LidarrSettings).url };
-  const { path, access, host, port, user, privateKeyPath, domain } = s.settings as FolderSettings;
+  const { path, access, host, port, user, privateKeyPath, domain, hostKey } = s.settings as FolderSettings;
   if ((access ?? 'local') === 'local') return { path };
   if (access === 'smb') return { path, access, host, port, user, domain };
-  return { path, access, host, port, user, privateKeyPath };
+  return { path, access, host, port, user, privateKeyPath, hostKey };
 }
 
 /** SMB listens on 445, SSH and SFTP on 22. */
 const defaultPort = (access: FolderAccessKind) => (access === 'smb' ? 445 : 22);
+
+const overSsh = (access: FolderAccessKind | undefined) => access === 'ssh' || access === 'sftp';
+
+/** Whether these settings log in with a password: not with a key file, nor as SMB's guest. */
+const usesPassword = (s: FolderSettings) => (s.access === 'smb' ? s.user?.toLowerCase() !== 'guest' : !s.privateKeyPath);
+
+/**
+ * What of a saved connection goes with new settings. The saved password only ever goes back to the host, port and
+ * user it was saved for: for anywhere else it must be typed again (400, before connecting), unless the new settings
+ * don't log in with one, and then it's dropped. The host key stays with its host and port, over SSH or SFTP.
+ */
+function fromSaved(next: FolderSettings, saved: FolderSettings, typed?: string): Pick<FolderSettings, 'password' | 'hostKey'> {
+  const sameAddress =
+    !!next.host && !!saved.host && next.host.toLowerCase() === saved.host.toLowerCase() && next.port === (saved.port ?? defaultPort(saved.access ?? 'ssh'));
+  const hostKey = sameAddress && overSsh(next.access) && overSsh(saved.access) ? saved.hostKey : undefined;
+  if (typed) return { password: typed, hostKey };
+  if (!saved.password) return { hostKey };
+  if (sameAddress && next.user === saved.user) return { password: saved.password, hostKey };
+  if (!usesPassword(next)) return { hostKey };
+  throw new SourceError(sameAddress ? 'Enter the password again for the new user' : 'Enter the password again for the new address', 400);
+}
+
+/** Settings with the host key `verify` saw, over SSH or SFTP; else the saved one they carry, if any. */
+const withHostKey = (settings: FolderSettings, verified: Verified): FolderSettings =>
+  verified.hostKey && overSsh(settings.access) ? { ...settings, hostKey: verified.hostKey } : settings;
 
 /** Drop undefined fields before storing settings as JSON. */
 const withoutUndefined = (o: object): Record<string, unknown> => JSON.parse(JSON.stringify(o)) as Record<string, unknown>;

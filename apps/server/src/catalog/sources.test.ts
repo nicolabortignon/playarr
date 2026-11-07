@@ -1,7 +1,9 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { LidarrClient } from '../lidarr/client.ts';
+import { newHostKey, startSshServer, type SshTestServer } from '../testing/sshServer.ts';
+import { FolderAccess, type FolderSettings, type HostKeyHandling } from './folderAccess.ts';
 import { SourceError, SourceManager } from './sources.ts';
 import { CatalogStore } from './store.ts';
 import { freshDb, mezzanine, tempDir } from './testFixtures.ts';
@@ -157,7 +159,7 @@ describe('SourceManager', () => {
         readdir: async (p: string) => (dirs[p] ?? []).map((name) => ({ name, dir: !name.includes('.'), file: name.includes('.') })),
         close: async () => {},
       };
-      return { create: vi.fn(() => fs), get: () => fs as never, release: () => {} };
+      return { create: vi.fn((_settings: FolderSettings, _hostKeys?: HostKeyHandling) => fs), get: () => fs as never, release: () => {} };
     }
 
     it('adds a remote folder after checking it over the connection, keeping the password secret', async () => {
@@ -190,7 +192,7 @@ describe('SourceManager', () => {
       const id = store.addSource('folder', 'NAS', { access: 'sftp', host: 'nas', user: 'me', password: 'pw', path: '/volume1' });
       const listing = await manager.browse({ id, path: '/volume1' });
       expect(listing).toEqual({ path: '/volume1', parent: '/', folders: [{ name: 'music', path: '/volume1/music' }], audioFiles: 0 });
-      expect(access.create).toHaveBeenCalledWith(expect.objectContaining({ password: 'pw', host: 'nas' }));
+      expect(access.create).toHaveBeenCalledWith(expect.objectContaining({ password: 'pw', host: 'nas' }), undefined);
       expect((await manager.browse({ connection: { access: 'ssh', host: 'nas', user: 'me' } })).path).toBe('/');
     });
 
@@ -237,19 +239,43 @@ describe('SourceManager', () => {
         ],
         audioFiles: 0,
       });
-      expect(access.create).toHaveBeenCalledWith(expect.objectContaining({ access: 'smb', host: 'nas', user: 'me', port: 445 }));
+      expect(access.create).toHaveBeenCalledWith(expect.objectContaining({ access: 'smb', host: 'nas', user: 'me', port: 445 }), undefined);
     });
 
-    it('never sends a saved password to another host', async () => {
+    it('sends a saved password only to the host, port and user it was saved for, asking for it again elsewhere', async () => {
       const { manager, store, cleanup } = withFolders();
       onTestFinished(cleanup);
-      const access = fakeRemote({ '/': [] });
+      const access = fakeRemote({ '/': [], '/music': [] });
       manager.useFolderAccess(access as never);
-      const id = store.addSource('folder', 'NAS', { access: 'sftp', host: 'nas', user: 'me', password: 'pw', path: '/' });
-      await manager.browse({ id, connection: { access: 'sftp', host: 'elsewhere', user: 'me' } });
-      expect(access.create).toHaveBeenLastCalledWith(expect.objectContaining({ host: 'elsewhere', password: undefined }));
-      manager.update(id, { settings: { host: 'elsewhere' } });
+      const saved = { access: 'sftp', host: 'nas', port: 22, user: 'me', password: 'pw', path: '/music' };
+      const id = store.addSource('folder', 'NAS', saved);
+      const browse = (connection: Record<string, unknown>) => manager.browse({ id, connection: { access: 'sftp', host: 'nas', user: 'me', ...connection } });
+      await expect(browse({ host: 'elsewhere' })).rejects.toThrow('Enter the password again for the new address');
+      await expect(browse({ port: 2222 })).rejects.toThrow('Enter the password again for the new address');
+      await expect(browse({ user: 'you' })).rejects.toThrow('Enter the password again for the new user');
+      await expect(manager.verify({ settings: { port: 2222 } }, id)).rejects.toThrow('Enter the password again for the new address');
+      expect(() => manager.update(id, { settings: { host: 'elsewhere' } })).toThrow('Enter the password again for the new address');
+      expect(access.create).not.toHaveBeenCalled();
+      expect(store.source(id)!.settings).toEqual(saved);
+      // The same host (in any case) and port: the saved password; a password typed: that one; a key file: none.
+      await browse({ host: 'NAS' });
+      expect(access.create).toHaveBeenLastCalledWith(expect.objectContaining({ host: 'NAS', password: 'pw' }), undefined);
+      await browse({ host: 'elsewhere', password: 'other' });
+      expect(access.create).toHaveBeenLastCalledWith(expect.objectContaining({ host: 'elsewhere', password: 'other' }), undefined);
+      await browse({ host: 'elsewhere', privateKeyPath: '/keys/id' });
+      expect(access.create.mock.lastCall?.[0]).toMatchObject({ host: 'elsewhere', privateKeyPath: '/keys/id' });
+      expect(access.create.mock.lastCall?.[0]).not.toHaveProperty('password');
+      manager.update(id, { settings: { host: 'elsewhere', privateKeyPath: '/keys/id' } });
       expect(store.source(id)!.settings).not.toHaveProperty('password');
+    });
+
+    it('doesn’t ask for a password again for SMB’s guest', () => {
+      const { manager, store, cleanup } = withFolders();
+      onTestFinished(cleanup);
+      manager.useFolderAccess(fakeRemote({}) as never);
+      const id = store.addSource('folder', 'Share', { access: 'smb', host: 'nas', port: 445, user: 'me', password: 'pw', path: '/music' });
+      manager.update(id, { settings: { user: 'guest' } });
+      expect(store.source(id)!.settings).toEqual({ access: 'smb', host: 'nas', port: 445, user: 'guest', path: '/music' });
     });
 
     it('adds folders inside the allowed roots, several of them', () => {
@@ -315,5 +341,152 @@ describe('SourceManager', () => {
         cleanup();
       }
     });
+  });
+});
+
+describe('SSH host keys', () => {
+  const servers: SshTestServer[] = [];
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((s) => s.close()));
+  });
+
+  async function nas(opts: { port?: number; authorizedKey?: string } = {}) {
+    const s = await startSshServer({ user: 'me', password: 'pw', dirs: ['/music'], ...opts });
+    servers.push(s);
+    return s;
+  }
+
+  /** The machine at the same address, reinstalled: a new host key. */
+  async function reinstall(s: SshTestServer, opts: { authorizedKey?: string } = {}) {
+    await s.close();
+    servers.splice(servers.indexOf(s), 1);
+    return nas({ port: s.port, ...opts });
+  }
+
+  function setup() {
+    const store = new CatalogStore(freshDb());
+    const manager = new SourceManager(store, new LidarrClient(), { info: () => {} });
+    const folders = new FolderAccess(store, { ffmpeg: 'ffmpeg', fpcalc: 'fpcalc', localFingerprints: false });
+    manager.useFolderAccess(folders);
+    onTestFinished(() => folders.closeAll());
+    const hostKey = (id: number) => (store.source(id)!.settings as FolderSettings).hostKey?.fingerprint;
+    return { store, manager, folders, hostKey };
+  }
+
+  const folderOn = (s: SshTestServer, settings: Record<string, unknown> = {}) => ({
+    kind: 'folder' as const,
+    settings: { access: 'ssh' as const, host: '127.0.0.1', port: s.port, user: 'me', path: '/music', ...settings },
+  });
+  const passwordsSent = (s: SshTestServer) => s.logins.filter((l) => l.method === 'password').map((l) => l.password);
+
+  /** A folder added with its password, as Settings adds it: checked, then saved with what the check found. */
+  async function added(manager: SourceManager, s: SshTestServer) {
+    const input = folderOn(s, { password: 'pw' });
+    return manager.add(input, await manager.verify(input));
+  }
+
+  it('records the host’s key when a remote folder is added, and shows it to admins', async () => {
+    const s = await nas();
+    const { manager, hostKey } = setup();
+    const info = await added(manager, s);
+    expect(hostKey(info.id)).toBe(s.fingerprint);
+    expect(info.settings?.hostKey).toEqual({ type: 'ssh-ed25519', fingerprint: s.fingerprint });
+  });
+
+  it('records the key of a source saved before keys were checked, on its next connection', async () => {
+    const s = await nas();
+    const { store, folders, hostKey } = setup();
+    const id = store.addSource('folder', 'NAS', folderOn(s, { password: 'pw' }).settings);
+    const fs = folders.get(id)!;
+    await fs.media.check();
+    expect(hostKey(id)).toBe(s.fingerprint);
+    expect(folders.get(id)).toBe(fs); // the same connection: recording its key isn't a change of settings
+  });
+
+  it('records a first key only into the settings its connection was made with', async () => {
+    const s = await nas();
+    const { store, folders, hostKey } = setup();
+    const settings = folderOn(s, { password: 'pw' }).settings;
+    const id = store.addSource('folder', 'NAS', settings);
+    const fs = folders.get(id)!;
+    store.updateSource(id, { settings: { ...settings, host: 'elsewhere' } }); // edited meanwhile
+    await fs.media.check();
+    expect(hostKey(id)).toBeUndefined();
+  });
+
+  it('refuses a changed key before logging in, and the sync says why', async () => {
+    const before = await nas();
+    const { store, manager, hostKey } = setup();
+    const { id } = await added(manager, before);
+    const after = await reinstall(before);
+    const sync = manager.active().find((a) => a.id === id)!.source.sync();
+    await expect(sync).rejects.toThrow(
+      `The SSH host’s key has changed since Playarr first connected (it was ${before.fingerprint}, now ${after.fingerprint}). ` +
+        'If you reinstalled or replaced that machine, edit the source in Settings → Sources, enter its password again and save it to trust the new key; ' +
+        'if not, something may be pretending to be it.',
+    );
+    expect(after.logins).toEqual([]);
+    // Browsing doesn't trust it either: only saving does.
+    const browse = manager.browse({ id, path: '/music', connection: { access: 'ssh', host: '127.0.0.1', port: after.port, user: 'me' } });
+    await expect(browse).rejects.toThrow(/key has changed/);
+    expect(after.logins).toEqual([]);
+    expect(hostKey(id)).toBe(before.fingerprint);
+    expect(store.source(id)!.settings).toMatchObject({ password: 'pw' });
+  });
+
+  it('trusts the new key when an admin saves the source with its password typed again', async () => {
+    const before = await nas();
+    const { manager, folders, hostKey } = setup();
+    const { id } = await added(manager, before);
+    const after = await reinstall(before);
+    // Saved as it was, the saved password isn't sent to the new key: saving asks for it.
+    const unchanged = { name: 'NAS', settings: { path: '/music' } };
+    await expect(manager.verify(unchanged, id)).rejects.toThrow(/enter its password again and save it to trust the new key/);
+    expect(after.logins).toEqual([]);
+    const typed = { name: 'NAS', settings: { path: '/music', password: 'pw' } };
+    manager.update(id, typed, await manager.verify(typed, id));
+    expect(hostKey(id)).toBe(after.fingerprint);
+    await folders.get(id)!.media.check();
+    expect(passwordsSent(after)).toEqual(['pw', 'pw']);
+  });
+
+  it('trusts the new key on a save when the source logs in with a key file', async () => {
+    const t = tempDir();
+    onTestFinished(t.cleanup);
+    const login = newHostKey(); // any key pair will do to log in with
+    const keyFile = join(t.dir, 'id_ed25519');
+    writeFileSync(keyFile, login.private);
+    const before = await nas({ authorizedKey: login.public });
+    const { store, manager, hostKey } = setup();
+    const settings = { ...folderOn(before).settings, privateKeyPath: keyFile, hostKey: { type: 'ssh-ed25519', fingerprint: before.fingerprint } };
+    const id = store.addSource('folder', 'NAS', settings);
+    const after = await reinstall(before, { authorizedKey: login.public });
+    const edit = { settings: { path: '/music' } };
+    manager.update(id, edit, await manager.verify(edit, id));
+    expect(hostKey(id)).toBe(after.fingerprint);
+    expect(after.logins.map((l) => l.method)).toContain('publickey');
+    expect(passwordsSent(after)).toEqual([]);
+  });
+
+  it('keeps using the saved password and key for the same host and port', async () => {
+    const s = await nas();
+    const { manager, hostKey } = setup();
+    const { id } = await added(manager, s);
+    const edit = { name: 'Music on the NAS', settings: { path: '/music', user: 'me' } };
+    manager.update(id, edit, await manager.verify(edit, id));
+    expect(passwordsSent(s)).toEqual(['pw', 'pw']);
+    expect(hostKey(id)).toBe(s.fingerprint);
+  });
+
+  it('starts over at a new address: the password typed for it, and its own key', async () => {
+    const first = await nas();
+    const second = await nas();
+    const { manager, hostKey } = setup();
+    const { id } = await added(manager, first);
+    await expect(manager.verify({ settings: { port: second.port } }, id)).rejects.toThrow('Enter the password again for the new address');
+    expect(second.connections).toBe(0);
+    const moved = { settings: { port: second.port, password: 'pw' } };
+    manager.update(id, moved, await manager.verify(moved, id));
+    expect(hostKey(id)).toBe(second.fingerprint);
   });
 });

@@ -63,6 +63,15 @@ public final class FolderFormModel {
   public var smb: Bool { access == .smb }
   public var passwordSaved: Bool { source?.secrets.contains("password") ?? false }
 
+  /// The SSH host's key Playarr trusts for this source, while the form still points at the host and port it was seen at
+  /// (FolderForm's `hostKey`). A host showing another key is refused until the source is saved again.
+  public var trustedHostKey: SshHostKey? {
+    guard remote, !smb, let saved = source?.settings, let key = saved.hostKey, port == saved.port,
+      host.trimmingCharacters(in: .whitespaces).lowercased() == saved.host?.lowercased()
+    else { return nil }
+    return key
+  }
+
   /// SMB listens on 445, SSH and SFTP on 22.
   static func defaultPort(_ access: FolderAccessKind) -> Int { access == .smb ? 445 : 22 }
 

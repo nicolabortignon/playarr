@@ -163,9 +163,9 @@ export function settingsRoutes(
   app.post('/api/settings/sources', editable, (req, reply) =>
     handle(reply, async () => {
       const input = parse(sourceInput, req.body);
-      // A folder on another machine is checked over its connection before it's saved.
-      await sources.verify(input);
-      const info = sources.add(input);
+      // A folder on another machine is checked over its connection before it's saved, with the host key it showed.
+      const verified = await sources.verify(input);
+      const info = sources.add(input, verified);
       syncInBackground();
       return reply.code(201).send(info);
     }),
@@ -175,8 +175,9 @@ export function settingsRoutes(
     handle(reply, async () => {
       const id = Number(req.params.id);
       const input = parse(sourceInput, req.body);
-      await sources.verify(input, id);
-      const info = sources.update(id, input);
+      // Saving trusts the host key the connection shows now (SourceManager.verify).
+      const verified = await sources.verify(input, id);
+      const info = sources.update(id, input, verified);
       syncInBackground();
       return info;
     }),
@@ -207,7 +208,8 @@ export function settingsRoutes(
     handle(reply, () => sources.listFolders(req.query.path || undefined)),
   );
 
-  // On this server, or over a (possibly unsaved) SSH, SFTP or SMB connection; the saved password never leaves the server.
+  // On this server, or over a (possibly unsaved) SSH, SFTP or SMB connection; the saved password never leaves the server,
+  // and goes only to the host, port and user it was saved for.
   app.post('/api/settings/folders/browse', editable, (req, reply) =>
     handle(reply, () => sources.browse(parse(browseInput, req.body))),
   );

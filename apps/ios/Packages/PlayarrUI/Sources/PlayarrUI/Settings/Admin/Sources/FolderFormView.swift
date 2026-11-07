@@ -68,6 +68,16 @@ struct FolderFormView: View {
           .font(.body.monospaced())
           .adminPlainField()
       }
+      if let hostKey = model.trustedHostKey {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Host key")
+          Text(SourceText.hostKey(hostKey)).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+          Text("Playarr connects only to a host with this key. If it changes, saving trusts the new one.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+      }
       Button("Connect") { model.connect() }.disabled(!model.canConnect)
     } footer: {
       Text(

@@ -1,14 +1,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Fastify from 'fastify';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { account, actAs, asAccount } from '../accounts/testAccess.ts';
+import { FolderAccess } from '../catalog/folderAccess.ts';
 import { Organizer } from '../catalog/organizer.ts';
 import { SourceManager } from '../catalog/sources.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { flacBytes, freshDb, mezzanine, tempDir } from '../catalog/testFixtures.ts';
 import { LidarrClient } from '../lidarr/client.ts';
 import { recordFixture } from '../testing/recordFixture.ts';
+import { startSshServer } from '../testing/sshServer.ts';
 import { UpdateBridge } from '../update/bridge.ts';
 import { readRequestSettings, REQUESTS_KEY, settingsRoutes } from './settings.ts';
 
@@ -32,7 +34,7 @@ function setup(matcher = fakeMatcher(), lidarrClient = fakeLidarr(), updates = n
     lidarr: lidarrClient,
     updates,
   });
-  return { app, store, library, matcher, lidarr: lidarrClient };
+  return { app, store, sources, library, matcher, lidarr: lidarrClient };
 }
 
 function fakeLidarr(configured = true) {
@@ -132,6 +134,28 @@ describe('settings routes', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toMatch(/doesn’t exist/);
+  });
+
+  it('saves a remote folder with the host key it showed, and its password only for that address', async () => {
+    const nas = await startSshServer({ user: 'me', password: 'pw', dirs: ['/music'] });
+    onTestFinished(() => nas.close());
+    const { app, sources, store } = setup();
+    const folders = new FolderAccess(store, { ffmpeg: 'ffmpeg', fpcalc: 'fpcalc', localFingerprints: false });
+    sources.useFolderAccess(folders);
+    onTestFinished(() => folders.closeAll());
+    const settings = { access: 'ssh', host: '127.0.0.1', port: nas.port, user: 'me', path: '/music' };
+    const added = await app.inject({ method: 'POST', url: '/api/settings/sources', payload: { kind: 'folder', settings: { ...settings, password: 'pw' } }, remoteAddress: HOME });
+    expect(added.statusCode).toBe(201);
+    expect(added.json().settings.hostKey).toEqual({ type: 'ssh-ed25519', fingerprint: nas.fingerprint });
+    expect(added.body).not.toContain('"pw"');
+    const id = added.json().id as number;
+    const moved = await app.inject({ method: 'PATCH', url: `/api/settings/sources/${id}`, payload: { settings: { ...settings, port: nas.port + 1 } }, remoteAddress: HOME });
+    expect(moved.statusCode).toBe(400);
+    expect(moved.json().error).toBe('Enter the password again for the new address');
+    const renamed = await app.inject({ method: 'PATCH', url: `/api/settings/sources/${id}`, payload: { name: 'NAS', settings }, remoteAddress: HOME });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json().settings.hostKey.fingerprint).toBe(nas.fingerprint);
+    expect(nas.logins.filter((l) => l.method === 'password').map((l) => l.password)).toEqual(['pw', 'pw']);
   });
 
   it('adds a source from the home network and starts a sync', async () => {

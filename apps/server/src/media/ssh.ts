@@ -1,7 +1,9 @@
+import type { SshHostKey } from '@playarr/shared';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { PassThrough, type Readable } from 'node:stream';
-import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
+import { Client, type ClientChannel, type ConnectConfig, type ServerHostKeyAlgorithm } from 'ssh2';
 import { ffmpegEncodeArgs, ffmpegPcmArgs, PCM_MAX_BUFFER, type ByteRange, type EncodeOptions, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
 
 export interface SshOptions {
@@ -10,26 +12,111 @@ export interface SshOptions {
   username: string;
   privateKeyPath?: string;
   password?: string;
+  /** The key trusted for this host and port. Without one, the first key the host shows is trusted. */
+  hostKey?: SshHostKey;
+  /** Accept a key other than `hostKey` on the first connection: an admin saving the source trusts the key the host shows. */
+  trustNewHostKey?: boolean;
+  /** The key the host showed, when it wasn't `hostKey` (the first use, or a new key trusted), once the connection is made. */
+  onHostKey?: (key: SshHostKey) => void;
+  /** How to trust a changed key, ending "If you reinstalled or replaced that machine, …" in the error that refuses it. */
+  howToTrust?: string;
+}
+
+/** Not reaching or not getting into the host, as opposed to a command failing once connected. */
+export class SshConnectError extends Error {}
+
+/** The host showed a key other than the one trusted for it. Refused before any password or key is sent. */
+export class HostKeyChangedError extends SshConnectError {
+  constructor(
+    readonly trusted: SshHostKey,
+    readonly found: SshHostKey,
+    howToTrust = 'restart Playarr to trust the new key',
+  ) {
+    super(
+      `The SSH host’s key has changed since Playarr first connected (it was ${trusted.fingerprint}, now ${found.fingerprint}). ` +
+        `If you reinstalled or replaced that machine, ${howToTrust}; if not, something may be pretending to be it.`,
+    );
+  }
+}
+
+/** A host key as ssh2 hands it to `hostVerifier` (SSH's wire form): its type and OpenSSH's SHA-256 fingerprint. */
+export function hostKeyOf(blob: Buffer): SshHostKey {
+  const length = blob.length >= 4 ? blob.readUInt32BE(0) : 0;
+  const type = blob.subarray(4, 4 + length).toString('latin1') || 'unknown';
+  return { type, fingerprint: `SHA256:${createHash('sha256').update(blob).digest('base64').replace(/=+$/, '')}` };
+}
+
+const sameHostKey = (a: SshHostKey, b: SshHostKey) => a.fingerprint === b.fingerprint;
+
+/** ssh2's host key algorithms, in its order of preference. */
+const HOST_KEY_ALGORITHMS: ServerHostKeyAlgorithm[] = [
+  'ssh-ed25519',
+  'ecdsa-sha2-nistp256',
+  'ecdsa-sha2-nistp384',
+  'ecdsa-sha2-nistp521',
+  'rsa-sha2-512',
+  'rsa-sha2-256',
+  'ssh-rsa',
+];
+
+/**
+ * The trusted key's algorithms first, as OpenSSH orders them for a known host: a host that has since added a key of
+ * another type still shows the one trusted, rather than looking changed. RSA keys sign with any of the three RSA algorithms.
+ */
+function hostKeyAlgorithms(trusted: SshHostKey | undefined): ServerHostKeyAlgorithm[] | undefined {
+  const first: ServerHostKeyAlgorithm[] =
+    trusted?.type === 'ssh-rsa' ? ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'] : HOST_KEY_ALGORITHMS.filter((a) => a === trusted?.type);
+  return first.length ? [...first, ...HOST_KEY_ALGORITHMS.filter((a) => !first.includes(a))] : undefined;
 }
 
 /**
  * One persistent SSH connection, reconnected on demand.
  * Auth order: private key file → password → ssh-agent (SSH_AUTH_SOCK).
+ * Host key: the trusted one (`hostKey`), else the first one seen; either way, a key once accepted is the only one this
+ * connection accepts again. It's checked during the key exchange, before anything is sent to log in.
  */
 export class SshConnection {
   private client: Promise<Client> | null = null;
+  /** The key this connection accepted and logged in with. */
+  private pinned?: SshHostKey;
 
   constructor(readonly opts: SshOptions) {}
 
   get(): Promise<Client> {
-    this.client ??= (async () => {
+    this.client ??= this.connect().catch((err: Error) => {
+      this.client = null;
+      throw err;
+    });
+    return this.client;
+  }
+
+  private async connect(): Promise<Client> {
+    const { host, port, username } = this.opts;
+    const trusted = this.pinned ?? this.opts.hostKey;
+    // What the host showed: the key accepted, or the one refused and the key it should have been.
+    const shown: { seen?: SshHostKey; refused?: { trusted: SshHostKey; found: SshHostKey } } = {};
+    const client = new Client();
+    try {
       const config: ConnectConfig = {
-        host: this.opts.host,
-        port: this.opts.port,
-        username: this.opts.username,
+        host,
+        port,
+        username,
         keepaliveInterval: 15_000,
         readyTimeout: 10_000,
+        // Also asked again when the host renews the session's keys, by then against the pinned key.
+        hostVerifier: (blob: Buffer) => {
+          const key = hostKeyOf(blob);
+          const expected = this.pinned ?? (this.opts.trustNewHostKey ? undefined : this.opts.hostKey);
+          if (expected && !sameHostKey(expected, key)) {
+            shown.refused = { trusted: expected, found: key };
+            return false;
+          }
+          shown.seen = key;
+          return true;
+        },
       };
+      const algorithms = hostKeyAlgorithms(trusted);
+      if (algorithms) config.algorithms = { serverHostKey: algorithms };
       if (this.opts.privateKeyPath) {
         config.privateKey = await readFile(this.opts.privateKeyPath.replace(/^~(?=\/)/, homedir()));
       } else if (this.opts.password) {
@@ -37,20 +124,25 @@ export class SshConnection {
       } else if (process.env.SSH_AUTH_SOCK) {
         config.agent = process.env.SSH_AUTH_SOCK;
       }
-      const client = new Client();
       await new Promise<void>((resolve, reject) => {
         client.once('ready', resolve).once('error', reject).connect(config);
       });
-      const reset = () => {
-        this.client = null;
-      };
-      client.on('close', reset).on('error', reset);
-      return client;
-    })().catch((err: Error) => {
+    } catch (err) {
+      const { refused } = shown;
+      if (refused) throw new HostKeyChangedError(refused.trusted, refused.found, this.opts.howToTrust);
+      throw new SshConnectError(`SSH connection to ${username}@${host} failed: ${(err as Error).message}`);
+    }
+    // Recorded only once the host has proved it holds the key and let Playarr in.
+    const { seen } = shown;
+    if (seen) {
+      if (!trusted || !sameHostKey(trusted, seen)) this.opts.onHostKey?.(seen);
+      this.pinned = seen;
+    }
+    const reset = () => {
       this.client = null;
-      throw new Error(`SSH connection to ${this.opts.username}@${this.opts.host} failed: ${err.message}`);
-    });
-    return this.client;
+    };
+    client.on('close', reset).on('error', reset);
+    return client;
   }
 
   async close() {

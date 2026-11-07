@@ -8,7 +8,7 @@ import type { MediaSource } from '../media/index.ts';
 import { parseLsjson, type Rclone } from '../media/rclone.ts';
 import { RcloneMediaSource } from '../media/rcloneServe.ts';
 import type { SftpMediaSource } from '../media/sftp.ts';
-import { shellQuote, type Shell } from '../media/ssh.ts';
+import { shellQuote, SshConnectError, type Shell } from '../media/ssh.ts';
 import { fpcalc, type Fingerprint } from './acoustid.ts';
 import { isAudioFile, listAudioFiles } from './folderSource.ts';
 import { pictureFrom, readTags, readTagsFrom, type TagInfo } from './tags.ts';
@@ -124,16 +124,21 @@ export class SshFolderFs implements FolderFs {
     private readonly onClose: () => Promise<void> = async () => {},
   ) {}
 
+  // Not there or not readable reads as nothing; not reaching the host is an error of its own (a sync says why, not "Folder not found").
   async stat(path: string) {
     try {
       return parseStat(await this.shell.run(`stat -L -c '%s %Y %F' -- ${shellQuote(path)}`));
-    } catch {
+    } catch (err) {
+      if (err instanceof SshConnectError) throw err;
       return null;
     }
   }
 
   async readdir(path: string): Promise<FsEntry[]> {
-    const out = await this.shell.run(`find ${shellQuote(path)} -mindepth 1 -maxdepth 1 -printf '%y\\t%f\\n'`).catch(() => '');
+    const out = await this.shell.run(`find ${shellQuote(path)} -mindepth 1 -maxdepth 1 -printf '%y\\t%f\\n'`).catch((err: unknown) => {
+      if (err instanceof SshConnectError) throw err;
+      return '';
+    });
     return out
       .split('\n')
       .filter(Boolean)
