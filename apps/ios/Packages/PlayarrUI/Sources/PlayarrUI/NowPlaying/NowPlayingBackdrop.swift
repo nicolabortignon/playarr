@@ -4,10 +4,13 @@ import SwiftUI
 
 /// Now Playing's atmosphere: the cover itself, blown up and blurred, drifting slowly through its own colors, 40 seconds
 /// each way (plan 7 §3; docs/design.md, Moments; the web's `Backdrop` and index.css's `drift`); a new song's cover
-/// fades in over the last. Still, and changing at once, under Reduce Motion.
+/// fades in over the last. Still, and changing at once, under Reduce Motion; flat black under Increase Contrast or Reduce
+/// Transparency, so the words stand on nothing that moves or shows through.
 struct NowPlayingBackdrop: View {
   let track: Track
   @Environment(\.reducesMotion) private var reducesMotion
+  @Environment(\.colorSchemeContrast) private var contrast
+  @Environment(\.accessibilityReduceTransparency) private var reducesTransparency
   /// When the drift began: the pose is worked out from the time since.
   @State private var start = Date()
 
@@ -19,14 +22,21 @@ struct NowPlayingBackdrop: View {
   var body: some View {
     ZStack {
       Color.black
-      TimelineView(.animation(minimumInterval: Self.step, paused: reducesMotion), content: Self.drifting(blurred, since: start, still: reducesMotion))
-        .animation(reducesMotion ? nil : .easeInOut(duration: 1.2), value: track.coverUrl)
-      RadialGradient(colors: [.clear, .black.opacity(0.5), .black.opacity(0.92)], center: .top, startRadius: 0, endRadius: 700)
-      // A dark wash over it all, so words stay readable over a bright cover.
-      Color.black.opacity(0.3)
+      if !Self.isFlat(contrast: contrast, reducesTransparency: reducesTransparency) {
+        TimelineView(.animation(minimumInterval: Self.step, paused: reducesMotion), content: Self.drifting(blurred, since: start, still: reducesMotion))
+          .animation(reducesMotion ? nil : .easeInOut(duration: 1.2), value: track.coverUrl)
+        RadialGradient(colors: [.clear, .black.opacity(0.5), .black.opacity(0.92)], center: .top, startRadius: 0, endRadius: 700)
+        // A dark wash over it all, so words stay readable over a bright cover.
+        Color.black.opacity(0.3)
+      }
     }
     .ignoresSafeArea()
     .accessibilityHidden(true)
+  }
+
+  /// Increase Contrast or Reduce Transparency: no cover behind the words.
+  static func isFlat(contrast: ColorSchemeContrast, reducesTransparency: Bool) -> Bool {
+    contrast == .increased || reducesTransparency
   }
 
   private var blurred: some View {

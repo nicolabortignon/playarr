@@ -81,7 +81,7 @@ The cover, with the deck under it: everything you do to the song.
 
 Everything right of a 28-point gutter, at the full height:
 
-1. **One header line** (44 points): close, then "PLAYING FROM" as a kicker over the source with the time left after it, quieter ("Mezzanine · 3 songs · 17 min left"; short of room "Mezzanine · 17 min left", then the source alone), then the sleep timer, lyrics, AirPlay and ⋯.
+1. **One header line** (44 points): close, then "PLAYING FROM" as a kicker over the source with the time left after it, quieter ("Mezzanine · 3 songs · 17 min left"; short of room "Mezzanine · 17 min left", then the source alone), then the sleep timer, lyrics, AirPlay and ⋯. At the accessibility text sizes "Playing from" keeps its room: the sleep timer and lyrics go into ⋯, and AirPlay (the system's own button, which no menu can hold) stays.
 2. **The tracklist or the lyrics**, scrolling, in all the room that's left. The lyrics button swaps one for the other; the cover stays put. (Upright, lyrics replace the cover; sideways, they replace the songs, because the big cover is the point of the wide screen.)
 
 ### The tracklist
@@ -106,7 +106,7 @@ Everything right of a 28-point gutter, at the full height:
 Sideways is how a phone sits in a stand, so Now Playing gets a calmer state.
 
 - **When:** after 12 seconds untouched while playing (`NowPlayingView.stageAfter`), or on a tap on the cover.
-- **What changes:** the header and deck fade; the record's column is recomputed with no deck, so the cover grows into its room (up to 42% of the width); the other tracklist lines and the end line dim to 25%; the open line's title grows to 34 points.
+- **What changes:** the header and deck fade; the record's column is recomputed with no deck, so the cover grows into its room (up to 42% of the width); the other tracklist lines and the end line dim to 25%; the open line's title grows to 34 points (22 otherwise; both grow with Dynamic Type).
 - **Back:** any touch, pausing (from anywhere, including the lock screen), or VoiceOver turning on. With VoiceOver running there is no stage. The fade takes 0.6 s, or is instant with reduced motion.
 
 ### Turning, and the settings
@@ -154,7 +154,7 @@ A folding iPhone. Two pieces of code handle it: `UnderTheRail` for the cover scr
 
 - **VoiceOver:** page and section titles carry the header trait, so the rotor's Headings jump between sections. Song rows (`Components/SongRow.swift`), the sleeve's lines and the iPad player bar's song offer their menu as custom actions in its order, Move up and Move down included in the queue and a playlist, then the heart (`SongRow.voiceOverActions`). A playlist's title offers Rename (also in its ⋯). Toasts offer Dismiss, and the escape gesture dismisses them; an Undo waits while VoiceOver is on it, and toasts' buttons take 44 points. Sleeve lines read their number, title, artist, length, "played" or "next", and "joined to the song before". There are no custom rotors.
 - **Text sizes:** `AdaptiveStack` turns rows into columns at AX1–AX5, and `essentialLineLimit()` lets essential text wrap there (`Accessibility/AdaptiveStack.swift`). The iPad's Now Playing goes to one column; the sleeve keeps its shape with a 36% record column.
-- **Increase Contrast:** secondary text uses `.paperDim` (`Theme/Palette.swift`), white at 70%, or 85% with more contrast; quieter text uses `.muted`, white at 50%, or 65%.
+- **Increase Contrast:** secondary text uses `.paperDim` (`Theme/Palette.swift`), white at 70%, or 85% with more contrast; quieter text uses `.muted`, white at 50%, or 65%. Now Playing's backdrop, the blurred cover drifting behind the words, goes flat black with Increase Contrast or Reduce Transparency (`NowPlayingBackdrop.isFlat`).
 - **Bold Text:** the bundled fonts don't follow it by themselves, as the system's do, so `RootView` sets text semibold while it's on (`followsBoldText`, outside every sheet), and the navigation bars' titles take a bolder weight (`Typography.styleBars`). A weight given on a view (`.fontWeight`, `.bold()`) still wins; one given in a font gives way, so a heavier weight goes on the view. Gloock has one weight and stays as it is. Seen on the simulator with Bold Text on (`defaults write com.apple.Accessibility EnhancedTextLegibilityEnabled -bool YES` in the simulator, then a restart).
 - **Reduce Motion:** Settings → Appearance → Motion (System, Reduced or Full) together with the system setting becomes the `reducesMotion` environment value, set once by `AppShell`, which also drops animations app-wide.
 - **Audits:** `AccessibilityAuditTests` runs Xcode's `performAccessibilityAudit()` over each main screen on the iPhone and the iPad, at AX5 (upright), and on Downloads. Exceptions live in one enum, `AuditExceptions`, each with its reason; contrast is re-measured from the element's pixels where the audit misreads it. Text under a bottom bar, or within 30 points above it where iOS fades the page into the bar (its soft scroll edge), isn't held to contrast there: it's read once scrolled into view. The system's own pieces aren't held to it either: the search field's Clear text button and the keyboard's empty suggestion cells. A missing song's row gives VoiceOver its whole frame (`contentShape(.accessibility, …)`), not just its words'.

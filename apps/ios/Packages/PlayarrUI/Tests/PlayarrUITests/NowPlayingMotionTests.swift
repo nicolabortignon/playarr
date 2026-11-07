@@ -96,4 +96,10 @@ import Testing
     }
     #expect(tilt.lean == CoverTilt.Lean())
   }
+
+  @Test func theBackdropGoesFlatUnderIncreaseContrastOrReduceTransparency() {
+    #expect(!NowPlayingBackdrop.isFlat(contrast: .standard, reducesTransparency: false))
+    #expect(NowPlayingBackdrop.isFlat(contrast: .increased, reducesTransparency: false))
+    #expect(NowPlayingBackdrop.isFlat(contrast: .standard, reducesTransparency: true))
+  }
 }

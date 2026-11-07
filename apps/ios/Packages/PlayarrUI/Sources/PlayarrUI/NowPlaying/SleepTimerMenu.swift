@@ -12,13 +12,7 @@ struct SleepTimerMenu: View {
     TimelineView(.periodic(from: .now, by: 15)) { context in
       let label = sleep.label(at: context.date)
       Menu {
-        ForEach(NowPlayingModel.sleepMinutes, id: \.self) { minutes in
-          Button(NowPlayingModel.sleepLabel(minutes: minutes), systemImage: "moon") { player.sleep(minutes: minutes) }
-        }
-        Button("At the end of this song", systemImage: "moon") { player.sleepAtEndOfSong() }
-        if label != nil {
-          Button("Turn off the timer", systemImage: Self.timerOff, role: .destructive) { player.cancelSleep() }
-        }
+        Self.items(player: player, running: label != nil)
       } label: {
         HStack(spacing: 4) {
           Image(systemName: "moon")
@@ -30,6 +24,17 @@ struct SleepTimerMenu: View {
       .accessibilityLabel(label.map { "Sleep timer: \($0)" } ?? "Sleep timer")
     }
     .id(sleep.endOfSong ? -1 : sleep.endsAt?.timeIntervalSince1970 ?? 0)
+  }
+
+  /// The timer's choices, here and in Now Playing's ⋯ at the largest text sizes.
+  @ViewBuilder static func items(player: Player, running: Bool) -> some View {
+    ForEach(NowPlayingModel.sleepMinutes, id: \.self) { minutes in
+      Button(NowPlayingModel.sleepLabel(minutes: minutes), systemImage: "moon") { player.sleep(minutes: minutes) }
+    }
+    Button("At the end of this song", systemImage: "moon") { player.sleepAtEndOfSong() }
+    if running {
+      Button("Turn off the timer", systemImage: timerOff, role: .destructive) { player.cancelSleep() }
+    }
   }
 
   /// An alarm clock struck through, as the web's AlarmClockOff, where iOS has one (27); before, a moon gone to sleep.

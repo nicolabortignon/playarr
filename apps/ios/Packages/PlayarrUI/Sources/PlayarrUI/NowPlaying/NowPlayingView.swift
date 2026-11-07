@@ -265,8 +265,20 @@ struct NowPlayingView: View {
   }
 
   /// ⋯: the song playing's menu, the one song menu without Play next and Add to queue, then Open queue.
-  private func moreMenu(_ track: Track) -> some View {
+  /// The song's menu; `holdsHeader`: the sideways header's lyrics and sleep timer too, at the largest text sizes.
+  private func moreMenu(_ track: Track, holdsHeader: Bool = false) -> some View {
     Menu {
+      if holdsHeader {
+        let router = session.router
+        Button(router.lyrics ? "Hide lyrics" : "Lyrics", systemImage: "quote.bubble") {
+          router.lyrics.toggle()
+          if router.lyrics { upNext = false }
+        }
+        Menu("Sleep timer", systemImage: "moon") {
+          SleepTimerMenu.items(player: session.player, running: session.player.sleep.label(at: Date()) != nil)
+        }
+        Divider()
+      }
       MenuButtons(
         groups: SongMenu.groups(
           track, place: SongMenu.Place(playing: true, own: [MenuAction(.openQueue) { session.router.showQueue() }]), session: session))
@@ -436,10 +448,17 @@ struct NowPlayingView: View {
         if let route = model.playingFromRoute { session.router.go(route) }
       }
       Spacer(minLength: 8)
-      SleepTimerMenu(player: session.player)
-      lyricsButton
-      airPlay
-      moreMenu(track)
+      if typeSize.isAccessibilitySize {
+        // At the largest text sizes "Playing from" keeps its room: the sleep timer and lyrics go into ⋯ (AirPlay is the
+        // system's own button, which no menu can hold).
+        airPlay
+        moreMenu(track, holdsHeader: true)
+      } else {
+        SleepTimerMenu(player: session.player)
+        lyricsButton
+        airPlay
+        moreMenu(track)
+      }
     }
     .buttonStyle(.plain)
   }

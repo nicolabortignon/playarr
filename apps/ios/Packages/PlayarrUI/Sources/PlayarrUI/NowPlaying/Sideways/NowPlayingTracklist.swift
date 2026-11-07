@@ -117,7 +117,8 @@ struct NowPlayingTracklist: View {
         .frame(width: 32)
       VStack(alignment: .leading, spacing: 4) {
         Text(track.title)
-          .font(.display(size: staged ? 34 : 22))
+          // Grows with Dynamic Type, as the lines around it do.
+          .font(.display(size: staged ? 34 : 22, relativeTo: staged ? .largeTitle : .title2))
           .essentialLineLimit(2)
           .foregroundStyle(theme.accent.color)
         HStack(spacing: 8) {
