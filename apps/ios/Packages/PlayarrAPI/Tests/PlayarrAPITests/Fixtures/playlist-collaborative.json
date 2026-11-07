@@ -1,0 +1,103 @@
+{
+  "id": 2,
+  "name": "Road trip",
+  "description": "",
+  "trackCount": 2,
+  "duration": 677,
+  "cover": {
+    "url": "/art/playlist/2?v=n4wq6z",
+    "layout": "currents",
+    "variant": 0,
+    "frozen": true,
+    "stale": true,
+    "tempo": 126,
+    "energy": 0.43,
+    "styles": [
+      "ambient"
+    ],
+    "era": [
+      1998,
+      1998
+    ],
+    "analyzed": 0,
+    "total": 2,
+    "pending": false
+  },
+  "updatedAt": "2026-11-03T12:00:00.000Z",
+  "owner": "Home",
+  "shared": true,
+  "mine": true,
+  "collaborative": true,
+  "canEdit": true,
+  "items": [
+    {
+      "itemId": 3,
+      "recordingId": "0b6a2c1e-1111-4222-8333-944455556666",
+      "title": "Angel",
+      "artistName": "Massive Attack",
+      "albumTitle": "Mezzanine",
+      "addedAt": "2026-11-03T12:00:00.000Z",
+      "track": {
+        "id": 700,
+        "recordingId": "0b6a2c1e-1111-4222-8333-944455556666",
+        "fileId": 9000,
+        "albumId": 70,
+        "artistId": 7,
+        "title": "Angel",
+        "artistName": "Massive Attack",
+        "albumTitle": "Mezzanine",
+        "trackNumber": 1,
+        "discNumber": 1,
+        "duration": 379,
+        "explicit": false,
+        "format": {
+          "codec": "FLAC",
+          "container": "flac",
+          "bits": 16,
+          "sampleRate": 44100,
+          "lossless": true
+        },
+        "size": 40000000,
+        "streamUrl": "/stream/9000",
+        "coverUrl": "/art/album/70/cover?v=1",
+        "coverColor": "#2a4b8d",
+        "coverAccent": "#527bcb"
+      }
+    },
+    {
+      "itemId": 4,
+      "recordingId": "0b6a2c1e-1111-4222-8333-944455557777",
+      "title": "Risingson",
+      "artistName": "Massive Attack",
+      "albumTitle": "Mezzanine",
+      "addedAt": "2026-11-03T12:00:00.000Z",
+      "addedBy": "Sam",
+      "track": {
+        "id": 701,
+        "recordingId": "0b6a2c1e-1111-4222-8333-944455557777",
+        "fileId": 9001,
+        "albumId": 70,
+        "artistId": 7,
+        "title": "Risingson",
+        "artistName": "Massive Attack",
+        "albumTitle": "Mezzanine",
+        "trackNumber": 2,
+        "discNumber": 1,
+        "duration": 298,
+        "explicit": false,
+        "format": {
+          "codec": "FLAC",
+          "container": "flac",
+          "bits": 16,
+          "sampleRate": 44100,
+          "lossless": true
+        },
+        "size": 30000000,
+        "streamUrl": "/stream/9001",
+        "coverUrl": "/art/album/70/cover?v=1",
+        "coverColor": "#2a4b8d",
+        "coverAccent": "#527bcb"
+      }
+    }
+  ]
+}

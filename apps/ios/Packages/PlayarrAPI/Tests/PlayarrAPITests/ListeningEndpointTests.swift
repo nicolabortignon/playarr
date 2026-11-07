@@ -33,5 +33,24 @@ import Testing
     #expect(stop.keys.sorted() == ["shared"])
     #expect(stop["shared"] as? Bool == false)
     #expect(try body(API.Playlists.update(id: 5, name: "Night", description: "")).keys.sorted() == ["description", "name"])
+    let open = try body(API.Playlists.update(id: 5, collaborative: true))
+    #expect(open.keys.sorted() == ["collaborative"])
+    #expect(open["collaborative"] as? Bool == true)
+  }
+
+  /// A server from before collaborative playlists says nothing of them, and its playlists still decode.
+  @Test func readsAPlaylistFromAServerThatDoesntSayWhoAddsToIt() throws {
+    let json = #"""
+      {"id":5,"name":"Road trip","description":"","trackCount":1,"duration":0,"updatedAt":"2026-11-03T12:00:00.000Z",
+       "owner":"Sam","shared":true,"mine":false,
+       "cover":{"url":"/art/playlist/5","layout":"ridges","variant":0,"frozen":true,"stale":false,"energy":0.5,"styles":[],
+                "analyzed":0,"total":1,"pending":false},
+       "items":[{"itemId":1,"recordingId":"rec-1","title":"Angel","artistName":"Massive Attack","albumTitle":"Mezzanine",
+                 "addedAt":"2026-11-03T12:00:00.000Z"}]}
+      """#
+    let playlist = try APIClient.decode(PlaylistDetail.self, from: Data(json.utf8))
+    #expect(playlist.collaborative == nil)
+    #expect(playlist.canEdit == nil)
+    #expect(playlist.items.first?.addedBy == nil)
   }
 }

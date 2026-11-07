@@ -87,6 +87,15 @@ export interface AccountInput {
   locked?: DeviceSetting[];
 }
 
+/** What a playlist's owner changes (PATCH /api/playlists/:id): only what's given. */
+export interface PlaylistPatch {
+  name?: string;
+  description?: string;
+  shared?: boolean;
+  /** Everyone it's shared with adds, removes and reorders its songs. */
+  collaborative?: boolean;
+}
+
 /** Where a 401 sends the page: to sign in, then back. Replaceable in tests. */
 export const signInRedirect = {
   go() {
@@ -178,12 +187,16 @@ export const api = {
   playlist: (id: number) => get<PlaylistDetail>(`/api/playlists/${id}`),
   createPlaylist: (body: { name: string; description?: string; recordingIds?: string[] }) =>
     request<PlaylistDetail>('/api/playlists', { method: 'POST', body: JSON.stringify(body) }),
-  updatePlaylist: (id: number, patch: { name?: string; description?: string; shared?: boolean }) =>
+  /** `collaborative` only on a shared playlist (stopping sharing stops it too). */
+  updatePlaylist: (id: number, patch: PlaylistPatch) =>
     request<PlaylistDetail>(`/api/playlists/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deletePlaylist: (id: number) => request<void>(`/api/playlists/${id}`, { method: 'DELETE' }),
   addToPlaylist: (id: number, recordingIds: string[]) =>
     request<PlaylistDetail>(`/api/playlists/${id}/items`, { method: 'POST', body: JSON.stringify({ recordingIds }) }),
-  /** How many of these songs each of the account's own playlists already holds (only those holding any), by playlist id. */
+  /**
+   * How many of these songs each playlist the account can add to (its own, and collaborative ones shared with it)
+   * already holds, only those holding any, by playlist id.
+   */
   playlistsHolding: (recordingIds: string[]) =>
     request<{ holding: Record<string, number> }>('/api/playlists/holding', { method: 'POST', body: JSON.stringify({ recordingIds }) }).then(
       (r) => r.holding,

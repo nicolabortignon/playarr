@@ -19,11 +19,11 @@ import Testing
     #expect(PageLines.failed == "The needle skipped.")
   }
 
-  @Test func onlyAPlaylistsOwnerIsToldHowToFillIt() {
+  @Test func onlyThoseWhoCanAddToAPlaylistAreToldHowToFillIt() {
     #expect(
-      PageLines.playlist(mine: true)
+      PageLines.playlist(canAdd: true)
         == PageLines.Line("This playlist is waiting for its first song.", "Choose Add to playlist… in any song’s ⋯ menu."))
-    #expect(PageLines.playlist(mine: false) == PageLines.Line("Nothing in this playlist yet."))
+    #expect(PageLines.playlist(canAdd: false) == PageLines.Line("Nothing in this playlist yet."))
   }
 
   @Test func anEmptyLibraryTellsAnAdminHowToFillItAndAMemberWhoCan() {

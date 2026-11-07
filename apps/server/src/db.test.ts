@@ -13,6 +13,8 @@ const ACCOUNTS_MIGRATION = 18;
 const LATE_FOLDERS_MIGRATION = 19;
 /** How many migrations ran before the one moving albums a later folder added songs to to the front. */
 const BUMP_ALBUMS_MIGRATION = 20;
+/** How many migrations ran before the one adding collaborative playlists and who added each song. */
+const COLLABORATIVE_MIGRATION = 25;
 
 describe('migrate', () => {
   it('creates the catalog tables', () => {
@@ -137,6 +139,31 @@ describe('migrate', () => {
     expect(cols('sessions')).toEqual(['id', 'account_id', 'token_hash', 'device', 'platform', 'created_at', 'last_seen_at']);
     expect(cols('setup_codes')).toEqual(['code_hash', 'account_id', 'expires_at', 'created_at']);
     expect(cols('account_sources')).toEqual(['account_id', 'source_id']);
+  });
+
+  it('keeps the playlists so far their owners’ to change, their songs added by no one recorded', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    migrate(db, COLLABORATIVE_MIGRATION);
+    db.exec(`
+      INSERT INTO playlists (id, name, created_at, updated_at, account_id, shared) VALUES (1, 'Road trip', 'now', 'now', 1, 1);
+      INSERT INTO playlist_items (playlist_id, position, recording_id, title, artist_name, album_title, added_at)
+        VALUES (1, 0, 'rec', 'Angel', 'Massive Attack', 'Mezzanine', 'now');
+    `);
+    migrate(db);
+    expect(db.prepare('SELECT shared, collaborative FROM playlists').get()).toEqual({ shared: 1, collaborative: 0 });
+    expect(db.prepare('SELECT added_by FROM playlist_items').get()).toEqual({ added_by: null });
+    // A song someone added stays when their account goes, no longer theirs.
+    db.exec(`
+      INSERT INTO accounts (id, name, username, created_at) VALUES (2, 'Sam', 'sam', 'now');
+      INSERT INTO playlist_items (playlist_id, position, recording_id, title, artist_name, album_title, added_at, added_by)
+        VALUES (1, 1, 'rec-2', 'Teardrop', 'Massive Attack', 'Mezzanine', 'now', 2);
+      DELETE FROM accounts WHERE id = 2;
+    `);
+    expect(db.prepare('SELECT title, added_by FROM playlist_items ORDER BY position').all()).toEqual([
+      { title: 'Angel', added_by: null },
+      { title: 'Teardrop', added_by: null },
+    ]);
   });
 
   it('re-dates a folder added to a library that already had music by when it was added, and its new albums', () => {

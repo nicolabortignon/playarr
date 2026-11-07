@@ -11,7 +11,8 @@ extension AccountSession {
     Task { await favorites.toggle(track) }
   }
 
-  /// Songs dropped on one of your playlists (the toast is phase 6's: Added “Angel” to “Late night”).
+  /// Songs dropped on a playlist you can add to (`TrackDrag.accepts`; the toast is phase 6's: Added “Angel” to “Late
+  /// night”).
   public func add(_ tracks: [Track], to playlist: PlaylistSummary) {
     Task { _ = await playlists.add(tracks, to: playlist.id) }
   }

@@ -2175,13 +2175,17 @@ public struct PlaylistDetail: Codable, Hashable, Sendable, Identifiable {
     public var updatedAt: String
     /// The display name of the account it belongs to.
     public var owner: String
-    /// Visible to every account on this server (only its owner changes it).
+    /// Visible to every account on this server (only its owner changes it, but for the songs of a collaborative one).
     public var shared: Bool
-    /// It belongs to the account asking.
+    /// It belongs to the account asking: only its owner renames it, describes it, gives it a cover, shares it and deletes it.
     public var mine: Bool
+    /// Shared, and its owner lets everyone it's shared with add, remove and reorder its songs. Servers from before collaborative playlists don't send it (nor `canEdit`): read none as false.
+    public var collaborative: Bool?
+    /// The account asking may add, remove and reorder its songs: its owner, or anyone while it's collaborative. Read none as `mine`.
+    public var canEdit: Bool?
     public var items: [PlaylistItem]
 
-    public init(id: Int, name: String, description: String, trackCount: Int, duration: Double, cover: PlaylistCoverInfo, updatedAt: String, owner: String, shared: Bool, mine: Bool, items: [PlaylistItem]) {
+    public init(id: Int, name: String, description: String, trackCount: Int, duration: Double, cover: PlaylistCoverInfo, updatedAt: String, owner: String, shared: Bool, mine: Bool, collaborative: Bool? = nil, canEdit: Bool? = nil, items: [PlaylistItem]) {
         self.id = id
         self.name = name
         self.description = description
@@ -2192,6 +2196,8 @@ public struct PlaylistDetail: Codable, Hashable, Sendable, Identifiable {
         self.owner = owner
         self.shared = shared
         self.mine = mine
+        self.collaborative = collaborative
+        self.canEdit = canEdit
         self.items = items
     }
 }
@@ -2203,16 +2209,19 @@ public struct PlaylistItem: Codable, Hashable, Sendable {
     public var artistName: String
     public var albumTitle: String
     public var addedAt: String
+    /// Who added it, by display name, when that was neither the playlist's owner nor the account asking: someone it's shared with, while it was collaborative. None for its owner's songs, the asker's own, and songs from before Playarr kept who added them.
+    public var addedBy: String?
     /// The playable track, or undefined if the song is no longer in the library.
     public var track: Track?
 
-    public init(itemId: Int, recordingId: String, title: String, artistName: String, albumTitle: String, addedAt: String, track: Track? = nil) {
+    public init(itemId: Int, recordingId: String, title: String, artistName: String, albumTitle: String, addedAt: String, addedBy: String? = nil, track: Track? = nil) {
         self.itemId = itemId
         self.recordingId = recordingId
         self.title = title
         self.artistName = artistName
         self.albumTitle = albumTitle
         self.addedAt = addedAt
+        self.addedBy = addedBy
         self.track = track
     }
 }
@@ -2227,12 +2236,16 @@ public struct PlaylistSummary: Codable, Hashable, Sendable, Identifiable {
     public var updatedAt: String
     /// The display name of the account it belongs to.
     public var owner: String
-    /// Visible to every account on this server (only its owner changes it).
+    /// Visible to every account on this server (only its owner changes it, but for the songs of a collaborative one).
     public var shared: Bool
-    /// It belongs to the account asking.
+    /// It belongs to the account asking: only its owner renames it, describes it, gives it a cover, shares it and deletes it.
     public var mine: Bool
+    /// Shared, and its owner lets everyone it's shared with add, remove and reorder its songs. Servers from before collaborative playlists don't send it (nor `canEdit`): read none as false.
+    public var collaborative: Bool?
+    /// The account asking may add, remove and reorder its songs: its owner, or anyone while it's collaborative. Read none as `mine`.
+    public var canEdit: Bool?
 
-    public init(id: Int, name: String, description: String, trackCount: Int, duration: Double, cover: PlaylistCoverInfo, updatedAt: String, owner: String, shared: Bool, mine: Bool) {
+    public init(id: Int, name: String, description: String, trackCount: Int, duration: Double, cover: PlaylistCoverInfo, updatedAt: String, owner: String, shared: Bool, mine: Bool, collaborative: Bool? = nil, canEdit: Bool? = nil) {
         self.id = id
         self.name = name
         self.description = description
@@ -2243,6 +2256,8 @@ public struct PlaylistSummary: Codable, Hashable, Sendable, Identifiable {
         self.owner = owner
         self.shared = shared
         self.mine = mine
+        self.collaborative = collaborative
+        self.canEdit = canEdit
     }
 }
 

@@ -6,6 +6,8 @@ struct MenuAction: Identifiable {
   enum Kind: Hashable, Sendable {
     case play, shuffle, playNext, addToQueue, addToPlaylist, startRadio, goToAlbum, goToArtist, showMetadata, editMixPoints
     case favorite, openQueue, saveAsPlaylist, moveUp, moveDown, remove, rename, newCover, share, stopSharing, delete
+    /// A shared playlist's owner's: everyone it's shared with adds songs, or only its owner again.
+    case letOthersAdd, stopOthersAdding
     /// A source's (Settings → Sources).
     case syncNow, matchAgain, organizeFiles, edit
   }
@@ -52,6 +54,8 @@ extension MenuAction.Kind {
     case .newCover: "New cover…"
     case .share: "Share with everyone"
     case .stopSharing: "Stop sharing"
+    case .letOthersAdd: "Let others add songs"
+    case .stopOthersAdding: "Stop others adding"
     case .delete: "Delete playlist"
     case .syncNow: "Sync now"
     case .matchAgain: "Match again"
@@ -85,6 +89,10 @@ extension MenuAction.Kind {
     case .newCover: "paintpalette"
     case .share: "person.2"
     case .stopSharing: "lock"
+    // A person with a plus, and with a cross, as the web's UserRoundPlus and UserRoundX: Add account's own glyph is
+    // `person.badge.plus`.
+    case .letOthersAdd: "person.crop.circle.badge.plus"
+    case .stopOthersAdding: "person.crop.circle.badge.xmark"
     case .delete: "trash"
     // Two arrows round, as the web's RefreshCw: "do it again", apart from Try again's one.
     case .syncNow: "arrow.triangle.2.circlepath"

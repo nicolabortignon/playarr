@@ -31,7 +31,7 @@ Rules the service enforces, each with a 409:
 - **The last password stays.** The only account with a password can't have it reset or be removed (`keepAPassword`). With no password left the server would be back in setup mode, where every request is the owner's, from anywhere. Give another account a password first.
 - **The owner comes first.** While in setup mode, accounts can't be created and passwords can't be reset: a setup code redeemed before the owner has a password would end setup mode and lock the owner out.
 
-Removing an account deletes its plays, mixes, favorites, playlists and ListenBrainz token; its sessions, setup codes and source list go with it by foreign key.
+Removing an account deletes its plays, mixes, favorites, playlists and ListenBrainz token; its sessions, setup codes and source list go with it by foreign key. Songs it added to others' collaborative playlists stay there, no longer saying who added them.
 
 ### Passwords
 
@@ -119,7 +119,7 @@ Once set up, the home network gives no rights: admins change settings from anywh
 What that means in practice ([api.md](api.md) lists every route):
 
 - **Admins** change settings: sources and folders, matching, requests, updates, how mixes are made, analysis, library refresh, rematching a file, and accounts. Members can read the source list (without connection settings) and Settings → Mixes, and get "Only an admin can change this".
-- **Each account** has its own ListenBrainz link and listening history (`requireOwn`), favorites, playlists (private unless shared with the server), mixes, radio and stats.
+- **Each account** has its own ListenBrainz link and listening history (`requireOwn`), favorites, playlists (private unless shared with the server; a shared one its owner makes collaborative takes songs from everyone, who add, move and remove them, while the rest stays its owner's), mixes, radio and stats.
 - **Members** may rename themselves (only the name) and see and sign out their own devices.
 - **Requests** need the account's "can request" right; Discover itself is open to every signed-in account.
 - **File paths** in a song's metadata (Show metadata) appear only for admins.

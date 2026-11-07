@@ -7,7 +7,7 @@ extension UTType {
   public static let playarrTracks = UTType(exportedAs: "me.tracklistme.playarr.tracks")
 }
 
-/// Songs being dragged (a song row, on iPad): dropped on one of your playlists in the sidebar, or on the queue.
+/// Songs being dragged (a song row, on iPad): dropped on a playlist you can add to in the sidebar, or on the queue.
 public struct TrackDrag: Codable, Transferable, Sendable, Equatable {
   public var tracks: [Track]
 
@@ -24,8 +24,9 @@ public struct TrackDrag: Codable, Transferable, Sendable, Equatable {
     drops.flatMap(\.tracks)
   }
 
-  /// Only your own playlists take songs: a playlist shared with you is changed by its owner.
+  /// Your own playlists take songs, and collaborative ones shared with you; any other shared with you is changed by its
+  /// owner. A server from before collaborative playlists doesn't say, and then only your own do.
   public static func accepts(_ playlist: PlaylistSummary) -> Bool {
-    playlist.mine
+    playlist.canEdit ?? playlist.mine
   }
 }

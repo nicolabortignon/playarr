@@ -8,9 +8,15 @@ extension API {
             Endpoint(.post, "/api/playlists", body: CreateBody(name: name, description: description, recordingIds: recordingIds, shared: shared))
         }
 
-        /// Only the fields given change. Only the playlist's owner may call it (403 otherwise).
-        public static func update(id: Int, name: String? = nil, description: String? = nil, shared: Bool? = nil) -> Endpoint<PlaylistDetail> {
-            Endpoint(.patch, "/api/playlists/\(id)", body: UpdateBody(name: name, description: description, shared: shared))
+        /// Only the fields given change. Only the playlist's owner may call it (403 otherwise). `collaborative`: everyone
+        /// it's shared with adds, removes and reorders its songs; only on a shared playlist (400 otherwise), and stopping
+        /// sharing stops it too.
+        public static func update(
+            id: Int, name: String? = nil, description: String? = nil, shared: Bool? = nil, collaborative: Bool? = nil
+        ) -> Endpoint<PlaylistDetail> {
+            Endpoint(
+                .patch, "/api/playlists/\(id)",
+                body: UpdateBody(name: name, description: description, shared: shared, collaborative: collaborative))
         }
 
         public static func delete(id: Int) -> Endpoint<NoContent> { Endpoint(.delete, "/api/playlists/\(id)") }
@@ -19,7 +25,8 @@ extension API {
             Endpoint(.post, "/api/playlists/\(id)/items", body: ["recordingIds": recordingIds])
         }
 
-        /// For Add to playlist's ticks: how many of these songs each of the account's own playlists already holds.
+        /// For Add to playlist's ticks: how many of these songs each playlist the account can add to already holds (its
+        /// own, and collaborative ones shared with it).
         public static func holding(recordingIds: [String]) -> Endpoint<PlaylistsHolding> {
             Endpoint(.post, "/api/playlists/holding", body: ["recordingIds": recordingIds])
         }
@@ -51,6 +58,7 @@ extension API {
             let name: String?
             let description: String?
             let shared: Bool?
+            let collaborative: Bool?
         }
 
         private struct CoverBody: Encodable, Sendable {

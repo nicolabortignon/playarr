@@ -5,6 +5,7 @@ extension Demo {
   static let lateNight = PlaylistDetail(
     id: playlist.id, name: playlist.name, description: playlist.description, trackCount: 2, duration: 677, cover: playlist.cover,
     updatedAt: playlist.updatedAt, owner: playlist.owner, shared: playlist.shared, mine: playlist.mine,
+    collaborative: playlist.collaborative, canEdit: playlist.canEdit,
     items: mezzanineTracks.prefix(2).enumerated().map { index, track in
       PlaylistItem(
         itemId: index + 1, recordingId: track.recordingId, title: track.title, artistName: track.artistName,
@@ -44,4 +45,24 @@ extension Demo {
     playlist.name = name
     return playlist
   }
+}
+
+extension Demo {
+  /// `-UITestsCollaborative`: Alex's "Sunday kitchen", shared and collaborative, so the demo account adds to it, moves
+  /// and removes its songs as its owner does. Sam added Sour Times; Alex the rest (the owner's say nothing of it).
+  static let sundayKitchen: PlaylistDetail = {
+    let songs: [(track: Track, addedBy: String?)] = [(protectionTracks[0], nil), (dummyTracks[1], "Sam"), (protectionTracks[1], nil)]
+    return PlaylistDetail(
+      id: 900, name: "Sunday kitchen", description: "Whatever’s cooking", trackCount: songs.count,
+      duration: songs.reduce(0) { $0 + $1.track.duration },
+      cover: PlaylistCoverInfo(
+        url: "/art/playlist/900?v=demo", layout: .horizon, variant: 2, frozen: true, stale: false, energy: 0.55, styles: [],
+        analyzed: songs.count, total: songs.count, pending: false),
+      updatedAt: when, owner: "Alex", shared: true, mine: false, collaborative: true, canEdit: true,
+      items: songs.enumerated().map { index, song in
+        PlaylistItem(
+          itemId: 501 + index, recordingId: song.track.recordingId, title: song.track.title, artistName: song.track.artistName,
+          albumTitle: song.track.albumTitle, addedAt: when, addedBy: song.addedBy, track: song.track)
+      })
+  }()
 }

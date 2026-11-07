@@ -25,7 +25,10 @@ async function handle<T>(reply: FastifyReply, fn: () => T | Promise<T>) {
   }
 }
 
-/** Each account's playlists and those shared with everyone; only an owner changes theirs. */
+/**
+ * Each account's playlists and those shared with everyone; only an owner changes theirs, but for the songs of a
+ * collaborative one, which everyone it's shared with adds, removes and reorders.
+ */
 export function playlistRoutes(
   app: FastifyInstance,
   deps: { playlists: Playlists; recommendations: Recommendations; covers: PlaylistCovers; library: Library },
@@ -81,8 +84,8 @@ export function playlistRoutes(
     );
   });
 
-  // Which of the asker's playlists already hold these songs, for Add to playlist's ticks. A POST, as an album or a
-  // mix makes a long list.
+  // Which of the playlists the asker can add to already hold these songs, for Add to playlist's ticks. A POST, as an
+  // album or a mix makes a long list.
   app.post<{ Body: { recordingIds?: string[] } }>('/api/playlists/holding', (req, reply) => {
     const ids = recordingIds(req.body?.recordingIds);
     if (!ids) return reply.code(400).send({ error: 'recordingIds must be a list of song ids' });
@@ -91,9 +94,11 @@ export function playlistRoutes(
 
   app.get<Id>('/api/playlists/:id', (req, reply) => handle(reply, () => playlists.get(id(req.params.id), viewer(req))));
 
-  app.patch<Id & { Body: { name?: string; description?: string; shared?: boolean } }>('/api/playlists/:id', (req, reply) => {
+  app.patch<Id & { Body: { name?: string; description?: string; shared?: boolean; collaborative?: boolean } }>('/api/playlists/:id', (req, reply) => {
     const body = req.body ?? {};
-    if (body.shared !== undefined && typeof body.shared !== 'boolean') return reply.code(400).send({ error: 'shared must be true or false' });
+    for (const flag of ['shared', 'collaborative'] as const) {
+      if (body[flag] !== undefined && typeof body[flag] !== 'boolean') return reply.code(400).send({ error: `${flag} must be true or false` });
+    }
     return handle(reply, () => playlists.update(id(req.params.id), body, viewer(req)));
   });
 

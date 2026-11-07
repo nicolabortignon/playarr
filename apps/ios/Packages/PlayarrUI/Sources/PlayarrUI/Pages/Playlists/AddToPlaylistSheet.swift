@@ -1,9 +1,10 @@
 import PlayarrAPI
 import SwiftUI
 
-/// "Add to playlist" and "New playlist" (apps/web/src/components/AddToPlaylistDialog.tsx): your own playlists, each with
-/// a tick on its cover when it holds the songs already (a dash when it holds some), to choose one or several and add to
-/// them all at once with Add; or a new playlist made with the songs. A playlist made from nothing opens once it's made.
+/// "Add to playlist" and "New playlist" (apps/web/src/components/AddToPlaylistDialog.tsx): the playlists you can add to
+/// (your own, and collaborative ones shared with you), each with a tick on its cover when it holds the songs already (a
+/// dash when it holds some), to choose one or several and add to them all at once with Add; or a new playlist made with
+/// the songs. A playlist made from nothing opens once it's made.
 struct AddToPlaylistSheet: View {
   let session: AccountSession
   @State private var model: AddToPlaylistModel
@@ -43,7 +44,7 @@ struct AddToPlaylistSheet: View {
               choice(playlist)
             }
           } header: {
-            Text("Your playlists")
+            Text("Playlists")
           }
         }
       }
@@ -70,12 +71,11 @@ struct AddToPlaylistSheet: View {
   }
 
   /// A playlist to add to: a checkbox (the circle on the right). On its cover, a tick when it holds every one of the
-  /// songs already, a dash when it holds some; its line says so in words too.
+  /// songs already, a dash when it holds some; its line says so in words too, and whose it is when it's someone else's.
   private func choice(_ playlist: PlaylistSummary) -> some View {
     let chosen = model.isChosen(playlist)
     let holds = model.holds(playlist)
-    let note = model.note(playlist)
-    let line = [Format.plural(playlist.trackCount, "song"), note].compactMap(\.self).joined(separator: " · ")
+    let line = model.line(playlist)
     return Button { model.toggle(playlist) } label: {
       HStack(spacing: 12) {
         PlaylistCover(cover: playlist.cover, points: 48, name: playlist.name)

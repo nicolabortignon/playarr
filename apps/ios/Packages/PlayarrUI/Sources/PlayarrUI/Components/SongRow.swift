@@ -20,6 +20,9 @@ struct SongRow: View {
   var rank: Int?
   /// Under the title, joined by dots: by default the artist and the album beside a cover, nothing beside a number.
   var subtitle: [String]?
+  /// After the subtitle, kept whole while the subtitle gives way: who added a playlist's song when it was someone else
+  /// ("Added by Sam").
+  var note: String?
   /// In place of the length, the number that matters in this list: a ranking's plays ("12 plays").
   var numbers: String?
   /// Marks the song when it's the one playing: off in Up next, where it never is.
@@ -141,9 +144,18 @@ struct SongRow: View {
       }
       let under = lines.joined(separator: " · ")
       if stacked {
-        NameAndNumbers(name: under.isEmpty ? nil : Text(under), numbers: Text(numbers ?? Format.time(track.duration)).monospacedDigit())
+        let name = (lines + (note.map { [$0] } ?? [])).joined(separator: " · ")
+        NameAndNumbers(name: name.isEmpty ? nil : Text(name), numbers: Text(numbers ?? Format.time(track.duration)).monospacedDigit())
           .typeRole(.small)
           .foregroundStyle(.paperDim)
+      } else if let note {
+        // The note stays whole, its dot with it ("Massive Att… · Added by Sam"); the artist and the album give way.
+        HStack(spacing: 0) {
+          if !under.isEmpty { Text(under).essentialLineLimit() }
+          Text(under.isEmpty ? note : " · \(note)").essentialLineLimit().layoutPriority(1)
+        }
+        .typeRole(.small)
+        .foregroundStyle(.paperDim)
       } else if !under.isEmpty {
         Text(under).typeRole(.small).foregroundStyle(.paperDim).essentialLineLimit()
       }
@@ -155,11 +167,12 @@ struct SongRow: View {
     subtitle ?? (lead == .cover ? [track.artistName, track.albumTitle] : [])
   }
 
-  /// "2. Sour Times, 4:14", "Angel, Massive Attack, Mezzanine, 6:19", "1. Angel, Massive Attack, 5 plays".
+  /// "2. Sour Times, 4:14", "Angel, Massive Attack, Mezzanine, 6:19", "1. Angel, Massive Attack, 5 plays",
+  /// "Angel, Massive Attack, Mezzanine, Added by Sam, 6:19".
   private var spoken: String {
     let place = rank ?? (lead == .number ? track.trackNumber : nil)
     let title = place.map { "\($0). \(track.title)" } ?? track.title
-    return ([title] + lines + [numbers ?? Format.time(track.duration)]).joined(separator: ", ")
+    return ([title] + lines + (note.map { [$0] } ?? []) + [numbers ?? Format.time(track.duration)]).joined(separator: ", ")
   }
 }
 

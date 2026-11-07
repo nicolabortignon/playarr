@@ -336,10 +336,17 @@ export interface PlaylistSummary {
   updatedAt: string;
   /** The display name of the account it belongs to. */
   owner: string;
-  /** Visible to every account on this server (only its owner changes it). */
+  /** Visible to every account on this server (only its owner changes it, but for the songs of a collaborative one). */
   shared: boolean;
-  /** It belongs to the account asking. */
+  /** It belongs to the account asking: only its owner renames it, describes it, gives it a cover, shares it and deletes it. */
   mine: boolean;
+  /**
+   * Shared, and its owner lets everyone it's shared with add, remove and reorder its songs. Servers from before
+   * collaborative playlists don't send it (nor `canEdit`): read none as false.
+   */
+  collaborative?: boolean;
+  /** The account asking may add, remove and reorder its songs: its owner, or anyone while it's collaborative. Read none as `mine`. */
+  canEdit?: boolean;
 }
 
 export interface PlaylistItem {
@@ -349,6 +356,12 @@ export interface PlaylistItem {
   artistName: string;
   albumTitle: string;
   addedAt: string;
+  /**
+   * Who added it, by display name, when that was neither the playlist's owner nor the account asking: someone it's
+   * shared with, while it was collaborative. None for its owner's songs, the asker's own, and songs from before
+   * Playarr kept who added them.
+   */
+  addedBy?: string;
   /** The playable track, or undefined if the song is no longer in the library. */
   track?: Track;
 }

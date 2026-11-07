@@ -31,6 +31,22 @@ import Testing
     #expect(making.choices.isEmpty)
   }
 
+  @Test func offersThePlaylistsOthersLetEveryoneAddToSayingWhoseTheyAre() async {
+    api.on(.get, "/api/playlists", [
+      Listening.summary(Listening.playlist(1, "Mine", items: Listening.three, collaborative: false, canEdit: true)),
+      Listening.summary(Listening.playlist(2, "Theirs", mine: false, shared: true, owner: "Sam", collaborative: false, canEdit: false)),
+      Listening.summary(
+        Listening.playlist(3, "Ours", items: [Listening.three[0]], mine: false, shared: true, owner: "Sam", collaborative: true, canEdit: true)),
+    ])
+    let store = PlaylistsStore(api: api, queries: QueryCache(directory: nil), toasts: ToastCenter(clock: TestClock()))
+    await store.load()
+    api.on(.post, "/api/playlists/holding", PlaylistsHolding(holding: ["1": 1, "3": 1]))
+    let adding = AddToPlaylistModel(tracks: [Listening.angel], store: store)
+    await adding.loadHolding()
+    #expect(adding.choices.map(\.name) == ["Mine", "Ours"])
+    #expect(adding.choices.map(adding.line) == ["3 songs · already in it", "1 song · Sam · already in it"])
+  }
+
   @Test func createsOnlyWithAName() async {
     let store = await store()
     let making = AddToPlaylistModel(tracks: [Listening.angel], store: store)

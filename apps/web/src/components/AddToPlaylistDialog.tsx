@@ -22,8 +22,9 @@ export function AddToPlaylistDialog() {
 }
 
 /**
- * The account's own playlists, each ticked when it already holds the songs (a dash when it holds some of them), to
- * choose one or several and add the songs to all of them at once. Or a new playlist, made with the songs.
+ * The playlists the account can add to (its own, and collaborative ones shared with it, which say whose they are), each
+ * ticked when it already holds the songs (a dash when it holds some of them), to choose one or several and add the
+ * songs to all of them at once. Or a new playlist, made with the songs.
  */
 function Picker({ tracks, open }: { tracks: Track[]; open: boolean }) {
   const close = useUI((s) => s.closePlaylistPicker);
@@ -34,11 +35,12 @@ function Picker({ tracks, open }: { tracks: Track[]; open: boolean }) {
   const [creating, setCreating] = useState(!tracks.length);
   const [name, setName] = useState('');
   const [chosen, setChosen] = useState<number[]>([]);
-  const mine = playlists?.filter((p) => p.mine) ?? [];
+  // A server from before collaborative playlists doesn't say: then only the account's own take songs.
+  const addable = playlists?.filter((p) => p.canEdit ?? p.mine) ?? [];
   // What the server counts: each song once, however many times it's in the list.
   const songs = new Set(tracks.map((t) => t.recordingId)).size;
   const title = !tracks.length ? 'New playlist' : tracks.length === 1 ? `Add “${tracks[0]!.title}”` : `Add ${tracks.length} songs`;
-  const choosing = tracks.length > 0 && mine.length > 0;
+  const choosing = tracks.length > 0 && addable.length > 0;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -104,8 +106,8 @@ function Picker({ tracks, open }: { tracks: Track[]; open: boolean }) {
         )}
 
         {choosing && (
-          <ul aria-label="Your playlists">
-            {mine.map((p) => (
+          <ul aria-label="Playlists">
+            {addable.map((p) => (
               <li key={p.id}>
                 <PlaylistChoice playlist={p} holds={holding?.[p.id] ?? 0} of={songs} chosen={chosen.includes(p.id)} onToggle={() => choose(p.id)} />
               </li>
@@ -119,7 +121,7 @@ function Picker({ tracks, open }: { tracks: Track[]; open: boolean }) {
 
 /**
  * A playlist to add to: a checkbox (the circle on the right). On its cover, a tick when it already holds every one of
- * the songs, a dash when it holds some; its line says so in words too.
+ * the songs, a dash when it holds some; its line says so in words too, and whose it is when it's someone else's.
  */
 function PlaylistChoice({
   playlist: p,
@@ -164,6 +166,7 @@ function PlaylistChoice({
         <span className="block truncate type-body text-paper">{p.name}</span>
         <span className="block truncate type-meta text-muted">
           {plural(p.trackCount, 'song')}
+          {p.mine ? '' : ` · ${p.owner}`}
           {all ? ' · already in it' : some ? ` · ${holds} of ${of} already in it` : ''}
         </span>
       </span>

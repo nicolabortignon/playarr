@@ -2,9 +2,10 @@ import Foundation
 import Observation
 import PlayarrAPI
 
-/// "Add to playlist" (apps/web/src/components/AddToPlaylistDialog.tsx): your own playlists, each ticked when it already
-/// holds every one of the songs (a dash when it holds some), to choose one or several and add the songs to all of them at
-/// once; or a new playlist made with the songs. With no songs it's "New playlist".
+/// "Add to playlist" (apps/web/src/components/AddToPlaylistDialog.tsx): the playlists you can add to (your own, and
+/// collaborative ones shared with you, which say whose they are), each ticked when it already holds every one of the
+/// songs (a dash when it holds some), to choose one or several and add the songs to all of them at once; or a new
+/// playlist made with the songs. With no songs it's "New playlist".
 @MainActor @Observable
 final class AddToPlaylistModel {
   /// How much of the songs a playlist holds already.
@@ -39,8 +40,9 @@ final class AddToPlaylistModel {
     }
   }
 
-  /// Your own playlists (others' shared ones can't be changed); none when making a new one from nothing.
-  var choices: [PlaylistSummary] { tracks.isEmpty ? [] : store.mine }
+  /// The playlists you can add to (others' shared ones are changed by their owners, but for collaborative ones); none
+  /// when making a new one from nothing.
+  var choices: [PlaylistSummary] { tracks.isEmpty ? [] : store.addable }
   var canCreate: Bool { !busy && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
   /// How many songs are being added, as the server counts them: each once, however many times it's in the list.
@@ -65,6 +67,13 @@ final class AddToPlaylistModel {
     case .some(let count): "\(count) of \(songs) already in it"
     case .all: "already in it"
     }
+  }
+
+  /// A playlist's line under its name: its songs, whose it is when it's someone else's, and its note ("12 songs · Sam ·
+  /// already in it").
+  func line(_ playlist: PlaylistSummary) -> String {
+    let whose = playlist.mine ? nil : playlist.owner
+    return [Format.plural(playlist.trackCount, "song"), whose, note(playlist)].compactMap(\.self).joined(separator: " · ")
   }
 
   func isChosen(_ playlist: PlaylistSummary) -> Bool { chosen.contains(playlist.id) }

@@ -5,10 +5,16 @@ import PlayarrAPI
 public struct DemoAPI: APISending {
   private let answers: [String: any Encodable & Sendable]
   /// Favorites and playlists change as on a real server (phase 6).
-  private let state = DemoState()
+  private let state: DemoState
 
   public init() {
+    self.init(state: DemoState())
+  }
+
+  /// With what the server remembers made by the caller (a test's `DemoState(collaborative: true)`).
+  init(state: DemoState) {
     answers = Dictionary(Demo.routes.map { ("\($0.method.rawValue) \($0.path)", $0.answer) }, uniquingKeysWith: { _, last in last })
+    self.state = state
   }
 
   public func send<T: Decodable & Sendable>(_ endpoint: Endpoint<T>) async throws -> T {

@@ -26,6 +26,7 @@ import type {
 import Fastify, { type FastifyInstance } from 'fastify';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Accounts } from '../accounts/accounts.ts';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { freshDb, mezzanine, tempDir } from '../catalog/testFixtures.ts';
@@ -202,8 +203,10 @@ describe('contract fixtures', () => {
       seedCount: 2,
     };
     const app = Fastify();
-    // Since accounts, favorites and playlists belong to the signed-in account: act as the owner.
-    actAs(app, [account(1, { role: 'admin', canRequest: true })]);
+    // Since accounts, favorites and playlists belong to the signed-in account: act as the owner, and as Sam, who adds
+    // to a collaborative playlist of theirs.
+    const sam = new Accounts(db).create({ username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null });
+    actAs(app, [account(1, { role: 'admin', canRequest: true }), account(sam.id, { name: 'Sam' })]);
     const owner = asAccount(1);
     favoriteRoutes(app, { favorites: new Favorites(db), library });
     playlistRoutes(app, {
@@ -225,6 +228,14 @@ describe('contract fixtures', () => {
       ['playlists', '/api/playlists'],
       ['recommendations', `/api/playlists/${created.json().id}/recommendations`],
     ], owner);
+    // A collaborative playlist as its owner sees it: Sam's song says who added it.
+    const ours = await app.inject({ method: 'POST', url: '/api/playlists', headers: owner, payload: { name: 'Road trip', recordingIds: [ANGEL], shared: true } });
+    const id = ours.json().id;
+    expect((await app.inject({ method: 'PATCH', url: `/api/playlists/${id}`, headers: owner, payload: { collaborative: true } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: `/api/playlists/${id}/items`, headers: asAccount(sam.id), payload: { recordingIds: [RISINGSON] } })).statusCode).toBe(200);
+    const collaborative = await app.inject({ method: 'GET', url: `/api/playlists/${id}`, headers: owner });
+    expect(collaborative.json()).toMatchObject({ collaborative: true, canEdit: true, items: [{ title: 'Angel' }, { title: 'Risingson', addedBy: 'Sam' }] });
+    recordFixture('playlist-collaborative', collaborative);
   });
 
   it('puts a favorite taken back where it was', async () => {

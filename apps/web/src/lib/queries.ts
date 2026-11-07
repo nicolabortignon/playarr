@@ -298,7 +298,7 @@ export const usePlaylist = (id: number) =>
 const songsNamed = (tracks: Track[]) => (tracks.length === 1 ? `“${tracks[0]!.title}”` : `${tracks.length} songs`);
 
 /**
- * For Add to playlist's ticks: how many of these songs each of the account's own playlists already holds, by playlist
+ * For Add to playlist's ticks: how many of these songs each playlist the account can add to already holds, by playlist
  * id (those holding none are left out). Asked afresh each time the picker opens; while it's closing (`open` false) it
  * keeps what it has without asking again.
  */
@@ -357,7 +357,7 @@ export function usePlaylistMutations() {
       onError,
     }),
     update: useMutation({
-      mutationFn: ({ id, ...patch }: { id: number; name?: string; description?: string; shared?: boolean }) => api.updatePlaylist(id, patch),
+      mutationFn: ({ id, ...patch }: { id: number } & Parameters<typeof api.updatePlaylist>[1]) => api.updatePlaylist(id, patch),
       onSuccess: settle,
       onError,
     }),
@@ -429,10 +429,13 @@ export async function restorePlaylistItem(id: number, recordingId: string, { aft
   }
 }
 
-/** Share a playlist with everyone on the server, or stop: Stop sharing's Undo. */
-export async function setPlaylistShared(id: number, shared: boolean) {
+/**
+ * Share a playlist with everyone on the server, or stop: Stop sharing's Undo, which lets everyone add songs again when
+ * they could (`collaborative`), as stopping sharing stopped that too.
+ */
+export async function setPlaylistShared(id: number, shared: boolean, collaborative?: boolean) {
   try {
-    playlistChanged(await api.updatePlaylist(id, { shared }));
+    playlistChanged(await api.updatePlaylist(id, collaborative ? { shared, collaborative } : { shared }));
   } catch (err) {
     toast((err as Error).message, 'error');
   }

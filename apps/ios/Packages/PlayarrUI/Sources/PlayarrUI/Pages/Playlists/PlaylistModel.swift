@@ -5,7 +5,9 @@ import PlayarrPlayer
 
 /// One playlist's page (apps/web/src/pages/Playlist.tsx). Another account's shared playlist plays like any other but
 /// offers no way to change it; only its owner renames, describes, reorders, removes songs, picks a cover, shares or
-/// stops sharing, and deletes it. Reordering shows at once and is sent when the song is dropped.
+/// stops sharing, and deletes it. A shared one its owner has made collaborative is everyone's to add to, reorder and
+/// remove songs from (`canEdit`), each song saying who added it when that was someone else; the rest stays its owner's.
+/// Reordering shows at once and is sent when the song is dropped.
 @MainActor @Observable
 final class PlaylistModel {
   let id: Int
@@ -31,6 +33,11 @@ final class PlaylistModel {
 
   /// The viewer owns it: everything that changes it is offered.
   var mine: Bool { playlist?.mine ?? false }
+  /// Everyone it's shared with adds, reorders and removes its songs.
+  var collaborative: Bool { playlist?.collaborative ?? false }
+  /// The viewer changes its songs: its owner, or anyone while it's collaborative. A server from before collaborative
+  /// playlists doesn't say, and then it's its owner alone.
+  var canEdit: Bool { playlist.map { $0.canEdit ?? $0.mine } ?? false }
   var playable: [Track] { items.compactMap(\.track) }
   var unavailable: Int { items.count - playable.count }
   var canPickCover: Bool { mine && !items.isEmpty }
@@ -50,15 +57,23 @@ final class PlaylistModel {
     return playlist.mine ? "Shared with everyone" : "Shared by \(playlist.owner)"
   }
 
-  /// Its owner's part of the ⋯ menu ("Playlist actions"), after Play next, Add to queue and Add to playlist….
+  /// After whose it is, on a collaborative playlist: that it's everyone's to add to.
+  var whoAdds: String? { collaborative ? "Everyone can add songs" : nil }
+
+  /// Under a song someone else added (the server says so only then): "Added by Sam".
+  static func credit(_ item: PlaylistItem) -> String? { item.addedBy.map { "Added by \($0)" } }
+
+  /// Its owner's part of the ⋯ menu ("Playlist actions"), after Play next, Add to queue and Add to playlist…. Only a
+  /// shared playlist has anyone else to add songs.
   var ownerActions: [PlaylistAction] {
     guard let playlist, mine else { return [] }
-    return [.rename] + (items.isEmpty ? [] : [.newCover]) + [playlist.shared ? .stopSharing : .share, .delete]
+    let sharing: [PlaylistAction] = playlist.shared ? [.stopSharing, collaborative ? .stopOthersAdding : .letOthersAdd] : [.share]
+    return [.rename] + (items.isEmpty ? [] : [.newCover]) + sharing + [.delete]
   }
 
-  /// A song's own actions, after the song menu's: its owner moves it up or down and removes it.
+  /// A song's own actions, after the song menu's: whoever changes its songs moves it up or down and removes it.
   func own(at index: Int) -> [MenuAction] {
-    guard mine, items.indices.contains(index) else { return [] }
+    guard canEdit, items.indices.contains(index) else { return [] }
     let item = items[index]
     return SongMenu.moves(index, of: items.count) { [weak self] from, to in Task { await self?.move(from, to: to) } }
       + [MenuAction(.remove, title: "Remove from playlist") { [weak self] in Task { await self?.remove(item) } }]
@@ -111,7 +126,7 @@ final class PlaylistModel {
     next ? session.actions.playNext(playable) : session.actions.addToQueue(playable)
   }
 
-  // MARK: Changing it (its owner only)
+  // MARK: Changing it (its owner only, but for the songs of a collaborative one)
 
   /// Rename and describe. An empty name cancels, as on the web. True when the page can stop editing.
   func save(name: String, description: String) async -> Bool {
@@ -120,32 +135,43 @@ final class PlaylistModel {
     return await change { try await $0.send(API.Playlists.update(id: id, name: name, description: description)) }
   }
 
-  /// Share with everyone, or Stop sharing: at once, with Undo in the toast, which shares it again ("Stopped sharing
-  /// “Late night”"; docs/design.md, "Taking things back").
+  /// Share with everyone, or Stop sharing: at once, with Undo in the toast, which shares it again as it was, everyone
+  /// adding songs too if they could ("Stopped sharing “Late night”"; docs/design.md, "Taking things back").
   func setShared(_ shared: Bool) async {
     guard mine, let name = playlist?.name else { return }
     let id = id
+    let wasCollaborative = collaborative
     guard await change({ try await $0.send(API.Playlists.update(id: id, shared: shared)) }), !shared else { return }
     let session = session
     session.toasts.removed("Stopped sharing “\(name)”") { [weak self] in
       Task {
         // The page may have closed since: the playlist is shared again all the same.
-        guard let restored = await Self.share(id, session: session) else { return }
+        guard let restored = await Self.share(id, collaborative: wasCollaborative, session: session) else { return }
         self?.show(restored)
       }
     }
   }
 
-  /// Undo for Stop sharing: shared with everyone again.
-  static func share(_ id: Int, session: AccountSession) async -> PlaylistDetail? {
+  /// Undo for Stop sharing: shared with everyone again, and everyone's to add to again when it was (stopping sharing
+  /// stopped that too).
+  static func share(_ id: Int, collaborative: Bool = false, session: AccountSession) async -> PlaylistDetail? {
     do {
-      let shared = try await session.api.send(API.Playlists.update(id: id, shared: true))
+      let shared = try await session.api.send(API.Playlists.update(id: id, shared: true, collaborative: collaborative ? true : nil))
       await session.playlists.settled(shared)
       return shared
     } catch {
       session.toasts.push(error.localizedDescription, tone: .error)
       return nil
     }
+  }
+
+  /// Let others add songs, or Stop others adding: on a shared playlist, everyone it's shared with adds, reorders and
+  /// removes its songs, or its owner alone again. Nothing is lost either way, so there's no Undo: the menu turns it
+  /// back.
+  func setCollaborative(_ collaborative: Bool) async {
+    guard mine, playlist?.shared == true else { return }
+    let id = id
+    _ = await change { try await $0.send(API.Playlists.update(id: id, collaborative: collaborative)) }
   }
 
   func setCover(layout: CoverLayout, variant: Int) async -> Bool {
@@ -157,7 +183,7 @@ final class PlaylistModel {
   /// Remove from playlist: gone from the list at once (back if the server says no), with Undo, which puts the song back
   /// where it was. A song no longer in the library can't be added again, so its removal has no Undo.
   func remove(_ item: PlaylistItem) async {
-    guard mine, let playlist, let index = items.firstIndex(where: { $0.itemId == item.itemId }) else { return }
+    guard canEdit, let playlist, let index = items.firstIndex(where: { $0.itemId == item.itemId }) else { return }
     let after = index > 0 ? items[index - 1].itemId : nil
     items.remove(at: index)
     let id = id
@@ -197,7 +223,7 @@ final class PlaylistModel {
 
   /// Adds songs ("Songs like these"' Add). True when they were added.
   func add(_ tracks: [Track]) async -> Bool {
-    guard mine, let playlist = await session.playlists.add(tracks, to: id) else { return false }
+    guard canEdit, let playlist = await session.playlists.add(tracks, to: id) else { return false }
     show(playlist)
     if playlist.cover.pending { pollRound += 1 }
     return true
@@ -212,7 +238,7 @@ final class PlaylistModel {
   /// A drag ended: the songs move at once, and the new order is sent if it differs from the server's. If the server
   /// says no, they go back.
   func move(fromOffsets source: IndexSet, toOffset destination: Int) async {
-    guard mine, let playlist else { return }
+    guard canEdit, let playlist else { return }
     items = Self.moved(items, fromOffsets: source, toOffset: destination)
     let order = items.map(\.itemId)
     guard order != playlist.items.map(\.itemId) else { return }

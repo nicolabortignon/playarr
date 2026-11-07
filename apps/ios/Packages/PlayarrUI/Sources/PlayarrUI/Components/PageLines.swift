@@ -18,9 +18,10 @@ enum PageLines {
     "Nothing in the record bag yet.", "Download an album, a playlist or a mix, and it plays here with or without a connection.")
   static let playlists = Line("Make a playlist for a mood, a trip or a friend.")
 
-  /// A playlist with no songs: its owner is told how to add some; anyone else, only that there's nothing yet.
-  static func playlist(mine: Bool) -> Line {
-    mine
+  /// A playlist with no songs: whoever can add to it (its owner, or anyone on a collaborative one) is told how; anyone
+  /// else, only that there's nothing yet.
+  static func playlist(canAdd: Bool) -> Line {
+    canAdd
       ? Line("This playlist is waiting for its first song.", "Choose Add to playlist… in any song’s ⋯ menu.")
       : Line("Nothing in this playlist yet.")
   }

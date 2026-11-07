@@ -216,3 +216,65 @@ describe('PlaylistPage', () => {
     expect(screen.getByText('Choose Add to playlist… in any song’s ⋯ menu.')).toBeTruthy();
   });
 });
+
+describe('PlaylistPage, built together', () => {
+  /** Nicola's shared playlist, which everyone can add songs to, as Sam sees it. */
+  const THEIRS: PlaylistDetail = { ...MINE, mine: false, shared: true, collaborative: true, canEdit: true };
+
+  it('lets its owner let others add songs to a shared playlist, and stop them', async () => {
+    const update = vi.spyOn(api, 'updatePlaylist').mockImplementation(async (_id, patch) => ({ ...MINE, shared: true, ...patch }));
+    view({ ...MINE, shared: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Road trip”' }));
+    expect(menuEntries()).toEqual(['Play next', 'Add to queue', 'Add to playlist…', '—', 'Rename', 'New cover…', 'Stop sharing', 'Let others add songs', 'Delete playlist']);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Let others add songs' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(5, { collaborative: true }));
+    expect(await screen.findByText('Everyone can add songs')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Road trip”' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Stop others adding' }));
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith(5, { collaborative: false }));
+    await waitFor(() => expect(screen.queryByText('Everyone can add songs')).toBeNull());
+  });
+
+  it('gives everyone it’s shared with its songs to add, move and remove, and leaves the rest to its owner', async () => {
+    const reorder = vi.spyOn(api, 'reorderPlaylist').mockImplementation(async (_id, itemIds) => ({ ...THEIRS, items: itemIds.map((i) => THEIRS.items.find((x) => x.itemId === i)!) }));
+    view(THEIRS);
+    expect(await screen.findByText('Shared by Nicola')).toBeTruthy();
+    expect(screen.getByText('Everyone can add songs')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Teardrop”' }));
+    expect(menuEntries().slice(-3)).toEqual(['—', 'Move down', 'Remove from playlist']);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move down' }));
+    await waitFor(() => expect(reorder).toHaveBeenLastCalledWith(5, [2, 1, 3]));
+    expect(screen.getByRole('button', { name: 'Drag to reorder Teardrop' })).toBeTruthy();
+    // Its name, cover, sharing and deleting it stay its owner's.
+    expect(screen.queryByRole('button', { name: 'Rename playlist' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New cover' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'More for “Road trip”' }));
+    expect(menuEntries()).toEqual(['Play next', 'Add to queue', 'Add to playlist…']);
+  });
+
+  it('tells someone who can add to an empty one how to', async () => {
+    view({ ...THEIRS, items: [], trackCount: 0 });
+    expect(await screen.findByText('This playlist is waiting for its first song.')).toBeTruthy();
+  });
+
+  it('says who added a song when it was someone else', async () => {
+    const [first, second, third] = MINE.items as [PlaylistItem, PlaylistItem, PlaylistItem];
+    view({ ...THEIRS, items: [first, { ...second, addedBy: 'Alex' }, { ...third, track: undefined, addedBy: 'Sam' }] });
+    const row = (await screen.findByRole('button', { name: 'Play Unfinished Sympathy' })).closest('li')!;
+    expect(row.textContent).toContain('Added by Alex');
+    expect(screen.getByRole('button', { name: 'Play Teardrop' }).closest('li')!.textContent).not.toContain('Added by');
+    // A song no longer in the library says so too.
+    expect(screen.getByText(/Added by Sam/)).toBeTruthy();
+  });
+
+  it('stops sharing at once, and Undo shares it again with everyone still adding songs', async () => {
+    const update = vi.spyOn(api, 'updatePlaylist').mockImplementation(async (_id, patch) => ({ ...MINE, collaborative: false, ...patch }));
+    view({ ...MINE, shared: true, collaborative: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'More for “Road trip”' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Stop sharing' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(5, { shared: false }));
+    await waitFor(() => expect(lastToast()?.message).toBe('Stopped sharing “Road trip”'));
+    undo();
+    await waitFor(() => expect(update).toHaveBeenLastCalledWith(5, { shared: true, collaborative: true }));
+  });
+});

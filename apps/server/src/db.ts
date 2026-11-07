@@ -300,6 +300,11 @@ const MIGRATIONS: Migration[] = [
    CREATE TRIGGER copies_retired AFTER DELETE ON copies BEGIN
      INSERT OR IGNORE INTO retired_copy_ids (id) VALUES (old.id);
    END;`,
+  // Playlists the household builds together: a shared playlist its owner has made collaborative takes songs from
+  // everyone it's shared with (playlists.ts). Each song records the account that added it; NULL for songs added before
+  // this, all by the playlist's owner, and for an account since removed.
+  `ALTER TABLE playlists ADD COLUMN collaborative INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE playlist_items ADD COLUMN added_by INTEGER REFERENCES accounts (id) ON DELETE SET NULL;`,
 ];
 
 /** How many copies made before migrations are kept in `backups/`: the newest. */

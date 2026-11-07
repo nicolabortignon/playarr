@@ -55,6 +55,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("favorites", [FavoriteTrack].self),
         Contract("playlists", [PlaylistSummary].self),
         Contract("playlist", PlaylistDetail.self),
+        Contract("playlist-collaborative", PlaylistDetail.self),
         Contract("playlists-holding", PlaylistsHolding.self),
         Contract("recommendations", Recommendations.self),
         // Settings and analysis

@@ -27,6 +27,8 @@
   "owner": "Home",
   "shared": false,
   "mine": true,
+  "collaborative": false,
+  "canEdit": true,
   "items": [
     {
       "itemId": 1,

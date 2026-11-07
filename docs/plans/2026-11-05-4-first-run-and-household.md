@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; fourth of four (after [robustness and scale]
 
 **Goal:** someone who downloads the app without a server understands it in a minute; an invited member goes from the invite to music in under two minutes; the owner's first steps lead to music, not settings; and the household shares requests and playlists like a family, not a set of strangers.
 
-**Where it stands (2026-11-07):** 1, 3 and 6 done; 2 done but for universal links, which wait for a Playarr domain; the rest not started.
+**Where it stands (2026-11-07):** 1, 3, 5 and 6 done; 2 done but for universal links, which wait for a Playarr domain; 4 under way.
 
 ## 1. The welcome screen explains itself — S–M — done 2026-11-07
 
@@ -34,7 +34,9 @@ Builds on plan 1's requests table.
 - "It's ready": when the album arrives, the person who asked is told (iOS local notification, web push, and a badge in Requests).
 - **Done when** a member's request, approved by the owner from a notification, ends with the member told and playing the album.
 
-## 5. Shared playlists the household can build together — M
+## 5. Shared playlists the household can build together — M — done 2026-11-07
+
+*Done: on a shared playlist its owner's ⋯ has Let others add songs, then Stop others adding; stopping sharing stops it too, and Stop sharing's Undo brings both back (`PATCH /api/playlists/:id { collaborative }`). While it's collaborative everyone it's shared with adds, moves and removes its songs, from its page (the handles, Move up and down, Remove, Songs like these), from Add to playlist, which lists it with whose it is, and on the iPad by a drop on the sidebar; its name, cover, sharing and deleting it stay its owner's, and its meta line says "Everyone can add songs". Each song keeps who added it (`playlist_items.added_by`), and one someone else added says "Added by Sam" in its row, on both apps. Apps already out ignore the new fields (`collaborative`, `canEdit`, `addedBy`), which are optional, so the new apps read older servers too. The demo has one with `-UITestsCollaborative`.*
 
 Shared playlists can only be changed by their owner (`apps/server/src/playlists.ts`). An owner can make a playlist collaborative: anyone it's shared with can add, remove and reorder songs; changes show who added what.
 

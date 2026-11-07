@@ -17,6 +17,7 @@ interface PlaylistRow {
   cover_snapshot: string | null;
   account_id: number;
   shared: number;
+  collaborative: number;
   owner: string | null;
 }
 
@@ -28,6 +29,10 @@ interface ItemRow {
   artist_name: string;
   album_title: string;
   added_at: string;
+  /** The account that added it: NULL for songs from before that was kept, and for an account since removed. */
+  added_by: number | null;
+  /** Its display name, where the rows were read with it (`itemRows`). */
+  added_by_name?: string | null;
 }
 
 export class PlaylistError extends Error {
@@ -39,13 +44,16 @@ export class PlaylistError extends Error {
   }
 }
 
-const PLAYLIST = `SELECT p.id, p.name, p.description, p.updated_at, p.cover_snapshot, p.account_id, p.shared, a.name AS owner
+const PLAYLIST = `SELECT p.id, p.name, p.description, p.updated_at, p.cover_snapshot, p.account_id, p.shared, p.collaborative, a.name AS owner
                   FROM playlists p LEFT JOIN accounts a ON a.id = p.account_id`;
 
 /**
  * Playlists of songs keyed by recording id (like favorites), with a title/artist/album snapshot so songs
  * that leave the library still show up, marked unavailable. Each belongs to an account: private, or
- * shared with everyone on this server, who can play it while only its owner changes it.
+ * shared with everyone on this server, who can play it while only its owner changes it. Its owner can
+ * make a shared one collaborative: then everyone it's shared with adds, removes and reorders its songs
+ * too, and each song says who added it; the rest (its name, description, cover and sharing, deleting
+ * it) stays its owner's.
  */
 export class Playlists {
   constructor(
@@ -102,18 +110,30 @@ export class Playlists {
       .prepare('INSERT INTO playlists (name, description, created_at, updated_at, account_id, shared) VALUES (?, ?, ?, ?, ?, ?)')
       .run(cleanName(name), cleanDescription(description), now, now, viewer.account, shared ? 1 : 0);
     const id = Number(lastInsertRowid);
-    if (tracks.length) this.append(id, tracks);
+    if (tracks.length) this.append(id, tracks, viewer.account);
     return this.get(id, viewer);
   }
 
-  async update(id: number, patch: { name?: string; description?: string; shared?: boolean }, viewer: Viewer): Promise<PlaylistDetail> {
+  /**
+   * Its owner's changes: the name, the description, sharing, and whether it's collaborative. Only a shared playlist
+   * can be (there's no one else to add songs to a private one): stopping sharing stops that too.
+   */
+  async update(
+    id: number,
+    patch: { name?: string; description?: string; shared?: boolean; collaborative?: boolean },
+    viewer: Viewer,
+  ): Promise<PlaylistDetail> {
     const p = this.row(id, viewer, 'own');
+    const shared = patch.shared ?? p.shared === 1;
+    if (patch.collaborative && !shared) throw new PlaylistError('Only a shared playlist can take songs from others');
+    const collaborative = shared && (patch.collaborative ?? p.collaborative === 1);
     this.db
-      .prepare('UPDATE playlists SET name = ?, description = ?, shared = ?, updated_at = ? WHERE id = ?')
+      .prepare('UPDATE playlists SET name = ?, description = ?, shared = ?, collaborative = ?, updated_at = ? WHERE id = ?')
       .run(
         patch.name !== undefined ? cleanName(patch.name) : p.name,
         patch.description !== undefined ? cleanDescription(patch.description) : p.description,
-        patch.shared !== undefined ? (patch.shared ? 1 : 0) : p.shared,
+        shared ? 1 : 0,
+        collaborative ? 1 : 0,
         new Date().toISOString(),
         id,
       );
@@ -126,8 +146,8 @@ export class Playlists {
   }
 
   /**
-   * For Add to playlist: how many of these songs each of the viewer's own playlists already holds (only those that hold
-   * any), so the picker can tick them.
+   * For Add to playlist: how many of these songs each playlist the viewer can add to (their own, and collaborative ones
+   * shared with them) already holds, only those that hold any, so the picker can tick them.
    */
   holding(recordingIds: string[], viewer: Viewer): Record<number, number> {
     const wanted = [...new Set(recordingIds)];
@@ -136,22 +156,25 @@ export class Playlists {
       .prepare(
         `SELECT i.playlist_id AS id, COUNT(DISTINCT i.recording_id) AS n FROM playlist_items i
          JOIN playlists p ON p.id = i.playlist_id
-         WHERE p.account_id = ? AND i.recording_id IN (${wanted.map(() => '?').join(', ')})
+         WHERE (p.account_id = ? OR (p.shared = 1 AND p.collaborative = 1)) AND i.recording_id IN (${wanted.map(() => '?').join(', ')})
          GROUP BY i.playlist_id`,
       )
       .all(viewer.account, ...wanted) as { id: number; n: number }[];
     return Object.fromEntries(rows.map((r) => [r.id, r.n]));
   }
 
-  /** Append songs the owner may hear (duplicates allowed, like most players). Unknown ids are rejected. */
+  /**
+   * Append songs the one adding may hear (duplicates allowed, like most players), as theirs. Unknown ids are rejected.
+   * On a collaborative playlist that's anyone it's shared with, so its owner may find a song they can't hear.
+   */
   async addItems(id: number, recordingIds: string[], viewer: Viewer): Promise<PlaylistDetail> {
-    this.row(id, viewer, 'own');
-    this.append(id, await this.tracks(recordingIds, viewer));
+    this.row(id, viewer, 'songs');
+    this.append(id, await this.tracks(recordingIds, viewer), viewer.account);
     return this.get(id, viewer);
   }
 
   async removeItem(id: number, itemId: number, viewer: Viewer): Promise<PlaylistDetail> {
-    this.row(id, viewer, 'own');
+    this.row(id, viewer, 'songs');
     const { changes } = this.db.prepare('DELETE FROM playlist_items WHERE id = ? AND playlist_id = ?').run(itemId, id);
     if (!changes) throw new PlaylistError('Song not found in this playlist', 404);
     this.touch(id);
@@ -160,7 +183,7 @@ export class Playlists {
 
   /** Set the full order; `itemIds` must be exactly the playlist's items. */
   async reorder(id: number, itemIds: number[], viewer: Viewer): Promise<PlaylistDetail> {
-    this.row(id, viewer, 'own');
+    this.row(id, viewer, 'songs');
     const current = (this.db.prepare('SELECT id FROM playlist_items WHERE playlist_id = ?').all(id) as { id: number }[]).map((r) => r.id);
     const same = current.length === itemIds.length && new Set(itemIds).size === itemIds.length && itemIds.every((i) => current.includes(i));
     if (!same) throw new PlaylistError('Order must list every item in the playlist exactly once');
@@ -172,13 +195,18 @@ export class Playlists {
     return this.get(id, viewer);
   }
 
-  /** A playlist as this viewer sees it: the songs as their library has them; the cover from all of them. */
+  /**
+   * A playlist as this viewer sees it: the songs as their library has them, with who added those someone else did; the
+   * cover from all of them.
+   */
   private async present(p: PlaylistRow, rows: ItemRow[], viewer: Viewer): Promise<PlaylistDetail> {
-    const items = await this.resolve(rows, viewer.library);
+    const items = await this.resolve(rows, viewer.library, { owner: p.account_id, viewer: viewer.account });
     const all = viewer.library === this.library ? items : await this.resolve(rows, this.library);
     const { info, freeze } = await this.covers.describe(this.coverInput(p, all));
     if (freeze) this.saveCover(p.id, freeze);
     const duration = items.reduce((s, { track }) => s + (track?.duration ?? 0), 0);
+    const mine = p.account_id === viewer.account;
+    const collaborative = isCollaborative(p);
     return {
       id: p.id,
       name: p.name,
@@ -189,21 +217,32 @@ export class Playlists {
       updatedAt: p.updated_at,
       owner: p.owner ?? 'Removed account',
       shared: p.shared === 1,
-      mine: p.account_id === viewer.account,
+      mine,
+      collaborative,
+      canEdit: mine || collaborative,
       items,
     };
   }
 
-  /** The playlist if the viewer may see it (theirs, or shared), and change it ('own': theirs only). */
-  private row(id: number, viewer: Viewer, need: 'see' | 'own' = 'see'): PlaylistRow {
+  /**
+   * The playlist if the viewer may see it (theirs, or shared), change its songs ('songs': theirs, or collaborative), or
+   * change the rest ('own': theirs only).
+   */
+  private row(id: number, viewer: Viewer, need: 'see' | 'songs' | 'own' = 'see'): PlaylistRow {
     const row = this.db.prepare(`${PLAYLIST} WHERE p.id = ?`).get(id) as unknown as PlaylistRow | undefined;
     if (!row || (row.account_id !== viewer.account && row.shared !== 1)) throw new PlaylistError('Playlist not found', 404);
-    if (need === 'own' && row.account_id !== viewer.account) throw new PlaylistError('Only its owner can change this playlist', 403);
-    return row;
+    if (need === 'see' || row.account_id === viewer.account || (need === 'songs' && isCollaborative(row))) return row;
+    throw new PlaylistError(isCollaborative(row) ? 'Only its owner can do that to this playlist' : 'Only its owner can change this playlist', 403);
   }
 
+  /** Its songs in order, with the name of whoever added each. */
   private itemRows(id: number): ItemRow[] {
-    return this.db.prepare('SELECT * FROM playlist_items WHERE playlist_id = ? ORDER BY position').all(id) as unknown as ItemRow[];
+    return this.db
+      .prepare(
+        `SELECT i.*, a.name AS added_by_name FROM playlist_items i LEFT JOIN accounts a ON a.id = i.added_by
+         WHERE i.playlist_id = ? ORDER BY i.position`,
+      )
+      .all(id) as unknown as ItemRow[];
   }
 
   /** The songs for these recordings in the viewer's library, or a 404 naming the first it doesn't have. */
@@ -217,15 +256,16 @@ export class Playlists {
     return tracks;
   }
 
-  private append(id: number, tracks: Track[]) {
+  /** The songs at the end, as added by `account`. */
+  private append(id: number, tracks: Track[], account: number) {
     const { next } = this.db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM playlist_items WHERE playlist_id = ?').get(id) as { next: number };
     const now = new Date().toISOString();
     const insert = this.db.prepare(
-      `INSERT INTO playlist_items (playlist_id, position, recording_id, title, artist_name, album_title, added_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO playlist_items (playlist_id, position, recording_id, title, artist_name, album_title, added_at, added_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     this.transaction(() => {
-      tracks.forEach((t, i) => insert.run(id, next + i, t.recordingId, t.title, t.artistName, t.albumTitle, now));
+      tracks.forEach((t, i) => insert.run(id, next + i, t.recordingId, t.title, t.artistName, t.albumTitle, now, account));
       this.touch(id);
     });
   }
@@ -254,19 +294,36 @@ export class Playlists {
     }
   }
 
-  private resolve(rows: ItemRow[], library: Pick<LibraryView, 'trackByRecording'>): Promise<PlaylistItem[]> {
+  /**
+   * The items as `library` has their songs. Seen by someone (`seen`), each song someone other than the playlist's owner
+   * and that viewer added says who: the owner's are the playlist's own, and the viewer knows their own.
+   */
+  private resolve(
+    rows: ItemRow[],
+    library: Pick<LibraryView, 'trackByRecording'>,
+    seen?: { owner: number; viewer: number },
+  ): Promise<PlaylistItem[]> {
     return Promise.all(
-      rows.map(async (r) => ({
-        itemId: r.id,
-        recordingId: r.recording_id,
-        title: r.title,
-        artistName: r.artist_name,
-        albumTitle: r.album_title,
-        addedAt: r.added_at,
-        track: await library.trackByRecording(r.recording_id),
-      })),
+      rows.map(async (r) => {
+        const credited = seen && r.added_by !== null && r.added_by !== seen.owner && r.added_by !== seen.viewer && r.added_by_name;
+        return {
+          itemId: r.id,
+          recordingId: r.recording_id,
+          title: r.title,
+          artistName: r.artist_name,
+          albumTitle: r.album_title,
+          addedAt: r.added_at,
+          ...(credited ? { addedBy: credited } : {}),
+          track: await library.trackByRecording(r.recording_id),
+        };
+      }),
     );
   }
+}
+
+/** Shared, and taking songs from everyone it's shared with. */
+function isCollaborative(p: Pick<PlaylistRow, 'shared' | 'collaborative'>): boolean {
+  return p.shared === 1 && p.collaborative === 1;
 }
 
 function cleanName(name: string): string {

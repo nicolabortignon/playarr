@@ -1,5 +1,5 @@
-import type { PlaylistItem } from '@playarr/shared';
-import { ListMusic, ListPlus, Lock, Palette, Pencil, Trash, Users, X } from 'lucide-react';
+import type { PlaylistItem, Track } from '@playarr/shared';
+import { ListMusic, ListPlus, Lock, Palette, Pencil, Trash, UserRoundPlus, UserRoundX, Users, X } from 'lucide-react';
 import { Reorder, useDragControls } from 'motion/react';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useNavigate, useParams } from 'react-router';
@@ -15,7 +15,7 @@ import { PlaylistCover } from '../components/PlaylistCover';
 import { PlaylistRecommendations } from '../components/PlaylistRecommendations';
 import { BackButton } from '../components/Section';
 import { EmptyState, ErrorState, SongRowsSkeleton } from '../components/States';
-import { ListRow, SongRow, type RowReorder } from '../components/SongRow';
+import { ArtistAndAlbum, ListRow, SongRow, type RowReorder } from '../components/SongRow';
 import { cn } from '../lib/cn';
 import { formatDuration, plural } from '../lib/format';
 import { restorePlaylistItem, setPlaylistShared, usePlaylist, usePlaylistMutations, useTempos } from '../lib/queries';
@@ -37,6 +37,10 @@ export function PlaylistPage() {
   const tempos = useTempos(items.map((i) => i.track));
   const playable = items.flatMap((i) => (i.track ? [i.track] : []));
   const mine = !!playlist?.mine;
+  const collaborative = !!playlist?.collaborative;
+  // Who changes its songs: its owner, and everyone it's shared with while it's collaborative. A server from before
+  // collaborative playlists doesn't say, and then it's its owner alone.
+  const canEdit = !!playlist && (playlist.canEdit ?? playlist.mine);
   const menu = usePlaylistMenu(
     { id },
     {
@@ -48,6 +52,12 @@ export function PlaylistPage() {
             playlist?.shared
               ? { label: 'Stop sharing', icon: Lock, onSelect: () => stopSharing() }
               : { label: 'Share with everyone', icon: Users, onSelect: () => mutations.update.mutate({ id, shared: true }) },
+            // Only a shared playlist has anyone else to add songs.
+            ...(!playlist?.shared
+              ? []
+              : collaborative
+                ? [{ label: 'Stop others adding', icon: UserRoundX, onSelect: () => mutations.update.mutate({ id, collaborative: false }) }]
+                : [{ label: 'Let others add songs', icon: UserRoundPlus, onSelect: () => mutations.update.mutate({ id, collaborative: true }) }]),
             { label: 'Delete playlist', icon: Trash, onSelect: () => setConfirmDelete(true) },
           ]
         : [],
@@ -59,12 +69,13 @@ export function PlaylistPage() {
     if (playlist) setItems(playlist.items);
   }, [playlist]);
 
-  /** Stop sharing: at once, with Undo. */
+  /** Stop sharing: at once, with Undo, which shares it again as it was (everyone adding songs too, if they could). */
   const stopSharing = () => {
     const name = playlist?.name ?? '';
+    const wasCollaborative = collaborative;
     mutations.update.mutate(
       { id, shared: false },
-      { onSuccess: () => toastWithUndo(`Stopped sharing “${name}”`, () => void setPlaylistShared(id, true)) },
+      { onSuccess: () => toastWithUndo(`Stopped sharing “${name}”`, () => void setPlaylistShared(id, true, wasCollaborative)) },
     );
   };
   /**
@@ -115,7 +126,7 @@ export function PlaylistPage() {
     commitOrder(next);
   };
   const unavailable = items.length - playable.length;
-  // Another account's shared playlist plays here; only its owner changes it.
+  // Another account's shared playlist plays here; only its owner changes it, but for the songs of a collaborative one.
   const canPickCover = mine && items.length > 0;
   const cover = (
     <PlaylistCover
@@ -189,6 +200,7 @@ export function PlaylistPage() {
           formatDuration(playlist.duration),
           unavailable > 0 && `${unavailable} not in library`,
           mine ? playlist.shared && <span title="Everyone on this server can see and play it">Shared with everyone</span> : `Shared by ${playlist.owner}`,
+          collaborative && <span title="Everyone it’s shared with can add songs, move them and remove them">Everyone can add songs</span>,
         )}
       >
         <ActionRow
@@ -212,7 +224,7 @@ export function PlaylistPage() {
       )}
 
       {items.length === 0 ? (
-        mine ? (
+        canEdit ? (
           <EmptyState
             icon={ListPlus}
             title="This playlist is waiting for its first song."
@@ -227,12 +239,12 @@ export function PlaylistPage() {
             <PlaylistRow
               key={item.itemId}
               item={item}
-              editable={mine}
+              editable={canEdit}
               bpm={item.track && tempos[item.track.recordingId]}
               onPlay={() => playFrom(item)}
               onDragEnd={() => commitOrder()}
               own={
-                mine
+                canEdit
                   ? [
                       ...moveItems(i, items.length, move),
                       { label: 'Remove from playlist', icon: X, onSelect: () => removeItem(item, i) },
@@ -245,7 +257,7 @@ export function PlaylistPage() {
         </Reorder.Group>
       )}
 
-      {mine && <PlaylistRecommendations playlistId={id} enabled={items.length > 0} />}
+      {canEdit && <PlaylistRecommendations playlistId={id} enabled={items.length > 0} />}
 
       <CoverPicker playlist={playlist} open={pickingCover} onClose={() => setPickingCover(false)} />
 
@@ -267,7 +279,10 @@ export function PlaylistPage() {
   );
 }
 
-/** A song of the playlist: the one song row, with its owner's Move up, Move down and Remove after a line. */
+/**
+ * A song of the playlist: the one song row, with Move up, Move down and Remove after a line for those who change its
+ * songs, and who added it when that was someone else.
+ */
 function PlaylistRow({
   item,
   editable,
@@ -278,22 +293,25 @@ function PlaylistRow({
   onMove,
 }: {
   item: PlaylistItem;
-  /** The viewer owns the playlist: drag to reorder, move and remove songs. */
+  /** The viewer changes the playlist's songs (its owner, or anyone on a collaborative one): drag to reorder, move and remove them. */
   editable: boolean;
   /** Its measured tempo, if any. */
   bpm: number | undefined;
   onPlay: () => void;
   onDragEnd: () => void;
-  /** Its owner's actions, after the song menu's. */
+  /** Move up, Move down and Remove, after the song menu's. */
   own: MenuItem[];
   onMove: (by: -1 | 1) => void;
 }) {
   const controls = useDragControls();
-  const { track } = item;
+  const { track, addedBy } = item;
   const reorder: RowReorder | undefined = editable ? { value: item, controls, label: `Drag to reorder ${item.title}`, onDragEnd, onMove } : undefined;
 
-  if (track) return <SongRow track={track} onPlay={onPlay} bpm={bpm} reorder={reorder} menu={{ own }} />;
-  // No longer in the library: in its place, greyed, with only the owner's actions.
+  if (track) {
+    const subtitle = addedBy ? <AddedBy track={track} name={addedBy} /> : undefined;
+    return <SongRow track={track} subtitle={subtitle} onPlay={onPlay} bpm={bpm} reorder={reorder} menu={{ own }} />;
+  }
+  // No longer in the library: in its place, greyed, with only Move up, Move down and Remove.
   return (
     <ListRow
       missing
@@ -303,12 +321,33 @@ function PlaylistRow({
       subtitle={
         <>
           {item.artistName} <span className="text-ink-600">·</span> {item.albumTitle}
+          {addedBy && (
+            <>
+              {' '}
+              <span className="text-ink-600">·</span> Added by {addedBy}
+            </>
+          )}
           <span className="ml-2 type-badge">Not in library</span>
         </>
       }
       reorder={reorder}
       menu={{ label: `More for “${item.title}”`, items: own }}
     />
+  );
+}
+
+/** "Massive Attack · Mezzanine · Added by Sam": who added it stays whole while the artist and the album give way. */
+function AddedBy({ track, name }: { track: Track; name: string }) {
+  return (
+    <span className="flex min-w-0">
+      <span className="min-w-0 truncate">
+        <ArtistAndAlbum track={track} />
+      </span>
+      <span className="shrink-0 whitespace-pre">
+        {' '}
+        <span className="text-ink-600">·</span> Added by {name}
+      </span>
+    </span>
   );
 }
 

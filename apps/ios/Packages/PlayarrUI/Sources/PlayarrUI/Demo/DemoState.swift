@@ -62,10 +62,10 @@ final class DemoState: Sendable {
         return state.playlists[0]
       }
     case (.post, "playlists", 2) where second == "holding":
-      // How many of the songs each of the account's own playlists holds, each song once (those holding none left out).
+      // How many of the songs each playlist the account can add to holds, each song once (those holding none left out).
       let wanted = Set(try JSONDecoder().decode(Input.self, from: body ?? Data("{}".utf8)).recordingIds ?? [])
       return library.withLock { state in
-        let counts = state.playlists.filter(\.mine).compactMap { playlist -> (String, Int)? in
+        let counts = state.playlists.filter { $0.canEdit ?? $0.mine }.compactMap { playlist -> (String, Int)? in
           let held = Set(playlist.items.map(\.recordingId)).intersection(wanted).count
           return held > 0 ? (String(playlist.id), held) : nil
         }
@@ -92,6 +92,9 @@ final class DemoState: Sendable {
     try library.withLock { state in
       guard let index = state.playlists.firstIndex(where: { $0.id == id }) else { throw Self.notFound }
       var playlist = state.playlists[index]
+      // As the server: someone else's playlist changes only its songs, and only while it's collaborative.
+      let songs = rest.first == "items" || rest.first == "order"
+      if method != .get, !playlist.mine, !(songs && playlist.collaborative == true) { throw Self.forbidden }
       switch (method, rest.first ?? "", rest.count) {
       case (.get, "", 0):
         return playlist
@@ -112,6 +115,11 @@ final class DemoState: Sendable {
         playlist.name = input.name ?? playlist.name
         playlist.description = input.description ?? playlist.description
         playlist.shared = input.shared ?? playlist.shared
+        // Only a shared playlist takes songs from others; stopping sharing stops that too.
+        if input.collaborative == true, !playlist.shared {
+          throw APIError.server(status: 400, message: "Only a shared playlist can take songs from others")
+        }
+        playlist.collaborative = playlist.shared && (input.collaborative ?? playlist.collaborative ?? false)
       case (.post, "items", 1):
         let input = try JSONDecoder().decode(Input.self, from: body ?? Data("{}".utf8))
         playlist.items += try Self.items(input.recordingIds ?? [], next: &state.nextItem)
@@ -137,6 +145,7 @@ final class DemoState: Sendable {
     var description: String?
     var recordingIds: [String]?
     var shared: Bool?
+    var collaborative: Bool?
   }
 
   private struct FavoriteInput: Decodable { var favoritedAt: String? }
@@ -150,6 +159,7 @@ final class DemoState: Sendable {
   private struct NoBody: Encodable, Sendable {}
 
   private static let notFound = APIError.server(status: 404, message: "Not found")
+  private static let forbidden = APIError.server(status: 403, message: "Only its owner can change this playlist")
 
   private static func items(_ recordingIds: [String], next: inout Int) throws -> [PlaylistItem] {
     try recordingIds.map { id in
@@ -167,7 +177,7 @@ final class DemoState: Sendable {
       cover: PlaylistCoverInfo(
         url: "/art/playlist/\(id)?v=demo", layout: .currents, variant: 0, frozen: true, stale: false, energy: 0.4, styles: [], analyzed: 0,
         total: 0, pending: false),
-      updatedAt: Demo.when, owner: Demo.account.name, shared: shared, mine: true, items: [])
+      updatedAt: Demo.when, owner: Demo.account.name, shared: shared, mine: true, collaborative: false, canEdit: true, items: [])
   }
 
   private static func counted(_ playlist: PlaylistDetail) -> PlaylistDetail {
@@ -183,6 +193,20 @@ final class DemoState: Sendable {
     PlaylistSummary(
       id: playlist.id, name: playlist.name, description: playlist.description, trackCount: playlist.trackCount,
       duration: playlist.duration, cover: playlist.cover, updatedAt: playlist.updatedAt, owner: playlist.owner,
-      shared: playlist.shared, mine: playlist.mine)
+      shared: playlist.shared, mine: playlist.mine, collaborative: playlist.collaborative, canEdit: playlist.canEdit)
+  }
+
+  /// `collaborative`: with Alex's "Sunday kitchen" (`Demo.sundayKitchen`) among the playlists, `-UITestsCollaborative`
+  /// in Debug builds.
+  init(collaborative: Bool = DemoState.collaborative) {
+    if collaborative { library.withLock { $0.playlists.append(Demo.sundayKitchen) } }
+  }
+
+  static var collaborative: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("-UITestsCollaborative")
+    #else
+      false
+    #endif
   }
 }

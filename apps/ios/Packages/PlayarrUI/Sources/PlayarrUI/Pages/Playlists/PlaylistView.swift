@@ -5,7 +5,8 @@ import SwiftUI
 /// A playlist's page (apps/web/src/pages/Playlist.tsx): the cover (tap for a new one), the name (tap to edit), its
 /// songs and whose it is, the action row (Play, Shuffle, Download, ⋯), what it's about, the songs (hold and drag, or
 /// Edit, to reorder; sent on the drop) and "Songs like these". What the cover is drawn from is in the cover picker.
-/// Someone else's shared playlist shows the same page without the ways to change it.
+/// Someone else's shared playlist shows the same page without the ways to change it; a collaborative one with the ways
+/// to change its songs, each saying who added it when that was someone else.
 struct PlaylistView: View {
   @State private var model: PlaylistModel
   @Environment(Theme.self) private var theme
@@ -50,7 +51,7 @@ struct PlaylistView: View {
     .titleInBar(playlist.name)
     #if os(iOS)
       // In the bar's text color: the accent on the bar's glass doesn't read at 4.5:1.
-      .toolbar { if model.mine, model.items.count > 1 { EditButton().tint(Color.paper) } }
+      .toolbar { if model.canEdit, model.items.count > 1 { EditButton().tint(Color.paper) } }
     #endif
     .refreshable { await model.load() }
     .sheet(isPresented: $pickingCover) { CoverPickerView(playlist: model, detail: playlist) }
@@ -62,19 +63,19 @@ struct PlaylistView: View {
         .listRowSeparator(.hidden)
       Section {
         if model.items.isEmpty {
-          // Yours waits for songs to be added (the glyph for adding to a playlist, as the web's); someone else's is a
-          // playlist with nothing in it yet.
+          // One you can add to waits for songs to be added (the glyph for adding to a playlist, as the web's); anyone
+          // else's is a playlist with nothing in it yet.
           EmptyState(
-            systemImage: model.mine ? MenuAction.Kind.addToPlaylist.systemImage : "music.note.list", line: PageLines.playlist(mine: model.mine),
-            underHeader: true)
+            systemImage: model.canEdit ? MenuAction.Kind.addToPlaylist.systemImage : "music.note.list",
+            line: PageLines.playlist(canAdd: model.canEdit), underHeader: true)
             .listRowSeparator(.hidden)
         }
         ForEach(Array(model.items.enumerated()), id: \.element.itemId) { index, item in
           row(item, at: index)
         }
-        .onMove(perform: model.mine ? { move($0, $1) } : nil)
+        .onMove(perform: model.canEdit ? { move($0, $1) } : nil)
       }
-      if model.mine, !model.items.isEmpty {
+      if model.canEdit, !model.items.isEmpty {
         RecommendationsSection(playlist: model)
       }
     }
@@ -129,7 +130,7 @@ struct PlaylistView: View {
             .accessibilityActions { if model.mine { Button("Rename", action: startEditing) } }
         }
       } meta: {
-        MetaLine(model.facts, model.sharing)
+        MetaLine(model.facts, model.sharing, model.whoAdds)
       } actions: {
         ActionRow(
           title: playlist.name, playState: model.playState, disabled: model.playable.isEmpty, play: model.playOrPause,
@@ -188,6 +189,8 @@ struct PlaylistView: View {
     case .newCover: pickingCover = true
     case .share: Task { await model.setShared(true) }
     case .stopSharing: Task { await model.setShared(false) }
+    case .letOthersAdd: Task { await model.setCollaborative(true) }
+    case .stopOthersAdding: Task { await model.setCollaborative(false) }
     case .delete: confirmingDelete = true
     }
   }
@@ -206,15 +209,19 @@ struct PlaylistView: View {
     return "The playlist goes for good\(shared ? ", for everyone it’s shared with" : "")." + stays
   }
 
-  /// A song of the playlist: the one song row, with its owner's Move up, Move down and Remove after a line. One the
-  /// library no longer has stays in its place, grayed, with only those.
+  /// A song of the playlist: the one song row, with Move up, Move down and Remove after a line for whoever changes its
+  /// songs, and who added it when that was someone else. One the library no longer has stays in its place, grayed,
+  /// with only those.
   @ViewBuilder private func row(_ item: PlaylistItem, at index: Int) -> some View {
     let own = model.own(at: index)
+    let credit = PlaylistModel.credit(item)
     if let track = item.track {
       // Dragged within the list to reorder, so not onto the sidebar.
-      SongRow(track: track, drags: false, place: SongMenu.Place(own: own)) { model.play(from: item) }
+      SongRow(track: track, note: credit, drags: false, place: SongMenu.Place(own: own)) { model.play(from: item) }
     } else {
-      MissingSongRow(title: item.title, lead: .cover(album: item.albumTitle), subtitle: [item.artistName, item.albumTitle], own: own)
+      MissingSongRow(
+        title: item.title, lead: .cover(album: item.albumTitle), subtitle: [item.artistName, item.albumTitle] + (credit.map { [$0] } ?? []),
+        own: own)
     }
   }
 }

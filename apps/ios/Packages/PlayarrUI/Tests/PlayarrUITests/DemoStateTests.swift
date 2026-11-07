@@ -37,6 +37,37 @@ import Testing
     await #expect(throws: APIError.server(status: 404, message: "Not found")) { try await api.send(API.Playlists.get(id: 2)) }
   }
 
+  @Test func letsEveryoneAddToAPlaylistOnlyOnceItsShared() async throws {
+    let api = DemoAPI()
+    await #expect(throws: APIError.server(status: 400, message: "Only a shared playlist can take songs from others")) {
+      try await api.send(API.Playlists.update(id: 1, collaborative: true))
+    }
+    let open = try await api.send(API.Playlists.update(id: 1, shared: true, collaborative: true))
+    #expect(open.collaborative == true)
+    #expect(try await api.send(API.Playlists.list()).first?.collaborative == true)
+    // Stopping sharing stops it too.
+    #expect(try await api.send(API.Playlists.update(id: 1, shared: false)).collaborative == false)
+  }
+
+  @Test func addsToSomeoneElsesCollaborativePlaylistButChangesNothingElseOfIt() async throws {
+    let api = DemoAPI(state: DemoState(collaborative: true))
+    let kitchen = try #require(try await api.send(API.Playlists.list()).first { $0.name == "Sunday kitchen" })
+    #expect(kitchen.mine == false)
+    #expect(kitchen.canEdit == true)
+    #expect(try await api.send(API.Playlists.get(id: kitchen.id)).items.map(\.addedBy) == [nil, "Sam", nil])
+    let added = try await api.send(API.Playlists.addItems(id: kitchen.id, recordingIds: ["rec-700"]))
+    #expect(added.items.map(\.title) == ["Protection", "Sour Times", "Karmacoma", "Angel"])
+    // The demo account added Angel: it says nothing of whose it is to them.
+    #expect(added.items.last?.addedBy == nil)
+    #expect(try await api.send(API.Playlists.holding(recordingIds: ["rec-700"])).count(kitchen.id) == 1)
+    await #expect(throws: APIError.server(status: 403, message: "Only its owner can change this playlist")) {
+      try await api.send(API.Playlists.update(id: kitchen.id, name: "Mine now"))
+    }
+    await #expect(throws: APIError.server(status: 403, message: "Only its owner can change this playlist")) {
+      try await api.send(API.Playlists.delete(id: kitchen.id))
+    }
+  }
+
   @Test func savesTheMixAsAPlaylist() async throws {
     let api = DemoAPI()
     let saved = try await api.send(API.Mixes.save(key: "vibes"))

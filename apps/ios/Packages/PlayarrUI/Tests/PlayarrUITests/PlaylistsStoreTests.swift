@@ -11,14 +11,15 @@ import Testing
     PlaylistsStore(api: api, queries: QueryCache(directory: nil), toasts: toasts, clock: clock)
   }
 
-  @Test func offersOnlyYourOwnToAddTo() async {
-    let mine = Listening.summary(Listening.playlist(1, "Mine"))
-    let theirs = Listening.summary(Listening.playlist(2, "Theirs", mine: false, shared: true, owner: "Sam"))
-    api.on(.get, "/api/playlists", [theirs, mine])
+  @Test func offersYourOwnToAddToAndThoseOthersLetEveryoneAddTo() async {
+    let mine = Listening.summary(Listening.playlist(1, "Mine", collaborative: false, canEdit: true))
+    let theirs = Listening.summary(Listening.playlist(2, "Theirs", mine: false, shared: true, owner: "Sam", collaborative: false, canEdit: false))
+    let ours = Listening.summary(Listening.playlist(3, "Ours", mine: false, shared: true, owner: "Sam", collaborative: true, canEdit: true))
+    api.on(.get, "/api/playlists", [ours, theirs, mine])
     let store = store()
     await store.load()
-    #expect(store.playlists?.map(\.name) == ["Theirs", "Mine"])
-    #expect(store.mine.map(\.name) == ["Mine"])
+    #expect(store.playlists?.map(\.name) == ["Ours", "Theirs", "Mine"])
+    #expect(store.addable.map(\.name) == ["Ours", "Mine"])
   }
 
   @Test func createsWithTheSongsAndSaysSo() async {

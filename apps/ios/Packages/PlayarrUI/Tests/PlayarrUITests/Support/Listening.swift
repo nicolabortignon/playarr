@@ -24,19 +24,23 @@ enum Listening {
   /// Angel, Risingson and Inertia Creeps as items 1, 2 and 3.
   static let three = [item(1, angel), item(2, risingson), item(3, inertia)]
 
+  /// A playlist as the server answers it. `collaborative` and `canEdit` left out answer as a server from before
+  /// collaborative playlists does.
   static func playlist(
     _ id: Int = 5, _ name: String = "Road trip", items: [PlaylistItem] = [], mine: Bool = true, shared: Bool = false,
-    owner: String = "Demo", pending: Bool = false
+    owner: String = "Demo", pending: Bool = false, collaborative: Bool? = nil, canEdit: Bool? = nil
   ) -> PlaylistDetail {
     PlaylistDetail(
       id: id, name: name, description: "", trackCount: items.count, duration: items.compactMap(\.track).reduce(0) { $0 + $1.duration },
-      cover: cover(pending: pending), updatedAt: "2026-11-03T10:00:00.000Z", owner: owner, shared: shared, mine: mine, items: items)
+      cover: cover(pending: pending), updatedAt: "2026-11-03T10:00:00.000Z", owner: owner, shared: shared, mine: mine,
+      collaborative: collaborative, canEdit: canEdit, items: items)
   }
 
   static func summary(_ detail: PlaylistDetail) -> PlaylistSummary {
     PlaylistSummary(
       id: detail.id, name: detail.name, description: detail.description, trackCount: detail.trackCount, duration: detail.duration,
-      cover: detail.cover, updatedAt: detail.updatedAt, owner: detail.owner, shared: detail.shared, mine: detail.mine)
+      cover: detail.cover, updatedAt: detail.updatedAt, owner: detail.owner, shared: detail.shared, mine: detail.mine,
+      collaborative: detail.collaborative, canEdit: detail.canEdit)
   }
 
   static func mix(refreshesAt: String = "2026-11-03T12:00:00.000Z", tracks: [Track] = []) -> MixDetail {

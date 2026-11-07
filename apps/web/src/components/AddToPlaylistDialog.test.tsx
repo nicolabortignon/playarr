@@ -85,6 +85,22 @@ describe('Add to playlist', () => {
     expect(useToasts.getState().toasts.map((t) => t.message)).toEqual(['Added 2 songs to “Late night” and “Gym”']);
   });
 
+  it('offers the playlists others let everyone add to, saying whose they are', async () => {
+    const kitchen = playlist(5, 'Kitchen', { mine: false, owner: 'Sam', shared: true, collaborative: true, canEdit: true });
+    vi.mocked(api.playlists).mockResolvedValue([...PLAYLISTS, kitchen]);
+    const add = vi.spyOn(api, 'addToPlaylist').mockResolvedValue({ ...kitchen, items: [] });
+    picker([song(1)]);
+    const choice = await screen.findByRole('checkbox', { name: /Kitchen/ });
+    expect(choice.textContent).toContain('12 songs · Sam');
+    // The account's own (Alex's) don't say whose they are.
+    expect(screen.getByRole('checkbox', { name: /Road trip/ }).textContent).not.toContain('Alex');
+    // Shared, but only Sam adds to Sam’s mix.
+    expect(screen.queryByRole('checkbox', { name: /Sam’s mix/ })).toBeNull();
+    fireEvent.click(choice);
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(add).toHaveBeenCalledWith(5, ['rec-1']));
+  });
+
   it('asks which playlists hold the songs while it’s open, and afresh at the next opening, not once it has closed', async () => {
     const client = picker([song(1)]);
     await screen.findByRole('checkbox', { name: /Road trip/ });

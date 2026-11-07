@@ -13,10 +13,17 @@ import Testing
     #expect(UTType.playarrTracks.identifier == "me.tracklistme.playarr.tracks")
   }
 
-  @Test func dropsOnlyOnYourOwnPlaylists() {
+  @Test func dropsOnYourOwnPlaylistsAndThoseOthersLetEveryoneAddTo() {
     var shared = Demo.playlist
     #expect(TrackDrag.accepts(shared))
     shared.mine = false
+    shared.canEdit = false
+    #expect(!TrackDrag.accepts(shared))
+    shared.collaborative = true
+    shared.canEdit = true
+    #expect(TrackDrag.accepts(shared))
+    // A server from before collaborative playlists says nothing: only your own take songs.
+    shared.canEdit = nil
     #expect(!TrackDrag.accepts(shared))
   }
 }

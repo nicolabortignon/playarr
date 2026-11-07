@@ -60,11 +60,13 @@ Details in [streaming-and-art.md](streaming-and-art.md) and [../mixing.md](../mi
 | method and path | purpose | who |
 |---|---|---|
 | `GET /api/favorites`; `PUT\|DELETE /api/favorites/:recordingId` | the account's favorites; `PUT` takes an optional `{ favoritedAt }` (an ISO time, not in the future) to put a favorite taken back where it was | signed in |
-| `GET\|POST /api/playlists`; `GET\|PATCH\|DELETE /api/playlists/:id` | the account's playlists and those shared with everyone; only the owner changes one | signed in |
-| `POST /api/playlists/:id/items`, `DELETE /api/playlists/:id/items/:itemId`, `PUT /api/playlists/:id/order` | add, remove and reorder songs | signed in |
-| `POST /api/playlists/holding` | `{ recordingIds }` → `{ holding: { [playlistId]: n } }`: how many of those songs each of the account's own playlists already holds, for Add to playlist's ticks | signed in |
-| `PUT /api/playlists/:id/cover` | choose the generated cover's layout and variant ([playlist-covers.md](playlist-covers.md)) | signed in |
+| `GET\|POST /api/playlists`; `GET\|PATCH\|DELETE /api/playlists/:id` | the account's playlists and those shared with everyone; only the owner renames, describes, shares or deletes one, or makes a shared one collaborative (`PATCH { collaborative }`: 400 on a private one, and `{ shared: false }` stops it too) | signed in |
+| `POST /api/playlists/:id/items`, `DELETE /api/playlists/:id/items/:itemId`, `PUT /api/playlists/:id/order` | add, remove and reorder songs: its owner, or anyone it's shared with while it's collaborative (403 otherwise). Songs added are the adder's, from what they may hear | signed in |
+| `POST /api/playlists/holding` | `{ recordingIds }` → `{ holding: { [playlistId]: n } }`: how many of those songs each playlist the account can add to (its own, and collaborative ones shared with it) already holds, for Add to playlist's ticks | signed in |
+| `PUT /api/playlists/:id/cover` | choose the generated cover's layout and variant ([playlist-covers.md](playlist-covers.md)); the owner only | signed in |
 | `GET /api/playlists/:id/recommendations` | "Songs like these" | signed in |
+
+**Collaborative playlists.** Beside `mine`, a playlist answers `collaborative` (shared, and everyone it's shared with adds, removes and reorders its songs) and `canEdit` (the asker may: its owner, or anyone while it's collaborative); each item says `addedBy`, the display name of whoever added it, when that was neither the playlist's owner nor the asker. Each song records the account that added it (`playlist_items.added_by`); songs from before that, and those of an account since removed, have none. All three fields are optional in the shared types, as servers from before them don't send them: the apps read none as false, as `mine`, and as nobody.
 
 ### Discover and requests
 

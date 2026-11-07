@@ -48,7 +48,7 @@ Nobody needs a Lidarr account or to know about quality profiles. Lidarr stays an
 
 ### <img src="docs/images/icons/users.svg" width="22" height="22" alt=""> Everyone gets their own
 
-- **One account per person**, each with its own favourites, playlists, history and mixes. A playlist can be shared with everyone on the server.
+- **One account per person**, each with its own favourites, playlists, history and mixes. A playlist can be shared with everyone on the server, and built together: let the others add songs, and each song shows who added it.
 - **You decide who hears what.** Admins choose which music each person can hear and whether they may request albums.
 - **Easy invites.** Hand someone a one-time setup code and they choose their own password.
 

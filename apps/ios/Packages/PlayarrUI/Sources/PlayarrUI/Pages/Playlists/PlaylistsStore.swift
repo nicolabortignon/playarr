@@ -27,8 +27,9 @@ public final class PlaylistsStore {
     playlists = queries.cached(.playlists, as: [PlaylistSummary].self)?.value
   }
 
-  /// Only your own: "Add to playlist" lists these (others' shared playlists can't be changed).
-  public var mine: [PlaylistSummary] { playlists?.filter(\.mine) ?? [] }
+  /// Those you can add songs to, as "Add to playlist" and the sidebar's drops offer them: your own, and collaborative
+  /// ones shared with you (others' shared playlists are changed by their owners).
+  public var addable: [PlaylistSummary] { playlists?.filter(TrackDrag.accepts) ?? [] }
 
   public func load() async {
     do {

@@ -74,7 +74,83 @@ import Testing
     await model.setShared(true)
     #expect(api.bodies(.patch, "/api/playlists/5") == [#"{"shared":true}"#])
     #expect(model.sharing == "Shared with everyone")
-    #expect(model.ownerActions == [.rename, .newCover, .stopSharing, .delete])
+    #expect(model.ownerActions == [.rename, .newCover, .stopSharing, .letOthersAdd, .delete])
+  }
+
+  // MARK: Built together
+
+  @Test func letsTheOwnerLetOthersAddSongsToASharedPlaylistAndStopThem() async {
+    let (model, session) = await model(Listening.playlist(items: three, shared: true, collaborative: false, canEdit: true))
+    #expect(model.whoAdds == nil)
+    api.on(.patch, "/api/playlists/5", Listening.playlist(items: three, shared: true, collaborative: true, canEdit: true))
+    await model.setCollaborative(true)
+    #expect(api.bodies(.patch, "/api/playlists/5") == [#"{"collaborative":true}"#])
+    #expect(model.whoAdds == "Everyone can add songs")
+    #expect(model.ownerActions == [.rename, .newCover, .stopSharing, .stopOthersAdding, .delete])
+    api.on(.patch, "/api/playlists/5", Listening.playlist(items: three, shared: true, collaborative: false, canEdit: true))
+    await model.setCollaborative(false)
+    #expect(api.bodies(.patch, "/api/playlists/5").last == #"{"collaborative":false}"#)
+    #expect(model.whoAdds == nil)
+    // Nothing is lost either way: no toast, no Undo.
+    #expect(session.toasts.toasts.isEmpty)
+  }
+
+  @Test func aPrivatePlaylistHasNoOneElseToAddSongs() async {
+    let (model, _) = await model(Listening.playlist(items: three))
+    await model.setCollaborative(true)
+    #expect(api.calls(.patch, "/api/playlists/5").isEmpty)
+  }
+
+  @Test func everyoneItsSharedWithChangesTheSongsOfACollaborativePlaylistAndNothingElse() async {
+    let theirs = Listening.playlist(items: three, mine: false, shared: true, owner: "Sam", collaborative: true, canEdit: true)
+    let (model, session) = await model(theirs)
+    #expect(model.canEdit)
+    #expect(model.sharing == "Shared by Sam")
+    #expect(model.whoAdds == "Everyone can add songs")
+    #expect(model.own(at: 0).map(\.kind) == [.moveDown, .remove])
+    api.on(.put, "/api/playlists/5/order", Listening.playlist(items: [three[1], three[0], three[2]], mine: false, shared: true, collaborative: true, canEdit: true))
+    await model.move(0, to: 1)
+    #expect(api.bodies(.put, "/api/playlists/5/order") == [#"{"itemIds":[2,1,3]}"#])
+    api.on(.delete, "/api/playlists/5/items/3", Listening.playlist(items: [three[1], three[0]], mine: false, shared: true, collaborative: true, canEdit: true))
+    await model.remove(three[2])
+    #expect(model.items.map(\.itemId) == [2, 1])
+    #expect(session.toasts.toasts.last?.action?.label == "Undo")
+    // Its name, cover, sharing and deleting it stay its owner's.
+    #expect(model.ownerActions.isEmpty)
+    #expect(!model.canPickCover)
+    #expect(await model.save(name: "Mine now", description: ""))
+    await model.setShared(false)
+    await model.setCollaborative(false)
+    #expect(!(await model.delete()))
+    #expect(api.calls(.patch, "/api/playlists/5").isEmpty)
+    #expect(api.calls(.delete, "/api/playlists/5").isEmpty)
+  }
+
+  @Test func aPlaylistFromAServerBeforeCollaborativeOnesIsItsOwnersToChange() async {
+    let (theirs, _) = await model(Listening.playlist(items: three, mine: false, shared: true, owner: "Sam"))
+    #expect(!theirs.canEdit)
+    #expect(!theirs.collaborative)
+    let (mine, _) = await model(Listening.playlist(6, items: three))
+    #expect(mine.canEdit)
+  }
+
+  @Test func saysWhoAddedASongWhenItWasSomeoneElse() {
+    var added = three[1]
+    added.addedBy = "Sam"
+    #expect(PlaylistModel.credit(added) == "Added by Sam")
+    #expect(PlaylistModel.credit(three[0]) == nil)
+  }
+
+  @Test func stoppingSharingACollaborativePlaylistTakesUndoBackToEveryoneAdding() async throws {
+    let (model, session) = await model(Listening.playlist(items: three, shared: true, collaborative: true, canEdit: true))
+    api.on(.patch, "/api/playlists/5", Listening.playlist(items: three, shared: false, collaborative: false, canEdit: true))
+    await model.setShared(false)
+    #expect(model.whoAdds == nil)
+    let toast = try #require(session.toasts.toasts.first)
+    api.on(.patch, "/api/playlists/5", Listening.playlist(items: three, shared: true, collaborative: true, canEdit: true))
+    session.toasts.perform(toast)
+    await eventually { model.whoAdds != nil }
+    #expect(api.bodies(.patch, "/api/playlists/5") == [#"{"shared":false}"#, #"{"collaborative":true,"shared":true}"#])
   }
 
   @Test func offersOnlyWhatAnEmptyOrUnavailablePlaylistCanDo() async {

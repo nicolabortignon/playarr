@@ -103,7 +103,7 @@ public enum Demo {
   public static let playlist = PlaylistSummary(
     id: 1, name: "Late night", description: "For the drive home", trackCount: 2, duration: 677,
     cover: PlaylistCoverInfo(url: "/art/playlist/1?v=demo", layout: .currents, variant: 0, frozen: true, stale: false, energy: 0.4, styles: [], analyzed: 2, total: 2, pending: false),
-    updatedAt: when, owner: "Demo", shared: false, mine: true)
+    updatedAt: when, owner: "Demo", shared: false, mine: true, collaborative: false, canEdit: true)
 
   public static let favorite = FavoriteTrack(
     id: 701, recordingId: "rec-701", fileId: 9701, albumId: 70, artistId: 7, title: "Risingson",

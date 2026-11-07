@@ -53,7 +53,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 - **Page header**, for tabs and library lists (web `PageHeader`, iOS `.pageHeader(_:count:)`): the page's name as a large title, the page's controls (sort, filter, Edit) on the right. The count is in `type-meta` `muted`: beside the title on the web, under it as the navigation subtitle on iOS, where the system's large title (in Gloock) has no room beside it. On iPad, pages opened from the sidebar show their title inline in the bar, as iPadOS chooses; pushed pages show it large.
 - **Detail header**, for everything you can play (web and iOS `DetailHeader`): cover · kicker saying what it is · title · one meta line, its parts joined by dots · the action row. On a phone the cover is at most 256 wide (64 % of the screen), above the words, so Play shows on the first screen, down to the iPhone SE. At iPad width the cover (240, or a 192 circle) sits beside the words, aligned to their foot, with the action row under them.
   - An album's meta line: the artist (linked, with their photo) · year · N songs · length, then the format badge. Missing songs show in the list, not here. Where it doesn't fit on one line, the artist goes on a line of its own and the rest under it; it never wraps around the badge.
-  - A playlist's meta line: songs · length · sharing ("Shared with everyone", "Shared by Sam"). Its description comes after the action row.
+  - A playlist's meta line: songs · length · sharing ("Shared with everyone", "Shared by Sam"), then "Everyone can add songs" while it's collaborative. Its description comes after the action row.
   - An artist: the kicker is "Artist", the meta line their counts ("2 albums · 5 songs"), and their genres go in About's kicker. An artist with a photo of their own gets a band (taller where it would otherwise go under the bar); one without gets a small circle with their best album cover (or a vinyl monogram), not an empty band.
   - Release kinds are named "Album", "EP", "Live album", "Live EP", "Compilation", "DJ mix", "Mixtape", "Loose songs" and "Release" (`releaseKind`). Cards on an artist's own page, in the library or beyond it, say the kind and year ("Album · 1998", "EP · 2019"), and how much of an album you have when it's only part ("8 of 12"; to an admin only, who can fill it in), without the artist's name or a badge. A card's second line is `type-small` everywhere, its figures tabular.
 - **A title appears once per screen.** A playlist's or mix's own cover drops its name on its page; cards keep it. On iOS the bar shows a detail page's name only once the page's own title has scrolled under it.
@@ -73,7 +73,8 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 - **Escape closes only what's on top:** a menu, then the dialog it's in, then Now Playing, one at a time. A field that uses Escape itself (renaming a playlist) keeps it.
 - **Dialogs:** one body padding (20), their buttons in a footer that stays in view while the body scrolls, three widths (448, wide 768, wider 896), the first field focused as they open, and a bottom sheet on a phone.
 - **Toasts:** what happened, naming the song in curly quotes ("“Teardrop” plays next", "3 songs play next"), with Undo where it can be taken back. A toast stays 3.5 seconds, an error 7, one with Undo 6, longer while it's hovered or focused (on iOS, while VoiceOver or the pointer is on it). At most three show at once, and a repeat replaces the one before it. On iOS VoiceOver can dismiss one (an action, and the escape gesture), and "Later" is only on toasts that don't go by themselves.
-- **Add to playlist** ticks the playlists that already hold all the songs (a dash for some), and adds to several at once. On iOS the tick (green) or dash (gray) sits on the playlist's cover, and Add is in the sheet's bar.
+- **Add to playlist** ticks the playlists that already hold all the songs (a dash for some), and adds to several at once. On iOS the tick (green) or dash (gray) sits on the playlist's cover, and Add is in the sheet's bar. It lists the playlists you can add to: your own, and collaborative ones shared with you, whose line says whose they are ("12 songs · Sam").
+- **Playlists built together:** a shared playlist's owner lets everyone it's shared with add, move and remove its songs (Let others add songs, Stop others adding); its name, cover, sharing and deleting it stay theirs. A song someone else added says so after its artist and album ("Added by Sam"), kept whole while they give way; the owner's songs and your own say nothing.
 - **Cards:** one width on every shelf (web `SHELF_CARD`, 42 % of a phone's width; iOS `ShelfCard.width`, 160 points). An artist is a circle with the name below: their photo, else their best album cover, else a vinyl monogram.
 - **A place to go** (Library's rows, Settings on a phone) is one row: the place's icon on a tile, its name, a chevron (web `NavRow`).
 - **A ⋯ menu says its actions in words**, each with its icon: a source's Sync now · Match again · Organize files · Edit · Move up · Move down, then Remove; an account's the same way. Never a row of icon-only buttons for things that change the server.
@@ -100,8 +101,8 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
   | Downloads | Nothing in the record bag yet. | Download an album, a playlist or a mix, and it plays here with or without a connection. | Browse albums |
   | Downloads, a browser without HTTPS | Downloads need a secure connection. | Browsers only keep music on a device over HTTPS. | |
   | Playlists | Make a playlist for a mood, a trip or a friend. | | New playlist |
-  | A playlist of your own | This playlist is waiting for its first song. | Choose Add to playlist… in any song's ⋯ menu. | |
-  | Someone else's playlist | Nothing in this playlist yet. | | |
+  | A playlist you can add to (your own, or a collaborative one) | This playlist is waiting for its first song. | Choose Add to playlist… in any song's ⋯ menu. | |
+  | Anyone else's playlist | Nothing in this playlist yet. | | |
   | Albums | Your crates are empty. | Admin: Add Lidarr or a folder of music, and it shows up here. Member: Music shows up here once an admin adds some. | Admin: Add music |
   | Artists | Nobody on the roster yet. | (as Albums) | (as Albums) |
   | An artist | Nothing by {artist} here yet. | | |
@@ -224,6 +225,7 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | New cover… | `Palette` | `paintpalette` | |
   | Share with everyone | `Users` | `person.2` | |
   | Stop sharing | `Lock` | `lock` | |
+  | Let others add songs, Stop others adding | `UserRoundPlus`, `UserRoundX` | `person.crop.circle.badge.plus`, `person.crop.circle.badge.xmark` | a person with a plus or a cross; Add account's is `UserPlus`, `person.badge.plus` |
   | A disc's heading | `Disc3` | `opticaldisc` | |
   | Reshuffle, Other suggestions, a cover's Shuffle | `Dices` | `dice` | |
 
