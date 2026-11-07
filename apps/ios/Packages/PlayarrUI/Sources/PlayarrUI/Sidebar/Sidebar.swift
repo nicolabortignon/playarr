@@ -123,7 +123,7 @@ struct Sidebar: View {
   }
 
   /// Playarr's own near-black behind the sidebar.
-  private static let dark = Color(red: 0x0F / 255, green: 0x0E / 255, blue: 0x0C / 255)
+  private static let dark = Color.ink950
 
   /// A row outside the list (Settings at the foot, the folded bar), drawn as the list draws a selected or plain row.
   private func row(_ item: SidebarItem, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -131,7 +131,7 @@ struct Sidebar: View {
       place(item.title, systemImage: item.systemImage, selected: selected)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .padding(.horizontal, 12)
-        .background(selected ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 12))
+        .background(selected ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: Radius.panel))
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)

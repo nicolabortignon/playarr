@@ -77,7 +77,7 @@ private struct RequestsList: View {
   /// Nothing requested: how to ask, or why asking isn't possible here and who can change that.
   private func empty(_ state: NoRequests) -> some View {
     EmptyState(
-      systemImage: "arrow.down.to.line", line: state.line,
+      systemImage: "binoculars", line: state.line,
       fill: state.action.map { action in
         .action(
           EmptyState.Action(action.title, systemImage: action.systemImage) {

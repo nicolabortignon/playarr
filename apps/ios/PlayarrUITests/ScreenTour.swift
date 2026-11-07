@@ -159,21 +159,22 @@ final class ScreenTour: XCTestCase {
       }
     }
 
-    // Home's listening button: playing, the cover alone with a pause sign; tapped, paused, Resume and the title.
+    // Home while the mini player shows: beside Feeling lucky, what comes next, as the mini player has play and pause.
     if tap(tab("Home")) {
       app.swipeDown()
       shot("05b-home-playing")
-      if tap(button(beginningWith: "Pause"), timeout: 2) {
-        shot("05c-home-paused")
-        tap(button(beginningWith: "Resume"), timeout: 2)
-      }
     }
 
+    // Now Playing, with Lyrics, AirPlay and Up next under the transport; Lyrics, then Up next, in the cover's place.
     if tap(app.buttons["Open now playing"]) {
       shot("06-now-playing")
       if tap(app.buttons["Lyrics"]) {
         shot("07-lyrics")
         tap(app.buttons["Lyrics"])
+      }
+      if tap(app.buttons["Up next"], timeout: 2) {
+        shot("07b-up-next")
+        tap(app.buttons["Up next"])
       }
       tap(app.buttons["Close now playing"])
     }
@@ -373,8 +374,9 @@ final class ScreenTour: XCTestCase {
     if tap(tab("Search")) { shot("07-search") }
   }
 
-  /// The iPad, sideways as it's mostly held: Home, an album, the artist, the albums, Now Playing, the queue and lyrics
-  /// columns, a playlist, Favorites, a mix, Settings and its Playback, Your listening and Search.
+  /// The iPad, sideways as it's mostly held: Home (the idle player bar), an album, the player bar's song menu, the
+  /// artist, the albums, Now Playing, the queue and lyrics columns, a playlist, Favorites, a mix, Settings and its
+  /// Playback, Your listening and Search (the player bar out of the keyboard's way).
   @MainActor
   func testTheMainScreensOnIPad() throws {
     try XCTSkipUnless(onIPad, "The iPad's tour")
@@ -396,6 +398,13 @@ final class ScreenTour: XCTestCase {
       shot("02-album")
       if tap(app.buttons["Play Mezzanine"]) {
         shot("03-album-playing")
+        // The player bar's song, held: the one song menu for the song playing.
+        let song = app.buttons["Angel, Massive Attack"].firstMatch
+        if song.waitForExistence(timeout: 3) {
+          song.press(forDuration: 1)
+          shot("03b-player-bar-menu", after: 1)
+          app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        }
         if tap(app.descendants(matching: .any)["playerBar.queue"].firstMatch) { shot("04-queue-column") }
         if tap(app.descendants(matching: .any)["playerBar.lyrics"].firstMatch) { shot("05-lyrics-column") }
         tap(app.descendants(matching: .any)["playerBar.lyrics"].firstMatch, timeout: 1)

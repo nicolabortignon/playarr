@@ -8,7 +8,7 @@ The rules are the web player's (`apps/web/src/player`), ported file for file whe
 
 ## 1. Who does what
 
-- **`Player`** (`Player.swift`, `@MainActor @Observable`): the queue (`QueueState`, a port of the web's `store.ts`) and its 10 Hz clock. Every change goes through a method on it, which edits `queue` and then `sync()`s everything else: the engine, levels, transitions, radio, keep-ahead, Now Playing and the saved queue (`queue.json`, written every 5 s and on close).
+- **`Player`** (`Player.swift`, `@MainActor @Observable`): the queue (`QueueState`, a port of the web's `store.ts`) and its 10 Hz clock. Every change goes through a method on it, which edits `queue` and then `sync()`s everything else: the engine, levels, transitions, radio, keep-ahead, Now Playing and the saved queue (`queue.json`, written every 5 s and on close). The 5 s save notes where to resume past `queue`'s observation (`_queue`), since no view shows it: a change to `queue` redraws every view of the queue, and a redraw closes any menu open on one.
 - **`Player.live`** (`PlayerLive.swift`): the player as the app runs it, with `NowPlayingBridge`, `AudioSessionController`, `NetworkMonitor`, the background download session and app-life notifications wired in.
 - **`AudioEngine`** (`AudioEngine.swift`, `@MainActor`): the AVAudioEngine graph and everything placed on its timeline.
 - **`Deck`** (`Deck.swift`): one player node fed from one `PCMSource`.

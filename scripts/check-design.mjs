@@ -7,9 +7,9 @@
 // Where a raw value is the point, ALLOW below says where and why.
 //
 // Usage: node scripts/check-design.mjs [--app web|ios] [--report] [--root <dir>]
-//   Both apps unless --app names one. The web enforces the check: any finding fails (exit 1), and the web's typecheck
-//   runs it. iOS is report-only until its own sweep: its findings are counted, never failed. --report lists every
-//   finding of the apps checked and exits 0. --root checks another copy of the repo (the check's own test does).
+//   Both apps unless --app names one. Both enforce the check: any finding fails (exit 1). The web's typecheck runs it,
+//   and iOS's `make build` and `make test` (apps/ios/Makefile, `design-check`). --report lists every finding of the
+//   apps checked and exits 0. --root checks another copy of the repo (the check's own tests do).
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
@@ -37,7 +37,7 @@ const RULES = [
   },
   {
     app: 'ios',
-    enforced: false,
+    enforced: true,
     dir: 'apps/ios/Packages/PlayarrUI/Sources/PlayarrUI',
     files: /\.swift$/,
     skip: /^Theme\//,
@@ -68,7 +68,20 @@ const ALLOW = {
     },
     { file: 'components/Nav.tsx', check: 'arbitrary text size', match: /text-\[1\.6rem\]/, reason: 'the wordmark is a logo, set at its own size' },
   ],
-  ios: [],
+  ios: [
+    {
+      file: 'Transitions/EnergyAroundTheMix.swift',
+      check: 'literal corner radius',
+      reason: 'the energy chart’s phrase bars, marks drawn to the data’s scale rather than a surface (the web’s are rounded-t-[4px])',
+    },
+    { file: 'MixPoints/MixPointsStrip.swift', check: 'literal corner radius', reason: 'the same energy chart’s phrase bars, under the mix points' },
+    {
+      file: 'StatsForNerds/StatsForNerdsOverlay.swift',
+      check: 'literal corner radius',
+      match: /cornerRadius: 1\)/,
+      reason: 'the energy strip’s one-point bars, a data chart (the web’s are rounded-[1px])',
+    },
+  ],
 };
 
 function* walk(dir) {
@@ -83,6 +96,12 @@ function* walk(dir) {
 function allowed(app, file, check, line) {
   return ALLOW[app].some((a) => a.file === file && [a.check].flat().includes(check) && (!a.match || a.match.test(line)));
 }
+
+/** What to use instead, by app, when a finding fails the check. */
+const HINT = {
+  web: 'Use index.css’s tokens and type-* roles (docs/design.md)',
+  ios: 'Use Theme/’s tokens: Radius.*, the type roles, IconRole and the palette (docs/design.md)',
+};
 
 /** Every raw value in the apps' sources: { app, file, line, check, text }. */
 export function findings(root, apps) {
@@ -135,7 +154,10 @@ function main(argv) {
   }
   const passing = apps.filter((a) => enforced.has(a));
   if (!failing.length && passing.length) console.log(`Design check (${passing.join(', ')}): no raw colors or sizes where the tokens should be.`);
-  else if (failing.length && !report) console.log(`\nUse index.css’s tokens and type-* roles (docs/design.md), or add the file to ALLOW in scripts/check-design.mjs with a reason.`);
+  else if (failing.length && !report) {
+    const hints = [...new Set(failing.map((f) => HINT[f.app]))].join('; ');
+    console.log(`\n${hints}, or add the file to ALLOW in scripts/check-design.mjs with a reason.`);
+  }
   return failing.length && !report ? 1 : 0;
 }
 

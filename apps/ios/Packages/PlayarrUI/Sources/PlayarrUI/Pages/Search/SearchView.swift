@@ -142,7 +142,7 @@ struct SearchView: View {
             Spacer()
           }
           .padding(16)
-          .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.08)))
+          .background(RoundedRectangle(cornerRadius: Radius.panel).fill(Color.secondary.opacity(0.08)))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 20)

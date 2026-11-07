@@ -74,7 +74,7 @@ struct AppearancePanel: View {
       Group {
         switch accent {
         case .album:
-          RoundedRectangle(cornerRadius: 6).fill(
+          RoundedRectangle(cornerRadius: Radius.tile).fill(
             LinearGradient(colors: [RGB(hex: 0xff7a1a).color, RGB(hex: 0xf43f5e).color, RGB(hex: 0xa78bfa).color, RGB(hex: 0x38bdf8).color], startPoint: .topLeading, endPoint: .bottomTrailing))
         case .fixed(let color):
           Circle().fill(color.rgb.color)

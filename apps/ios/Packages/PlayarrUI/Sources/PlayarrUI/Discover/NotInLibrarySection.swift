@@ -2,7 +2,8 @@ import PlayarrAPI
 import SwiftUI
 
 /// On a library artist's page: their albums and EPs not in the library at all, from their MusicBrainz discography,
-/// each with Request (pages/Artist.tsx NotInLibrary). Only for artists with a MusicBrainz id, on a server with Lidarr.
+/// each with Request where requesting is possible (pages/Artist.tsx NotInLibrary). For every artist with a MusicBrainz
+/// id, with or without Lidarr (without, the server reads the discography from MusicBrainz itself), as on the web.
 public struct NotInLibrarySection: View {
   let artistMbid: String
   let owned: [Album]
@@ -20,7 +21,7 @@ public struct NotInLibrarySection: View {
   }
 
   public var body: some View {
-    if let context, context.gate.hasLidarr {
+    if let context {
       content
         .task(id: context.generation(.discoverArtist)) { await load(context) }
     }

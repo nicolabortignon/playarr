@@ -27,6 +27,9 @@ public struct RequestButton: View {
     self.placement = placement
   }
 
+  /// Request's glyph (docs/design.md, Icons), as Requests' own in the sidebar and Library.
+  static let requestImage = "binoculars"
+
   public var body: some View {
     if let context {
       control(context.requests.buttonState(for: album, availability: availability, allowed: context.gate.allowsRequests), context.requests)
@@ -49,8 +52,8 @@ public struct RequestButton: View {
     case .partial(let count, let summary, let albumId, let canRequest):
       partial(count: count, summary: summary, albumId: albumId, canRequest: canRequest, requests)
     case .request:
-      // A plus rather than the web's arrow: on an album page, Download's arrow sits beside it.
-      ask(state, variant: .primary, systemImage: "plus", requests)
+      // Binoculars, as the web's: Lidarr goes looking for it, apart from Download's arrow beside it on an album page.
+      ask(state, variant: .primary, systemImage: Self.requestImage, requests)
     case .searchAgain:
       ask(state, variant: .secondary, systemImage: "clock", requests)
     case .retry:
@@ -99,7 +102,7 @@ public struct RequestButton: View {
       }
     case .actionRow:
       // On the album's own page: only the request for the rest.
-      if canRequest { ask(.request, variant: .secondary, systemImage: "plus", requests) }
+      if canRequest { ask(.request, variant: .secondary, systemImage: Self.requestImage, requests) }
     }
   }
 
@@ -117,7 +120,7 @@ public struct RequestButton: View {
       }
       if canRequest {
         Button { requests.request(album) } label: {
-          if withIcon { Label("Request", systemImage: "plus") } else { Text("Request") }
+          if withIcon { Label("Request", systemImage: Self.requestImage) } else { Text("Request") }
         }
         .buttonStyle(.pill(.primary, size: .small))
         .help("Request the whole album")
@@ -174,11 +177,14 @@ public struct RequestButton: View {
     }
   }
 
-  /// The icon alone, or a spinner while it asks.
+  /// The icon alone, or a spinner while it asks. In the color of the words beside it (black on Request's accent),
+  /// but for a warning's red: `.foreground` would be the screen's white, not the pill's.
   @ViewBuilder
   private func icon(_ systemImage: String?, warning: Bool) -> some View {
-    if let systemImage {
-      Image(systemName: systemImage).foregroundStyle(warning ? AnyShapeStyle(.danger) : AnyShapeStyle(.foreground))
+    if let systemImage, warning {
+      Image(systemName: systemImage).foregroundStyle(.danger)
+    } else if let systemImage {
+      Image(systemName: systemImage)
     } else {
       ProgressView()
     }

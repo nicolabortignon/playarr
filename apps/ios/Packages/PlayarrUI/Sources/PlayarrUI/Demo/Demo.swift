@@ -126,6 +126,7 @@ public enum Demo {
       (.post, "/api/radio", dummyTracks),
     ]
     routes += settingsRoutes
+    for artist in discographies { routes.append((.get, "/api/discover/artists/\(artist.mbid)", artist)) }
     for artist in artists {
       routes.append((.get, "/api/artists/\(artist.id)", artistDetail(artist)))
       routes.append((.get, "/api/artists/\(artist.id)/tracks", tracks.filter { $0.artistId == artist.id }))

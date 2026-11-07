@@ -17,7 +17,7 @@ struct SleepTimerMenu: View {
         }
         Button("At the end of this song", systemImage: "moon") { player.sleepAtEndOfSong() }
         if label != nil {
-          Button("Turn off the timer", systemImage: "moon.zzz", role: .destructive) { player.cancelSleep() }
+          Button("Turn off the timer", systemImage: Self.timerOff, role: .destructive) { player.cancelSleep() }
         }
       } label: {
         HStack(spacing: 4) {
@@ -30,5 +30,11 @@ struct SleepTimerMenu: View {
       .accessibilityLabel(label.map { "Sleep timer: \($0)" } ?? "Sleep timer")
     }
     .id(sleep.endOfSong ? -1 : sleep.endsAt?.timeIntervalSince1970 ?? 0)
+  }
+
+  /// An alarm clock struck through, as the web's AlarmClockOff, where iOS has one (27); before, a moon gone to sleep.
+  static var timerOff: String {
+    if #available(iOS 27, macOS 27, *) { return "alarm.slash" }
+    return "moon.zzz"
   }
 }

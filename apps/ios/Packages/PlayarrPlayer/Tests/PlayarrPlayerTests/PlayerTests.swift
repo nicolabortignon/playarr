@@ -1,5 +1,7 @@
 import Foundation
+import Observation
 import PlayarrAPI
+import Synchronization
 import Testing
 @testable import PlayarrPlayer
 
@@ -26,6 +28,22 @@ struct PlayerTests {
     let saved = try #require(JSONFile<QueueState>(directory.appending(path: "queue.json")).read())
     #expect(saved.pos == 1)
     #expect(saved.queue.count == 3)
+  }
+
+  @Test func savesWhereItIsEveryFiveSecondsWithoutRedrawingTheQueue() async throws {
+    // A menu open on a page closes when the page redraws: nothing shows where to resume, so the views of the queue
+    // aren't told when it's saved.
+    let directory = temporaryDirectory()
+    let player = try Player.testing(directory: directory)
+    player.play([song(1), song(2)])
+    try await player.play(for: 1.5)
+    let redrawn = Mutex(false)
+    withObservationTracking { _ = player.queue } onChange: { redrawn.withLock { $0 = true } }
+    player.tick(now: Date() + 6)
+    #expect(!redrawn.withLock { $0 })
+    let saved = try #require(JSONFile<QueueState>(directory.appending(path: "queue.json")).read())
+    #expect(saved.resumeAt > 1)
+    #expect(saved.resumeAt == player.time)
   }
 
   @Test func anAlbumInOrderNeverFadesOtherSongsDo() throws {

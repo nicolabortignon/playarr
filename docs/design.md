@@ -2,9 +2,9 @@
 
 How Playarr looks, on the web and on iOS: every role once, with one name in both apps. A page never holds a raw color, size or radius. When nothing here fits, this page and the shared components change together ([plan 5](plans/2026-11-05-5-ui-consistency.md)).
 
-`scripts/check-design.mjs` keeps it so: the web's `pnpm typecheck` fails on a raw color or an arbitrary text size outside `index.css`, naming the file and line, except where its allow-list says why (the accent choices, a canvas, a cover's pixels, data colors). iOS is counted, not yet enforced.
+`scripts/check-design.mjs` keeps it so: the web's `pnpm typecheck` fails on a raw color or an arbitrary text size outside `index.css`, naming the file and line, except where its allow-list says why (the accent choices, a canvas, a cover's pixels, data colors). iOS's `make build` and `make test` run it first and fail the same way on a `Color(red:)`, a `.system(size:)` or a literal `cornerRadius:` outside `PlayarrUI/Theme/`, except where the allow-list says why (an energy chart's bars).
 
-The tokens live in `apps/web/src/index.css` (`@theme` and the `type-*` utilities) and in iOS's `PlayarrUI/Theme/` (`Palette.swift`, `TypeRole.swift`, `Shape.swift`, `Typography.swift`).
+The tokens live in `apps/web/src/index.css` (`@theme` and the `type-*` utilities) and in iOS's `PlayarrUI/Theme/` (`Palette.swift`, `TypeRole.swift`, `Shape.swift`, `Typography.swift`, `IconRole.swift`).
 
 Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbols, and the system's menus and lists. iOS pages share the screen with system menus, sheets, lists and alerts, so iOS text takes the system's white, and danger, success and warning its red, green and yellow. The web's canvas is all Playarr's, so it uses warm ink and paper.
 
@@ -12,7 +12,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 | Role | Web | iOS | For |
 |---|---|---|---|
-| Surface | `bg-ink-900`; raised: `ink-850`, `ink-800`; deepest: `ink-950` | the system's dark background, and system materials for bars and sheets | pages, panels, menus, the player bar |
+| Surface | `bg-ink-900`; raised: `ink-850`, `ink-800`; deepest: `ink-950` | the system's dark background, and system materials for bars and sheets; Playarr's own deepest, `.ink950`, for the iPad's sidebar and side column | pages, panels, menus, the player bar |
 | Text | `text-paper` (#ece6dc) | `.paper` (the system's label white) | titles, row titles, paragraphs |
 | Secondary text | `text-paper-dim` (#b8b0a3) | `.paperDim` (white 70 %, 85 % with Increase Contrast) | the artist under a title, descriptions |
 | Muted | `text-muted` (#857d71) | `.muted` (white 50 %, 65 % with Increase Contrast) | kickers, times, counts, hints |
@@ -44,7 +44,7 @@ Where the apps differ, the platform is the reason: the tab bar, sheets, SF Symbo
 
 ## Shape
 
-- **Radii:** covers and thumbnails 4 (`rounded-cover`, `Radius.cover`); panels and cards 12 (`rounded-panel`, `Radius.panel`); dialogs and sheets 16 (`rounded-dialog`, `Radius.dialog`); pills and round buttons are full (`rounded-full`, `Capsule`/`Circle`).
+- **Radii:** covers and thumbnails 4 (`rounded-cover`, `Radius.cover`); a place's icon tile and the accent swatches 6 (`rounded-md`, `Radius.tile`); panels and cards 12 (`rounded-panel`, `Radius.panel`); dialogs and sheets 16 (`rounded-dialog`, `Radius.dialog`); pills and round buttons are full (`rounded-full`, `Capsule`/`Circle`).
 - **Cover shadows:** a cover on a shelf or in a grid (`shadow-cover`, `.coverShadow(.shelf)`); a page's own cover and Now Playing's (`shadow-cover-hero`, `.coverShadow(.hero)`).
 - **Glow:** a large primary button (Play, Feeling lucky) glows with the accent (web `shadow-glow`; iOS's large primary pill draws the same).
 
@@ -149,7 +149,7 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 
 ## Icons
 
-- **Sizes by role.** A control sizes its own icon (`Button`'s `icon`, a `Menu` item's), so a page hands it the glyph alone. iOS sets symbols by text style, so they grow with Dynamic Type; the system's menus, lists and bars size their own.
+- **Sizes by role.** A control sizes its own icon (`Button`'s `icon`, a `Menu` item's), so a page hands it the glyph alone. iOS sets symbols by text style, so they grow with Dynamic Type; the system's menus, lists and bars size their own. A glyph inside something of a fixed size (a play button's circle, a badge, a cover) takes its role's size on iOS too (`Font.icon(_:)`, `IconRole`), so it doesn't outgrow its shape.
 
   | Role | Size | Web | For |
   |---|---|---|---|
@@ -175,8 +175,8 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | Artists | `MicVocal` | `music.mic` | |
   | Albums | `Disc3` | `square.stack` | iOS: Music's own picture for albums |
   | Favorites | `Heart` | `heart` | |
-  | Downloads | `ArrowDownToLine` | `arrow.down.circle` | iOS to align: `arrow.down.to.line`, as its Download button |
-  | Requests | `Binoculars` | `arrow.down.to.line` in the sidebar, `arrow.down.circle` in Library | iOS to align: `binoculars`; today Requests and Downloads swap arrows |
+  | Downloads | `ArrowDownToLine` | `arrow.down.to.line` | |
+  | Requests | `Binoculars` | `binoculars` | |
   | Playlists, a playlist | `ListMusic` | `music.note.list` | |
   | Your listening | `ChartColumn` | `chart.bar` | |
   | Settings | `Settings` | `gearshape` | |
@@ -193,24 +193,24 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | Open Now Playing | `Maximize2` | (a tap on the mini player) | |
   | Close Now Playing | `ChevronDown` | `chevron.down` | |
   | Volume | `Volume1`, `Volume2`, `VolumeX` | `speaker.wave.1.fill`, `speaker.wave.2.fill`, `speaker.slash.fill` | |
-  | AirPlay, output | none | none yet | iOS: the system's AirPlay button when it comes; browsers offer no picker |
+  | AirPlay, output | none | the system's AirPlay button (`AVRoutePickerView`), in the row under Now Playing's transport on a phone | browsers offer no picker |
   | Sleep timer | `Moon` | `moon` | |
-  | Turn off the timer | `AlarmClockOff` | `moon.zzz` | to align: one picture |
-  | Loading | `LoaderCircle`, spinning | the system's spinner | |
+  | Turn off the timer | `AlarmClockOff` | `alarm.slash` (iOS 27; `moon.zzz` on iOS 26, which has no alarm-off symbol) | |
+  | Loading | `LoaderCircle`, spinning | the system's spinner (the Requests pill's too) | |
   | The song playing | the equalizer (`Equalizer`) | `waveform`, moving | each app's own animation |
   | Feeling lucky | `Twinkle` (Playarr's three stars) | `Twinkle` (the same drawing) | |
   | Jump back in | `Undo2` | `arrow.uturn.backward` | |
   | New record (Stats) | `Flag` | `flag` | |
   | Sleep well | `Moon` | `moon` | |
   | Edit mix points | `AudioWaveform` | `waveform` | |
-  | A transition | `Blend` | `arrow.triangle.merge` | to align: one picture |
+  | A transition | `Blend` | `circle.dotted.and.circle` | the nearest SF Symbol to Blend's overlapping circles |
 
   | Songs and lists | Web | iOS | Note |
   |---|---|---|---|
   | ⋯ ("More for “Teardrop”") | `Ellipsis` | `ellipsis` | |
   | Play next | `ListStart` | `text.line.first.and.arrowtriangle.forward` | |
   | Add to queue | `ListEnd` | `text.append` | |
-  | Add to playlist…, Save as playlist | `ListPlus` | `music.note.list`; Save as playlist `bookmark` (a mix) and `text.badge.plus` (the queue) | iOS to align: one glyph for adding to a playlist, apart from a playlist's own (`text.badge.plus`, as the web's `ListPlus` beside `ListMusic`) |
+  | Add to playlist…, Save as playlist | `ListPlus` | `text.badge.plus` | a playlist itself stays `music.note.list` |
   | Start radio | `Radio` | `dot.radiowaves.left.and.right` | |
   | Go to album | `Disc3` | `square.stack` | as Albums |
   | Go to artist | `MicVocal` | `music.mic` | |
@@ -234,7 +234,7 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | Downloaded | `CircleCheck` in `success` | `checkmark` in `success`, in the ring | |
   | On this device (a song) | `CircleArrowDown` in the accent | `arrow.down.circle.fill` in the accent | iOS: filled reads better at caption size |
   | Space on this device | `HardDrive` | `internaldrive` | |
-  | Request | `Binoculars` | `plus` | iOS to align: `binoculars` (it chose a plus to stay apart from Download's arrow, which `binoculars` does too) |
+  | Request | `Binoculars` | `binoculars`, in the button's own color (black on Request's accent) | |
   | Search again later | `Clock` | `clock` | |
   | A request that failed | `TriangleAlert` | `exclamationmark.triangle` | |
   | In your library, Open in your library | `Check`, `ArrowRight` | `checkmark`, `arrow.right` | |
@@ -251,7 +251,7 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | Lidarr, a folder, a remote folder | `Server`, `Folder`, `Network` | `server.rack`, `folder`, `network` | |
   | Sync now | `RefreshCw` | `arrow.triangle.2.circlepath` | |
   | Match again | `ScanSearch` | `text.magnifyingglass` | |
-  | Organize files | `FolderTree` | `folder.badge.gearshape` | to align: one picture |
+  | Organize files | `FolderTree` | `folder.badge.gearshape` | SF Symbols has no folder tree |
   | Edit (a source) | `Pencil` | `pencil` | |
   | Fix the names | `PencilLine` | `pencil.line` | |
   | Add account | `UserPlus` | `person.badge.plus` | |
@@ -266,7 +266,7 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   |---|---|---|---|
   | New (playlist, source) | `Plus` | `plus` | |
   | Try again, Reload, Check for updates | `RotateCw` | `arrow.clockwise` | |
-  | Do it again (New mix, Sync now, ask Lidarr again) | `RefreshCw` | `arrow.triangle.2.circlepath` | iOS to align: New mix and asking Lidarr again still have Try again's `arrow.clockwise` |
+  | Do it again (New mix, Sync now, ask Lidarr again) | `RefreshCw` | `arrow.triangle.2.circlepath` | |
   | A recent search | `RotateCcwClock` | `clock.arrow.circlepath` | |
   | Undo | `Undo2` | `arrow.uturn.backward` | iOS also has it for Jump back in |
   | Error, warning | `CircleAlert`, `TriangleAlert` | `exclamationmark.circle`, `exclamationmark.triangle` | |
@@ -283,6 +283,9 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
 - **Settings:** This device · Your account · Server (members see Your account before Server, with "Only an admin can change these."; a server panel opens read-only for them, saying "Only an admin can change these settings.", and Analysis "Analyses can be started by an admin."). Where the page has room (web: the page at least `page-lg`, a 1024 px window), a column of the groups sits beside the open panel, under the Settings title: the groups' names as kickers, each panel's icon and name, the open one lit as the sidebar lights the page you're on, the version at its foot. Every panel is always in view: never a strip that scrolls sideways. The panel's scope is the line above it. Narrower (a phone, a narrow window), the same groups are a list, a line under each saying what it's for and the version at the foot; each panel has a back link to Settings.
 - **Keyboard shortcuts** show only where there's a keyboard (a fine pointer, or a key pressed outside a field). On the web `?` opens them over any page as a record sleeve: Side A · Playing and Side B · Getting around, numbered A1…, dotted leaders to the keys in `type-badge` keycaps, the two sides side by side from 1024 px, a shared modifier written once ("Shift + ← or →"). iPadOS has its own ⌘ overlay, so iOS lists them there instead.
 - **The idle player bar** (desktop and tablet, nothing playing): the album heard last under the kicker "Heard last", Resume as the primary button and Feeling lucky beside it; with no history, "Nothing playing" and Feeling lucky.
+- **The iPad's player bar** steps aside while the screen's keyboard is up, as the phone's tab bar and mini player do; a long press on its song opens the one song menu for the song playing.
+- **Beside Feeling lucky on Home:** where a mini player shows (a phone with a song queued), what comes next ("Up next" over the next song's title, beside its cover), opening the queue, never a second play and pause; nothing when nothing comes next. Without a mini player (iPad, desktop), the listening button.
+- **Now Playing on a phone:** under the transport, one row of Lyrics · AirPlay · Up next, as Apple Music has them; Lyrics and Up next each take the cover's place, one at a time, lit while they do.
 - **The side column** (web from 1280 px, the iPad at regular width): Queue and Lyrics beside any page, 340 wide on `ink-950`, the queue headed "Up next" with its counts in `type-meta` and its rows on two lines (the length beside the artist, whose name gives way first). A page lays itself out by its own width, not the window's (web `page-lg`, `page-xl`, `page-2xl`), so it narrows when the column opens.
 - **Fixed layers on the web:** iPhone Safari paints its translucent bars in the color of the topmost fixed element at each edge, so that element has a solid background (the tab bar, Now Playing), and anything without a color of its own (the film grain) stays below them (z-index under 40).
 

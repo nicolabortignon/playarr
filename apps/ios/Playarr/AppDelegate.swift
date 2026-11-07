@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
   func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
     guard identifier == URLSessionTransport.backgroundIdentifier else { return completionHandler() }
     finishBackgroundEvents = completionHandler
-    URLSessionTransport.background.whenEventsFinish {
+    URLSessionTransport.background.whenEventsFinish { [weak self] in
       Task { @MainActor [weak self] in
         self?.finishBackgroundEvents?()
         self?.finishBackgroundEvents = nil

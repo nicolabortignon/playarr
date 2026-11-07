@@ -8,6 +8,9 @@ struct SplitShell: View {
   /// Where the player bar is, in the window: the sidebar runs the full height of the window, under the bar, so it
   /// keeps Settings clear of it.
   @State private var bar = CGRect.zero
+  /// The screen's keyboard is up: the player bar steps aside until it's put away (`ShellLayout.barStepsAside`).
+  @State private var typing = false
+  @Environment(\.reducesMotion) private var reducesMotion
 
   var body: some View {
     let router = session.router
@@ -27,8 +30,16 @@ struct SplitShell: View {
         .inspectorColumnWidth(min: 300, ideal: 340, max: 440)
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      PlayerBar(session: session)
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bar = $0 }
+      if !typing {
+        PlayerBar(session: session)
+          .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bar = $0 }
+          .onDisappear { bar = .zero }
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+      }
+    }
+    // The window's own foot, keyboard and all (outside the bar's inset, so the bar going doesn't move it).
+    .onGeometryChange(for: Bool.self) { ShellLayout.barStepsAside(bottomInset: $0.safeAreaInsets.bottom) } action: { aside in
+      withAnimation(reducesMotion ? nil : Motion.standard) { typing = aside }
     }
   }
 

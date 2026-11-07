@@ -95,8 +95,8 @@ public struct StatsForNerdsOverlay: View {
       }
     }
     .font(.mono(size: 11).monospacedDigit())
-    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-    .overlay(RoundedRectangle(cornerRadius: 10).stroke(.primary.opacity(0.1)))
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.panel))
+    .overlay(RoundedRectangle(cornerRadius: Radius.panel).stroke(.primary.opacity(0.1)))
     .shadow(radius: 20)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Stats for nerds")

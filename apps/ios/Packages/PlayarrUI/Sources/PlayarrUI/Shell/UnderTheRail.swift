@@ -25,8 +25,9 @@ struct UnderTheRail: ViewModifier {
     }
   }
 
-  /// The column's width: the window's trailing margin, when it's upright.
-  static func railWidth(size: CGSize, trailingInset: CGFloat) -> CGFloat {
+  /// The column's width: the window's trailing margin, when it's upright. Nonisolated: the geometry is read off the
+  /// main actor.
+  nonisolated static func railWidth(size: CGSize, trailingInset: CGFloat) -> CGFloat {
     size.height > size.width ? trailingInset : 0
   }
 }

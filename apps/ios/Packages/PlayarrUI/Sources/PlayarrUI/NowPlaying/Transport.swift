@@ -47,7 +47,7 @@ struct PlayPauseButton: View {
           ProgressView().tint(filled ? Color.black : Color.primary)
         } else {
           Image(systemName: playing ? "pause.fill" : "play.fill")
-            .font(.system(size: size * 0.4))
+            .font(.icon(glyph))
             .foregroundStyle(filled ? Color.black : Color.primary)
         }
       }
@@ -60,4 +60,8 @@ struct PlayPauseButton: View {
     .accessibilityLabel(playing ? "Pause" : "Play")
     .sensoryFeedback(Haptic.playPause, trigger: playing)
   }
+
+  /// The glyph's size for its circle's, as the web's: 32 in Now Playing's 72, 20 in the sideways deck's 52, 18 in the
+  /// bar's and the mini player's 44.
+  private var glyph: IconRole { size >= 72 ? .play : size > 44 ? .iconButton : .toolbar }
 }

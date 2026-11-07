@@ -70,7 +70,7 @@ struct QueueView: View {
             }
           #endif
           ToolbarItem(placement: .secondaryAction) {
-            Button("Save as playlist", systemImage: "text.badge.plus") {
+            Button(MenuAction.Kind.saveAsPlaylist.title, systemImage: MenuAction.Kind.saveAsPlaylist.systemImage) {
               session.addToPlaylist(AccountSession.queueToSave(session.player.queue))
             }
           }

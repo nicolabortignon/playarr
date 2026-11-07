@@ -21,9 +21,9 @@ public struct TrackMetadataSheet: View {
             content(m)
           } else {
             VStack(alignment: .leading, spacing: 12) {
-              RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(height: 32)
-              RoundedRectangle(cornerRadius: 8).fill(.quaternary).frame(height: 160)
-              RoundedRectangle(cornerRadius: 8).fill(.quaternary).frame(height: 128)
+              RoundedRectangle(cornerRadius: Radius.cover).fill(.quaternary).frame(height: 32)
+              RoundedRectangle(cornerRadius: Radius.panel).fill(.quaternary).frame(height: 160)
+              RoundedRectangle(cornerRadius: Radius.panel).fill(.quaternary).frame(height: 128)
             }
             .accessibilityLabel("Loading metadata")
           }
@@ -75,7 +75,7 @@ public struct TrackMetadataSheet: View {
       }
     }
     .padding(12)
-    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+    .overlay(RoundedRectangle(cornerRadius: Radius.panel).strokeBorder(.separator))
   }
 
   private func rematch(_ c: TrackCopyMetadata) -> some View {
@@ -84,7 +84,12 @@ public struct TrackMetadataSheet: View {
     return VStack(alignment: .leading, spacing: 8) {
       Button { Task { await model.rematch(c) } } label: {
         HStack(spacing: 8) {
-          if busy { ProgressView().controlSize(.mini) } else { Image(systemName: "arrow.clockwise") }
+          // As the web's: Lidarr's "do it again", or MusicBrainz's Match again (a source's menu has the same).
+          if busy {
+            ProgressView().controlSize(.mini)
+          } else {
+            Image(systemName: lidarr ? MenuAction.Kind.syncNow.systemImage : MenuAction.Kind.matchAgain.systemImage)
+          }
           Text(MetadataFormat.rematchLabel(lidarr: lidarr, busy: busy))
         }
         .font(.sans(.footnote))

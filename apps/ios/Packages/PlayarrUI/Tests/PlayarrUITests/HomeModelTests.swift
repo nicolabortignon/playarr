@@ -76,6 +76,21 @@ import Testing
     #expect(!model.isPlaying)
   }
 
+  @Test func saysWhatComesNextWhileTheMiniPlayerShows() {
+    let session = demoSession()
+    let model = HomeModel(session: session)
+    #expect(!model.miniPlayerShows)
+    session.player.play(Demo.mezzanineTracks)
+    // The phone's tabs: the mini player has play and pause, so Home says what's next.
+    #expect(model.miniPlayerShows)
+    #expect(model.upNext?.title == "Risingson")
+    session.player.jump(to: 2)
+    #expect(model.upNext == nil)
+    // The iPad's sidebar: no mini player, so the play and pause button stays.
+    session.router.setLayout(.split)
+    #expect(!model.miniPlayerShows)
+  }
+
   @Test func rollsTheDiceForOtherAlbums() async {
     let api = FakeAPI.demoLibrary()
     let model = HomeModel(session: demoSession(api: api))

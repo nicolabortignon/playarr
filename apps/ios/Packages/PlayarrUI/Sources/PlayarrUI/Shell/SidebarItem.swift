@@ -35,9 +35,9 @@ public enum SidebarItem: Hashable, Sendable, Codable {
     case .artists: "music.mic"
     case .albums: "square.stack"
     case .favorites: "heart"
-    case .downloads: "arrow.down.circle"
+    case .downloads: "arrow.down.to.line"
     case .queue: "list.bullet"
-    case .requests: "arrow.down.to.line"
+    case .requests: "binoculars"
     case .playlists, .playlist: "music.note.list"
     case .settings: "gearshape"
     }

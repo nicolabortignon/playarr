@@ -1,8 +1,8 @@
 import XCTest
 
 /// The iPad layout on a full-screen iPad, against the demo library: the sidebar, pages in the detail column, the
-/// player bar, the queue and lyrics column, Now Playing with Up next, the keyboard, dragging songs and coming back
-/// where it was.
+/// player bar (idle, then playing), the queue and lyrics column, Now Playing with Up next, the keyboard, dragging songs
+/// and coming back where it was.
 final class IPadLayoutTests: XCTestCase {
   override func setUpWithError() throws {
     try XCTSkipUnless(isPad, "iPad only")
@@ -45,7 +45,10 @@ final class IPadLayoutTests: XCTestCase {
     }
     XCTAssertTrue(app.element("sidebar.playlist.1").exists)  // the demo's "Late night"
     XCTAssertTrue(app.element("playerBar").exists)
-    XCTAssertTrue(app.staticTexts["NOTHING PLAYING"].exists)
+    // Nothing playing: the album heard last, with Resume and Feeling lucky, rather than controls that do nothing.
+    XCTAssertTrue(app.buttons["Heard last: Mezzanine, Massive Attack"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Resume Mezzanine"].exists)
+    XCTAssertTrue(app.element("playerBar").buttons["Feeling lucky"].exists)
 
     playMezzanine(app)
     let open = app.buttons["Open now playing"]
@@ -63,6 +66,23 @@ final class IPadLayoutTests: XCTestCase {
     app.element("sidebar.home").tap()
     app.buttons["Angel, Massive Attack"].tap()
     XCTAssertTrue(app.staticTexts["LINER NOTES"].waitForExistence(timeout: 5))
+  }
+
+  @MainActor
+  func testThePlayerBarStepsAsideForTheKeyboard() throws {
+    let app = XCUIApplication.demo()
+    app.launch()
+    XCTAssertTrue(app.element("sidebar.search").waitForExistence(timeout: 10))
+    app.element("sidebar.search").tap()
+    let field = app.searchFields.firstMatch
+    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    field.tap()
+    try XCTSkipUnless(app.keyboards.firstMatch.waitForExistence(timeout: 5), "With a hardware keyboard there's none on the screen")
+    // While typing on the screen's keyboard, the bar steps aside, so the results keep the room above the keys.
+    XCTAssertTrue(app.element("playerBar").waitForNonExistence(timeout: 5))
+    // Search on the keyboard puts it away, and the bar comes back.
+    field.typeText("mass\n")
+    XCTAssertTrue(app.element("playerBar").waitForExistence(timeout: 5))
   }
 
   @MainActor

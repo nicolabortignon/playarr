@@ -14,6 +14,13 @@ import Testing
     #expect(ShellLayout.choose(regularWidth: false, width: 402) == .tabs)  // iPhone
   }
 
+  @Test func stepsThePlayerBarAsideOnlyForTheScreensKeyboard() {
+    #expect(!ShellLayout.barStepsAside(bottomInset: 0))  // a home button
+    #expect(!ShellLayout.barStepsAside(bottomInset: 20))  // the home indicator
+    #expect(!ShellLayout.barStepsAside(bottomInset: 70))  // a hardware keyboard's shortcuts bar
+    #expect(ShellLayout.barStepsAside(bottomInset: 300))  // the keyboard on the screen
+  }
+
   @Test func listsTheDesktopLinksInTheWebsOrder() {
     #expect(SidebarItem.links.map(\.title) == ["Home", "Search", "Made for you", "Artists", "Albums", "Favorites", "Downloads", "Queue"])
     #expect(SidebarItem.playlist(3).identifier == "sidebar.playlist.3")

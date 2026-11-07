@@ -102,6 +102,13 @@ final class HomeModel {
   /// The song of the listening session, paused (to resume) or playing (to pause from here).
   var listening: Track? { session.player.queue.currentTrack }
 
+  /// The mini player shows (the phone's tabs, with a song queued), with its own play and pause: beside Feeling lucky,
+  /// Home says what comes next instead of repeating them (docs/design.md, Patterns).
+  var miniPlayerShows: Bool { session.router.layout == .tabs && listening != nil }
+
+  /// The song after the one playing, in play order (shuffled, if it is), as Up next lists it.
+  var upNext: Track? { UpNextPreview.entries(session.player.queue).first?.track }
+
   var isPlaying: Bool { session.player.queue.playing }
 
   func togglePlay() { session.player.setPlaying(!isPlaying) }

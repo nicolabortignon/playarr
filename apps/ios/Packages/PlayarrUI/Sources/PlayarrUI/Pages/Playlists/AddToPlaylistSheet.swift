@@ -8,6 +8,7 @@ struct AddToPlaylistSheet: View {
   let session: AccountSession
   @State private var model: AddToPlaylistModel
   @Environment(\.dismiss) private var dismiss
+  @Environment(Theme.self) private var theme
   @FocusState private var naming: Bool
 
   init(tracks: [Track], session: AccountSession) {
@@ -46,6 +47,8 @@ struct AddToPlaylistSheet: View {
           }
         }
       }
+      // A system list, lighter than the page: the accent lifted to read on its rows ("New playlist", the ticks).
+      .tint(theme.listAccent.color)
       .navigationTitle(model.title)
       #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

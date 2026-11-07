@@ -3,9 +3,10 @@ import PlayarrPlayer
 import SwiftUI
 
 /// Now Playing, over everything (apps/web/src/components/NowPlaying.tsx): swipe down to close, "Playing from", the
-/// sleep timer, lyrics, the ⋯ menu, the cover (or lyrics), the song, the seek bar and the transport. On an iPad, the
-/// cover beside the song with Up next; on a phone held sideways, the sleeve: the cover with its deck on the left,
-/// the tracklist on the right (docs/ios/layouts.md).
+/// sleep timer, the ⋯ menu, the cover (or lyrics), the song, the seek bar and the transport, then Lyrics, AirPlay and
+/// Up next in a row, as Apple Music has them. On an iPad, the cover beside the song with Up next, lyrics at the top;
+/// on a phone held sideways, the sleeve: the cover with its deck on the left, the tracklist on the right
+/// (docs/ios/layouts.md).
 struct NowPlayingView: View {
   let session: AccountSession
   @Environment(Theme.self) private var theme
@@ -30,6 +31,8 @@ struct NowPlayingView: View {
   @State private var wider = false
   /// Now Playing holds the hardware keyboard's focus, so Escape reaches it (`onKeyPress`).
   @FocusState private var holdsKeyboard: Bool
+  /// Upright, Up next in the cover's place (the row under the transport), as lyrics take it.
+  @State private var upNext = false
 
   /// How long sideways Now Playing waits, untouched while playing, before the stage.
   static let stageAfter: Duration = .seconds(12)
@@ -77,11 +80,12 @@ struct NowPlayingView: View {
                 .frame(maxWidth: 480)
               }
             } else {
-              artwork(track)
+              if upNext { upNextPanel() } else { artwork(track) }
               song(track)
               SeekBar(player: player)
               Transport(player: player)
               TransitionLine(player: player)
+              extras
             }
             Spacer(minLength: 0)
           }
@@ -93,7 +97,7 @@ struct NowPlayingView: View {
     .offset(y: drag)
     .toolbar {
       if underTheRail, let track = player.queue.currentTrack {
-        ToolbarItemGroup(placement: .primaryAction) { trailingButtons(track) }
+        ToolbarItemGroup(placement: .primaryAction) { trailingButtons(track, lyrics: layout != .upright) }
       }
     }
     #if os(iOS)
@@ -184,23 +188,79 @@ struct NowPlayingView: View {
       .layoutPriority(1)
       HStack(spacing: 0) {
         Spacer(minLength: 0)
-        if !underTheRail { trailingButtons(track) }
+        if !underTheRail { trailingButtons(track, lyrics: layout != .upright) }
       }
       .frame(maxWidth: .infinity)
     }
     .buttonStyle(.plain)
   }
 
-  /// The sleep timer, lyrics and ⋯: at the right of the top row, or in the bar on the Duo's cover screen.
+  /// The sleep timer, lyrics (where the row under the transport hasn't got them) and ⋯: at the right of the top row, or
+  /// in the bar on the Duo's cover screen.
   @ViewBuilder
-  private func trailingButtons(_ track: Track) -> some View {
+  private func trailingButtons(_ track: Track, lyrics: Bool) -> some View {
     SleepTimerMenu(player: session.player)
-    Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
-      .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
-      .accessibilityLabel("Lyrics")
-      .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
-      .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
+    if lyrics { lyricsButton }
     moreMenu(track)
+  }
+
+  /// Lyrics in the cover's place (sideways, the tracklist's), or back.
+  private var lyricsButton: some View {
+    let router = session.router
+    return Button {
+      router.lyrics.toggle()
+      if router.lyrics { upNext = false }
+    } label: {
+      Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(router.lyrics ? theme.accent.color : .primary)
+    .accessibilityLabel("Lyrics")
+    .accessibilityAddTraits(router.lyrics ? .isSelected : [])
+    .sensoryFeedback(Haptic.toggle, trigger: router.lyrics)
+  }
+
+  /// Upright, under the transport, where Apple Music keeps them: Lyrics, AirPlay and Up next. Lyrics and Up next each
+  /// take the cover's place, one at a time.
+  private var extras: some View {
+    HStack {
+      lyricsButton
+      Spacer()
+      AirPlayButton(tint: .paper, activeTint: theme.accent.color)
+        .frame(width: 44, height: 44)
+      Spacer()
+      Button {
+        upNext.toggle()
+        if upNext { session.router.lyrics = false }
+      } label: {
+        Image(systemName: "list.bullet").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(upNext ? theme.accent.color : .primary)
+      .accessibilityLabel("Up next")
+      .accessibilityAddTraits(upNext ? .isSelected : [])
+      .sensoryFeedback(Haptic.toggle, trigger: upNext)
+    }
+  }
+
+  /// Up next in the cover's place: the next four songs (Queue opens the rest), or what comes after this one.
+  private func upNextPanel() -> some View {
+    let player = session.player
+    return ScrollView {
+      if UpNextPreview.entries(player.queue).isEmpty {
+        let tracklist = Tracklist(
+          queue: player.queue, transitions: player.settings.transitions, crossfade: player.settings.crossfade, autoplay: player.settings.autoplay)
+        VStack(alignment: .leading, spacing: 8) {
+          Kicker(text: "Up next", overArt: true).accessibilityAddTraits(.isHeader)
+          Text(tracklist.end).typeRole(.body).foregroundStyle(.paperDim)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      } else {
+        UpNextPreview(session: session)
+      }
+    }
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
   /// ⋯: the song playing's menu, the one song menu without Play next and Add to queue, then Open queue.
@@ -366,11 +426,7 @@ struct NowPlayingView: View {
       .accessibilityValue(tail ?? "")
       Spacer(minLength: 8)
       SleepTimerMenu(player: session.player)
-      Button { session.router.lyrics.toggle() } label: { Image(systemName: "quote.bubble").font(.title3).frame(width: 44, height: 44).contentShape(Rectangle()) }
-        .foregroundStyle(session.router.lyrics ? theme.accent.color : .primary)
-        .accessibilityLabel("Lyrics")
-        .accessibilityAddTraits(session.router.lyrics ? .isSelected : [])
-        .sensoryFeedback(Haptic.toggle, trigger: session.router.lyrics)
+      lyricsButton
       moreMenu(track)
     }
     .buttonStyle(.plain)

@@ -77,7 +77,7 @@ It reads every exported type from `packages/shared/src/index.ts` and `packages/m
 `AppShell` is the signed-in app: `AdaptiveShell` picks the layout from the window's width (`ShellLayout`, at the web's 768-point desktop breakpoint) and switches as the window is resized without losing the page.
 
 - **iPhone, and narrow iPad windows** (`TabShell`): tabs Home, Search, Library and Queue, each a stack of pages, with the mini player (`MiniPlayer`) above the tab bar.
-- **iPad** (`SplitShell`): the desktop web's sidebar (`Sidebar`), the page, a side column for the queue or lyrics (`SideColumnView`), and the player bar (`PlayerBar`) along the bottom. Keyboard shortcuts with a hardware keyboard (`PlayarrCommands`), and drag and drop of songs (`TrackDrag`).
+- **iPad** (`SplitShell`): the desktop web's sidebar (`Sidebar`), the page, a side column for the queue or lyrics (`SideColumnView`), and the player bar (`PlayerBar`) along the bottom: with nothing playing, the album heard last with Resume and Feeling lucky (`IdlePlayerBar`); out of the way while the screen's keyboard is up. Keyboard shortcuts with a hardware keyboard (`PlayarrCommands`), and drag and drop of songs (`TrackDrag`).
 - **iPhone Duo**: on the cover screen the system's tabs and bar buttons stand in a column on the right; pages' backgrounds run under it and their content keeps clear of it (`UnderTheRail`). Opened, Now Playing lays out along the fold (`Fold`).
 - **Now Playing** (`NowPlayingView`) covers everything, swiped down to close: lyrics, the sleep timer, the transition sheet, up next. On the iPhone it also turns sideways.
 
@@ -114,8 +114,9 @@ What differs on purpose: accounts replace the web's old profiles; user-facing te
 | Command | What it does |
 |---|---|
 | `pnpm ios:bootstrap` | Download the pinned, checksummed XcodeGen into `apps/ios/.tools/` and generate the project |
-| `pnpm ios:build` | A simulator build |
-| `pnpm ios:test` | The scripts' tests (`node --test`), `swift test` in each package, then the UI tests on a simulator |
+| `pnpm ios:build` | The design check, then a simulator build |
+| `pnpm ios:test` | The design check, the scripts' tests (`node --test`), `swift test` in each package, then the UI tests on a simulator |
+| `make -C apps/ios design-check` | The design check alone (`scripts/check-design.mjs --app ios`) |
 | `make -C apps/ios test-packages` | The package tests only: quick, no simulator |
 | `make -C apps/ios test-app ONLY="IPadLayoutTests"` | Only those UI test classes |
 | `pnpm ios:screens` | Screenshots of the main views on the demo library, in `screenshots/` at the repo root |
@@ -125,6 +126,7 @@ Release targets are in [release.md](release.md); every target is listed at the t
 
 Notes:
 
+- **The design check.** Colors, type sizes and radii come from `PlayarrUI/Theme/` by role ([design.md](../design.md)): `make build` and `make test` (and so CI) first run `scripts/check-design.mjs --app ios`, which fails on a `Color(red:)`, a `.system(size:)` or a literal `cornerRadius:` anywhere else in `PlayarrUI`, naming the file and the line. Use the tokens (`Radius.*`, the type roles, `IconRole` for a glyph in something of a fixed size, the palette), add one in `Theme/` where a size has a real role, or add the file to the script's `ALLOW` with the reason (today the energy charts' bars). Its tests are `scripts/check-design.test.mjs`, which `make test-scripts` runs.
 - **Sandboxed shells** (Claude's): SwiftPM and the compiler can't start their own sandboxes inside another, so `swift test` needs `--disable-sandbox` and `xcodebuild` needs `-IDEPackageSupportDisableManifestSandbox=YES` and `-Xfrontend -disable-sandbox`. The Makefile and `release.mjs` already pass them. Swift and Xcode commands also need the shell's own sandbox off.
 - **Which simulator.** `SIMULATOR` picks one by name (default "iPhone 17 Pro"); without one by that name, the first available iPhone. This Mac has two "iPhone 17 Pro"s and the Makefile takes the first listed, on iOS 26.3; to use the iOS 26.5 one, pass its id: `make -C apps/ios test SIMULATOR_ID=<id>` (from `xcrun simctl list devices available`).
 - **UI tests run on a simulator of their own**: parallel runs on a shared one break each other. `make screens` makes "Playarr Screens iphone", "ipad" and "duo" (and "se" when asked for); the iPhone Duo needs its own iOS 27 runtime.

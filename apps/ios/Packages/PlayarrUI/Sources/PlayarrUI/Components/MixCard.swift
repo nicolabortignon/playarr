@@ -83,7 +83,7 @@ struct MixCover: View {
       }
     }
     .frame(width: width, height: width)
-    .clipShape(RoundedRectangle(cornerRadius: 4))
+    .clipShape(RoundedRectangle(cornerRadius: Radius.cover))
     .task(id: tonePaths) { await readTones() }
   }
 

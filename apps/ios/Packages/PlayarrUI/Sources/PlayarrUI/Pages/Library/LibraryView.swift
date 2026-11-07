@@ -24,11 +24,11 @@ struct LibraryView: View {
         row("Your listening", "chart.bar", .listening)
         row("Favorites", "heart", .favorites, detail: session.favorites.tracks.map { Format.plural($0.count, "song") })
         let downloads = session.player.downloads.manifest.pins.count
-        if downloads > 0 { row("Downloads", "arrow.down.circle", .downloads, detail: String(downloads)) }
+        if downloads > 0 { row("Downloads", "arrow.down.to.line", .downloads, detail: String(downloads)) }
         row("Artists", "music.mic", .artists, detail: library.map { String($0.artists) })
         row("Albums", "square.stack", .albums(.artist), detail: library.map { String($0.albums) })
         if let count = discover?.requests.requests?.count, count > 0 {
-          row("Requests", "arrow.down.circle", .requests, detail: String(count)).accessibilityIdentifier("library-requests")
+          row("Requests", "binoculars", .requests, detail: String(count)).accessibilityIdentifier("library-requests")
         }
       }
       Section {
@@ -37,7 +37,7 @@ struct LibraryView: View {
             Image(systemName: "plus")
               .foregroundStyle(theme.accent.color)
               .frame(width: 56, height: 56)
-              .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4])))
+              .overlay(RoundedRectangle(cornerRadius: Radius.cover).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4])))
             Text("New playlist")
           }
         }
@@ -99,7 +99,7 @@ struct LibraryView: View {
         Image(systemName: icon)
           .foregroundStyle(theme.accent.color)
           .frame(width: 40, height: 40)
-          .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15)))
+          .background(RoundedRectangle(cornerRadius: Radius.tile).fill(Color.secondary.opacity(0.15)))
         Text(title)
         Spacer()
         if let detail { Text(detail).font(.mono(.caption)).foregroundStyle(.secondary) }

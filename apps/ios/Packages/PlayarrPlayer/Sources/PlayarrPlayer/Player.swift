@@ -319,7 +319,9 @@ public final class Player {
       notice = Notice(text: "Sleep timer: music stopped", isError: false)
     }
     if loaded != nil, now.timeIntervalSince(lastSaved) >= 5 {
-      queue.resumeAt = time
+      // Past the queue's observation (`_queue`, the macro's storage): nothing shows where to resume, and a change to
+      // `queue` every 5 s redrew every view of it, closing any menu open on one of them.
+      _queue.resumeAt = time
       save(at: now)
     }
   }

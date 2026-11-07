@@ -45,8 +45,8 @@ struct HomeView: View {
     }
   }
 
-  /// The greeting, the library in a line, Feeling lucky and Resume: a column upright; held sideways, one row with the
-  /// buttons on the right, so the shelves start on the first screen.
+  /// The greeting, the library in a line, Feeling lucky and Resume (or Up next): a column upright; held sideways, one
+  /// row with the buttons on the right, so the shelves start on the first screen.
   private var intro: some View {
     let sideways = GatefoldRule.applies(verticalSizeClass)
     let layout = sideways ? AnyLayout(HStackLayout(alignment: .bottom, spacing: 24)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
@@ -68,7 +68,12 @@ struct HomeView: View {
       AdaptiveStack(spacing: 12) {
         FeelingLuckyButton()
           .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: false)
-        if let track = model.listening { ListeningButton(track: track, playing: model.isPlaying, player: session.player) { model.togglePlay() } }
+        if model.miniPlayerShows {
+          // The mini player below has play and pause: what comes next instead, opening Up next; nothing when nothing does.
+          if let next = model.upNext { UpNextButton(track: next) { session.router.showQueue() } }
+        } else if let track = model.listening {
+          ListeningButton(track: track, playing: model.isPlaying, player: session.player) { model.togglePlay() }
+        }
       }
     }
     .padding(.horizontal, 20)
@@ -108,7 +113,7 @@ struct HomeView: View {
       }
       .padding(16)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.12)))
+      .background(RoundedRectangle(cornerRadius: Radius.panel).fill(Color.secondary.opacity(0.12)))
     }
     .buttonStyle(.plain)
     .padding(.horizontal, 20)
@@ -172,9 +177,10 @@ struct HomeView: View {
   }
 }
 
-/// The listening session, beside Feeling lucky: paused, "Resume" and the song's title beside its cover with a play sign;
-/// playing, just the cover, round, ringed by how far into the song it is, with a pause sign. It draws in and out between
-/// the two (apps/web/src/pages/Home.tsx ListeningButton).
+/// The listening session, beside Feeling lucky where no mini player shows (the iPad's player bar is far below): paused,
+/// "Resume" and the song's title beside its cover with a play sign; playing, just the cover, round, ringed by how far
+/// into the song it is, with a pause sign. It draws in and out between the two (apps/web/src/pages/Home.tsx
+/// ListeningButton).
 private struct ListeningButton: View {
   let track: Track
   let playing: Bool
@@ -193,7 +199,7 @@ private struct ListeningButton: View {
           .overlay {
             Circle().fill(.black.opacity(0.45))
             Image(systemName: playing ? "pause.fill" : "play.fill")
-              .font(.system(size: 13, weight: .bold))
+              .font(.icon(.small, weight: .bold))
               .foregroundStyle(.white)
               .contentTransition(.symbolEffect(.replace))
           }
@@ -214,6 +220,34 @@ private struct ListeningButton: View {
     .buttonStyle(.plain)
     .animation(.snappy(duration: 0.35), value: playing)
     .accessibilityLabel(playing ? "Pause \(track.title)" : "Resume \(track.title)")
+  }
+}
+
+/// Beside Feeling lucky while the mini player shows (it has play and pause): the song that comes next, its cover and
+/// "Up next" over its title, opening Up next (the Queue tab).
+private struct UpNextButton: View {
+  let track: Track
+  let open: () -> Void
+
+  var body: some View {
+    Button(action: open) {
+      HStack(spacing: 10) {
+        Cover(path: track.coverUrl, points: 36, label: track.albumTitle, circle: true)
+          .frame(width: 36, height: 36)
+        VStack(alignment: .leading, spacing: 0) {
+          Kicker(text: "Up next")
+          Text(track.title).font(.sans(.subheadline)).lineLimit(1)
+        }
+      }
+      .padding(5)
+      .padding(.trailing, 11)
+      .background(Capsule().fill(.tint.opacity(0.16)))
+      .clipShape(Capsule())
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Up next: \(track.title)")
+    .accessibilityHint("Opens the queue")
   }
 }
 

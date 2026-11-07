@@ -1,8 +1,10 @@
 # Playarr iOS app: every entry point. The root package.json's `pnpm ios:*` scripts call these targets.
 #
 #   make bootstrap   download the pinned XcodeGen into .tools/ and generate Playarr.xcodeproj
-#   make build       simulator build (SIMULATOR="iPad Pro 13-inch (M5)" picks another)
-#   make test        the scripts' tests, `swift test` in each package, then the UI tests on a simulator
+#   make build       the design check, then a simulator build (SIMULATOR="iPad Pro 13-inch (M5)" picks another)
+#   make test        the design check, the scripts' tests, `swift test` in each package, then the UI tests on a simulator
+#   make design-check  no literal corner radius, .system(size:) or Color(red:) outside PlayarrUI's Theme/
+#                    (../../scripts/check-design.mjs, docs/design.md); build and test run it first
 #   make setup       register the bundle id; once the app record exists, the "Household" TestFlight group
 #                    (TESTERS="a@example.com b@example.com" adds those App Store Connect users to it)
 #   make beta        test, then archive, upload and hand the build to TestFlight (beta-upload skips the tests)
@@ -29,8 +31,11 @@ XCODEGEN := .tools/xcodegen-$(XCODEGEN_VERSION)/bin/xcodegen
 
 PACKAGES := PlayarrAPI PlayarrPlayer PlayarrUI
 SIMULATOR ?= iPhone 17 Pro
-# That simulator's id, or the first available iPhone's when this Xcode has none by that name.
-SIMULATOR_ID = $(shell { xcrun simctl list devices available | grep -E '^ +$(SIMULATOR) [(][0-9A-F-]{36}[)]'; xcrun simctl list devices available | grep -E '^ +iPhone'; } | head -1 | grep -oE '[0-9A-F-]{36}')
+# That simulator's id, or the first available iPhone's when this Xcode has none by that name. The name is matched as
+# it's written (-F): as a pattern, "iPad Pro 13-inch (M5)"'s brackets matched nothing, and the tests ran on an iPhone.
+# (The bracket after it is a variable: written inside $(shell ...), make would take it for part of the call.)
+lparen := (
+SIMULATOR_ID = $(shell { xcrun simctl list devices available | grep -F '    $(SIMULATOR) $(lparen)'; xcrun simctl list devices available | grep -E '^ +iPhone'; } | head -1 | grep -oE '[0-9A-F-]{36}')
 # -IDEPackageSupportDisableManifestSandbox: SwiftPM can't sandbox package manifests inside another sandbox (Claude's shell).
 # -Xfrontend -disable-sandbox: nor can the compiler sandbox the macro plugins it runs (@Observable).
 XCODEBUILD = xcodebuild -project Playarr.xcodeproj -scheme Playarr -derivedDataPath build/DerivedData \
@@ -39,7 +44,7 @@ XCODEBUILD = xcodebuild -project Playarr.xcodeproj -scheme Playarr -derivedDataP
 # The repo's .env has ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and IOS_BUNDLE_ID; CI sets them itself.
 NODE = node --env-file-if-exists=../../.env
 
-.PHONY: bootstrap tools project build test test-scripts test-packages test-app screens models models-check setup crashes beta beta-upload device screenshots store-check release release-submit clean
+.PHONY: bootstrap tools project design-check build test test-scripts test-packages test-app screens models models-check setup crashes beta beta-upload device screenshots store-check release release-submit clean
 
 bootstrap: project
 
@@ -59,10 +64,15 @@ $(XCODEGEN):
 project: $(XCODEGEN)
 	$(XCODEGEN) generate --spec project.yml --quiet
 
-build: project
+# Colors, type sizes and radii come from Theme/'s tokens: a new raw one fails here, naming the file and line, unless
+# the check's allow-list says why.
+design-check:
+	node ../../scripts/check-design.mjs --app ios
+
+build: design-check project
 	$(XCODEBUILD) build
 
-test: test-scripts test-packages test-app
+test: design-check test-scripts test-packages test-app
 
 test-scripts:
 	node --test 'scripts/*.test.mjs'

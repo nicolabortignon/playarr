@@ -60,7 +60,11 @@ struct PlaylistView: View {
         .listRowSeparator(.hidden)
       Section {
         if model.items.isEmpty {
-          EmptyState(systemImage: "music.note.list", line: PageLines.playlist(mine: model.mine), underHeader: true)
+          // Yours waits for songs to be added (the glyph for adding to a playlist, as the web's); someone else's is a
+          // playlist with nothing in it yet.
+          EmptyState(
+            systemImage: model.mine ? MenuAction.Kind.addToPlaylist.systemImage : "music.note.list", line: PageLines.playlist(mine: model.mine),
+            underHeader: true)
             .listRowSeparator(.hidden)
         }
         ForEach(Array(model.items.enumerated()), id: \.element.itemId) { index, item in

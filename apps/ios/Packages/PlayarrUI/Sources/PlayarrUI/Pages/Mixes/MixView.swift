@@ -95,17 +95,20 @@ struct MixView: View {
     }
   }
 
+  /// New mix's glyph: "do it again", two arrows round (docs/design.md, Icons), apart from Try again's one.
+  static let newMixImage = "arrow.triangle.2.circlepath"
+
   /// Another draw of the mix ("Mixing…" while it's made), as an icon when the row has no room for its words.
   @ViewBuilder private func newMix(compact: Bool) -> some View {
     let title = model.regenerating ? "Mixing…" : "New mix"
     Group {
       if compact {
-        Button { Task { await model.regenerate() } } label: { Image(systemName: "arrow.clockwise") }
+        Button { Task { await model.regenerate() } } label: { Image(systemName: Self.newMixImage) }
           .buttonStyle(.outlinedIcon)
           .accessibilityLabel(title)
       } else {
         Button { Task { await model.regenerate() } } label: {
-          SteadyLabel(title, systemImage: "arrow.clockwise", among: [("New mix", "arrow.clockwise"), ("Mixing…", "arrow.clockwise")])
+          SteadyLabel(title, systemImage: Self.newMixImage, among: [("New mix", Self.newMixImage), ("Mixing…", Self.newMixImage)])
         }
         .buttonStyle(.pill(.secondary, size: .large))
       }

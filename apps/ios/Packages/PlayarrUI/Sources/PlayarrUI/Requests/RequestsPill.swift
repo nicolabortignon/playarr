@@ -9,7 +9,12 @@ public struct RequestsPill: View {
   public var body: some View {
     if let count = context?.requests.activeCount, count > 0 {
       NavigationLink(value: Route.requests) {
-        Label(Format.plural(count, "request") + " in progress", systemImage: "arrow.triangle.2.circlepath")
+        // On their way: the system's spinner, as the web's turning LoaderCircle (two arrows round mean "do it again").
+        Label {
+          Text(Format.plural(count, "request") + " in progress")
+        } icon: {
+          ProgressView().controlSize(.mini)
+        }
       }
       .buttonStyle(.pill(.secondary, size: .small))
     }

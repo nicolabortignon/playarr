@@ -7,7 +7,7 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - App Store launch: the user's decisions, the privacy and support pages, the screenshots, the CI release job, a dry run, the submission. *([2026-11-03-ios-phase11-app-store.md](2026-11-03-ios-phase11-app-store.md))*
 - Checks on a real iPhone, iPad and iPhone Duo: sideways, iPad keyboard, pointer, drag, narrow windows, restoration, VoiceOver, Siri, the Duo's hinge, offline, the server settings panels. *([2026-11-05-ios-device-checklist.md](2026-11-05-ios-device-checklist.md))*
 - iOS offline, in the simulator against the dev server: album download ring and Library → Downloads, a playlist download fetching its transitions, lowering the limit to 512 MB, playing offline with skipped songs, resuming after quitting from the switcher. *(ios-status, phase 7)*
-- Plans 5 to 7 on iOS: plan 5's icons and design check, and plan 6's player (section 5), under way; then plan 7's sections 1 to 7. The web has done its part of all three. *([plan 5](2026-11-05-5-ui-consistency.md), [plan 6](2026-11-05-6-ux-flows.md), [plan 7](2026-11-05-7-delight.md))*
+- Plan 7 on iOS: sections 1 to 7, under way (plans 5 and 6 are done on both apps). The web has done its part. Also on iOS: Undo for un-hearting on Favorites, and AirPlay on the iPad and sideways. *([plan 5](2026-11-05-5-ui-consistency.md), [plan 6](2026-11-05-6-ux-flows.md), [plan 7](2026-11-05-7-delight.md))*
 
 ## Server
 

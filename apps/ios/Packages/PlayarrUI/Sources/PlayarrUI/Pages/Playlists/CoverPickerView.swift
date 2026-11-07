@@ -25,9 +25,9 @@ struct CoverPickerView: View {
             Button { picker.chosen = style.layout } label: {
               VStack(alignment: .leading, spacing: 6) {
                 // Some styles take a few seconds to draw: the cover's stand-in shows until they arrive.
-                Cover(path: picker.preview(style.layout), points: 170, label: style.label, corner: 6)
+                Cover(path: picker.preview(style.layout), points: 170, label: style.label, corner: Radius.cover)
                   .id("\(style.layout.rawValue)-\(picker.variant)")
-                  .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(chosen ? theme.accent.color : .clear, lineWidth: 3))
+                  .overlay(RoundedRectangle(cornerRadius: Radius.cover).strokeBorder(chosen ? theme.listAccent.color : .clear, lineWidth: 3))
                 Kicker(text: style.label)
               }
             }
@@ -41,6 +41,8 @@ struct CoverPickerView: View {
           .padding(.top, 24)
       }
       .padding(20)
+      // On a sheet, lighter than the page: the accent lifted to read there, as in the sheet's lists.
+      .tint(theme.listAccent.color)
       .navigationTitle("New cover")
       .toolbar {
         // Each with an icon: on the iPhone Duo's cover screen a full-height sheet's bar buttons move to the column down

@@ -15,6 +15,8 @@ extension ShapeStyle where Self == Color {
   public static var success: Color { .green }
   /// Worth a look before going on.
   public static var warning: Color { .yellow }
+  /// Playarr's own near-black, the deepest surface (the web's `ink-950`): behind the iPad's sidebar and side column.
+  public static var ink950: Color { RGB(hex: 0x0f0e0c).color }
 }
 
 /// Secondary text (the artist under a title, a description) that gets brighter with Increase Contrast. Playarr is

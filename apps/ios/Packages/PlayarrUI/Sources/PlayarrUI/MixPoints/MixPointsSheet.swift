@@ -26,7 +26,7 @@ public struct MixPointsSheet: View {
           } else if model.loaded {
             Text(MixPointsModel.notAnalyzed).font(.sans(.subheadline)).foregroundStyle(.secondary)
           } else {
-            RoundedRectangle(cornerRadius: 8).fill(.quaternary).frame(height: 96).accessibilityLabel("Loading mix points")
+            RoundedRectangle(cornerRadius: Radius.panel).fill(.quaternary).frame(height: 96).accessibilityLabel("Loading mix points")
           }
         }
         .padding(20)
@@ -92,7 +92,7 @@ public struct MixPointsSheet: View {
       }
     }
     .padding(12)
-    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+    .overlay(RoundedRectangle(cornerRadius: Radius.panel).strokeBorder(.separator))
   }
 
   private func stepButton(_ point: MixPointsEditor.Point, forward: Bool, phrase: Bool, icon: String, label: String) -> some View {

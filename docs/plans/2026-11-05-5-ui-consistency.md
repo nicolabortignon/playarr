@@ -6,12 +6,10 @@ Proposed 2026-11-05 from a review of every screen of both apps (how, below); agr
 
 **The rule:** a new screen uses the shared components; when none fits, the component and `docs/design.md` change together. Pages never hold raw colors, sizes or radii.
 
-## Where it stands (2026-11-06)
+## Where it stands (2026-11-07)
 
-- **Done on both apps:** 1 the design language written down (`docs/design.md`), 2 buttons and controls, 3 the action row, 4 page headers, 5 rows and cards, 7 one vocabulary, 8 empty, loading and error, 9 overlays.
-- **Done on the web, under way on iOS:**
-  - 6 icons: the rows of `docs/design.md`'s icon map marked "iOS to align" (Downloads, Requests, adding to a playlist, Do it again, and three glyphs still to make one picture).
-  - 10 the check: the web screen tour runs, and the web's check is enforced in its typecheck. iOS still has 22 literal corner radii, 2 `.system(size:)` and 2 `Color(red:)` to move onto Theme's tokens; then the check gets enforced in the iOS build.
+- **Done on both apps:** all ten steps. 1 the design language written down (`docs/design.md`), 2 buttons and controls, 3 the action row, 4 page headers, 5 rows and cards, 6 icons, 7 one vocabulary, 8 empty, loading and error, 9 overlays, 10 the tours and the check, enforced in the web's typecheck and in iOS's `make build` and `make test`.
+- **Left:** the check doesn't catch a radius handed to a parameter (`Cover(corner: 8)`, `TextBar`'s 3); Organize files keeps a picture of its own on each app, SF Symbols having no folder tree.
 
 ## How the screens were reviewed
 
@@ -201,6 +199,7 @@ The standard:
 - **Done when** each tour runs from one command, and the check fails a page that adds a raw color.
 - *Tour done 2026-11-06: `pnpm web:screens` (scripts/web-screens/, docs/web.md §12): 51 phone and 44 tablet screens in about 6 minutes. The check is `scripts/check-design.mjs`, report-only until the sweeps land.*
 - *Web check enforced 2026-11-06: the web is swept (no raw color or arbitrary text size outside `index.css` and the allow-list) and `pnpm -C apps/web typecheck` runs `check-design --app web`. iOS still counts 22 literal corner radii, 2 `.system(size:)` and 2 `Color(red:)`: its sweep, then enforcement, to do.*
+- *iOS check enforced 2026-11-07: the 22 radii are Theme tokens (`Radius.tile` new, 6), the sizes `Font.icon(_:)` (`IconRole`) and the colors `Color.ink950`; the energy chart's bars are allowed. `make build` and `make test` run `make design-check` first. Parameters that take a radius (`Cover(corner: 8)`, `TextBar`'s 3) aren't caught yet.*
 
 ## Order
 

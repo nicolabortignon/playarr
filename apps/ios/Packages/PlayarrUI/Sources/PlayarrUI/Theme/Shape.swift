@@ -5,6 +5,8 @@ import SwiftUI
 public enum Radius {
   /// Covers and thumbnails.
   public static let cover: CGFloat = 4
+  /// A place's icon on its tile (Library's rows) and the accent swatches: the web's `rounded-md`.
+  public static let tile: CGFloat = 6
   /// Panels and cards.
   public static let panel: CGFloat = 12
   /// Dialogs and sheets.

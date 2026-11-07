@@ -67,7 +67,9 @@ extension MenuAction.Kind {
     case .shuffle: "shuffle"
     case .playNext: "text.line.first.and.arrowtriangle.forward"
     case .addToQueue: "text.append"
-    case .addToPlaylist: "music.note.list"
+    // A list with a plus, as the web's ListPlus, for every way into a playlist (Save as playlist too): `music.note.list`
+    // is a playlist's own glyph.
+    case .addToPlaylist: "text.badge.plus"
     case .startRadio: "dot.radiowaves.left.and.right"
     case .goToAlbum: "square.stack"
     case .goToArtist: "music.mic"
@@ -75,7 +77,7 @@ extension MenuAction.Kind {
     case .editMixPoints: "waveform"
     case .favorite: "heart"
     case .openQueue: "list.bullet"
-    case .saveAsPlaylist: "bookmark"
+    case .saveAsPlaylist: "text.badge.plus"
     case .moveUp: "arrow.up"
     case .moveDown: "arrow.down"
     case .remove: "xmark"

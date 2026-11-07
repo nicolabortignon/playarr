@@ -2,8 +2,11 @@ import SwiftUI
 
 /// Feeling lucky (docs/design.md, "Controls"): 15 songs the server puts together now, starting from one that suits the
 /// hour, new at every press; the sparkles twinkle while they're picked, and a toast says why when nothing can be
-/// (apps/web/src/components/LuckyButton.tsx). On Home, and as what fills an empty queue, Made for you or Your listening.
+/// (apps/web/src/components/LuckyButton.tsx). On Home, and as what fills an empty queue, Made for you or Your listening;
+/// in the iPad's idle player bar, regular-sized, and outlined beside Resume.
 struct FeelingLuckyButton: View {
+  var variant: PillVariant = .primary
+  var size: PillSize = .large
   @Environment(AccountSession.self) private var session
   @State private var picking = false
 
@@ -19,10 +22,10 @@ struct FeelingLuckyButton: View {
       Label {
         Text("Feeling lucky")
       } icon: {
-        Twinkle(on: picking)
+        Twinkle(on: picking, size: size.icon)
       }
     }
-    .buttonStyle(.pill(.primary, size: .large))
+    .buttonStyle(.pill(variant, size: size))
     .disabled(picking)
     .accessibilityLabel("Feeling lucky")
     .accessibilityHint("Plays 15 songs picked for this hour, new every time")

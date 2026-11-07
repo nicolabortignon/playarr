@@ -42,14 +42,14 @@ struct DiscoverAlbumCard: View {
             .overlay(alignment: .topLeading) {
               if album.availability.state != .available, !onArtistPage {
                 Text(kind.uppercased())
-                  .font(.mono(size: 9)).tracking(1.5)
+                  .typeRole(.badge)
                   .padding(.horizontal, 6).padding(.vertical, 2)
-                  .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 3))
+                  .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.cover))
                   .padding(8)
               }
             }
             .overlay {
-              if highlighted { RoundedRectangle(cornerRadius: 4).strokeBorder(.tint, lineWidth: 2).padding(-4) }
+              if highlighted { RoundedRectangle(cornerRadius: Radius.cover).strokeBorder(.tint, lineWidth: 2).padding(-4) }
             }
           VStack(alignment: .leading, spacing: 2) {
             Text(album.title).font(.sans(.subheadline)).lineLimit(1)

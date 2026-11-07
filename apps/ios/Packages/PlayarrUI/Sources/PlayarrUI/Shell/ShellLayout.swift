@@ -13,4 +13,15 @@ public enum ShellLayout: String, Hashable, Sendable, Codable {
   public static func choose(regularWidth: Bool, width: CGFloat) -> ShellLayout {
     regularWidth && width >= splitMinWidth ? .split : .tabs
   }
+
+  /// How far up the window's foot a keyboard reaches before the player bar steps aside: a software keyboard takes
+  /// hundreds of points, while the home indicator takes 20 and a hardware keyboard's shortcuts bar a few dozen.
+  public static let keyboardReach: CGFloat = 120
+
+  /// Whether the iPad's player bar steps aside, from the window's bottom safe area (`bottomInset`, which takes in a
+  /// keyboard while one is up): while typing on the screen's keyboard, as the phone's tab bar and mini player do, so
+  /// what's typed keeps its results in view rather than two rows between the bar and the keys.
+  public static func barStepsAside(bottomInset: CGFloat) -> Bool {
+    bottomInset > keyboardReach
+  }
 }

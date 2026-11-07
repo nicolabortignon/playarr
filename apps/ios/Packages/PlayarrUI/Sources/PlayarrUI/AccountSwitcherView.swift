@@ -6,6 +6,7 @@ import SwiftUI
 struct AccountSwitcherView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(Theme.self) private var theme
     @State private var adding: AddServerFlow.Start?
     @State private var leaving: KeptForAccount?
 
@@ -42,6 +43,8 @@ struct AccountSwitcherView: View {
                     Button("Add a server") { adding = .address }
                 }
             }
+            // A system list, lighter than the page: the accent lifted to read on its rows ("Add account", the tick).
+            .tint(theme.listAccent.color)
             .navigationTitle("Accounts")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() } }

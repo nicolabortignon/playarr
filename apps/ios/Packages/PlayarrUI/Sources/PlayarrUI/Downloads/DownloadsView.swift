@@ -31,7 +31,7 @@ public struct DownloadsView<Cover: View>: View {
       if downloads.isEmpty {
         ScrollView {
           EmptyState(
-            systemImage: "arrow.down.circle", line: PageLines.downloads,
+            systemImage: "arrow.down.to.line", line: PageLines.downloads,
             fill: .action(EmptyState.Action("Browse albums", systemImage: "square.stack") { open("/albums") }))
         }
       } else {

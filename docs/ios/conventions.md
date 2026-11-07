@@ -36,7 +36,8 @@ apps/ios/
 ├── PlayarrUITests/    # the XCUITest target: flows, audits, ScreenTour, StoreScreenshots
 ├── store/             # the App Store listing: app.json, en-US/*.txt
 └── scripts/           # asc.mjs, release.mjs, appstore.mjs, store.mjs, screenshots.mjs, screens-covers.mjs,
-                       # gen-models.mjs, mix-fixtures.mjs (each with a .test.mjs), flatten-png.swift, make-icons.swift
+                       # gen-models.mjs, mix-fixtures.mjs (each with a .test.mjs), flatten-png.swift, make-icons.swift,
+                       # check-design.test.mjs (the repo's scripts/check-design.mjs, on iOS)
 ```
 
 Two things share the name `PlayarrUITests`: the XCUITest target at `apps/ios/PlayarrUITests/`, and `PlayarrUI`'s package test target at `Packages/PlayarrUI/Tests/PlayarrUITests/`. Give the full path when it matters.
@@ -48,8 +49,8 @@ Dependencies: the app target → `PlayarrUI` → `PlayarrPlayer` → `PlayarrAPI
 | pnpm script | Make target | What it does |
 |---|---|---|
 | `pnpm ios:bootstrap` | `bootstrap` | Download the pinned XcodeGen (2.46.0, SHA-256 checked) and generate the project |
-| `pnpm ios:build` | `build` | Simulator build |
-| `pnpm ios:test` | `test` | `test-scripts` (`node --test scripts/*.test.mjs`), `test-packages` (`swift test` in each package), `test-app` (the UI tests) |
+| `pnpm ios:build` | `build` | `design-check`, then a simulator build |
+| `pnpm ios:test` | `test` | `design-check`, `test-scripts` (`node --test scripts/*.test.mjs`), `test-packages` (`swift test` in each package), `test-app` (the UI tests) |
 | `pnpm ios:models` | `models` | Regenerate `Models.generated.swift`; `make models-check` fails when it's stale |
 | `pnpm ios:screens` | `screens` | Screenshots of the main views on the demo library, in `screenshots/<device>/` at the repo root |
 | `pnpm ios:device` | `device` | Build and install on a paired iPhone with `xcrun devicectl` |
@@ -58,7 +59,7 @@ Dependencies: the app target → `PlayarrUI` → `PlayarrPlayer` → `PlayarrAPI
 | `pnpm ios:crashes` | `crashes` | New TestFlight crash reports, logs saved in `apps/ios/build/crashes/` |
 | `pnpm ios:screenshots` | `screenshots` | The App Store screenshots |
 | `pnpm ios:release` | `release` | Test, then submit `MARKETING_VERSION` to the App Store |
-| none | `store-check`, `release-submit`, `models-check`, `tools`, `project`, `test-scripts`, `test-packages`, `test-app`, `clean` | Run with `make -C apps/ios <target>` |
+| none | `design-check`, `store-check`, `release-submit`, `models-check`, `tools`, `project`, `test-scripts`, `test-packages`, `test-app`, `clean` | Run with `make -C apps/ios <target>`. `design-check` is the repo's `scripts/check-design.mjs --app ios` (section 6) |
 
 Make variables go after the target, also through pnpm (`pnpm ios:screens SCREENS=ipad`):
 
@@ -101,7 +102,7 @@ Accounts, sessions, setup codes, the 401 rules and Bonjour are described in [../
 - User-facing text copies the web's wording, and where the two differ [design.md](../design.md)'s Words win: songs, not tracks; Favorites, capitalized; Made for you; Try again for every retry; a pending verb with an ellipsis ("Saving…"); Remove for what stays elsewhere, Delete for what goes for good; American spelling. Where the web names the browser, say "this device" ("This file format is not supported on this device"). A format is a `FormatBadge`, which leaves out what's ordinary (`Format.badge`; the full details are its accessibility value).
 - **Empty, loading and error.** An empty page is an `EmptyState`: its line from `PageLines` (design.md's The lines, word for word), and the action that fills it (`.lucky` where nothing else does; `ListeningEmptyState` for the queue and Favorites, `LibraryEmptyState` for Albums and Artists). Loading is a skeleton shaped like what's coming (`CardSkeletons`, `SongRowsSkeleton`, `ListRowsSkeleton`, `DetailSkeleton`), not a lone spinner. A page that couldn't load is an `ErrorState` ("The needle skipped.", the reason, Try again, Back home); a part of a page that couldn't is an `InlineError` in its place, with a small Try again.
 - **Taking things back.** What can be put back goes at once, with `ToastCenter.undo` (a removed download, Stop sharing). What the server can't take back hides at once and goes only once the Undo has (a request: `RequestsModel.hide(_:)`, then `remove(_:)` in the toast's `done`). What can't asks first with `confirmLoss`: a `LossQuestion` whose title names what goes, whose message says what goes and what stays, and whose verb is the destructive button beside Cancel. Questions are built by a model or a `static func`, so tests read them. Attach `confirmLoss` to the control it's asked from (the action row whose ⋯ holds Delete, the row's button), not to the whole page: a phone shows it as a popover pointing there, and asked from a page an iPhone SE showed nothing.
-- Every control is at least 44 points (`.contentShape` after the frame). Colors, type, radii and cover shadows come from `Theme/` by role ([design.md](../design.md)): secondary text is `.paperDim`, quieter text (kickers, times, counts) `.muted`; text drawn on artwork goes through `ArtworkText`. Use `AdaptiveStack`, `essentialLineLimit()`, `reducesMotion` and `pointerHover()` where they fit.
+- Every control is at least 44 points (`.contentShape` after the frame). Colors, type, radii and cover shadows come from `Theme/` by role ([design.md](../design.md)): secondary text is `.paperDim`, quieter text (kickers, times, counts) `.muted`, Playarr's own near-black `.ink950`; radii are `Radius.cover`, `.tile`, `.panel` and `.dialog`; a glyph inside something of a fixed size (a play button's circle, a cover) takes `Font.icon(_:)`'s `IconRole`, other symbols a text style; text drawn on artwork goes through `ArtworkText`. `make design-check`, which `build` and `test` run first, fails on a `Color(red:)`, `.system(size:)` or literal `cornerRadius:` outside `Theme/`, unless `scripts/check-design.mjs`'s `ALLOW` says why. Use `AdaptiveStack`, `essentialLineLimit()`, `reducesMotion` and `pointerHover()` where they fit.
 - **Headers.** A tab or a library list takes `pageHeader(_:count:)`, its controls going in the bar; anything you can play takes `DetailHeader` and `titleInBar(_:)`, its meta line a `MetaLine` of parts joined by dots ([layouts.md](layouts.md#2-iphone-upright)). A kicker is `Kicker` (`.muted` in the kicker role, `overArt:` for `.paperDim` over art). A name beside numbers is `NameAndNumbers`, so the numbers move under the name rather than cut it.
 - **Rows and menus.** A song in a list is a `SongRow` (a song not in the library a `MissingSongRow`), whose ⋯, long press and VoiceOver actions are the one song menu (`SongMenu.groups`), the place's own actions passed as `SongMenu.Place`; never build a song's menu by hand. Everything you can play offers `PlayableMenu`'s items, and a source in Settings `SourceMenu`'s. A change that can be taken back says so with `ToastCenter.undo(_:undo:)`; a menu item that takes something away is `.remove` (or `.delete`, for good), drawn in red.
 - Put `.accessibilityLabel` on the `Button` or `NavigationLink` itself. Never wrap a button in `.accessibilityElement(children: .ignore)`: VoiceOver and UI tests can't tap the wrapper.
@@ -118,7 +119,7 @@ Accounts, sessions, setup codes, the 401 rules and Bonjour are described in [../
 - UI tests each run on a simulator of their own. Phone flows that go through the tab bar call `skipOnIPad()` first.
 - **Launch arguments** (`Playarr/PlayarrApp.swift`): `-UITests` (no servers, nothing kept; takes a dev server's session from `PLAYARR_UITEST_SERVER` and `PLAYARR_UITEST_TOKEN`), `-UITestsDemo` (the demo library, without Lidarr: its search beyond the library answers as MusicBrainz would, and Settings → Accounts and Sources have an invited account and two sources), `-UITestsRequests` (the demo with Lidarr), and with the demo `-UITestsOffline`, `-UITestsLongQueue`, `-UITestsManyPlaylists`, `-UITestsTurnToOpen`, `-UITestsRestore`, `-UITestsFold flat|half` (the iPhone Duo's hinge, which the simulator can't open). `-UITestsDownloads` (Debug builds) opens made-up downloads.
 - **Environment for the UI tests**, through xcodebuild's `TEST_RUNNER_` prefix: `PLAYARR_UITEST_SERVER`, `PLAYARR_UITEST_ADMIN`, `PLAYARR_UITEST_PASSWORD` (`AccountsUITests`, skipped without them), `PLAYARR_DEVICE_CHECKS=1` and `PLAYARR_RESTORE=1` (checks only a device can do), `SCREENS_DIR` and `PLAYARR_DEMO_COVERS` (`ScreenTour`), and `PLAYARR_SCREENSHOTS`, `PLAYARR_SERVER`, `PLAYARR_USERNAME`, `PLAYARR_PASSWORD`, `PLAYARR_ALBUM`, `PLAYARR_LANDSCAPE` (`StoreScreenshots`, set by `screenshots.mjs`).
-- **Stable identifiers** include `settings` (in the account menu), `settings.<panel>`, `sidebar.*`, `playerBar*`, `sideColumn` and `nowPlaying.upNext`.
+- **Stable identifiers** include `settings` (in the account menu), `settings.<panel>`, `sidebar.*`, `playerBar*` (`playerBar` is gone while the screen's keyboard is up), `sideColumn` and `nowPlaying.upNext`.
 
 ## 8. Commits
 

@@ -30,7 +30,8 @@ public struct TransitionLine: View {
       Button {
         open = true
       } label: {
-        Label(text, systemImage: "arrow.triangle.merge")
+        // Two circles overlapping, one fading: the web's Blend.
+        Label(text, systemImage: "circle.dotted.and.circle")
           .font(.sans(.footnote).monospacedDigit())
           .lineLimit(1)
           .foregroundStyle(.secondary)

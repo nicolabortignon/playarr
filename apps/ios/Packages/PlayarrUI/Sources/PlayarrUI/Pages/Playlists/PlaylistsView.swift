@@ -23,7 +23,7 @@ struct PlaylistsView: View {
               Text("New playlist")
             }
             .frame(width: ShelfCard.width, height: ShelfCard.width)
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4])))
+            .overlay(RoundedRectangle(cornerRadius: Radius.cover).strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4])))
           }
           .buttonStyle(.plain)
           .accessibilityIdentifier("playlists.new")
