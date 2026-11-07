@@ -98,7 +98,15 @@ Every page is a `Route`, registered once in `shellDestinations(_:)` so tabs and 
 
 `Playarr/Intents/` has three `AudioPlaybackIntent`s, so they play without bringing the app to the front: Play my Favorites, Feeling lucky (15 songs for this hour), and Start radio from the current song. `PlayarrShortcuts` gives Siri their phrases and the Shortcuts app their actions. They find the app's `AppModel` through `AppDependencyManager` (registered in `PlayarrApp.init`) and call `QuickPlay` in `PlayarrUI`, the same code as the buttons in the app; a failure is spoken as `QuickPlay.Failure`'s text ("Open Playarr and sign in first.").
 
-## 6. Parity with the web
+## 6. Logs and diagnostics
+
+The app logs to the system's log by category (`Log` in PlayarrAPI: player, engine, downloads, network, auth), under the subsystem `playarr`. On a Mac with the device attached: Console.app, or `log stream --predicate 'subsystem == "playarr"'`. Ids, statuses and paths are public in the logs; titles, searches, addresses and tokens never go in. What's logged: requests that fail and why, the switch between the public and the home address, the home address's proof, signing in and out, each song started (by id) and why one failed or stalled, the network's changes, audio session events, engine rebuilds and output changes, downloads added, removed and failed.
+
+MetricKit's hang and crash reports come in on the launch after they happen (`HangReports`, started by the app delegate). The newest 20 are kept as a line each in Application Support.
+
+**Settings → Copy diagnostics** (`Diagnostics`) puts a report on the pasteboard for the listener to send themselves. It has the app's version, the system and the model's identifier, the server's version (asked again, which shows whether it answers) and the account's role. It says which addresses are in use, the network, and what the player is doing (song ids, not titles). Then the downloads' count and size, the MetricKit lines, and the log of the last hour (the newest 300 lines, from `OSLogStore`). Nothing is sent anywhere by the app.
+
+## 7. Parity with the web
 
 The app was built against an inventory of everything the web app does (every route, setting, endpoint and player rule). Today it covers:
 
@@ -110,7 +118,7 @@ The app was built against an inventory of everything the web app does (every rou
 
 What differs on purpose: accounts replace the web's old profiles; user-facing text follows the web's (and [design.md](../design.md)'s Words where the two differ), with "this device" where the web names the browser; keyboard shortcuts only with a hardware keyboard on an iPad.
 
-## 7. Building and testing
+## 8. Building and testing
 
 | Command | What it does |
 |---|---|

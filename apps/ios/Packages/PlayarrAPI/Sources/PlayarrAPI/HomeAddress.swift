@@ -77,6 +77,7 @@ public final class HomeAddress: Sendable {
     /// Asks the server at the home address to prove itself, and keeps its answer for the network it was asked on.
     private func ask(on generation: Int) async -> Bool {
         let outcome = await Self.prove(at: url, key: key, session: session)
+        Log.network.info("The home address, asked to prove itself: \(String(describing: outcome), privacy: .public)")
         state.withLock { state in
             state.last = (generation, outcome, .now)
             if state.asking?.generation == generation { state.asking = nil }

@@ -88,6 +88,8 @@ public final class Player {
   @ObservationIgnored private var pauseAtMixEnd: SampleTime?
   /// A song stopped by a dead spot, waiting to play on from where it was (`stall`).
   @ObservationIgnored private(set) var stalled: Stall?
+  /// The song is waiting out a dead spot (Settings → Copy diagnostics says so).
+  public var isStalled: Bool { stalled != nil }
   @ObservationIgnored private var seekedSinceTick = false
 
   /// The next song's mix couldn't be placed in time: it follows gapless (Stats for nerds says so).
@@ -279,7 +281,9 @@ public final class Player {
   // MARK: The system
 
   public func handle(_ event: SessionEvent) {
-    switch policy.action(for: event, playing: queue.playing) {
+    let action = policy.action(for: event, playing: queue.playing)
+    Log.engine.info("Audio session: \(String(describing: event), privacy: .public), \(String(describing: action), privacy: .public)")
+    switch action {
     case .pause:
       setPlaying(false)
     case .resume:
@@ -298,6 +302,7 @@ public final class Player {
   public func networkChanged(_ kind: NetworkKind) {
     let wasOffline = lastNetwork == .offline
     lastNetwork = kind
+    Log.network.info("Network: \(String(describing: kind), privacy: .public)")
     downloads.networkChanged(kind)
     if wasOffline && kind != .offline { Task { [reports] in await reports.retry() } }
     // A song stopped by a dead spot plays on from where it was, on whatever network is here now.
@@ -427,6 +432,7 @@ public final class Player {
     queue.startAt = nil
     firstLoad = false
     let item = EngineItem(track: track, gainDb: gainDb(track), startAt: start)
+    Log.player.info("Song \(track.id) from \(start, format: .fixed(precision: 1)) s\(resumed == nil ? "" : ", after a dead spot", privacy: .public)")
     pressed = nil
     pressAwaits = nil
     pauseAtMixEnd = nil
@@ -723,6 +729,7 @@ public final class Player {
       if skipToKept() { return sync() }
       if failure.isNetwork, stall(current.entry) { return }
       endStall()
+      Log.player.error("Song \(current.item.track.id) failed: \(failure.message, privacy: .public)")
       error = failure.message
       notice = Notice(text: failure.message, isError: true)
       queue.playing = false
@@ -737,7 +744,8 @@ public final class Player {
     var stall = stalled?.entry == entry ? stalled! : Stall(entry: entry, at: time)
     stall.retry?.cancel()
     stall.retry = nil
-    if network() != .offline {
+    let online = network() != .offline
+    if online {
       guard stall.tries < stallRetries.count else { return false }
       let wait = stallRetries[stall.tries]
       stall.tries += 1
@@ -747,6 +755,7 @@ public final class Player {
       }
     }
     if stalled == nil { notice = Notice(text: OfflinePlayback.stalledNotice, isError: false) }
+    Log.player.notice("Stalled at \(stall.at, format: .fixed(precision: 1)) s, \(online ? "tried again soon" : "offline", privacy: .public) (\(stall.tries) tries)")
     stalled = stall
     time = stall.at
     queue.playing = false
@@ -770,7 +779,8 @@ public final class Player {
 
   private func rebuildEngine() {
     let at = time
-    guard let fresh = try? makeEngine() else { return }
+    Log.engine.notice("Rebuilding the audio engine at \(at, format: .fixed(precision: 1)) s")
+    guard let fresh = try? makeEngine() else { return Log.engine.error("The audio engine couldn't be rebuilt") }
     engine.stop()
     engine = fresh
     engine.onEvent = { [weak self] in self?.handle($0) }

@@ -45,7 +45,9 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 - Timeouts on SSH commands, a size cap on remote images, one retry with backoff for Lidarr calls.
 - A per-source lock shared by refresh and organize.
 
-## 6. Logging and diagnostics — S–M
+## 6. Logging and diagnostics — S–M — done on iOS 2026-11-07
+
+*Done on iOS: `Log` categories, MetricKit's hang and crash reports, and Settings → Copy diagnostics (docs/ios/README.md §6). The server's part is left.*
 
 - iOS: `os.Logger` categories (player, engine, downloads, network, auth); MetricKit for hangs; Settings → "Copy diagnostics".
 - Server: 4xx/5xx logged with request id, account and route; `x-request-id` returned; an admin-only `/api/diagnostics` (versions, queue depths, stalls, last sync per source); the Docker health check on the API.

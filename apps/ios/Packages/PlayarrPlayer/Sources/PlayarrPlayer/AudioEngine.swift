@@ -628,11 +628,13 @@ public final class AudioEngine {
     // the music starts over from here.
     if metered != nil { tapMeter() }
     guard current != nil else { return }
+    Log.engine.notice("The output changed: the song starts over from here")
     reloadCurrent()
   }
 
   private func failed(_ id: UUID, _ error: any Error) {
     let playbackError = error as? PlaybackError ?? .undecodable
+    Log.engine.error("A deck failed: \(String(describing: error), privacy: .public)")
     if id == upcoming?.item.id {
       // The next song didn't load: it loads again the usual way when its turn comes.
       upcomingDeck?.release()

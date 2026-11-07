@@ -215,6 +215,7 @@ public final class DownloadStore {
   /// since). Transitions between songs that no longer follow each other go.
   public func add(key: String, title: String, subtitle: String? = nil, coverUrl: String? = nil, href: String, tracks: [Track]) {
     let songs = tracks.filter { $0.fileId > 0 }
+    Log.downloads.info("Download \(key, privacy: .public): \(songs.count) songs")
     let before = manifest.pins[key]
     let pairs = OfflineRules.pairs(of: songs, mode: OfflineRules.transitionMode)
     manifest.pins[key] = PinnedDownload(
@@ -233,6 +234,7 @@ public final class DownloadStore {
   /// use to downloads, so they go unless another one has them too.
   public func remove(_ key: String) {
     guard manifest.pins.removeValue(forKey: key) != nil else { return }
+    Log.downloads.info("Removed \(key, privacy: .public)")
     pinsChanged()
     save()
     let pinned = OfflineRules.pinnedSongs(manifest.pins)
@@ -475,7 +477,10 @@ public final class DownloadStore {
       } else if let fileId, !onPurpose {
         // Cancelled without us: the system stopped it (the app closed from the switcher), picked up again from its
         // resume data.
-        if failure != .cancelled { fail(fileId, failure.reason) }
+        if failure != .cancelled {
+          Log.downloads.error("Song file \(fileId) didn't download: \(failure.reason, privacy: .public)")
+          fail(fileId, failure.reason)
+        }
       }
       pump()
     }

@@ -8,6 +8,7 @@ struct SettingsView: View {
   let session: AccountSession
   @Environment(AppModel.self) private var app
   @Environment(Theme.self) private var theme
+  @State private var copying = false
 
   var body: some View {
     List {
@@ -51,6 +52,12 @@ struct SettingsView: View {
         }
       #endif
       Section {
+        Button("Copy diagnostics", systemImage: "doc.on.doc", action: copyDiagnostics)
+          .disabled(copying)
+      } footer: {
+        Text("For someone helping with a problem: the app’s and the server’s versions, the network, the player and the app’s recent log, without addresses, passwords or song titles.")
+      }
+      Section {
       } footer: {
         Text("Playarr \(app.appVersion.description)").frame(maxWidth: .infinity)
       }
@@ -62,6 +69,17 @@ struct SettingsView: View {
 
   /// The store's copy, which follows a role changed in Settings → Accounts.
   private var role: AccountRole { app.store.activeAccount?.account.role ?? session.account.role }
+
+  /// Copy diagnostics: gathered (the server asked, the log read), then on the pasteboard, with a toast.
+  private func copyDiagnostics() {
+    copying = true
+    Task {
+      let report = await Diagnostics.gather(app: app, session: session)
+      Pasteboard.copy(report.text)
+      session.toasts.push("Diagnostics copied")
+      copying = false
+    }
+  }
 }
 
 /// One panel of Settings.

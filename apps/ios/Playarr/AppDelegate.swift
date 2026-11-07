@@ -3,12 +3,14 @@ import PlayarrUI
 import UIKit
 
 /// The app's side of downloads on the background session: the session is made at launch, so a relaunch for finished
-/// downloads reconnects to it, and the system's completion handler is called once it has handed over every event.
+/// downloads reconnects to it, and the system's completion handler is called once it has handed over every event. At
+/// launch it also asks MetricKit for the app's hang and crash reports (`HangReports`, for Copy diagnostics).
 final class AppDelegate: NSObject, UIApplicationDelegate {
   private var finishBackgroundEvents: (() -> Void)?
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     _ = URLSessionTransport.background
+    HangReports.shared.start()
     return true
   }
 

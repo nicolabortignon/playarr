@@ -175,6 +175,7 @@ public final class ServerStore {
         }
         active = record.key
         save()
+        Log.auth.notice("Signed in: account \(record.account.id) (\(record.account.role.rawValue, privacy: .public)) of server \(info.id, privacy: .public), Playarr \(info.version, privacy: .public)")
     }
 
     /// Switches to another account: no password, its token is already kept.
@@ -194,6 +195,7 @@ public final class ServerStore {
 
     /// The server ended the session: forget the token, keep the account listed to sign in again.
     public func markSignedOut(_ key: AccountKey) {
+        Log.auth.notice("Signed out by the server, or without a token here: account \(key.accountId) of server \(key.serverId, privacy: .public)")
         try? secrets.removeToken(for: key.keychainAccount)
         clients[key] = nil
         homes[key] = nil
@@ -206,6 +208,7 @@ public final class ServerStore {
     /// Signs out on the server (POST /api/auth/sign-out), forgets the token and the account, and the
     /// server too once no account is left. Another signed-in account becomes active, if there is one.
     public func signOut(_ key: AccountKey) async {
+        Log.auth.notice("Signing out: account \(key.accountId) of server \(key.serverId, privacy: .public)")
         if let record = account(key), let client = client(for: record) {
             _ = try? await client.send(API.Auth.signOut())
         }

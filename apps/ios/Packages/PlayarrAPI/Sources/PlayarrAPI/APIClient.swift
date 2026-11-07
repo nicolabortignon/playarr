@@ -39,18 +39,24 @@ public actor APIClient {
         do {
             (data, http) = try await load(endpoint)
         } catch {
+            if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                Log.network.error("\(endpoint.method.rawValue, privacy: .public) \(endpoint.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
             throw Self.transportError(error)
         }
         if http.statusCode == 401, token != nil {
+            Log.auth.notice("\(endpoint.method.rawValue, privacy: .public) \(endpoint.path, privacy: .public): 401, the session is over")
             await onUnauthorized()
             throw APIError.unauthorized
         }
         guard (200..<300).contains(http.statusCode) else {
+            Log.network.error("\(endpoint.method.rawValue, privacy: .public) \(endpoint.path, privacy: .public): \(http.statusCode)")
             throw APIError.server(status: http.statusCode, message: Self.message(in: data, status: http.statusCode))
         }
         do {
             return try Self.decode(T.self, from: data)
         } catch {
+            Log.network.error("\(endpoint.method.rawValue, privacy: .public) \(endpoint.path, privacy: .public): an answer this app can't read")
             throw APIError.decoding(String(describing: error))
         }
     }
@@ -64,6 +70,7 @@ public actor APIClient {
                 return try await load(endpoint, from: home.url)
             } catch let error as URLError where Self.couldntConnect(error) {
                 try Task.checkCancellation()
+                Log.network.notice("The home address stopped answering: the public one again")
                 homeFirst = false
                 return try await load(endpoint, from: baseURL)
             }
@@ -76,6 +83,7 @@ public actor APIClient {
             // on another network (a café's, a captive portal's) never sees the token, or a question it could answer.
             guard await home.verify() else { throw error }
             let answer = try await load(endpoint, from: home.url)
+            if !homeFirst { Log.network.notice("The public address is out of reach: the proven home address instead") }
             homeFirst = true
             return answer
         }
