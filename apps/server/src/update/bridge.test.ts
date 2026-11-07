@@ -49,9 +49,26 @@ describe('UpdateBridge', () => {
       available: true,
       enabled: false,
       intervalMinutes: 60,
+      channel: 'stable',
       requested: false,
       status: { state: 'failed', lastCheck: 100, lastUpdate: 50, deployed: SHA, latest: SHA, error: 'Download failed' },
     });
+  });
+
+  it('passes on what the last check found, on which channel, and the release', async () => {
+    const found = status({ state: 'idle', outcome: 'waiting', channel: 'stable', release: 'v0.7.0' });
+    expect((await setup({ 'status.json': found }).bridge.info()).status).toEqual({
+      state: 'idle',
+      lastCheck: 100,
+      lastUpdate: 50,
+      deployed: SHA,
+      latest: SHA,
+      channel: 'stable',
+      release: 'v0.7.0',
+      outcome: 'waiting',
+    });
+    const odd = status({ outcome: 'deployed', channel: 'main', release: 'v1; rm -rf /' });
+    expect((await setup({ 'status.json': odd }).bridge.info()).status).toEqual({ state: 'idle', lastCheck: 100, lastUpdate: 50, deployed: SHA, latest: SHA });
   });
 
   it('treats a damaged status as missing and drops odd fields', async () => {
@@ -72,7 +89,7 @@ describe('UpdateBridge', () => {
     const { dir, bridge } = setup({ 'status.json': status() });
     await bridge.save({ enabled: true });
     await bridge.save({ intervalMinutes: 1440 });
-    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 1440 });
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 1440, channel: 'stable' });
     expect(existsSync(join(dir, 'settings.json.new'))).toBe(false);
     expect(await bridge.info()).toMatchObject({ enabled: true, intervalMinutes: 1440 });
     await expect(bridge.save({ intervalMinutes: 7 as never })).rejects.toMatchObject({ status: 400 });
@@ -81,8 +98,28 @@ describe('UpdateBridge', () => {
   });
 
   it('reads damaged settings as the defaults', async () => {
-    const info = await setup({ 'settings.json': '{"enabled":"true","intervalMinutes":5}' }).bridge.info();
-    expect(info).toMatchObject({ enabled: false, intervalMinutes: 60 });
+    const info = await setup({ 'settings.json': '{"enabled":"true","intervalMinutes":5,"channel":"main"}' }).bridge.info();
+    expect(info).toMatchObject({ enabled: false, intervalMinutes: 60, channel: 'edge' });
+  });
+
+  it('starts a new install on stable, and keeps settings saved before there were channels on edge', async () => {
+    expect((await setup({ 'status.json': status() }).bridge.info()).channel).toBe('stable');
+    const before = setup({ 'status.json': status(), 'settings.json': '{"enabled":true,"intervalMinutes":15}' });
+    expect(await before.bridge.info()).toMatchObject({ enabled: true, intervalMinutes: 15, channel: 'edge' });
+    // Saved once, the channel is written down, whichever rule gave it.
+    await before.bridge.save({ intervalMinutes: 60 });
+    expect(JSON.parse(readFileSync(join(before.dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 60, channel: 'edge' });
+    expect((await setup({ 'settings.json': 'not json' }).bridge.info()).channel).toBe('edge');
+  });
+
+  it('saves a channel, and nothing but stable or edge', async () => {
+    const { dir, bridge } = setup({ 'status.json': status() });
+    await bridge.save({ channel: 'edge' });
+    expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: false, intervalMinutes: 60, channel: 'edge' });
+    for (const channel of ['main', 'refs/heads/main', 'nicolabortignon/fork', 'Stable']) {
+      await expect(bridge.save({ channel: channel as never })).rejects.toMatchObject({ status: 400 });
+    }
+    expect((await bridge.info()).channel).toBe('edge');
   });
 
   it('asks the updater to check now', async () => {

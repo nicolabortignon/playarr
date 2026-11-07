@@ -529,7 +529,7 @@ export const useUpdates = () =>
     },
   });
 
-/** Turns automatic updates on or off, or changes how often; shown at once. */
+/** Turns automatic updates on or off, or changes how often or the channel; shown at once. */
 export function useSaveUpdates() {
   const client = useQueryClient();
   return useMutation({

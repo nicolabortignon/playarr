@@ -195,7 +195,7 @@ authRoutes(app, { accounts, sessions, setupCodes });
 accountRoutes(app, { accounts, sessions, setupCodes, publicUrl: config.PUBLIC_URL });
 const info = () => serverInfo({ store, name: config.SERVER_NAME, setupMode: () => accounts.setupMode(), ownerUsername: () => accounts.owner().username, publicUrl: config.PUBLIC_URL });
 serverRoutes(app, { info });
-apiRoutes(app, { config, lidarr, library, media, requestSettings });
+apiRoutes(app, { config, lidarr, library, media, requestSettings, db });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders, colors: coverColors });
 // Songs encoded as they're asked for (High and Normal quality), one encode per stream however many ask.

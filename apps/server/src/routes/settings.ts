@@ -75,10 +75,11 @@ const requestsInput = z.object({
   qualityProfileId: profileId.nullable().optional(),
   metadataProfileId: profileId.nullable().optional(),
 });
-// Only these two: never the repository, branch or commit (only GitHub main of the configured repository is deployed).
+// Only these: never the repository, branch or commit (only the configured repository's releases or main are deployed).
 const updatesInput = z.object({
   enabled: z.boolean().optional(),
   intervalMinutes: z.union([z.literal(15), z.literal(60), z.literal(360), z.literal(1440)]).optional(),
+  channel: z.enum(['stable', 'edge']).optional(),
 });
 
 /** Where the AcoustID key is saved (app settings). */

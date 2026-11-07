@@ -86,4 +86,41 @@ describe('UpdatesPanel', () => {
     expect(screen.getByText(/Up to date/)).toBeTruthy();
     expect(await screen.findByRole('button', { name: 'Reload' })).toBeTruthy();
   });
+
+  it('chooses the channel, and says what the last check found', async () => {
+    const lastCheck = Math.floor(Date.now() / 1000) - 120;
+    const info: UpdateInfo = {
+      available: true,
+      enabled: true,
+      intervalMinutes: 15,
+      channel: 'edge',
+      requested: false,
+      status: { state: 'idle', lastCheck, lastUpdate: 0, deployed: OLD, latest: NEW, channel: 'edge', outcome: 'waiting' },
+    };
+    const { calls, client } = show(info);
+    expect(await screen.findByText(/is waiting for its checks on GitHub/)).toBeTruthy();
+    expect(screen.getByText(/Latest on main/).textContent).toBe('Latest on main: bbbbbbb · Waiting for its checks');
+    expect(screen.getByText(/Every change to the main branch/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Stable' }));
+    await waitFor(() => expect(calls.filter((c) => c.method === 'PUT').map((c) => c.body)).toEqual(['{"channel":"stable"}']));
+    expect(await screen.findByText(/Releases only/)).toBeTruthy();
+
+    client.setQueryData<UpdateInfo>(['updates'], {
+      ...info,
+      channel: 'stable',
+      status: { state: 'idle', lastCheck, lastUpdate: 0, deployed: OLD, channel: 'stable', outcome: 'noRelease' },
+    });
+    expect(await screen.findByText('No release yet: Playarr stays on this version until the first one')).toBeTruthy();
+    expect(screen.getByText('Latest release: none yet')).toBeTruthy();
+
+    const error = "v0.7.0 (bbbbbbb) didn't start, so Playarr went back to aaaaaaa (rolled back)";
+    client.setQueryData<UpdateInfo>(['updates'], {
+      ...info,
+      channel: 'stable',
+      status: { state: 'failed', lastCheck, lastUpdate: 0, deployed: OLD, latest: NEW, channel: 'stable', release: 'v0.7.0', outcome: 'rolledBack', error },
+    });
+    expect((await screen.findByText(error)).className).toContain('text-danger');
+    expect(screen.getByText(/Latest release/).textContent).toBe('Latest release: v0.7.0 · bbbbbbb · It didn’t start');
+  });
 });

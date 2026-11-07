@@ -132,7 +132,7 @@ const MAP: MixMap = {
 
 describe('contract fixtures', () => {
   it('library, search, metadata and lyrics', async () => {
-    const { store, library } = await catalog();
+    const { db, store, library } = await catalog();
     const lyrics: Lyrics = { synced: [{ at: 12.5, text: 'Love, love is a verb' }], plain: 'Love, love is a verb', source: 'lrclib' };
     const app = Fastify();
     apiRoutes(app, {
@@ -141,6 +141,7 @@ describe('contract fixtures', () => {
       library,
       media: { kind: 'local', check: async () => {} } as unknown as MediaSource,
       requestSettings: () => ({ enabled: false, searchOnAdd: true }),
+      db,
     });
     metadataRoutes(app, { store, library, pathMap: [], features: () => new Map() });
     lyricsRoutes(app, { lyrics: { forTrack: async () => lyrics } });

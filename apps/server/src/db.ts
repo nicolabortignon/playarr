@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { usernameFrom } from './accounts/username.ts';
@@ -335,12 +335,19 @@ function schemaOf(db: DatabaseSync): number {
 /**
  * A copy of the database as it is now, consistent while it's in use (VACUUM INTO), in `folder` as `name`; the newest
  * BACKUPS_KEPT copies stay. A copy this version already made, before migrations that failed, is the database before
- * any of them, so it's kept as it is. A copy that can't be made stops the migration, and the server, with it.
+ * any of them, so it's kept as it is. A copy that can't be made stops the migration, and the server, with it. It's
+ * made under another name and renamed once complete: one cut short (the server stopped mid-copy) never passes for a
+ * whole one, which an update going back to the version before puts back (docker/update.sh).
  */
 export function backUp(db: DatabaseSync, folder: string, name: string) {
   mkdirSync(folder, { recursive: true });
   const file = join(folder, name);
-  if (!existsSync(file)) db.prepare('VACUUM INTO ?').run(file);
+  if (!existsSync(file)) {
+    const part = `${file}.part`;
+    rmSync(part, { force: true });
+    db.prepare('VACUUM INTO ?').run(part);
+    renameSync(part, file);
+  }
   const copies = readdirSync(folder)
     .filter((f) => /^playarr-.+\.db$/.test(f))
     .map((f) => ({ path: join(folder, f), at: statSync(join(folder, f)).mtimeMs }))

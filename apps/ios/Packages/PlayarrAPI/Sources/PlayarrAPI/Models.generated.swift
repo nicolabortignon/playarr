@@ -1021,13 +1021,16 @@ public struct HealthStatus: Codable, Hashable, Sendable {
     public var library: LibraryStats?
     /// A Lidarr source is set up and requests are allowed in Settings.
     public var requests: Bool
+    /// The database answers (a trivial query). An update waits for this, not `ok`, before it counts the new version as started (docker/update.sh). Absent from servers before it was added.
+    public var database: Database?
 
-    public init(ok: Bool, lidarr: Lidarr? = nil, media: Media, library: LibraryStats? = nil, requests: Bool) {
+    public init(ok: Bool, lidarr: Lidarr? = nil, media: Media, library: LibraryStats? = nil, requests: Bool, database: Database? = nil) {
         self.ok = ok
         self.lidarr = lidarr
         self.media = media
         self.library = library
         self.requests = requests
+        self.database = database
     }
 
     public struct Lidarr: Codable, Hashable, Sendable {
@@ -1094,6 +1097,16 @@ public struct HealthStatus: Codable, Hashable, Sendable {
                 var container = encoder.singleValueContainer()
                 try container.encode(rawValue)
             }
+        }
+    }
+
+    public struct Database: Codable, Hashable, Sendable {
+        public var ok: Bool
+        public var error: String?
+
+        public init(ok: Bool, error: String? = nil) {
+            self.ok = ok
+            self.error = error
         }
     }
 }
@@ -3344,9 +3357,46 @@ public enum TransitionStyle: RawRepresentable, Codable, Hashable, Sendable, Case
     }
 }
 
+/// Settings → Updates: stable installs the newest release on GitHub, edge every commit on main; either once its checks pass.
+public enum UpdateChannel: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case stable
+    case edge
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [UpdateChannel] = [.stable, .edge]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "stable": self = .stable
+        case "edge": self = .edge
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .stable: "stable"
+        case .edge: "edge"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 public struct UpdateInfo: Codable, Hashable, Sendable {
     public var enabled: Bool
     public var intervalMinutes: UpdateInterval
+    /// A new install starts on stable; one that saved its settings before there were channels stays on edge. Absent from older servers, which follow main.
+    public var channel: UpdateChannel?
     /// Updates can be managed here (Docker setup with the updater running).
     public var available: Bool
     /// Why not, when not.
@@ -3357,9 +3407,10 @@ public struct UpdateInfo: Codable, Hashable, Sendable {
     /// The last run's output (update.sh), last 60 lines.
     public var log: String?
 
-    public init(enabled: Bool, intervalMinutes: UpdateInterval, available: Bool, reason: String? = nil, status: Status? = nil, requested: Bool, log: String? = nil) {
+    public init(enabled: Bool, intervalMinutes: UpdateInterval, channel: UpdateChannel? = nil, available: Bool, reason: String? = nil, status: Status? = nil, requested: Bool, log: String? = nil) {
         self.enabled = enabled
         self.intervalMinutes = intervalMinutes
+        self.channel = channel
         self.available = available
         self.reason = reason
         self.status = status
@@ -3372,18 +3423,27 @@ public struct UpdateInfo: Codable, Hashable, Sendable {
         /// Unix seconds. 0: never.
         public var lastCheck: Int
         public var lastUpdate: Int
-        /// Commit running (full SHA), and the newest on GitHub main, when known.
+        /// Commit running (full SHA), and the newest on the channel, when known.
         public var deployed: String?
         public var latest: String?
         public var error: String?
+        /// The channel the last check followed.
+        public var channel: UpdateChannel?
+        /// On stable, the newest release's tag (the release `latest` is).
+        public var release: String?
+        /// Why the last check didn't install `latest`: its checks on GitHub haven't finished (waiting) or failed (checksFailed), stable has no release yet (noRelease), or it didn't start and the version that was running came back (rolledBack). waiting and noRelease aren't failures (state idle); the others come with `error`. Absent: updated, up to date, or another failure.
+        public var outcome: Outcome?
 
-        public init(state: State, lastCheck: Int, lastUpdate: Int, deployed: String? = nil, latest: String? = nil, error: String? = nil) {
+        public init(state: State, lastCheck: Int, lastUpdate: Int, deployed: String? = nil, latest: String? = nil, error: String? = nil, channel: UpdateChannel? = nil, release: String? = nil, outcome: Outcome? = nil) {
             self.state = state
             self.lastCheck = lastCheck
             self.lastUpdate = lastUpdate
             self.deployed = deployed
             self.latest = latest
             self.error = error
+            self.channel = channel
+            self.release = release
+            self.outcome = outcome
         }
 
         public enum State: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
@@ -3422,20 +3482,63 @@ public struct UpdateInfo: Codable, Hashable, Sendable {
                 try container.encode(rawValue)
             }
         }
+
+        public enum Outcome: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+            case waiting
+            case checksFailed
+            case noRelease
+            case rolledBack
+            /// A value this version of the app doesn't know yet.
+            case unknown(String)
+
+            public static let allCases: [Outcome] = [.waiting, .checksFailed, .noRelease, .rolledBack]
+
+            public init(rawValue: String) {
+                switch rawValue {
+                case "waiting": self = .waiting
+                case "checksFailed": self = .checksFailed
+                case "noRelease": self = .noRelease
+                case "rolledBack": self = .rolledBack
+                default: self = .unknown(rawValue)
+                }
+            }
+
+            public var rawValue: String {
+                switch self {
+                case .waiting: "waiting"
+                case .checksFailed: "checksFailed"
+                case .noRelease: "noRelease"
+                case .rolledBack: "rolledBack"
+                case .unknown(let value): value
+                }
+            }
+
+            public init(from decoder: any Decoder) throws {
+                self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+            }
+
+            public func encode(to encoder: any Encoder) throws {
+                var container = encoder.singleValueContainer()
+                try container.encode(rawValue)
+            }
+        }
     }
 }
 
-/// Settings → Updates: how often the updater container checks GitHub main.
+/// Settings → Updates: how often the updater container checks GitHub.
 public typealias UpdateInterval = Int
 
-/// What Settings → Updates can change. Not the repository, branch or commit: only main of the configured repository is deployed.
+/// What Settings → Updates can change. Not the repository, branch or commit: only the configured repository's releases or main are deployed.
 public struct UpdateSettings: Codable, Hashable, Sendable {
     public var enabled: Bool
     public var intervalMinutes: UpdateInterval
+    /// A new install starts on stable; one that saved its settings before there were channels stays on edge. Absent from older servers, which follow main.
+    public var channel: UpdateChannel?
 
-    public init(enabled: Bool, intervalMinutes: UpdateInterval) {
+    public init(enabled: Bool, intervalMinutes: UpdateInterval, channel: UpdateChannel? = nil) {
         self.enabled = enabled
         self.intervalMinutes = intervalMinutes
+        self.channel = channel
     }
 }
 
@@ -3443,10 +3546,13 @@ public struct UpdateSettings: Codable, Hashable, Sendable {
 public struct UpdateSettingsPatch: Codable, Hashable, Sendable {
     public var enabled: Bool?
     public var intervalMinutes: UpdateInterval?
+    /// A new install starts on stable; one that saved its settings before there were channels stays on edge. Absent from older servers, which follow main.
+    public var channel: UpdateChannel?
 
-    public init(enabled: Bool? = nil, intervalMinutes: UpdateInterval? = nil) {
+    public init(enabled: Bool? = nil, intervalMinutes: UpdateInterval? = nil, channel: UpdateChannel? = nil) {
         self.enabled = enabled
         self.intervalMinutes = intervalMinutes
+        self.channel = channel
     }
 }
 

@@ -347,7 +347,9 @@ describe('settings routes', () => {
     const withFolder = () => {
       const { dir, cleanup } = tempDir();
       const heartbeat = Math.floor(Date.now() / 1000);
-      writeFileSync(join(dir, 'status.json'), JSON.stringify({ state: 'idle', heartbeat, lastCheck: 0, lastUpdate: 0 }));
+      // What the last check found too, so the recorded answer carries every field the apps decode.
+      const found = { deployed: 'a'.repeat(40), latest: 'b'.repeat(40), channel: 'stable', release: 'v0.7.0', outcome: 'waiting' };
+      writeFileSync(join(dir, 'status.json'), JSON.stringify({ state: 'idle', heartbeat, lastCheck: 0, lastUpdate: 0, ...found }));
       return { dir, cleanup, ...setup(fakeMatcher(), fakeLidarr(), new UpdateBridge(dir)) };
     };
 
@@ -372,7 +374,7 @@ describe('settings routes', () => {
         const put = await app.inject({ method: 'PUT', url, payload: { enabled: true, intervalMinutes: 360 }, remoteAddress: HOME });
         expect(put.statusCode).toBe(200);
         expect(put.json()).toMatchObject({ enabled: true, intervalMinutes: 360 });
-        expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 360 });
+        expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 360, channel: 'stable' });
         const check = await app.inject({ method: 'POST', url: `${url}/check`, remoteAddress: HOME });
         expect(check.json()).toMatchObject({ requested: true });
         recordFixture('updates', check);
@@ -382,14 +384,15 @@ describe('settings routes', () => {
       }
     });
 
-    it('validates input, and takes nothing but enabled and the interval', async () => {
+    it('validates input, and takes nothing but enabled, the interval and a channel', async () => {
       const { app, dir, cleanup } = withFolder();
       try {
-        for (const payload of [{ intervalMinutes: 30 }, { enabled: 'yes' }, { intervalMinutes: '60' }]) {
+        const bad = [{ intervalMinutes: 30 }, { enabled: 'yes' }, { intervalMinutes: '60' }, { channel: 'main' }, { channel: 'v1.0.0' }, { channel: 'x/y' }];
+        for (const payload of bad) {
           expect((await app.inject({ method: 'PUT', url, payload, remoteAddress: HOME })).statusCode).toBe(400);
         }
-        await app.inject({ method: 'PUT', url, payload: { enabled: true, branch: 'evil', repo: 'x/y' }, remoteAddress: HOME });
-        expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 60 });
+        await app.inject({ method: 'PUT', url, payload: { enabled: true, channel: 'edge', branch: 'evil', repo: 'x/y', ref: 'v1' }, remoteAddress: HOME });
+        expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'))).toEqual({ enabled: true, intervalMinutes: 60, channel: 'edge' });
       } finally {
         cleanup();
       }

@@ -1,5 +1,6 @@
 import type { AlbumSort, HealthStatus, RequestSettings } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { DatabaseSync } from 'node:sqlite';
 import type { Config } from '../config.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
@@ -51,6 +52,8 @@ export function apiRoutes(
     library: Library;
     media: MediaSource;
     requestSettings: () => RequestSettings;
+    /** For health's `database`: absent, health leaves it out. */
+    db?: Pick<DatabaseSync, 'prepare'>;
   },
 ) {
   const { config, lidarr, library, media } = deps;
@@ -73,6 +76,18 @@ export function apiRoutes(
     return result;
   };
 
+  // The database answering a trivial query: what an update waits for (docker/update.sh looks for "database":{"ok":true),
+  // where `ok` also needs Lidarr and the music, which can be away for reasons of their own.
+  const database = (): HealthStatus['database'] => {
+    if (!deps.db) return undefined;
+    try {
+      deps.db.prepare('PRAGMA user_version').get();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  };
+
   app.get('/api/health', async (req): Promise<HealthStatus> => {
     const [lidarrResult, mediaResult] = await probes();
     const lidarrOk = lidarrResult.status === 'fulfilled';
@@ -91,6 +106,7 @@ export function apiRoutes(
       library: req.auth === null ? undefined : await libraryOf(library, req).stats(),
       // Request buttons show only to accounts that may use them.
       requests: lidarr.configured && deps.requestSettings().enabled && canRequest(req),
+      database: database(),
     };
   });
 

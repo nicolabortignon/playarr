@@ -132,6 +132,11 @@ export interface HealthStatus {
   library?: LibraryStats;
   /** A Lidarr source is set up and requests are allowed in Settings. */
   requests: boolean;
+  /**
+   * The database answers (a trivial query). An update waits for this, not `ok`, before it counts the new version as
+   * started (docker/update.sh). Absent from servers before it was added.
+   */
+  database?: { ok: boolean; error?: string };
 }
 
 export type AlbumSort = 'title' | 'artist' | 'year' | 'added';
@@ -624,13 +629,18 @@ export interface FolderAccessOptions {
   smb: boolean;
 }
 
-/** Settings → Updates: how often the updater container checks GitHub main. */
+/** Settings → Updates: how often the updater container checks GitHub. */
 export type UpdateInterval = 15 | 60 | 360 | 1440;
 
-/** What Settings → Updates can change. Not the repository, branch or commit: only main of the configured repository is deployed. */
+/** Settings → Updates: stable installs the newest release on GitHub, edge every commit on main; either once its checks pass. */
+export type UpdateChannel = 'stable' | 'edge';
+
+/** What Settings → Updates can change. Not the repository, branch or commit: only the configured repository's releases or main are deployed. */
 export interface UpdateSettings {
   enabled: boolean;
   intervalMinutes: UpdateInterval;
+  /** A new install starts on stable; one that saved its settings before there were channels stays on edge. Absent from older servers, which follow main. */
+  channel?: UpdateChannel;
 }
 
 export interface UpdateInfo extends UpdateSettings {
@@ -643,10 +653,21 @@ export interface UpdateInfo extends UpdateSettings {
     /** Unix seconds. 0: never. */
     lastCheck: number;
     lastUpdate: number;
-    /** Commit running (full SHA), and the newest on GitHub main, when known. */
+    /** Commit running (full SHA), and the newest on the channel, when known. */
     deployed?: string;
     latest?: string;
     error?: string;
+    /** The channel the last check followed. */
+    channel?: UpdateChannel;
+    /** On stable, the newest release's tag (the release `latest` is). */
+    release?: string;
+    /**
+     * Why the last check didn't install `latest`: its checks on GitHub haven't finished (waiting) or failed (checksFailed),
+     * stable has no release yet (noRelease), or it didn't start and the version that was running came back (rolledBack).
+     * waiting and noRelease aren't failures (state idle); the others come with `error`. Absent: updated, up to date, or
+     * another failure.
+     */
+    outcome?: 'waiting' | 'checksFailed' | 'noRelease' | 'rolledBack';
   };
   /** A Check now is waiting for the updater. */
   requested: boolean;

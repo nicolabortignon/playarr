@@ -30,10 +30,23 @@ public struct UpdatesPanel: View {
             if let command = unavailable.command { Text(command).font(.body.monospaced()).textSelection(.enabled) }
           }
         } else {
+          // Servers from before channels follow main, with no choice to show.
+          if let channel = info.channel {
+            Section {
+              Picker("Channel", selection: Binding(get: { channel }, set: { value in Task { await model.setChannel(value) } })) {
+                ForEach(UpdatesModel.channels, id: \.channel) { Text($0.label).tag($0.channel) }
+              }
+              .pickerStyle(.segmented)
+            } header: {
+              Text("Channel")
+            } footer: {
+              Text(UpdatesModel.note(for: channel))
+            }
+          }
           Section("Automatic updates") {
             Toggle(isOn: Binding(get: { info.enabled }, set: { on in Task { await model.setEnabled(on) } })) {
               Text("Update Playarr from GitHub automatically")
-              Text("Only the main branch of Playarr’s repository is ever installed.")
+              Text("Only Playarr’s own releases, or its main branch on Edge, are ever installed.")
             }
             Picker("Check every", selection: Binding(get: { info.intervalMinutes }, set: { value in Task { await model.setInterval(value) } })) {
               ForEach(UpdatesModel.intervals, id: \.minutes) { Text($0.label).tag($0.minutes) }

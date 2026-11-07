@@ -1,4 +1,4 @@
-import type { UpdateInfo, UpdateInterval } from '@playarr/shared';
+import type { UpdateChannel, UpdateInfo, UpdateInterval } from '@playarr/shared';
 import { RotateCw } from 'lucide-react';
 import { useEffect } from 'react';
 import { ApiError } from '../lib/api';
@@ -17,16 +17,33 @@ const INTERVALS: readonly { value: UpdateInterval; label: string }[] = [
   { value: 1440, label: 'Day' },
 ];
 
+const CHANNELS: readonly { value: UpdateChannel; label: string }[] = [
+  { value: 'stable', label: 'Stable' },
+  { value: 'edge', label: 'Edge' },
+];
+
+const CHANNEL_NOTES: Record<UpdateChannel, string> = {
+  stable: 'Releases only: the versions published on GitHub as ready for everyone. Switching from Edge installs the newest release at the next check, even an older one.',
+  edge: 'Every change to the main branch, once its checks pass on GitHub: the newest, and sometimes rough.',
+};
+
 const LOG =
   'mt-3 max-h-80 overflow-auto rounded-lg border border-line bg-ink-900 p-3 type-meta leading-relaxed whitespace-pre-wrap text-paper-dim';
 
 const short = (sha: string) => sha.slice(0, 7);
 
+type Status = NonNullable<UpdateInfo['status']>;
+
+/** The newest version on the channel by its name: the release on stable, else the commit. */
+function latestName(status: Status): string {
+  return status.channel === 'stable' && status.release ? status.release : short(status.latest ?? '');
+}
+
 /** The commit the server ran when this page loaded, to notice it being replaced (once per page load). */
 let loadedDeployed: string | undefined;
 let toldAboutUpdate = false;
 
-/** Settings → Updates: rebuild Playarr from GitHub main, on a schedule or now. For everyone (Docker setup only). */
+/** Settings → Updates: rebuild Playarr from GitHub, its releases or main, on a schedule or now. For everyone (Docker setup only). */
 export function UpdatesPanel() {
   const { data, error, refetch, isFetching } = useUpdates();
   const save = useSaveUpdates();
@@ -43,8 +60,9 @@ export function UpdatesPanel() {
   return (
     <div>
       <p className="mb-10 max-w-prose type-body text-paper-dim">
-        Playarr downloads the latest version from GitHub, rebuilds itself and restarts. The music keeps playing from your
-        device’s cache, and a failed update leaves the running version alone.
+        Playarr downloads the newest version on its channel from GitHub, rebuilds itself and restarts; the music keeps
+        playing from your device’s cache. A version is installed only once its checks pass on GitHub, and if it doesn’t
+        start, the version that was running comes back.
       </p>
 
       <SettingsSection title="Version">
@@ -57,10 +75,17 @@ export function UpdatesPanel() {
         </SettingsSection>
       ) : (
         <>
+          {data.channel && (
+            <SettingsSection title="Channel">
+              <Choice label="Channel" options={CHANNELS} value={data.channel} onChange={(channel) => save.mutate({ channel })} />
+              <p className="mt-3 type-small text-muted">{CHANNEL_NOTES[data.channel]}</p>
+            </SettingsSection>
+          )}
+
           <SettingsSection title="Automatic updates">
             <Switch
               label="Update Playarr from GitHub automatically"
-              description="Only the main branch of Playarr’s repository is ever installed."
+              description="Only Playarr’s own releases, or its main branch on Edge, are ever installed."
               checked={data.enabled}
               onChange={(enabled) => save.mutate({ enabled })}
             />
@@ -102,27 +127,38 @@ export function UpdatesPanel() {
   );
 }
 
+/** Why the newest version isn't the one running, when the last check said. */
+const NOT_INSTALLED: Partial<Record<NonNullable<Status['outcome']>, string>> = {
+  waiting: 'Waiting for its checks',
+  checksFailed: 'Its checks failed',
+  rolledBack: 'It didn’t start',
+};
+
 function Version({ info }: { info: UpdateInfo }) {
-  const deployed = info.status?.deployed;
-  const latest = info.status?.latest;
-  const running = deployed ?? __APP_REVISION__;
+  const status = info.status;
+  const latest = status?.latest;
+  const running = status?.deployed ?? __APP_REVISION__;
   const upToDate = latest && running ? latest.startsWith(running) || running.startsWith(latest) : undefined;
+  const stable = status?.channel === 'stable';
   return (
     <div className="space-y-1 type-body">
       <p className="text-paper">
         Playarr v{__APP_VERSION__}
         {__APP_REVISION__ && <span className="type-meta text-muted"> · {__APP_REVISION__}</span>}
       </p>
-      {latest && (
+      {status && latest ? (
         <p className="text-paper-dim">
-          Latest on GitHub: <span className="type-meta">{short(latest)}</span>
+          {stable ? 'Latest release' : 'Latest on main'}:{' '}
+          <span className="type-meta">{stable && status.release ? `${status.release} · ${short(latest)}` : short(latest)}</span>
           {upToDate !== undefined && (
             <span className={upToDate ? 'text-muted' : 'text-accent'}>
               {' · '}
-              {upToDate ? 'Up to date' : 'A newer version is available'}
+              {upToDate ? 'Up to date' : ((status.outcome && NOT_INSTALLED[status.outcome]) ?? 'A newer version is available')}
             </span>
           )}
         </p>
+      ) : (
+        status?.outcome === 'noRelease' && <p className="text-paper-dim">Latest release: none yet</p>
       )}
     </div>
   );
@@ -152,11 +188,20 @@ function LastCheck({ info }: { info: UpdateInfo }) {
     return <p className="type-body text-paper-dim">Checking for a new version…</p>;
   }
   if (!status?.lastCheck) return <p className="type-body text-muted">Not checked yet.</p>;
+  // A failure's words are update.sh's own (failed checks and a version that didn't start among them).
   const outcome =
     status.state === 'failed' ? (
       <span className="text-danger">{status.error ?? 'The update failed'}</span>
+    ) : status.outcome === 'waiting' && status.latest ? (
+      <span className="text-paper">
+        <span className="type-meta">{latestName(status)}</span> is waiting for its checks on GitHub
+      </span>
+    ) : status.outcome === 'noRelease' ? (
+      <span className="text-paper">No release yet: Playarr stays on this version until the first one</span>
     ) : status.lastUpdate === status.lastCheck && status.deployed ? (
-      <span className="text-paper">Updated to <span className="type-meta">{short(status.deployed)}</span></span>
+      <span className="text-paper">
+        Updated to <span className="type-meta">{status.deployed === status.latest ? latestName(status) : short(status.deployed)}</span>
+      </span>
     ) : (
       <span className="text-paper">Already up to date</span>
     );

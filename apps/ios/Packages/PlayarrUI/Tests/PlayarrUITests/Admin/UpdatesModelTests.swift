@@ -22,7 +22,7 @@ import Testing
     api.on(.get, "/api/settings/updates", json: info())
     await updates.load()
     #expect(updates.versionText == "Playarr v0.7.3 · 1a2b3c4")
-    #expect(updates.latestText == "Latest on GitHub: 9f8e7d6 · A newer version is available")
+    #expect(updates.latestText == "Latest on main: 9f8e7d6 · A newer version is available")
     #expect(updates.lastCheck(now: now) == ("2 minutes ago · Already up to date", false))
     api.on(.get, "/api/settings/updates", json: info(lastCheck: 1_800_000_000 - 120, lastUpdate: 1_800_000_000 - 120))
     await updates.load()
@@ -58,6 +58,34 @@ import Testing
     #expect(api.bodies(.put, "/api/settings/updates") == [#"{"intervalMinutes":1440}"#])
     #expect(updates.info?.intervalMinutes == 60)
     #expect(updates.notice == "Couldn’t save: The updater isn’t running")
+  }
+
+  @Test func choosesTheChannelAndSaysWhatTheLastCheckFound() async {
+    let updates = model()
+    let lastCheck = 1_800_000_000 - 120
+    func found(_ channel: String, _ status: String) -> String {
+      #"{"enabled":true,"intervalMinutes":15,"channel":"\#(channel)","available":true,"requested":false,"status":{"lastCheck":\#(lastCheck),"lastUpdate":0,"deployed":"1a2b3c4d5e",\#(status)}}"#
+    }
+    api.on(.get, "/api/settings/updates", json: found("edge", #""state":"idle","latest":"9f8e7d6c5b","channel":"edge","outcome":"waiting""#))
+    await updates.load()
+    #expect(updates.lastCheck(now: now) == ("2 minutes ago · 9f8e7d6 is waiting for its checks on GitHub", false))
+    #expect(updates.latestText == "Latest on main: 9f8e7d6 · Waiting for its checks")
+
+    api.on(.put, "/api/settings/updates", json: found("stable", #""state":"idle","channel":"stable","outcome":"noRelease""#))
+    await updates.setChannel(.stable)
+    #expect(api.bodies(.put, "/api/settings/updates") == [#"{"channel":"stable"}"#])
+    #expect(updates.info?.channel == .stable)
+    #expect(updates.lastCheck(now: now) == ("2 minutes ago · No release yet: Playarr stays on this version until the first one", false))
+    #expect(updates.latestText == "Latest release: none yet")
+
+    let error = "v0.7.0 (9f8e7d6) didn't start, so Playarr went back to 1a2b3c4 (rolled back)"
+    api.on(
+      .get, "/api/settings/updates",
+      json: found("stable", #""state":"failed","latest":"9f8e7d6c5b","channel":"stable","release":"v0.7.0","outcome":"rolledBack","error":"\#(error)""#)
+    )
+    await updates.load()
+    #expect(updates.lastCheck(now: now) == ("2 minutes ago · \(error)", true))
+    #expect(updates.latestText == "Latest release: v0.7.0 · 9f8e7d6 · It didn’t start")
   }
 
   @Test func explainsHowToStartTheUpdater() async {

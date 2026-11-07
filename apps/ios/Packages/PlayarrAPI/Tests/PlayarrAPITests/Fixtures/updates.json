@@ -2,10 +2,16 @@
   "available": true,
   "enabled": true,
   "intervalMinutes": 360,
+  "channel": "stable",
   "status": {
     "state": "idle",
     "lastCheck": 0,
-    "lastUpdate": 0
+    "lastUpdate": 0,
+    "deployed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "latest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "channel": "stable",
+    "release": "v0.7.0",
+    "outcome": "waiting"
   },
   "requested": true
 }

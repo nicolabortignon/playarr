@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { access, open, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { UpdateInfo, UpdateInterval, UpdateSettings } from '@playarr/shared';
+import type { UpdateChannel, UpdateInfo, UpdateInterval, UpdateSettings } from '@playarr/shared';
 
 /**
  * Settings → Updates, through the folder shared with the updater container (docker/updater.sh).
@@ -10,7 +10,10 @@ import type { UpdateInfo, UpdateInterval, UpdateSettings } from '@playarr/shared
  */
 
 const INTERVALS: readonly number[] = [15, 60, 360, 1440] satisfies UpdateInterval[];
-const DEFAULTS: UpdateSettings = { enabled: false, intervalMinutes: 60 };
+const CHANNELS: readonly string[] = ['stable', 'edge'] satisfies UpdateChannel[];
+const DEFAULTS = { enabled: false, intervalMinutes: 60 } as const satisfies UpdateSettings;
+type Outcome = NonNullable<Status['outcome']>;
+const OUTCOMES: readonly string[] = ['waiting', 'checksFailed', 'noRelease', 'rolledBack'] satisfies Outcome[];
 /** The updater writes a heartbeat every 30 s (every few seconds while it updates). */
 const STALE_AFTER_S = 180;
 const LOG_LINES = 60;
@@ -63,15 +66,18 @@ export class UpdateBridge {
     };
   }
 
+  /** Always writes the channel too, so settings saved once never fall back to another rule. */
   async save(patch: Partial<UpdateSettings>): Promise<void> {
     const dir = this.folder();
     if (patch.enabled !== undefined && typeof patch.enabled !== 'boolean') throw new UpdateError('enabled must be true or false', 400);
     if (patch.intervalMinutes !== undefined && !INTERVALS.includes(patch.intervalMinutes)) {
       throw new UpdateError(`intervalMinutes must be one of ${INTERVALS.join(', ')}`, 400);
     }
-    const next: UpdateSettings = { ...(await this.settings()) };
+    if (patch.channel !== undefined && !CHANNELS.includes(patch.channel)) throw new UpdateError(`channel must be ${CHANNELS.join(' or ')}`, 400);
+    const next = { ...(await this.settings()) };
     if (patch.enabled !== undefined) next.enabled = patch.enabled;
     if (patch.intervalMinutes !== undefined) next.intervalMinutes = patch.intervalMinutes;
+    if (patch.channel !== undefined) next.channel = patch.channel;
     await write(dir, 'settings.json', `${JSON.stringify(next)}\n`);
   }
 
@@ -85,14 +91,21 @@ export class UpdateBridge {
     return this.dir;
   }
 
-  /** settings.json, each value only if well-formed (the defaults otherwise). */
-  private async settings(): Promise<UpdateSettings> {
-    const raw = await readJson(join(this.dir!, 'settings.json'));
+  /**
+   * settings.json, each value only if well-formed (the defaults otherwise). The channel by the updater's rule
+   * (docker/updater.sh): no settings saved yet is a new install, on stable; settings saved before there were
+   * channels follow main. One the updater would refuse reads as edge here, until it's chosen again.
+   */
+  private async settings(): Promise<Required<UpdateSettings>> {
+    const path = join(this.dir!, 'settings.json');
+    const raw = await readJson(path);
+    const saved = raw !== undefined || (await exists(path));
     return {
       enabled: typeof raw?.enabled === 'boolean' ? raw.enabled : DEFAULTS.enabled,
       intervalMinutes: INTERVALS.includes(raw?.intervalMinutes as number)
         ? (raw!.intervalMinutes as UpdateInterval)
         : DEFAULTS.intervalMinutes,
+      channel: CHANNELS.includes(raw?.channel as string) ? (raw!.channel as UpdateChannel) : saved ? 'edge' : 'stable',
     };
   }
 
@@ -105,6 +118,9 @@ export class UpdateBridge {
     const deployed = sha(raw.deployed);
     const latest = sha(raw.latest);
     const error = typeof raw.error === 'string' && raw.error ? raw.error.slice(0, 500) : undefined;
+    const channel = CHANNELS.includes(raw.channel as string) ? (raw.channel as UpdateChannel) : undefined;
+    const release = typeof raw.release === 'string' && /^[A-Za-z0-9._/-]{1,100}$/.test(raw.release) ? raw.release : undefined;
+    const outcome = OUTCOMES.includes(raw.outcome as string) ? (raw.outcome as Outcome) : undefined;
     return {
       heartbeat: seconds(raw.heartbeat),
       status: {
@@ -114,6 +130,9 @@ export class UpdateBridge {
         ...(deployed ? { deployed } : {}),
         ...(latest ? { latest } : {}),
         ...(error ? { error } : {}),
+        ...(channel ? { channel } : {}),
+        ...(release ? { release } : {}),
+        ...(outcome ? { outcome } : {}),
       },
     };
   }

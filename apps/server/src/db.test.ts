@@ -230,6 +230,19 @@ describe('openDatabase', () => {
     copy.close();
   });
 
+  it('makes a copy cut short by an earlier start again, under its name only once it is whole', () => {
+    const dir = folder();
+    olderAt(dir, PROFILES_MIGRATION);
+    const name = `playarr-0.7.1-schema-${PROFILES_MIGRATION}.db`;
+    mkdirSync(join(dir, 'backups'));
+    writeFileSync(join(dir, 'backups', `${name}.part`), 'half a copy');
+    openDatabase(dir, '0.7.1').close();
+    expect(readdirSync(join(dir, 'backups'))).toEqual([name]);
+    const copy = new DatabaseSync(join(dir, 'backups', name));
+    expect((copy.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(PROFILES_MIGRATION);
+    copy.close();
+  });
+
   it('makes no copy of a new database, nor of one already up to date', () => {
     const dir = folder();
     openDatabase(dir, '0.7.1').close();
