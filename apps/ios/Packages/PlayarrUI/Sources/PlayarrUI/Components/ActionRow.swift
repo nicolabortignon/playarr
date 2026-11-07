@@ -36,11 +36,22 @@ struct ActionRow<Action: View, More: View>: View {
   }
 
   var body: some View {
+    // Each arrangement is made here, with the row, not by a ForEach: SwiftUI can measure one it hasn't made yet while
+    // it draws an animation off the main thread (iOS 26), and a closure made in `body` traps there (build 684).
     ViewThatFits(in: .horizontal) {
-      ForEach(ActionRowCompaction.steps(hasAction: Action.self != EmptyView.self), id: \.self) { row($0) }
+      step(0)
+      step(1)
+      step(2)
+      step(3)
       // Unclipped, so Play's glow isn't cut off at the row's edges.
       ScrollView(.horizontal) { row(.all) }.scrollIndicators(.hidden).scrollClipDisabled()
     }
+  }
+
+  /// The arrangement to try `index`th, if there's one (`ActionRowCompaction.steps`: three or four).
+  @ViewBuilder private func step(_ index: Int) -> some View {
+    let steps = ActionRowCompaction.steps(hasAction: Action.self != EmptyView.self)
+    if index < steps.count { row(steps[index]) }
   }
 
   private func row(_ compaction: ActionRowCompaction) -> some View {
