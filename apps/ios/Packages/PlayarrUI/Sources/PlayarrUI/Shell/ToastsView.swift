@@ -3,8 +3,9 @@ import SwiftUI
 /// The toasts at the top of the screen (apps/web/src/components/Toasts.tsx). VoiceOver reads each one out, and offers
 /// Dismiss on it (or the escape gesture); an Undo waits while VoiceOver or the pointer is on it. Buttons take 44 points.
 struct ToastsView: View {
-  /// A tap as each toast comes in: not from the one under Now Playing while it's open over it, so a toast taps once.
-  var haptics = true
+  /// A tap and VoiceOver reading each toast out as it comes in: not from the one under Now Playing while it's open over
+  /// it, so a toast taps and is read once.
+  var announces = true
   @Environment(ToastCenter.self) private var center
   /// Which toast VoiceOver is on, and on which part of it.
   @AccessibilityFocusState private var focus: Focus?
@@ -54,10 +55,10 @@ struct ToastsView: View {
     // A tap as each toast comes in (a removal warns, an error is an error): on the stack, as a toast's own view is new
     // when it comes, with nothing to change from.
     .sensoryFeedback(
-      center.toasts.last.map(Haptic.toast(_:)) ?? Haptic.success, trigger: Arrival(id: center.toasts.last?.id, haptics: haptics),
+      center.toasts.last.map(Haptic.toast(_:)) ?? Haptic.success, trigger: Arrival(id: center.toasts.last?.id, announces: announces),
       condition: Self.arrived)
     .onChange(of: center.toasts.last?.id) { _, _ in
-      if let message = center.toasts.last?.message { AccessibilityNotification.Announcement(message).post() }
+      if announces, let message = center.toasts.last?.message { AccessibilityNotification.Announcement(message).post() }
     }
     // VoiceOver on a toast holds its Undo; moving on lets its time start over.
     .onChange(of: focus?.id) { before, now in
@@ -71,14 +72,14 @@ struct ToastsView: View {
   /// What a toast's tap goes by: the newest toast, and whether this stack taps.
   struct Arrival: Equatable, Sendable {
     let id: Int?
-    let haptics: Bool
+    let announces: Bool
   }
 
   /// A toast came in: the newest is a newer one (ids only grow), rather than one gone, on a stack that taps (one taking
   /// up tapping again doesn't tap for the toast already there). A function outside the main actor, as SwiftUI keeps it
   /// to call later.
   nonisolated static func arrived(_ before: Arrival, _ now: Arrival) -> Bool {
-    now.haptics && (now.id ?? 0) > (before.id ?? 0)
+    now.announces && (now.id ?? 0) > (before.id ?? 0)
   }
 }
 

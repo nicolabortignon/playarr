@@ -66,14 +66,14 @@ import Testing
   }
 
   @Test func tapsAsEachToastComesInNotAsOneGoes() {
-    let at = { (id: Int?) in ToastsView.Arrival(id: id, haptics: true) }
+    let at = { (id: Int?) in ToastsView.Arrival(id: id, announces: true) }
     #expect(ToastsView.arrived(at(nil), at(1)))
     #expect(ToastsView.arrived(at(1), at(2)))
     #expect(!ToastsView.arrived(at(2), at(1)))
     #expect(!ToastsView.arrived(at(1), at(nil)))
     // Behind Now Playing the stack doesn't tap, nor, once it closes, for the toast already there.
-    #expect(!ToastsView.arrived(at(1), ToastsView.Arrival(id: 2, haptics: false)))
-    #expect(!ToastsView.arrived(ToastsView.Arrival(id: 2, haptics: false), at(2)))
+    #expect(!ToastsView.arrived(at(1), ToastsView.Arrival(id: 2, announces: false)))
+    #expect(!ToastsView.arrived(ToastsView.Arrival(id: 2, announces: false), at(2)))
   }
 
   @Test func undoingStopsWhatWaited() {

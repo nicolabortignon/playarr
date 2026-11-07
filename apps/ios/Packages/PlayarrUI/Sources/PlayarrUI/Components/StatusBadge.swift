@@ -37,11 +37,12 @@ struct StatusBadge: View {
     .frame(minHeight: PillSize.small.height)
     .background {
       ZStack(alignment: .leading) {
+        // Scaled from the leading edge rather than measured: a GeometryReader's closure, the main actor's, would be
+        // called again as the badge's width changes, maybe mid-animation off the main thread, where it traps (build 684).
         if let progress {
-          GeometryReader { box in
-            Rectangle().fill(style(0.15)).frame(width: box.size.width * min(max(progress, 0), 1))
-          }
-          .clipShape(Capsule())
+          Rectangle().fill(style(0.15))
+            .scaleEffect(x: min(max(progress, 0), 1), y: 1, anchor: .leading)
+            .clipShape(Capsule())
         }
         Capsule().strokeBorder(tone == .quiet ? AnyShapeStyle(.line) : style(0.4), lineWidth: 1)
       }
