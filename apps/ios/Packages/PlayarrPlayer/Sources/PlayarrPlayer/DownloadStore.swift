@@ -46,6 +46,9 @@ public final class DownloadStore {
   /// The pair the player is asking the server about (phase 5's planner): the server keeps one waiting render per
   /// song, so a download asking about the same song into another one would push the player's out.
   @ObservationIgnored public var playerPair: @MainActor () -> (fromFileId: Int, toFileId: Int)? = { nil }
+  /// Levels learned for downloads' songs, as they're learned: the player's level store takes them then, for playing
+  /// them offline later in the same run, rather than at the next launch (`keptLevels`).
+  @ObservationIgnored public var learnedLevels: @MainActor ([String: TrackLevel]) -> Void = { _ in }
 
   @ObservationIgnored private let settings: PlaybackSettings
   @ObservationIgnored private let cache: StreamCache
@@ -661,6 +664,7 @@ public final class DownloadStore {
       for t in tracks { if let level = found[t.recordingId] { manifest.pins[key]?.levels[t.recordingId] = level } }
     }
     save()
+    if !found.isEmpty { learnedLevels(found) }
   }
 
   // MARK: Disk

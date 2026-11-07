@@ -58,5 +58,4 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 
 - Hand-set cue points stay on the old id when a folder song is matched to MusicBrainz (`moveRecording` in `apps/server/src/catalog/store.ts` moves favorites, playlist items, sound analysis and plays only), though a comment in `db.ts` says they survive. *(found)*
 - A deleted copy's id can be handed to a new Lidarr copy with the same track-file id (`freeId` in `catalog/store.ts`), which could point a song kept offline at another file. *(found)*
-- On iOS, levels a download learns while the app runs reach the player only at the next launch or sign-in (`levels.remember(downloads.keptLevels)` runs once in `Player.init`). *(found)*
 - An iPhone Pro Max held sideways may be regular width (956 points), which would give it the iPad's sidebar and wide Now Playing instead of the sleeve (`ShellLayout.choose`); untested, worth a look on the simulator. *(found)*

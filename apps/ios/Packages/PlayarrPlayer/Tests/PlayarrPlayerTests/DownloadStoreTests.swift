@@ -299,10 +299,14 @@ struct DownloadStoreTests {
   @Test func keepsEvenVolumeWithADownloadForPlayingOffline() async {
     let rig = StoreRig()
     rig.backend.levelTable.withLock { $0 = ["rec-4": TrackLevel(track: -5, album: -3)] }
+    var learned: [String: TrackLevel] = [:]
+    rig.store.learnedLevels = { learned.merge($0) { _, new in new } }
     rig.store.add(album([4, 5]))
     await eventually { !rig.store.keptLevels.isEmpty }
     #expect(rig.store.keptLevels == ["rec-4": TrackLevel(track: -5, album: -3)])
     #expect(JSONFile<OfflineManifest>(rig.folder.manifest).read()?.pins["album:1"]?.levels.count == 1)
+    // And the player hears of them at once, for playing the album offline before the next launch.
+    #expect(learned == ["rec-4": TrackLevel(track: -5, album: -3)])
   }
 
   @Test func removeAllLeavesNothing() async throws {

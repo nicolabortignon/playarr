@@ -104,7 +104,7 @@ The coordinator's download closure plays a kept file from `offline/transitions/`
 - **Starting a song.** Offline, if the song isn't kept, the Player jumps to the next kept song in play order (no wrapping round, `OfflinePlayback.nextKept`) with the web's toast: "Offline: skipped songs that aren't on this device". With none kept ahead, it tries the song and fails in the web's words.
 - **The next song.** A song that isn't kept isn't joined as the next one. The current song ends, and the next kept one is found then.
 - **A song that fails offline** skips to the next kept one in the same way.
-- **Levels.** Downloads keep their songs' levels (asked once while online, 50 to a request, again after reconnecting), so their songs play levelled offline. The Player reads them into `LevelStore` when it's made (`levels.remember(downloads.keptLevels)`).
+- **Levels.** Downloads keep their songs' levels (asked once while online, 50 to a request, again after reconnecting), so their songs play levelled offline. The Player reads them into `LevelStore` when it's made (`levels.remember(downloads.keptLevels)`), and takes the ones a download learns later as they're learned (`DownloadStore.learnedLevels`), so an album downloaded and then played offline in the same run is levelled too.
 
 ## 8. Pages offline
 

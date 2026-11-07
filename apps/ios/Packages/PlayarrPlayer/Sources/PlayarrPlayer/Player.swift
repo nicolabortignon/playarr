@@ -110,6 +110,7 @@ public final class Player {
     let downloads = DownloadStore(folder: folder, settings: settings, cache: cache, transport: transport, backend: backend)
     let levels = LevelStore { ids in try await backend.levels(ids) }
     levels.remember(downloads.keptLevels)
+    downloads.learnedLevels = { [weak levels] found in levels?.remember(found) }
     let reports = PlayReportQueue(file: directory.appending(path: "pending-plays.json")) { try await backend.reportPlays($0) }
     let sources: @MainActor (EngineItem, Int64) -> any PCMSource = makeSource ?? { item, frame in
       // After a transition into an MP3: the server's rest of it, which runs on from the transition sample for sample.
