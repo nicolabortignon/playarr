@@ -62,6 +62,8 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 ## 7. Code health — L, as we go
 
+*Done so far: the boot smoke test (`apps/server/src/boot.test.ts`: the server as `pnpm dev` runs it starts on empty folders, answers `/api/health` with its headers, and closes with nothing logged as an error).*
+
 - The web player engine (`AudioEngine.tsx`, 2,171 lines) becomes a framework-free engine with an explicit state machine and one owner of its timers; the React component a thin adapter.
 - ESLint with `react-hooks` and `jsx-a11y` (rules only, no formatter); web tests that fail on any unmocked network request.
 - Server: one error type and handler, zod for every route, `store.ts` split, a boot smoke test.
