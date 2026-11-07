@@ -38,6 +38,8 @@ final class MixModel {
   }
 
   func load() async {
+    // Kept on disk: shown first, read off the main thread.
+    if mix == nil, let kept = await session.queries.kept(.mix(key), as: MixDetail.self)?.value { mix = kept }
     do {
       let fresh = try await session.api.send(API.Mixes.get(key: key, timeZone: timeZone))
       mix = fresh

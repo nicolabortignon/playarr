@@ -43,6 +43,8 @@ public final class FavoritesStore {
   public var duration: Double { tracks?.reduce(0) { $0 + $1.duration } ?? 0 }
 
   public func load() async {
+    // A long list kept on disk shows first, read off the main thread.
+    if tracks == nil, let kept = await queries.kept(.favorites, as: [FavoriteTrack].self)?.value, tracks == nil { show(kept) }
     let asked = changes
     do {
       let fresh = try await api.send(API.Favorites.list())

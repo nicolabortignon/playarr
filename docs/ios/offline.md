@@ -111,7 +111,7 @@ The coordinator's download closure plays a kept file from `offline/transitions/`
 
 ## 8. Pages offline
 
-The query cache (`PlayarrUI/Data/QueryCache.swift`, in `queries/`) keeps the library families on disk for 7 days (`QueryKey.keptNames`: artists, artist, albums, album, favorites, playlists, playlist, mixes). A download's pages are pinned on top (`PinnedDownload.pageKeys`, applied by `pinningDownloadedPages` in `RootView` and when the session opens). Pinned pages stay on disk however old they are, and `removeExpired` leaves them alone:
+The query cache (`PlayarrUI/Data/QueryCache.swift`, in `queries/`) keeps the library families on disk for 7 days (`QueryKey.keptNames`: artists, artist, albums, album, favorites, playlists, playlist, mixes). A download's pages are pinned on top (`PinnedDownload.pageKeys`, applied by `pinningDownloadedPages` in `RootView` and when the session opens). Pinned pages stay on disk however old they are, and `removeExpired` leaves them alone. An answer on disk up to 64 KB is read at once when a page opens; a bigger one (the artists, Favorites, a long playlist) is read and decoded off the main thread as the page loads (`QueryCache.kept`), since decoding it would hold up the music's thread for tens of milliseconds:
 
 | Download | Pages kept |
 |---|---|

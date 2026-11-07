@@ -68,6 +68,8 @@ struct AppShell: View {
     .task(id: session.key) { session.discover.start() }
     .onChange(of: scenePhase) { _, phase in
       model.isActive = phase == .active
+      // Screens' polling waits in the background (plan 3 §2).
+      if phase != .inactive { AppActivity.shared.set(inForeground: phase == .active) }
       // Back on screen: the app may have been suspended, so health and the requests are asked for at once.
       if phase == .active {
         session.discover.becameActive()

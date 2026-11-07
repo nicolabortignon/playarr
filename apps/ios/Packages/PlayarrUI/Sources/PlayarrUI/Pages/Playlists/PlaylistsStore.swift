@@ -32,6 +32,8 @@ public final class PlaylistsStore {
   public var addable: [PlaylistSummary] { playlists?.filter(TrackDrag.accepts) ?? [] }
 
   public func load() async {
+    // A long list kept on disk shows first, read off the main thread.
+    if playlists == nil, let kept = await queries.kept(.playlists, as: [PlaylistSummary].self)?.value { playlists = kept }
     do {
       let fresh = try await api.send(API.Playlists.list())
       playlists = fresh

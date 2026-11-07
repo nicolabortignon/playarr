@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 **Goal:** Playarr holds up on a collector's library (100k tracks) and in daily use: no stalls on the server's event loop or the iPhone's main thread, nothing lost when storage fills or two tabs are open, sessions and connections that can be trusted, and enough logging to diagnose a user's problem.
 
-**Where it stands (2026-11-07):** §1 done but for the build in a worker; §2 partly done; §6 done on iOS. The rest not started.
+**Where it stands (2026-11-07):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §6 done on iOS. The rest not started.
 
 ## 1. Big libraries — M — done 2026-11-07, but for the build in a worker
 
@@ -16,9 +16,9 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 - An ETag from the library version on `/api/albums` and `/api/artists`; paging where lists get long; iOS and web page or index the albums list.
 - **Done when**, at 100k tracks, a no-change refresh takes under 1 s, search answers in under 200 ms and the albums page opens in under 2 s.
 
-## 2. iOS: the main thread belongs to the audio — M — partly done 2026-11-07
+## 2. iOS: the main thread belongs to the audio — M — done 2026-11-07 but for the measurement
 
-*Done: the queue and the downloads' list are written off the main thread, a second after they last changed and at once when the app goes to the background (`JSONWriter`), and where it is in the song is saved on its own (`resume.json`); covers are decoded off the main thread and kept decoded (`PreparedImages`, 48 MB); the query cache keeps the 300 answers used most recently in memory; the clock ticks twice a second while paused; sideways Now Playing's "Playing from" line and the synced lyrics' line are the only parts of their pages that read the clock (`PlayingFromButton`, `LineFollower`), so the pages aren't made again 10 times a second. Left: cached answers read from disk off the main thread, polling paused in the background (but the requests' watch, which notifies), and the measurement in Instruments on a device.*
+*Done: the queue and the downloads' list are written off the main thread, a second after they last changed and at once when the app goes to the background (`JSONWriter`), and where it is in the song is saved on its own (`resume.json`); covers are decoded off the main thread and kept decoded (`PreparedImages`, 48 MB); the query cache keeps the 300 answers used most recently in memory; the clock ticks twice a second while paused; sideways Now Playing's "Playing from" line and the synced lyrics' line are the only parts of their pages that read the clock (`PlayingFromButton`, `LineFollower`), so the pages aren't made again 10 times a second. Cached answers bigger than 64 KB (the artists, Favorites, a long playlist) are read and decoded off the main thread (`QueryCache.kept`), smaller ones at once so a page opens with them; screens' polling (admin panels, health, MusicBrainz's status, a cover being drawn) waits while the app is in the background, playing music or not, and asks at once when it's back (`AppActivity`); the requests' watch goes on, since it tells of albums that arrived. Left: the measurement in Instruments on a device.*
 
 - Queue and download-manifest saves move into an actor with debounced writes; the resume position is saved on its own (`Player.swift`, `JSONFile.swift`, `DownloadStore.swift`).
 - Cached answers decoded off the main thread (`QueryCache.swift`, `Query.swift`).

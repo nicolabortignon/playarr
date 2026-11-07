@@ -55,11 +55,9 @@ public final class DiscoverContext {
   public func start() {
     requests.startPolling()
     healthWatch?.cancel()
+    // Health waits in the background (the requests' polling doesn't: it tells of albums that arrived).
     healthWatch = Task { [weak self, clock] in
-      while !Task.isCancelled {
-        await self?.refreshHealth()
-        do { try await clock.sleep(for: .seconds(60)) } catch { return }
-      }
+      await Polling.run(clock: clock, interval: { .seconds(60) }) { await self?.refreshHealth() }
     }
   }
 

@@ -19,11 +19,11 @@ public final class MusicBrainzStatusModel {
     (status?.queued ?? 0) > 0 ? .milliseconds(1500) : .seconds(15)
   }
 
-  /// Keeps `status` fresh until the calling task is cancelled.
+  /// Keeps `status` fresh until the calling task is cancelled (waiting while the app is in the background).
   public func watch() async {
-    while !Task.isCancelled {
-      if let fresh = try? await api.send(API.Server.musicBrainzStatus()) { status = fresh }
-      do { try await clock.sleep(for: Self.interval(after: status)) } catch { return }
+    await Polling.run(clock: clock, interval: { [weak self] in Self.interval(after: self?.status) }) { [weak self] in
+      guard let self, let fresh = try? await api.send(API.Server.musicBrainzStatus()) else { return }
+      status = fresh
     }
   }
 }

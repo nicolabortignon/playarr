@@ -24,6 +24,8 @@ public final class MixesStore {
   }
 
   public func load() async {
+    // Kept on disk: shown first, read off the main thread.
+    if mixes == nil, let kept = await queries.kept(.mixes, as: [MixSummary].self)?.value { mixes = kept }
     do {
       let fresh = try await api.send(API.Mixes.list(timeZone: timeZone))
       mixes = fresh

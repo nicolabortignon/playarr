@@ -15,6 +15,9 @@ public final class QueryCache {
   static let memoryLimit = 300
   /// Writes kept to wait for in `flush`: the newest (the older ones are done by then).
   static let writesKept = 64
+  /// The biggest kept answer read from disk on the main thread (`cached`): an album's page, a search. A bigger one (the
+  /// artists, Favorites, a long playlist) takes tens of milliseconds to decode, so it's read off it (`kept`).
+  static let syncReadLimit = 64 * 1024
 
   private struct Entry {
     var value: any Sendable
@@ -44,20 +47,42 @@ public final class QueryCache {
 
   private func keepsOnDisk(_ key: QueryKey) -> Bool { key.isKept || pinned.contains(key) }
 
-  /// The answer kept for `key` and when it came, from memory or else from disk; nil if none (or older than 7 days).
+  /// The answer kept for `key` and when it came, from memory or else from disk when it's small (`syncReadLimit`); nil
+  /// if none (or older than 7 days), or it's bigger and on disk: `kept` reads that one off the main thread.
   public func cached<T: Codable & Sendable>(_ key: QueryKey, as type: T.Type = T.self) -> (value: T, updatedAt: Date)? {
-    if let entry = memory[key], let value = entry.value as? T {
-      uses += 1
-      memory[key]?.usedAt = uses
-      return (value, entry.updatedAt)
-    }
-    guard keepsOnDisk(key), let disk, let stored = disk.read(T.self, file: key.fileName) else { return nil }
+    if let hit = inMemory(key, as: T.self) { return hit }
+    guard keepsOnDisk(key), let disk, let size = disk.size(file: key.fileName), size <= Self.syncReadLimit else { return nil }
+    return keep(disk.read(T.self, file: key.fileName), for: key)
+  }
+
+  /// The answer kept for `key`, from memory or else read and decoded from disk off the main thread, whatever its size;
+  /// nil if none (or older than 7 days).
+  public func kept<T: Codable & Sendable>(_ key: QueryKey, as type: T.Type = T.self) async -> (value: T, updatedAt: Date)? {
+    if let hit = inMemory(key, as: T.self) { return hit }
+    guard keepsOnDisk(key), let disk else { return nil }
+    let file = key.fileName
+    let stored = await Task.detached(priority: .userInitiated) { disk.read(T.self, file: file) }.value
+    // The server's answer may have come meanwhile: newer than the disk's.
+    if let hit = inMemory(key, as: T.self) { return hit }
+    return keep(stored, for: key)
+  }
+
+  private func inMemory<T: Codable & Sendable>(_ key: QueryKey, as type: T.Type) -> (value: T, updatedAt: Date)? {
+    guard let entry = memory[key], let value = entry.value as? T else { return nil }
+    uses += 1
+    memory[key]?.usedAt = uses
+    return (value, entry.updatedAt)
+  }
+
+  /// An answer read from disk, remembered unless it's too old (then the file goes).
+  private func keep<T: Codable & Sendable>(_ stored: (value: T, updatedAt: Date)?, for key: QueryKey) -> (value: T, updatedAt: Date)? {
+    guard let stored else { return nil }
     guard pinned.contains(key) || now().timeIntervalSince(stored.updatedAt) < Self.keepFor else {
-      disk.remove(file: key.fileName)
+      disk?.remove(file: key.fileName)
       return nil
     }
     remember(stored.value, updatedAt: stored.updatedAt, for: key)
-    return (stored.value, stored.updatedAt)
+    return stored
   }
 
   /// The answers in memory whose keys are named one of `names`, as `T`: what has been loaded already, whatever its
@@ -150,6 +175,10 @@ actor QueryDisk {
       let stored = try? JSONDecoder().decode(Stored<T>.self, from: data)
     else { return nil }
     return (stored.value, stored.updatedAt)
+  }
+
+  nonisolated func size(file: String) -> Int? {
+    (try? FileManager.default.attributesOfItem(atPath: directory.appending(path: file).path(percentEncoded: false))[.size] as? Int)
   }
 
   nonisolated func remove(file: String) {

@@ -19,6 +19,34 @@ import Testing
     #expect(next.cached(.search("mezz"), as: [String].self) == nil)
   }
 
+  @Test func readsABigKeptAnswerOffTheMainThreadOnly() async throws {
+    let first = QueryCache(directory: directory)
+    let big = (0..<5_000).map { "Artist number \($0)" }  // over 64 KB as JSON
+    _ = try await first.fetch(.artists) { big }
+    _ = try await first.fetch(.album(70)) { ["Mezzanine"] }
+    await first.flush()
+
+    let next = QueryCache(directory: directory)
+    // A small one is read at once, a big one isn't: it would hold up the main thread.
+    #expect(next.cached(.album(70), as: [String].self)?.value == ["Mezzanine"])
+    #expect(next.cached(.artists, as: [String].self) == nil)
+    #expect(await next.kept(.artists, as: [String].self)?.value == big)
+    // Read, it's in memory from then on.
+    #expect(next.cached(.artists, as: [String].self)?.value == big)
+  }
+
+  @Test func theServersAnswerWinsOverWhatsOnDisk() async throws {
+    let first = QueryCache(directory: directory)
+    _ = try await first.fetch(.artists) { (0..<5_000).map { "Old \($0)" } }
+    await first.flush()
+    let next = QueryCache(directory: directory)
+    async let read = next.kept(.artists, as: [String].self)
+    next.set(["Fresh"], for: .artists)
+    let kept = await read
+    #expect(kept?.value == ["Fresh"])
+    #expect(next.cached(.artists, as: [String].self)?.value == ["Fresh"])
+  }
+
   @Test func keepsTheMostRecentlyUsedAnswersInMemory() {
     let cache = QueryCache(directory: nil)
     let limit = QueryCache.memoryLimit

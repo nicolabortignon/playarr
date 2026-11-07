@@ -82,6 +82,8 @@ final class PlaylistModel {
   // MARK: Asking the server
 
   func load() async {
+    // A long playlist kept on disk shows first, read off the main thread.
+    if playlist == nil, let kept = await session.queries.kept(.playlist(id), as: PlaylistDetail.self)?.value { show(kept) }
     do {
       let fresh = try await session.api.send(API.Playlists.get(id: id))
       show(fresh)

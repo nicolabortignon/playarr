@@ -25,8 +25,10 @@ public final class Query<Value: Codable & Sendable> {
   /// Nothing to show yet, and no error either.
   public var isPending: Bool { value == nil && error == nil }
 
-  /// Asks the server when there's no answer or it's stale.
+  /// Asks the server when there's no answer or it's stale; a big answer kept on disk shows first, read off the main
+  /// thread.
   public func load() async {
+    if value == nil, let kept = await cache.kept(key, as: Value.self) { value = kept.value }
     guard value == nil || cache.isStale(key, after: staleAfter) else { return }
     await refresh()
   }
