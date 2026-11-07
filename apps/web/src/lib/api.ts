@@ -4,6 +4,7 @@ import type {
   AccountRole,
   Album,
   AlbumDetail,
+  AlbumPage,
   AlbumRef,
   AlbumRequest,
   AlbumSort,
@@ -123,6 +124,7 @@ export const api = {
   artistTracks: (id: number) => get<Track[]>(`/api/artists/${id}/tracks`),
   albums: (sort: AlbumSort, limit?: number) =>
     get<Album[]>(`/api/albums?sort=${sort}${limit ? `&limit=${limit}` : ''}`),
+  albumPage: (sort: AlbumSort, offset: number, limit: number) => get<AlbumPage>(`/api/albums?sort=${sort}&offset=${offset}&limit=${limit}`),
   randomAlbums: (limit = 12) => get<Album[]>(`/api/albums/random?limit=${limit}`),
   album: (id: number) => get<AlbumDetail>(`/api/albums/${id}`),
   randomTracks: (limit = 50) => get<Track[]>(`/api/tracks/random?limit=${limit}`),

@@ -53,7 +53,10 @@ describe('the covers Feeling lucky deals', () => {
   it('are, while it picks, the albums already loaded, each once', () => {
     queryClient.setQueryData(['albums', 'added', 14], SHELF);
     queryClient.setQueryData(['recent-albums'], [SHELF[0], { ...SHELF[1]!, id: 30, coverUrl: '/art/album/30/cover' }]);
-    expect(coversAtHand().map((c) => c.key).sort()).toEqual([20, 21, 22, 23, 30].map((id) => `/art/album/${id}/cover`).sort());
+    // The Albums page's, a page at a time.
+    const paged = { ...SHELF[2]!, id: 40, coverUrl: '/art/album/40/cover' };
+    queryClient.setQueryData(['albums', 'artist', 'pages'], { pages: [{ albums: [paged, SHELF[0]], total: 2, version: '1' }], pageParams: [0] });
+    expect(coversAtHand().map((c) => c.key).sort()).toEqual([20, 21, 22, 23, 30, 40].map((id) => `/art/album/${id}/cover`).sort());
     queryClient.clear();
     expect(coversAtHand()).toEqual([]);
   });

@@ -23,7 +23,7 @@ import type {
   UpdateSettings,
 } from '@playarr/shared';
 import { MIX_MAP_VERSION, type MixMap, type MixMapEntry } from '@playarr/mix';
-import { keepPreviousData, queryOptions, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import { api, ApiError, type AnalysisKind } from './api';
 import { plural } from './format';
@@ -83,6 +83,25 @@ export const useAlbums = (sort: AlbumSort, limit?: number) =>
   useQuery({
     queryKey: ['albums', sort, limit],
     queryFn: () => api.albums(sort, limit),
+    placeholderData: keepPreviousData,
+  });
+
+/** How many albums the Albums page asks for at a time: a few screenfuls, and a multiple of every grid's columns. */
+export const ALBUM_PAGE = 120;
+
+/**
+ * The albums in this order a page at a time (`fetchNextPage` for the next), so a collector's 10,000 open as fast
+ * as a few dozen: the first page is about 60 KB where the whole list is about 5 MB.
+ */
+export const useAlbumPages = (sort: AlbumSort) =>
+  useInfiniteQuery({
+    queryKey: ['albums', sort, 'pages'],
+    queryFn: ({ pageParam }) => api.albumPage(sort, pageParam, ALBUM_PAGE),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((n, page) => n + page.albums.length, 0);
+      return last.albums.length && loaded < last.total ? loaded : undefined;
+    },
     placeholderData: keepPreviousData,
   });
 

@@ -1,4 +1,4 @@
-import type { Account, Album, LuckyMix, Track } from '@playarr/shared';
+import type { Account, Album, AlbumPage, LuckyMix, Track } from '@playarr/shared';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { api, sized } from '../lib/api';
@@ -182,10 +182,13 @@ function pictureOf(c: FanCover, ms = Infinity): Promise<void> {
  * last visit), shuffled; none when nothing is loaded yet.
  */
 export function coversAtHand(): FanCover[] {
-  const lists = [...queryClient.getQueriesData<Album[]>({ queryKey: ['albums'] }), ...queryClient.getQueriesData<Album[]>({ queryKey: ['recent-albums'] })];
+  type Loaded = Album[] | { pages: AlbumPage[] } | undefined;
+  const lists = [...queryClient.getQueriesData<Loaded>({ queryKey: ['albums'] }), ...queryClient.getQueriesData<Loaded>({ queryKey: ['recent-albums'] })];
   const covers = new Map<string, FanCover>();
-  for (const [, albums] of lists) {
-    for (const a of Array.isArray(albums) ? albums : []) if (a.coverUrl && !covers.has(a.coverUrl)) covers.set(a.coverUrl, coverOf({ ...a, albumId: a.id }));
+  for (const [, loaded] of lists) {
+    // A list, or the Albums page's pages of one.
+    const albums = Array.isArray(loaded) ? loaded : Array.isArray(loaded?.pages) ? loaded.pages.flatMap((page) => page.albums) : [];
+    for (const a of albums) if (a.coverUrl && !covers.has(a.coverUrl)) covers.set(a.coverUrl, coverOf({ ...a, albumId: a.id }));
   }
   const all = [...covers.values()];
   for (let i = all.length - 1; i > 0; i--) {

@@ -1,13 +1,13 @@
-import type { AlbumSort } from '@playarr/shared';
+import type { Album, AlbumPage, AlbumSort } from '@playarr/shared';
 import { Disc3, FolderPlus, type LucideIcon } from 'lucide-react';
 import { useSearchParams } from 'react-router';
-import type { CSSProperties } from 'react';
+import { useEffect, useMemo, type CSSProperties } from 'react';
 import { AlbumCard } from '../components/Cards';
 import { Choice } from '../components/Choice';
 import { PageHeader } from '../components/PageHeader';
 import { CardSkeletons, EmptyState, ErrorState } from '../components/States';
-import { useAlbums, useIsMember } from '../lib/queries';
-import { useIncremental } from '../lib/useIncremental';
+import { useAlbumPages, useIsMember } from '../lib/queries';
+import { useLoadMore } from '../lib/useIncremental';
 
 const SORTS: { value: AlbumSort; label: string }[] = [
   { value: 'artist', label: 'Artist' },
@@ -33,14 +33,27 @@ export function gridItem(i: number, { lift = false } = {}): { className: string;
 export function AlbumsPage() {
   const [params, setParams] = useSearchParams();
   const sort = (SORTS.find((s) => s.value === params.get('sort'))?.value ?? 'artist') as AlbumSort;
-  const { data, error, isPending, refetch } = useAlbums(sort);
-  const { visible, more, sentinel } = useIncremental(data, { resetKey: sort });
+  // A page at a time from the server, the next as the end of the grid comes near: a library of 10,000 albums
+  // opens with its first 120, not all of them.
+  const { data, error, isPending, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useAlbumPages(sort);
+  const albums = useMemo(() => uniqueAlbums(data?.pages ?? []), [data]);
+  const total = data?.pages[0]?.total;
+  // A page read after the library changed: those before it may have moved, so they're all read again.
+  const moved = !!data && data.pages.some((page) => page.version !== data.pages[0]!.version);
+  useEffect(() => {
+    if (moved) void refetch();
+  }, [moved, refetch]);
+  const sentinel = useLoadMore({
+    count: albums.length,
+    more: !!hasNextPage && !isFetchingNextPage && !moved,
+    load: () => void fetchNextPage(),
+  });
 
   return (
     <div className="px-5 pt-8 md:px-10 md:pt-14">
       <PageHeader
         title="Albums"
-        count={data?.length || undefined}
+        count={total || undefined}
         actions={
           <Choice
             label="Sort albums"
@@ -54,18 +67,24 @@ export function AlbumsPage() {
       />
       {error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
-      ) : data && !data.length ? (
+      ) : data && !total ? (
         <EmptyLibrary icon={Disc3} title="Your crates are empty." />
       ) : (
         <>
           <div className={GRID}>
-            {isPending ? <CardSkeletons /> : visible.map((a, i) => <AlbumCard key={a.id} album={a} {...gridItem(i, { lift: true })} />)}
+            {isPending ? <CardSkeletons /> : albums.map((a, i) => <AlbumCard key={a.id} album={a} {...gridItem(i, { lift: true })} />)}
           </div>
-          {more && <div ref={sentinel} aria-hidden className="h-px" />}
+          {hasNextPage && <div ref={sentinel} aria-hidden className="h-px" />}
         </>
       )}
     </div>
   );
+}
+
+/** The pages' albums in order, each once: while pages read across a change are read again, one may be on two. */
+export function uniqueAlbums(pages: AlbumPage[]): Album[] {
+  const seen = new Set<number>();
+  return pages.flatMap((page) => page.albums.filter((album) => !seen.has(album.id) && !!seen.add(album.id)));
 }
 
 /**

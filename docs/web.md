@@ -74,7 +74,7 @@ Controls drawn smaller than 44 px take that much to tap on touch screens through
 
 **Your listening** (`pages/Stats.tsx`): the headline minutes count up as the report opens (`CountUp`: the real number holds its place, and is what a screen reader reads, while the count runs over it); a longest streak that's the one going on, and more than a day, is flagged "New record" (`isNewRecord`, from the server's `currentStreak`, absent from older servers); and a year in review rises into place like a sleeve pulled out of a crate.
 
-Long grids show a screenful at a time (`lib/useIncremental.ts`: 48 items, then 48 more as the end comes within 1500 px). Covers load four at a time, on-screen ones first (`lib/imageQueue.ts`).
+Long grids show a screenful at a time (`lib/useIncremental.ts`: 48 items, then 48 more as the end comes within 1500 px). Albums asks the server for its albums a page at a time instead (`useAlbumPages` in `lib/queries.ts`: 120 at a time, a multiple of every grid's columns; `useLoadMore`), the next as the end of the grid comes within 1500 px, so a library of 10,000 albums opens with 60 KB rather than 5 MB. Its count is the server's `total`. A page read after the library changed (its `version` isn't the first page's) has them all read again from the first, each album shown once meanwhile (`uniqueAlbums`). Covers load four at a time, on-screen ones first (`lib/imageQueue.ts`).
 
 ## 3. Layout
 

@@ -27,7 +27,7 @@ afterEach(() => {
 describe('an empty library', () => {
   it('tells an admin their crates are empty, and how to add music', async () => {
     vi.spyOn(api, 'me').mockResolvedValue(me('admin'));
-    vi.spyOn(api, 'albums').mockResolvedValue([]);
+    vi.spyOn(api, 'albumPage').mockResolvedValue({ albums: [], total: 0, version: '1' });
     view(<AlbumsPage />);
     expect(await screen.findByText('Your crates are empty.')).toBeTruthy();
     expect(screen.getByText('Add Lidarr or a folder of music, and it shows up here.')).toBeTruthy();
