@@ -4,9 +4,9 @@ import SwiftUI
 
 /// Now Playing, over everything (apps/web/src/components/NowPlaying.tsx): swipe down to close, "Playing from", the
 /// sleep timer, the ⋯ menu, the cover (or lyrics), the song, the seek bar over the song's energy and the transport,
-/// then Lyrics, AirPlay and Up next in a row, as Apple Music has them. On an iPad, the cover beside the song with Up
-/// next, lyrics and AirPlay at the top; on a phone held sideways, the sleeve: the cover with its deck on the left, the
-/// tracklist on the right (docs/ios/layouts.md).
+/// then Lyrics, AirPlay and Up next in a row, as Apple Music has them. On an iPad, the cover beside the song with the
+/// tracklist under it, lyrics and AirPlay at the top; on a phone held sideways, the sleeve: the cover with its deck on
+/// the left, the tracklist on the right (docs/ios/layouts.md).
 struct NowPlayingView: View {
   let session: AccountSession
   @Environment(Theme.self) private var theme
@@ -67,15 +67,21 @@ struct NowPlayingView: View {
               .contentShape(Rectangle())
               .gesture(closeGesture)
             if layout == .wide {
-              // The web's desktop Now Playing: the cover (or lyrics) beside the song, its controls and Up next.
-              HStack(spacing: 64) {
-                artwork(track)
+              // The web's desktop Now Playing: the cover (or lyrics) beside the song, its controls and the tracklist, the
+              // sleeve's, with the iPad's height for far more of it than the web's four songs of Up next.
+              // Their tops level: the cover square (lyrics take the height), the column running down beside it.
+              HStack(alignment: .top, spacing: 64) {
+                if session.router.lyrics {
+                  artwork(track)
+                } else {
+                  artwork(track).aspectRatio(1, contentMode: .fit)
+                }
                 VStack(spacing: 24) {
                   song(track)
                   SeekBar(player: player, energy: true)
                   Transport(player: player)
                   MixLine(player: player)
-                  UpNextPreview(session: session)
+                  NowPlayingTracklist(session: session, openLine: false)
                 }
                 .frame(maxWidth: 480)
               }
@@ -337,8 +343,8 @@ struct NowPlayingView: View {
 
   // MARK: iPhone Duo
 
-  /// Open with the crease down the middle: two pages, the cover centred on the left one, the song, its controls and Up
-  /// next on the right, a margin either side of the crease.
+  /// Open with the crease down the middle: two pages, the cover centred on the left one, the song, its controls and the
+  /// tracklist on the right, a margin either side of the crease.
   private func pages(_ model: NowPlayingModel, track: Track) -> some View {
     HStack(spacing: 0) {
       artwork(track)
@@ -353,8 +359,7 @@ struct NowPlayingView: View {
         SeekBar(player: session.player, energy: true)
         Transport(player: session.player)
         MixLine(player: session.player)
-        UpNextPreview(session: session)
-        Spacer(minLength: 0)
+        NowPlayingTracklist(session: session, openLine: false)
       }
       .padding(.horizontal, 32)
       .padding(.vertical, 12)
@@ -363,7 +368,7 @@ struct NowPlayingView: View {
   }
 
   /// Propped up part-open like a small laptop: the cover (or lyrics) on the half that stands, the song, its controls
-  /// and Up next on the half that lies flat.
+  /// and the tracklist on the half that lies flat.
   private func desk(_ model: NowPlayingModel, track: Track) -> some View {
     VStack(spacing: 0) {
       VStack(spacing: 8) {
@@ -379,8 +384,7 @@ struct NowPlayingView: View {
         song(track)
         SeekBar(player: session.player, energy: true)
         Transport(player: session.player)
-        UpNextPreview(session: session)
-        Spacer(minLength: 0)
+        NowPlayingTracklist(session: session, openLine: false)
       }
       .padding(.horizontal, 24)
       .padding(.top, 24)

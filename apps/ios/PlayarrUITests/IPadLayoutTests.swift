@@ -1,7 +1,7 @@
 import XCTest
 
 /// The iPad layout on a full-screen iPad, against the demo library: the sidebar, pages in the detail column, the
-/// player bar (idle, then playing), the queue and lyrics column, Now Playing with Up next, the keyboard, dragging songs
+/// player bar (idle, then playing), the queue and lyrics column, Now Playing with the tracklist, the keyboard, dragging songs
 /// and coming back where it was.
 final class IPadLayoutTests: XCTestCase {
   override func setUpWithError() throws {
@@ -86,13 +86,14 @@ final class IPadLayoutTests: XCTestCase {
   }
 
   @MainActor
-  func testNowPlayingShowsUpNext() {
+  func testNowPlayingShowsTheTracklist() {
     let app = XCUIApplication.demo()
     app.launch()
     playMezzanine(app)
     app.buttons["Open now playing"].tap()
-    XCTAssertTrue(app.element("nowPlaying.upNext").waitForExistence(timeout: 5))
-    app.buttons["Inertia Creeps, Massive Attack, 5:56"].tap()
+    let tracklist = app.element("nowPlaying.tracklist")
+    XCTAssertTrue(tracklist.waitForExistence(timeout: 5))
+    tracklist.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Inertia Creeps")).firstMatch.tap()
     XCTAssertTrue(app.staticTexts["Inertia Creeps"].waitForExistence(timeout: 5))
     app.buttons["Close now playing"].tap()
     XCTAssertTrue(app.buttons["Close now playing"].waitForNonExistence(timeout: 5))

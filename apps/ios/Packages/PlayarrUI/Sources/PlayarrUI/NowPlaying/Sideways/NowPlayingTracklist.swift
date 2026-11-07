@@ -5,11 +5,15 @@ import SwiftUI
 /// The back of the sleeve, when Now Playing is held sideways: the song before, the song playing as the open line
 /// (big, with its artist, format and heart), then the rest of the queue, with how each song becomes the next between
 /// them. Tap a line to play from it, long-press for its menu, swipe it away to take it out of the queue. The list
-/// follows the song playing; scroll away and it stops, comes back with "Now", or on its own after 8 seconds.
+/// follows the song playing; scroll away and it stops, comes back with "Now", or on its own after 8 seconds. On an iPad
+/// and the iPhone Duo it ends the column under the song and its controls, from the next song (the song playing, a line
+/// like the others, is a scroll up).
 struct NowPlayingTracklist: View {
   let session: AccountSession
-  /// The stage: the other lines dim and the open line grows (`NowPlayingStage`).
+  /// The stage: the other lines dim, and the open line grows and moves to the middle with the time left under it.
   var staged = false
+  /// The song playing as the open line; false where the song is shown big above the list already (the iPad, the Duo).
+  var openLine = true
 
   @Environment(Theme.self) private var theme
   @Environment(\.reducesMotion) private var reducesMotion
@@ -23,64 +27,87 @@ struct NowPlayingTracklist: View {
     let player = session.player
     let tracklist = Tracklist(
       queue: player.queue, transitions: player.settings.transitions, crossfade: player.settings.crossfade, autoplay: player.settings.autoplay)
-    ScrollViewReader { proxy in
-      List {
-        ForEach(tracklist.range, id: \.self) { orderPos in
-          if let line = tracklist.line(at: orderPos) {
-            row(line)
-              .id(orderPos)
-              .listRowBackground(Color.clear)
-              .listRowSeparator(.hidden)
-              .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+    GeometryReader { geometry in
+      ScrollViewReader { proxy in
+        List {
+          ForEach(tracklist.range, id: \.self) { orderPos in
+            if let line = tracklist.line(at: orderPos) {
+              row(line)
+                .id(orderPos)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            }
+          }
+          Text(tracklist.end.uppercased())
+            .font(.mono(.caption2)).tracking(2).foregroundStyle(.paperDim)
+            .frame(minHeight: 44)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .opacity(staged ? 0.25 : 1)
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        // In the stage, room above the first line and below the last, so the open line can sit in the middle wherever it
+        // is in the queue.
+        .contentMargins(.vertical, staged ? geometry.size.height * 0.4 : 0, for: .scrollContent)
+        .onScrollPhaseChange { _, phase in
+          if phase == .interacting {
+            following = false
+            touched = Date()
           }
         }
-        Text(tracklist.end.uppercased())
-          .font(.mono(.caption2)).tracking(2).foregroundStyle(.paperDim)
-          .frame(minHeight: 44)
-          .listRowBackground(Color.clear)
-          .listRowSeparator(.hidden)
-          .opacity(staged ? 0.25 : 1)
-      }
-      .listStyle(.plain)
-      .scrollContentBackground(.hidden)
-      .onScrollPhaseChange { _, phase in
-        if phase == .interacting {
-          following = false
-          touched = Date()
-        }
-      }
-      .overlay(alignment: .top) {
-        if !following {
-          Button { follow(proxy, pos: player.queue.pos) } label: {
-            Label("Now", systemImage: "waveform").font(.mono(.caption)).padding(.horizontal, 14).frame(minHeight: 36)
+        .overlay(alignment: .top) {
+          if !following {
+            Button { follow(proxy, pos: player.queue.pos) } label: {
+              Label("Now", systemImage: "waveform").font(.mono(.caption)).padding(.horizontal, 14).frame(minHeight: 36)
+            }
+            .buttonStyle(.plain)
+            .glassEffect()
+            .padding(.top, 6)
+            .accessibilityLabel("Back to the song playing")
+            .transition(.opacity)
           }
-          .buttonStyle(.plain)
-          .glassEffect()
-          .padding(.top, 6)
-          .accessibilityLabel("Back to the song playing")
-          .transition(.opacity)
         }
-      }
-      .onAppear { proxy.scrollTo(max(0, player.queue.pos - 1), anchor: .top) }
-      .onChange(of: player.queue.pos) { _, pos in if following { follow(proxy, pos: pos) } }
-      // Scrolled away and left alone: back to the song playing, as the lyrics do.
-      .task(id: touched) {
-        guard !following else { return }
-        try? await Task.sleep(for: Self.returnAfter)
-        if !Task.isCancelled { follow(proxy, pos: player.queue.pos) }
+        .onAppear { scroll(proxy, to: player.queue.pos) }
+        .onChange(of: player.queue.pos) { _, pos in if following { follow(proxy, pos: pos) } }
+        // Into the stage the open line moves to the middle, and back out to the top; once more as the fade ends, as the
+        // line has grown (or shrunk) meanwhile.
+        .onChange(of: staged) { if following { follow(proxy, pos: player.queue.pos) } }
+        .task(id: staged) {
+          try? await Task.sleep(for: .milliseconds(650))
+          if !Task.isCancelled, following { follow(proxy, pos: player.queue.pos) }
+        }
+        // Scrolled away and left alone: back to the song playing, as the lyrics do.
+        .task(id: touched) {
+          guard !following else { return }
+          try? await Task.sleep(for: Self.returnAfter)
+          if !Task.isCancelled { follow(proxy, pos: player.queue.pos) }
+        }
       }
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("nowPlaying.tracklist")
   }
 
-  /// The song playing second from the top, with the one before above it.
+  /// The song playing second from the top, with the one before above it; in the stage, in the middle. Where the song
+  /// playing is shown big above the list, the next song at the top (what's played and playing are a scroll away).
   private func follow(_ proxy: ScrollViewProxy, pos: Int) {
     following = true
     if reducesMotion {
+      scroll(proxy, to: pos)
+    } else {
+      withAnimation(.spring(duration: 0.5)) { scroll(proxy, to: pos) }
+    }
+  }
+
+  private func scroll(_ proxy: ScrollViewProxy, to pos: Int) {
+    if staged {
+      proxy.scrollTo(pos, anchor: .center)
+    } else if openLine {
       proxy.scrollTo(max(0, pos - 1), anchor: .top)
     } else {
-      withAnimation(.spring(duration: 0.5)) { proxy.scrollTo(max(0, pos - 1), anchor: .top) }
+      proxy.scrollTo(min(pos + 1, max(pos, session.player.queue.order.count - 1)), anchor: .top)
     }
   }
 
@@ -88,8 +115,10 @@ struct NowPlayingTracklist: View {
   private func row(_ line: Tracklist.Line) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       join(line.joinBefore, playing: line.state == .playing)
-      if line.state == .playing {
+      if line.state == .playing, openLine {
         openLine(line)
+      } else if line.state == .playing {
+        playingLine(line)
       } else {
         HStack(spacing: 4) {
           closedLine(line)
@@ -128,11 +157,37 @@ struct NowPlayingTracklist: View {
             .frame(minHeight: 32)
           FormatBadge(format: track.format)
         }
+        // The stage hides the header, which said it: the time left, under the song, as a clock on a stand would.
+        if staged { TimeLeftLine(player: session.player).transition(.opacity) }
       }
       Spacer(minLength: 8)
       FavoriteButton(track: track, size: .row)
     }
     .padding(.vertical, 8)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Now playing: \(track.title), \(track.artistName)")
+  }
+
+  /// The song playing where it's shown big above the list: a line like the others, the bars that keep time with it in
+  /// its number's place and its title in the accent.
+  private func playingLine(_ line: Tracklist.Line) -> some View {
+    let track = line.track
+    return HStack(spacing: 12) {
+      Equalizer(playing: session.player.queue.playing)
+        .foregroundStyle(theme.accent.color)
+        .frame(width: 32)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(track.title).font(.sans(.body)).foregroundStyle(theme.accent.color).essentialLineLimit()
+        if let detail = detail(line) {
+          Text(detail).font(.sans(.footnote)).foregroundStyle(.paperDim).essentialLineLimit()
+        }
+      }
+      Spacer(minLength: 8)
+      SongLength(track: track, font: .mono(.footnote))
+      // As every line has: the lengths line up down the list.
+      FavoriteButton(track: track, size: .row)
+    }
+    .frame(minHeight: 44)
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Now playing: \(track.title), \(track.artistName)")
   }
@@ -213,5 +268,19 @@ struct NowPlayingTracklist: View {
   /// Swiped away: out of the queue, with Undo.
   private func remove(_ line: Tracklist.Line) {
     QueueModel(session: session).remove(offset(line))
+  }
+}
+
+/// "7 songs · 38 min left", under the open line in the stage: a view of its own, as the only part of the list that
+/// reads the clock (plan 3 §2).
+private struct TimeLeftLine: View {
+  let player: Player
+
+  var body: some View {
+    let tracklist = Tracklist(
+      queue: player.queue, transitions: player.settings.transitions, crossfade: player.settings.crossfade, autoplay: player.settings.autoplay)
+    if let left = tracklist.left(elapsed: player.time) {
+      Text(left).font(.mono(.footnote)).foregroundStyle(.paperDim).lineLimit(1)
+    }
   }
 }

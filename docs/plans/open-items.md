@@ -42,7 +42,6 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - Accessibility Nutrition Labels on the App Store, once the device checks pass. *(phase 11, "Not in this phase")*
 - Mac and CarPlay. *(iOS app design)*
 - Seeking inside a DJ transition abandons the mix rather than seeking within it. *(phase 5)*
-- Sideways Now Playing, parts of the spec not built: the tracklist on the iPad and Duo (they still show four songs of Up next), the stage centring the open line with the time left. *(sideways Now Playing spec)*
 - `ScreenTour` shots of the stage, lyrics sideways and a DJ-mix join. *(sideways Now Playing spec)*
 - Mix colors drawn in Display P3 rather than sRGB (optional; today's washes fit in sRGB). *(phase 6 next steps)*
 - Once in five iPhone runs of `AccessibilityAuditTests`, Now Playing didn't open from the mini player within 5 seconds; it has passed every run since. *(found)*
