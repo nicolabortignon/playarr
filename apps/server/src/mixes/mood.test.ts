@@ -7,6 +7,7 @@ import {
   shapeOfEnvelope,
   shapeOfPhrases,
   tensionOf,
+  tooShort,
   traitsOf,
   vocalsOf,
   wordsOf,
@@ -64,6 +65,27 @@ describe('singing', () => {
     expect(vocalsOf('x', [['hip hop', 1]], {})).toBeGreaterThan(0.85);
   });
 
+  it('lets an "instrumental" tag settle it, however broad the other tags', () => {
+    // Kind of Blue, as ListenBrainz tags it.
+    const kindOfBlue: [string, number][] = [['jazz', 2], ['modal jazz', 0.9], ['cool jazz', 0.8], ['hard bop', 0.4], ['instrumental', 0.13]];
+    expect(vocalsOf('So What', kindOfBlue, {})).toBeLessThanOrEqual(0.15);
+  });
+
+  it('isn’t fooled by crowds tagging a sung record "instrumental rock"', () => {
+    // Fleetwood Mac's Rumours, as ListenBrainz tags its songs.
+    const rumours: [string, number][] = [['rock', 2], ['soft rock', 1.44], ['pop rock', 1.26], ['blues rock', 0.56], ['folk pop', 0.27], ['instrumental rock', 0.1]];
+    expect(vocalsOf('Go Your Own Way', rumours, {})).toBeGreaterThan(0.7);
+    // Nor is "soft rock" calm.
+    expect(wordsOf(rumours).calm).toBe(0);
+    expect(wordsOf([['mellow', 1], ['soft', 0.5]]).calm).toBe(1);
+  });
+
+  it('lets tags that decide outweigh tags that say little either way', () => {
+    expect(vocalsOf('x', [['electronic', 2], ['post-rock', 0.5]], {})).toBeLessThan(0.35);
+    expect(vocalsOf('x', [['jazz', 2], ['vocal jazz', 0.5]], {})).toBeGreaterThan(0.6);
+    expect(vocalsOf('x', [['ambient pop', 1]], {})).toBeGreaterThan(0.7);
+  });
+
   it('falls back to the style, then to more likely than not', () => {
     expect(vocalsOf('x', [['velvet', 1]], { classical: 1 })).toBeLessThan(0.2);
     expect(vocalsOf('x', [], { hiphop: 0.5, classical: 0.5 })).toBeCloseTo(0.55, 2);
@@ -72,38 +94,49 @@ describe('singing', () => {
 });
 
 describe('what a song should never be picked for', () => {
-  it('knows short intros, interludes, skits and sketches under a minute, but not songs named like them', () => {
-    expect(traitsOf('Intro', 100, []).filler).toBe(true);
-    expect(traitsOf('Interlude (Rain)', 90, []).filler).toBe(true);
-    expect(traitsOf('Phone Call Skit', 70, []).filler).toBe(true);
-    expect(traitsOf('Happiness', 45, []).filler).toBe(true);
-    expect(traitsOf('Introduction to the Blues', 200, []).filler).toBe(false);
-    expect(traitsOf('Sketches of Spain', 200, []).filler).toBe(false);
-    // M83's "Intro" is a five-minute song.
-    expect(traitsOf('Intro', 322, []).filler).toBe(false);
+  it('knows short intros, interludes and skits, but not songs named like them, nor a five-minute "Intro"', () => {
+    expect(traitsOf('Intro', 100, []).sketch).toBe(true);
+    expect(traitsOf('Interlude (Rain)', 90, []).sketch).toBe(true);
+    expect(traitsOf('Phone Call Skit', 70, []).sketch).toBe(true);
+    expect(traitsOf('Introduction to the Blues', 200, []).sketch).toBe(false);
+    expect(traitsOf('Sketches of Spain', 200, []).sketch).toBe(false);
+    expect(traitsOf('Intro', 322, []).sketch).toBe(false);
   });
 
-  it('doesn’t take a song whose length isn’t known yet for a short one', () => {
-    expect(traitsOf('Happiness', 0, []).filler).toBe(false);
+  it('takes under 30 s for too short, and under a minute too unless there’s a sure beat (punk, not a skit)', () => {
+    expect(tooShort(25, sound({ pulse: 0.9, bpm: 180 }))).toBe(true);
+    expect(tooShort(45, sound({ pulse: 0.9, bpm: 180 }))).toBe(false);
+    expect(tooShort(45, sound({ pulse: 0.2, bpm: 90 }))).toBe(true);
+    expect(tooShort(45, undefined)).toBe(true);
+    expect(tooShort(61, undefined)).toBe(false);
+    // A length not known yet isn't short.
+    expect(tooShort(0, undefined)).toBe(false);
   });
 
-  it('knows spoken word and stand-up by their telling tags, not by a passing one, and comedy songs are songs', () => {
-    expect(traitsOf('Track 3', 300, [['stand-up comedy', 1], ['spoken word', 0.8]]).filler).toBe(true);
-    expect(traitsOf('Track 3', 300, [['hip hop', 1], ['spoken word', 0.2]]).filler).toBe(false);
-    expect(traitsOf('White & Nerdy', 170, [['comedy', 1], ['parody', 0.9], ['hip hop', 0.6]]).filler).toBe(false);
+  it('knows spoken word and stand-up by their release or their strongest tags, and comedy songs are songs', () => {
+    expect(traitsOf('Track 3', 300, [['stand-up comedy', 1], ['spoken word', 0.95]]).sketch).toBe(true);
+    expect(traitsOf('Chapter 1', 900, [], { types: ['Audiobook'] }).sketch).toBe(true);
+    expect(traitsOf('Track 3', 300, [['hip hop', 1], ['spoken word', 0.6]]).sketch).toBe(false);
+    expect(traitsOf('White & Nerdy', 170, [['comedy', 1], ['parody', 0.9], ['hip hop', 0.6]]).sketch).toBe(false);
   });
 
-  it('knows live recordings, but not songs about living', () => {
+  it('knows live recordings by their title or their release, but not songs about living', () => {
     expect(traitsOf('Wonderwall (Live at Knebworth)', 260, []).live).toBe(true);
     expect(traitsOf('Roxanne - Live', 260, []).live).toBe(true);
+    // Live albums' songs aren't titled "(Live)": the release says so.
+    expect(traitsOf('Gloria’s Step', 360, [], { title: 'Sunday at the Village Vanguard', types: ['Live'] }).live).toBe(true);
     expect(traitsOf('Live Forever', 276, []).live).toBe(false);
     expect(traitsOf('Live and Let Die', 192, []).live).toBe(false);
     expect(traitsOf('Live in the Moment', 236, []).live).toBe(false);
   });
 
-  it('knows Christmas songs, and when they’re in season, but not every song of an artist with one Christmas album', () => {
-    expect(traitsOf('Last Christmas', 260, []).christmas).toBe(true);
+  it('knows Christmas songs by their title, their album or their tags, but not every song of an artist with one Christmas album', () => {
+    for (const title of ['Last Christmas', 'Wonderful Christmastime', 'Santa Baby', 'Little Drummer Boy', 'Carol of the Bells', 'Joy to the World']) {
+      expect(traitsOf(title, 200, []).christmas).toBe(true);
+    }
     expect(traitsOf('Song', 260, [['christmas', 1]]).christmas).toBe(true);
+    expect(traitsOf('Song', 200, [['christmas', 0.6], ['pop', 0.76]]).christmas).toBe(true);
+    expect(traitsOf('Moonlight', 200, [], { title: 'A Very Merry Christmas' }).christmas).toBe(true);
     expect(traitsOf('Fantasy', 240, [['pop', 1], ['r&b', 0.8], ['christmas', 0.4]]).christmas).toBe(false);
     expect(traitsOf('Santa Monica', 260, []).christmas).toBe(false);
     expect(christmasSeason({ month: 11, day: 23 })).toBe(false);
@@ -114,16 +147,26 @@ describe('what a song should never be picked for', () => {
 });
 
 describe('mood, tension and groove', () => {
-  it('reads major keys and happy tags as brighter than minor keys and sad ones', () => {
-    const major = moodOf({ camelot: '8B', confidence: 0.8 }, { ...quiet, warmth: 0.5 }, 0.6);
-    const minor = moodOf({ camelot: '8A', confidence: 0.8 }, { ...quiet, warmth: -0.5 }, 0.4);
-    expect(major).toBeGreaterThan(0.7);
-    expect(minor).toBeLessThan(0.3);
+  it('reads happy tags as brighter than sad ones, and a key’s mode only a little', () => {
+    expect(moodOf(undefined, { ...quiet, warmth: 0.6 }, undefined)).toBeGreaterThan(0.65);
+    expect(moodOf(undefined, { ...quiet, warmth: -0.6 }, undefined)).toBeLessThan(0.35);
+    // A minor key alone, a darker sound: still well within Chill's reach (0.35).
+    expect(moodOf({ camelot: '2A', confidence: 0.9 }, quiet, 0.25)).toBeGreaterThan(0.4);
     expect(moodOf(undefined, quiet, undefined)).toBe(0.5);
   });
 
+  it('weighs mood words by their share of the tags, as whole words', () => {
+    // One stray "atmospheric" and "melancholic" among many tags barely move it; a song tagged mostly "sad" does.
+    const stray = wordsOf([['trip hop', 1], ['electronic', 0.9], ['downtempo', 0.8], ['british', 0.6], ['melancholic', 0.03], ['atmospheric', 0.03]]);
+    expect(stray.warmth).toBeGreaterThan(-0.05);
+    expect(wordsOf([['sad', 1], ['piano', 0.5]]).warmth).toBeLessThan(-0.5);
+    // "funk" isn't "fun", "intense" isn't "tense".
+    expect(wordsOf([['funk', 1]]).warmth).toBe(0);
+    expect(wordsOf([['intense', 1]]).tense).toBe(0);
+  });
+
   it('hears tension in dark and aggressive tags and in metal', () => {
-    const dark = wordsOf([['dark ambient', 1], ['ambient', 1]], { calm: 0, warmth: 0 });
+    const dark = wordsOf([['dark ambient', 1], ['ambient', 1]]);
     expect(tensionOf(dark, { chill: 1 })).toBeGreaterThan(0.9);
     expect(tensionOf(quiet, { metal: 1 })).toBeCloseTo(0.4, 5);
     expect(tensionOf(quiet, { jazz: 1 })).toBe(0);

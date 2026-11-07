@@ -139,10 +139,16 @@ function tempoFeel(sound: SongSound): number | undefined {
 
 // ── Mood, tension, groove, steadiness ────────────────────────────────────────
 
-/** 0 (bleak) … 1 (bright and happy): a major or minor key, mood tags, and a bright or dark sound. 0.5 when nothing says. */
+/**
+ * A major key counts this much towards a bright mood, a minor one against: little, since key detection is sure of a key
+ * against the keys that clash with it, not against its relative major or minor.
+ */
+const MODE_WEIGHT = 0.05;
+
+/** 0 (bleak) … 1 (bright and happy): mood tags, a bright or dark sound, and a little the key's mode. 0.5 when nothing says. */
 export function moodOf(key: { camelot: string; confidence: number } | undefined, words: Words, bright: number | undefined): number {
   const mode = key ? (key.camelot.endsWith('B') ? 1 : -1) * ramp(key.confidence, 0.3, 0.6) : 0;
-  return clamp(0.5 + 0.15 * mode + 0.3 * words.warmth + (bright === undefined ? 0 : 0.1 * (bright - 0.5)));
+  return clamp(0.5 + MODE_WEIGHT * mode + 0.3 * words.warmth + (bright === undefined ? 0 : 0.1 * (bright - 0.5)));
 }
 
 /** 0 … 1: dark, eerie, aggressive or harsh, from the tags (any such tag counts three times its share) and the style. */
@@ -173,29 +179,61 @@ export interface Words {
   calm: number;
   /** Share of the tags' weight that's dark, eerie, aggressive or harsh. */
   tense: number;
+  /** Happy and uplifting (+) against sad and dark (−), by how much of the tags' weight says either. */
   warmth: number;
 }
 
-const ENERGETIC = ['energetic', 'upbeat', 'party', 'intense', 'powerful', 'driving', 'workout', 'anthem', 'banger', 'hype', 'high energy', 'fast'];
-const TENSE = ['dark', 'eerie', 'haunting', 'ominous', 'creepy', 'horror', 'aggressive', 'angry', 'harsh', 'abrasive', 'noise', 'industrial',
-  'sinister', 'menacing', 'disturbing', 'chaotic', 'brutal', 'dissonant', 'tense'];
+/**
+ * Mood words, each matched as a whole word or phrase ("intense" isn't "tense", "funk" isn't "fun", "late night" isn't
+ * "night"), and soft only when it isn't the genre ("soft rock" is Rumours, not a lullaby).
+ */
+const MOOD_WORDS = {
+  calm: ['mellow', 'calm', 'relaxing', 'relaxed', 'meditative', 'peaceful', 'chill', 'chillout', 'chill out', 'chillwave', 'quiet', 'sleep',
+    'gentle', 'soothing', 'tranquil', 'serene', 'laid back', 'laid-back', 'soft(?! rock| pop)'],
+  energetic: ['energetic', 'upbeat', 'party', 'intense', 'powerful', 'driving', 'workout', 'anthem', 'anthemic', 'banger', 'hype', 'high energy', 'fast'],
+  tense: ['dark', 'darkwave', 'eerie', 'haunting', 'ominous', 'creepy', 'horror', 'aggressive', 'angry', 'harsh', 'abrasive', 'noise', 'industrial',
+    'sinister', 'menacing', 'disturbing', 'chaotic', 'brutal', 'dissonant', 'tense'],
+  warm: ['happy', 'upbeat', 'summer', 'sunny', 'uplifting', 'party', 'feel good', 'feel-good', 'fun', 'joyful', 'cheerful', 'romantic', 'warm', 'playful',
+    'optimistic'],
+  cool: ['sad', 'melancholic', 'melancholy', 'depressing', 'dark', 'haunting', 'bleak', 'gloomy', 'somber', 'sombre', 'mournful', 'grief', 'lonely', 'cold'],
+};
+type MoodWord = keyof typeof MOOD_WORDS;
+const MOOD_PATTERNS = Object.fromEntries(
+  // Each word escaped, but for soft's lookahead.
+  Object.entries(MOOD_WORDS).map(([kind, words]) => [
+    kind,
+    new RegExp(`(^|[^a-z])(${words.map((w) => (w.includes('(?!') ? w : escape(w))).join('|')})($|[^a-z])`),
+  ]),
+) as Record<MoodWord, RegExp>;
+/** Tags repeat across a library: each is read once. */
+const moodWordCache = new Map<string, MoodWord[]>();
 
-/** The tags' energetic and tense shares (each tag counted by its weight), with the calm and warmth styles.ts reads. */
-export function wordsOf(tags: [string, number][], style: { calm: number; warmth: number }): Words {
-  let total = 0;
-  let energetic = 0;
-  let tense = 0;
-  for (const [raw, weight] of tags) {
-    const tag = raw.toLowerCase();
-    total += weight;
-    if (ENERGETIC.some((w) => tag.includes(w))) energetic += weight;
-    if (TENSE.some((w) => tag.includes(w))) tense += weight;
+function moodWordsOf(tag: string): MoodWord[] {
+  let kinds = moodWordCache.get(tag);
+  if (!kinds) {
+    kinds = (Object.keys(MOOD_PATTERNS) as MoodWord[]).filter((kind) => MOOD_PATTERNS[kind].test(tag));
+    moodWordCache.set(tag, kinds);
   }
+  return kinds;
+}
+
+/**
+ * The tags' calm, energetic, tense and warm shares, each tag counted by its weight. A stray "atmospheric" among a dozen
+ * tags barely moves warmth; a song tagged mostly "sad" moves it far.
+ */
+export function wordsOf(tags: [string, number][]): Words {
+  let total = 0;
+  const share: Record<MoodWord, number> = { calm: 0, energetic: 0, tense: 0, warm: 0, cool: 0 };
+  for (const [raw, weight] of tags) {
+    total += weight;
+    for (const kind of moodWordsOf(raw.toLowerCase())) share[kind] += weight;
+  }
+  if (!total) return { energetic: 0, calm: 0, tense: 0, warmth: 0 };
   return {
-    energetic: total ? Math.min(1, (energetic / total) * 4) : 0,
-    calm: style.calm,
-    tense: total ? tense / total : 0,
-    warmth: style.warmth,
+    energetic: Math.min(1, (share.energetic / total) * 4),
+    calm: Math.min(1, (share.calm / total) * 4),
+    tense: share.tense / total,
+    warmth: Math.max(-1, Math.min(1, (3 * (share.warm - share.cool)) / total)),
   };
 }
 
@@ -218,7 +256,8 @@ const VOCAL_HINTS: [string, number][] = [
   ['hip hop', 0.9], ['hip-hop', 0.9], ['pop', 0.92], ['r&b', 0.95], ['soul', 0.9], ['neo soul', 0.95], ['gospel', 0.95],
   ['opera', 0.95], ['choral', 0.95], ['a cappella', 1], ['folk', 0.85], ['country', 0.92], ['rock', 0.85], ['indie', 0.85],
   ['punk', 0.9], ['metal', 0.85], ['emo', 0.95], ['dream pop', 0.85], ['shoegaze', 0.8], ['reggae', 0.85], ['disco', 0.85],
-  ['funk', 0.75], ['blues', 0.85],
+  ['funk', 0.75], ['blues', 0.85], ['ambient pop', 0.85], ['piano rock', 0.9], ['piano blues', 0.75], ['electropop', 0.9],
+  ['art pop', 0.9], ['synthpop', 0.9], ['acid jazz', 0.6], ['jazz-funk', 0.4], ['jazz funk', 0.4], ['nu jazz', 0.4],
 ];
 const VOCAL_PATTERNS = VOCAL_HINTS.map(([hint, p]) => ({ hint, p, regex: new RegExp(`(^|[^a-z])${escape(hint)}($|[^a-z])`) })).sort(
   (a, b) => b.hint.length - a.hint.length,
@@ -246,13 +285,27 @@ const vocalHintCache = new Map<string, number | null>();
 /** What a song's lyrics lookup found: its words, or that it's instrumental. */
 export type LyricsFact = 'words' | 'instrumental';
 
-/** How likely a song has singing or rapping, 0 … 1: its lyrics when they were looked up, its title, its tags, then its style. */
+/**
+ * A bare "instrumental" tag this heavy (next to the strongest) holds singing to INSTRUMENTAL_TAGGED, whatever the broad
+ * tags say: listeners tag Kind of Blue so, lightly. Not "instrumental rock": crowds put that on Rumours too.
+ */
+const INSTRUMENTAL_TAG = 0.03;
+const INSTRUMENTAL_TAGGED = 0.15;
+const BARE_INSTRUMENTAL = /^\s*instrumentals?\s*$/;
+
+/**
+ * How likely a song has singing or rapping, 0 … 1: its lyrics when they were looked up, its title, its tags, then its
+ * style. Tags that say little either way ("jazz", "electronic": some sing, some don't) count for less than tags that
+ * decide ("vocal jazz", "post-rock"), and listeners tagging it "instrumental" settle it.
+ */
 export function vocalsOf(title: string, tags: [string, number][], families: Partial<Record<StyleFamily, number>>, lyrics?: LyricsFact): number {
   if (lyrics === 'instrumental' || /\binstrumental\b/i.test(title)) return 0.03;
   if (lyrics === 'words') return 0.97;
   if (/\bkaraoke\b/i.test(title)) return 0.1;
+  const strongest = Math.max(0, ...tags.map(([, w]) => w));
   let sum = 0;
   let weight = 0;
+  let instrumental = false;
   for (const [raw, w] of tags) {
     const tag = raw.toLowerCase();
     let p = vocalHintCache.get(tag);
@@ -261,10 +314,13 @@ export function vocalsOf(title: string, tags: [string, number][], families: Part
       vocalHintCache.set(tag, p);
     }
     if (p === null) continue;
-    sum += p * w;
-    weight += w;
+    if (BARE_INSTRUMENTAL.test(tag) && w >= strongest * INSTRUMENTAL_TAG) instrumental = true;
+    // A hint of 0.5 says nothing (0.2 of its weight); one of 0 or 1 says everything.
+    const decides = 0.2 + 1.6 * Math.abs(p - 0.5);
+    sum += p * w * decides;
+    weight += w * decides;
   }
-  if (weight) return sum / weight;
+  if (weight) return instrumental ? Math.min(INSTRUMENTAL_TAGGED, sum / weight) : sum / weight;
   let familyWeight = 0;
   for (const [family, w] of Object.entries(families) as [StyleFamily, number][]) {
     sum += FAMILY_VOCALS[family] * w;
@@ -273,46 +329,79 @@ export function vocalsOf(title: string, tags: [string, number][], families: Part
   return familyWeight ? sum / familyWeight : UNKNOWN_VOCALS;
 }
 
-/** What a song should never be picked for. */
+/** What a song should never be picked for, or only for some mixes. */
 export interface Traits {
-  /** A short intro, interlude, outro or skit, or under a minute long; spoken word, stand-up, an audiobook. Never in a picked mix. */
-  filler: boolean;
-  /** Recorded live: applause and crowd break a calm or focused mix. */
+  /**
+   * An intro, interlude, outro or skit (by its title, under 150 s), or not a song at all: spoken word, stand-up, an
+   * audiobook (by its release's type or its strongest tags). Never in a mix, On Repeat included.
+   */
+  sketch: boolean;
+  /** Recorded live (its title, its release's type or its tags): applause and crowd break a calm or focused mix. */
   live: boolean;
-  /** A Christmas song: only in season. */
+  /** A Christmas song (its title, its album's or its tags): only in season. */
   christmas: boolean;
 }
 
-const FILLER_TITLE = /^(intro|outro|interlude)\b|\b(interlude|skit)\b/i;
-/** An "Intro" this long is a song of its own (M83's runs five minutes): only shorter ones are filler. */
-const LONGEST_FILLER = 150;
+/** The release a song is on, as the catalog has it. */
+export interface Release {
+  title?: string;
+  /** MusicBrainz's secondary types: "Live", "Spokenword", "Audiobook"… */
+  types?: string[];
+}
+
+const SKETCH_TITLE = /^(intro|outro|interlude)\b|\b(interlude|skit)\b/i;
+/** An "Intro" this long is a song of its own (M83's runs five minutes): only shorter ones are sketches. */
+const LONGEST_SKETCH = 150;
 /** "(Live)", "(Live at …)", "[Live]", "- Live …": not "Live Forever" or "Live in the Moment". */
 const LIVE_TITLE = /[([]\s*live\b|\s-\s+live\b|[([]\s*(en vivo|ao vivo)\b/i;
-const CHRISTMAS_TITLE =
-  /\b(christmas|xmas|santa claus|jingle bells?|sleigh ride|silent night|rudolph|mistletoe|let it snow|winter wonderland|feliz navidad|deck the halls|o holy night|frosty the snowman)\b/i;
+const CHRISTMAS_TITLE = new RegExp(
+  `\\b(${[
+    'christmas\\w*', 'xmas', 'santa claus', 'santa baby', 'jingle bells?', 'sleigh ride', 'silent night', 'rudolph', 'mistletoe', 'let it snow',
+    'winter wonderland', 'feliz navidad', 'deck the halls', 'o holy night', 'frosty the snowman', 'little drummer boy', 'joy to the world',
+    'carol of the bells', 'o come,? all ye faithful', 'hark,? the herald', 'god rest ye', 'we wish you a merry', 'away in a manger',
+    'the first no[eë]l', 'little town of bethlehem', 'good king wenceslas', "mary's boy child",
+  ].join('|')})\\b`,
+  'i',
+);
+const CHRISTMAS_ALBUM = /\b(christmas\w*|xmas|navidad|no[eë]l|weihnacht\w*)\b/i;
+/** Releases that aren't music to mix (MusicBrainz's secondary types). */
+const NOT_MUSIC_TYPES = new Set(['spokenword', 'audiobook', 'interview', 'audio drama']);
 /** Not "comedy": that's Weird Al too. */
 const NOT_SONGS = ['spoken word', 'stand-up', 'standup', 'audiobook', 'podcast', 'white noise'];
 /** A tag this heavy (next to the song's strongest) says what the song is, rather than what its artist sometimes makes. */
 const TELLING_TAG = 0.5;
+/** Saying a song isn't a song takes its strongest tags: an artist who sometimes speaks over the music still makes songs. */
+const NOT_SONG_TAG = 0.9;
 /** A Christmas tag must be about this heavy: an artist with one Christmas album isn't a Christmas artist. */
-const CHRISTMAS_TAG = 0.8;
-/** Under this many seconds a track is a sketch, an intro or a skit, not a song to pick. */
-export const SHORTEST_SONG = 60;
+const CHRISTMAS_TAG = 0.6;
 
-/** What the title, length and tags say a song is. A length of 0 is one not known yet: it doesn't make a song short. */
-export function traitsOf(title: string, duration: number, tags: [string, number][]): Traits {
+/** What the title, the release and the tags say a song is. A length of 0 is one not known yet. */
+export function traitsOf(title: string, duration: number, tags: [string, number][], release: Release = {}): Traits {
   const strongest = Math.max(0, ...tags.map(([, w]) => w));
   const heavier = (share: number) => tags.filter(([, w]) => w >= strongest * share).map(([t]) => t.toLowerCase());
-  const telling = heavier(TELLING_TAG);
-  const short = duration > 0 && duration < SHORTEST_SONG;
+  const types = (release.types ?? []).map((t) => t.toLowerCase());
   return {
-    filler:
-      short ||
-      (FILLER_TITLE.test(title) && (!duration || duration < LONGEST_FILLER)) ||
-      telling.some((t) => NOT_SONGS.some((n) => t.includes(n))),
-    live: LIVE_TITLE.test(title) || telling.some((t) => t === 'live'),
-    christmas: CHRISTMAS_TITLE.test(title) || heavier(CHRISTMAS_TAG).some((t) => t.includes('christmas') || t === 'xmas'),
+    sketch:
+      (SKETCH_TITLE.test(title) && (!duration || duration < LONGEST_SKETCH)) ||
+      types.some((t) => NOT_MUSIC_TYPES.has(t)) ||
+      heavier(NOT_SONG_TAG).some((t) => NOT_SONGS.some((n) => t.includes(n))),
+    live: LIVE_TITLE.test(title) || types.includes('live') || heavier(TELLING_TAG).some((t) => t === 'live'),
+    christmas:
+      CHRISTMAS_TITLE.test(title) ||
+      (release.title !== undefined && CHRISTMAS_ALBUM.test(release.title)) ||
+      heavier(CHRISTMAS_TAG).some((t) => t.includes('christmas') || t === 'xmas'),
   };
+}
+
+/** Under this many seconds a track is never picked: a sketch, a jingle. */
+const SHORTEST_SONG = 30;
+/** Under this many seconds a track is only picked with a sure beat: grindcore and punk, not a skit spoken over nothing. */
+const SHORT_SONG = 60;
+
+/** Too short to pick: under 30 s, or under a minute without a sure beat. A length not known yet (0) isn't short. */
+export function tooShort(duration: number, sound: SongSound | undefined): boolean {
+  if (!(duration > 0)) return false;
+  return duration < SHORTEST_SONG || (duration < SHORT_SONG && !((sound?.pulse ?? 0) >= 0.5));
 }
 
 /** Christmas songs belong from 24 November to Epiphany (6 January). */

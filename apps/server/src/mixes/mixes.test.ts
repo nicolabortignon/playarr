@@ -138,6 +138,18 @@ describe('Mixes', () => {
     );
   });
 
+  it('makes a mix again as the same draw when only the settings changed, the same day', async () => {
+    const { mixes, store } = setup();
+    store.setAppSetting('mixes', JSON.stringify({ length: 25 }));
+    const now = at('2026-11-01T10:05:00Z');
+    const before = await mixes.get('genre-rock', 'UTC', now);
+    store.setAppSetting('mixes', JSON.stringify({ length: 25, enabled: { onthisday: false } }));
+    const later = at('2026-11-01T10:20:00Z');
+    const generated = async () => (await mixes.list('UTC', later)).find((m) => m.key === 'genre-rock')!.generatedAt;
+    await vi.waitFor(async () => expect(await generated()).toBe(later.toISOString()));
+    expect((await mixes.get('genre-rock', 'UTC', later)).tracks.map((t) => t.id)).toEqual(before.tracks.map((t) => t.id));
+  });
+
   it('draws a new mix on request, and saves a mix as a playlist', async () => {
     const { mixes, playlists } = setup();
     const now = at('2026-11-01T10:05:00Z');
@@ -156,6 +168,31 @@ describe('Mixes', () => {
     store.setAppSetting('mixes', JSON.stringify({ analyzeLibrary: true, length: 25 }));
     await mixes.list('UTC', at('2026-11-01T10:06:00Z'));
     await vi.waitFor(() => expect(analyzer.ensure).toHaveBeenLastCalledWith(expect.any(Array), { audio: true }));
+  });
+
+  it('reads the songs again as analysis goes on: after many more songs at once, after a few within minutes', async () => {
+    const mixMaps = new Map<string, MixMapSummary>();
+    const { mixes, analyzer } = setup(mixMaps);
+    const reads = vi.spyOn(analyzer, 'mixSummaries');
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(at('2026-11-01T10:00:00Z').getTime());
+    try {
+      await mixes.radio(['rec-200'], [], 25);
+      expect(reads).toHaveBeenCalledTimes(1);
+      // Three songs measured: not worth reading them all again yet…
+      for (const id of ['rec-201', 'rec-202', 'rec-203']) mixMaps.set(id, map(120, '8A'));
+      await mixes.radio(['rec-200'], [], 25);
+      expect(reads).toHaveBeenCalledTimes(1);
+      // …but a library this small would never measure a hundred more: five minutes on, they're read.
+      clock.mockReturnValue(at('2026-11-01T10:05:00Z').getTime());
+      await mixes.radio(['rec-200'], [], 25);
+      expect(reads).toHaveBeenCalledTimes(2);
+      // A hundred more at once are read straight away.
+      for (let i = 0; i < 100; i++) mixMaps.set(`extra-${i}`, map(120, '8A'));
+      await mixes.radio(['rec-200'], [], 25);
+      expect(reads).toHaveBeenCalledTimes(3);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('follows one household time zone, whichever device asks', async () => {

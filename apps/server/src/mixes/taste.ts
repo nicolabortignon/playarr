@@ -34,6 +34,11 @@ export interface Song {
    * estimated from tags when its sound isn't measured; undefined if unknown.
    */
   energy?: number;
+  /**
+   * How intense its measured sound is on analysis's own scales, the same in every library: what keeps a mix that a
+   * library's own scale would allow (the softest songs of a library measured only where it's loud) from the obviously wrong.
+   */
+  absolute?: number;
   /** Its sound was measured, not just guessed from its tags. */
   measured: boolean;
   /** 0 … 1: how much its tags say calm, soft, relaxing. */
@@ -77,6 +82,8 @@ export interface SongFacts {
   phraseEnergy?: (number | null)[];
   /** What a lyrics lookup found, if one was made. */
   lyrics?: LyricsFact;
+  /** Its release's MusicBrainz secondary types ("Live", "Spokenword"…). */
+  releaseTypes?: string[];
 }
 
 /** How intense each style feels, for songs whose sound hasn't been measured. */
@@ -101,15 +108,16 @@ export function toSong(f: SongFacts): Song {
   const tags = f.tags.length ? f.tags : f.genres.map((g): [string, number] => [g, 1]);
   const style = styleProfile(tags);
   const families = style.families;
-  const words = wordsOf(tags, style);
+  const words = wordsOf(tags);
   const sound = soundOf(f.features, f.mix?.gridStable);
   const shape = (f.phraseEnergy && shapeOfPhrases(f.phraseEnergy)) ?? (sound && f.features ? shapeOfEnvelope(f.features.envelope) : undefined);
   let energy: number | undefined;
-  if (sound) energy = intensityOf(sound, words);
+  const absolute = sound ? intensityOf(sound, words) : undefined;
+  if (absolute !== undefined) energy = absolute;
   else if (Object.keys(families).length) {
     let e = 0;
     for (const [family, w] of Object.entries(families)) e += FAMILY_ENERGY[family as StyleFamily] * w!;
-    energy = clamp(e - style.calm * 0.25);
+    energy = clamp(e - words.calm * 0.25);
   }
   const groove = grooveOf(sound);
   const steadiness = steadinessOf(shape);
@@ -119,8 +127,9 @@ export function toSong(f: SongFacts): Song {
     track: f.track,
     families,
     ...(energy !== undefined ? { energy } : {}),
+    ...(absolute !== undefined ? { absolute } : {}),
     measured: sound !== undefined,
-    calm: style.calm,
+    calm: words.calm,
     mood: moodOf(f.mix?.key, words, sound?.bright),
     tension: tensionOf(words, families),
     vocals: vocalsOf(f.track.title, tags, families, f.lyrics),
@@ -129,7 +138,7 @@ export function toSong(f: SongFacts): Song {
     ...(shape ? { shape } : {}),
     ...(sound ? { sound } : {}),
     words,
-    traits: traitsOf(f.track.title, f.track.duration, tags),
+    traits: traitsOf(f.track.title, f.track.duration, tags, { title: f.track.albumTitle, types: f.releaseTypes }),
     ...(year ? { year } : {}),
     ...(f.addedAt ? { addedAt: Date.parse(f.addedAt) } : {}),
     // "YYYY-01-01" is how a bare year is stored: not a real day.

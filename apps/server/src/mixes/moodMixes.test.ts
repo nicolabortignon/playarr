@@ -2,7 +2,7 @@ import type { Camelot } from '@playarr/mix';
 import type { MixKind, MixSettings, Track } from '@playarr/shared';
 import { describe, expect, it } from 'vitest';
 import type { AudioFeatures } from '../analysis/dsp.ts';
-import { generateMix, type MixContext } from './generators.ts';
+import { generateMix, usable, type MixContext } from './generators.ts';
 import { MIX_DEFAULTS } from './settings.ts';
 import { buildTaste, calibrateSongs, toSong, type Song } from './taste.ts';
 import { localTime } from './time.ts';
@@ -17,6 +17,8 @@ const STEADY = [0.6, 0.85, 0.9, 0.88, 0.92, 0.9, 0.87, 0.9, 0.6];
 const GENTLE = [0.5, 0.7, 0.8, 0.75, 0.85, 0.8, 0.72, 0.78, 0.5];
 const VERSE_CHORUS = [0.3, 0.5, 0.55, 1, 0.55, 0.5, 1, 0.95, 0.4];
 const CRESCENDO = [0.05, 0.1, 0.12, 0.15, 0.2, 0.3, 0.9, 1, 0.6];
+/** A quiet piece that builds slowly, about 3 dB a phrase: no one jump, but 26 dB in all. */
+const SWELL = [0.04, 0.05, 0.07, 0.1, 0.14, 0.2, 0.28, 0.4, 0.56, 0.8, 1, 0.6];
 
 interface Archetype {
   tags: string[];
@@ -33,6 +35,12 @@ interface Archetype {
   phrases: number[];
   title?: string;
   duration?: number;
+  /** Tags of their own weight, beside `tags` (weighted 1, 0.8, 0.6…). */
+  extraTags?: [string, number][];
+  /** The release's MusicBrainz secondary types ("Live"…). */
+  releaseTypes?: string[];
+  /** False: never analyzed, known by its tags alone. */
+  measured?: boolean;
 }
 
 const KINDS = {
@@ -53,13 +61,23 @@ const KINDS = {
   orchestral: { tags: ['orchestral', 'classical'], year: 1990, meanDb: -18, onsets: 2, centroid: 1300, lowShare: 0.25, rangeDb: 27, phrases: CRESCENDO },
   techno: { tags: ['minimal techno', 'techno'], year: 2016, meanDb: -10, onsets: 3.4, centroid: 1200, lowShare: 0.55, rangeDb: 5, bpm: 124, pulse: 0.95, phrases: HIGH },
 } satisfies Record<string, Archetype>;
-type Kind = keyof typeof KINDS | 'skit' | 'interlude' | 'live' | 'christmas';
+type Special = 'skit' | 'interlude' | 'live' | 'liveAlbum' | 'christmas' | 'swell' | 'minorLofi' | 'minorBossa' | 'quietAmbient' | 'quietPiano';
+type Kind = keyof typeof KINDS | Special;
 
-const SPECIALS: Record<'skit' | 'interlude' | 'live' | 'christmas', Archetype> = {
+const SPECIALS: Record<Special, Archetype> = {
   skit: { ...KINDS.lofi, tags: ['hip hop'], title: 'Skit', duration: 45 },
   interlude: { ...KINDS.ambient, title: 'Interlude', duration: 95 },
   live: { ...KINDS.jazzBallad, title: 'Autumn Leaves (Live at the Village Vanguard)' },
+  // A live album's songs aren't titled "(Live)": its release says so.
+  liveAlbum: { ...KINDS.jazzBallad, releaseTypes: ['Live'] },
   christmas: { ...KINDS.jazzBallad, title: 'Have Yourself a Merry Little Christmas' },
+  swell: { tags: ['orchestral', 'classical'], year: 1990, meanDb: -22, onsets: 1.2, centroid: 900, lowShare: 0.25, rangeDb: 20, phrases: SWELL },
+  // Lo-fi and bossa in minor keys, with a stray mood tag or two, as real tags have them.
+  minorLofi: { ...KINDS.lofi, key: '2A', extraTags: [['atmospheric', 0.03], ['melancholic', 0.03]] },
+  minorBossa: { ...KINDS.bossa, key: '9A' },
+  // Never analyzed: only their tags say what they are.
+  quietAmbient: { ...KINDS.ambient, tags: ['ambient', 'drone', 'calm'], measured: false },
+  quietPiano: { ...KINDS.piano, tags: ['piano', 'neoclassical', 'relaxing'], measured: false },
 };
 
 const scale = (v: number, lo: number, hi: number) => Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
@@ -106,13 +124,16 @@ function songsOf(kind: Kind, artists = 6, each = 2): Song[] {
         streamUrl: `/stream/${id}`,
       } as Track;
       kindOf.set(id, kind);
+      const tags = [...a.tags.map((t, k): [string, number] => [t, 1 - k * 0.2]), ...(a.extraTags ?? [])];
+      if (a.measured === false) return toSong({ track, tags, genres: [], albumYear: a.year, releaseTypes: a.releaseTypes });
       return toSong({
         track,
-        tags: a.tags.map((t, k): [string, number] => [t, 1 - k * 0.2]),
+        tags,
         genres: [],
         features,
         albumYear: a.year,
         phraseEnergy: a.phrases,
+        releaseTypes: a.releaseTypes,
         ...(a.bpm ? { mix: { bpm: a.bpm + jitter, beatConfidence: a.pulse ?? 0.5, gridStable: true, ...(a.key ? { key: { camelot: a.key, confidence: 0.8 } } : {}) } } : {}),
       });
     }),
@@ -125,7 +146,9 @@ function library(): Song[] {
     ...songsOf('skit', 3, 1),
     ...songsOf('interlude', 3, 1),
     ...songsOf('live', 3, 1),
+    ...songsOf('liveAlbum', 3, 1),
     ...songsOf('christmas', 3, 1),
+    ...songsOf('swell', 3, 2),
   ];
 }
 
@@ -181,11 +204,19 @@ describe('Energy boost', () => {
 });
 
 describe('Chill', () => {
-  it('is laid back but alive: lo-fi beats and bossa nova, nothing intense, nothing dark', () => {
+  it('is laid back but alive: lo-fi beats and bossa nova, nothing intense, nothing dark, nothing that swells', () => {
     const { kinds } = mix('chill');
     expect(kinds.has('lofi')).toBe(true);
     expect(kinds.has('bossa')).toBe(true);
     for (const k of ['edm', 'metal', 'punk', 'garage', 'tripHop', 'darkAmbient', 'postRock', 'orchestral'] as Kind[]) expect(kinds.has(k)).toBe(false);
+    expect(mix('chill', context(LIBRARY, { length: 100 })).kinds.has('swell')).toBe(false);
+  });
+
+  it('keeps lo-fi and bossa in minor keys, whatever stray mood tag they carry', () => {
+    const songs = [...LIBRARY.filter((s) => !['lofi', 'bossa'].includes(kindOf.get(s.track.id)!)), ...songsOf('minorLofi'), ...songsOf('minorBossa')];
+    const { kinds } = mix('chill', context(songs));
+    expect(kinds.has('minorLofi')).toBe(true);
+    expect(kinds.has('minorBossa')).toBe(true);
   });
 });
 
@@ -196,9 +227,9 @@ describe('Wind down', () => {
     for (const k of ['garage', 'punk', 'metal', 'edm', 'pop', 'ballad'] as Kind[]) expect(kinds.has(k)).toBe(false);
   });
 
-  it('has nothing eerie, nothing that surges, no applause and no interludes', () => {
-    const { kinds } = mix('winddown');
-    for (const k of ['darkAmbient', 'orchestral', 'postRock', 'live', 'interlude', 'skit'] as Kind[]) expect(kinds.has(k)).toBe(false);
+  it('has nothing eerie, nothing that surges or swells, no applause (live albums too) and no interludes', () => {
+    const { kinds } = mix('winddown', context(LIBRARY, { length: 100 }));
+    for (const k of ['darkAmbient', 'orchestral', 'postRock', 'swell', 'live', 'liveAlbum', 'interlude', 'skit'] as Kind[]) expect(kinds.has(k)).toBe(false);
   });
 
   it('settles, fifth by fifth', () => {
@@ -247,6 +278,41 @@ describe('every mix', () => {
       if (today) lanes.add(today);
     }
     expect(lanes.size).toBeGreaterThan(1);
+  });
+});
+
+describe('a library measured only in part', () => {
+  // Measured: the loud end (what was played or queued). Never measured: the calm songs, known by their tags.
+  const PARTIAL = [
+    ...(['edm', 'pop', 'metal', 'garage', 'ballad', 'techno'] as const).flatMap((k) => songsOf(k, 10, 2)),
+    ...songsOf('quietAmbient', 10, 2),
+    ...songsOf('quietPiano', 10, 2),
+  ];
+  const ctx = context(PARTIAL);
+
+  it('winds down with the calm songs its tags know, not the softest of what happened to be measured', () => {
+    const { songs, kinds } = mix('winddown', ctx);
+    for (const k of ['pop', 'techno', 'edm', 'metal', 'garage'] as Kind[]) expect(kinds.has(k)).toBe(false);
+    const calm = songs.filter((s) => ['quietAmbient', 'quietPiano'].includes(kindOf.get(s.track.id)!));
+    expect(calm.length).toBeGreaterThanOrEqual(songs.length * 0.8);
+  });
+
+  it('keeps dance-pop and techno out of Chill, and still finds Deep focus its wordless songs', () => {
+    const chill = mix('chill', ctx).kinds;
+    for (const k of ['pop', 'techno', 'edm', 'ballad'] as Kind[]) expect(chill.has(k)).toBe(false);
+    const focus = mix('focus', ctx).kinds;
+    expect(focus.has('quietAmbient') || focus.has('quietPiano')).toBe(true);
+  });
+});
+
+describe('short songs', () => {
+  it('picks a 45-second punk song with a sure beat, never a 45-second skit spoken over nothing', () => {
+    const [punk] = songsOf('punk', 1, 1).map((s) => ({ ...s, track: { ...s.track, duration: 45 } }));
+    const [spoken] = songsOf('jazzBallad', 1, 1).map((s) => ({ ...s, track: { ...s.track, duration: 45 } }));
+    const ctx = context([punk!, spoken!]);
+    const [p, sp] = ctx.songs;
+    expect(usable(ctx, p!)).toBe(true);
+    expect(usable(ctx, sp!)).toBe(false);
   });
 });
 

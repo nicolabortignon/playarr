@@ -21,6 +21,10 @@ const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NEIGHBOUR_SEEDS = 10;
 /** How often the background check looks for mixes that are due. */
 const CHECK_EVERY_MS = 60_000;
+/** The mixes' songs are read again once analysis has measured (or tagged, or found lyrics for) this many more… */
+const SONG_CACHE_STEP = 100;
+/** …or fewer, once the last read is this old: a library smaller than a step, and analysis's last songs, are seen too. */
+const SONG_CACHE_MS = 5 * 60_000;
 /** Feeling Lucky's length, and how many presses' first songs (and songs) the next press avoids. */
 export const LUCKY_SONGS = 15;
 const LUCKY_REMEMBERED_SEEDS = 20;
@@ -81,7 +85,9 @@ export class Mixes {
   private inflight = new Map<number, Promise<void>>();
   private timer: NodeJS.Timeout | null = null;
   /** Songs as the mixes see them, per set of sources, until the library or what's known about its songs changes. */
-  private songCache = new Map<string, { key: string; songs: Song[] }>();
+  private songCache = new Map<string, { key: string; coarse: string; at: number; songs: Song[] }>();
+  /** Songs being read, by set of sources and cache key: two asking at once wait for the same read. */
+  private songReads = new Map<string, Promise<Song[]>>();
   /** What the last Feeling Lucky presses gave, by account (newest first): the next press goes elsewhere. */
   private luckyRecent = new Map<number, { seeds: string[]; songs: string[] }>();
 
@@ -322,8 +328,11 @@ export class Mixes {
     for (const p of plan!.plan) {
       if (!due(p)) continue;
       const period = periodOf(p.kind, local);
+      // A new hour, day or week leans away from the mix it replaces; made again for the same one (the settings changed),
+      // a mix is the same draw as before.
       const previous = rows.get(p.key);
-      this.write(account, p.key, period, 0, { settings: hash, mix: generateMix(p, ctx, period, 0, previous ? songsOf(previous) : undefined) }, now);
+      const replaced = previous && previous.period !== period ? songsOf(previous) : undefined;
+      this.write(account, p.key, period, 0, { settings: hash, mix: generateMix(p, ctx, period, 0, replaced) }, now);
       // Let requests waiting meanwhile through between mixes.
       await new Promise((resolve) => setImmediate(resolve));
     }
@@ -375,28 +384,52 @@ export class Mixes {
     const { analyzer } = this.deps;
     const progress = analyzer.progress();
     const sources = library.sources?.join(',') ?? 'all';
-    const key = `${library.version}:${progress.features}:${progress.meta}:${progress.mixMaps}:${settings.analyzeLibrary}`;
+    // Analysis moves song by song: the songs are read again every SONG_CACHE_STEP songs it measures or tags (and lyrics
+    // it finds), or every few minutes while it moves by fewer, not after each, since reading 50,000 of them takes a
+    // second or more.
+    const counts = [progress.features, progress.meta, progress.mixMaps, this.lyricsCount()];
+    const key = [library.version, settings.analyzeLibrary, ...counts].join(':');
+    const coarse = [library.version, settings.analyzeLibrary, ...counts.map((n) => Math.floor(n / SONG_CACHE_STEP))].join(':');
     const cached = this.songCache.get(sources);
-    if (cached?.key === key) return cached.songs;
+    if (cached && (cached.key === key || (cached.coarse === coarse && Date.now() - cached.at < SONG_CACHE_MS))) return cached.songs;
+    const reading = `${sources}|${key}`;
+    let read = this.songReads.get(reading);
+    if (!read) {
+      read = this.readSongs(settings, library)
+        .then((songs) => {
+          this.songCache.set(sources, { key, coarse, at: Date.now(), songs });
+          return songs;
+        })
+        .finally(() => this.songReads.delete(reading));
+      this.songReads.set(reading, read);
+    }
+    return read;
+  }
+
+  private async readSongs(settings: MixSettings, library: LibraryView): Promise<Song[]> {
+    const { analyzer } = this.deps;
     const [tracks, albums, artists] = await Promise.all([library.allTracks(), library.albums(), library.artists()]);
     const seen = new Set<string>();
     const unique = tracks.filter((t) => !seen.has(t.recordingId) && seen.add(t.recordingId));
     const ids = unique.map((t) => t.recordingId);
     // Tags are cheap and fetched for everything; measuring sound only when Settings → Analysis asks for it.
     analyzer.ensure(ids, { audio: settings.analyzeLibrary });
-    const features = analyzer.features(ids);
-    const meta = analyzer.meta(ids);
     // Only what blending needs, and the phrase energy the mood mixes read a song's shape from: whole mix maps (beat
     // grid…) for every song would be slow to read and fill memory.
     const summaries = analyzer.mixSummaries(ids);
+    const features = analyzer.features(ids, summaries);
+    const meta = analyzer.meta(ids);
     const phrases = analyzer.phraseEnergies(ids);
     const lyrics = lyricsFacts(this.deps.db, ids);
     const albumById = new Map(albums.map((a) => [a.id, a]));
     const genres = new Map(artists.map((a) => [a.id, a.genres]));
-    const songs = unique.map((track) => {
+    const songs: Song[] = [];
+    for (const track of unique) {
+      // Let requests through now and then: this is a lot of songs.
+      if (songs.length % 2000 === 1999) await new Promise((resolve) => setImmediate(resolve));
       const album = albumById.get(track.albumId);
       const m = meta.get(track.recordingId);
-      return toSong({
+      songs.push(toSong({
         track,
         tags: m?.tags ?? [],
         // The album's genres (its tags, else the artist's), else the artist's.
@@ -409,11 +442,15 @@ export class Mixes {
         mix: summaries.get(track.recordingId),
         phraseEnergy: phrases.get(track.recordingId),
         lyrics: lyrics.get(track.recordingId),
-      });
-    });
-    const calibrated = calibrateSongs(songs);
-    this.songCache.set(sources, { key, songs: calibrated });
-    return calibrated;
+        releaseTypes: album?.secondaryTypes,
+      }));
+    }
+    return calibrateSongs(songs);
+  }
+
+  /** How many songs lyrics lookups have found something for: what singing is read from. */
+  private lyricsCount(): number {
+    return (this.deps.db.prepare('SELECT COUNT(*) AS n FROM lyrics WHERE data IS NOT NULL').get() as { n: number }).n;
   }
 
   /** Library songs ListenBrainz finds alike to the most played (or loved) ones, for Discovery Weekly. */
@@ -470,9 +507,9 @@ function periodOf(kind: MixKind, local: LocalTime): string {
 
 /**
  * How mixes are made: bumped when that changes enough that the mixes made with the old recipe should go at once (2: the
- * mood mixes read the measured sound, and Chill, 2026-11-07).
+ * mood mixes read the measured sound, and Chill; 3: their review's fixes, both 2026-11-07).
  */
-const RECIPE = 2;
+const RECIPE = 3;
 
 /** Only the settings that shape the mixes, and the recipe: turning history recording off doesn't remake them. */
 const settingsHash = (s: MixSettings) =>

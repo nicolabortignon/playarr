@@ -133,6 +133,29 @@ export interface StyleProfile {
   calm: number;
 }
 
+/** What one tag says, read once: tags repeat across a library, and the mixes read every song's. */
+interface TagReading {
+  families: StyleFamily[];
+  warm: boolean;
+  cool: boolean;
+  calm: boolean;
+}
+const readings = new Map<string, TagReading>();
+
+function readTag(tag: string): TagReading {
+  let reading = readings.get(tag);
+  if (!reading) {
+    reading = {
+      families: patterns.filter(({ regex }) => regex.test(tag)).map(({ family }) => family),
+      warm: WARM.some((w) => tag.includes(w)),
+      cool: COOL.some((w) => tag.includes(w)),
+      calm: CALM.some((w) => tag.includes(w)),
+    };
+    readings.set(tag, reading);
+  }
+  return reading;
+}
+
 /** Weighted tags (any source) → style profile. */
 export function styleProfile(tags: [tag: string, weight: number][]): StyleProfile {
   const families: Partial<Record<StyleFamily, number>> = {};
@@ -141,13 +164,11 @@ export function styleProfile(tags: [tag: string, weight: number][]): StyleProfil
   let calm = 0;
   let moodWeight = 0;
   for (const [raw, weight] of tags) {
-    const tag = raw.toLowerCase();
-    for (const { family, regex } of patterns) {
-      if (regex.test(tag)) families[family] = (families[family] ?? 0) + weight;
-    }
-    if (WARM.some((w) => tag.includes(w))) warm += weight;
-    if (COOL.some((w) => tag.includes(w))) cool += weight;
-    if (CALM.some((w) => tag.includes(w))) calm += weight;
+    const reading = readTag(raw.toLowerCase());
+    for (const family of reading.families) families[family] = (families[family] ?? 0) + weight;
+    if (reading.warm) warm += weight;
+    if (reading.cool) cool += weight;
+    if (reading.calm) calm += weight;
     moodWeight += weight;
   }
   // Crowd tags are noisy: drop families with under 12% of the song's tag weight.

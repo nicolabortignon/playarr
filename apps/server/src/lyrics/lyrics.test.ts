@@ -73,10 +73,13 @@ describe('lyrics', () => {
     save.run('plain', JSON.stringify({ plain: 'Look at the stars', source: 'file' }), now);
     save.run('instrumental', JSON.stringify({ instrumental: true, source: 'lrclib' }), now);
     save.run('missing', null, now);
-    expect(Object.fromEntries(lyricsFacts(db, ['synced', 'plain', 'instrumental', 'missing', 'never']))).toEqual({
+    // Embedded lyrics often only say so.
+    save.run('saysSo', JSON.stringify({ plain: '[Instrumental]', source: 'file' }), now);
+    expect(Object.fromEntries(lyricsFacts(db, ['synced', 'plain', 'instrumental', 'missing', 'saysSo', 'never']))).toEqual({
       synced: 'words',
       plain: 'words',
       instrumental: 'instrumental',
+      saysSo: 'instrumental',
     });
   });
 });

@@ -255,13 +255,14 @@ export class Analyzer {
    * The songs' features: how each sounds (sound analysis), with its tempo and how sure the beat is from
    * its beat analysis (its mix map; 0 until it has one). One tempo for every use: the one DJ mix plays by.
    */
-  features(ids: string[]): Map<string, AudioFeatures> {
+  features(ids: string[], summaries?: Map<string, MixMapSummary>): Map<string, AudioFeatures> {
     const rows = this.select<{ recording_id: string; features: string }>(
       'SELECT recording_id, features FROM track_features WHERE version = ? AND features IS NOT NULL AND recording_id IN',
       ids,
       [ANALYSIS_VERSION],
     );
-    const beats = this.mixSummaries(rows.map((r) => r.recording_id));
+    // A caller that has the songs' mix map summaries already (the mixes) hands them over rather than have them read again.
+    const beats = summaries ?? this.mixSummaries(rows.map((r) => r.recording_id));
     return new Map(
       rows.map((r) => {
         // Features measured before sound analysis left the tempo to beat analysis still hold their own: left out.

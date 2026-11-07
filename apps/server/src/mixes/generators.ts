@@ -3,7 +3,7 @@ import type { MixKind, MixSettings } from '@playarr/shared';
 import { FAMILIES, type StyleFamily } from '../analysis/styles.ts';
 import { hash32, Rng } from '../cover/random.ts';
 import type { Play } from './history.ts';
-import { christmasSeason } from './mood.ts';
+import { christmasSeason, tooShort } from './mood.ts';
 import { isEnabled } from './settings.ts';
 import { familySimilarity, hourProfile, topFamilies, type Song, type Taste } from './taste.ts';
 import type { LocalTime } from './time.ts';
@@ -275,9 +275,10 @@ function repeat(ctx: Making): Made | null {
     c.last = Math.max(c.last, at);
     counts.set(p.recordingId, c);
   }
-  // What's played most, as it was, but never a skit or an interlude however often its album was.
+  // What's played most, as it was (a 45-second punk song, a Christmas song in January), but never a skit or an interlude
+  // however often its album was.
   const songs = ctx.songs
-    .filter((s) => !s.traits.filler && (counts.get(s.track.recordingId)?.n ?? 0) >= 2)
+    .filter((s) => !s.traits.sketch && (counts.get(s.track.recordingId)?.n ?? 0) >= 2)
     .sort((x, y) => {
       const a = counts.get(x.track.recordingId)!;
       const b = counts.get(y.track.recordingId)!;
@@ -409,11 +410,11 @@ function genre(ctx: Making, rng: Rng, param?: string): Made | null {
 
 /**
  * Energy boost: for moving. A driving beat, fast or forceful, a full sound that rarely lets up: the library's most
- * intense fifth or so, leaning to the uplifting. Builds to the peak.
+ * intense songs, leaning to the uplifting. Builds to the peak.
  */
 function energy(ctx: Making, rng: Rng): Made | null {
   const { songs, lanes } = moodPick(ctx, rng, {
-    fits: (s) => s.energy! >= 0.7 && (s.shape?.sustain ?? 1) >= 0.6 && s.calm < 0.5,
+    fits: (s) => s.energy! >= 0.7 && s.absolute! >= 0.5 && (s.shape?.sustain ?? 1) >= 0.6 && s.calm < 0.5,
     guess: (s) => s.energy !== undefined && s.energy >= 0.62 && s.calm < 0.3,
     fit: (s) => 0.6 * (s.energy ?? 0.62) + 0.25 * (s.groove ?? UNKNOWN_GROOVE) + 0.15 * s.mood,
   });
@@ -428,12 +429,20 @@ function energy(ctx: Making, rng: Rng): Made | null {
 
 /**
  * Chill: for an easy afternoon. Laid back but alive: an easy groove or a gentle sway, warm rather than bright, nothing
- * tense, nothing heavy-hearted. Rolls gently rather than going anywhere.
+ * tense, nothing heavy-hearted, nothing that swells. Rolls gently rather than going anywhere.
  */
 function chill(ctx: Making, rng: Rng): Made | null {
   const { songs, lanes } = moodPick(ctx, rng, {
     fits: (s) =>
-      !s.traits.live && lasts(s, 90) && s.energy! >= 0.15 && s.energy! <= 0.6 && s.tension < 0.4 && s.mood >= 0.35 && (s.shape?.surgeDb ?? 0) <= 5,
+      !s.traits.live &&
+      lasts(s, 90) &&
+      s.energy! >= 0.15 &&
+      s.energy! <= 0.6 &&
+      s.absolute! <= 0.65 &&
+      s.tension < 0.4 &&
+      s.mood >= 0.35 &&
+      (s.shape?.surgeDb ?? 0) <= 5 &&
+      (s.steadiness ?? 0.5) >= 0.3,
     guess: (s) => !s.traits.live && lasts(s, 90) && (s.calm >= 0.4 || (s.families.chill ?? 0) >= 0.4) && s.tension < 0.3,
     fit: (s) =>
       0.25 * near(s.energy ?? CHILL_ENERGY, CHILL_ENERGY, 0.25) +
@@ -459,12 +468,20 @@ const UNKNOWN_GROOVE = 0.3;
 const CALM_ENERGY = 0.3;
 
 /**
- * Wind down: for the end of the day. Soft and slow, quiet next to music of its time, nothing sudden and nothing tense:
- * the library's stillest songs. Settles as it goes.
+ * Wind down: for the end of the day. Soft and slow, quiet next to music of its time, nothing sudden, nothing tense and
+ * no groove that wants you up: the library's stillest songs. Settles as it goes.
  */
 function winddown(ctx: Making, rng: Rng): Made | null {
   const { songs, lanes } = moodPick(ctx, rng, {
-    fits: (s) => !s.traits.live && lasts(s, 100) && s.energy! <= 0.3 && s.tension < 0.3 && (s.shape?.surgeDb ?? 0) <= 7,
+    fits: (s) =>
+      !s.traits.live &&
+      lasts(s, 100) &&
+      s.energy! <= 0.3 &&
+      s.absolute! <= 0.45 &&
+      s.tension < 0.3 &&
+      (s.groove ?? 0) <= 0.6 &&
+      (s.shape?.surgeDb ?? 0) <= 7 &&
+      (s.steadiness ?? 0.5) >= 0.3,
     guess: (s) => !s.traits.live && lasts(s, 100) && (s.calm >= 0.5 || (s.energy !== undefined && s.energy <= CALM_ENERGY)) && s.tension < 0.2,
     fit: (s) =>
       0.45 * (1 - (s.energy ?? CALM_ENERGY)) +
@@ -500,10 +517,11 @@ function focus(ctx: Making, rng: Rng): Made | null {
       (s.steadiness ?? 0.5) >= 0.5 &&
       s.energy! >= 0.05 &&
       s.energy! <= 0.7 &&
+      s.absolute! <= 0.8 &&
       s.tension < 0.5 &&
       (s.shape?.surgeDb ?? 0) <= 8,
     guess: (s) => !s.traits.live && lasts(s, 120) && s.vocals <= 0.3 && s.tension < 0.4,
-    fit: (s) => 0.4 * (1 - s.vocals) + 0.35 * (s.steadiness ?? 0.4) + 0.25 * near(s.energy ?? FOCUS_ENERGY, FOCUS_ENERGY, 0.4),
+    fit: (s) => 0.4 * (1 - s.vocals) + 0.35 * (s.steadiness ?? 0.5) + 0.25 * near(s.energy ?? FOCUS_ENERGY, FOCUS_ENERGY, 0.4),
   });
   const wordless = songs.filter((s) => s.vocals <= 0.2).length >= songs.length * 0.9;
   return {
@@ -514,39 +532,40 @@ function focus(ctx: Making, rng: Rng): Made | null {
   };
 }
 
-/** How a mood mix picks: who belongs, how well each fits (0 … 1), and which songs known only by their tags may stand in. */
+/** How a mood mix picks: who belongs, how well each fits (0 … 1), and which songs known only by their tags may join. */
 interface Mood {
   /** Whether a song whose sound was measured belongs. */
   fits: (song: Song) => boolean;
-  /** Whether a song known only by its tags belongs: taken only when the measured ones run short. */
+  /** Whether a song known only by its tags belongs. */
   guess: (song: Song) => boolean;
   /** How well it fits, before what the listener likes and chance. */
   fit: (song: Song) => number;
 }
 
-/** A song known only by its tags comes after measured songs that fit about as well: its sound is a guess. */
-const GUESS_PENALTY = 0.25;
+/**
+ * A song known only by its tags comes after measured songs that fit about as well, its sound being a guess; but it
+ * competes, so a library measured only where it's loud still gets its calm songs into Wind down.
+ */
+const GUESS_PENALTY = 0.2;
 /** Lanes need room to choose: at least this many songs that fit for each the mix holds. */
 const LANES_ROOM = 1.5;
 
 /**
- * A mood mix's songs: the measured songs that belong (then songs guessed from their tags, if those run short), scored
- * on how well they fit (0.5), what the listener likes (0.3), today's lanes (up to 0.12) and chance (0.1). At most two
- * by any artist.
+ * A mood mix's songs: the measured songs that belong and the songs that belong by their tags, scored on how well they
+ * fit (0.5), what the listener likes (0.3), today's lanes (up to 0.12) and chance (0.1), less a guess's penalty. At
+ * most two by any artist.
  */
 function moodPick(ctx: Making, rng: Rng, mood: Mood): { songs: Song[]; lanes: StyleFamily[] } {
-  const usableSongs = ctx.songs.filter((s) => usable(ctx, s));
-  const measured = usableSongs.filter((s) => s.measured && s.energy !== undefined && mood.fits(s));
-  const guessed = measured.length < ctx.settings.length ? usableSongs.filter((s) => !s.measured && mood.guess(s)) : [];
-  const pool = [...measured, ...guessed];
+  const pool = ctx.songs.filter(
+    (s) => usable(ctx, s) && (s.measured ? s.energy !== undefined && s.absolute !== undefined && mood.fits(s) : mood.guess(s)),
+  );
   const lanes = pool.length >= ctx.settings.length * LANES_ROOM ? pickLanes(ctx, pool, rng) : [];
-  const shares = Object.fromEntries(lanes.map((f) => [f, 1 / lanes.length])) as Partial<Record<StyleFamily, number>>;
   const scored = pool.map((song) => ({
     song,
     score:
       0.5 * mood.fit(song) +
       0.3 * affinity(ctx, song) +
-      (lanes.length ? LANE_PULL * familySimilarity(song.families, shares) : 0) +
+      LANE_PULL * inLanes(song, lanes) +
       0.1 * rng.next() -
       (song.measured ? 0 : GUESS_PENALTY) -
       skipPenalty(ctx, song) -
@@ -559,11 +578,14 @@ function moodPick(ctx: Making, rng: Rng, mood: Mood): { songs: Song[]; lanes: St
 const LANE_PULL = 0.12;
 /** A lane needs at least this share of the strongest style's weight among the songs that fit. */
 const LANE_FLOOR = 0.15;
+/** A second lane only when it's at least half as strong as the first: otherwise the day has one. */
+const SECOND_LANE = 0.5;
 
 /**
  * Today's lanes: one or two styles most of a mood mix comes from, so it holds together (not Chopin, then drum and
- * bass). Drawn by chance among the four styles with the most songs that fit, weighted by how much the listener likes
- * them, so they change from day to day.
+ * bass). The first is drawn by chance among the four styles with the most songs that fit, weighted by how much the
+ * listener likes them, so they change from day to day; a second is drawn the same way if one is at least half as
+ * strong.
  */
 function pickLanes(ctx: MixContext, pool: Song[], rng: Rng): StyleFamily[] {
   const weight: Partial<Record<StyleFamily, number>> = {};
@@ -573,13 +595,20 @@ function pickLanes(ctx: MixContext, pool: Song[], rng: Rng): StyleFamily[] {
   }
   const ranked = (Object.entries(weight) as [StyleFamily, number][]).sort((a, b) => b[1] - a[1]);
   const top = ranked.filter(([, w]) => w >= ranked[0]![1] * LANE_FLOOR).slice(0, 4);
-  const lanes: StyleFamily[] = [];
-  while (lanes.length < 2 && top.length) {
-    let r = rng.next() * top.reduce((sum, [, w]) => sum + w, 0);
-    const i = top.findIndex(([, w]) => (r -= w) <= 0);
-    lanes.push(top.splice(i === -1 ? top.length - 1 : i, 1)[0]![0]);
-  }
-  return lanes;
+  const draw = (from: [StyleFamily, number][]) => {
+    let r = rng.next() * from.reduce((sum, [, w]) => sum + w, 0);
+    const i = from.findIndex(([, w]) => (r -= w) <= 0);
+    return from.splice(i === -1 ? from.length - 1 : i, 1)[0]!;
+  };
+  if (!top.length) return [];
+  const [first, firstWeight] = draw(top);
+  const strong = top.filter(([, w]) => w >= firstWeight * SECOND_LANE);
+  return strong.length ? [first, draw(strong)[0]] : [first];
+}
+
+/** How much of a song is of today's lanes, 0 … 1: all of a song in either lane counts in full. */
+function inLanes(song: Song, lanes: StyleFamily[]): number {
+  return Math.min(1, lanes.reduce((sum, lane) => sum + (song.families[lane] ?? 0), 0));
 }
 
 /** Whether a song runs at least this long (one whose length isn't known yet does). */
@@ -678,9 +707,12 @@ function affinity(ctx: MixContext, song: Song): number {
   return Math.max(ctx.taste.songAffinity.get(song.track.recordingId) ?? 0, (ctx.taste.artists.get(song.track.artistId) ?? 0) * 0.8);
 }
 
-/** Whether a song may be picked at all: never an intro, an interlude or a skit (mood.ts `traitsOf`), nor a Christmas song out of season. */
+/**
+ * Whether a song may be picked at all: never an intro, an interlude, a skit or spoken word (mood.ts `traitsOf`), nothing
+ * too short to be a song (`tooShort`), nor a Christmas song out of season.
+ */
 export function usable(ctx: Pick<MixContext, 'local'>, song: Song): boolean {
-  return !song.traits.filler && (!song.traits.christmas || christmasSeason(ctx.local));
+  return !song.traits.sketch && !tooShort(song.track.duration, song.sound) && (!song.traits.christmas || christmasSeason(ctx.local));
 }
 
 /** Songs of the mix this one replaces sink this much, so a daily mix isn't yesterday's again. */
@@ -880,11 +912,15 @@ export function artistsLine(songs: Song[], max = 3): string {
   return `${names.slice(0, max).join(', ')} and more`;
 }
 
-/** ", mostly electronic and hip hop today", when at least half the songs are mostly of today's lanes. */
+/** A lane is named when at least this share of the mix is mostly of it. */
+const NAMED_LANE = 0.2;
+
+/** ", mostly electronic and hip hop today": the lanes a fair share of the mix is mostly of, when together they're at least half. */
 function lanesLine(lanes: StyleFamily[], songs: Song[]): string {
-  if (!lanes.length) return '';
-  const inLanes = songs.filter((s) => lanes.includes(topFamilies(s.families, 1)[0]!)).length;
-  return inLanes >= songs.length / 2 ? `, mostly ${familyNames(lanes)} today` : '';
+  const count = (lane: StyleFamily) => songs.filter((s) => topFamilies(s.families, 1)[0] === lane).length;
+  const named = lanes.filter((lane) => count(lane) >= songs.length * NAMED_LANE);
+  const total = named.reduce((sum, lane) => sum + count(lane), 0);
+  return named.length && total >= songs.length / 2 ? `, mostly ${familyNames(named)} today` : '';
 }
 
 /** A beat this sure gives a song's tempo to the description. */

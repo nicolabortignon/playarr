@@ -42,16 +42,28 @@ interface LrclibRecord {
   duration?: number;
 }
 
-/** What lyrics lookups found for songs that have been looked up: their words, or that they're instrumental (LRCLIB's flag). */
+/** Lyrics that only say the song has none: "[Instrumental]", as embedded lyrics often do. */
+const NO_WORDS = /^\W*instrumental\W*$/i;
+
+/**
+ * What lyrics lookups found for songs that have been looked up: their words, or that they're instrumental (LRCLIB's
+ * flag, or lyrics that only say so).
+ */
 export function lyricsFacts(db: DatabaseSync, ids: string[]): Map<string, LyricsFact> {
-  const rows = selectIn<{ recording_id: string; instrumental: number | null; words: number }>(
+  const rows = selectIn<{ recording_id: string; instrumental: number | null; words: number; plain: string | null }>(
     db,
     `SELECT recording_id, json_extract(data, '$.instrumental') AS instrumental,
-       (json_type(data, '$.synced') IS NOT NULL OR json_type(data, '$.plain') IS NOT NULL) AS words
+       (json_type(data, '$.synced') IS NOT NULL OR json_type(data, '$.plain') IS NOT NULL) AS words,
+       CASE WHEN length(json_extract(data, '$.plain')) <= 40 THEN json_extract(data, '$.plain') END AS plain
      FROM lyrics WHERE data IS NOT NULL AND recording_id IN`,
     ids,
   );
-  return new Map(rows.flatMap((r): [string, LyricsFact][] => (r.instrumental === 1 ? [[r.recording_id, 'instrumental']] : r.words ? [[r.recording_id, 'words']] : [])));
+  return new Map(
+    rows.flatMap((r): [string, LyricsFact][] => {
+      if (r.instrumental === 1 || (r.plain !== null && NO_WORDS.test(r.plain))) return [[r.recording_id, 'instrumental']];
+      return r.words ? [[r.recording_id, 'words']] : [];
+    }),
+  );
 }
 
 /**
