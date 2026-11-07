@@ -466,6 +466,21 @@ describe('CatalogStore: organizing', () => {
     expect(store.matches(id).has('Massive Attack/Mezzanine/01 Angel.flac')).toBe(true);
   });
 
+  it('moves a file onto the path of one that went, its rows left behind', () => {
+    const { store, id } = folderWithMezzanine();
+    const tags = { genres: [], duration: 1, format: { codec: 'FLAC', container: 'flac', lossless: true } };
+    store.saveFolderFiles(id, [{ rel: 'misc/0.flac', size: 1, mtimeMs: 1, tags }], ['misc/0.flac']);
+    // A file once at the target, deleted outside Playarr: its match row stays until a scan.
+    store.saveMatches(id, [
+      { rel: 'misc/0.flac', groupKey: 'g', state: 'manual', size: 1, mtimeMs: 1 },
+      { rel: 'Massive Attack/Mezzanine/01 Angel.flac', groupKey: 'old', state: 'auto', size: 9, mtimeMs: 9 },
+    ]);
+    store.renameFolderFile(id, 'misc/0.flac', 'Massive Attack/Mezzanine/01 Angel.flac', '/music/Massive Attack/Mezzanine/01 Angel.flac');
+    const matches = store.matches(id);
+    expect(matches.get('Massive Attack/Mezzanine/01 Angel.flac')).toMatchObject({ groupKey: 'g', state: 'manual' });
+    expect(matches.has('misc/0.flac')).toBe(false);
+  });
+
   it('journals moves by batch', () => {
     const { store, id } = folderWithMezzanine();
     const batch = store.nextMoveBatch();

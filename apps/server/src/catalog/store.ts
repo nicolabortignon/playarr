@@ -918,10 +918,18 @@ export class CatalogStore {
       .sort((a, b) => a.rel.localeCompare(b.rel));
   }
 
-  /** A folder file was moved: its copy, tag cache and match follow it (the copy keeps its id). */
+  /**
+   * A folder file was moved: its copy, tag cache and match follow it (the copy keeps its id). Rows still at the new path
+   * are of a file that was there once and went (match rows outlive their files until a scan): the moved file is there
+   * now, so they go first rather than block the move.
+   */
   renameFolderFile(sourceId: number, fromRel: string, toRel: string, toPath: string) {
+    if (fromRel === toRel) return;
     this.db.exec('BEGIN');
     try {
+      for (const [table, column] of [['copies', 'source_ref'], ['folder_files', 'rel_path'], ['folder_matches', 'rel_path']] as const) {
+        this.sql(`DELETE FROM ${table} WHERE source_id = ? AND ${column} = ?`).run(sourceId, toRel);
+      }
       this.sql('UPDATE copies SET source_ref = ?, path = ? WHERE source_id = ? AND source_ref = ?')
         .run(toRel, toPath, sourceId, fromRel);
       this.sql('UPDATE folder_files SET rel_path = ? WHERE source_id = ? AND rel_path = ?')
