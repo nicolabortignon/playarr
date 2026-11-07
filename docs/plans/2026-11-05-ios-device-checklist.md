@@ -66,3 +66,17 @@ How downloads and offline play work is in [docs/ios/offline.md](../ios/offline.m
 - [ ] Accounts: add an account and share its setup link by Messages to yourself. The link opens the web's redeem page (or the app through `playarr://`). Remove the account afterwards.
 - [ ] On mobile data (away from home, over HTTPS): Sources and Accounts still load and change things.
 - [ ] Larger text (two steps up): no panel cuts off a button.
+
+## The home address (iPhone, signed in to the real server)
+
+The app sends its token to the server's home address (`http://192.168.1.103:4000`) only on Wi-Fi or a wired network, and only once the server there has answered `GET /api/auth/proof` ([docs/server/accounts-and-access.md](../server/accounts-and-access.md#8-the-home-address)). The server's log shows each question.
+
+- [ ] **At home, the public address out of reach** (the reverse proxy off for a minute, or tracklist.me blocked in the router): Home, an album and its covers still load. The log shows one `GET /api/auth/proof` from the phone, then its requests; no second question until the phone changes network.
+- [ ] **Another Wi-Fi** (a café's, a friend's): everything goes through the public address, and the log shows no question.
+- [ ] **Another Wi-Fi, the public address out of reach** (the proxy off): the app says it can't reach the server, and the log shows nothing from the phone.
+- [ ] **A captive portal** (a hotel's or a train's Wi-Fi, before signing in to it): the app says it can't reach the server; signed in to the Wi-Fi, it works through the public address.
+- [ ] **Mobile data, the public address out of reach**: the app says so at once, and nothing goes to the home address.
+
+## Restoring (iPhone)
+
+- [ ] **A backup without the Keychain.** Back up a phone signed in to Playarr in Finder with "Encrypt local backup" off (such a backup leaves the Keychain out), and restore it onto an iPhone: Playarr opens on "sign in again" for the account, still listed, rather than a spinner, and signing in brings it back. (An encrypted or iCloud backup brings the token back too, and Playarr opens signed in.)

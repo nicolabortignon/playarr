@@ -8,12 +8,21 @@ import Synchronization
 final class DemoState: Sendable {
   private struct Library {
     var favorites = [Demo.favorite]
-    var playlists = [Demo.lateNight] + (ProcessInfo.processInfo.arguments.contains("-UITestsManyPlaylists") ? Demo.morePlaylists : [])
+    var playlists = [Demo.lateNight] + (DemoState.manyPlaylists ? Demo.morePlaylists : [])
     var nextPlaylist = 2
     var nextItem = 100
   }
 
   private let library = Mutex(Library())
+
+  /// `-UITestsManyPlaylists` (Debug builds): two dozen more playlists, enough that the iPad's sidebar scrolls.
+  private static var manyPlaylists: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("-UITestsManyPlaylists")
+    #else
+      false
+    #endif
+  }
 
   /// The answer to `method path`, or nil when it isn't one of these.
   func answer(_ method: HTTPMethod, _ path: String, query: [URLQueryItem], body: Data?) throws -> (any Encodable & Sendable)? {

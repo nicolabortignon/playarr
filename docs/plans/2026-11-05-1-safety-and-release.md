@@ -6,7 +6,7 @@ Agreed 2026-11-05 from the iOS, server, web and product reviews. First of four p
 
 Already done: the last password can no longer be reset or removed, which reopened the server in setup mode to anyone (`accounts.ts` `keepAPassword`, 2026-11-05).
 
-**Where it stands (2026-11-07):** 1, 5 and 6 done; 2 under way (CI, the copy before migrations and the refusal of a newer database are done; the updater's part is left); 3 and 4 under way.
+**Where it stands (2026-11-07):** 1, 3, 4, 5 and 6 done; 2 under way (CI, the copy before migrations and the refusal of a newer database are done; the updater's part is left). Of 4, only the check of past uploads for ITMS-91053 warnings is left (App Store Connect's emails).
 
 ## 1. The web app survives a deploy and a page error — S — done 2026-11-05
 
@@ -31,7 +31,9 @@ Nothing runs the server or web tests before the updater builds `main` (`.github/
 - The server refuses to start on a database newer than it knows (`user_version` above its migrations), rather than running against it. *Done 2026-11-07.*
 - **Done when** a red commit never reaches the NAS, a failed start rolls back within one update cycle, and a backup exists for every migration run.
 
-## 3. iOS never sends the token to an address it hasn't verified — M
+## 3. iOS never sends the token to an address it hasn't verified — M — done 2026-11-07
+
+*Done: `PlayarrAPI/LocalNetwork.swift` (Wi-Fi or wired, from `NWPathMonitor`, and a count of networks) and `HomeAddress.swift` (the proof, asked once per network and kept), used by `APIClient`, `MediaURLs`, `ImageCache` and `ServerStore` (its anonymous client and Bonjour's addresses); certificate errors still lead to the home address (`APIClient.couldntConnect`), now only behind the proof. The server's `GET /api/auth/proof` (`Sessions.proof`, `routes/auth.ts`), answered for real only from the home network. The design and its threat model: [accounts-and-access.md](../server/accounts-and-access.md#8-the-home-address). Three changes to what's below: certificate errors still count as "couldn't connect", since the proof now keeps the token from anything else at the home address, and a router without NAT loopback answering the public address with its own certificate would otherwise lock the app out at home; the question names the session by HMAC(sha256(token), nonce), so neither the token nor its hash (the key) is in it, and the server answers for real only questions straight from the home network, so an impostor can't pass the question on to the public address. Left out: a server known only by its home address still gets the token on any network (proving it everywhere would cut off older servers and VPN users).*
 
 When the public address fails (including on certificate errors, which captive portals cause), `APIClient` retries at the stored home address, `http://192.168…`, and attaches the Bearer token, on whatever network the phone is on (`PlayarrAPI/APIClient.swift` `load` and `couldntConnect`; `ImageCache.swift` falls back on any error; `MediaURLs.swift` attaches the token for the local origin). The home address can also come from any device advertising `_playarr._tcp` with the server's public id.
 
@@ -40,7 +42,9 @@ When the public address fails (including on certificate errors, which captive po
 - Before the token goes to the home address, the server proves it holds it: a new `GET /api/auth/proof?nonce=` answers HMAC(sha256(token), nonce) (the server stores sha256 of tokens); the app checks it once per network change and caches the answer.
 - **Done when** a test with a fake server at the home address that can't answer the proof never receives the token, and the real home server still works off the public address.
 
-## 4. App Store blockers — S
+## 4. App Store blockers — S — done 2026-11-07
+
+*Done: `apps/ios/Playarr/PrivacyInfo.xcprivacy`, with system boot time (`35F9.1`, the audio engine's `mach_absolute_time`) and disk space shown to the person (`85F4.1`) besides the three below, and file timestamps as `C617.1` only (none are shown); the reasons are in [release.md](../ios/release.md#8-the-privacy-manifest). `SessionFailedView` and `AppModel.sessionFailure`; a missing token signs the account out (`ServerStore.hasToken`). `PlayarrApp.uiTestModel`, `AppModel+UITests.swift` and the demo's test switches under `#if DEBUG`: a Release build's binary holds none of the `-UITests` arguments or `PLAYARR_UITEST_*` keys. Left: the ITMS-91053 check of past uploads, which needs the account holder's mail or App Store Connect.*
 
 - `PrivacyInfo.xcprivacy` in the app target: UserDefaults (CA92.1), file timestamps (C617.1 / DDA9.1), disk space (E174.1); no tracking, no data collected. Check App Store Connect for ITMS-91053 warnings on past uploads.
 - An account whose session can't open (Keychain token missing after a restore, engine setup failing) shows a reason and a way out instead of a spinner for ever: a missing token signs the account out; an engine failure offers Retry (`RootView.swift`, `AppModel.swift`; today the error toast goes to a `ToastsView` that isn't on screen).

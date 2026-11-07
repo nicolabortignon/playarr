@@ -20,6 +20,9 @@ public final class AppModel {
     public let toasts = ToastCenter()
     /// The active account's session; nil while no account is signed in.
     public private(set) var session: AccountSession?
+    /// Why the active account's session couldn't open (its player's audio engine wouldn't start, or the Keychain
+    /// couldn't be read): RootView says so with Try again, where it would otherwise wait for ever.
+    public private(set) var sessionFailure: String?
     /// The active server needs a newer app.
     public private(set) var tooOld: ServerInfo?
     /// A setup-code link to open (playarr://redeem).
@@ -46,8 +49,8 @@ public final class AppModel {
         self.appearance = appearance
         self.theme = Theme(appearance: appearance)
         self.makeSession = makeSession
-        // A known server found at home keeps that address as its local one.
-        browser.onUpdate = { [weak store] servers in store?.discovered(servers) }
+        // A known server found at home keeps that address as its local one, once the server there proves itself.
+        browser.onUpdate = { [weak store] servers in _ = store?.discovered(servers) }
     }
 
     public static func live() -> AppModel {
@@ -78,18 +81,32 @@ public final class AppModel {
         return model
     }
 
-    /// Opens the session of the active, signed-in account, closing the one before; none while signed out.
+    /// Opens the session of the active, signed-in account, closing the one before; none while signed out. An account
+    /// whose token isn't on this device is signed out, to sign in again; one whose session fails to open says why
+    /// (`sessionFailure`) until this is called again (Try again).
     public func syncSession() {
         let record = store.activeAccount.flatMap { $0.signedIn ? $0 : nil }
         guard record?.key != session?.key else { return }
         session?.close()
         session = nil
+        sessionFailure = nil
         guard let record else { return }
         do {
-            session = try makeSession(record, self)
+            guard let opened = try makeSession(record, self) else {
+                // No token for it here: an unencrypted backup brings the server list back but leaves the Keychain out.
+                store.markSignedOut(record.key)
+                return
+            }
+            session = opened
         } catch {
-            toasts.push(error.localizedDescription, tone: .error)
+            sessionFailure = Self.reason(error)
         }
+    }
+
+    /// What a session that couldn't open says under "The needle skipped.".
+    static func reason(_ error: any Error) -> String {
+        if error is KeychainError { return "This account’s sign-in couldn’t be read from the Keychain. Unlock the device and try again." }
+        return "Playarr couldn’t get playback ready on this device: \(error.localizedDescription)"
     }
 
     /// playarr:// links: redeem a setup code.

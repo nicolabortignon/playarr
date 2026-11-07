@@ -1,7 +1,7 @@
 import PlayarrAPI
 import SwiftUI
 
-/// What the app shows: adding a server, signing in again, an update, or the signed-in app.
+/// What the app shows: adding a server, signing in again, an update, the signed-in app, or why its session couldn't open.
 public struct RootView: View {
     @Bindable var model: AppModel
 
@@ -28,6 +28,8 @@ public struct RootView: View {
             if account.signedIn {
                 if let session = model.session, session.key == account.key {
                     AppShell(model: model, session: session)
+                } else if let reason = model.sessionFailure {
+                    SessionFailedView(model: model, reason: reason)
                 } else {
                     ProgressView()
                 }

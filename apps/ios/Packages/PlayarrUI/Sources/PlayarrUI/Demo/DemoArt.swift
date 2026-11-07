@@ -14,15 +14,18 @@ enum DemoArt {
   }()
 
   /// A PNG for an `/art/…` address, as wide as its `size` asks (480 without one). Screenshots of the main views
-  /// (`make screens`, on this Mac only) use the albums' real covers instead, from the folder in PLAYARR_DEMO_COVERS.
+  /// (`make screens`, on this Mac only, Debug builds) use the albums' real covers instead, from the folder in
+  /// PLAYARR_DEMO_COVERS.
   static func png(for url: URL) -> Data? {
     guard url.path.contains("/art/") else { return nil }
-    if let covers = ProcessInfo.processInfo.environment["PLAYARR_DEMO_COVERS"],
-      let id = url.path.firstMatch(of: /\/art\/album\/(\d+)\/cover/)?.1,
-      let real = try? Data(contentsOf: URL(filePath: covers).appending(path: "\(id).jpg"))
-    {
-      return real
-    }
+    #if DEBUG
+      if let covers = ProcessInfo.processInfo.environment["PLAYARR_DEMO_COVERS"],
+        let id = url.path.firstMatch(of: /\/art\/album\/(\d+)\/cover/)?.1,
+        let real = try? Data(contentsOf: URL(filePath: covers).appending(path: "\(id).jpg"))
+      {
+        return real
+      }
+    #endif
     let asked = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "size" }?.value
     let side = min(max(Int(asked ?? "") ?? 480, 32), 1200)
     var seed = fnv(url.path)

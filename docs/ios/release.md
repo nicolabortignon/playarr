@@ -115,3 +115,16 @@ There are two kinds, and they never mix.
 **Screenshots of the main views** (`pnpm ios:screens`, `make screens`), for looking at the app after a UI change, not for the store. The `ScreenTour` UI test walks the main views on the demo library on simulators of its own ("Playarr Screens iphone", "ipad", "duo") and writes `screenshots/<device>/` (and `-sideways/`) at the repo root, replaced on every run and gitignored. `SCREENS="ipad"` takes one device. First, `scripts/screens-covers.mjs` looks the three demo albums up on MusicBrainz and fetches their real covers from the Cover Art Archive into `apps/ios/build/screens-covers/`, once. `ScreenTour` hands that folder to the app as `PLAYARR_DEMO_COVERS`, so these screenshots show real covers. The covers stay on this Mac: the app, the repo and the App Store screenshots keep the demo's drawn ones (`DemoArt.swift`), as the artwork isn't ours to publish. An album whose lookup fails is drawn.
 
 `scripts/make-icons.swift` draws the app icon's dark and tinted variants from the same shapes as `AppIcon.png`.
+
+## 8. The privacy manifest
+
+`apps/ios/Playarr/PrivacyInfo.xcprivacy` is in the app target, so XcodeGen puts it in the app's resources. It says the app doesn't track and collects no data (as App Privacy's "Data Not Collected"; see [../plans/2026-11-03-ios-phase11-app-store.md](../plans/2026-11-03-ios-phase11-app-store.md)), and gives Apple's reason for every API on its required-reason list that the app or its packages call. The packages are linked into the app, so their calls count as the app's:
+
+| Category | Where | Reason |
+|---|---|---|
+| User defaults | `PlaybackSettings`, `AppearanceSettings` (and the demo's own suites) | `CA92.1`: settings only this app reads |
+| File timestamps | `ImageCache`, `QueryCache`, `StreamCache` and `OfflineFolder` read and touch modification dates to throw out what was used least lately | `C617.1`: files in the app's own container |
+| Disk space | `OfflineFolder.availableCapacity` (`volumeAvailableCapacityForImportantUsage`): whether a download fits, and "… needs 1.2 GB, and 800 MB is free" | `E174.1`: room to write files; `85F4.1`: shown to the person |
+| System boot time | `mach_absolute_time()` in `AudioEngine` (when a deck starts) and `Pulse.hostNow()` (where the music heard is, against the engine's clock) | `35F9.1`: time between events in the app, timers |
+
+A new call to an API on Apple's list (`stat`, `systemUptime`, `activeInputModes`, file creation dates and the rest, at developer.apple.com under "Describing use of required reason API") adds its category and reason here in the same change. Apple checks each upload and emails the account holder about any it finds undeclared (`ITMS-91053: Missing API declaration`), and by its rules an app without them isn't accepted for the App Store. Xcode's Organizer shows what an archive declares (right-click the archive, Generate Privacy Report).

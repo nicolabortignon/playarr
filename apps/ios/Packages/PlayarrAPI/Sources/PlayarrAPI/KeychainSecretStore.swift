@@ -50,4 +50,8 @@ public struct KeychainSecretStore: SecretStore {
 
 public struct KeychainError: Error, Equatable, Sendable {
     public let status: OSStatus
+
+    public init(status: OSStatus) {
+        self.status = status
+    }
 }

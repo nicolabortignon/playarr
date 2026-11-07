@@ -71,9 +71,10 @@ public final class AccountSession {
     URL.cachesDirectory.appending(path: "Playarr/\(key.serverId)/\(key.accountId)/images", directoryHint: .isDirectory)
   }
 
-  /// The session for a signed-in account of `model.store`; nil when it has no token.
+  /// The session for a signed-in account of `model.store`; nil when it has no token on this device. A Keychain that
+  /// can't be read now (before the device's first unlock) throws, rather than passing for a token that's gone.
   public static func live(_ record: AccountRecord, model: AppModel) throws -> AccountSession? {
-    guard let server = model.store.server(record.serverId), let client = model.store.client(for: record),
+    guard try model.store.hasToken(record.key), let server = model.store.server(record.serverId), let client = model.store.client(for: record),
       let media = model.store.mediaURLs(for: record)
     else { return nil }
     let folder = folder(for: record.key)

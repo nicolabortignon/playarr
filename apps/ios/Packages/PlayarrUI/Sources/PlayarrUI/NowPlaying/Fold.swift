@@ -6,16 +6,20 @@ import SwiftUI
 public enum Fold: Equatable, Sendable {
   case none, flat, half
 
-  /// `-UITestsFold flat` or `-UITestsFold half`: the simulator can't open the hinge, so UI tests and screenshots
-  /// say how it's held.
+  /// `-UITestsFold flat` or `-UITestsFold half` (Debug builds): the simulator can't open the hinge, so UI tests and
+  /// screenshots say how it's held.
   static var forcedForUITests: Fold? {
-    let arguments = ProcessInfo.processInfo.arguments
-    guard let at = arguments.firstIndex(of: "-UITestsFold"), at + 1 < arguments.count else { return nil }
-    switch arguments[at + 1] {
-    case "flat": return .flat
-    case "half": return .half
-    default: return Fold.none
-    }
+    #if DEBUG
+      let arguments = ProcessInfo.processInfo.arguments
+      guard let at = arguments.firstIndex(of: "-UITestsFold"), at + 1 < arguments.count else { return nil }
+      switch arguments[at + 1] {
+      case "flat": return .flat
+      case "half": return .half
+      default: return Fold.none
+      }
+    #else
+      return nil
+    #endif
   }
 }
 

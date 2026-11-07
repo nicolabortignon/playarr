@@ -19,7 +19,7 @@ More detail:
 
 | Part | What it owns |
 |---|---|
-| `Playarr` (app target) | `PlayarrApp.swift` (picks a live, empty or demo `AppModel` from the launch arguments), `AppDelegate.swift` (the background download session, the orientation mask), `Intents/` (App Intents), the asset catalog. `Config/` holds `Info.plist` and the entitlements. |
+| `Playarr` (app target) | `PlayarrApp.swift` (the live `AppModel`; in Debug builds an empty or demo one from the launch arguments), `AppDelegate.swift` (the background download session, the orientation mask), `Intents/` (App Intents), the asset catalog, `PrivacyInfo.xcprivacy` (the privacy manifest, [release.md](release.md#8-the-privacy-manifest)). `Config/` holds `Info.plist` and the entitlements. |
 | `Packages/PlayarrAPI` | Talking to servers: the generated models, `Endpoint<T>` and every call as `API.<Feature>.<call>()`, `APIClient`, `ServerStore`, Keychain tokens, Bonjour (`ServerBrowser`), `MediaURLs`. No dependencies. |
 | `Packages/PlayarrPlayer` | Playback: the queue, the audio engine and its decks, levels, transitions, play reports, radio, the sleep timer, the lock screen, the stream cache and downloads. |
 | `Packages/PlayarrUI` | Every screen and component, the per-account session, the query and image caches, the shell, the demo library, the web's fonts (`Fonts/`). |
@@ -35,11 +35,11 @@ Every call is an `Endpoint<T>` (method, path, query, body) built by a function i
 
 - every request carries `X-Playarr: 1` and, when signed in, `Authorization: Bearer <token>`;
 - an error answer becomes an `APIError` (`.unauthorized`, `.server(status:message:)`, `.offline`, `.decoding`). A 401 to a request that carried the token means the session has ended: `ServerStore` marks the account signed out and keeps it listed to sign in again;
-- when a server has a public address (`ServerInfo.publicUrl`) and was also reached at home, `ServerRecord.baseURL` is the public one and `localURL` the home one. A request that can't connect to one is tried once at the other, and whichever answered goes first afterwards (for routers without NAT loopback).
+- when a server has a public address (`ServerInfo.publicUrl`) and was also reached at home, `ServerRecord.baseURL` is the public one and `localURL` the home one. A request that can't connect to the public one (for routers without NAT loopback) is tried at the home one, but only on Wi-Fi or a wired network (`LocalNetwork`, from `NWPathMonitor`) and only once the server there has proven it holds the session (`HomeAddress`, `GET /api/auth/proof`), asked once per network the phone joins; it then goes first while it answers. A certificate that isn't the server's counts as a failure to connect (a router without NAT loopback answering with its own page), so the home address is asked too; a captive portal can't answer the proof either. A server from before the proof is never proven, and the app keeps to its public address. Why, and against whom: [../server/accounts-and-access.md](../server/accounts-and-access.md#8-the-home-address).
 
 View models never hold an `APIClient`: they take `api: any APISending`, which tests answer with `FakeAPI` and the demo with `DemoAPI`.
 
-Songs, transitions and images are fetched through `MediaURLs`, which puts the token in a header and never in a URL. `ServerAddress` turns what someone typed into a base URL: plain HTTP only for local names and private addresses (as `NSAllowsLocalNetworking` allows), HTTPS for everything else.
+Songs, transitions and images are fetched through `MediaURLs`, which puts the token in a header and never in a URL, and in a request to the home address only while that's proven on the network the phone is on; `ImageCache` tries the home address the way `APIClient` does (`MediaURLs.onHomeAddress`). `ServerAddress` turns what someone typed into a base URL: plain HTTP only for local names and private addresses (as `NSAllowsLocalNetworking` allows), HTTPS for everything else.
 
 ### Generated models
 
@@ -63,7 +63,7 @@ It reads every exported type from `packages/shared/src/index.ts` and `packages/m
 
 ### Finding servers and signing in
 
-`RootView` shows one of four things: adding a server, signing in again (an account whose session ended), "update required" (the server's `minAppVersion` is newer than `AppVersion`), or the signed-in app.
+`RootView` shows one of five things: adding a server, signing in again (an account whose session ended), "update required" (the server's `minAppVersion` is newer than `AppVersion`), the signed-in app, or why the active account's session couldn't open (`SessionFailedView`: "The needle skipped.", the reason, Try again and Accounts). An account whose token isn't in the Keychain (an unencrypted backup brings `servers.json` back but leaves the Keychain out) is signed out to sign in again; one whose session fails to open (its player's audio engine won't start, or the Keychain can't be read before the first unlock) gets `SessionFailedView` (`AppModel.sessionFailure`).
 
 1. **Finding a server.** `WelcomeView` lists the servers `ServerBrowser` finds on the home network (Bonjour `_playarr._tcp`, which shows the Local Network prompt), or takes an address.
 2. **Asking who it is.** `AddServerModel` calls `GET /api/server`. A server in setup mode goes to `SetupView` (its owner claims it, from the home network only); otherwise `SignInView`.
@@ -85,7 +85,7 @@ Every page is a `Route`, registered once in `shellDestinations(_:)` so tabs and 
 
 ## 4. The demo library
 
-`PlayarrUI/Sources/PlayarrUI/Demo/` is a server in memory, for UI tests, screenshots and view-model tests. It isn't something a user can open: the only way in is a launch argument (`PlayarrApp.makeModel()`).
+`PlayarrUI/Sources/PlayarrUI/Demo/` is a server in memory, for UI tests, screenshots and view-model tests. It isn't something a user can open: the only way in is a launch argument, which only Debug builds read (`PlayarrApp.uiTestModel`). The library itself is in every build.
 
 - `-UITestsDemo` makes `AppModel.demo()`: signed in as "Demo" to a demo server answered by `DemoAPI` from the `Demo` library (Massive Attack, and Portishead without a photo of their own; three albums, lyrics, a mix, a playlist and a favorite). Nothing is kept: a temporary folder and a `UserDefaults` suite of its own.
 - `DemoState` remembers changes between calls, so tests can heart a song and make, fill, reorder and delete a playlist.
