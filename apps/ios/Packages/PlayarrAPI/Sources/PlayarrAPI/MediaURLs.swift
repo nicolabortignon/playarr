@@ -4,13 +4,15 @@ import Foundation
 /// with `request(for:)`, which puts it in the Authorization header (and only for this server).
 public struct MediaURLs: Sendable {
     public let baseURL: URL
-    /// The server's home-network address when `baseURL` is its public one (see `ServerRecord.localURL`).
-    public let localURL: URL?
+    /// The server's home-network address when `baseURL` is its public one (see `ServerRecord.localURL`), with what it
+    /// has proved on this network.
+    public let home: HomeAddress?
+    public var localURL: URL? { home?.url }
     private let token: String?
 
-    public init(baseURL: URL, localURL: URL? = nil, token: String?) {
+    public init(baseURL: URL, home: HomeAddress? = nil, token: String?) {
         self.baseURL = baseURL
-        self.localURL = localURL
+        self.home = home
         self.token = token
     }
 
@@ -48,8 +50,16 @@ public struct MediaURLs: Sendable {
         art("/art/playlist/\(playlistId)/preview?layout=\(layout.rawValue)&variant=\(variant)", size: size)
     }
 
-    /// `url` (one of these addresses) at the server's local address, to try when the public one can't be
-    /// reached; nil without a local address or for a URL elsewhere.
+    /// `url` (one of these addresses) at the server's home address, to try when the public one can't be reached: nil
+    /// without one, for a URL elsewhere, or until the server there has proven itself on this network (asked here the
+    /// first time, `HomeAddress.verify()`).
+    public func onHomeAddress(_ url: URL) async -> URL? {
+        guard let local = onLocalAddress(url), let home, await home.verify() else { return nil }
+        return local
+    }
+
+    /// `url` (one of these addresses) at the server's local address; nil without a local address or for a URL
+    /// elsewhere. Whether anything may go there is `onHomeAddress`'s to say.
     public func onLocalAddress(_ url: URL) -> URL? {
         guard let localURL, Self.sameOrigin(url, baseURL),
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -67,15 +77,18 @@ public struct MediaURLs: Sendable {
         return components.url
     }
 
-    /// A request for `url` carrying the token, when `url` is on this server (either address).
+    /// A request for `url` carrying the token, when `url` is on this server: at its address, or at its home address
+    /// while that's proven on the network the phone is on.
     public func request(for url: URL) -> URLRequest {
         var request = URLRequest(url: url)
-        if let token, isOnServer(url) { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let token, mayCarryToken(url) { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         return request
     }
 
-    private func isOnServer(_ url: URL) -> Bool {
-        Self.sameOrigin(url, baseURL) || localURL.map { Self.sameOrigin(url, $0) } == true
+    private func mayCarryToken(_ url: URL) -> Bool {
+        if Self.sameOrigin(url, baseURL) { return true }
+        guard let home, Self.sameOrigin(url, home.url) else { return false }
+        return home.isProven
     }
 
     private static func sameOrigin(_ a: URL, _ b: URL) -> Bool {

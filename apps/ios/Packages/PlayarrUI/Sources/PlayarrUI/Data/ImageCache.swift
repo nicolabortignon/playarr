@@ -5,7 +5,8 @@ import PlayarrAPI
 /// Covers and artist photos, per server and account: in memory, on disk, else from the server at one of the sizes it
 /// makes (`apps/server/src/routes/art.ts` snaps every `?size=` to these), with the token in the header. A failed
 /// image is asked once more after 1.5 s with `&retry=1`, as the web's `Cover` does. When the server's public address
-/// can't be reached, its home-network one is tried (`MediaURLs.onLocalAddress`), as `APIClient` does.
+/// can't be reached, its home-network one is tried once the server there has proven itself on this network
+/// (`MediaURLs.onHomeAddress`), as `APIClient` does.
 public actor ImageCache {
   /// The sizes the server makes (px); asking for one of them hits its cache, and ours.
   public static let sizes = [96, 160, 240, 320, 480, 640, 960, 1200]
@@ -102,10 +103,13 @@ public actor ImageCache {
     let answer: (Data, URLResponse)
     do {
       answer = try await session.data(for: media.request(for: url))
-    } catch {
-      // The public address can't be reached (at home, behind a router that doesn't loop back): the home one.
-      guard let local = media.onLocalAddress(url), let fromHome = try? await session.data(for: media.request(for: local)) else { return nil }
+    } catch let error as URLError where APIClient.couldntConnect(error) {
+      // The public address can't be reached (at home, behind a router that doesn't loop back): the home one, if the
+      // server there has proven itself on this network.
+      guard let local = await media.onHomeAddress(url), let fromHome = try? await session.data(for: media.request(for: local)) else { return nil }
       answer = fromHome
+    } catch {
+      return nil
     }
     guard (answer.1 as? HTTPURLResponse)?.statusCode == 200, !answer.0.isEmpty else { return nil }
     return answer.0

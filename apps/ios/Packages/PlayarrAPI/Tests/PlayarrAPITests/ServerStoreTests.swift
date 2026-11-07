@@ -153,21 +153,55 @@ import Testing
         #expect(store.servers[0].localURL == nil)
     }
 
-    @Test func followsBonjourToTheServersLocalAddress() throws {
-        let store = ServerStore(directory: directory, secrets: secrets)
+    @Test func followsBonjourToTheServersLocalAddressOnceTheServerThereProvesItself() async throws {
+        let movedHost = uniqueHost()
+        let session = StubProtocol.session(host: movedHost) { proofAnswer($0, holding: ["tok-1"]) ?? (404, Data()) }
+        let store = ServerStore(directory: directory, secrets: secrets, session: session, network: LocalNetwork(isLocal: true))
         try store.signedIn(SignInResponse(token: "tok-1", account: account(1, "Nicola")), server: tracklist, at: homeURL)
-        let moved = URL(string: "http://192.168.1.50:4000")!
+        let moved = URL(string: "http://\(movedHost):4000")!
 
-        store.discovered([
+        await store.discovered([
             DiscoveredServer(id: "srv-1", name: "Home", version: "0.7.0", baseURL: moved),
             DiscoveredServer(id: "srv-other", name: "Elsewhere", version: "0.7.0", baseURL: URL(string: "http://192.168.1.60:4000")!),
-        ])
+        ]).value
 
         #expect(store.servers.map(\.id) == ["srv-1"])
         #expect(store.servers[0].baseURL == publicURL)
         #expect(store.servers[0].localURL == moved)
         #expect(store.activeClient?.localURL == moved)
+        // Proven on its way in, so the account's requests needn't ask again.
+        #expect(store.activeClient?.home?.isProven == true)
         #expect(ServerStore(directory: directory, secrets: secrets).servers[0].localURL == moved)
+    }
+
+    @Test func ignoresAServersIdAdvertisedByAnythingThatCantProveIt() async throws {
+        // Anything on a network can advertise _playarr._tcp with a server's id: it's in the server's own TXT record.
+        let impostor = uniqueHost()
+        let asked = Seen()
+        let session = StubProtocol.session(host: impostor) { request in
+            asked.add(request)
+            return (200, json(#"{"proof":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#))
+        }
+        let store = ServerStore(directory: directory, secrets: secrets, session: session, network: LocalNetwork(isLocal: true))
+        try store.signedIn(SignInResponse(token: "tok-1", account: account(1, "Nicola")), server: tracklist, at: homeURL)
+
+        await store.discovered([DiscoveredServer(id: "srv-1", name: "Home", version: "0.7.0", baseURL: URL(string: "http://\(impostor):4000")!)]).value
+
+        #expect(store.servers[0].localURL == homeURL)
+        #expect(asked.paths == ["/api/auth/proof"])
+        #expect(asked.withToken.isEmpty)
+    }
+
+    @Test func triesTheHomeAddressSigningInNobodyOnlyForAServerWithAnAccountSignedIn() throws {
+        // GET /api/server's answer can move the server to another public address: it's trusted from home only once the
+        // server there has proven itself to one of its accounts.
+        let store = ServerStore(directory: directory, secrets: secrets)
+        try store.signedIn(SignInResponse(token: "tok-1", account: account(1, "Nicola")), server: tracklist, at: homeURL)
+        #expect(store.anonymousClient(for: store.servers[0]).localURL == homeURL)
+
+        store.markSignedOut(AccountKey(serverId: "srv-1", accountId: 1))
+
+        #expect(store.anonymousClient(for: store.servers[0]).localURL == nil)
     }
 
     @Test func readsServerListsSavedBeforeLocalAddresses() throws {

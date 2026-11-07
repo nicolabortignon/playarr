@@ -1,5 +1,5 @@
 extension API {
-    /// Signing in and out. Sign-in, redeem and setup are sent without a token.
+    /// Signing in and out. Sign-in, redeem, setup and proof are sent without a token.
     public enum Auth {
         /// POST /api/auth/setup: claims a server in setup mode as its owner (home network only).
         public static func setup(username: String, name: String, password: String, device: DeviceInfo) -> Endpoint<SignInResponse> {
@@ -21,6 +21,12 @@ extension API {
 
         /// GET /api/auth/me: the signed-in account.
         public static func me() -> Endpoint<Account> { Endpoint(.get, "/api/auth/me") }
+
+        /// GET /api/auth/proof: the server at a home address proving it holds a session (`HomeAddress`). Sent without
+        /// the token: `id` names the session, `nonce` makes the answer new.
+        public static func proof(id: String, nonce: String) -> Endpoint<AuthProof> {
+            Endpoint(.get, "/api/auth/proof", query: Endpoint<AuthProof>.items(["id": id, "nonce": nonce]))
+        }
 
         private struct SetupBody: Encodable, Sendable {
             let username, name, password, device, platform: String

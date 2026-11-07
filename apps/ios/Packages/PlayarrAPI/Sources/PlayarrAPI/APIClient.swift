@@ -4,10 +4,12 @@ import Foundation
 /// `X-Playarr: 1` and, with a token, `Authorization: Bearer <token>`; error answers become `APIError`.
 public actor APIClient {
     public nonisolated let baseURL: URL
-    /// The server's home-network address when `baseURL` is its public one. A request that can't connect
-    /// to one address is tried once at the other, and the one that answered is tried first afterwards.
-    public nonisolated let localURL: URL?
-    private var preferLocal = false
+    /// The server's home-network address when `baseURL` is its public one, with what it has proved on this network.
+    /// A request that can't connect to the public address is tried there once the server there has proven itself
+    /// (`HomeAddress`), and goes there first afterwards while it stays proven; one that can't connect there goes back.
+    public nonisolated let home: HomeAddress?
+    public nonisolated var localURL: URL? { home?.url }
+    private var homeFirst = false
     private nonisolated let token: String?
     private let session: URLSession
     private nonisolated let timeout: TimeInterval
@@ -17,14 +19,14 @@ public actor APIClient {
     /// session has ended (ServerStore marks the account signed out).
     public init(
         baseURL: URL,
-        localURL: URL? = nil,
+        home: HomeAddress? = nil,
         token: String? = nil,
         session: URLSession = .shared,
         timeout: TimeInterval = 30,
         onUnauthorized: @escaping @Sendable () async -> Void = {}
     ) {
         self.baseURL = baseURL
-        self.localURL = localURL
+        self.home = home
         self.token = token
         self.session = session
         self.timeout = timeout
@@ -53,29 +55,47 @@ public actor APIClient {
         }
     }
 
-    /// The answer from the address that answered last; when it can't be reached, from the other one.
+    /// The answer from the public address, or from the home address where that's proven and answered last; when the
+    /// one tried can't be reached, from the other, the home address only once it's proven on this network.
     private func load<T>(_ endpoint: Endpoint<T>) async throws -> (Data, HTTPURLResponse) {
-        guard let localURL else { return try await load(endpoint, from: baseURL) }
-        let (first, second) = preferLocal ? (localURL, baseURL) : (baseURL, localURL)
+        guard let home else { return try await load(endpoint, from: baseURL) }
+        if homeFirst, home.isProven {
+            do {
+                return try await load(endpoint, from: home.url)
+            } catch let error as URLError where Self.couldntConnect(error) {
+                try Task.checkCancellation()
+                homeFirst = false
+                return try await load(endpoint, from: baseURL)
+            }
+        }
         do {
-            return try await load(endpoint, from: first)
+            return try await load(endpoint, from: baseURL)
         } catch let error as URLError where Self.couldntConnect(error) {
             try Task.checkCancellation()
-            let answer = try await load(endpoint, from: second)
-            preferLocal = second == localURL
+            // Only on Wi-Fi or a wired network, and only to the server itself: whatever else answers at a home address
+            // on another network (a café's, a captive portal's) never sees the token, or a question it could answer.
+            guard await home.verify() else { throw error }
+            let answer = try await load(endpoint, from: home.url)
+            homeFirst = true
             return answer
         }
     }
 
     private func load<T>(_ endpoint: Endpoint<T>, from base: URL) async throws -> (Data, HTTPURLResponse) {
+        // Nothing goes to the home address unless it's proven on the network the phone is on as it goes (it may have
+        // just changed).
+        if base == home?.url, home?.isProven != true { throw URLError(.cannotConnectToHost) }
         let (data, response) = try await session.data(for: urlRequest(for: endpoint, base: base))
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         return (data, http)
     }
 
-    /// Failures that say nothing answered at that address (or something else did, with the wrong
-    /// certificate: a router's own page), as opposed to the server answering with an error.
-    static func couldntConnect(_ error: URLError) -> Bool {
+    /// Failures that say the server didn't answer at that address, as opposed to the server answering with an error:
+    /// nothing answered, or something else did, with a certificate that isn't the server's (at home, a router without NAT
+    /// loopback answering the public address with its own page; away, a captive portal). Either way the home address
+    /// is worth a try, and it gets the token only once the server there has proven itself (`HomeAddress`), which a
+    /// portal's network or anything else at that address can't.
+    public static func couldntConnect(_ error: URLError) -> Bool {
         switch error.code {
         case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .timedOut, .networkConnectionLost, .notConnectedToInternet,
              .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot,

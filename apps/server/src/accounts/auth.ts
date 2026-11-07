@@ -29,8 +29,19 @@ declare module 'fastify' {
 
 /** Behind sign-in once any account has a password. */
 const PROTECTED = /^\/(api|stream|art|transitions)\//;
-/** Open to anyone: what an app needs to find this server and sign in. Switch checks the token it's sent. */
-const OPEN = new Set(['GET /api/server', 'GET /api/health', 'POST /api/auth/sign-in', 'POST /api/auth/redeem', 'POST /api/auth/setup', 'POST /api/auth/switch']);
+/**
+ * Open to anyone: what an app needs to find this server and sign in. Switch checks the token it's sent; proof is
+ * asked without one, before the token goes to the server's home address.
+ */
+const OPEN = new Set([
+  'GET /api/server',
+  'GET /api/health',
+  'POST /api/auth/sign-in',
+  'POST /api/auth/redeem',
+  'POST /api/auth/setup',
+  'POST /api/auth/switch',
+  'GET /api/auth/proof',
+]);
 
 /** One cookie's value from a Cookie header. */
 export function readCookie(header: string | undefined, name: string): string | undefined {

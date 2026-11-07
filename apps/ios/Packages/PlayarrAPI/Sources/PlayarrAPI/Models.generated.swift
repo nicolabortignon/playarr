@@ -468,6 +468,16 @@ public struct AudioFormat: Codable, Hashable, Sendable {
     }
 }
 
+/// GET /api/auth/proof: the server at an app's home address proving it holds the app's session, before the app sends its token there (docs/server/accounts-and-access.md, "The home address").
+public struct AuthProof: Codable, Hashable, Sendable {
+    /// HMAC-SHA256 keyed by the SHA-256 of the session's token, of "playarr-home-proof:" and the nonce; base64url.
+    public var proof: String
+
+    public init(proof: String) {
+        self.proof = proof
+    }
+}
+
 /// A gain or filter value over time, linear between points. Times are seconds into the transition.
 public typealias Automation = [AutomationItem]
 

@@ -18,15 +18,22 @@ public final class ServerBrowser {
     public func start() {
         guard browser == nil else { return }
         let browser = NWBrowser(for: .bonjourWithTXTRecord(type: "_playarr._tcp", domain: nil), using: NWParameters())
-        browser.browseResultsChangedHandler = { [weak self] results, _ in
+        browser.browseResultsChangedHandler = Self.resultsHandler(for: self)
+        browser.start(queue: .main)
+        self.browser = browser
+    }
+
+    /// Made outside the main actor: Network calls it on the queue the browser started on, and isn't told that's the main one.
+    private nonisolated static func resultsHandler(
+        for browser: ServerBrowser
+    ) -> @Sendable (Set<NWBrowser.Result>, Set<NWBrowser.Result.Change>) -> Void {
+        { [weak browser] results, _ in
             let services = results.compactMap { result -> (NWEndpoint, [String: String])? in
                 guard case .bonjour(let record) = result.metadata else { return nil }
                 return (result.endpoint, record.dictionary)
             }
-            Task { @MainActor in await self?.update(services) }
+            Task { @MainActor in await browser?.update(services) }
         }
-        browser.start(queue: .main)
-        self.browser = browser
     }
 
     public func stop() {

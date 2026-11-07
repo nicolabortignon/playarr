@@ -960,6 +960,13 @@ export interface SignInResponse {
   account: Account;
 }
 
+/** GET /api/auth/proof: the server at an app's home address proving it holds the app's session, before the app sends
+ *  its token there (docs/server/accounts-and-access.md, "The home address"). */
+export interface AuthProof {
+  /** HMAC-SHA256 keyed by the SHA-256 of the session's token, of "playarr-home-proof:" and the nonce; base64url. */
+  proof: string;
+}
+
 /** A one-time code (and link) for choosing a first password. */
 export interface SetupCode {
   code: string;

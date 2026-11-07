@@ -66,7 +66,7 @@ Each account sees its own devices and can sign any of them out; admins can for e
 
 ### Sign-in limits
 
-`accounts/rateLimit.ts`. Failed sign-ins and failed setup codes count per client address: 10 failures within a sliding 15 minutes, then 429 ("Too many tries") until the oldest ages out. Only addresses count, never usernames, so guessing at someone's username can't lock them out, and a success doesn't clear the count. The address is `req.ip`: the visitor's own behind a proxy trusted with `TRUST_PROXY`, otherwise the socket's. The counts are in memory; a restart forgives.
+`accounts/rateLimit.ts`. Failed sign-ins and failed setup codes count per client address: 10 failures within a sliding 15 minutes, then 429 ("Too many tries") until the oldest ages out. Only addresses count, never usernames, so guessing at someone's username can't lock them out, and a success doesn't clear the count. The address is `req.ip`: the visitor's own behind a proxy trusted with `TRUST_PROXY`, otherwise the socket's. The counts are in memory; a restart forgives. The home-address proof (section 8) has a limit of its own, 30 questions in 15 minutes, which counts every question, answered or not.
 
 ---
 
@@ -79,7 +79,7 @@ Each account sees its own devices and can sign any of them out; admins can for e
 3. **Setup mode**: no valid session needed; `req.auth` is the owner, with no session.
 4. **Otherwise** `req.auth` is null, and a request under `/api/`, `/stream/`, `/art/` or `/transitions/` gets 401 (`{ setup: false }`), unless it's one of the open routes:
 
-`GET /api/server`, `GET /api/health`, `POST /api/auth/sign-in`, `/redeem`, `/setup` and `/switch`. `/api/health` tells an unsigned caller whether Lidarr and the music files are reachable, but not the library's size. The web app's own pages are served to anyone.
+`GET /api/server`, `GET /api/health`, `POST /api/auth/sign-in`, `/redeem`, `/setup` and `/switch`, and `GET /api/auth/proof` (section 8). `/api/health` tells an unsigned caller whether Lidarr and the music files are reachable, but not the library's size. The web app's own pages are served to anyone.
 
 ---
 
@@ -150,4 +150,45 @@ It signs the account out everywhere and prints a setup code and link (on `PUBLIC
 
 **`GET /api/server`** (open; `routes/server.ts`) answers which server this is: a UUID made once and kept in the database (`server.id`), so apps know it under any address; its name (`SERVER_NAME`, else the machine's name); the server version; `minAppVersion`, the oldest iOS app it works with (`MIN_APP_VERSION`, 1.0.0); `setup`; `publicUrl` when set; and, only while in setup mode, `ownerUsername` for the setup page to pre-fill.
 
-**Bonjour** (`bonjour.ts`, through `bonjour-service`): after it starts listening, the server advertises itself on the home network as `_playarr._tcp` on its port, with TXT keys `id`, `v` (version), `name` (cut to fit 255 bytes) and `path` (`/`), so the iOS app lists it. It works for native installs and host-networked Docker; elsewhere the app takes an address. `BONJOUR=off` turns it off; a network without multicast only logs a warning.
+**Bonjour** (`bonjour.ts`, through `bonjour-service`): after it starts listening, the server advertises itself on the home network as `_playarr._tcp` on its port, with TXT keys `id`, `v` (version), `name` (cut to fit 255 bytes) and `path` (`/`), so the iOS app lists it. It works for native installs and host-networked Docker; elsewhere the app takes an address. `BONJOUR=off` turns it off; a network without multicast only logs a warning. Anything can advertise a server's id, so the app takes a new home address from Bonjour only once the server there proves itself (section 8).
+
+---
+
+## 8. The home address
+
+A server with a public address (`PUBLIC_URL`, say `https://tracklist.me`) that an iPhone also reached at home is kept under both addresses: the public one for every request, the home one (`http://192.168.1.103:4000`) for when the public one can't be reached, as at home behind a router without NAT loopback. But a private address names a different machine on every network, so the app sends its token there only once whatever answers has proven it's the server holding the session (`HomeAddress` in `PlayarrAPI`; `GET /api/auth/proof` and `Sessions.proof` here):
+
+1. The app asks only after the public address failed to connect (no DNS, refused, timed out, no route, or a certificate that isn't the server's), and only on Wi-Fi or a wired network, never on mobile data or a hotspot (`LocalNetwork`, from `NWPathMonitor`). A certificate that isn't the server's counts: at home, a router without NAT loopback can answer the public address with its own page and certificate, and the home address is the way in there. A captive portal answers the same way, but the question the app then asks at the home address gets nothing from the portal, or anything else there, that proves it holds the session, so the token stays with the app.
+2. It sends `GET /api/auth/proof?id=…&nonce=…` without its token: `nonce` is 256 fresh random bits, `id` is HMAC-SHA256(key: the token's SHA-256, message: `playarr-home-id:` + nonce), both base64url.
+3. The server keeps each token only as its SHA-256 (section 2). For every session it works out the same HMAC from the stored hash and compares it with `id` in constant time, then answers `{ "proof": … }`, HMAC-SHA256(key: that session's stored hash, message: `playarr-home-proof:` + nonce). An id that's no session's is answered the same way from a random key, after the same work: every session is looked at either way and none stops the search early, so neither the answer nor its timing says which sessions exist.
+4. The app checks the proof with its own SHA-256 of the token. Proven, the token goes to the home address, and requests go there first while it answers, until the phone changes network: on the next one it's asked again. An answer that proves nothing is kept for 10 minutes, no answer at all for 30 s.
+
+The question carries nothing to answer it from: not the token, not its SHA-256 (the key itself), and `id` can't be worked back to either. A fresh nonce each time means an answer overheard can't be played back, and the fresh id that comes with it means an id overheard on one network doesn't follow the phone to the next.
+
+What the route does besides:
+
+- It's open, and asked without a token (it ignores one sent anyway). It wants Playarr's own header (`X-Playarr: 1`, section 3) although it's a GET: a web page can't send that to another site without asking first, so a page open on a phone at home can't spend the phone's questions (403 without it, not counted).
+- It answers for real only a question straight from the home network (`isLocalRequest`, section 4: a local socket address, no proxy headers, addressed by IP or a local name). Anything else, which is how an impostor at the home address would pass the app's question on to the public one, gets the random-key answer.
+- Every question counts toward the limit (section 2), answered or not: counting only the misses would let the limit say which ids matched.
+- An older server answers 401 (set up) or 404 (in setup mode) there. The app takes that as unproven and keeps to the public address.
+
+The app treats other answers from home the same way. A known server that Bonjour finds at a new home address takes it only once the server there has proven itself to one of its signed-in accounts (`ServerStore.discovered`). `GET /api/server` asked signed in as nobody (`AppModel.checkActiveServer`) goes to the home address only once it's proven to one of the server's accounts: its `publicUrl` could otherwise move the app, token and all, to a server of an impostor's choosing.
+
+### Threat model
+
+**Against:** a hostile device on another network (a café's Wi-Fi, a hotel's, an evil twin of the home network's name) at the server's home address, `192.168.1.103:4000` on that network, when the public address can't be reached from there, or the device's owner runs the network and blocks it. It can answer anything, read whatever is sent to it (the home address is plain HTTP), know the server's public address and id (from DNS and TLS names, or the open `GET /api/server`), and reach the server at its public address.
+
+**What holds:**
+
+- It never sees the token, or anything to answer the question from or reuse: only the question.
+- It can't pass the question on to the server and hand back the answer: the server answers for real only questions straight from the home network, and a question passed on arrives through the proxy (forwarding headers, the public name) or from outside.
+- It can't play back an answer, or carry one network's proof to another.
+- It can't steer the app elsewhere: answers given without the token, and Bonjour's addresses, are taken from home only once it's proven.
+- On mobile data or a hotspot, nothing goes to a home address at all.
+
+**What it doesn't cover:**
+
+- Someone on the home network itself: the home address is plain HTTP there, as before.
+- A copy of the database: the stored hashes are the proof's keys, so someone with a copy and the network position above could answer the question and be sent the token.
+- A reverse proxy that reaches the server from a local address with no forwarding headers and `Host` rewritten to an IP (nginx's `proxy_pass` with no `proxy_set_header` lines does that): a question passed on then looks like it came straight from home. It's the same limit as claiming a server in setup mode (section 4). Proxies that send `X-Forwarded-For` or keep the public `Host`, as Caddy, Traefik, Nginx Proxy Manager and cloudflared do unless told otherwise, don't have it.
+- A server known only by its home address (no `PUBLIC_URL`): the app sends such a server the token wherever the phone is, as before. Asking it for the proof on every network would cut off servers from before the proof, and the home address reached over a VPN (Tailscale, WireGuard) on mobile data.

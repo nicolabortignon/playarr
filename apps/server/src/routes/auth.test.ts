@@ -1,9 +1,11 @@
-import type { SignInResponse } from '@playarr/shared';
+import type { AuthProof, SignInResponse } from '@playarr/shared';
 import Fastify from 'fastify';
+import { randomBytes } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Accounts } from '../accounts/accounts.ts';
 import { authHook } from '../accounts/auth.ts';
-import { Sessions } from '../accounts/sessions.ts';
+import { hashToken, Sessions } from '../accounts/sessions.ts';
 import { SetupCodes } from '../accounts/setupCodes.ts';
 import { freshDb } from '../catalog/testFixtures.ts';
 import { recordFixture } from '../testing/recordFixture.ts';
@@ -24,7 +26,26 @@ function setup(options: { trustProxy?: boolean } = {}) {
   authRoutes(app, { accounts, sessions, setupCodes });
   const post = (url: string, payload: object, extra: { headers?: Record<string, string>; remoteAddress?: string } = {}) =>
     app.inject({ method: 'POST', url, payload, headers: { ...H, ...extra.headers }, remoteAddress: extra.remoteAddress });
-  return { accounts, sessions, setupCodes, app, post };
+  return { db, accounts, sessions, setupCodes, app, post };
+}
+
+/**
+ * The home-address proof worked out by hand (node:crypto): a session's token, an app's nonce, the id the app names
+ * the session by, and the server's answer. The iOS app's HomeAddressTests check the same four, so the two can't drift.
+ */
+const VECTOR = {
+  token: 'q2vK8uWm0sZb4N3yRj7tLx5pAe1cDh9fGo6iUk2wQzE',
+  nonce: 'Zm9yLXRoZS10ZXN0LXZlY3Rvci1vbmx5LTAwMDAwMDA',
+  id: 'zMeUpoDAZIEdQYfetB3cfbWaBgpXvauknrcPSpZz80w',
+  proof: '-HSL_2JeFGzqbuQ_mS3Woz6K3OzGVWUUm8WPkiUP1p4',
+};
+/** The app at the server's home address, on the home network. */
+const AT_HOME = { headers: { host: '192.168.1.103:4000' }, remoteAddress: '192.168.1.30' };
+
+/** A session with VECTOR's token, as signing in would have kept it (only its hash). */
+function keepVectorSession(db: DatabaseSync) {
+  const at = new Date().toISOString();
+  db.prepare("INSERT INTO sessions (account_id, token_hash, device, platform, created_at, last_seen_at) VALUES (1, ?, 'iPhone', 'ios', ?, ?)").run(hashToken(VECTOR.token), at, at);
 }
 
 const owner = { username: 'nicola', name: 'Nicola', password: 'correct horse', ...device };
@@ -147,5 +168,73 @@ describe('auth routes', () => {
     const res = await app.inject({ url: '/api/auth/me' });
     expect(res.statusCode).toBe(401);
     expect(res.json()).toEqual({ error: 'Nobody is signed in', setup: true });
+  });
+});
+
+describe('the home-address proof', () => {
+  const ask = (app: ReturnType<typeof setup>['app'], id: string, at: { headers?: Record<string, string>; remoteAddress?: string } = AT_HOME) =>
+    app.inject({ url: `/api/auth/proof?id=${id}&nonce=${VECTOR.nonce}`, headers: { ...H, ...at.headers }, remoteAddress: at.remoteAddress });
+
+  it('proves at the home address that it holds the session, asked without the token', async () => {
+    const { app, accounts, db } = setup();
+    await accounts.setPassword(1, 'correct horse'); // set up: every other /api route now wants a session
+    keepVectorSession(db);
+    const res = await ask(app, VECTOR.id);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ proof: VECTOR.proof });
+    recordFixture('auth-proof', res);
+  });
+
+  it('answers an id that is no session’s just as it answers one it holds', async () => {
+    const { app, accounts, db } = setup();
+    await accounts.setPassword(1, 'correct horse');
+    keepVectorSession(db);
+    const res = await ask(app, randomBytes(32).toString('base64url'));
+    expect(res.statusCode).toBe(200);
+    const { proof } = res.json() as AuthProof;
+    expect(proof).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(proof).not.toBe(VECTOR.proof);
+  });
+
+  it('proves nothing to a question that didn’t come straight from the home network', async () => {
+    // An impostor at the home address on a café's network passes the app's question on to the public address: it
+    // reaches the server through the proxy, or from outside.
+    const { app, accounts, db } = setup();
+    await accounts.setPassword(1, 'correct horse');
+    keepVectorSession(db);
+    const proxied = await ask(app, VECTOR.id, { headers: { ...AT_HOME.headers, 'x-forwarded-for': AWAY }, remoteAddress: '127.0.0.1' });
+    const outside = await ask(app, VECTOR.id, { headers: { host: 'music.example.com' }, remoteAddress: AWAY });
+    for (const res of [proxied, outside]) {
+      expect(res.statusCode).toBe(200);
+      const { proof } = res.json() as AuthProof;
+      expect(proof).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(proof).not.toBe(VECTOR.proof);
+    }
+  });
+
+  it('counts every proof asked from an address, answered or not', async () => {
+    const { app, db } = setup();
+    keepVectorSession(db);
+    for (let i = 0; i < 30; i++) expect((await ask(app, VECTOR.id)).statusCode).toBe(200);
+    const res = await ask(app, randomBytes(32).toString('base64url'));
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toEqual({ error: 'Too many tries. Wait a few minutes and try again.' });
+    expect((await ask(app, VECTOR.id, { ...AT_HOME, remoteAddress: '192.168.1.31' })).statusCode).toBe(200);
+  });
+
+  it('wants an id and a nonce', async () => {
+    const { app } = setup();
+    expect((await app.inject({ url: `/api/auth/proof?nonce=${VECTOR.nonce}`, headers: H })).statusCode).toBe(400);
+    expect((await app.inject({ url: `/api/auth/proof?id=${VECTOR.id}&nonce=short`, headers: H })).statusCode).toBe(400);
+  });
+
+  it('answers only the app, so a web page open at home can’t spend its questions', async () => {
+    const { app, db } = setup();
+    keepVectorSession(db);
+    for (let i = 0; i < 40; i++) {
+      const res = await app.inject({ url: `/api/auth/proof?id=${VECTOR.id}&nonce=${VECTOR.nonce}`, ...AT_HOME });
+      expect(res.statusCode).toBe(403);
+    }
+    expect((await ask(app, VECTOR.id)).json()).toEqual({ proof: VECTOR.proof });
   });
 });

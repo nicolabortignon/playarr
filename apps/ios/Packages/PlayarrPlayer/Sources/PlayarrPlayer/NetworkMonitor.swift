@@ -32,18 +32,23 @@ public final class NetworkMonitor {
   @ObservationIgnored private let monitor = NWPathMonitor()
 
   public init() {
-    monitor.pathUpdateHandler = { [weak self] path in
-      let kind = NetworkKind(path)
-      Task { @MainActor in
-        guard let self, self.kind != kind else { return }
-        self.kind = kind
-        self.onChange?(kind)
-      }
-    }
+    monitor.pathUpdateHandler = Self.pathHandler(for: self)
     monitor.start(queue: DispatchQueue(label: "playarr.network"))
   }
 
   isolated deinit { monitor.cancel() }
+
+  /// Made outside the main actor: Network calls it on its own queue.
+  private nonisolated static func pathHandler(for network: NetworkMonitor) -> @Sendable (NWPath) -> Void {
+    { [weak network] path in
+      let kind = NetworkKind(path)
+      Task { @MainActor in
+        guard let network, network.kind != kind else { return }
+        network.kind = kind
+        network.onChange?(kind)
+      }
+    }
+  }
 }
 
 extension NetworkKind {

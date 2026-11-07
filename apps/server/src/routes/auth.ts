@@ -1,4 +1,4 @@
-import type { Account, SignInResponse } from '@playarr/shared';
+import type { Account, AuthProof, SignInResponse } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AccountError, checkPassword, type Accounts } from '../accounts/accounts.ts';
@@ -7,6 +7,7 @@ import { RateLimiter } from '../accounts/rateLimit.ts';
 import { requireLocalSetup } from '../accounts/rights.ts';
 import type { Sessions } from '../accounts/sessions.ts';
 import type { SetupCodes } from '../accounts/setupCodes.ts';
+import { APP_HEADER, isLocalRequest } from '../net.ts';
 
 const device = {
   device: z.string().trim().max(80).default('Unknown device'),
@@ -16,8 +17,12 @@ const setupInput = z.object({ username: z.string().trim().min(1).max(64), name: 
 const signInInput = z.object({ username: z.string().trim().min(1).max(64), password: z.string().min(1).max(200), ...device });
 const redeemInput = z.object({ code: z.string().trim().min(1).max(32), password: z.string().max(200), ...device });
 const switchInput = z.object({ token: z.string().min(1).max(200) });
+// An HMAC-SHA256 in base64url, and a nonce of at least 128 random bits.
+const proofInput = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{43}$/), nonce: z.string().regex(/^[A-Za-z0-9_-]{22,128}$/) });
 
 const TOO_MANY = 'Too many tries. Wait a few minutes and try again.';
+/** Home-address proofs per client address in 15 minutes: an app asks once per network it joins. */
+const PROOFS = 30;
 
 /** A request body as `schema` wants it, or a 400 naming what's wrong. */
 export function parseInput<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -36,14 +41,15 @@ export async function handleAccountErrors(reply: FastifyReply, fn: () => unknown
   }
 }
 
-/** Claiming the server, signing in and out, setup codes, and who's signed in. */
+/** Claiming the server, signing in and out, setup codes, who's signed in, and the home-address proof. */
 export function authRoutes(
   app: FastifyInstance,
-  deps: { accounts: Accounts; sessions: Sessions; setupCodes: SetupCodes; limiter?: RateLimiter },
+  deps: { accounts: Accounts; sessions: Sessions; setupCodes: SetupCodes; limiter?: RateLimiter; proofLimiter?: RateLimiter },
 ) {
   const { accounts, sessions, setupCodes } = deps;
   // Failed sign-ins and codes count per client address: req.ip, the visitor's behind a proxy trusted with TRUST_PROXY.
   const limiter = deps.limiter ?? new RateLimiter();
+  const proofLimiter = deps.proofLimiter ?? new RateLimiter(PROOFS);
   const signedIn = (account: Account, input: { device: string; platform: string }): SignInResponse => ({
     token: sessions.create(account.id, input.device, input.platform).token,
     account,
@@ -106,6 +112,20 @@ export function authRoutes(
   app.get('/api/auth/me', (req, reply) =>
     req.auth?.session ? req.auth.account : reply.code(401).send({ error: 'Nobody is signed in', setup: accounts.setupMode() }),
   );
+
+  // The iOS app asks before its token goes to this server's home address, on a network it can't vouch for: the
+  // server there proves it holds the session, from a question that gives nothing away (Sessions.proof). Open, and
+  // asked without the token, but only with Playarr's own header, which a web page can't send another site without
+  // asking first: a page open on a phone at home can't spend that phone's questions. Every question counts toward
+  // the limit, answered or not: counting only the misses would let the limit say which ids matched.
+  app.get('/api/auth/proof', (req, reply) => {
+    if (req.headers[APP_HEADER] !== '1') return reply.code(403).send({ error: 'Only the Playarr app asks this' });
+    const parsed = proofInput.safeParse(req.query);
+    if (!parsed.success) return reply.code(400).send({ error: 'An id and a nonce are required' });
+    if (!proofLimiter.take(req.ip)) return reply.code(429).send({ error: TOO_MANY });
+    const answer: AuthProof = { proof: sessions.proof(parsed.data.id, parsed.data.nonce, isLocalRequest(req)) };
+    return answer;
+  });
 
   // The web keeps a token per account signed in on the device; switching makes one the cookie.
   app.post('/api/auth/switch', (req, reply) => {

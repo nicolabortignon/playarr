@@ -19,7 +19,7 @@ function setup() {
   });
   app.get('/api/whoami', (req) => who(req));
   app.post('/api/change', (req) => who(req));
-  for (const url of ['/stream/1', '/art/album/1/cover', '/transitions/x.flac', '/api/server', '/api/health', '/']) app.get(url, () => 'ok');
+  for (const url of ['/stream/1', '/art/album/1/cover', '/transitions/x.flac', '/api/server', '/api/health', '/api/auth/proof', '/']) app.get(url, () => 'ok');
   for (const url of ['/api/auth/sign-in', '/api/auth/redeem', '/api/auth/setup', '/api/auth/switch']) app.post(url, () => 'ok');
   return { accounts, sessions, app };
 }
@@ -41,10 +41,10 @@ describe('authHook', () => {
     }
   });
 
-  it('leaves open what an app needs to find the server and sign in, and the web pages', async () => {
+  it('leaves open what an app needs to find the server, sign in and check its home address, and the web pages', async () => {
     const { app, accounts } = setup();
     await accounts.setPassword(1, 'correct horse');
-    for (const url of ['/api/server', '/api/health', '/']) expect((await app.inject({ url })).statusCode).toBe(200);
+    for (const url of ['/api/server', '/api/health', '/api/auth/proof', '/']) expect((await app.inject({ url })).statusCode).toBe(200);
     for (const url of ['/api/auth/sign-in', '/api/auth/redeem', '/api/auth/setup', '/api/auth/switch']) {
       expect((await app.inject({ method: 'POST', url, headers: { 'x-playarr': '1' } })).statusCode).toBe(200);
     }

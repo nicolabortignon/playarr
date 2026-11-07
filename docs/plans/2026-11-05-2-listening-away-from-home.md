@@ -30,7 +30,7 @@ The store description promises AirPlay; there's no route picker in the app. An `
 
 ## 5. Playback rides out a dead spot — M
 
-- iOS: downloads back off (1, 3, 8 s…) instead of three quick retries; a failed song waits for the network (`NWPath`) and resumes at its time instead of stopping (`PlayarrPlayer/Download.swift`, `Player.swift` `handle(.failed)`, `networkChanged`). Songs, levels and transitions use the home address too once plan 1 makes that safe.
+- iOS: downloads back off (1, 3, 8 s…) instead of three quick retries; a failed song waits for the network (`NWPath`) and resumes at its time instead of stopping (`PlayarrPlayer/Download.swift`, `Player.swift` `handle(.failed)`, `networkChanged`). Songs, levels and transitions use the home address too once plan 1 makes that safe (plan 1 §3 has: `MediaURLs.onHomeAddress` gives a song's home address once `HomeAddress` has proven it on this network, and `request(for:)` then carries the token there).
 - Web: a watchdog on the playing deck (stuck in `waiting` more than about 8 s while online: reload from the current time); retries with backoff; out of retries offline, wait for `online`; online, move to the next song; a default timeout on API requests (`AudioEngine.tsx` `retryStream`, `lib/api.ts`).
 - **Done when** turning the network off for 20 s mid-song and back on resumes the song where it was, on both.
 

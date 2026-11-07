@@ -15,6 +15,17 @@ describe('RateLimiter', () => {
     expect(limiter.allows('1.2.3.4')).toBe(true);
   });
 
+  it('counts every try with take, not only the failed ones', () => {
+    let now = 0;
+    const limiter = new RateLimiter(2, 1000, () => now);
+    expect(limiter.take('1.2.3.4')).toBe(true);
+    expect(limiter.take('1.2.3.4')).toBe(true);
+    expect(limiter.take('1.2.3.4')).toBe(false);
+    expect(limiter.take('5.6.7.8')).toBe(true);
+    now = 1001;
+    expect(limiter.take('1.2.3.4')).toBe(true);
+  });
+
   it('gives every address a budget of its own', () => {
     const limiter = new RateLimiter(2, 1000, () => 0);
     limiter.fail('1.2.3.4');

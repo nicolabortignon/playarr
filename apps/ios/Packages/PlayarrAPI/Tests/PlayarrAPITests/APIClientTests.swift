@@ -142,45 +142,177 @@ import Testing
         #expect(try client.urlRequest(for: API.Server.health()).timeoutInterval == 30)
     }
 
-    // A server behind a public address, reached from home through a router without NAT loopback.
+    // A server behind a public address, reached from home through a router without NAT loopback. The home address is
+    // tried only on Wi-Fi or a wired network, and only once the server there has proven it holds the session.
 
-    @Test func triesTheLocalAddressWhenThePublicOneCantBeReached() async throws {
+    static let info = json(#"{"id":"u-1","name":"Home","version":"0.7.0","minAppVersion":"1.0.0","setup":false}"#)
+
+    /// A client for `token` on a server at `https://<away>`, with `http://<home>:4000` as its home address.
+    func client(away: String, home: String, token: String? = "tok", network: LocalNetwork = LocalNetwork(isLocal: true), session: URLSession) -> APIClient {
+        let address = HomeAddress(url: URL(string: "http://\(home):4000")!, token: "tok", session: session, network: network)
+        return APIClient(baseURL: URL(string: "https://\(away)")!, home: address, token: token, session: session)
+    }
+
+    @Test func triesTheHomeAddressWhenThePublicOneCantBeReached() async throws {
         let away = uniqueHost(), home = uniqueHost()
         let publicTries = Mutex(0)
-        let seen = Mutex<URLRequest?>(nil)
+        let seen = Seen()
         let session = StubProtocol.session(host: away) { _ in
             publicTries.withLock { $0 += 1 }
             throw URLError(.cannotConnectToHost)
         }
+        // The real server: it holds the session, and answers the proof.
         _ = StubProtocol.session(host: home) { request in
-            seen.withLock { $0 = request }
-            return (200, json(#"{"id":"u-1","name":"Home","version":"0.7.0","minAppVersion":"1.0.0","setup":false}"#))
+            seen.add(request)
+            return proofAnswer(request, holding: ["tok"]) ?? (200, Self.info)
         }
-        let client = APIClient(baseURL: URL(string: "https://\(away)")!, localURL: URL(string: "http://\(home):4000")!, token: "tok", session: session)
+        let client = client(away: away, home: home, session: session)
 
         #expect(try await client.send(API.Server.info()).name == "Home")
-        let request = try #require(seen.withLock { $0 })
+        #expect(seen.paths == ["/api/auth/proof", "/api/server"])
+        let request = try #require(seen.all.last)
         #expect(request.url?.absoluteString == "http://\(home):4000/api/server")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tok")
 
-        // The local address answered: the next request starts there.
+        // The home address answered: the next request starts there, without asking again.
         _ = try await client.send(API.Server.info())
         #expect(publicTries.withLock { $0 } == 1)
+        #expect(seen.paths == ["/api/auth/proof", "/api/server", "/api/server"])
     }
 
-    @Test func goesBackToThePublicAddressWhenTheLocalOneStopsAnswering() async throws {
+    @Test(arguments: ["answers anything", "answers the proof wrong", "plays back a proof", "knows no proof"])
+    func neverSendsTheTokenToAHomeAddressThatCantProveIt(_ impostor: String) async throws {
+        // A café's network, where something else answers at the server's home address: it would take any request.
+        let away = uniqueHost(), home = uniqueHost()
+        let seen = Seen()
+        let session = StubProtocol.session(host: away) { _ in throw URLError(.cannotConnectToHost) }
+        _ = StubProtocol.session(host: home) { request in
+            seen.add(request)
+            guard request.url?.path() == "/api/auth/proof" else { return (200, Self.info) }
+            switch impostor {
+            case "answers anything":
+                return (200, Self.info)
+            case "answers the proof wrong":
+                return (200, json(#"{"proof":"\#(HomeAddress.base64URL(Data(repeating: 1, count: 32)))"}"#))
+            case "plays back a proof":
+                // The real server's answer to an earlier question, overheard: it doesn't answer this one.
+                let earlier = "Zm9yLXRoZS10ZXN0LXZlY3Rvci1vbmx5LTAwMDAwMDA"
+                let id = HomeAddress.id(nonce: earlier, key: HomeAddress.key(token: "tok"))
+                return proofAnswer(URLRequest(url: URL(string: "http://\(home)/api/auth/proof?id=\(id)&nonce=\(earlier)")!), holding: ["tok"])!
+            default:
+                return (404, json(#"{"error":"Not found"}"#))
+            }
+        }
+        let client = client(away: away, home: home, session: session)
+
+        await #expect(throws: APIError.offline) { try await client.send(API.Auth.me()) }
+        await #expect(throws: APIError.offline) { try await client.send(API.Server.info()) }
+
+        // It was asked to prove itself, once, and never sent the token, nor anything but the question.
+        #expect(seen.paths == ["/api/auth/proof"])
+        #expect(seen.withToken.isEmpty)
+    }
+
+    @Test func keepsToThePublicAddressWithAServerFromBeforeTheProof() async throws {
+        // The real server at home, but one too old to answer the proof (its auth hook turns the question away): unproven.
+        let away = uniqueHost(), home = uniqueHost()
+        let seen = Seen()
+        let session = StubProtocol.session(host: away) { _ in throw URLError(.timedOut) }
+        _ = StubProtocol.session(host: home) { request in
+            seen.add(request)
+            return request.url?.path() == "/api/auth/proof" ? (401, json(#"{"error":"Sign in to Playarr","setup":false}"#)) : (200, Self.info)
+        }
+        let client = client(away: away, home: home, session: session)
+
+        await #expect(throws: APIError.offline) { try await client.send(API.Server.info()) }
+        #expect(seen.paths == ["/api/auth/proof"])
+    }
+
+    @Test func triesTheHomeAddressOnlyOnWiFiOrWired() async throws {
+        let away = uniqueHost(), home = uniqueHost()
+        let seen = Seen()
+        let session = StubProtocol.session(host: away) { _ in throw URLError(.cannotConnectToHost) }
+        _ = StubProtocol.session(host: home) { request in
+            seen.add(request)
+            return proofAnswer(request, holding: ["tok"]) ?? (200, Self.info)
+        }
+        // Mobile data, where a private address could be anyone's.
+        let client = client(away: away, home: home, network: LocalNetwork(isLocal: false), session: session)
+
+        await #expect(throws: APIError.offline) { try await client.send(API.Server.info()) }
+        #expect(seen.all.isEmpty)
+    }
+
+    @Test(arguments: [URLError.Code.serverCertificateUntrusted, .serverCertificateHasUnknownRoot, .serverCertificateHasBadDate, .secureConnectionFailed])
+    func triesTheHomeAddressPastACertificateThatIsntTheServers(_ code: URLError.Code) async throws {
+        // At home, a router without NAT loopback answering the public address with its own page and certificate: the
+        // home address, once the server there has proven itself.
+        let away = uniqueHost(), home = uniqueHost()
+        let seen = Seen()
+        let session = StubProtocol.session(host: away) { _ in throw URLError(code) }
+        _ = StubProtocol.session(host: home) { request in
+            seen.add(request)
+            return proofAnswer(request, holding: ["tok"]) ?? (200, Self.info)
+        }
+        let client = client(away: away, home: home, session: session)
+
+        _ = try await client.send(API.Server.info())
+        #expect(seen.paths == ["/api/auth/proof", "/api/server"])
+        #expect(seen.withToken.compactMap { $0.url?.path() } == ["/api/server"])
+    }
+
+    @Test func neverSendsTheTokenPastACaptivePortal() async throws {
+        // A café's portal, answering the public address with its own certificate and its home address with its page.
+        let away = uniqueHost(), home = uniqueHost()
+        let seen = Seen()
+        let session = StubProtocol.session(host: away) { _ in throw URLError(.serverCertificateUntrusted) }
+        _ = StubProtocol.session(host: home) { request in
+            seen.add(request)
+            return (200, json(#"<html>Accept the terms</html>"#))
+        }
+        let client = client(away: away, home: home, session: session)
+
+        await #expect(throws: APIError.offline) { try await client.send(API.Auth.me()) }
+        #expect(seen.paths == ["/api/auth/proof"])
+        #expect(seen.withToken.isEmpty)
+    }
+
+    @Test func provesTheHomeAddressAgainOnEveryNetwork() async throws {
+        let away = uniqueHost(), home = uniqueHost()
+        let seen = Seen()
+        let session = StubProtocol.session(host: away) { _ in throw URLError(.cannotConnectToHost) }
+        _ = StubProtocol.session(host: home) { request in
+            seen.add(request)
+            return proofAnswer(request, holding: ["tok"]) ?? (200, Self.info)
+        }
+        let network = LocalNetwork(isLocal: true)
+        let client = client(away: away, home: home, network: network, session: session)
+        _ = try await client.send(API.Server.info())
+
+        // Off home and back: the public address first again, then the question again before the token goes.
+        network.change(isLocal: true)
+        _ = try await client.send(API.Server.info())
+        #expect(seen.paths == ["/api/auth/proof", "/api/server", "/api/auth/proof", "/api/server"])
+
+        // Mobile data: nothing more goes to the home address.
+        network.change(isLocal: false)
+        await #expect(throws: APIError.offline) { try await client.send(API.Server.info()) }
+        #expect(seen.all.count == 4)
+    }
+
+    @Test func goesBackToThePublicAddressWhenTheHomeOneStopsAnswering() async throws {
         let away = uniqueHost(), home = uniqueHost()
         let atHome = Mutex(true)
-        let info = json(#"{"id":"u-1","name":"Home","version":"0.7.0","minAppVersion":"1.0.0","setup":false}"#)
         let session = StubProtocol.session(host: away) { _ in
             if atHome.withLock({ $0 }) { throw URLError(.timedOut) }
-            return (200, info)
+            return (200, Self.info)
         }
-        _ = StubProtocol.session(host: home) { _ in
-            if atHome.withLock({ $0 }) { return (200, info) }
+        _ = StubProtocol.session(host: home) { request in
+            if atHome.withLock({ $0 }) { return proofAnswer(request, holding: ["tok"]) ?? (200, Self.info) }
             throw URLError(.cannotConnectToHost)
         }
-        let client = APIClient(baseURL: URL(string: "https://\(away)")!, localURL: URL(string: "http://\(home)")!, session: session)
+        // Signing in nobody (GET /api/server): the home address still has to prove itself to an account first.
+        let client = client(away: away, home: home, token: nil, session: session)
         _ = try await client.send(API.Server.info())
 
         atHome.withLock { $0 = false }
@@ -188,25 +320,25 @@ import Testing
         #expect(try await client.send(API.Server.info()).name == "Home")
     }
 
-    @Test func triesTheLocalAddressOnlyForConnectionFailures() async throws {
+    @Test func triesTheHomeAddressOnlyForConnectionFailures() async throws {
         let away = uniqueHost(), home = uniqueHost()
-        let localTries = Mutex(0)
+        let seen = Seen()
         let session = StubProtocol.session(host: away) { _ in (500, json(#"{"error":"Library not loaded"}"#)) }
-        _ = StubProtocol.session(host: home) { _ in
-            localTries.withLock { $0 += 1 }
+        _ = StubProtocol.session(host: home) { request in
+            seen.add(request)
             return (200, Data())
         }
-        let client = APIClient(baseURL: URL(string: "https://\(away)")!, localURL: URL(string: "http://\(home)")!, session: session)
+        let client = client(away: away, home: home, session: session)
 
         await #expect(throws: APIError.server(status: 500, message: "Library not loaded")) { try await client.send(API.Server.info()) }
-        #expect(localTries.withLock { $0 } == 0)
+        #expect(seen.all.isEmpty)
     }
 
     @Test func isOfflineWhenNeitherAddressAnswers() async throws {
         let away = uniqueHost(), home = uniqueHost()
         let session = StubProtocol.session(host: away) { _ in throw URLError(.cannotFindHost) }
         _ = StubProtocol.session(host: home) { _ in throw URLError(.timedOut) }
-        let client = APIClient(baseURL: URL(string: "https://\(away)")!, localURL: URL(string: "http://\(home)")!, session: session)
+        let client = client(away: away, home: home, session: session)
 
         await #expect(throws: APIError.offline) { try await client.send(API.Server.info()) }
     }

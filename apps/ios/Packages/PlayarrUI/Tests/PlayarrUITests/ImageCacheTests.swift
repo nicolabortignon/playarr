@@ -57,12 +57,31 @@ import Testing
     #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
   }
 
+  /// The image cache of a server at `https://<host>` (no handler: FakeServer fails it as an unreachable host), whose
+  /// home address `home` answers with `handler`.
+  func cache(home: String, _ handler: @escaping FakeServer.Handler) -> ImageCache {
+    let session = FakeServer.session(host: home, handler)
+    let address = HomeAddress(url: URL(string: "http://\(home)")!, token: "tok", session: session, network: LocalNetwork(isLocal: true))
+    let media = MediaURLs(baseURL: URL(string: "https://\(host)")!, home: address, token: "tok")
+    return ImageCache(directory: directory, media: media, session: session, retryDelay: .zero)
+  }
+
   @Test func triesTheHomeAddressWhenThePublicOneCantBeReached() async {
-    let home = "home-\(UUID().uuidString.lowercased()).invalid"
-    // The public host has no handler: FakeServer fails it as an unreachable host.
-    let session = FakeServer.session(host: home) { request in (200, "from home \(request.value(forHTTPHeaderField: "Authorization") ?? "")") }
-    let media = MediaURLs(baseURL: URL(string: "https://\(host)")!, localURL: URL(string: "http://\(home)")!, token: "tok")
-    let images = ImageCache(directory: directory, media: media, session: session, retryDelay: .zero)
+    // The server itself at home: it proves it holds the session first.
+    let images = cache(home: "home-\(UUID().uuidString.lowercased()).invalid") { request in
+      FakeServer.proof(request, holding: ["tok"]) ?? (200, "from home \(request.value(forHTTPHeaderField: "Authorization") ?? "")")
+    }
     #expect(await images.data("/art/album/70/cover", size: 96) == Data("from home Bearer tok".utf8))
+  }
+
+  @Test func neverSendsTheTokenToAHomeAddressThatCantProveIt() async {
+    // Something else at the home address (a café's network), which would answer any request with a picture.
+    let asked = Mutex<[String]>([])
+    let images = cache(home: "home-\(UUID().uuidString.lowercased()).invalid") { request in
+      asked.withLock { $0.append("\(request.url!.path()) \(request.value(forHTTPHeaderField: "Authorization") ?? "")") }
+      return request.url!.path() == "/api/auth/proof" ? (404, "") : (200, "a picture")
+    }
+    #expect(await images.data("/art/album/70/cover", size: 96) == nil)
+    #expect(asked.withLock { $0 } == ["/api/auth/proof "])
   }
 }

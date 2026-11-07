@@ -18,7 +18,7 @@ import Testing
             }
         }
         let directory = FileManager.default.temporaryDirectory.appending(path: "playarr-\(UUID().uuidString)")
-        let store = ServerStore(directory: directory, secrets: InMemorySecretStore(), session: session)
+        let store = ServerStore(directory: directory, secrets: InMemorySecretStore(), session: session, network: LocalNetwork(isLocal: true))
         return AppModel(store: store, browser: ServerBrowser(), appVersion: AppVersion("1.0.0"), device: DeviceInfo(name: "Test", platform: "ios"))
     }
 
@@ -85,10 +85,14 @@ import Testing
         let model = AddServerModel(app: app)
         await model.connect(to: URL(string: "http://\(host)")!)
         _ = await model.signIn(username: "sam", password: "secret")
-        let moved = URL(string: "http://192.168.1.50:4000")!
+        // The server at its new address, which proves it holds Sam's session ("tok") before it's taken for the server.
+        let movedHost = "moved-\(UUID().uuidString.lowercased()).invalid"
+        _ = FakeServer.session(host: movedHost) { FakeServer.proof($0, holding: ["tok"]) ?? (404, #"{"error":"Not found"}"#) }
+        let moved = URL(string: "http://\(movedHost):4000")!
 
         app.browser.onUpdate?([DiscoveredServer(id: "srv-1", name: "Home", version: "0.7.0", baseURL: moved)])
 
+        await eventually { app.store.activeServer?.localURL == moved }
         #expect(app.store.activeServer?.localURL == moved)
     }
 }

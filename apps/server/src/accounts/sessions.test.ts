@@ -1,10 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { describe, expect, it, vi } from 'vitest';
 import { freshDb } from '../catalog/testFixtures.ts';
 import { Accounts } from './accounts.ts';
-import { hashToken, Sessions } from './sessions.ts';
+import { hashToken, PROOF_ANSWER, PROOF_ID, Sessions } from './sessions.ts';
 import { normalizeCode, SetupCodes } from './setupCodes.ts';
 
 const T0 = Date.parse('2026-11-03T10:00:00Z');
+
+// Every HMAC made, counted: the home-address proof must do the same work whether or not it knows the session.
+const hmacs = vi.hoisted(() => ({ made: 0 }));
+vi.mock('node:crypto', async (original) => {
+  const crypto = await original<typeof import('node:crypto')>();
+  return { ...crypto, createHmac: (...args: Parameters<typeof crypto.createHmac>) => (hmacs.made++, crypto.createHmac(...args)) };
+});
+
+/** What the app sends for a session: the id it names it by, as the iOS app's HomeAddress works it out. */
+function idFor(token: string, nonce: string) {
+  const key = createHash('sha256').update(token).digest();
+  return createHmac('sha256', key).update(PROOF_ID + nonce).digest('base64url');
+}
 
 describe('Sessions', () => {
   it('gives each device a random token, stored only as its hash', () => {
@@ -47,6 +61,32 @@ describe('Sessions', () => {
     expect(sessions.resolve(a.token)).toBeUndefined();
     sessions.removeAll(1);
     expect(sessions.resolve(b.token)).toBeUndefined();
+  });
+
+  it('proves it holds a session to the app that names it, keyed by the hash it stores', () => {
+    const sessions = new Sessions(freshDb());
+    const { token } = sessions.create(1, 'iPhone', 'ios');
+    const nonce = randomBytes(32).toString('base64url');
+    const key = createHash('sha256').update(token).digest();
+    expect(sessions.proof(idFor(token, nonce), nonce, true)).toBe(createHmac('sha256', key).update(PROOF_ANSWER + nonce).digest('base64url'));
+    // A new nonce, a new answer: one overheard can't be replayed.
+    const again = randomBytes(32).toString('base64url');
+    expect(sessions.proof(idFor(token, again), again, true)).not.toBe(sessions.proof(idFor(token, nonce), nonce, true));
+  });
+
+  it('does the same work for a session it holds as for one it doesn’t, or a question it won’t answer', () => {
+    const sessions = new Sessions(freshDb());
+    const tokens = Array.from({ length: 5 }, () => sessions.create(1, 'iPhone', 'ios').token);
+    const nonce = randomBytes(32).toString('base64url');
+    const work = (id: string, fromHome: boolean) => {
+      hmacs.made = 0;
+      sessions.proof(id, nonce, fromHome);
+      return hmacs.made;
+    };
+    // Each session's id is worked out (none stops the search early), then the answer.
+    expect(work(idFor(tokens[0]!, nonce), true)).toBe(6);
+    expect(work(randomBytes(32).toString('base64url'), true)).toBe(6);
+    expect(work(idFor(tokens[0]!, nonce), false)).toBe(6);
   });
 });
 

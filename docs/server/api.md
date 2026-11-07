@@ -91,6 +91,7 @@ Details in [../mixes.md](../mixes.md).
 | `POST /api/auth/setup` | claim the server: the owner's username and password | setup |
 | `POST /api/auth/sign-in`, `/api/auth/redeem` | sign in; choose a password with a setup code (both rate-limited per address) | open |
 | `POST /api/auth/switch` | make a token this browser's session cookie (authenticates by the token) | open |
+| `GET /api/auth/proof?id=&nonce=` | the server at an app's home address proving it holds the app's session, asked without the token (rate-limited per address; see [accounts-and-access.md](accounts-and-access.md#8-the-home-address)) | open |
 | `GET /api/auth/me`, `POST /api/auth/sign-out` | who's signed in; sign this device out | session |
 | `GET\|POST /api/accounts`, `DELETE /api/accounts/:id`, `POST /api/accounts/:id/reset` | list, create (with a setup code), remove, reset a password; create and reset refused in setup mode | admin |
 | `PATCH /api/accounts/:id` | change an account; members may change their own name only | admin, or own name |

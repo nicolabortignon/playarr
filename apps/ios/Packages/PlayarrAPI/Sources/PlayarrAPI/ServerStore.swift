@@ -11,12 +11,18 @@ public final class ServerStore {
     @ObservationIgnored private let file: URL
     @ObservationIgnored private let secrets: any SecretStore
     @ObservationIgnored private let session: URLSession
+    @ObservationIgnored private let network: LocalNetwork
     @ObservationIgnored private var clients: [AccountKey: APIClient] = [:]
+    /// Each signed-in account's view of its server's home address (what it proved on this network), shared by the
+    /// account's client and media addresses.
+    @ObservationIgnored private var homes: [AccountKey: HomeAddress] = [:]
 
-    public init(directory: URL, secrets: any SecretStore, session: URLSession = .shared) {
+    /// `network`: whether the phone is on a network where a home address may be tried (`LocalNetwork.shared`).
+    public init(directory: URL, secrets: any SecretStore, session: URLSession = .shared, network: LocalNetwork = .shared) {
         self.file = directory.appending(path: "servers.json")
         self.secrets = secrets
         self.session = session
+        self.network = network
         if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode(Saved.self, from: data) {
             servers = saved.servers
             active = saved.active
@@ -39,12 +45,18 @@ public final class ServerStore {
         server(key.serverId)?.accounts.first { $0.account.id == key.accountId }
     }
 
+    /// Whether the account's token is on this device: false when the Keychain has none (an unencrypted backup brings the
+    /// server list back but leaves the Keychain out); throws when the Keychain can't be read now.
+    public func hasToken(_ key: AccountKey) throws -> Bool {
+        try secrets.token(for: key.keychainAccount) != nil
+    }
+
     /// A client for a signed-in account (one per account, kept); nil when signed out.
     public func client(for record: AccountRecord) -> APIClient? {
         let key = record.key
         if let client = clients[key] { return client }
         guard record.signedIn, let server = server(key.serverId), let token = try? secrets.token(for: key.keychainAccount) else { return nil }
-        let client = APIClient(baseURL: server.baseURL, localURL: server.localURL, token: token, session: session) { [weak self] in
+        let client = APIClient(baseURL: server.baseURL, home: home(of: server, for: key, token: token), token: token, session: session) { [weak self] in
             await self?.markSignedOut(key)
         }
         clients[key] = client
@@ -56,15 +68,33 @@ public final class ServerStore {
         APIClient(baseURL: baseURL, session: session, timeout: 15)
     }
 
-    /// The same for a known server, trying its local address too.
+    /// The same for a known server, trying its home address too once the server there has proven itself to a signed-in
+    /// account (preferably the active one): an answer from anything else at that address could steer the app anywhere
+    /// (its `publicUrl`), token or not. Without a signed-in account, its public address only.
     public func anonymousClient(for server: ServerRecord) -> APIClient {
-        APIClient(baseURL: server.baseURL, localURL: server.localURL, session: session, timeout: 15)
+        let signedIn = server.accounts.filter(\.signedIn)
+        var home: HomeAddress?
+        for record in signedIn.filter({ $0.key == active }) + signedIn.filter({ $0.key != active }) {
+            guard let token = try? secrets.token(for: record.key.keychainAccount) else { continue }
+            home = self.home(of: server, for: record.key, token: token)
+            break
+        }
+        return APIClient(baseURL: server.baseURL, home: home, session: session, timeout: 15)
     }
 
     /// Media addresses for a signed-in account, with its token for the Authorization header.
     public func mediaURLs(for record: AccountRecord) -> MediaURLs? {
         guard record.signedIn, let server = server(record.serverId), let token = try? secrets.token(for: record.key.keychainAccount) else { return nil }
-        return MediaURLs(baseURL: server.baseURL, localURL: server.localURL, token: token)
+        return MediaURLs(baseURL: server.baseURL, home: home(of: server, for: record.key, token: token), token: token)
+    }
+
+    /// The account's view of the server's home address, kept while the address stays the same; nil without one.
+    private func home(of server: ServerRecord, for key: AccountKey, token: String) -> HomeAddress? {
+        guard let localURL = server.localURL else { return nil }
+        if let home = homes[key], home.url == localURL { return home }
+        let home = HomeAddress(url: localURL, token: token, session: session, network: network)
+        homes[key] = home
+        return home
     }
 
     /// Remembers a server reached at `url`, or its new name and address. A server with a public address
@@ -89,19 +119,35 @@ public final class ServerStore {
         return servers[index]
     }
 
-    /// Servers Bonjour found: a known one at another address than its own keeps that as its local address.
-    public func discovered(_ found: [DiscoveredServer]) {
-        var changed = false
+    /// Servers Bonjour found: a known one at another address than its own keeps that as its local address, once the
+    /// server there has proven it holds a signed-in account's session (`HomeAddress`), since anything on a network can
+    /// advertise `_playarr._tcp` with a server's id. A server with no account signed in has no use for one. Returns
+    /// the checks, for tests to wait on.
+    @discardableResult
+    public func discovered(_ found: [DiscoveredServer]) -> Task<Void, Never> {
+        var candidates: [(key: AccountKey, home: HomeAddress)] = []
         for server in found {
-            guard let index = servers.firstIndex(where: { $0.id == server.id }),
-                  !Self.sameAddress(server.baseURL, servers[index].baseURL),
-                  servers[index].localURL != server.baseURL
-            else { continue }
-            servers[index].localURL = server.baseURL
-            dropClients(serverId: server.id)
-            changed = true
+            guard let known = self.server(server.id), !Self.sameAddress(server.baseURL, known.baseURL), known.localURL != server.baseURL else { continue }
+            for record in known.accounts where record.signedIn {
+                guard let token = try? secrets.token(for: record.key.keychainAccount) else { continue }
+                candidates.append((record.key, HomeAddress(url: server.baseURL, token: token, session: session, network: network)))
+                break
+            }
         }
-        if changed { save() }
+        return Task { [weak self] in
+            for candidate in candidates {
+                if await candidate.home.verify() { self?.adopt(candidate.home, for: candidate.key) }
+            }
+        }
+    }
+
+    /// A home address Bonjour found and the server there proved to `key`'s session, which keeps the proof.
+    private func adopt(_ home: HomeAddress, for key: AccountKey) {
+        guard let index = servers.firstIndex(where: { $0.id == key.serverId }), servers[index].localURL != home.url else { return }
+        servers[index].localURL = home.url
+        dropClients(serverId: key.serverId)
+        homes[key] = home
+        save()
     }
 
     private static func sameAddress(_ a: URL, _ b: URL) -> Bool {
@@ -119,6 +165,7 @@ public final class ServerStore {
         let record = AccountRecord(serverId: info.id, account: response.account)
         try secrets.setToken(response.token, for: record.key.keychainAccount)
         clients[record.key] = nil
+        homes[record.key] = nil
         update(serverId: info.id) { server in
             if let index = server.accounts.firstIndex(where: { $0.account.id == record.account.id }) {
                 server.accounts[index] = record
@@ -149,6 +196,7 @@ public final class ServerStore {
     public func markSignedOut(_ key: AccountKey) {
         try? secrets.removeToken(for: key.keychainAccount)
         clients[key] = nil
+        homes[key] = nil
         update(serverId: key.serverId) { server in
             if let index = server.accounts.firstIndex(where: { $0.account.id == key.accountId }) { server.accounts[index].signedIn = false }
         }
@@ -163,6 +211,7 @@ public final class ServerStore {
         }
         try? secrets.removeToken(for: key.keychainAccount)
         clients[key] = nil
+        homes[key] = nil
         update(serverId: key.serverId) { server in server.accounts.removeAll { $0.account.id == key.accountId } }
         servers.removeAll { $0.accounts.isEmpty && $0.id == key.serverId }
         if active == key {
@@ -178,6 +227,7 @@ public final class ServerStore {
 
     private func dropClients(serverId: String) {
         clients = clients.filter { $0.key.serverId != serverId }
+        homes = homes.filter { $0.key.serverId != serverId }
     }
 
     private struct Saved: Codable {

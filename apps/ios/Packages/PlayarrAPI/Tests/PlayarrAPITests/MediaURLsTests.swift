@@ -29,14 +29,42 @@ import Testing
         #expect(media.request(for: elsewhere).value(forHTTPHeaderField: "Authorization") == nil)
     }
 
-    @Test func sendsTheTokenToTheLocalAddressTooAndMovesAddressesThere() throws {
-        let media = MediaURLs(baseURL: URL(string: "https://tracklist.me")!, localURL: URL(string: "http://192.168.1.103:4000")!, token: "tok")
+    @Test func movesAddressesToTheHomeAddress() throws {
+        let home = HomeAddress(url: URL(string: "http://192.168.1.103:4000")!, token: "tok", network: LocalNetwork(isLocal: true))
+        let media = MediaURLs(baseURL: URL(string: "https://tracklist.me")!, home: home, token: "tok")
         let stream = try #require(media.stream(fileId: 9000))
-        let local = try #require(media.onLocalAddress(stream))
-        #expect(local.absoluteString == "http://192.168.1.103:4000/stream/9000")
-        #expect(media.request(for: local).value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+        #expect(media.onLocalAddress(stream)?.absoluteString == "http://192.168.1.103:4000/stream/9000")
         #expect(media.onLocalAddress(try #require(media.art("/art/album/70/cover?v=2", size: 600)))?.absoluteString == "http://192.168.1.103:4000/art/album/70/cover?v=2&size=600")
         #expect(media.onLocalAddress(URL(string: "https://coverartarchive.org/x")!) == nil)
         #expect(self.media.onLocalAddress(stream) == nil)
+    }
+
+    @Test func sendsTheTokenToTheHomeAddressOnlyWhileItsProven() async throws {
+        let host = uniqueHost()
+        let session = StubProtocol.session(host: host) { proofAnswer($0, holding: ["tok"]) ?? (404, Data()) }
+        let network = LocalNetwork(isLocal: true)
+        let home = HomeAddress(url: URL(string: "http://\(host):4000")!, token: "tok", session: session, network: network)
+        let media = MediaURLs(baseURL: URL(string: "https://tracklist.me")!, home: home, token: "tok")
+        let stream = try #require(media.stream(fileId: 9000))
+        let local = try #require(media.onLocalAddress(stream))
+        #expect(media.request(for: local).value(forHTTPHeaderField: "Authorization") == nil)
+
+        #expect(await media.onHomeAddress(stream) == local)
+        #expect(media.request(for: local).value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+
+        // Another network: not until it's proven there too.
+        network.change(isLocal: true)
+        #expect(media.request(for: local).value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(media.request(for: stream).value(forHTTPHeaderField: "Authorization") == "Bearer tok")
+    }
+
+    @Test func givesNoHomeAddressThatCantProveItself() async throws {
+        let host = uniqueHost()
+        let session = StubProtocol.session(host: host) { _ in (404, json(#"{"error":"Not found"}"#)) }
+        let home = HomeAddress(url: URL(string: "http://\(host):4000")!, token: "tok", session: session, network: LocalNetwork(isLocal: true))
+        let media = MediaURLs(baseURL: URL(string: "https://tracklist.me")!, home: home, token: "tok")
+        let stream = try #require(media.stream(fileId: 9000))
+        #expect(await media.onHomeAddress(stream) == nil)
+        #expect(media.request(for: try #require(media.onLocalAddress(stream))).value(forHTTPHeaderField: "Authorization") == nil)
     }
 }
