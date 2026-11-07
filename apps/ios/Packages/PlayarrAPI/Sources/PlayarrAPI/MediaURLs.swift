@@ -35,6 +35,12 @@ public struct MediaURLs: Sendable {
     /// The song's file at a gain (dB), as a WAV levelled on the server: for a seek past what's downloaded.
     public func levelled(_ track: Track, gain: Double) -> URL? { url("\(track.streamUrl)/levelled.wav?gain=\(gain)") }
 
+    /// The song encoded by the server (AAC at `kbps`, 128 or 256, in fragmented MP4), from its sample `start` on
+    /// (44.1 kHz): docs/server/streaming-and-art.md §2. Servers from 0.6.571.
+    public func encoded(_ track: Track, kbps: Int, start: Int64 = 0) -> URL? {
+        url("\(track.streamUrl)/aac?kbps=\(kbps)" + (start > 0 ? "&start=\(start)" : ""))
+    }
+
     /// A rendered transition: the `url` of a ready `TransitionAnswer` (or its `continuationUrl`).
     public func transition(_ path: String) -> URL? { url(path) }
 

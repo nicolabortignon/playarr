@@ -54,6 +54,15 @@ struct NerdStatsTests {
     #expect(strip.introLabel == "intro ends 0:32.5")
   }
 
+  @Test func saysWhenTheSongStreamsEncoded() {
+    let encoded = NerdStats.groups(.init(track: track, time: 18.25, duration: 379.5, buffered: 9.96, loading: false, playing: true, encoded: .normal))
+    #expect(row(encoded, "Playback", "Stream") == "its encoded stream, AAC 128 kbps")
+    #expect(row(encoded, "Playback", "URL") == "\(track.streamUrl)/aac?kbps=128")
+    let leveled = NerdStats.groups(.init(
+      track: track, time: 18.25, duration: 379.5, buffered: 9.96, loading: false, playing: true, gainDb: -6, encoded: .high))
+    #expect(row(leveled, "Playback", "Stream") == "its encoded stream, AAC 256 kbps, leveled on this device at −6.0 dB")
+  }
+
   @Test func everyGroupWithTheNativeStreamDecksAndChangeovers() {
     let report = MixReport(kind: .mixIn, way: .server, songs: "Angel → Teardrop", sample: 154_350, songTime: 207.5, headroom: 2.61)
     let deck = DeckSnapshot(name: "A", title: "Angel", startsAt: 0, decodedSeconds: 12.34, scheduledSeconds: 2.5, finished: false, gain: 0.5)

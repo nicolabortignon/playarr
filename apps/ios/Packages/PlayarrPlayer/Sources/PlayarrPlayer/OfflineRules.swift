@@ -91,10 +91,12 @@ public enum OfflineRules {
   }
 
   /// The next song of a download to fetch: downloads in the order they were added, songs in order. `skip`: songs
-  /// that failed this session, or are on their way.
-  public static func nextToDownload(_ pins: [String: PinnedDownload], songs: [Int: KeptFile], skip: Set<Int> = []) -> Track? {
+  /// that failed this session, or are on their way. `satisfies`: a song kept will do (not below the download quality).
+  public static func nextToDownload(
+    _ pins: [String: PinnedDownload], songs: [Int: KeptFile], skip: Set<Int> = [], satisfies: (Track, KeptFile) -> Bool = { _, _ in true }
+  ) -> Track? {
     for d in inOrder(pins) {
-      if let t = d.tracks.first(where: { songs[$0.fileId] == nil && !skip.contains($0.fileId) }) { return t }
+      if let t = d.tracks.first(where: { t in !skip.contains(t.fileId) && songs[t.fileId].map { !satisfies(t, $0) } ?? true }) { return t }
     }
     return nil
   }

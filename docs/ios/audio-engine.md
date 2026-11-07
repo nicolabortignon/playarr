@@ -35,13 +35,16 @@ Transition ─ mixer ┘                                             └─ tap:
 
 `TrackSource` picks its way at the first read:
 
-1. **A file kept elsewhere** (`Origin.kept`, a download's transition continuation): decoded from there.
-2. **The whole file in the stream cache**: `FileDecoder` (`AVAudioFile` plus one `AVAudioConverter`), which seeks exactly.
-3. **From the start**: the file's `Download`, decoded as it arrives by `StreamDecoder` (AudioFileStream plus one converter). It handles FLAC, MP3 and AAC (ADTS, or M4A with its index first), and trims MP3/AAC priming and padding from the packet table, so joins stay gapless.
-4. **From a later frame, the song measured**: the server's `levelled.wav?gain=0` from byte `44 + frame × 4` (`LevelledWAV.swift`), exact to the sample. The file's own download carries on for next time.
-5. **From a later frame, not measured**: the file from its start, decoding and dropping frames up to the seek.
+1. **A file kept elsewhere** (`Origin.kept`: a download's copy of the song, whatever its quality, or a download's transition continuation): decoded from there.
+2. **A whole file in the stream cache as good as wanted** (`Origin.accepts`: the quality wanted on this network, anything offline): `FileDecoder` (`AVAudioFile` plus one `AVAudioConverter`), which seeks exactly.
+3. **The song comes encoded on this network** (`Origin.encoded`, plan 2 §1): the server's encoded stream (`/stream/:id/aac?kbps=&start=`, [../server/streaming-and-art.md](../server/streaming-and-art.md#2-encoded-streams-streamfileidaac)), decoded as it arrives by `StreamDecoder` as an M4A, trimmed by the packet table its iTunSMPB gives. From the start it goes into the cache (`<fileId>.<quality>.m4a`), as the song's own file would; from a later frame, the server starts it at that very sample (`start=`), into a file of its own. Either way every sample is where the song's file has it, so DJ joins land as on the file. A server from before encoded streams, a song it can't encode or an encode that failed plays the song's own file for the rest of the session (`EncodeSupport`); a busy server (503) for this time only. An encode that fails mid-song gives way to the song's own file from the frame it got to.
+4. **From the start**: the file's `Download`, decoded as it arrives by `StreamDecoder` (AudioFileStream plus one converter). It handles FLAC, MP3 and AAC (ADTS, or M4A with its index first, the server's fragmented M4A included), and trims MP3/AAC priming and padding from the packet table, so joins stay gapless.
+5. **From a later frame, the song measured**: the server's `levelled.wav?gain=0` from byte `44 + frame × 4` (`LevelledWAV.swift`), exact to the sample. The file's own download carries on for next time.
+6. **From a later frame, not measured**: the file from its start, decoding and dropping frames up to the seek.
 
 A format the decoder can't stream (WAV, Ogg, M4A with its index last) plays from the levelled stream if there is one, else once downloaded whole.
+
+**Streaming quality** (Settings → Playback, `PlaybackSettings`: `wifiQuality`, `cellularQuality`, `downloadQuality`, as on the web). Original streams each song's own file; High (256 kbps) and Normal (128 kbps) its encoded stream, on mobile data (and in Low Data Mode) at `cellularQuality`, Normal unless changed, elsewhere at `wifiQuality`, Original unless changed. A file within a quarter of the bitrate plays as it is (`StreamQuality.encodes`: a 128 kbps MP3 at Normal). `Player.origin` makes the choice for each song as its deck opens it; keep-ahead fetches each song at the quality it will play at. An encoded stream is declared longer than it is and padded with a `free` box (the server's upper bound): `Download` walks the boxes as they arrive and ends where the padding starts (`StreamPadding`), so the padding is never fetched nor kept. B's rest after a transition into an MP3 is still the server's file.
 
 `Download` (`Download.swift`) fetches one file over HTTP, readable while it arrives. A broken connection is asked again from the byte it stopped at (`Range: bytes=N-`), 3 times per file, after 1, 3 and 8 s (`Download.backoff`), so a dead spot of a few seconds plays through what's buffered. After that, `PlaybackError.diagnose` asks for `bytes=0-1` to tell the server's refusal (its own message) from a file that broke off, won't decode or isn't supported, or a server out of reach. Each case gets the web's words (`PlaybackError.swift`).
 
@@ -49,8 +52,8 @@ A format the decoder can't stream (WAV, Ogg, M4A with its index last) plays from
 
 **Files.** Each server and account has its own folder, `Application Support/Playarr/<serverId>/<accountId>/` (`OfflineFolder`). Inside it:
 
-- `stream/<fileId>.<ext>`: song files, with `.part` while incomplete.
-- `stream/levelled-<uuid>.wav`: a seek's levelled stream, deleted when its source closes.
+- `stream/<fileId>.<ext>`: song files, with `.part` while incomplete; `stream/<fileId>.<quality>.m4a` a song's encoded stream (`normal`, `high`). A song is kept at one quality: a better file in, the other goes.
+- `stream/levelled-<uuid>.wav`, `stream/encoded-<uuid>.m4a`: a seek's levelled or encoded stream, deleted when its source closes.
 - `stream/transition-<name>`: transition files the player fetched.
 - `stream/-<hash>.flac`: an MP3's continuation (see §5), filed under a negative file id made from its URL (`Track+Continuation.swift`).
 

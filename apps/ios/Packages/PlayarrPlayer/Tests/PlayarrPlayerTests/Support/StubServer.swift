@@ -21,10 +21,12 @@ final class StubServer: URLProtocol, @unchecked Sendable {
   }
 
   static let routes = Mutex<[String: Route]>([:])
-  static let log = Mutex<[(path: String, range: String?)]>([])
+  static let log = Mutex<[(path: String, range: String?, query: String?)]>([])
 
   static func serve(_ path: String, _ route: Route) { routes.withLock { $0[path] = route } }
   static func requests(_ path: String) -> [String?] { log.withLock { $0.filter { $0.path == path }.map(\.range) } }
+  /// The query each request for `path` had.
+  static func queries(_ path: String) -> [String?] { log.withLock { $0.filter { $0.path == path }.map(\.query) } }
 
   static func configuration() -> URLSessionConfiguration {
     let c = URLSessionConfiguration.ephemeral
@@ -34,6 +36,12 @@ final class StubServer: URLProtocol, @unchecked Sendable {
 
   static let base = URL(string: "https://playarr.test")!
   static func request(_ path: String) -> URLRequest { URLRequest(url: base.appending(path: path)) }
+  /// A request for `path` with a query (`"kbps=128&start=44100"`), which routes go without.
+  static func request(_ path: String, query: String) -> URLRequest {
+    var components = URLComponents(url: base.appending(path: path), resolvingAgainstBaseURL: false)!
+    components.percentEncodedQuery = query
+    return URLRequest(url: components.url!)
+  }
 
   private let stopped = Flag()
 
@@ -44,7 +52,7 @@ final class StubServer: URLProtocol, @unchecked Sendable {
     guard let url = request.url, let client else { return }
     let path = url.path()
     let range = request.value(forHTTPHeaderField: "Range")
-    Self.log.withLock { $0.append((path, range)) }
+    Self.log.withLock { $0.append((path, range, url.query())) }
     guard var route = Self.routes.withLock({ $0[path] }) else {
       return respond(client, url, status: 404, headers: [:], body: Data(#"{"error":"Unknown track file"}"#.utf8))
     }

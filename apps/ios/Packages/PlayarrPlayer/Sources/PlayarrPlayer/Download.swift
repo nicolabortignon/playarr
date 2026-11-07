@@ -3,7 +3,8 @@ import Synchronization
 
 /// One file fetched over HTTP into a local file, from a byte on, readable while it arrives. A connection that breaks
 /// is asked again from the byte it stopped at, up to `retries` times (3, as `STREAM_RETRIES` on the web), backing off
-/// further each time (`backoff`): a dead spot of a few seconds goes by without the song failing.
+/// further each time (`backoff`): a dead spot of a few seconds goes by without the song failing. An encoded stream's
+/// download (`endsAtPadding`) ends where its padding starts (`StreamPadding`): the rest isn't fetched.
 ///
 /// URLSession calls the delegate methods on its own queue while readers wait on other tasks, so all state sits in a
 /// `Mutex` (a checked `Sendable`, no `@unchecked` needed). Waiting readers are continuations resumed outside the lock.
@@ -42,6 +43,8 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
     var errorBody = Data()
     var waiters: [Waiter] = []
     var onFinish: (@Sendable () -> Void)?
+    /// The walk to an encoded stream's padding, through the resource's bytes from its first.
+    var padding: StreamPadding?
   }
 
   private let state: Mutex<State>
@@ -53,10 +56,12 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
   static let backoff = [1, 3, 8]
 
   /// `file` already holding bytes (an earlier, interrupted download) is continued from its end. With `finalFile`,
-  /// the file is moved there once complete.
+  /// the file is moved there once complete. `endsAtPadding`: an encoded stream from its first byte, which ends at its
+  /// padding.
   public init(
     request: URLRequest, firstByte: Int64 = 0, file: URL, finalFile: URL? = nil, retries: Int = 3,
-    retryDelay: Duration = .seconds(1), configuration: @escaping @Sendable () -> URLSessionConfiguration = { .default }
+    retryDelay: Duration = .seconds(1), endsAtPadding: Bool = false,
+    configuration: @escaping @Sendable () -> URLSessionConfiguration = { .default }
   ) {
     self.request = request
     self.firstByte = firstByte
@@ -64,7 +69,18 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
     self.retries = retries
     self.configuration = configuration
     let existing = (try? FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.size] as? Int64) ?? 0
-    state = Mutex(State(file: file, finalFile: finalFile, received: existing, retriesLeft: retries))
+    var initial = State(file: file, finalFile: finalFile, received: existing, retriesLeft: retries)
+    if endsAtPadding { initial.padding = Self.walk(file, upTo: existing) }
+    state = Mutex(initial)
+  }
+
+  /// The walk to the padding through the bytes an interrupted download left.
+  private static func walk(_ file: URL, upTo length: Int64) -> StreamPadding {
+    var padding = StreamPadding()
+    guard length > 0, let handle = try? FileHandle(forReadingFrom: file) else { return padding }
+    defer { try? handle.close() }
+    while padding.start == nil, let data = try? handle.read(upToCount: 256 * 1024), !data.isEmpty { padding.scan(data) }
+    return padding
   }
 
   public var received: Int64 { state.withLock { $0.received } }
@@ -78,14 +94,21 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
   }
 
   public func start() {
-    state.withLock { s in
-      guard s.session == nil, !s.finished, !s.cancelled, s.failure == nil else { return }
+    let onFinish = state.withLock { s -> (@Sendable () -> Void)? in
+      guard s.session == nil, !s.finished, !s.cancelled, s.failure == nil else { return nil }
       if !FileManager.default.fileExists(atPath: s.file.path(percentEncoded: false)) {
         FileManager.default.createFile(atPath: s.file.path(percentEncoded: false), contents: nil)
       }
+      // An interrupted download that got as far as the padding: it's all here.
+      if let end = s.padding?.start {
+        complete(&s, at: end - firstByte)
+        return s.onFinish
+      }
       s.session = URLSession(configuration: configuration(), delegate: self, delegateQueue: nil)
       begin(&s)
+      return nil
     }
+    onFinish?()
   }
 
   public func cancel() {
@@ -173,6 +196,7 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
           s.writer = nil
           try? Data().write(to: s.file)
           s.received = 0
+          if s.padding != nil { s.padding = StreamPadding() }
         }
         if response.expectedContentLength > 0 { s.total = response.expectedContentLength - firstByte }
       }
@@ -181,10 +205,10 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
   }
 
   public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-    let ready = state.withLock { s -> [Waiter] in
-      guard (200..<300).contains(s.status) else {
-        s.errorBody.append(data)
-        return []
+    let (ready, onFinish) = state.withLock { s -> ([Waiter], (@Sendable () -> Void)?) in
+      guard (200..<300).contains(s.status), !s.finished else {
+        if !s.finished { s.errorBody.append(data) }
+        return ([], nil)
       }
       var data = data
       if s.skip > 0 {
@@ -192,31 +216,68 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
         data = data.dropFirst(Int(dropped))
         s.skip -= dropped
       }
-      guard !data.isEmpty else { return [] }
-      do {
-        if s.writer == nil {
-          s.writer = try FileHandle(forWritingTo: s.file)
-          try s.writer?.seekToEnd()
+      guard !data.isEmpty else { return ([], nil) }
+      // An encoded stream's padding: what's before it is the whole file.
+      var end: Int64?
+      if s.padding != nil {
+        s.padding?.scan(data)
+        if let start = s.padding?.start {
+          end = start - firstByte
+          data = data.prefix(Int(max(0, start - firstByte - s.received)))
         }
-        try s.writer?.write(contentsOf: data)
+      }
+      do {
+        if !data.isEmpty {
+          if s.writer == nil {
+            s.writer = try FileHandle(forWritingTo: s.file)
+            try s.writer?.seekToEnd()
+          }
+          try s.writer?.write(contentsOf: data)
+        }
       } catch {
         s.task?.cancel()  // disk full: ends as a broken connection
-        return []
+        return ([], nil)
       }
       s.received += Int64(data.count)
+      if let end {
+        s.task?.cancel()
+        s.session?.invalidateAndCancel()
+        s.session = nil
+        complete(&s, at: end)
+        defer { s.waiters = [] }
+        return (s.waiters, s.onFinish)
+      }
       let now = s.received
       let (go, stay) = (s.waiters.filter { $0.wanted <= now }, s.waiters.filter { $0.wanted > now })
       s.waiters = stay
-      return go
+      return (go, nil)
     }
     for w in ready { w.continuation.resume() }
+    onFinish?()
+  }
+
+  /// The file is whole at `length` bytes (an encoded stream up to its padding): kept at that, and moved into place.
+  /// Called with the lock held; the caller resumes the waiters and calls `onFinish`.
+  private func complete(_ s: inout State, at length: Int64) {
+    try? s.writer?.close()
+    s.writer = nil
+    if s.received > length, let handle = try? FileHandle(forWritingTo: s.file) {
+      try? handle.truncate(atOffset: UInt64(max(0, length)))
+      try? handle.close()
+      s.received = max(0, length)
+    }
+    s.finished = true
+    if let final = s.finalFile {
+      try? FileManager.default.removeItem(at: final)
+      if (try? FileManager.default.moveItem(at: s.file, to: final)) != nil { s.file = final }
+    }
   }
 
   public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
     enum Outcome { case done, failed(Failure), retry(after: Duration), nothing }
     let (outcome, waiters, onFinish) = state.withLock { s -> (Outcome, [Waiter], (@Sendable () -> Void)?) in
       s.task = nil
-      if s.cancelled { return (.nothing, [], nil) }
+      if s.cancelled || s.finished { return (.nothing, [], nil) }
       let broken = error != nil || (s.status == 206 && s.total.map { s.received < $0 } == true)
       let outcome: Outcome
       if s.status == 416 && s.received > 0 {

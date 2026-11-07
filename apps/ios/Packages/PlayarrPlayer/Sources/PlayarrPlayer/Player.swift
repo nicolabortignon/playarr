@@ -53,12 +53,19 @@ public final class Player {
   @ObservationIgnored public private(set) var engine: AudioEngine
   @ObservationIgnored public var nowPlaying: NowPlayingBridge?
   @ObservationIgnored public var session: (any AudioSessionControlling)?
-  @ObservationIgnored public var network: () -> NetworkKind = { .wifi }
+  /// The network the phone is on (the app's `NetworkMonitor`; tests set their own).
+  @ObservationIgnored public var network: () -> NetworkKind {
+    get { networkReader.read }
+    set { networkReader.read = newValue }
+  }
+  /// What the session has learned of the server's encoded streams (plan 2 §1).
+  @ObservationIgnored let encodeSupport: EncodeSupport
   /// How long the queue must stay put before keep-ahead fetches (tests: zero).
   @ObservationIgnored public var settle: Duration = KeepAhead.settle
 
   @ObservationIgnored private let backend: any PlayerBackend
   @ObservationIgnored private let cache: StreamCache
+  @ObservationIgnored private let networkReader: NetworkReader
   @ObservationIgnored private let reports: PlayReportQueue
   /// The queue, written off the main thread a moment after it changes.
   @ObservationIgnored private let saved: JSONWriter<QueueState>
@@ -139,11 +146,13 @@ public final class Player {
   ) throws {
     let folder = OfflineFolder(root: directory)
     let cache = StreamCache(directory: folder.stream)
-    let downloads = DownloadStore(folder: folder, settings: settings, cache: cache, transport: transport, backend: backend)
+    let support = EncodeSupport()
+    let downloads = DownloadStore(folder: folder, settings: settings, cache: cache, transport: transport, backend: backend, support: support)
     let levels = LevelStore { ids in try await backend.levels(ids) }
     levels.remember(downloads.keptLevels)
     downloads.learnedLevels = { [weak levels] found in levels?.remember(found) }
     let reports = PlayReportQueue(file: directory.appending(path: "pending-plays.json")) { try await backend.reportPlays($0) }
+    let networkReader = NetworkReader()
     let sources: @MainActor (EngineItem, Int64) -> any PCMSource = makeSource ?? { item, frame in
       // After a transition into an MP3: the server's rest of it, which runs on from the transition sample for sample.
       if let rest = item.continuation {
@@ -155,9 +164,9 @@ public final class Player {
       }
       return TrackSource(
         track: item.track, firstFrame: frame,
-        origin: TrackSource.Origin(
-          stream: backend.streamRequest(item.track),
-          levelled: levels.levels[item.track.recordingId] == nil ? nil : backend.levelledRequest(item.track)),
+        origin: Self.origin(
+          for: item.track, on: networkReader.read(), settings: settings, backend: backend, downloads: downloads,
+          levelled: levels.levels[item.track.recordingId] != nil, support: support),
         cache: cache)
     }
     let build = { try makeEngine?(sources) ?? AudioEngine(makeSource: sources) }
@@ -175,6 +184,8 @@ public final class Player {
         return await cache.transitionFile(named: name)
       })
     self.backend = backend
+    self.networkReader = networkReader
+    encodeSupport = support
     self.settings = settings
     self.levels = levels
     self.downloads = downloads
@@ -686,14 +697,65 @@ public final class Player {
   }
 
   private func keepAhead() {
-    keptAhead = KeepAhead.plan(queue, network: network(), limit: settings.offlineLimit)
+    let network = network()
+    keptAhead = KeepAhead.plan(queue, network: network, limit: settings.offlineLimit)
     let keep = Set((playingSongs + keptAhead).map(\.fileId))
     downloads.protect(keep)
-    let requests = keptAhead.filter { !downloads.isKept($0.fileId) }.map { ($0, backend.streamRequest($0)) }
+    // Each at the quality it plays at on this network: its encoded stream, or its own file.
+    let requests = keptAhead.compactMap { track -> (Track, StreamQuality, URLRequest)? in
+      let quality = settings.streamQuality(on: network).of(track)
+      guard !downloads.keeps(track, atLeast: quality) else { return nil }
+      if Self.playsEncoded(track, on: network, settings: settings, backend: backend, support: encodeSupport), let kbps = quality.kbps,
+        let request = backend.encodedRequest(track, kbps: kbps, start: 0)
+      {
+        return (track, quality, request)
+      }
+      return (track, .original, backend.streamRequest(track))
+    }
     Task { [cache] in
       await cache.keepOnly(keep)
       await cache.prefetch(requests)
     }
+  }
+
+  /// The quality a song streams at here now when it comes encoded (Stats for nerds); nil when it plays its own file or
+  /// a copy on this device.
+  public func encodedQuality(of track: Track) -> StreamQuality? {
+    let network = network()
+    let quality = settings.streamQuality(on: network)
+    guard Self.playsEncoded(track, on: network, settings: settings, backend: backend, support: encodeSupport),
+      !downloads.keeps(track, atLeast: quality.of(track))
+    else { return nil }
+    return quality
+  }
+
+  /// Where a song plays from (plan 2 §1): a download's copy, whatever its quality (the listener chose it); else a copy
+  /// the stream cache has at the quality wanted on this network (any copy offline); else its encoded stream when it
+  /// comes encoded here; else its own file.
+  static func origin(
+    for track: Track, on network: NetworkKind, settings: PlaybackSettings, backend: any PlayerBackend, downloads: DownloadStore,
+    levelled: Bool, support: EncodeSupport
+  ) -> TrackSource.Origin {
+    let quality = settings.streamQuality(on: network)
+    var encoded: TrackSource.Encoded?
+    if playsEncoded(track, on: network, settings: settings, backend: backend, support: support), let kbps = quality.kbps {
+      encoded = TrackSource.Encoded(quality: quality, support: support) { start in
+        backend.encodedRequest(track, kbps: kbps, start: start) ?? backend.streamRequest(track)
+      }
+    }
+    return TrackSource.Origin(
+      stream: backend.streamRequest(track), levelled: levelled ? backend.levelledRequest(track) : nil,
+      kept: downloads.downloadedFile(track), accepts: network == .offline ? .normal : quality.of(track), encoded: encoded)
+  }
+
+  /// The song streams encoded here now: online, at a quality that encodes it, from a server that has encoded streams
+  /// and hasn't failed this song's.
+  static func playsEncoded(
+    _ track: Track, on network: NetworkKind, settings: PlaybackSettings, backend: any PlayerBackend, support: EncodeSupport
+  ) -> Bool {
+    let quality = settings.streamQuality(on: network)
+    guard network != .offline, quality.encodes(track), let kbps = quality.kbps, support.allows(track.fileId) else { return false }
+    return backend.encodedRequest(track, kbps: kbps, start: 0) != nil
   }
 
   /// Offline, a song not on this device can't play: on to the next one that is, with the web's toast. False online,
@@ -912,4 +974,9 @@ extension Player {
     previews?.engine = nil
     preview = nil
   }
+}
+
+/// Where the player reads the network from: the app's monitor, set after the player is made (`Player.network`).
+@MainActor final class NetworkReader {
+  var read: () -> NetworkKind = { .wifi }
 }

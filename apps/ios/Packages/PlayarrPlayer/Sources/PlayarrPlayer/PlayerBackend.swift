@@ -10,6 +10,9 @@ public protocol PlayerBackend: Sendable {
   func streamRequest(_ track: Track) -> URLRequest
   /// The song's levelled stream at gain 0 (the phone applies the gain), authorized.
   func levelledRequest(_ track: Track) -> URLRequest
+  /// The song encoded at `kbps` from its sample `start` on (plan 2 §1), authorized; nil where there are no encoded
+  /// streams (the demo).
+  func encodedRequest(_ track: Track, kbps: Int, start: Int64) -> URLRequest?
   func artwork(_ track: Track, size: Int) async -> Data?
   /// `POST /api/transitions`.
   func transition(_ request: TransitionRequest) async throws -> TransitionAnswer
@@ -51,6 +54,10 @@ public struct APIBackend: PlayerBackend {
 
   public func levelledRequest(_ track: Track) -> URLRequest {
     media.request(for: media.levelled(track, gain: 0) ?? media.baseURL)
+  }
+
+  public func encodedRequest(_ track: Track, kbps: Int, start: Int64) -> URLRequest? {
+    media.encoded(track, kbps: kbps, start: start).map { media.request(for: $0) }
   }
 
   public func transition(_ request: TransitionRequest) async throws -> TransitionAnswer {

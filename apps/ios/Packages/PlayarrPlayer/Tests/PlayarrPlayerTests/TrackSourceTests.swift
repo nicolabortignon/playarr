@@ -100,6 +100,100 @@ struct TrackSourceTests {
     #expect(pcm.left[500] == 0.25)
   }
 
+  // MARK: Encoded streams (plan 2 §1)
+
+  /// A source for song `id` (a FLAC at 900 kbps) wanting its encoded stream at Normal.
+  func encodedSource(_ id: Int, from frame: Int64 = 0, support: EncodeSupport = EncodeSupport(), cache: StreamCache? = nil) -> (TrackSource, StreamCache) {
+    let cache = cache ?? StreamCache(directory: temporaryDirectory(), retryDelay: .milliseconds(5), configuration: StubServer.configuration)
+    let encoded = TrackSource.Encoded(quality: .normal, support: support) { start in
+      StubServer.request("/stream/\(id)/aac", query: "kbps=128" + (start > 0 ? "&start=\(start)" : ""))
+    }
+    let origin = TrackSource.Origin(stream: StubServer.request("/stream/\(id)"), levelled: nil, accepts: .normal, encoded: encoded)
+    let session = URLSession(configuration: StubServer.configuration())
+    return (TrackSource(track: encodable(song(id)), firstFrame: frame, origin: origin, cache: cache, probeSession: session), cache)
+  }
+
+  @Test func playsTheEncodedStreamAndKeepsItWithoutItsPadding() async throws {
+    StubServer.serve("/stream/120/aac", .init(body: try Data(contentsOf: StreamPaddingTests.fixture), chunk: 4096))
+    let (source, cache) = encodedSource(120)
+    let pcm = try await readAll(source)
+    #expect(pcm.frames == 132_300)
+    #expect(StubServer.requests("/stream/120").isEmpty)
+    #expect(StubServer.queries("/stream/120/aac") == ["kbps=128"])
+    try await Task.sleep(for: .milliseconds(50))  // the download's last callback renames the file
+    let kept = try #require(await cache.completedFile(for: encodable(song(120)), atLeast: .normal))
+    #expect(kept.lastPathComponent == "120.normal.m4a")
+    #expect(try Data(contentsOf: kept).count == Int(StreamPaddingTests.audioBytes))
+    // Its own file is wanted at Original: the copy at Normal won't do there.
+    #expect(await cache.completedFile(for: encodable(song(120))) == nil)
+  }
+
+  @Test func aSeekAsksForTheEncodedStreamFromThatSampleIntoAFileOfItsOwn() async throws {
+    StubServer.serve("/stream/121/aac", .init(body: try Data(contentsOf: StreamPaddingTests.fixture)))
+    let (source, cache) = encodedSource(121, from: 44_100)
+    let first = try #require(try await source.read(maxFrames: 4096))
+    #expect(first.frames > 0)
+    #expect(StubServer.queries("/stream/121/aac") == ["kbps=128&start=44100"])
+    await source.close()
+    // Nothing of it stays: a stream from a sample isn't the song's.
+    let names = try FileManager.default.contentsOfDirectory(atPath: await cache.directory.path(percentEncoded: false))
+    #expect(!names.contains { $0.hasPrefix("encoded-") || $0.hasPrefix("121.") })
+  }
+
+  @Test func aCopyOnTheDeviceAsGoodAsWantedPlaysInsteadOfTheStream() async throws {
+    let directory = temporaryDirectory()
+    try Data(contentsOf: AudioFiles.flac(seconds: 2)).write(to: directory.appending(path: "122.flac"))
+    let cache = StreamCache(directory: directory, retryDelay: .milliseconds(5), configuration: StubServer.configuration)
+    let (source, _) = encodedSource(122, cache: cache)
+    let pcm = try await readAll(source)
+    #expect(pcm.frames == 88_200)
+    #expect(StubServer.requests("/stream/122/aac").isEmpty)
+  }
+
+  @Test func aServerWithoutEncodedStreamsPlaysTheSongsOwnFileAndIsntAskedAgain() async throws {
+    // A server from before encoded streams: its "Not found" for a path it doesn't have.
+    StubServer.serve("/stream/123/aac", .init(body: Data(#"{"error":"Not found"}"#.utf8), status: 404))
+    StubServer.serve("/stream/123", .init(body: try Data(contentsOf: AudioFiles.flac(seconds: 2))))
+    let support = EncodeSupport()
+    let (source, _) = encodedSource(123, support: support)
+    let pcm = try await readAll(source)
+    #expect(pcm.frames == 88_200)
+    #expect(!support.allows(123))
+    #expect(!support.allows(999))
+  }
+
+  @Test func aBusyServerPlaysTheSongsOwnFileThisTimeOnly() async throws {
+    StubServer.serve("/stream/124/aac", .init(body: Data(#"{"error":"Too many songs are being encoded"}"#.utf8), status: 503))
+    StubServer.serve("/stream/124", .init(body: try Data(contentsOf: AudioFiles.flac(seconds: 2))))
+    let support = EncodeSupport()
+    let (source, _) = encodedSource(124, support: support)
+    let pcm = try await readAll(source)
+    #expect(pcm.frames == 88_200)
+    #expect(support.allows(124))
+  }
+
+  @Test func anEncodeThatFailsMidwayGivesWayToTheSongsOwnFileFromWhereItGot() async throws {
+    // The stream breaks off after its first fragment and the server then says the encode failed.
+    let stream = try Data(contentsOf: StreamPaddingTests.fixture)
+    StubServer.serve("/stream/125/aac", .init(body: stream, chunk: 2048, pause: .milliseconds(20), breakAfter: 12_198, breaks: 1))
+    StubServer.serve("/stream/125", .init(body: try Data(contentsOf: AudioFiles.flac(seconds: 4))))
+    let support = EncodeSupport()
+    let (source, _) = encodedSource(125, support: support)
+    var all = PCMBlock(left: [], right: [])
+    while let block = try await source.read(maxFrames: 4096) {
+      all.left += block.left
+      all.right += block.right
+      if all.frames > 20_000 {
+        StubServer.serve("/stream/125/aac", .init(body: Data(#"{"error":"This song couldn’t be encoded"}"#.utf8), status: 502))
+      }
+    }
+    // The stream's frames, then the file's from there on, each at its place in the song: four seconds in all,
+    // nothing twice or left out.
+    #expect(all.frames == 176_400)
+    #expect(abs(all.left[176_000] - sine(176_000, 0)) < 1e-6)
+    #expect(!support.allows(125))
+  }
+
   @Test func explainsFailuresInTheWebsWords() async throws {
     let (missing, _) = source(106)  // no route: the stub answers 404 {"error":"Unknown track file"}
     await #expect(throws: PlaybackError.server("Unknown track file")) { try await missing.read(maxFrames: 4096) }

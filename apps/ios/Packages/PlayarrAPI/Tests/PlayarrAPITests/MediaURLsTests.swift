@@ -18,6 +18,12 @@ import Testing
         #expect(media.levelled(track, gain: -4.5)?.absoluteString == "https://music.example.com/playarr/stream/9000/levelled.wav?gain=-4.5")
     }
 
+    @Test func asksForASongEncodedFromAnySample() {
+        let track = Track(id: 700, recordingId: "rec-1", fileId: 9000, albumId: 70, artistId: 7, title: "Angel", artistName: "Massive Attack", albumTitle: "Mezzanine", trackNumber: 1, discNumber: 1, duration: 379, explicit: false, format: AudioFormat(codec: "FLAC", container: "flac", lossless: true), size: 1, streamUrl: "/stream/9000")
+        #expect(media.encoded(track, kbps: 128)?.absoluteString == "https://music.example.com/playarr/stream/9000/aac?kbps=128")
+        #expect(media.encoded(track, kbps: 256, start: 441_000)?.absoluteString == "https://music.example.com/playarr/stream/9000/aac?kbps=256&start=441000")
+    }
+
     @Test func putsTheTokenInTheHeaderNeverInTheURL() throws {
         let url = try #require(media.stream(fileId: 1))
         #expect(!url.absoluteString.contains("tok"))

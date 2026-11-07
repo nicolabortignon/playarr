@@ -6,7 +6,9 @@ import PlayarrAPI
 /// apps/web/src/player: the manifest (`offline.json`), songs kept as you listen within the limit (least recently
 /// played make room), and downloads (albums, playlists, mixes, Favorites) pinned outside it, fetched one song at a time
 /// on the background session, then the DJ transitions between their songs. The stream cache owns the files in
-/// `stream/` and tells this store about each whole file and each play; this store decides what goes.
+/// `stream/` and tells this store about each whole file and each play; this store decides what goes. A song is kept at
+/// one quality (plan 2 §1): downloads' songs at Settings → Playback's download quality (a copy below it is fetched
+/// again, a better one kept), songs kept as you listen at the quality they streamed at.
 @MainActor @Observable
 public final class DownloadStore {
   public struct Active: Sendable, Equatable {
@@ -57,6 +59,10 @@ public final class DownloadStore {
   /// The list of downloads and kept files, written off the main thread a moment after it changes.
   @ObservationIgnored private let saved: JSONWriter<OfflineManifest>
   @ObservationIgnored private let capacity: @Sendable () -> Int64?
+  /// What the session has learned of the server's encoded streams (shared with the player).
+  @ObservationIgnored private let support: EncodeSupport
+  /// Song jobs fetching an encoded stream: job id → its quality.
+  @ObservationIgnored private var encodedJobs: [String: StreamQuality] = [:]
   @ObservationIgnored private let now: @Sendable () -> Date
   @ObservationIgnored private let poller: TransitionPoller
   /// Songs playing or fetched ahead: never dropped to make room.
@@ -89,10 +95,11 @@ public final class DownloadStore {
   public init(
     folder: OfflineFolder, settings: PlaybackSettings, cache: StreamCache, transport: any DownloadTransport,
     backend: any PlayerBackend, capacity: @escaping @Sendable () -> Int64? = { OfflineFolder.availableCapacity() },
-    now: @escaping @Sendable () -> Date = { Date() }, poll: TransitionPoller.Timing = .server
+    now: @escaping @Sendable () -> Date = { Date() }, poll: TransitionPoller.Timing = .server, support: EncodeSupport = EncodeSupport()
   ) {
     self.folder = folder
     self.settings = settings
+    self.support = support
     self.cache = cache
     self.transport = transport
     self.backend = backend
@@ -139,6 +146,16 @@ public final class DownloadStore {
   /// what the "on this device" mark means (docs/design.md, "Rows, menus and toasts"). Songs only kept ahead as you
   /// listen aren't: nobody can count on them staying.
   public func isDownloaded(_ fileId: Int) -> Bool { manifest.songs[fileId] != nil && pinnedFileIds.contains(fileId) }
+  /// A download's copy of the song, whatever its quality: it plays from here, online too (the listener chose it).
+  public func downloadedFile(_ track: Track) -> URL? {
+    guard isDownloaded(track.fileId), let kept = manifest.songs[track.fileId] else { return nil }
+    return folder.url(kept.file)
+  }
+  /// The song is on this device at `quality` or better (a download's copy at any): nothing to fetch for it.
+  public func keeps(_ track: Track, atLeast quality: StreamQuality) -> Bool {
+    guard let kept = manifest.songs[track.fileId] else { return false }
+    return pinnedFileIds.contains(track.fileId) || OfflineFolder.quality(ofSongPath: kept.file).atLeast(quality)
+  }
   /// Songs kept as you listen: what Settings → Playback counts against the limit.
   public var keptAsYouListen: (count: Int, bytes: Int64) {
     let rest = OfflineRules.unpinned(manifest.songs, pins: manifest.pins)
@@ -165,6 +182,16 @@ public final class DownloadStore {
     }
   }
 
+  /// Settings → Playback → Streaming quality → Downloads: songs downloaded from now on come at it, and those kept
+  /// below it are fetched again; a better copy stays.
+  public var downloadQuality: StreamQuality {
+    get { settings.downloadQuality }
+    set {
+      settings.downloadQuality = newValue
+      retry()
+    }
+  }
+
   /// "Allow downloads on mobile data". The song under way starts again under the new rule.
   public var cellularDownloads: Bool {
     get { settings.cellularDownloads }
@@ -179,7 +206,7 @@ public final class DownloadStore {
   public func room(for tracks: [Track]) -> Room {
     var seen = Set<Int>()
     let needed = tracks.filter { $0.fileId > 0 && manifest.songs[$0.fileId] == nil && seen.insert($0.fileId).inserted }
-      .reduce(Int64(0)) { $0 + Int64($1.size) }
+      .reduce(Int64(0)) { $0 + settings.downloadQuality.size(of: $1) }
     guard needed > 0, let free = capacity() else { return .enough }
     let freeable = keptAsYouListen.bytes
     let available = free + freeable - Self.reserve
@@ -338,36 +365,62 @@ public final class DownloadStore {
       pumpAgain = false
       while online, songJobs.count < (inBackground ? Self.backgroundJobs : Self.foregroundJobs) {
         let skip = Set(songJobs.values).union(failed.keys).union(withCache)
-        guard let next = OfflineRules.nextToDownload(manifest.pins, songs: manifest.songs, skip: skip) else { break }
+        guard let next = OfflineRules.nextToDownload(manifest.pins, songs: manifest.songs, skip: skip, satisfies: satisfies) else { break }
         if adopt(next) { continue }
         if await cache.isDownloading(next.fileId) {
           withCache.insert(next.fileId)  // the player is fetching it: its whole file is recorded when it lands
           continue
         }
-        guard makeRoom(for: Int64(next.size)) else {
+        guard makeRoom(for: quality(for: next).size(of: next)) else {
           fail(next.fileId, OfflineRules.noRoom)
           continue
         }
         start(next)
       }
     } while pumpAgain
-    if songJobs.isEmpty, withCache.isEmpty, OfflineRules.nextToDownload(manifest.pins, songs: manifest.songs, skip: Set(failed.keys)) == nil {
+    if songJobs.isEmpty, withCache.isEmpty,
+      OfflineRules.nextToDownload(manifest.pins, songs: manifest.songs, skip: Set(failed.keys), satisfies: satisfies) == nil
+    {
       keepNextTransition()
     }
   }
 
-  /// A song's whole file the stream cache already has (played before): taken on rather than downloaded again.
+  /// The quality a download's song comes at: the download quality, unless the server can't encode it.
+  private func quality(for track: Track) -> StreamQuality {
+    let quality = settings.downloadQuality.of(track)
+    guard let kbps = quality.kbps, support.allows(track.fileId), backend.encodedRequest(track, kbps: kbps, start: 0) != nil else { return .original }
+    return quality
+  }
+
+  /// A download's song kept at the quality downloads want, or better.
+  private func satisfies(_ track: Track, _ kept: KeptFile) -> Bool {
+    OfflineFolder.quality(ofSongPath: kept.file).atLeast(quality(for: track))
+  }
+
+  /// A song's whole file the stream cache already has (played before) at the quality wanted or better: taken on rather
+  /// than downloaded again.
   private func adopt(_ track: Track) -> Bool {
-    let path = folder.songPath(track)
-    guard manifest.songs[track.fileId] == nil, let bytes = folder.size(of: path), bytes > 0 else { return false }
-    record(track.fileId, path: path, bytes: bytes)
-    return true
+    guard manifest.songs[track.fileId] == nil else { return false }
+    let wanted = quality(for: track)
+    for kind in [StreamQuality.original, .high, .normal] where kind.atLeast(wanted) {
+      let path = folder.songPath(track, quality: kind)
+      guard let bytes = folder.size(of: path), bytes > 0 else { continue }
+      record(track.fileId, path: path, bytes: bytes)
+      return true
+    }
+    return false
   }
 
   private func start(_ track: Track) {
-    let id = folder.jobID(folder.songPath(track))
+    let quality = quality(for: track)
+    let id = folder.jobID(folder.songPath(track, quality: quality))
     songJobs[id] = track.fileId
-    transport.start(TransportJob(id: id, request: allowed(backend.streamRequest(track)), resumeData: resumeData(id)))
+    var request = backend.streamRequest(track)
+    if let kbps = quality.kbps, let encoded = backend.encodedRequest(track, kbps: kbps, start: 0) {
+      request = encoded
+      encodedJobs[id] = quality
+    }
+    transport.start(TransportJob(id: id, request: allowed(request), resumeData: resumeData(id)))
   }
 
   /// A request with mobile data (and personal hotspots) allowed only if the setting says so.
@@ -422,7 +475,9 @@ public final class DownloadStore {
     Task { [cache] in await cache.remove(set) }
   }
 
+  /// A song's whole file is here: kept, in place of a copy at another quality, which goes.
   private func record(_ fileId: Int, path: String, bytes: Int64) {
+    if let before = manifest.songs[fileId], before.file != path { folder.remove(before.file) }
     manifest.songs[fileId] = KeptFile(file: path, bytes: bytes, usedAt: now())
     save()
   }
@@ -455,15 +510,18 @@ public final class DownloadStore {
       let size = manifest.pins.values.lazy.flatMap(\.tracks).first { $0.fileId == fileId }?.size ?? 0
       active = Active(fileId: fileId, loaded: written, total: expected > 0 ? expected : Int64(size))
 
-    case .finished(let id, let bytes):
+    case .finished(let id, var bytes):
       clearResumeData(id)
       let fileId = songJobs.removeValue(forKey: id)
+      encodedJobs[id] = nil
       if active?.fileId == fileId { active = nil }
       if stopping.remove(id) != nil {
         if fileId == nil || !OfflineRules.pinnedSongs(manifest.pins).contains(fileId ?? 0) { folder.remove(path) }
       } else if path.hasPrefix("offline/transitions/") {
         transitionFileArrived(id, path: path, bytes: bytes)
       } else if let fileId = fileId ?? Self.songId(path) {
+        // An encoded stream comes whole, padding and all, from the system: kept without its padding.
+        if OfflineFolder.quality(ofSongPath: path) != .original { bytes = StreamPadding.trim(folder.url(path)) ?? bytes }
         record(fileId, path: path, bytes: bytes)
         fitLimit()
       }
@@ -472,10 +530,27 @@ public final class DownloadStore {
     case .failed(let id, let failure, let resume):
       if let resume { saveResumeData(resume, id) }
       let fileId = songJobs.removeValue(forKey: id)
+      let encoded = encodedJobs.removeValue(forKey: id) != nil
       if active?.fileId == fileId { active = nil }
       let onPurpose = stopping.remove(id) != nil
       if path.hasPrefix("offline/transitions/") {
         if !onPurpose { transitionFileFailed(id, failure) }
+      } else if let fileId, !onPurpose, encoded, case .server(let status, let message) = failure {
+        clearResumeData(id)
+        folder.remove(path)
+        if status == 503 {
+          // The server is encoding all the songs it takes at once: this one again in a while, still at its quality.
+          fail(fileId, message ?? "The server is busy")
+          Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            self?.retry()
+          }
+        } else {
+          // No encoded stream for it (an old server, a song it can't encode, an encode that failed): its own file, for
+          // the rest of the session.
+          Log.downloads.info("Song file \(fileId) has no encoded stream (\(status)): its own file")
+          support.failed(fileId, status: status, message: message)
+        }
       } else if let fileId, !onPurpose {
         // Cancelled without us: the system stopped it (the app closed from the switcher), picked up again from its
         // resume data.

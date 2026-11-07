@@ -11,6 +11,7 @@ let package = Package(
     .target(name: "PlayarrPlayer", dependencies: ["PlayarrAPI", "ObjCExceptions"]),
     // Catches the Objective-C exceptions AVFoundation raises, which Swift can't (see ObjCExceptions.h).
     .target(name: "ObjCExceptions"),
-    .testTarget(name: "PlayarrPlayerTests", dependencies: ["PlayarrPlayer", "ObjCExceptions"]),
+    // Fixtures: an encoded stream as the server sends it (Apple's AAC in the server's fragmented MP4, padding included).
+    .testTarget(name: "PlayarrPlayerTests", dependencies: ["PlayarrPlayer", "ObjCExceptions"], resources: [.copy("Fixtures")]),
   ]
 )

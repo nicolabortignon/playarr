@@ -30,4 +30,27 @@ struct OfflineFolderTests {
     folder.removeAll()
     #expect(folder.songFiles().isEmpty)
   }
+
+  @Test func namesASongsEncodedStreamByItsQualityAndReadsItBack() {
+    #expect(OfflineFolder.songFileName(song(12), quality: .normal) == "12.normal.m4a")
+    #expect(OfflineFolder.songFileName(song(12), quality: .high) == "12.high.m4a")
+    #expect(OfflineFolder.songFileName(song(12), quality: .original) == "12.flac")
+    #expect(OfflineFolder.quality(ofSongPath: "stream/12.normal.m4a") == .normal)
+    #expect(OfflineFolder.quality(ofSongPath: "stream/12.high.m4a") == .high)
+    #expect(OfflineFolder.quality(ofSongPath: "stream/12.m4a") == .original)
+    #expect(OfflineFolder.quality(ofSongPath: "stream/12.flac") == .original)
+    #expect(OfflineFolder.fileId(ofName: "12.normal.m4a") == 12)
+  }
+
+  @Test func aSongOnDiskAtTwoQualitiesKeepsTheBetter() throws {
+    let folder = OfflineFolder(root: temporaryDirectory().appending(path: "srv/1"))
+    folder.prepare()
+    try Data(count: 10).write(to: folder.stream.appending(path: "12.flac"))
+    try Data(count: 4).write(to: folder.stream.appending(path: "12.normal.m4a"))
+    try Data(count: 6).write(to: folder.stream.appending(path: "13.high.m4a"))
+    try Data(count: 4).write(to: folder.stream.appending(path: "13.normal.m4a"))
+    #expect(folder.songFiles().mapValues(\.path) == [12: "stream/12.flac", 13: "stream/13.high.m4a"])
+    #expect(folder.size(of: "stream/12.normal.m4a") == nil)
+    #expect(folder.size(of: "stream/13.normal.m4a") == nil)
+  }
 }

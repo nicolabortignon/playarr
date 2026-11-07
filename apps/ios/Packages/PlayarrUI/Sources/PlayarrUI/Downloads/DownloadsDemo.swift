@@ -91,6 +91,7 @@
     func radio(seeds: [String], exclude: [String], count: Int) async throws -> [Track] { [] }
     func streamRequest(_ track: Track) -> URLRequest { URLRequest(url: URL(filePath: "/dev/null")) }
     func levelledRequest(_ track: Track) -> URLRequest { URLRequest(url: URL(filePath: "/dev/null")) }
+    func encodedRequest(_ track: Track, kbps: Int, start: Int64) -> URLRequest? { nil }
     func artwork(_ track: Track, size: Int) async -> Data? { nil }
     func transition(_ request: TransitionRequest) async throws -> TransitionAnswer { .unavailable(.init(reason: "Demo")) }
     func mixMaps(_ recordingIds: [String]) async throws -> [String: MixMapEntry] { [:] }

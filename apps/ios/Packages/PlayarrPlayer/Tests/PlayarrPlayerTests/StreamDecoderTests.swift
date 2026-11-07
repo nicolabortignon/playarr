@@ -35,6 +35,31 @@ struct StreamDecoderTests {
     #expect(pcm.left.allSatisfy { $0 == 0 })
   }
 
+  /// The server's encoded stream (plan 2 §1): Apple's AAC in the server's fragmented MP4, decoded as it arrives and
+  /// trimmed by the packet table its iTunSMPB gives. Every sample where the song has it: the song's length exactly,
+  /// the same samples as AVAudioFile gives (Core Audio's ExtAudioFile, which the server's alignment test measured
+  /// exact), each click on its sample.
+  @Test func decodesAnEncodedStreamAsItArrivesToTheSample() throws {
+    let data = try Data(contentsOf: StreamPaddingTests.fixture)
+    let streamed = try AudioFiles.decodeStreaming(data, container: "m4a", chunk: 1_000)
+    #expect(streamed.frames == 132_300)
+    let decoder = try FileDecoder(url: StreamPaddingTests.fixture)
+    var file = PCMBlock(left: [], right: [])
+    while let block = try decoder.decode(maxFrames: 8192) {
+      file.left += block.left
+      file.right += block.right
+    }
+    #expect(file.frames == streamed.frames)
+    let worst = zip(file.left, streamed.left).map { abs($0 - $1) }.max() ?? 1
+    #expect(worst < 1e-5)
+    // The clicks (0.9 over noise at 0.1), each the loudest sample around its place.
+    for mark in [10_000, 30_011, 50_022, 70_033, 90_044, 110_055] {
+      let around = (mark - 500)...(mark + 500)
+      let loudest = around.max { abs(streamed.left[$0]) < abs(streamed.left[$1]) }!
+      #expect(abs(loudest - mark) <= 1, "click at \(mark) heard at \(loudest)")
+    }
+  }
+
   @Test func saysWhenItCannotStreamAFormatSoTheCallerFallsBack() throws {
     #expect(StreamDecoder.fileType(forContainer: "ogg") == nil)
     let decoder = try StreamDecoder(fileType: kAudioFileFLACType)

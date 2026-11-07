@@ -57,6 +57,15 @@ struct PlaybackPanel: View {
           case .dj: Text("Songs are mixed like a DJ would, when their beats allow: long blends, quick mixes or straight on. Songs that can’t be mixed on the beat fade into each other for this long. How many songs are ready for DJ mix: Settings → Analysis.")
           }
         }
+        Section {
+          Picker("On Wi-Fi", selection: $settings.wifiQuality) { qualities }
+          Picker("On mobile data", selection: $settings.cellularQuality) { qualities }
+          Picker("Downloads", selection: downloadQuality) { qualities }
+        } header: {
+          Text("Streaming quality")
+        } footer: {
+          Text("Original streams each song’s own file as it is: lossless takes 300 MB an hour or more. High and Normal stream it made smaller on the server as it plays: High at 256 kbps, about 120 MB an hour and hard to tell from the original; Normal at 128 kbps, about 60 MB. A file already that small plays as it is. Choose a better quality for downloads and those downloaded below it are fetched again.")
+        }
       }
       .disabled(locked)
       if let downloads {
@@ -67,6 +76,21 @@ struct PlaybackPanel: View {
     .navigationTitle("Playback")
     .onReceive(NotificationCenter.default.publisher(for: HardwareKeyboard.changes[0])) { _ in keyboard.recheck() }
     .onReceive(NotificationCenter.default.publisher(for: HardwareKeyboard.changes[1])) { _ in keyboard.recheck() }
+  }
+
+  @ViewBuilder private var qualities: some View {
+    Text("Original").tag(StreamQuality.original)
+    Text("High").tag(StreamQuality.high)
+    Text("Normal").tag(StreamQuality.normal)
+  }
+
+  /// Downloads' quality goes through the store, which fetches again the songs kept below a better one.
+  private var downloadQuality: Binding<StreamQuality> {
+    Binding(
+      get: { settings.downloadQuality },
+      set: { quality in
+        if let downloads { downloads.downloadQuality = quality } else { settings.downloadQuality = quality }
+      })
   }
 
   private var onPad: Bool {

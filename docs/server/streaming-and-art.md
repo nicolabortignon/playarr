@@ -111,6 +111,8 @@ Bare ADTS starts at once in AVPlayer, but 2112 samples late and with a guessed d
 
 ### For the iOS app
 
+The app does all this (docs/ios/audio-engine.md §3, offline.md §5):
+
 - Ask for `aac`, or `levelled.aac` with the song's gain, never Opus; `kbps` 128 or 256; `start` 0 for a song from its start.
 - Read it as an M4A file (AudioFileStream opened with `kAudioFileM4AType`, as `StreamDecoder` opens an `m4a`; or AVAudioFile and AVAssetReader on a copy on the device) and trim by its packet table (`kAudioFileStreamProperty_PacketTableInfo`): after the 2112 primed samples, the first decoded sample is the song's sample `start`; stop after `mNumberValidFrames`.
 - To seek, ask for a new stream from `start` (samples at 44.1 kHz), or seek within what's downloaded by its fragments.

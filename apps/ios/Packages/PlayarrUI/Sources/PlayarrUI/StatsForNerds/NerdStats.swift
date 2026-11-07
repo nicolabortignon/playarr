@@ -84,19 +84,22 @@ public enum NerdStats {
     public var reports: [MixReport.Kind: MixReport]
     public var decks: [DeckSnapshot]
     public var continuation: EngineItem.Continuation?
+    /// The quality the song streams at, encoded by the server (plan 2 §1); nil for its own file or a copy on the device.
+    public var encoded: StreamQuality?
 
     public init(track: Track, time: Double, duration: Double, buffered: Double, loading: Bool, playing: Bool, error: String? = nil,
       map: MixMapEntry? = nil, level: TrackLevel? = nil, metadata: TrackMetadata? = nil, gainDb: Double = 0, levelVolume: Bool = true,
       albumGain: Bool = false, transitions: PlaybackSettings.Transitions = .dj, crossfade: Double = 0, mixMode: MixMode = .auto,
       next: Track? = nil, upcoming: TransitionPlanner.Result? = nil, djWanted: Bool = false, mixMissed: Bool = false,
       mix: AudioEngine.MixInProgress? = nil, engineNow: SampleTime = 0, reports: [MixReport.Kind: MixReport] = [:], decks: [DeckSnapshot] = [],
-      continuation: EngineItem.Continuation? = nil
+      continuation: EngineItem.Continuation? = nil, encoded: StreamQuality? = nil
     ) {
       self.track = track; self.time = time; self.duration = duration; self.buffered = buffered; self.loading = loading
       self.playing = playing; self.error = error; self.map = map; self.level = level; self.metadata = metadata; self.gainDb = gainDb
       self.levelVolume = levelVolume; self.albumGain = albumGain; self.transitions = transitions; self.crossfade = crossfade
       self.mixMode = mixMode; self.next = next; self.upcoming = upcoming; self.djWanted = djWanted; self.mixMissed = mixMissed
       self.mix = mix; self.engineNow = engineNow; self.reports = reports; self.decks = decks; self.continuation = continuation
+      self.encoded = encoded
     }
   }
 
@@ -215,7 +218,7 @@ public enum NerdStats {
     ])
     list += i.decks.filter { $0.title != nil }.map { Row(label: "Deck \($0.name)", value: .text(deck($0))) }
     list += rows([
-      ("URL", i.continuation?.url ?? i.track.streamUrl),
+      ("URL", i.continuation?.url ?? i.encoded?.kbps.map { "\(i.track.streamUrl)/aac?kbps=\($0)" } ?? i.track.streamUrl),
       ("Format", NerdFormat.format(i.track.format)),
       ("Transitions", i.transitions == .dj ? "DJ mix · \(i.mixMode.rawValue)" : i.transitions == .crossfade ? "crossfade \(Int(i.crossfade)) s" : "gapless"),
       ("Mix in", i.reports[.mixIn].map(report) ?? "none yet"),
@@ -225,13 +228,15 @@ public enum NerdStats {
     return Group(title: "Playback", rows: list)
   }
 
-  /// What's heard: the server's transition, a mix played live, the server's rest of a song, or its own file.
+  /// What's heard: the server's transition, a mix played live, the server's rest of a song, its encoded stream or its
+  /// own file.
   static func stream(_ i: Input) -> String {
     if let mix = i.mix, i.engineNow < mix.end {
       return mix.way == .server ? "DJ transition, made on the server" : "mixed live on this device"
     }
     if let rest = i.continuation, i.time >= rest.from { return "the rest after the transition, from \(NerdFormat.at(rest.from))" }
-    return i.gainDb != 0 ? "its own file, leveled on this device at \(NerdFormat.dB(i.gainDb))" : "its own file"
+    let what = i.encoded?.kbps.map { "its encoded stream, AAC \($0) kbps" } ?? "its own file"
+    return i.gainDb != 0 ? "\(what), leveled on this device at \(NerdFormat.dB(i.gainDb))" : what
   }
 
   /// "Song 2 · at 3:12.0 · 9.5 s decoded, 2.5 s scheduled · +2.0 dB".

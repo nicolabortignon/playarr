@@ -26,6 +26,42 @@ struct DownloadTests {
     #expect(try Data(contentsOf: d.file) == body)
   }
 
+  /// An encoded stream's download ends where its padding starts (plan 2 §1): the bytes before it are the whole file.
+  @Test func anEncodedStreamEndsAtItsPadding() async throws {
+    let stream = try Data(contentsOf: StreamPaddingTests.fixture)
+    StubServer.serve("/stream/20/aac", .init(body: stream, chunk: 4096))
+    let folder = temporaryDirectory()
+    let d = Download(
+      request: StubServer.request("/stream/20/aac"), file: folder.appending(path: "20.normal.m4a.part"),
+      finalFile: folder.appending(path: "20.normal.m4a"), retryDelay: .milliseconds(5), endsAtPadding: true,
+      configuration: StubServer.configuration)
+    let finished = Flag()
+    d.onFinish { finished.set() }
+    d.start()
+    try await d.waitUntilFinished()
+    #expect(d.isFinished && finished.isSet)
+    #expect(d.received == StreamPaddingTests.audioBytes)
+    #expect(d.file.lastPathComponent == "20.normal.m4a")
+    #expect(try Data(contentsOf: d.file) == stream.prefix(Int(StreamPaddingTests.audioBytes)))
+    #expect(try await d.bytes(at: StreamPaddingTests.audioBytes, maxLength: 10).isEmpty)
+  }
+
+  @Test func anEncodedStreamCutOffIsTakenUpFromWhereItStoppedAndStillEndsAtItsPadding() async throws {
+    let stream = try Data(contentsOf: StreamPaddingTests.fixture)
+    StubServer.serve("/stream/21/aac", .init(body: stream, chunk: 1000, breakAfter: 12_000, breaks: 1))
+    let folder = temporaryDirectory()
+    let part = folder.appending(path: "21.normal.m4a.part")
+    // An earlier run's first 5000 bytes, then this one's: the walk to the padding goes through both.
+    try stream.prefix(5000).write(to: part)
+    let d = Download(
+      request: StubServer.request("/stream/21/aac"), file: part, finalFile: folder.appending(path: "21.normal.m4a"),
+      retryDelay: .milliseconds(5), endsAtPadding: true, configuration: StubServer.configuration)
+    d.start()
+    try await d.waitUntilFinished()
+    #expect(try Data(contentsOf: d.file) == stream.prefix(Int(StreamPaddingTests.audioBytes)))
+    #expect(StubServer.requests("/stream/21/aac").first == "bytes=5000-")
+  }
+
   @Test func aBrokenConnectionIsAskedAgainFromWhereItStoppedThreeTimes() async throws {
     StubServer.serve("/stream/2", .init(body: body, breakAfter: 50_000, breaks: 3))
     let d = download("/stream/2")

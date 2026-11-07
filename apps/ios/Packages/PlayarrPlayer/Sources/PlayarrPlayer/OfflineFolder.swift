@@ -37,8 +37,18 @@ public struct OfflineFolder: Sendable, Equatable {
   public var manifest: URL { root.appending(path: "offline.json") }
 
   /// A song's file, as the stream cache names it.
-  public static func songFileName(_ track: Track) -> String { "\(track.fileId).\(track.format.container.lowercased())" }
-  public func songPath(_ track: Track) -> String { "stream/\(Self.songFileName(track))" }
+  /// A song's file in `stream/`: its own file (`12.flac`), or its encoded stream at a quality (`12.normal.m4a`).
+  public static func songFileName(_ track: Track, quality: StreamQuality = .original) -> String {
+    quality == .original ? "\(track.fileId).\(track.format.container.lowercased())" : "\(track.fileId).\(quality.rawValue).m4a"
+  }
+  public func songPath(_ track: Track, quality: StreamQuality = .original) -> String { "stream/\(Self.songFileName(track, quality: quality))" }
+  /// "12.normal.m4a" → 12.
+  static func fileId(ofName name: String) -> Int? { Int(name.prefix { $0 != "." }) }
+  /// The quality of a song's file, by its name or path: an encoded stream's says it, a song's own file doesn't.
+  public static func quality(ofSongPath path: String) -> StreamQuality {
+    let parts = (path as NSString).lastPathComponent.split(separator: ".")
+    return parts.count == 3 && parts[2] == "m4a" ? StreamQuality(rawValue: String(parts[1])) ?? .original : .original
+  }
   public func transitionPath(_ name: String) -> String { "offline/transitions/\(name)" }
   public func url(_ path: String) -> URL { root.appending(path: path) }
 
@@ -72,11 +82,18 @@ public struct OfflineFolder: Sendable, Equatable {
     public var modified: Date
   }
 
-  /// Songs' whole files in `stream/`, by file id (not `.part` files or a seek's levelled stream).
+  /// Songs' whole files in `stream/`, by file id (not `.part` files or a seek's levelled stream). A song kept at two
+  /// qualities (the app closed between a better file arriving and the other going): the better, the other removed.
   public func songFiles() -> [Int: FoundFile] {
     var out: [Int: FoundFile] = [:]
     for (name, found) in files(in: stream, prefix: "stream/") {
-      guard !name.hasSuffix(".part"), let dot = name.firstIndex(of: "."), let id = Int(name[..<dot]) else { continue }
+      guard !name.hasSuffix(".part"), name.contains("."), let id = Self.fileId(ofName: name) else { continue }
+      if let have = out[id] {
+        let better = Self.quality(ofSongPath: found.path).atLeast(Self.quality(ofSongPath: have.path)) ? found : have
+        remove(better == found ? have.path : found.path)
+        out[id] = better
+        continue
+      }
       out[id] = found
     }
     return out

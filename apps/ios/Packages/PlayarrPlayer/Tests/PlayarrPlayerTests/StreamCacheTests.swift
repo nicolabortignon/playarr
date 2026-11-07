@@ -13,7 +13,7 @@ struct StreamCacheTests {
   @Test func prefetchesOneSongAtATimeInOrder() async throws {
     for id in 201...203 { StubServer.serve("/stream/\(id)", .init(body: body)) }
     let cache = cache()
-    await cache.prefetch((201...203).map { (song($0), StubServer.request("/stream/\($0)")) })
+    await cache.prefetch((201...203).map { (song($0), .original, StubServer.request("/stream/\($0)")) })
     for _ in 0..<500 where await cache.completedFile(for: song(203)) == nil { try await Task.sleep(for: .milliseconds(2)) }
     #expect(await cache.completedFile(for: song(203)) != nil)
     #expect(StubServer.requests("/stream/201").count == 1)

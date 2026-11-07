@@ -25,6 +25,14 @@ final class FakeBackend: PlayerBackend {
   }
   func streamRequest(_ track: Track) -> URLRequest { StubServer.request(track.streamUrl) }
   func levelledRequest(_ track: Track) -> URLRequest { StubServer.request(track.streamUrl + "/levelled.wav") }
+  /// `/stream/:id/aac?kbps=&start=`, as the real server's; nil: a backend without encoded streams.
+  let encodes = Shared(true)
+  func encodedRequest(_ track: Track, kbps: Int, start: Int64) -> URLRequest? {
+    guard encodes.value else { return nil }
+    var components = URLComponents(url: StubServer.base.appending(path: track.streamUrl + "/aac"), resolvingAgainstBaseURL: false)!
+    components.queryItems = [URLQueryItem(name: "kbps", value: String(kbps))] + (start > 0 ? [URLQueryItem(name: "start", value: String(start))] : [])
+    return URLRequest(url: components.url!)
+  }
   func artwork(_ track: Track, size: Int) async -> Data? { nil }
 
   /// Answers for POST /api/transitions by "<from id>-<to id>", in turn (the last one repeats); unavailable otherwise.

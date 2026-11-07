@@ -20,6 +20,24 @@ struct PlaybackSettingsTests {
     #expect(!again.levelVolume)
   }
 
+  @Test func streamsAtTheWebsQualitiesForEachNetworkAndKeepsWhatIsPicked() {
+    let defaults = UserDefaults(suiteName: UUID().uuidString)!
+    let settings = PlaybackSettings(defaults: defaults)
+    #expect(settings.wifiQuality == .original)
+    #expect(settings.cellularQuality == .normal)
+    #expect(settings.downloadQuality == .original)
+    #expect(settings.streamQuality(on: .wifi) == .original)
+    #expect(settings.streamQuality(on: .cellular) == .normal)
+    #expect(settings.streamQuality(on: .constrained) == .normal)
+    settings.wifiQuality = .high
+    settings.cellularQuality = .original
+    settings.downloadQuality = .normal
+    let again = PlaybackSettings(defaults: defaults)
+    #expect(again.streamQuality(on: .wifi) == .high)
+    #expect(again.streamQuality(on: .cellular) == .original)
+    #expect(again.downloadQuality == .normal)
+  }
+
   @Test func onlyCrossfadeFades() {
     let settings = PlaybackSettings(defaults: UserDefaults(suiteName: UUID().uuidString)!)
     settings.crossfade = 6

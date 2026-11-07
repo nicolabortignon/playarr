@@ -1,9 +1,9 @@
 import Foundation
 import PlayarrAPI
 
-/// Songs' own files on disk, fetched ahead of playback: one `Download` per file at a time, shared by whoever reads
-/// it. Files are named by file id (`<fileId>.<ext>`, `.part` while incomplete), one folder per server and account
-/// (the caller's `directory`). The least recently played go first past `maxBytes`, until a ledger keeps the books
+/// Songs' files on disk, fetched ahead of playback: one `Download` per file at a time, shared by whoever reads it.
+/// Files are named by file id: the song's own file `<fileId>.<ext>`, its encoded stream `<fileId>.<quality>.m4a`
+/// (plan 2 §1), `.part` while incomplete; one folder per server and account (the caller's `directory`). The least recently played go first past `maxBytes`, until a ledger keeps the books
 /// (`keepBooks(with:)`): then `DownloadStore` decides which songs go, with the user's limit and downloads' songs kept,
 /// and the cache's own limit only applies to the transition files the player fetched.
 public actor StreamCache {
@@ -11,9 +11,10 @@ public actor StreamCache {
   private let maxBytes: Int64
   private let configuration: @Sendable () -> URLSessionConfiguration
   private let retryDelay: Duration
-  private var downloads: [Int: Download] = [:]
+  /// By file name (`file(for:quality:)`'s).
+  private var downloads: [String: Download] = [:]
   private var transitions: [String: Download] = [:]
-  private var waiting: [(Track, URLRequest)] = []
+  private var waiting: [(Track, StreamQuality, URLRequest)] = []
   private var ledger: (@Sendable (Event) -> Void)?
 
   /// What the cache tells whoever keeps its books (phase 7's `DownloadStore`).
@@ -35,26 +36,35 @@ public actor StreamCache {
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   }
 
-  public func file(for track: Track) -> URL { directory.appending(path: "\(track.fileId).\(track.format.container.lowercased())") }
-
-  /// The whole file, if it's here. Marks it as just played.
-  public func completedFile(for track: Track) -> URL? {
-    let url = file(for: track)
-    guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return nil }
-    try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path(percentEncoded: false))
-    ledger?(.used(fileId: track.fileId))
-    return url
+  /// The song's file at a quality: its own file, or its encoded stream.
+  public func file(for track: Track, quality: StreamQuality = .original) -> URL {
+    directory.appending(path: OfflineFolder.songFileName(track, quality: quality))
   }
 
-  /// The download of this song's file, started (or continued from what's here) if it isn't running.
-  public func download(for track: Track, request: URLRequest) -> Download {
-    if let running = downloads[track.fileId], running.isActive || running.isFinished { return running }
-    let final = file(for: track)
+  /// The song's whole file at `quality` or better, if it's here: its own file first, then the encoded streams, the
+  /// better first. Marks it as just played.
+  public func completedFile(for track: Track, atLeast quality: StreamQuality = .original) -> URL? {
+    for kind in [StreamQuality.original, .high, .normal] where kind.atLeast(quality) {
+      let url = file(for: track, quality: kind)
+      guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { continue }
+      try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path(percentEncoded: false))
+      ledger?(.used(fileId: track.fileId))
+      return url
+    }
+    return nil
+  }
+
+  /// The download of this song's file at `quality`, started (or continued from what's here) if it isn't running. An
+  /// encoded stream's ends where its padding starts.
+  public func download(for track: Track, quality: StreamQuality = .original, request: URLRequest) -> Download {
+    let final = file(for: track, quality: quality)
+    let name = final.lastPathComponent
+    if let running = downloads[name], running.isActive || running.isFinished { return running }
     let d = Download(
       request: request, file: final.appendingPathExtension("part"), finalFile: final, retryDelay: retryDelay,
-      configuration: configuration)
-    d.onFinish { [weak self] in Task { await self?.finished(track.fileId) } }
-    downloads[track.fileId] = d
+      endsAtPadding: quality != .original, configuration: configuration)
+    d.onFinish { [weak self] in Task { await self?.finished(name) } }
+    downloads[name] = d
     d.start()
     return d
   }
@@ -93,23 +103,34 @@ public actor StreamCache {
     return d
   }
 
+  /// An encoded stream from a later sample (a seek past what's here), into a file of its own removed on `discard`:
+  /// it ends at its padding.
+  public func temporaryEncoded(request: URLRequest) -> Download {
+    let d = Download(
+      request: request, file: directory.appending(path: "encoded-\(UUID().uuidString).m4a"), retryDelay: retryDelay,
+      endsAtPadding: true, configuration: configuration)
+    d.start()
+    return d
+  }
+
   public func discard(_ download: Download) {
     download.cancel()
     try? FileManager.default.removeItem(at: download.file)
   }
 
-  /// The songs to fetch ahead, in order (the next 3 on Wi-Fi, 1 on mobile data: see `PrefetchPolicy`): one at a time,
-  /// once nothing else is downloading. Replaces the earlier list.
-  public func prefetch(_ songs: [(Track, URLRequest)]) {
-    waiting = songs.filter { completedFile(for: $0.0) == nil }
+  /// The songs to fetch ahead, each at the quality it plays at, in order (the next 3 on Wi-Fi, 1 on mobile data: see
+  /// `PrefetchPolicy`): one at a time, once nothing else is downloading. Replaces the earlier list.
+  public func prefetch(_ songs: [(Track, StreamQuality, URLRequest)]) {
+    waiting = songs.filter { completedFile(for: $0.0, atLeast: $0.1) == nil }
     pump()
   }
 
   /// Stops the downloads of other songs (what's here stays, and continues later).
   public func keepOnly(_ fileIds: Set<Int>) {
-    for (id, d) in downloads where !fileIds.contains(id) && !d.isFinished {
+    for (name, d) in downloads where !d.isFinished {
+      guard let id = OfflineFolder.fileId(ofName: name), !fileIds.contains(id) else { continue }
       d.cancel()
-      downloads[id] = nil
+      downloads[name] = nil
     }
     waiting.removeAll { !fileIds.contains($0.0.fileId) }
   }
@@ -119,26 +140,40 @@ public actor StreamCache {
   public func keepBooks(with ledger: @escaping @Sendable (Event) -> Void) {
     self.ledger = ledger
     // Files that came in before there was a ledger.
-    for (id, d) in downloads where d.isFinished { report(id, d) }
+    for (name, d) in downloads where d.isFinished {
+      if let id = OfflineFolder.fileId(ofName: name) { report(id, d) }
+    }
   }
 
   /// Drops these songs' files, whole or partial; not one being downloaded right now (it's being played).
   public func remove(_ fileIds: Set<Int>) {
     let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))) ?? []
-    for id in fileIds where downloads[id]?.isActive != true {
-      downloads[id] = nil
+    for id in fileIds where !isDownloading(id) {
+      for (name, _) in downloads where OfflineFolder.fileId(ofName: name) == id { downloads[name] = nil }
       for name in names where name.hasPrefix("\(id).") {
         try? FileManager.default.removeItem(at: directory.appending(path: name))
       }
     }
   }
 
-  /// Whether this song's file is being fetched now (for playback or ahead of it).
-  public func isDownloading(_ fileId: Int) -> Bool { downloads[fileId]?.isActive == true }
+  /// Drops a song's other whole files than `name` (one at a quality it no longer plays at), not one being downloaded.
+  public func removeOthers(of fileId: Int, keeping name: String) {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))) ?? []
+    for other in names where other != name && !other.hasSuffix(".part") && OfflineFolder.fileId(ofName: other) == fileId {
+      guard downloads[other]?.isActive != true else { continue }
+      downloads[other] = nil
+      try? FileManager.default.removeItem(at: directory.appending(path: other))
+    }
+  }
 
-  private func finished(_ fileId: Int) {
+  /// Whether this song's file is being fetched now (for playback or ahead of it), at any quality.
+  public func isDownloading(_ fileId: Int) -> Bool {
+    downloads.contains { OfflineFolder.fileId(ofName: $0.key) == fileId && $0.value.isActive }
+  }
+
+  private func finished(_ name: String) {
     if ledger != nil {
-      if let d = downloads[fileId] { report(fileId, d) }
+      if let d = downloads[name], let id = OfflineFolder.fileId(ofName: name) { report(id, d) }
     } else {
       evict()
     }
@@ -157,8 +192,8 @@ public actor StreamCache {
 
   private func pump() {
     guard !downloads.values.contains(where: \.isActive), !waiting.isEmpty else { return }
-    let (track, request) = waiting.removeFirst()
-    _ = download(for: track, request: request)
+    let (track, quality, request) = waiting.removeFirst()
+    _ = download(for: track, quality: quality, request: request)
   }
 
   private func evict() {

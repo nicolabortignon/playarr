@@ -18,6 +18,8 @@ public struct DemoPlayerBackend: PlayerBackend {
   }
   public func streamRequest(_ track: Track) -> URLRequest { URLRequest(url: Demo.baseURL.appending(path: track.streamUrl)) }
   public func levelledRequest(_ track: Track) -> URLRequest { streamRequest(track) }
+  /// The demo's songs are silence: nothing to encode.
+  public func encodedRequest(_ track: Track, kbps: Int, start: Int64) -> URLRequest? { nil }
   public func artwork(_ track: Track, size: Int) async -> Data? { nil }
   /// The demo renders no transitions, but plans them from its songs' mix maps: a quick mix out of the last bars of the
   /// song playing (none within an album played in order, as the server's). Its file can't be fetched, so the phone

@@ -249,6 +249,69 @@ struct DownloadStoreTests {
     #expect(rig.store.room(for: [song(1), song(2)]) == .enough)
   }
 
+  // MARK: The download quality (plan 2 §1)
+
+  func encodedAlbum(_ ids: [Int]) -> (key: String, title: String, href: String, tracks: [Track]) {
+    ("album:1", "Dummy", "/albums/1", ids.map { encodable(song($0)) })
+  }
+
+  @Test func downloadsSongsAtTheDownloadQuality() async {
+    let rig = StoreRig()
+    rig.settings.downloadQuality = .normal
+    rig.store.add(encodedAlbum([4]))
+    let job = rig.job(4, "normal.m4a")
+    await eventually { rig.transport.runningIDs == [job] }
+    #expect(rig.transport.started[0].request.url?.path() == "/stream/4/aac")
+    #expect(rig.transport.started[0].request.url?.query() == "kbps=128")
+    rig.transport.finish(job, bytes: 500)
+    await eventually { rig.store.isKept(4) }
+    #expect(rig.store.manifest.songs[4]?.file == "stream/4.normal.m4a")
+    #expect(rig.store.downloadedFile(encodable(song(4)))?.lastPathComponent == "4.normal.m4a")
+    // A download's copy plays whatever the quality wanted.
+    #expect(rig.store.keeps(encodable(song(4)), atLeast: .original))
+  }
+
+  @Test func aCopyBelowTheDownloadQualityIsFetchedAgainAndReplaced() async {
+    let rig = StoreRig()
+    rig.settings.downloadQuality = .normal
+    rig.store.add(encodedAlbum([4]))
+    await eventually { rig.transport.runningIDs == [rig.job(4, "normal.m4a")] }
+    rig.transport.finish(rig.job(4, "normal.m4a"), bytes: 500)
+    await eventually { rig.store.isKept(4) }
+    rig.store.downloadQuality = .original
+    await eventually { rig.transport.runningIDs == [rig.job(4)] }
+    #expect(rig.transport.started.last?.request.url?.path() == "/stream/4")
+    rig.transport.finish(rig.job(4), bytes: 2000)
+    await eventually { rig.store.manifest.songs[4]?.file == "stream/4.flac" }
+    #expect(rig.folder.size(of: "stream/4.normal.m4a") == nil)
+    #expect(rig.folder.songFiles().keys.sorted() == [4])
+    // Lower again, the better copy stays.
+    rig.store.downloadQuality = .normal
+    try? await Task.sleep(for: .milliseconds(30))
+    #expect(rig.transport.runningIDs.isEmpty)
+    #expect(rig.store.manifest.songs[4]?.file == "stream/4.flac")
+  }
+
+  @Test func aSongTheServerCantEncodeDownloadsAsItsOwnFile() async {
+    let rig = StoreRig()
+    rig.settings.downloadQuality = .normal
+    rig.store.add(encodedAlbum([4]))
+    await eventually { rig.transport.runningIDs == [rig.job(4, "normal.m4a")] }
+    rig.transport.fail(rig.job(4, "normal.m4a"), .server(status: 404, message: "This source can’t encode songs"))
+    await eventually { rig.transport.runningIDs == [rig.job(4)] }
+    #expect(rig.store.failed.isEmpty)
+  }
+
+  @Test func aBusyServerLeavesTheSongForLaterStillEncoded() async {
+    let rig = StoreRig()
+    rig.settings.downloadQuality = .normal
+    rig.store.add(encodedAlbum([4, 5]))
+    await eventually { rig.transport.runningIDs == [rig.job(4, "normal.m4a")] }
+    rig.transport.fail(rig.job(4, "normal.m4a"), .server(status: 503, message: "Too many songs are being encoded"))
+    await eventually { rig.transport.runningIDs == [rig.job(5, "normal.m4a")] }
+    #expect(rig.store.failed == [4: "Too many songs are being encoded"])
+  }
+
   @Test func takesOnAWholeFileTheStreamCacheHasInsteadOfDownloadingItAgain() async throws {
     let rig = StoreRig()
     try await rig.play(4)
