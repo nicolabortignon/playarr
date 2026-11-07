@@ -20,6 +20,7 @@ Each server and account has one folder, `Application Support/Playarr/<serverId>/
 | `offline.json` | The manifest (`OfflineManifest`): every kept song file with its size and last use, downloads' transition files, and the downloads themselves. Written off the main thread a second after it last changed, and at once when the app goes to the background (`DownloadStore.flushSaves`). |
 | `queries/` | The query cache's answers (§8). |
 | `pending-plays.json`, `queue.json`, `resume.json` | Play reports waiting to go, the saved queue, and where it was in the song. |
+| `levels.json` | The even-volume levels of the songs heard most lately, so songs kept as you listen play leveled offline (`LevelStore`). |
 
 `OfflineFolder.prepare()` marks `stream/` and `offline/` `isExcludedFromBackup`: none of it goes to iCloud backups, since it can all be downloaded again. iOS never clears Application Support on its own. Covers are the exception: they live in `Caches/Playarr/<serverId>/<accountId>/images/` (`AccountSession.imageFolder`), which the system may empty.
 

@@ -119,7 +119,7 @@ With Settings → Playback → Transitions on DJ mix (`PlaybackSettings.transiti
 
 ## 6. Even volume
 
-`LevelStore` asks `POST /api/levels` for songs it doesn't know: 50 to a request, each song at most every 15 s. `JoinRules.levelDb` uses the album's level when the song before or after it in play order is its neighbour on the album (an album played in order keeps its quiet and loud songs), else the track's. The gain goes into `EngineItem.gainDb`, and from there into the PCM. A measured song seeks through the levelled stream at gain 0, and the phone applies the gain itself. Downloads keep their songs' levels, so they play levelled offline.
+`LevelStore` asks `POST /api/levels` for songs it doesn't know: 50 to a request, each song at most every 15 s. `JoinRules.levelDb` uses the album's level when the song before or after it in play order is its neighbour on the album (an album played in order keeps its quiet and loud songs), else the track's. The gain goes into `EngineItem.gainDb`, and from there into the PCM. A measured song seeks through the levelled stream at gain 0, and the phone applies the gain itself. Downloads keep their songs' levels, so they play levelled offline, and the levels of the 3,000 songs learned most lately are kept across launches (`levels.json`, `LevelStore.keptMax`), so songs kept as you listen do too. Each kept level is asked about again once a launch, online, in case its file was replaced since.
 
 ## 7. Keeping ahead
 

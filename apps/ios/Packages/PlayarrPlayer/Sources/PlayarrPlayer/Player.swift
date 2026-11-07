@@ -148,7 +148,7 @@ public final class Player {
     let cache = StreamCache(directory: folder.stream)
     let support = EncodeSupport()
     let downloads = DownloadStore(folder: folder, settings: settings, cache: cache, transport: transport, backend: backend, support: support)
-    let levels = LevelStore { ids in try await backend.levels(ids) }
+    let levels = LevelStore(file: directory.appending(path: "levels.json")) { ids in try await backend.levels(ids) }
     levels.remember(downloads.keptLevels)
     downloads.learnedLevels = { [weak levels] found in levels?.remember(found) }
     let reports = PlayReportQueue(file: directory.appending(path: "pending-plays.json")) { try await backend.reportPlays($0) }
@@ -365,6 +365,7 @@ public final class Player {
     saved.flush()
     saveResumePoint()
     downloads.flushSaves()
+    levels.flushSaves()
   }
 
   /// The account is switched away from: the song so far is reported, the queue saved, the engine stopped, and the lock

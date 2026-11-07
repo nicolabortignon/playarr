@@ -30,6 +30,39 @@ struct LevelStoreTests {
     #expect(server.requests.withLock { $0.last } == ["rec-9"])
   }
 
+  @Test func keepsLevelsAcrossLaunchesAndAsksAboutThemAgainOnce() async {
+    let server = Server()
+    let file = temporaryDirectory().appending(path: "levels.json")
+    let first = LevelStore(file: file) { try server.levels($0) }
+    await first.load([song(1), song(2)])
+    first.flushSaves()
+
+    // The next launch, offline: they're known at once.
+    server.failing.withLock { $0 = true }
+    let next = LevelStore(file: file) { try server.levels($0) }
+    #expect(next.levels["rec-1"]?.track == -4)
+    #expect(next.gainDb(for: song(1), in: QueueState(), enabled: true) != nil)
+    // Online, each is asked about once more (its file may have been replaced), then known.
+    server.failing.withLock { $0 = false }
+    server.requests.withLock { $0 = [] }
+    await next.load([song(1), song(2)])
+    #expect(server.requests.withLock { $0 } == [["rec-1", "rec-2"]])
+    await next.load([song(1), song(2)])
+    #expect(server.requests.withLock { $0.count } == 1)
+  }
+
+  @Test func keepsOnlyTheLevelsLearnedMostLately() async {
+    let server = Server()
+    let file = temporaryDirectory().appending(path: "levels.json")
+    let store = LevelStore(file: file) { try server.levels($0) }
+    await store.load((1...(LevelStore.keptMax + 10)).map { song($0 + 1000) })
+    store.flushSaves()
+    let next = LevelStore(file: file) { try server.levels($0) }
+    #expect(next.levels.count == LevelStore.keptMax)
+    #expect(next.levels["rec-1001"] == nil)
+    #expect(next.levels["rec-\(LevelStore.keptMax + 1010)"] != nil)
+  }
+
   @Test func asksAtMostFiftyAtATime() async {
     let server = Server()
     let store = LevelStore { try server.levels($0) }
