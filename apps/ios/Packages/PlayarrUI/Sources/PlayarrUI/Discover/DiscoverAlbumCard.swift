@@ -1,8 +1,8 @@
 import PlayarrAPI
 import SwiftUI
 
-/// An album from MusicBrainz: cover, title, artist and year, what kind it is (or how much of it is here), and its
-/// Request button. Opens the album when any of it is here, growing from the cover (`CoverZoom`), else the artist's
+/// An album from MusicBrainz: cover, title, artist and year, what kind it is, and its Request button (which says how
+/// much of it is here, when some is). Opens the album when any of it is here, growing from the cover (`CoverZoom`), else the artist's
 /// discography (components/Discover.tsx).
 struct DiscoverAlbumCard: View {
   let album: DiscoverAlbum
@@ -21,12 +21,8 @@ struct DiscoverAlbumCard: View {
     self.onArtistPage = onArtistPage
   }
 
-  private var kind: String {
-    let a = album.availability
-    let partial = a.state == .partial || (a.have != nil && a.albumId != nil)
-    if partial, let have = a.have, let total = a.total, total > 0 { return "\(have) of \(total)" }
-    return album.secondaryTypes.first ?? album.type
-  }
+  /// What it is ("Album", "Compilation"): how much of it is here is the Request button's to say ("3/5").
+  private var kind: String { album.secondaryTypes.first ?? album.type }
 
   /// The line under the title: "Massive Attack · 2010", or on the artist's own page "EP · 2019".
   static func byline(_ album: DiscoverAlbum, onArtistPage: Bool) -> String {

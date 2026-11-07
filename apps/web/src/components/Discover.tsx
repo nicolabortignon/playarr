@@ -202,13 +202,14 @@ export function DiscoverAlbumCard({
   useEffect(() => {
     if (highlighted) ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }, [highlighted]);
-  const { state: availabilityState, albumId: libraryAlbumId, have, total } = album.availability;
+  const { state: availabilityState, albumId: libraryAlbumId, have } = album.availability;
   const available = availabilityState === 'available';
   // Partly in the library: the album page plays what's there.
   const partial = availabilityState === 'partial' || (have !== undefined && libraryAlbumId !== undefined);
   const opensAlbum = (available || partial) && libraryAlbumId !== undefined;
   const to = opensAlbum ? `/albums/${libraryAlbumId}` : `/discover/artists/${album.artistMbid}`;
-  const kind = partial && have !== undefined && total ? `${have} of ${total}` : (album.secondaryTypes[0] ?? album.type);
+  // What it is: how much of it is here is the Request button's to say ("3/5"), opening the album.
+  const kind = album.secondaryTypes[0] ?? album.type;
   // An album in the library opens there, its cover growing into the page (plan 7 §1).
   const cover = useGrowingCover(opensAlbum ? libraryAlbumId : undefined, ref);
   return (
