@@ -13,6 +13,8 @@ The simulator can't check the items below. Their code is in the TestFlight build
 - [ ] **Siri and Shortcuts.** "Play my favorites in Playarr", "I'm feeling lucky in Playarr" and "Start radio from this song in Playarr" each work. The three appear in the Shortcuts app and can go on the Action button. With nothing playing, Start radio says "Nothing playing."
 - [ ] **Launch and icon.** Opening the app shows no white flash. The dark and tinted Home Screen icons look right.
 - [ ] **Bold Text and Increase Contrast.** Text gets bolder, and secondary text gets brighter.
+- [ ] **A dead spot.** Play a song that isn't downloaded, turn on Airplane Mode for 20 seconds partway through, then turn it off. The music stops where the buffer ran out, the toast says "Lost the connection: the song goes on from here once it's back", and the song plays on from that place by itself once the network is back.
+- [ ] **AirPlay.** The AirPlay button in Now Playing lists the speakers on the network. Playing to one (a HomePod if there's one) moves the music there and back, and the button turns to the accent while it plays elsewhere.
 
 ## iPad
 

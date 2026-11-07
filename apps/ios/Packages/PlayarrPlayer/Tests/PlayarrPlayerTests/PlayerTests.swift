@@ -173,7 +173,7 @@ struct PlayerTests {
     #expect(player.engine.currentItem?.gainDb == 0)
   }
 
-  @Test func aSongThatFailsShowsTheWebsMessageAndPauses() async throws {
+  @Test func aSongThatKeepsFailingShowsTheWebsMessageAndPausesOnceTriedAgain() async throws {
     struct Broken: PCMSource {
       func read(maxFrames: Int) async throws -> PCMBlock? { throw PlaybackError.keptBreakingOff }
       func close() async {}
@@ -181,10 +181,14 @@ struct PlayerTests {
     let player = try Player(
       backend: FakeBackend(), directory: temporaryDirectory(), settings: PlaybackSettings(defaults: UserDefaults(suiteName: UUID().uuidString)!),
       makeEngine: { try AudioEngine(manualRendering: true, makeSource: $0) }, makeSource: { _, _ in Broken() })
+    // A network failure is waited out and tried again first (PlayerDeadSpotTests): here, once.
+    player.stallRetries = [.milliseconds(5)]
     player.play([song(1)])
     await player.engine.settle()
+    await eventually { player.error != nil }
     #expect(player.error == "The song kept stopping loading: the Playarr server or the network is too busy")
     #expect(!player.queue.playing)
+    #expect(player.stalled == nil)
   }
 
   @Test func headphonesUnpluggedPause() async throws {

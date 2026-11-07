@@ -24,11 +24,15 @@ On desktop the audio already goes through Web Audio: apply the level with a gain
 - Settings → Server: "Reachable from outside over HTTPS?", checked from the server against its public address, with what to fix when it isn't.
 - **Done when** a fresh owner gets a working public HTTPS address following the docs in under 15 minutes.
 
-## 4. AirPlay — S
+## 4. AirPlay — S — done but for the HomePod trial
+
+*Done: the AirPlay button (`AirPlayButton`, an `AVRoutePickerView`) is in Now Playing and the iPad's player bar, since plans 5 and 6. Left: trying `longFormAudio` on a HomePod, on a device.*
 
 The store description promises AirPlay; there's no route picker in the app. An `AVRoutePickerView` in Now Playing and the iPad player bar; try `longFormAudio` routing on a HomePod (`AudioSessionController.swift`) and keep it if it behaves better. Add both to the device checklist.
 
-## 5. Playback rides out a dead spot — M
+## 5. Playback rides out a dead spot — M — done on iOS 2026-11-07
+
+*Done on iOS: downloads back off (1, 3, 8 s), and a song stopped by the network waits where it was and plays on when the network is back, or after 2 to 30 s while the phone is online (docs/ios/audio-engine.md, "Dead spots"). The songs, levels and transitions on the home address came with plan 1 §3. The web's part comes with this plan's server and web work.*
 
 - iOS: downloads back off (1, 3, 8 s…) instead of three quick retries; a failed song waits for the network (`NWPath`) and resumes at its time instead of stopping (`PlayarrPlayer/Download.swift`, `Player.swift` `handle(.failed)`, `networkChanged`). Songs, levels and transitions use the home address too once plan 1 makes that safe (plan 1 §3 has: `MediaURLs.onHomeAddress` gives a song's home address once `HomeAddress` has proven it on this network, and `request(for:)` then carries the token there).
 - Web: a watchdog on the playing deck (stuck in `waiting` more than about 8 s while online: reload from the current time); retries with backoff; out of retries offline, wait for `online`; online, move to the next song; a default timeout on API requests (`AudioEngine.tsx` `retryStream`, `lib/api.ts`).

@@ -86,10 +86,25 @@ public final class Player {
   @ObservationIgnored private var missedMixes: Set<UUID> = []
   /// The sleep timer ended the song in the middle of a mix: the music stops where the mix ends.
   @ObservationIgnored private var pauseAtMixEnd: SampleTime?
+  /// A song stopped by a dead spot, waiting to play on from where it was (`stall`).
+  @ObservationIgnored private(set) var stalled: Stall?
   @ObservationIgnored private var seekedSinceTick = false
 
   /// The next song's mix couldn't be placed in time: it follows gapless (Stats for nerds says so).
   public var upcomingMixMissed: Bool { upcoming.map { missedMixes.contains($0.item.id) } ?? false }
+
+  /// A song the network stopped (plan 2 §5): where it was, and how many times it has been tried again while the phone
+  /// said it was online.
+  struct Stall {
+    let entry: Entry
+    var at: Double
+    var tries = 0
+    var retry: Task<Void, Never>?
+  }
+
+  /// While the phone is online, a stalled song is tried again after these waits; then it gives up and says why (tests:
+  /// shorter).
+  @ObservationIgnored var stallRetries: [Duration] = [.seconds(2), .seconds(5), .seconds(10), .seconds(20), .seconds(30)]
 
   /// With DJ mix the engine keeps 2.5 s scheduled (not 10), so a press of Next mixes a few seconds after it.
   static let djScheduleAhead = 2.5
@@ -228,6 +243,7 @@ public final class Player {
     seekedSinceTick = true
     engine.seek(to: seconds)
     time = seconds
+    stalled?.at = seconds
     // The bars and the glow wait at the new place until the music plays from it.
     pulse.setClock(songTime: seconds, engineTime: 0, at: Pulse.hostNow(), playing: false, latency: session?.outputLatency ?? 0)
     showNowPlaying()
@@ -278,12 +294,14 @@ public final class Player {
   }
 
   /// The network changed (NetworkMonitor): keep-ahead plans again, downloads wait or go on, play reports waiting go out
-  /// once back online, and offline the next song joined is one on this device.
+  /// once back online, a song stopped by a dead spot plays on, and offline the next song joined is one on this device.
   public func networkChanged(_ kind: NetworkKind) {
     let wasOffline = lastNetwork == .offline
     lastNetwork = kind
     downloads.networkChanged(kind)
     if wasOffline && kind != .offline { Task { [reports] in await reports.retry() } }
+    // A song stopped by a dead spot plays on from where it was, on whatever network is here now.
+    if kind != .offline { playOnAfterStall() }
     updateUpcoming()
     prefetch()
   }
@@ -315,7 +333,9 @@ public final class Player {
   public func tick(now: Date = Date()) {
     engine.pump()
     tickPreview()
-    if loaded != nil { time = engine.position }
+    // The stalled song plays again: its dead spot is over. Until then the time stays where it stopped.
+    if engine.state == .playing { endStall() }
+    if loaded != nil { time = stalled?.at ?? engine.position }
     buffered = engine.bufferedAhead
     loading = engine.state == .loading || engine.state == .buffering
     if engine.state == .playing { tracker.tick(time) } else { tracker.pause() }
@@ -395,10 +415,15 @@ public final class Player {
       return
     }
     if network() == .offline, !downloads.isKept(track.fileId), skipToKept() { return loadCurrent(currentEntry) }
-    // Played again from the start (repeat one, "previous" near the start): it counts as heard through.
-    tracker.finish(loaded?.entry.index == entry.index ? .ended : .changed)
-    tracker.start(track)
-    let start = queue.startAt ?? (firstLoad ? queue.resumeAt : 0)
+    let resumed = stalled?.entry == entry ? stalled?.at : nil
+    if resumed == nil {
+      endStall()
+      // Played again from the start (repeat one, "previous" near the start): it counts as heard through.
+      tracker.finish(loaded?.entry.index == entry.index ? .ended : .changed)
+      tracker.start(track)
+    }
+    // A stalled song goes on from where it stopped, its play counted as one.
+    let start = queue.startAt ?? resumed ?? (firstLoad ? queue.resumeAt : 0)
     queue.startAt = nil
     firstLoad = false
     let item = EngineItem(track: track, gainDb: gainDb(track), startAt: start)
@@ -694,13 +719,53 @@ public final class Player {
         change { $0.next() }
       }
     case .failed(let id, let failure):
-      guard loaded?.item.id == id else { return }
+      guard let current = loaded, current.item.id == id else { return }
       if skipToKept() { return sync() }
+      if failure.isNetwork, stall(current.entry) { return }
+      endStall()
       error = failure.message
       notice = Notice(text: failure.message, isError: true)
       queue.playing = false
       showNowPlaying()
     }
+  }
+
+  /// The network stopped the song (a dead spot): it waits, paused where it was, and plays on from there once the
+  /// network is back (`networkChanged`). While the phone says it's online (its server, not the phone, out of reach),
+  /// it's tried again after each of `stallRetries`; false once they're used up, for the error to be shown.
+  private func stall(_ entry: Entry) -> Bool {
+    var stall = stalled?.entry == entry ? stalled! : Stall(entry: entry, at: time)
+    stall.retry?.cancel()
+    stall.retry = nil
+    if network() != .offline {
+      guard stall.tries < stallRetries.count else { return false }
+      let wait = stallRetries[stall.tries]
+      stall.tries += 1
+      stall.retry = Task { [weak self] in
+        try? await Task.sleep(for: wait)
+        if !Task.isCancelled { self?.playOnAfterStall() }
+      }
+    }
+    if stalled == nil { notice = Notice(text: OfflinePlayback.stalledNotice, isError: false) }
+    stalled = stall
+    time = stall.at
+    queue.playing = false
+    showNowPlaying()
+    return true
+  }
+
+  /// The network is back, or it's time to try again: the stalled song plays on from where it stopped. Not when the
+  /// listener has already pressed play, or moved on to another song.
+  private func playOnAfterStall() {
+    guard let stall = stalled, !queue.playing else { return }
+    guard stall.entry == currentEntry else { return endStall() }
+    queue.playing = true
+    sync()
+  }
+
+  private func endStall() {
+    stalled?.retry?.cancel()
+    stalled = nil
   }
 
   private func rebuildEngine() {

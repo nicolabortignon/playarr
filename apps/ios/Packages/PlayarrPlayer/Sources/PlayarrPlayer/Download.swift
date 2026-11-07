@@ -2,7 +2,8 @@ import Foundation
 import Synchronization
 
 /// One file fetched over HTTP into a local file, from a byte on, readable while it arrives. A connection that breaks
-/// is asked again from the byte it stopped at, up to `retries` times (3, as `STREAM_RETRIES` on the web).
+/// is asked again from the byte it stopped at, up to `retries` times (3, as `STREAM_RETRIES` on the web), backing off
+/// further each time (`backoff`): a dead spot of a few seconds goes by without the song failing.
 ///
 /// URLSession calls the delegate methods on its own queue while readers wait on other tasks, so all state sits in a
 /// `Mutex` (a checked `Sendable`, no `@unchecked` needed). Waiting readers are continuations resumed outside the lock.
@@ -46,6 +47,10 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
   private let state: Mutex<State>
   private let configuration: @Sendable () -> URLSessionConfiguration
   private let retryDelay: Duration
+  private let retries: Int
+
+  /// The waits before asking again, in `retryDelay`s: 1, 3 and 8 s by default (plan 2 §5).
+  static let backoff = [1, 3, 8]
 
   /// `file` already holding bytes (an earlier, interrupted download) is continued from its end. With `finalFile`,
   /// the file is moved there once complete.
@@ -56,6 +61,7 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
     self.request = request
     self.firstByte = firstByte
     self.retryDelay = retryDelay
+    self.retries = retries
     self.configuration = configuration
     let existing = (try? FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.size] as? Int64) ?? 0
     state = Mutex(State(file: file, finalFile: finalFile, received: existing, retriesLeft: retries))
@@ -207,7 +213,7 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
   }
 
   public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
-    enum Outcome { case done, failed(Failure), retry, nothing }
+    enum Outcome { case done, failed(Failure), retry(after: Duration), nothing }
     let (outcome, waiters, onFinish) = state.withLock { s -> (Outcome, [Waiter], (@Sendable () -> Void)?) in
       s.task = nil
       if s.cancelled { return (.nothing, [], nil) }
@@ -219,8 +225,9 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
         outcome = .failed(.server(status: s.status, message: PlaybackError.serverMessage(s.errorBody)))
       } else if broken {
         if s.retriesLeft > 0 {
+          let attempt = retries - s.retriesLeft
           s.retriesLeft -= 1
-          return (.retry, [], nil)
+          return (.retry(after: retryDelay * Self.backoff[min(attempt, Self.backoff.count - 1)]), [], nil)
         }
         outcome = .failed(.network)
       } else {
@@ -243,9 +250,9 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
       return (outcome, s.waiters, s.onFinish)
     }
     switch outcome {
-    case .retry:
-      Task { [retryDelay] in
-        try? await Task.sleep(for: retryDelay)
+    case .retry(let wait):
+      Task {
+        try? await Task.sleep(for: wait)
         self.state.withLock { s in if !s.cancelled { self.begin(&s) } }
       }
     case .failed(let failure):

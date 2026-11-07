@@ -4,6 +4,8 @@ import Foundation
 public enum OfflinePlayback {
   /// The web's toast when songs are skipped.
   public static let skippedNotice = "Offline: skipped songs that aren’t on this device"
+  /// A song stopped by a dead spot (`Player.stall`).
+  public static let stalledNotice = "Lost the connection: the song goes on from here once it’s back"
   /// A kept transition whose mix point is closer than this is passed over online, so the server plans from where the
   /// song is (`GIVE_UP_S`).
   public static let giveUpSeconds: Double = 20

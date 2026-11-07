@@ -19,6 +19,10 @@ public enum PlaybackError: Error, Sendable, Equatable {
     }
   }
 
+  /// The network let the song down (its server out of reach, or its stream breaking off), not the server or the file:
+  /// it can play on from where it stopped once the network is back.
+  public var isNetwork: Bool { self == .unreachable || self == .keptBreakingOff }
+
   /// What went wrong on this side, before asking the server.
   public enum Cause: Sendable { case network, decoding, format }
 
