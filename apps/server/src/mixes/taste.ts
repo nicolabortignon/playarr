@@ -3,19 +3,55 @@ import type { Track } from '@playarr/shared';
 import type { AudioFeatures } from '../analysis/dsp.ts';
 import { styleProfile, type StyleFamily } from '../analysis/styles.ts';
 import type { Play } from './history.ts';
+import {
+  calibrate,
+  grooveOf,
+  intensityOf,
+  moodOf,
+  shapeOfEnvelope,
+  shapeOfPhrases,
+  soundOf,
+  steadinessOf,
+  tensionOf,
+  traitsOf,
+  vocalsOf,
+  wordsOf,
+  type LyricsFact,
+  type SongShape,
+  type SongSound,
+  type Traits,
+  type Words,
+} from './mood.ts';
 import { hourDistance } from './time.ts';
 
-/** A library song with what the mixes know about it. */
+/** A library song with what the mixes know about it (mood.ts says how each quality is read). */
 export interface Song {
   track: Track;
   /** Style families, weights summing to 1 (empty when nothing is known). */
   families: Partial<Record<StyleFamily, number>>;
-  /** 0 (still) … 1 (intense), from the measured sound, else estimated from tags; undefined if unknown. */
+  /**
+   * 0 (still) … 1 (intense): once `calibrateSongs` has run, where the song stands among the library's measured songs;
+   * estimated from tags when its sound isn't measured; undefined if unknown.
+   */
   energy?: number;
+  /** Its sound was measured, not just guessed from its tags. */
+  measured: boolean;
   /** 0 … 1: how much its tags say calm, soft, relaxing. */
   calm: number;
-  /** 0 … 1: instrumental, steady music to work to. */
-  focus: number;
+  /** 0 (bleak) … 1 (bright and happy). */
+  mood: number;
+  /** 0 … 1: dark, eerie, aggressive or harsh. */
+  tension: number;
+  /** 0 … 1: how likely someone sings or raps in it. */
+  vocals: number;
+  /** 0 … 1: a steady beat to move to; unknown before beat analysis. */
+  groove?: number;
+  /** 0 … 1: how little its level moves; unknown without a shape. */
+  steadiness?: number;
+  shape?: SongShape;
+  sound?: SongSound;
+  words: Words;
+  traits: Traits;
   year?: number;
   /** When its album arrived in the library (ms). */
   addedAt?: number;
@@ -37,6 +73,10 @@ export interface SongFacts {
   addedAt?: string;
   releaseDate?: string;
   mix?: MixMapSummary;
+  /** Its mix map's phrase energy: how its level moves, phrase by phrase. */
+  phraseEnergy?: (number | null)[];
+  /** What a lyrics lookup found, if one was made. */
+  lyrics?: LyricsFact;
 }
 
 /** How intense each style feels, for songs whose sound hasn't been measured. */
@@ -55,46 +95,62 @@ const FAMILY_ENERGY: Record<StyleFamily, number> = {
   chill: 0.24,
   classical: 0.2,
 };
-const FOCUS_FAMILIES: Partial<Record<StyleFamily, number>> = { chill: 1, classical: 1, cinematic: 0.8, jazz: 0.6, experimental: 0.4, electronic: 0.3 };
-const FOCUS_TAGS = ['instrumental', 'post-rock', 'ambient', 'soundtrack', 'piano', 'lo-fi', 'lofi', 'minimal', 'neoclassical', 'study'];
 
 export function toSong(f: SongFacts): Song {
   // Tags from ListenBrainz describe the song; the catalog's genres are a fallback.
   const tags = f.tags.length ? f.tags : f.genres.map((g): [string, number] => [g, 1]);
   const style = styleProfile(tags);
   const families = style.families;
+  const words = wordsOf(tags, style);
+  const sound = soundOf(f.features, f.mix?.gridStable);
+  const shape = (f.phraseEnergy && shapeOfPhrases(f.phraseEnergy)) ?? (sound && f.features ? shapeOfEnvelope(f.features.envelope) : undefined);
   let energy: number | undefined;
-  if (f.features) {
-    const x = f.features;
-    if (x.bpm > 0) {
-      const tempo = Math.min(1, Math.max(0, (x.bpm - 70) / 110)) * x.pulse;
-      energy = clamp(0.35 * x.loudness + 0.3 * x.busyness + 0.2 * x.pulse + 0.15 * tempo);
-    } else {
-      // No beat analysis yet, so no tempo: from how loud and busy it sounds alone, on the same scale.
-      energy = clamp((0.35 * x.loudness + 0.3 * x.busyness) / 0.65);
-    }
-  } else if (Object.keys(families).length) {
+  if (sound) energy = intensityOf(sound, words);
+  else if (Object.keys(families).length) {
     let e = 0;
     for (const [family, w] of Object.entries(families)) e += FAMILY_ENERGY[family as StyleFamily] * w!;
     energy = clamp(e - style.calm * 0.25);
   }
-  const tagFocus = tags.some(([t]) => FOCUS_TAGS.some((w) => t.toLowerCase().includes(w))) ? 0.5 : 0;
-  let familyFocus = 0;
-  for (const [family, w] of Object.entries(families)) familyFocus += (FOCUS_FAMILIES[family as StyleFamily] ?? 0) * w!;
+  const groove = grooveOf(sound);
+  const steadiness = steadinessOf(shape);
   const year = f.albumYear ?? f.tagYear;
   const date = f.releaseDate?.slice(0, 10);
   return {
     track: f.track,
     families,
     ...(energy !== undefined ? { energy } : {}),
+    measured: sound !== undefined,
     calm: style.calm,
-    focus: clamp(familyFocus * 0.7 + tagFocus + (energy !== undefined && energy < 0.5 ? 0.15 : 0)),
+    mood: moodOf(f.mix?.key, words, sound?.bright),
+    tension: tensionOf(words, families),
+    vocals: vocalsOf(f.track.title, tags, families, f.lyrics),
+    ...(groove !== undefined ? { groove } : {}),
+    ...(steadiness !== undefined ? { steadiness } : {}),
+    ...(shape ? { shape } : {}),
+    ...(sound ? { sound } : {}),
+    words,
+    traits: traitsOf(f.track.title, f.track.duration, tags),
     ...(year ? { year } : {}),
     ...(f.addedAt ? { addedAt: Date.parse(f.addedAt) } : {}),
     // "YYYY-01-01" is how a bare year is stored: not a real day.
     ...(date && !date.endsWith('-01-01') ? { releaseDate: date } : {}),
     ...(f.mix ? { mix: f.mix } : {}),
   };
+}
+
+/**
+ * The songs with their sound placed among each other's (mood.ts `calibrate`): energy becomes where a song stands in
+ * the library, loudness judged next to music of its time, and its mood and groove are read from the same places. Songs
+ * whose sound wasn't measured keep their estimates.
+ */
+export function calibrateSongs(songs: Song[]): Song[] {
+  const placed = calibrate(songs);
+  return songs.map((song, i) => {
+    const p = placed[i];
+    if (!p) return song;
+    const groove = grooveOf(p.sound);
+    return { ...song, sound: p.sound, energy: p.intensity, mood: moodOf(song.mix?.key, song.words, p.sound.bright), ...(groove !== undefined ? { groove } : {}) };
+  });
 }
 
 export interface SongStats {

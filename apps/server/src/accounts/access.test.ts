@@ -219,7 +219,7 @@ describe('library access: listening', () => {
   async function listening() {
     const s = await setup();
     const history = new History(s.db, s.library);
-    const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), mixSummaries: () => new Map(), progress: () => ({ features: 0, meta: 0, mixMaps: 0 }) } as unknown as Analyzer;
+    const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), mixSummaries: () => new Map(), phraseEnergies: () => new Map(), progress: () => ({ features: 0, meta: 0, mixMaps: 0 }) } as unknown as Analyzer;
     const sources: Record<number, number[] | null> = { 1: null, 2: [s.cc], 3: [s.lidarr] };
     const mixes = new Mixes({ db: s.db, store: s.store, library: s.library, analyzer, history, playlists: {} as Playlists, similar: async () => [], libraryFor: (id) => s.library.view(sources[id] ?? null) });
     mixRoutes(s.app, { mixes, history, store: s.store, analysisAvailable: false, analyzeLibrary: vi.fn(), library: s.library, db: s.db });

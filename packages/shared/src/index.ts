@@ -759,6 +759,7 @@ export type MixKind =
   | 'decade'
   | 'genre'
   | 'energy'
+  | 'chill'
   | 'winddown'
   | 'focus'
   | 'onthisday';

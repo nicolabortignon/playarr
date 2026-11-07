@@ -30,7 +30,7 @@ public final class MixSettingsModel {
       verb: "Clear history")
   }
   public static let soundText =
-    "Energy boost, Wind down, Deep focus and Vibes of the hour are better once Playarr has measured how songs sound (tempo, loudness, energy); until then they go by genre. Measure every song in Settings → Analysis."
+    "Energy boost, Chill, Deep focus, Wind down and Vibes of the hour are better once Playarr has measured how songs sound (tempo, loudness, energy); until then they go by genre. Measure every song in Settings → Analysis."
 
   public init(
     api: any APISending, isAdmin: Bool, deviceTimeZone: String = TimeZone.current.identifier,

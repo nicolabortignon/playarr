@@ -1408,13 +1408,14 @@ public enum MixKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable
     case decade
     case genre
     case energy
+    case chill
     case winddown
     case focus
     case onthisday
     /// A value this version of the app doesn't know yet.
     case unknown(String)
 
-    public static let allCases: [MixKind] = [.vibes, .discovery, .`repeat`, .blast, .deepcuts, .fresh, .decade, .genre, .energy, .winddown, .focus, .onthisday]
+    public static let allCases: [MixKind] = [.vibes, .discovery, .`repeat`, .blast, .deepcuts, .fresh, .decade, .genre, .energy, .chill, .winddown, .focus, .onthisday]
 
     public init(rawValue: String) {
         switch rawValue {
@@ -1427,6 +1428,7 @@ public enum MixKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable
         case "decade": self = .decade
         case "genre": self = .genre
         case "energy": self = .energy
+        case "chill": self = .chill
         case "winddown": self = .winddown
         case "focus": self = .focus
         case "onthisday": self = .onthisday
@@ -1445,6 +1447,7 @@ public enum MixKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable
         case .decade: "decade"
         case .genre: "genre"
         case .energy: "energy"
+        case .chill: "chill"
         case .winddown: "winddown"
         case .focus: "focus"
         case .onthisday: "onthisday"
@@ -1756,11 +1759,12 @@ public struct MixSettings: Codable, Hashable, Sendable {
         public var decade: Bool?
         public var genre: Bool?
         public var energy: Bool?
+        public var chill: Bool?
         public var winddown: Bool?
         public var focus: Bool?
         public var onthisday: Bool?
 
-        public init(vibes: Bool? = nil, discovery: Bool? = nil, `repeat`: Bool? = nil, blast: Bool? = nil, deepcuts: Bool? = nil, fresh: Bool? = nil, decade: Bool? = nil, genre: Bool? = nil, energy: Bool? = nil, winddown: Bool? = nil, focus: Bool? = nil, onthisday: Bool? = nil) {
+        public init(vibes: Bool? = nil, discovery: Bool? = nil, `repeat`: Bool? = nil, blast: Bool? = nil, deepcuts: Bool? = nil, fresh: Bool? = nil, decade: Bool? = nil, genre: Bool? = nil, energy: Bool? = nil, chill: Bool? = nil, winddown: Bool? = nil, focus: Bool? = nil, onthisday: Bool? = nil) {
             self.vibes = vibes
             self.discovery = discovery
             self.`repeat` = `repeat`
@@ -1770,6 +1774,7 @@ public struct MixSettings: Codable, Hashable, Sendable {
             self.decade = decade
             self.genre = genre
             self.energy = energy
+            self.chill = chill
             self.winddown = winddown
             self.focus = focus
             self.onthisday = onthisday
@@ -1822,11 +1827,12 @@ public struct MixSettingsInfo: Codable, Hashable, Sendable {
         public var decade: Bool?
         public var genre: Bool?
         public var energy: Bool?
+        public var chill: Bool?
         public var winddown: Bool?
         public var focus: Bool?
         public var onthisday: Bool?
 
-        public init(vibes: Bool? = nil, discovery: Bool? = nil, `repeat`: Bool? = nil, blast: Bool? = nil, deepcuts: Bool? = nil, fresh: Bool? = nil, decade: Bool? = nil, genre: Bool? = nil, energy: Bool? = nil, winddown: Bool? = nil, focus: Bool? = nil, onthisday: Bool? = nil) {
+        public init(vibes: Bool? = nil, discovery: Bool? = nil, `repeat`: Bool? = nil, blast: Bool? = nil, deepcuts: Bool? = nil, fresh: Bool? = nil, decade: Bool? = nil, genre: Bool? = nil, energy: Bool? = nil, chill: Bool? = nil, winddown: Bool? = nil, focus: Bool? = nil, onthisday: Bool? = nil) {
             self.vibes = vibes
             self.discovery = discovery
             self.`repeat` = `repeat`
@@ -1836,6 +1842,7 @@ public struct MixSettingsInfo: Codable, Hashable, Sendable {
             self.decade = decade
             self.genre = genre
             self.energy = energy
+            self.chill = chill
             self.winddown = winddown
             self.focus = focus
             self.onthisday = onthisday
@@ -1894,11 +1901,12 @@ public struct MixSettingsPatch: Codable, Hashable, Sendable {
         public var decade: Bool?
         public var genre: Bool?
         public var energy: Bool?
+        public var chill: Bool?
         public var winddown: Bool?
         public var focus: Bool?
         public var onthisday: Bool?
 
-        public init(vibes: Bool? = nil, discovery: Bool? = nil, `repeat`: Bool? = nil, blast: Bool? = nil, deepcuts: Bool? = nil, fresh: Bool? = nil, decade: Bool? = nil, genre: Bool? = nil, energy: Bool? = nil, winddown: Bool? = nil, focus: Bool? = nil, onthisday: Bool? = nil) {
+        public init(vibes: Bool? = nil, discovery: Bool? = nil, `repeat`: Bool? = nil, blast: Bool? = nil, deepcuts: Bool? = nil, fresh: Bool? = nil, decade: Bool? = nil, genre: Bool? = nil, energy: Bool? = nil, chill: Bool? = nil, winddown: Bool? = nil, focus: Bool? = nil, onthisday: Bool? = nil) {
             self.vibes = vibes
             self.discovery = discovery
             self.`repeat` = `repeat`
@@ -1908,6 +1916,7 @@ public struct MixSettingsPatch: Codable, Hashable, Sendable {
             self.decade = decade
             self.genre = genre
             self.energy = energy
+            self.chill = chill
             self.winddown = winddown
             self.focus = focus
             self.onthisday = onthisday

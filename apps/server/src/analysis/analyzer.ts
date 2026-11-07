@@ -315,6 +315,19 @@ export class Analyzer {
     );
   }
 
+  /**
+   * Each song's phrase energy from its current mix map (each 16-beat phrase's level next to the loudest), for the mood
+   * mixes' sense of how a song moves: SQLite picks the array out, so the rest of each map is never parsed.
+   */
+  phraseEnergies(ids: string[]): Map<string, (number | null)[]> {
+    const rows = this.select<{ recording_id: string; energy: string | null }>(
+      `SELECT recording_id, json_extract(data, '$.phraseEnergy') AS energy FROM mix_maps WHERE version >= ? AND data IS NOT NULL AND recording_id IN`,
+      ids,
+      [OLDEST_USABLE_MIX_MAP],
+    );
+    return new Map(rows.flatMap((r): [string, (number | null)[]][] => (r.energy ? [[r.recording_id, JSON.parse(r.energy) as (number | null)[]]] : [])));
+  }
+
   /** Mix points set by hand, for the songs that have any. */
   cues(ids: string[]): Map<string, CuePoints> {
     const rows = this.select<{ recording_id: string; mix_in: number | null; mix_out: number | null }>(

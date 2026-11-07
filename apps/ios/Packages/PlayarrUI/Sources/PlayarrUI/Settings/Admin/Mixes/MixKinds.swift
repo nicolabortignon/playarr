@@ -11,9 +11,10 @@ enum MixKinds {
     (.deepcuts, "Deep cuts", "The songs you’ve barely played by the artists you love."),
     (.fresh, "Fresh arrivals", "Songs from albums added in the last 30 days."),
     (.decade, "Time machine", "One for each decade you have the most music from."),
-    (.energy, "Energy boost", "Loud, fast songs, building up."),
-    (.focus, "Deep focus", "Steady, mostly instrumental music to work to."),
-    (.winddown, "Wind down", "Calm, soft songs, slowing down."),
+    (.energy, "Energy boost", "Songs with a driving beat, building to the peak."),
+    (.chill, "Chill", "Laid-back songs with an easy groove, warm and unhurried."),
+    (.focus, "Deep focus", "Steady, instrumental music that stays out of the way."),
+    (.winddown, "Wind down", "Soft, slow songs for the end of the day, settling down."),
     (.onthisday, "On this day", "Songs from albums released this week in years past."),
   ]
 
@@ -34,6 +35,7 @@ enum MixKinds {
     case .decade: \.decade
     case .genre: \.genre
     case .energy: \.energy
+    case .chill: \.chill
     case .winddown: \.winddown
     case .focus: \.focus
     case .onthisday: \.onthisday
@@ -53,6 +55,7 @@ enum MixKinds {
     case .decade: \.decade
     case .genre: \.genre
     case .energy: \.energy
+    case .chill: \.chill
     case .winddown: \.winddown
     case .focus: \.focus
     case .onthisday: \.onthisday

@@ -1,6 +1,6 @@
 # Listening and generated mixes
 
-This is how Playarr learns from what's played and turns it into music: the play reports, the taste model, the twelve "Made for you" mixes, radio, Jump back in, listening stats and the year in review, and what ListenBrainz adds. The server side lives in `apps/server/src/mixes` (history, taste, generators, stats), `apps/server/src/listenbrainz` (sending plays) and `apps/server/src/discover/listenbrainz.ts` (reading ListenBrainz data); the routes are in `apps/server/src/routes/mixes.ts`. Ordering songs so neighbours blend is `packages/mix/src/blend.ts`, shared with the DJ mix engine ([mixing.md](mixing.md)).
+This is how Playarr learns from what's played and turns it into music: the play reports, the taste model, the thirteen "Made for you" mixes, radio, Jump back in, listening stats and the year in review, and what ListenBrainz adds. The server side lives in `apps/server/src/mixes` (history, taste, generators, stats), `apps/server/src/listenbrainz` (sending plays) and `apps/server/src/discover/listenbrainz.ts` (reading ListenBrainz data); the routes are in `apps/server/src/routes/mixes.ts`. Ordering songs so neighbours blend is `packages/mix/src/blend.ts`, shared with the DJ mix engine ([mixing.md](mixing.md)).
 
 Everything here is per account: history, mixes, stats and the ListenBrainz link follow whoever is signed in (see [server/accounts-and-access.md](server/accounts-and-access.md)). How mixes are made is the server's, set by admins.
 
@@ -31,8 +31,9 @@ Mixes are made from the last 365 days of an account's plays, its favourites and 
 **What a song is known by** (`toSong`):
 
 - **Style**: ListenBrainz tags (section 7), folded into style families by `apps/server/src/analysis/styles.ts`; without tags, the album's genres, else the artist's.
-- **Energy** (0–1): from measured sound where sound analysis has run (loudness, busyness, pulse and tempo); otherwise estimated from the style families (metal high, classical low), less a little for calm tags. Unknown without either.
-- **Calm** and **focus**: from tags (calm, instrumental, ambient, post-rock, piano…) and families (chill, classical, cinematic, jazz).
+- **Energy** (0–1): where sound analysis has run, where the song stands among the library's measured songs for intensity: loudness next to music of its time, busyness, the beat's strength and tempo, and brightness (`mood.ts`). Otherwise estimated from the style families (metal high, classical low), less a little for calm tags. Unknown without either.
+- **Mood, tension, singing, groove and steadiness**: from the key, the tags, the title, lyrics that were looked up, the beat and the phrase-by-phrase shape of the song. **Traits** say what's never picked (intros, interludes, skits, anything under a minute, spoken word), what's recorded live, and what's a Christmas song. What each is and how it's read: [plans/2026-11-07-8-mood-mixes.md](plans/2026-11-07-8-mood-mixes.md).
+- **Calm**: from tags (mellow, calm, relaxing…).
 - **Year**: the album's, else ListenBrainz's first release year. **Added**: when its album arrived. **Release date**: only real dates, not bare years.
 - **Tempo and key**: a summary of its mix map from beat analysis, for blending.
 
@@ -52,13 +53,16 @@ Mixes are made from the last 365 days of an account's plays, its favourites and 
 | **Deep cuts** | Songs by the account's 20 favourite artists that have no liking of their own yet: unplayed, not favourites, not in playlists (needs at least 2 such artists). | daily |
 | **Fresh arrivals** | Up to 3 unplayed songs from each album added in the last 30 days, newest albums first. | daily |
 | **Time machine** | One per decade with the most songs, weighted by what the account likes (at least 30 songs), e.g. "The 90s". | daily |
-| **Energy boost** | Energy 0.62 and up, not calm; building up. | daily |
-| **Deep focus** | Focus-leaning songs of middling energy (0.12–0.6). | daily |
-| **Wind down** | Energy 0.38 or less, or calm by their tags; settling down. | daily |
+| **Energy boost** | For moving: the library's most intense songs (energy 0.7 and up) that stay at full tilt, leaning to the uplifting; building to the peak. | daily |
+| **Chill** | For an easy afternoon: relaxed but alive (energy 0.15–0.6), an easy groove, warm, nothing tense or swelling; rolling gently. | daily |
+| **Deep focus** | For working: no singing, steady, nothing sudden, of middling energy; level. | daily |
+| **Wind down** | For the end of the day: the stillest songs (energy 0.3 or less), soft and slow, no surges and nothing tense; settling down. | daily |
 | **On this day** | Songs from albums released within 3 days of today's date in past years, up to 3 per album, oldest first. | daily |
 
-Home shows them in that order (`planMixes`). Common rules:
+Home shows them in that order (`planMixes`). The four mood mixes (Energy boost, Chill, Deep focus, Wind down) are specified, with the algorithm that matches them, in [plans/2026-11-07-8-mood-mixes.md](plans/2026-11-07-8-mood-mixes.md): each leans to a style or two of the day so it holds together, and songs whose sound isn't measured only fill in when measured ones run short. Common rules:
 
+- Never intros, outros, interludes, skits, anything under a minute, spoken word or comedy (On Repeat keeps what's played most, but not skits). Christmas songs only from 24 November to 6 January, in mixes, radio and Feeling lucky.
+- A mix made again (a new day, a new draw) leans away from the songs of the one it replaces.
 - At most 2 songs per artist (3 in Blast from the past and Deep cuts), and never the same artist twice in a row where it can be helped.
 - A mix with fewer than 8 songs isn't shown. Songs per mix is a setting (25–100).
 - Each mix is seeded by its key and period, so it doesn't reshuffle on every visit. **New mix** (`POST /api/mixes/:key/regenerate`) draws another for the same period. **Save** (`POST /api/mixes/:key/save`) keeps it as an ordinary playlist named "<mix> · 5 Nov".
@@ -75,8 +79,9 @@ Home shows them in that order (`planMixes`). Common rules:
 `blendScore(a, b)` rates how well one song would mix into the next from tempo, key and energy (the formula is in [mixing.md](mixing.md#5-choosing-songs-that-blend-blendts)). `blendOrder` in `generators.ts` uses it: from the first song, a greedy walk to the song that blends best (another artist first), then up to 200 2-opt swaps (reversing a stretch when its ends blend better that way round), then any run of one artist broken up. How each mix uses it:
 
 - **Flow** (Discovery, Blast from the past, Deep cuts, Fresh arrivals, Time machine): shuffled for a different start, then ordered to blend.
-- **Smooth** (Vibes, genre mixes, Deep focus): energy rises then falls, in steps of 0.15, ordered to blend within each step. With energy known for under half the songs, it falls back to flow.
-- **Energy boost** rises and **Wind down** settles, step by step, blending within each step.
+- **Smooth** (Vibes, genre mixes, Chill): energy rises then falls, in steps of 0.15, ordered to blend within each step. With energy known for under half the songs, it falls back to flow.
+- **Energy boost** rises and **Wind down** settles, in five steps of their own songs, blending within each step.
+- **Deep focus** holds level: from the song in the middle of its energy, each next one the song that blends best.
 - **On Repeat** (most played first) and **On this day** (oldest first) keep their own order.
 
 ---
@@ -87,7 +92,7 @@ Home shows them in that order (`planMixes`). Common rules:
 - **How they're made**: the time zone ("Use this device's"), songs per mix (25 / 50 / 75 / 100, default 50), Discovery Weekly (Familiar / Balanced / Adventurous, default Balanced), Blast from the past (not heard for a month / 3 / 6 months / a year, default 3 months), genre mixes and decade mixes (0–4 each, defaults 3 and 2).
 - **Listening history**: Remember what's played, how many songs since when, and **Clear history** (the account's only; its mixes are made again from scratch).
 - **ListenBrainz**: the account's link (section 7).
-- **Sound**: a pointer to Settings → Analysis, whose *Analyse every song in the library* switch (stored with these settings as `analyzeLibrary`) measures every song's sound, so Energy boost, Wind down, Deep focus and Vibes go by sound rather than genre.
+- **Sound**: a pointer to Settings → Analysis, whose *Analyse every song in the library* switch (stored with these settings as `analyzeLibrary`) measures every song's sound, so Energy boost, Chill, Deep focus, Wind down and Vibes go by sound rather than genre.
 
 Admins change how mixes are made (`PUT /api/settings/mixes`); members see it read-only. The history and the ListenBrainz link are each account's own.
 

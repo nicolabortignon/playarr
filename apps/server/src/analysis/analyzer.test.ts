@@ -383,6 +383,19 @@ describe('Analyzer mix maps', () => {
     expect(summaries.get('outro')?.gridStable).toBe(false);
   });
 
+  it('hands out each song’s phrase energy from mix maps in use, and nothing for maps without it', () => {
+    const { analyzer, db } = withSong({ seconds: 200 });
+    const save = db.prepare('INSERT INTO mix_maps (recording_id, version, data, error, analyzed_at) VALUES (?, ?, ?, ?, ?)');
+    const now = new Date().toISOString();
+    save.run('current', MIX_MAP_VERSION, JSON.stringify({ bpm: 128, phraseEnergy: [0.2, 0.9, null, 1] }), null, now);
+    save.run('older', 2, JSON.stringify({ bpm: 100, phraseEnergy: [1] }), null, now);
+    save.run('without', MIX_MAP_VERSION, JSON.stringify({ bpm: 128 }), null, now);
+    save.run('ancient', 1, JSON.stringify({ bpm: 90, phraseEnergy: [1] }), null, now);
+    save.run('failed', MIX_MAP_VERSION, null, 'boom', now);
+    const energies = analyzer.phraseEnergies(['current', 'older', 'without', 'ancient', 'failed', 'unknown']);
+    expect(Object.fromEntries(energies)).toEqual({ current: [0.2, 0.9, null, 1], older: [1] });
+  });
+
   it('takes each song’s tempo and beat from its beat analysis, none until it has one', () => {
     const { analyzer, db } = withSong({ seconds: 200 });
     const now = new Date().toISOString();

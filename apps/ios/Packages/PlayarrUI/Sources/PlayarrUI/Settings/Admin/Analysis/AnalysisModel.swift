@@ -114,7 +114,7 @@ public final class AnalysisModel {
         explain: "Beat analysis for every song, from scratch, at low priority. Each song mixes as it does now until its turn. On a small server this takes many hours: up to a minute a song."),
       row(
         .sound, "Sound analysis",
-        "What each song feels like: its energy, brightness, bass and how busy it is. For Energy boost, Wind down, Deep focus, Vibes of the hour, radio and playlist covers.",
+        "What each song feels like: its energy, brightness, bass and how busy it is. For Energy boost, Chill, Deep focus, Wind down, Vibes of the hour, radio and playlist covers.",
         text: audio ? AnalysisText.sound(p) : AnalysisText.audioOff, done: p.sound.ready, failed: p.sound.failed, of: p.songs,
         canRun: audio, verb: "Analyze", meter: "Songs measured for their sound", again: "Reanalyze the entire collection",
         explain: "Sound analysis for every song, from scratch, at low priority. Each song keeps what it has until its turn."),

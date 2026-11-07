@@ -1,9 +1,11 @@
 import type { Lyrics, Track } from '@playarr/shared';
 import type { DatabaseSync } from 'node:sqlite';
 import { extname } from 'node:path';
+import { selectIn } from '../analysis/sql.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import { lyricsFrom } from '../catalog/tags.ts';
 import type { Library } from '../library/library.ts';
+import type { LyricsFact } from '../mixes/mood.ts';
 
 const LRCLIB = 'https://lrclib.net/api';
 const USER_AGENT = 'Playarr (self-hosted music player)';
@@ -38,6 +40,18 @@ interface LrclibRecord {
   plainLyrics?: string | null;
   instrumental?: boolean;
   duration?: number;
+}
+
+/** What lyrics lookups found for songs that have been looked up: their words, or that they're instrumental (LRCLIB's flag). */
+export function lyricsFacts(db: DatabaseSync, ids: string[]): Map<string, LyricsFact> {
+  const rows = selectIn<{ recording_id: string; instrumental: number | null; words: number }>(
+    db,
+    `SELECT recording_id, json_extract(data, '$.instrumental') AS instrumental,
+       (json_type(data, '$.synced') IS NOT NULL OR json_type(data, '$.plain') IS NOT NULL) AS words
+     FROM lyrics WHERE data IS NOT NULL AND recording_id IN`,
+    ids,
+  );
+  return new Map(rows.flatMap((r): [string, LyricsFact][] => (r.instrumental === 1 ? [[r.recording_id, 'instrumental']] : r.words ? [[r.recording_id, 'words']] : [])));
 }
 
 /**

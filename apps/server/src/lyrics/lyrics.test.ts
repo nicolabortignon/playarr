@@ -2,7 +2,7 @@ import type { Track } from '@playarr/shared';
 import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { freshDb } from '../catalog/testFixtures.ts';
-import { LyricsService, parseLrc } from './lyrics.ts';
+import { LyricsService, lyricsFacts, parseLrc } from './lyrics.ts';
 
 const track = { id: 1, fileId: 1, recordingId: 'rec-1', artistName: 'Coldplay', title: 'Yellow', albumTitle: 'Parachutes', duration: 269 } as Track;
 
@@ -63,5 +63,20 @@ describe('lyrics', () => {
     expect(await service.forTrack(1)).toBeNull();
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(await service.forTrack(2)).toBeUndefined();
+  });
+
+  it('tells the mixes which looked-up songs have words and which are instrumental', () => {
+    const db = freshDb();
+    const save = db.prepare('INSERT INTO lyrics (recording_id, data, fetched_at) VALUES (?, ?, ?)');
+    const now = new Date().toISOString();
+    save.run('synced', JSON.stringify({ synced: [{ at: 1, text: 'Look at the stars' }], source: 'lrclib' }), now);
+    save.run('plain', JSON.stringify({ plain: 'Look at the stars', source: 'file' }), now);
+    save.run('instrumental', JSON.stringify({ instrumental: true, source: 'lrclib' }), now);
+    save.run('missing', null, now);
+    expect(Object.fromEntries(lyricsFacts(db, ['synced', 'plain', 'instrumental', 'missing', 'never']))).toEqual({
+      synced: 'words',
+      plain: 'words',
+      instrumental: 'instrumental',
+    });
   });
 });

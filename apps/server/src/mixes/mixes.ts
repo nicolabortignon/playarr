@@ -6,11 +6,12 @@ import type { CatalogStore } from '../catalog/store.ts';
 import { hash32, Rng } from '../cover/random.ts';
 import { similarRecordings } from '../discover/listenbrainz.ts';
 import type { Library, LibraryView } from '../library/library.ts';
+import { lyricsFacts } from '../lyrics/lyrics.ts';
 import type { Playlists } from '../playlists.ts';
-import { blendOrder, choose, generateMix, luckySeed, planHues, planMixes, spread, tempoAndKey, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
+import { blendOrder, choose, generateMix, luckySeed, planHues, planMixes, spread, tempoAndKey, usable, type GeneratedMix, type MixContext, type MixPlan } from './generators.ts';
 import type { History } from './history.ts';
 import { MIXES_KEY, readMixSettings } from './settings.ts';
-import { buildTaste, familySimilarity, toSong, type Song, type Taste } from './taste.ts';
+import { buildTaste, calibrateSongs, familySimilarity, toSong, type Song, type Taste } from './taste.ts';
 import type { StyleFamily } from '../analysis/styles.ts';
 import { localTime, nextBoundary, validTimeZone, type LocalTime } from './time.ts';
 
@@ -36,6 +37,7 @@ const CADENCE: Record<MixKind, 'hour' | 'day' | 'week'> = {
   decade: 'day',
   genre: 'day',
   energy: 'day',
+  chill: 'day',
   winddown: 'day',
   focus: 'day',
   onthisday: 'day',
@@ -88,7 +90,7 @@ export class Mixes {
       db: DatabaseSync;
       store: Pick<CatalogStore, 'appSetting' | 'setAppSetting'>;
       library: Library;
-      analyzer: Pick<Analyzer, 'ensure' | 'features' | 'meta' | 'mixSummaries' | 'progress'>;
+      analyzer: Pick<Analyzer, 'ensure' | 'features' | 'meta' | 'mixSummaries' | 'phraseEnergies' | 'progress'>;
       history: History;
       playlists: Pick<Playlists, 'create'>;
       /** ListenBrainz neighbours of a recording (swappable in tests). */
@@ -163,7 +165,8 @@ export class Mixes {
     const settings = readMixSettings(this.deps.store);
     const ctx = await this.context(account, localTime(now, tz), now, settings, plan.kind === 'discovery');
     const variant = row.variant + 1;
-    const mix = generateMix(plan, ctx, row.period, variant);
+    // A new draw leans away from the one it replaces.
+    const mix = generateMix(plan, ctx, row.period, variant, songsOf(row));
     if (mix) this.write(account, key, row.period, variant, { settings: settingsHash(settings), mix }, now);
     return this.get(key, tz, now, account);
   }
@@ -188,6 +191,7 @@ export class Mixes {
     const artists = new Set(seedSongs.map((s) => s.track.artistId));
     const neighbours = await this.neighboursOf(seeds.filter((id) => MBID.test(id)).slice(0, 5), library);
     const skip = new Set([...seeds, ...exclude]);
+    const local = localTime(new Date(), this.timeZone());
     // Energy has its own term: this one is how well a song's tempo and key go with the seeds'. The song
     // playing (the last seed) is what the radio follows on from, so it weighs as much as the rest together.
     const playing = tempoAndKey(seedSongs.at(-1)!);
@@ -200,7 +204,7 @@ export class Mixes {
     };
     const rng = new Rng(Date.now() >>> 0);
     const scored = songs
-      .filter((s) => !skip.has(s.track.recordingId))
+      .filter((s) => !skip.has(s.track.recordingId) && usable({ local }, s))
       .map((song) => ({
         song,
         score:
@@ -318,7 +322,8 @@ export class Mixes {
     for (const p of plan!.plan) {
       if (!due(p)) continue;
       const period = periodOf(p.kind, local);
-      this.write(account, p.key, period, 0, { settings: hash, mix: generateMix(p, ctx, period, 0) }, now);
+      const previous = rows.get(p.key);
+      this.write(account, p.key, period, 0, { settings: hash, mix: generateMix(p, ctx, period, 0, previous ? songsOf(previous) : undefined) }, now);
       // Let requests waiting meanwhile through between mixes.
       await new Promise((resolve) => setImmediate(resolve));
     }
@@ -381,8 +386,11 @@ export class Mixes {
     analyzer.ensure(ids, { audio: settings.analyzeLibrary });
     const features = analyzer.features(ids);
     const meta = analyzer.meta(ids);
-    // Only what blending needs: whole mix maps (beat grid, phrase energy…) for every song would be slow to read and fill memory.
+    // Only what blending needs, and the phrase energy the mood mixes read a song's shape from: whole mix maps (beat
+    // grid…) for every song would be slow to read and fill memory.
     const summaries = analyzer.mixSummaries(ids);
+    const phrases = analyzer.phraseEnergies(ids);
+    const lyrics = lyricsFacts(this.deps.db, ids);
     const albumById = new Map(albums.map((a) => [a.id, a]));
     const genres = new Map(artists.map((a) => [a.id, a.genres]));
     const songs = unique.map((track) => {
@@ -399,10 +407,13 @@ export class Mixes {
         addedAt: album?.addedAt,
         releaseDate: album?.releaseDate,
         mix: summaries.get(track.recordingId),
+        phraseEnergy: phrases.get(track.recordingId),
+        lyrics: lyrics.get(track.recordingId),
       });
     });
-    this.songCache.set(sources, { key, songs });
-    return songs;
+    const calibrated = calibrateSongs(songs);
+    this.songCache.set(sources, { key, songs: calibrated });
+    return calibrated;
   }
 
   /** Library songs ListenBrainz finds alike to the most played (or loved) ones, for Discovery Weekly. */
@@ -457,9 +468,21 @@ function periodOf(kind: MixKind, local: LocalTime): string {
   return cadence === 'hour' ? `${local.date}T${String(local.hour).padStart(2, '0')}` : cadence === 'week' ? local.week : local.date;
 }
 
-/** Only the settings that shape the mixes: turning history recording off doesn't remake them. */
+/**
+ * How mixes are made: bumped when that changes enough that the mixes made with the old recipe should go at once (2: the
+ * mood mixes read the measured sound, and Chill, 2026-11-07).
+ */
+const RECIPE = 2;
+
+/** Only the settings that shape the mixes, and the recipe: turning history recording off doesn't remake them. */
 const settingsHash = (s: MixSettings) =>
-  hash32(JSON.stringify([s.enabled, s.length, s.adventurous, s.blastDays, s.genreMixes, s.decadeMixes]));
+  hash32(JSON.stringify([RECIPE, s.enabled, s.length, s.adventurous, s.blastDays, s.genreMixes, s.decadeMixes]));
+
+/** A stored mix's songs, by recording: what the mix replacing it leans away from. */
+function songsOf(row: Row): Set<string> {
+  const stored = JSON.parse(row.data) as Stored;
+  return new Set(stored.mix?.recordingIds ?? []);
+}
 
 function summary(mix: GeneratedMix, tracks: Track[], row: Row, now: Date, local: LocalTime, hues: Map<string, number>): MixSummary {
   const covers: string[] = [];

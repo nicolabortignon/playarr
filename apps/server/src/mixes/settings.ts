@@ -14,6 +14,7 @@ export const MIX_KINDS: MixKind[] = [
   'decade',
   'genre',
   'energy',
+  'chill',
   'winddown',
   'focus',
   'onthisday',

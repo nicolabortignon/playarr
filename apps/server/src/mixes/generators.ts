@@ -3,6 +3,7 @@ import type { MixKind, MixSettings } from '@playarr/shared';
 import { FAMILIES, type StyleFamily } from '../analysis/styles.ts';
 import { hash32, Rng } from '../cover/random.ts';
 import type { Play } from './history.ts';
+import { christmasSeason } from './mood.ts';
 import { isEnabled } from './settings.ts';
 import { familySimilarity, hourProfile, topFamilies, type Song, type Taste } from './taste.ts';
 import type { LocalTime } from './time.ts';
@@ -62,6 +63,7 @@ export function planMixes(ctx: MixContext): MixPlan[] {
   add('fresh');
   for (const decade of decadePicks(ctx, settings.decadeMixes)) add('decade', String(decade));
   add('energy');
+  add('chill');
   add('focus');
   add('winddown');
   add('onthisday');
@@ -70,12 +72,12 @@ export function planMixes(ctx: MixContext): MixPlan[] {
 
 /**
  * Each kind of mix owns a stretch of the colour wheel (OKLCH hue), so a shelf of them doesn't repeat a colour: the
- * fixed mixes the pinks, reds and ambers (one each), genres the greens to azures, decades the blues to violets. Genres
+ * fixed mixes the pinks, reds, ambers and a lime (one each), genres the greens to azures, decades the blues to violets. Genres
  * and decades are spread evenly over theirs (decades oldest first), so two of them are never close. Vibes, Discovery
  * and On Repeat keep a hue of their own, which the apps only show until they've blended the colours of the mix's
  * first two covers.
  */
-const FIXED_HUES: Partial<Record<MixKind, number>> = { focus: 338, winddown: 356, energy: 14, blast: 32, deepcuts: 50, onthisday: 68, fresh: 86 };
+const FIXED_HUES: Partial<Record<MixKind, number>> = { focus: 338, winddown: 356, energy: 14, blast: 32, deepcuts: 50, onthisday: 68, fresh: 86, chill: 104 };
 const GENRE_HUES = { from: 110, to: 225 };
 const DECADE_HUES = { from: 240, to: 320 };
 const FAMILY_ORDER = Object.keys(FAMILIES) as StyleFamily[];
@@ -91,10 +93,13 @@ export function planHues(plan: MixPlan[]): Map<string, number> {
   return hues;
 }
 
-/** Make one mix; null when there aren't enough songs for it. `period` and `variant` seed the randomness. */
-export function generateMix(plan: MixPlan, ctx: MixContext, period: string, variant = 0): GeneratedMix | null {
+/**
+ * Make one mix; null when there aren't enough songs for it. `period` and `variant` seed the randomness. `previous` is
+ * the mix this one replaces (by recording): its songs sink a little, so a daily mix isn't yesterday's again.
+ */
+export function generateMix(plan: MixPlan, ctx: MixContext, period: string, variant = 0, previous: Set<string> = new Set()): GeneratedMix | null {
   const rng = new Rng(hash32(`${plan.key}|${period}|${variant}`));
-  const made = GENERATORS[plan.kind](ctx, rng, plan.param);
+  const made = GENERATORS[plan.kind]({ ...ctx, previous }, rng, plan.param);
   if (!made || made.songs.length < MIN_TRACKS) return null;
   return {
     key: plan.key,
@@ -116,7 +121,12 @@ interface Made {
   songs: Song[];
 }
 
-type Generator = (ctx: MixContext, rng: Rng, param?: string) => Made | null;
+/** A mix being made: what it's made from, and the songs of the mix it replaces. */
+interface Making extends MixContext {
+  previous: Set<string>;
+}
+
+type Generator = (ctx: Making, rng: Rng, param?: string) => Made | null;
 
 const GENERATORS: Record<MixKind, Generator> = {
   vibes,
@@ -128,6 +138,7 @@ const GENERATORS: Record<MixKind, Generator> = {
   decade,
   genre,
   energy,
+  chill,
   winddown,
   focus,
   onthisday,
@@ -148,13 +159,13 @@ function daypart(hour: number) {
   return DAYPARTS.find((d) => h >= d.from && h < d.to)!;
 }
 
-function vibes(ctx: MixContext, rng: Rng): Made | null {
+function vibes(ctx: Making, rng: Rng): Made | null {
   const { local, taste, settings } = ctx;
   const part = daypart(local.hour);
   const profile = hourProfile(ctx.songs, ctx.plays, local.hour, local.weekday);
   const targetFamilies = profile?.families ?? Object.fromEntries(part.families.map((f, i) => [f, (5 - i) / 15]));
   const targetEnergy = profile?.energy ?? part.energy;
-  const scored = ctx.songs.map((song) => {
+  const scored = ctx.songs.filter((s) => usable(ctx, s)).map((song) => {
     const heardHere = profile?.songs.get(song.track.recordingId) ?? 0;
     const artistHere = profile?.artists.get(song.track.artistId) ?? 0;
     const energyFit = song.energy === undefined ? 0.4 : 1 - Math.abs(song.energy - targetEnergy) * 1.6;
@@ -164,7 +175,8 @@ function vibes(ctx: MixContext, rng: Rng): Made | null {
       0.2 * energyFit +
       0.1 * (taste.artists.get(song.track.artistId) ?? 0) +
       0.1 * Math.min(1, heardHere / 3) -
-      skipPenalty(ctx, song) +
+      skipPenalty(ctx, song) -
+      repeatPenalty(ctx, song) +
       rng.next() * 0.15;
     return { song, score };
   });
@@ -205,8 +217,9 @@ export function luckySeed(ctx: MixContext, rng: Rng, avoid: Set<string>): LuckyS
   const targetFamilies = profile?.families ?? Object.fromEntries(part.families.map((f, i) => [f, (5 - i) / 15]));
   const targetEnergy = profile?.energy ?? part.energy;
   const wander = !profile || rng.next() < 0.25;
-  const candidates = ctx.songs.filter((s) => !avoid.has(s.track.recordingId) && (!wander || !profile?.songs.has(s.track.recordingId)));
-  const pool = candidates.length ? candidates : ctx.songs;
+  const usableSongs = ctx.songs.filter((s) => usable(ctx, s));
+  const candidates = usableSongs.filter((s) => !avoid.has(s.track.recordingId) && (!wander || !profile?.songs.has(s.track.recordingId)));
+  const pool = candidates.length ? candidates : usableSongs;
   const scored = pool.map((song) => {
     const heardHere = profile?.songs.get(song.track.recordingId) ?? 0;
     const artistHere = profile?.artists.get(song.track.artistId) ?? 0;
@@ -228,16 +241,17 @@ export function luckySeed(ctx: MixContext, rng: Rng, avoid: Set<string>): LuckyS
   return { song: pick.song, subtitle: profile ? `Your ${hourLabel(local.hour)} sound` : `${part.name}: ${part.words}` };
 }
 
-function discovery(ctx: MixContext, rng: Rng): Made | null {
+function discovery(ctx: Making, rng: Rng): Made | null {
   const { taste, settings } = ctx;
   const a = settings.adventurous;
-  const candidates = ctx.songs.filter((s) => !taste.songs.has(s.track.recordingId) && !taste.songAffinity.has(s.track.recordingId));
+  const candidates = ctx.songs.filter((s) => usable(ctx, s) && !taste.songs.has(s.track.recordingId) && !taste.songAffinity.has(s.track.recordingId));
   const scored = candidates.map((song) => {
     const known = taste.artists.get(song.track.artistId) ?? 0;
     const style = familySimilarity(song.families, taste.families);
     const neighbour = ctx.neighbours.get(song.track.id) ?? 0;
     const unknownArtist = known === 0 ? 1 : 0;
-    const score = (1 - a) * 0.4 * known + 0.3 * style + 0.3 * neighbour + a * 0.35 * unknownArtist * (0.4 + style) + rng.next() * (0.1 + a * 0.15);
+    const score =
+      (1 - a) * 0.4 * known + 0.3 * style + 0.3 * neighbour + a * 0.35 * unknownArtist * (0.4 + style) + rng.next() * (0.1 + a * 0.15) - repeatPenalty(ctx, song);
     return { song, score };
   });
   const songs = choose(scored, settings.length, 2);
@@ -250,7 +264,7 @@ function discovery(ctx: MixContext, rng: Rng): Made | null {
   };
 }
 
-function repeat(ctx: MixContext): Made | null {
+function repeat(ctx: Making): Made | null {
   const since = ctx.now - 30 * DAY;
   const counts = new Map<string, { n: number; last: number }>();
   for (const p of ctx.plays) {
@@ -261,8 +275,9 @@ function repeat(ctx: MixContext): Made | null {
     c.last = Math.max(c.last, at);
     counts.set(p.recordingId, c);
   }
+  // What's played most, as it was, but never a skit or an interlude however often its album was.
   const songs = ctx.songs
-    .filter((s) => (counts.get(s.track.recordingId)?.n ?? 0) >= 2)
+    .filter((s) => !s.traits.filler && (counts.get(s.track.recordingId)?.n ?? 0) >= 2)
     .sort((x, y) => {
       const a = counts.get(x.track.recordingId)!;
       const b = counts.get(y.track.recordingId)!;
@@ -279,28 +294,29 @@ function repeat(ctx: MixContext): Made | null {
   };
 }
 
-function blast(ctx: MixContext, rng: Rng): Made | null {
+function blast(ctx: Making, rng: Rng): Made | null {
   const { taste, settings } = ctx;
   const cutoff = ctx.now - settings.blastDays * DAY;
-  const old = ctx.songs
+  const usableSongs = ctx.songs.filter((s) => usable(ctx, s));
+  const old = usableSongs
     .filter((s) => {
       const st = taste.songs.get(s.track.recordingId);
       return st && st.plays >= 3 && st.last < cutoff;
     })
     .map((song) => {
       const st = taste.songs.get(song.track.recordingId)!;
-      return { song, score: Math.log2(1 + st.plays) * Math.log10(10 + (ctx.now - st.last) / DAY) + rng.next() * 0.5 };
+      return { song, score: Math.log2(1 + st.plays) * Math.log10(10 + (ctx.now - st.last) / DAY) + rng.next() * 0.5 - repeatPenalty(ctx, song) };
     });
   let songs = choose(old, settings.length, 3);
   let source = 'played a lot, then not for a while';
   if (songs.length < MIN_TRACKS) {
     // Not enough history yet: loved songs not heard lately, then albums from the library's early days.
     // "From the past" needs a past: only songs in the library for at least as long as the window.
-    const loved = ctx.songs
+    const loved = usableSongs
       .filter((s) => (taste.songAffinity.get(s.track.recordingId) ?? 0) > 0 && s.addedAt !== undefined && s.addedAt < cutoff)
       .filter((s) => (taste.songs.get(s.track.recordingId)?.last ?? 0) < cutoff)
       .map((song) => ({ song, score: taste.songAffinity.get(song.track.recordingId)! + rng.next() * 0.3 }));
-    const early = ctx.songs
+    const early = usableSongs
       .filter((s) => s.addedAt !== undefined && s.addedAt < ctx.now - 365 * DAY && !taste.songs.has(s.track.recordingId))
       .map((song) => ({ song, score: rng.next() * 0.5 + (taste.artists.get(song.track.artistId) ?? 0) * 0.3 }));
     songs = choose([...old, ...loved.map((x) => ({ ...x, score: x.score + 2 })), ...early], settings.length, 3);
@@ -314,15 +330,15 @@ function blast(ctx: MixContext, rng: Rng): Made | null {
   };
 }
 
-function deepcuts(ctx: MixContext, rng: Rng): Made | null {
+function deepcuts(ctx: Making, rng: Rng): Made | null {
   const { taste } = ctx;
   const favourites = [...taste.artists].sort((a, b) => b[1] - a[1]).slice(0, 20);
   if (favourites.length < 2) return null;
   const top = new Map(favourites);
   const scored = ctx.songs
-    .filter((s) => top.has(s.track.artistId))
+    .filter((s) => usable(ctx, s) && top.has(s.track.artistId))
     .filter((s) => (taste.songs.get(s.track.recordingId)?.plays ?? 0) <= 1 && !taste.songAffinity.has(s.track.recordingId))
-    .map((song) => ({ song, score: top.get(song.track.artistId)! * (0.6 + rng.next() * 0.8) - skipPenalty(ctx, song) }));
+    .map((song) => ({ song, score: top.get(song.track.artistId)! * (0.6 + rng.next() * 0.8) - skipPenalty(ctx, song) - repeatPenalty(ctx, song) }));
   const songs = choose(scored, ctx.settings.length, 3);
   return {
     title: 'Deep cuts',
@@ -332,11 +348,11 @@ function deepcuts(ctx: MixContext, rng: Rng): Made | null {
   };
 }
 
-function fresh(ctx: MixContext, rng: Rng): Made | null {
+function fresh(ctx: Making, rng: Rng): Made | null {
   const since = ctx.now - 30 * DAY;
   const byAlbum = new Map<number, Song[]>();
   for (const s of ctx.songs) {
-    if (s.addedAt === undefined || s.addedAt < since || ctx.taste.songs.has(s.track.recordingId)) continue;
+    if (!usable(ctx, s) || s.addedAt === undefined || s.addedAt < since || ctx.taste.songs.has(s.track.recordingId)) continue;
     byAlbum.set(s.track.albumId, [...(byAlbum.get(s.track.albumId) ?? []), s]);
   }
   // Newest albums first, a few songs from each.
@@ -354,12 +370,15 @@ function fresh(ctx: MixContext, rng: Rng): Made | null {
   };
 }
 
-function decade(ctx: MixContext, rng: Rng, param?: string): Made | null {
+function decade(ctx: Making, rng: Rng, param?: string): Made | null {
   const from = Number(param);
   if (!from) return null;
   const scored = ctx.songs
-    .filter((s) => s.year !== undefined && s.year >= from && s.year < from + 10)
-    .map((song) => ({ song, score: affinity(ctx, song) * 0.5 + familySimilarity(song.families, ctx.taste.families) * 0.2 + rng.next() * 0.4 - skipPenalty(ctx, song) }));
+    .filter((s) => usable(ctx, s) && s.year !== undefined && s.year >= from && s.year < from + 10)
+    .map((song) => ({
+      song,
+      score: affinity(ctx, song) * 0.5 + familySimilarity(song.families, ctx.taste.families) * 0.2 + rng.next() * 0.4 - skipPenalty(ctx, song) - repeatPenalty(ctx, song),
+    }));
   const songs = choose(scored, ctx.settings.length, 2);
   return {
     title: `The ${decadeName(from)}`,
@@ -369,13 +388,13 @@ function decade(ctx: MixContext, rng: Rng, param?: string): Made | null {
   };
 }
 
-function genre(ctx: MixContext, rng: Rng, param?: string): Made | null {
+function genre(ctx: Making, rng: Rng, param?: string): Made | null {
   const family = param as StyleFamily;
   const info = FAMILIES[family];
   if (!info) return null;
   const scored = ctx.songs
-    .filter((s) => (s.families[family] ?? 0) >= 0.4)
-    .map((song) => ({ song, score: song.families[family]! * 0.3 + affinity(ctx, song) * 0.4 + rng.next() * 0.3 - skipPenalty(ctx, song) }));
+    .filter((s) => usable(ctx, s) && (s.families[family] ?? 0) >= 0.4)
+    .map((song) => ({ song, score: song.families[family]! * 0.3 + affinity(ctx, song) * 0.4 + rng.next() * 0.3 - skipPenalty(ctx, song) - repeatPenalty(ctx, song) }));
   const songs = choose(scored, ctx.settings.length, 2);
   const label = info.label[0]!.toUpperCase() + info.label.slice(1);
   return {
@@ -386,54 +405,213 @@ function genre(ctx: MixContext, rng: Rng, param?: string): Made | null {
   };
 }
 
-function energy(ctx: MixContext, rng: Rng): Made | null {
-  const scored = ctx.songs
-    .filter((s) => s.energy !== undefined && s.energy >= 0.62 && s.calm < 0.3)
-    .map((song) => ({ song, score: song.energy! * 0.5 + affinity(ctx, song) * 0.3 + rng.next() * 0.2 - skipPenalty(ctx, song) }));
-  const songs = choose(scored, ctx.settings.length, 2);
+// ── The mood mixes (docs/plans/2026-11-07-8-mood-mixes.md) ─────────────────
+
+/**
+ * Energy boost: for moving. A driving beat, fast or forceful, a full sound that rarely lets up: the library's most
+ * intense fifth or so, leaning to the uplifting. Builds to the peak.
+ */
+function energy(ctx: Making, rng: Rng): Made | null {
+  const { songs, lanes } = moodPick(ctx, rng, {
+    fits: (s) => s.energy! >= 0.7 && (s.shape?.sustain ?? 1) >= 0.45 && s.calm < 0.5,
+    guess: (s) => s.energy !== undefined && s.energy >= 0.62 && s.calm < 0.3,
+    fit: (s) => 0.6 * (s.energy ?? 0.62) + 0.25 * (s.groove ?? UNKNOWN_GROOVE) + 0.15 * s.mood,
+  });
+  const ordered = inSteps(songs, 'up');
   return {
     title: 'Energy boost',
-    subtitle: 'Loud, fast, building up',
-    description: `Your most intense songs — loud, busy, a strong beat — building as it goes: ${artistsLine(songs)}.`,
-    songs: blendOrder([...songs].sort((a, b) => a.energy! - b.energy!), energyStep(MIDDLE_ENERGY)),
+    subtitle: 'A driving beat, building up',
+    description: `Your most driving songs${lanesLine(lanes, songs)}${tempoLine(songs)}, building to the peak: ${artistsLine(ordered)}.`,
+    songs: ordered,
   };
 }
 
-/** A Wind down song's energy when only its tags say it's calm: low, but not the stillest. */
-const CALM_ENERGY = 0.3;
-
-function winddown(ctx: MixContext, rng: Rng): Made | null {
-  const scored = ctx.songs
-    .filter((s) => (s.energy !== undefined && s.energy <= 0.38) || s.calm >= 0.5)
-    .map((song) => ({ song, score: (1 - (song.energy ?? CALM_ENERGY)) * 0.35 + song.calm * 0.2 + affinity(ctx, song) * 0.25 + rng.next() * 0.2 - skipPenalty(ctx, song) }));
-  const songs = choose(scored, ctx.settings.length, 2);
+/**
+ * Chill: for an easy afternoon. Laid back but alive: an easy groove or a gentle sway, warm rather than bright, nothing
+ * tense, nothing heavy-hearted. Rolls gently rather than going anywhere.
+ */
+function chill(ctx: Making, rng: Rng): Made | null {
+  const { songs, lanes } = moodPick(ctx, rng, {
+    fits: (s) =>
+      !s.traits.live && s.track.duration >= 90 && s.energy! >= 0.15 && s.energy! <= 0.6 && s.tension < 0.4 && s.mood >= 0.35 && (s.shape?.surgeDb ?? 0) <= 5,
+    guess: (s) => !s.traits.live && s.track.duration >= 90 && (s.calm >= 0.4 || (s.families.chill ?? 0) >= 0.4) && s.tension < 0.3,
+    fit: (s) =>
+      0.25 * near(s.energy ?? CHILL_ENERGY, CHILL_ENERGY, 0.25) +
+      0.3 * (s.groove ?? UNKNOWN_GROOVE) +
+      0.1 * (s.steadiness ?? 0.5) +
+      0.1 * (1 - (s.sound?.bright ?? 0.5)) +
+      0.15 * s.mood +
+      0.1 * s.calm,
+  });
   return {
-    title: 'Wind down',
-    subtitle: 'Calm, soft, slowing down',
-    description: `Quiet, gentle songs, settling as it goes: ${artistsLine(songs)}.`,
-    songs: blendOrder([...songs].sort((a, b) => (b.energy ?? CALM_ENERGY) - (a.energy ?? CALM_ENERGY)), energyStep(CALM_ENERGY)),
-  };
-}
-
-function focus(ctx: MixContext, rng: Rng): Made | null {
-  const scored = ctx.songs
-    .filter((s) => s.focus >= 0.5 && (s.energy === undefined || (s.energy >= 0.12 && s.energy <= 0.6)))
-    .map((song) => ({ song, score: song.focus * 0.4 + affinity(ctx, song) * 0.3 + rng.next() * 0.3 - skipPenalty(ctx, song) }));
-  const songs = choose(scored, ctx.settings.length, 2);
-  return {
-    title: 'Deep focus',
-    subtitle: 'Steady, mostly instrumental',
-    description: `Steady, mostly instrumental music to work or read to: ${artistsLine(songs)}.`,
+    title: 'Chill',
+    subtitle: 'Easy, warm, unhurried',
+    description: `Laid-back songs with an easy groove${lanesLine(lanes, songs)}, warm and unhurried: ${artistsLine(songs)}.`,
     songs: smooth(songs, rng),
   };
 }
 
-function onthisday(ctx: MixContext, rng: Rng): Made | null {
+/** Where Chill sits: relaxed, but well above stillness. */
+const CHILL_ENERGY = 0.38;
+/** A song that grooves as much as it might, for one without beat analysis yet. */
+const UNKNOWN_GROOVE = 0.3;
+/** A Wind down song's energy when only its tags say it's calm: low, but not the stillest. */
+const CALM_ENERGY = 0.3;
+
+/**
+ * Wind down: for the end of the day. Soft and slow, quiet next to music of its time, nothing sudden and nothing tense:
+ * the library's stillest songs. Settles as it goes.
+ */
+function winddown(ctx: Making, rng: Rng): Made | null {
+  const { songs, lanes } = moodPick(ctx, rng, {
+    fits: (s) => !s.traits.live && s.track.duration >= 100 && s.energy! <= 0.3 && s.tension < 0.3 && (s.shape?.surgeDb ?? 0) <= 7,
+    guess: (s) => !s.traits.live && s.track.duration >= 100 && (s.calm >= 0.5 || (s.energy !== undefined && s.energy <= CALM_ENERGY)) && s.tension < 0.2,
+    fit: (s) =>
+      0.45 * (1 - (s.energy ?? CALM_ENERGY)) +
+      0.2 * (s.steadiness ?? 0.5) +
+      0.15 * (1 - (s.sound?.bright ?? 0.5)) +
+      0.1 * (1 - (s.groove ?? UNKNOWN_GROOVE)) +
+      0.1 * s.calm,
+  });
+  const ordered = inSteps(songs, 'down');
+  return {
+    title: 'Wind down',
+    subtitle: 'Soft and slow, settling down',
+    description: `Soft, slow songs for the end of the day${lanesLine(lanes, songs)}, settling as it goes: ${artistsLine(ordered)}.`,
+    songs: ordered,
+  };
+}
+
+/** Deep focus's songs may sing this likely at most: it's music without words to follow. */
+const FOCUS_VOCALS = 0.35;
+/** Where Deep focus sits: present enough to keep you going, never demanding. */
+const FOCUS_ENERGY = 0.4;
+
+/**
+ * Deep focus: for working. No words to follow, a steady pulse or a steady wash, nothing that jumps out: present
+ * enough to keep you going, never asking for attention. Holds level.
+ */
+function focus(ctx: Making, rng: Rng): Made | null {
+  const { songs, lanes } = moodPick(ctx, rng, {
+    fits: (s) =>
+      !s.traits.live &&
+      s.track.duration >= 120 &&
+      s.vocals <= FOCUS_VOCALS &&
+      (s.steadiness ?? 0.5) >= 0.5 &&
+      s.energy! >= 0.05 &&
+      s.energy! <= 0.7 &&
+      s.tension < 0.5 &&
+      (s.shape?.surgeDb ?? 0) <= 8,
+    guess: (s) => !s.traits.live && s.track.duration >= 120 && s.vocals <= 0.3 && s.tension < 0.4,
+    fit: (s) => 0.4 * (1 - s.vocals) + 0.35 * (s.steadiness ?? 0.4) + 0.25 * near(s.energy ?? FOCUS_ENERGY, FOCUS_ENERGY, 0.4),
+  });
+  const wordless = songs.filter((s) => s.vocals <= 0.2).length >= songs.length * 0.9;
+  return {
+    title: 'Deep focus',
+    subtitle: wordless ? 'Steady and instrumental' : 'Steady, mostly instrumental',
+    description: `${wordless ? 'Instrumental' : 'Mostly instrumental'} music that holds steady${lanesLine(lanes, songs)}, nothing sudden and no words to follow: ${artistsLine(songs)}.`,
+    songs: level(songs),
+  };
+}
+
+/** How a mood mix picks: who belongs, how well each fits (0 … 1), and which songs known only by their tags may stand in. */
+interface Mood {
+  /** Whether a song whose sound was measured belongs. */
+  fits: (song: Song) => boolean;
+  /** Whether a song known only by its tags belongs: taken only when the measured ones run short. */
+  guess: (song: Song) => boolean;
+  /** How well it fits, before what the listener likes and chance. */
+  fit: (song: Song) => number;
+}
+
+/** A song known only by its tags comes after measured songs that fit about as well: its sound is a guess. */
+const GUESS_PENALTY = 0.25;
+/** Lanes need room to choose: at least this many songs that fit for each the mix holds. */
+const LANES_ROOM = 1.5;
+
+/**
+ * A mood mix's songs: the measured songs that belong (then songs guessed from their tags, if those run short), scored
+ * on how well they fit (0.5), what the listener likes (0.3), today's lanes (up to 0.12) and chance (0.1). At most two
+ * by any artist.
+ */
+function moodPick(ctx: Making, rng: Rng, mood: Mood): { songs: Song[]; lanes: StyleFamily[] } {
+  const usableSongs = ctx.songs.filter((s) => usable(ctx, s));
+  const measured = usableSongs.filter((s) => s.measured && s.energy !== undefined && mood.fits(s));
+  const guessed = measured.length < ctx.settings.length ? usableSongs.filter((s) => !s.measured && mood.guess(s)) : [];
+  const pool = [...measured, ...guessed];
+  const lanes = pool.length >= ctx.settings.length * LANES_ROOM ? pickLanes(ctx, pool, rng) : [];
+  const shares = Object.fromEntries(lanes.map((f) => [f, 1 / lanes.length])) as Partial<Record<StyleFamily, number>>;
+  const scored = pool.map((song) => ({
+    song,
+    score:
+      0.5 * mood.fit(song) +
+      0.3 * affinity(ctx, song) +
+      (lanes.length ? LANE_PULL * familySimilarity(song.families, shares) : 0) +
+      0.1 * rng.next() -
+      (song.measured ? 0 : GUESS_PENALTY) -
+      skipPenalty(ctx, song) -
+      repeatPenalty(ctx, song),
+  }));
+  return { songs: choose(scored, ctx.settings.length, 2), lanes };
+}
+
+/** How far today's lanes pull: enough that most of a mix holds together, not so far that a fine song of another style can't get in. */
+const LANE_PULL = 0.12;
+/** A lane needs at least this share of the strongest style's weight among the songs that fit. */
+const LANE_FLOOR = 0.15;
+
+/**
+ * Today's lanes: one or two styles most of a mood mix comes from, so it holds together (not Chopin, then drum and
+ * bass). Drawn by chance among the four styles with the most songs that fit, weighted by how much the listener likes
+ * them, so they change from day to day.
+ */
+function pickLanes(ctx: MixContext, pool: Song[], rng: Rng): StyleFamily[] {
+  const weight: Partial<Record<StyleFamily, number>> = {};
+  for (const s of pool) {
+    const a = 0.3 + affinity(ctx, s);
+    for (const [family, w] of Object.entries(s.families) as [StyleFamily, number][]) weight[family] = (weight[family] ?? 0) + w * a;
+  }
+  const ranked = (Object.entries(weight) as [StyleFamily, number][]).sort((a, b) => b[1] - a[1]);
+  const top = ranked.filter(([, w]) => w >= ranked[0]![1] * LANE_FLOOR).slice(0, 4);
+  const lanes: StyleFamily[] = [];
+  while (lanes.length < 2 && top.length) {
+    let r = rng.next() * top.reduce((sum, [, w]) => sum + w, 0);
+    const i = top.findIndex(([, w]) => (r -= w) <= 0);
+    lanes.push(top.splice(i === -1 ? top.length - 1 : i, 1)[0]![0]);
+  }
+  return lanes;
+}
+
+/** 1 at `target`, falling to 0 at `width` either side. */
+function near(value: number, target: number, width: number): number {
+  return Math.max(0, 1 - Math.abs(value - target) / width);
+}
+
+/** Energy that builds (or settles), in STEPS of the mix's own songs, ordered to blend within each step. */
+function inSteps(songs: Song[], way: 'up' | 'down'): Song[] {
+  const sign = way === 'up' ? 1 : -1;
+  const sorted = [...songs].sort((a, b) => sign * ((a.energy ?? MIDDLE_ENERGY) - (b.energy ?? MIDDLE_ENERGY)));
+  const step = new Map(sorted.map((s, i) => [s, Math.floor((i * STEPS) / sorted.length)]));
+  return blendOrder(sorted, (s) => step.get(s)!);
+}
+
+/** How many steps a mix that builds or settles takes. */
+const STEPS = 5;
+
+/** Level: from the song in the middle of the mix's energy, each next song the one that blends best (energy among it). */
+function level(songs: Song[]): Song[] {
+  if (songs.length < 3) return [...songs];
+  const sorted = [...songs].sort((a, b) => (a.energy ?? MIDDLE_ENERGY) - (b.energy ?? MIDDLE_ENERGY));
+  const middle = sorted[Math.floor(sorted.length / 2)]!;
+  return blendOrder([middle, ...songs.filter((s) => s !== middle)]);
+}
+
+function onthisday(ctx: Making, rng: Rng): Made | null {
   const { local } = ctx;
   const today = Date.UTC(2000, local.month - 1, local.day);
   const byAlbum = new Map<number, Song[]>();
   for (const s of ctx.songs) {
-    if (!s.releaseDate) continue;
+    if (!s.releaseDate || !usable(ctx, s)) continue;
     const [, m, d] = s.releaseDate.split('-').map(Number);
     if (!m || !d) continue;
     const gap = Math.abs(Date.UTC(2000, m - 1, d) - today) / DAY;
@@ -493,6 +671,18 @@ function decadePicks(ctx: MixContext, n: number): number[] {
 /** How much the listener likes a song: its own affinity, and its artist's. */
 function affinity(ctx: MixContext, song: Song): number {
   return Math.max(ctx.taste.songAffinity.get(song.track.recordingId) ?? 0, (ctx.taste.artists.get(song.track.artistId) ?? 0) * 0.8);
+}
+
+/** Whether a song may be picked at all: never an intro, an interlude or a skit (mood.ts `traitsOf`), nor a Christmas song out of season. */
+export function usable(ctx: Pick<MixContext, 'local'>, song: Song): boolean {
+  return !song.traits.filler && (!song.traits.christmas || christmasSeason(ctx.local));
+}
+
+/** Songs of the mix this one replaces sink this much, so a daily mix isn't yesterday's again. */
+const REPEAT_PENALTY = 0.12;
+
+function repeatPenalty(ctx: Making, song: Song): number {
+  return ctx.previous.has(song.track.recordingId) ? REPEAT_PENALTY : 0;
 }
 
 /** Songs skipped more often than played sink. */
@@ -683,6 +873,25 @@ export function artistsLine(songs: Song[], max = 3): string {
   if (!names.length) return 'nothing yet';
   if (names.length <= max) return names.length === 1 ? names[0]! : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
   return `${names.slice(0, max).join(', ')} and more`;
+}
+
+/** ", mostly electronic and hip hop today", when at least half the songs are mostly of today's lanes. */
+function lanesLine(lanes: StyleFamily[], songs: Song[]): string {
+  if (!lanes.length) return '';
+  const inLanes = songs.filter((s) => lanes.includes(topFamilies(s.families, 1)[0]!)).length;
+  return inLanes >= songs.length / 2 ? `, mostly ${familyNames(lanes)} today` : '';
+}
+
+/** A beat this sure gives a song's tempo to the description. */
+const SURE_PULSE = 0.5;
+
+/** ", 118–150 BPM": the middle 80 % of the songs' tempos, when most songs have a sure one. */
+function tempoLine(songs: Song[]): string {
+  const bpms = songs.flatMap((s) => (s.sound?.bpm && (s.sound.pulse ?? 0) >= SURE_PULSE ? [s.sound.bpm] : [])).sort((a, b) => a - b);
+  if (bpms.length < Math.max(MIN_TRACKS, songs.length * 0.6)) return '';
+  const low = Math.round(bpms[Math.floor(bpms.length * 0.1)]!);
+  const high = Math.round(bpms[Math.ceil(bpms.length * 0.9) - 1]!);
+  return low === high ? `, around ${low} BPM` : `, ${low}–${high} BPM`;
 }
 
 export function hourLabel(hour: number): string {

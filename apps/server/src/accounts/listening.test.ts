@@ -40,7 +40,7 @@ function setup() {
   const accounts = new Accounts(db);
   const sam = accounts.create({ username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null });
   const history = new History(db, library);
-  const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), mixSummaries: () => new Map(), progress: () => ({ features: 0, meta: 0, mixMaps: 0 }) } as unknown as Analyzer;
+  const analyzer = { ensure: vi.fn(), features: () => new Map(), meta: () => new Map(), mixSummaries: () => new Map(), phraseEnergies: () => new Map(), progress: () => ({ features: 0, meta: 0, mixMaps: 0 }) } as unknown as Analyzer;
   const mixes = new Mixes({ db, store, library, analyzer, history, playlists: {} as Playlists, similar: async () => [], accounts: () => accounts.ids() });
   const app = Fastify();
   actAs(app, accounts.list());

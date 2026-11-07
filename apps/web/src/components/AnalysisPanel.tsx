@@ -253,7 +253,7 @@ export function AnalysisPanel() {
 
       <SettingsSection
         title="Sound analysis"
-        description="What each song feels like: its energy, brightness, bass and how busy it is. For Energy boost, Wind down, Deep focus, Vibes of the hour, radio and playlist covers."
+        description="What each song feels like: its energy, brightness, bass and how busy it is. For Energy boost, Chill, Deep focus, Wind down, Vibes of the hour, radio and playlist covers."
       >
         <Analysis
           kind="sound"

@@ -74,6 +74,7 @@ function setup(mixMaps = new Map<string, MixMapSummary>(), views: Record<number,
     features: () => new Map(),
     meta: () => new Map(),
     mixSummaries: (ids: string[]) => new Map(ids.flatMap((id) => (mixMaps.has(id) ? [[id, mixMaps.get(id)!]] : []))),
+    phraseEnergies: () => new Map(),
     progress: () => ({ features: 0, meta: 0, mixMaps: mixMaps.size }),
   } as unknown as Analyzer;
   const history = new History(db, library);

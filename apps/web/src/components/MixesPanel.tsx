@@ -22,9 +22,10 @@ const KINDS: { kind: MixKind; label: string; description: string }[] = [
   { kind: 'deepcuts', label: 'Deep cuts', description: 'The songs you’ve barely played by the artists you love.' },
   { kind: 'fresh', label: 'Fresh arrivals', description: 'Songs from albums added in the last 30 days.' },
   { kind: 'decade', label: 'Time machine', description: 'One for each decade you have the most music from.' },
-  { kind: 'energy', label: 'Energy boost', description: 'Loud, fast songs, building up.' },
-  { kind: 'focus', label: 'Deep focus', description: 'Steady, mostly instrumental music to work to.' },
-  { kind: 'winddown', label: 'Wind down', description: 'Calm, soft songs, slowing down.' },
+  { kind: 'energy', label: 'Energy boost', description: 'Songs with a driving beat, building to the peak.' },
+  { kind: 'chill', label: 'Chill', description: 'Laid-back songs with an easy groove, warm and unhurried.' },
+  { kind: 'focus', label: 'Deep focus', description: 'Steady, instrumental music that stays out of the way.' },
+  { kind: 'winddown', label: 'Wind down', description: 'Soft, slow songs for the end of the day, settling down.' },
   { kind: 'onthisday', label: 'On this day', description: 'Songs from albums released this week in years past.' },
 ];
 
@@ -154,8 +155,8 @@ export function MixesPanel() {
 
       <SettingsSection title="Sound">
         <p className="text-sm text-muted">
-          Energy boost, Wind down, Deep focus and Vibes of the hour are better once Playarr has measured how songs sound (tempo,
-          loudness, energy); until then they go by genre. Measure every song in{' '}
+          Energy boost, Chill, Deep focus, Wind down and Vibes of the hour are better once Playarr has measured how songs sound
+          (tempo, loudness, energy); until then they go by genre. Measure every song in{' '}
           <Link to="/settings/analysis" className="text-paper-dim underline underline-offset-2 hover:text-paper">
             Settings → Analysis
           </Link>
