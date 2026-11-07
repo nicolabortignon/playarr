@@ -70,6 +70,6 @@ Shared rules keep them in step: the planner in `packages/mix` is deterministic, 
 
 ## Deployment
 
-One Docker image (Node 24 Alpine with ffmpeg, chromaprint and rclone), usually run on the same host as Lidarr with the music mounted read-only at the path Lidarr uses. A second container, the updater, is the only one with the Docker socket and pulls new versions of `main` on a timer (Settings → Updates). User data lives in `DATA_DIR` (back it up); caches in `CACHE_DIR` (safe to delete). See [server/updates-and-deploy.md](server/updates-and-deploy.md).
+One Docker image (Node 24 Alpine with ffmpeg, chromaprint and rclone), usually run on the same host as Lidarr with the music mounted read-only at the path Lidarr uses. A second container, the updater, is the only one with the Docker socket and installs new versions on a timer (Settings → Updates): the newest GitHub release on stable, or `main` on edge, once its checks pass, going back to the version that was running when a new one doesn't start. User data lives in `DATA_DIR` (back it up); caches in `CACHE_DIR` (safe to delete). See [server/updates-and-deploy.md](server/updates-and-deploy.md).
 
 The owner's own install runs on a UGREEN NAS; pushing to GitHub `main` is the release, and the NAS updates itself.

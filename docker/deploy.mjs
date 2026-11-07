@@ -1,6 +1,7 @@
 // Deploy Playarr to the NAS as a standalone Docker service (docker/compose.yaml), from this machine.
 //
-//   pnpm deploy:nas              have the NAS build the latest commit on GitHub main (docker/update.sh), check it's up
+//   pnpm deploy:nas              have the NAS update itself from GitHub (docker/update.sh, on the channel in its Settings →
+//                                Updates: main once its checks pass, for a NAS set up before channels), check it's up
 //   pnpm deploy:nas --local      ship this machine's last commit instead (for work that isn't pushed)
 //   pnpm deploy:nas --with-data  also copy this machine's favorites, playlists and song analysis,
 //                                if the NAS has none yet (add --force-data to replace them)

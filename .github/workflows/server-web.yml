@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   test:
+    # The check run's name: the NAS's updater installs a commit only once the run by this name has passed (docker/update.sh).
+    name: Server and web
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -32,9 +34,10 @@ jobs:
           corepack enable
           pnpm install --frozen-lockfile
 
-      # Analysis, levelled streams and transitions run ffmpeg; tests that need the real one find it.
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # Analysis, leveled streams and transitions run ffmpeg; tests that need the real one find it. busybox: the update
+      # scripts' tests also run them with busybox's sh and tools, as in the updater's Alpine image.
+      - name: Install ffmpeg and busybox
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg busybox
 
       - name: Typecheck
         run: pnpm typecheck

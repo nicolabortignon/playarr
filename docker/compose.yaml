@@ -8,6 +8,7 @@ services:
     build:
       context: ./src
       dockerfile: docker/Dockerfile
+    # By name, so update.sh can keep the image it replaces as playarr:previous and put it back as this one.
     image: playarr:latest
     container_name: playarr
     # Same user as the other containers here, so files in ./config and ./cache belong to you.
@@ -37,7 +38,7 @@ services:
       - "4000:4000"
     restart: unless-stopped
 
-  # Settings → Updates: rebuilds Playarr from GitHub main when asked (docker/updater.sh).
+  # Settings → Updates: rebuilds Playarr from GitHub, its newest release or main, when asked (docker/updater.sh).
   # The only container with the Docker socket; it has no ports.
   updater:
     build:

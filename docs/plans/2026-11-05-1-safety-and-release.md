@@ -6,7 +6,7 @@ Agreed 2026-11-05 from the iOS, server, web and product reviews. First of four p
 
 Already done: the last password can no longer be reset or removed, which reopened the server in setup mode to anyone (`accounts.ts` `keepAPassword`, 2026-11-05).
 
-**Where it stands (2026-11-07):** 1, 3, 4, 5 and 6 done; 2 under way (CI, the copy before migrations and the refusal of a newer database are done; the updater's part is left). Of 4, only the check of past uploads for ITMS-91053 warnings is left (App Store Connect's emails).
+**Where it stands (2026-11-07):** all six done (2 still to be seen on the NAS: its first update after the gate goes through the old `update.sh`, ungated). Of 4, only the check of past uploads for ITMS-91053 warnings is left (App Store Connect's emails).
 
 ## 1. The web app survives a deploy and a page error — S — done 2026-11-05
 
@@ -19,15 +19,17 @@ After a deploy, a tab on the old build that opens a lazy page asks for a chunk t
 - The server answers unknown `/assets/*` (and other files with an extension) with 404, not `index.html`.
 - **Done when** a test removes a chunk mid-session and the page reloads into the new build while a song plays on, and a thrown render error leaves the player bar working.
 
-## 2. A gate before the NAS, a snapshot before migrations, a way back — M
+## 2. A gate before the NAS, a snapshot before migrations, a way back — M — done 2026-11-07
+
+*Done: `.github/workflows/server-web.yml`, `backUp` and `openDatabase` in `apps/server/src/db.ts`, the gate, channels and rollback in `docker/update.sh` and `docker/updater.sh`, `database` in `/api/health`, the channel in Settings → Updates on the web and iOS, and `apps/server/src/update/scripts.test.ts` running the scripts under sh, dash and busybox (see [updates-and-deploy.md](../server/updates-and-deploy.md), section 5).*
 
 Nothing runs the server or web tests before the updater builds `main` (`.github/workflows/` has only `ios.yml`); migrations run at startup with no copy of the database (`apps/server/src/db.ts`); `docker/update.sh` replaces the container and prunes the old image, so there's nothing to go back to; the health check passes any body starting with `{`.
 
 - `.github/workflows/server-web.yml`: typecheck and tests for `packages/*`, `apps/server` and `apps/web` on every push and pull request. *Done 2026-11-07, on Node 24 (the Docker image's), with ffmpeg.*
-- The updater deploys only commits whose checks passed on GitHub (or tags, see the next point).
-- Stable and edge: tagged releases are the default channel; following `main` becomes an opt-in setting (Settings → Updates). Owners from the App Store get stable.
+- The updater deploys only commits whose checks passed on GitHub (or tags, see the next point). *Done 2026-11-07: `update.sh` asks for the commit's "Server and web" check run (the workflow's job, named for it), one call; while it's pending it stays and says it's waiting, and when it failed it stays and says which commit.*
+- Stable and edge: tagged releases are the default channel; following `main` becomes an opt-in setting (Settings → Updates). Owners from the App Store get stable. *Done 2026-11-07: a new install starts on stable, the newest GitHub release, and says so plainly while there's none; settings saved before there were channels stay on edge, the owner's NAS among them.*
 - Before running migrations, `VACUUM INTO /config/backups/playarr-<version>-<sha>.db`, keeping the last 5. *Done 2026-11-07, named `playarr-<version>-schema-<n>.db`: every commit raises the version, so it names the commit, and the schema says what the copy holds.*
-- `update.sh` tags the running image `playarr:previous` before replacing it and restores it when the new one fails a real health check (`/api/health` with the database answering, not just any JSON).
+- `update.sh` tags the running image `playarr:previous` before replacing it and restores it when the new one fails a real health check (`/api/health` with the database answering, not just any JSON). *Done 2026-11-07: within the same run, with its compose.yaml and source, and the copy of the database the new version made before migrating it; the check never depends on Lidarr or the music, and a version that didn't start isn't tried again until a newer one.*
 - The server refuses to start on a database newer than it knows (`user_version` above its migrations), rather than running against it. *Done 2026-11-07.*
 - **Done when** a red commit never reaches the NAS, a failed start rolls back within one update cycle, and a backup exists for every migration run.
 

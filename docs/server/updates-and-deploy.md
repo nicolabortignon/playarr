@@ -57,9 +57,9 @@ Configuration comes from environment variables, validated with zod in `apps/serv
 
 ### The database across versions
 
-Migrations run when the server starts (`openDatabase` in `apps/server/src/db.ts`), each once, tracked with SQLite's `user_version`. Before a start that migrates an existing database, the server copies it with `VACUUM INTO` (consistent even with the database open) to `<DATA_DIR>/backups/playarr-<version>-schema-<n>.db`: the version that's about to migrate it (every commit raises the version, so it names the commit) and the schema it was at. The newest five copies stay. When the copy can't be made (a full disk), the server doesn't start, rather than migrate without one.
+Migrations run when the server starts (`openDatabase` in `apps/server/src/db.ts`), each once, tracked with SQLite's `user_version`. Before a start that migrates an existing database, the server copies it with `VACUUM INTO` (consistent even with the database open) to `<DATA_DIR>/backups/playarr-<version>-schema-<n>.db`: the version that's about to migrate it (every commit raises the version, so it names the commit) and the schema it was at. The copy is made as `<name>.part` and renamed once complete, so one cut short never passes for a whole one. The newest five copies stay. When the copy can't be made (a full disk), the server doesn't start, rather than migrate without one.
 
-A database a newer version has used (its `user_version` beyond this version's migrations) is refused: the server stops, saying which schema it found and where the copies are, instead of running against tables it doesn't know. To go back to an older version, stop the server and put back the copy made before that version's successor migrated: `cp config/backups/playarr-<version>-schema-<n>.db config/playarr.db`, removing `playarr.db-wal` and `playarr.db-shm` beside it.
+A database a newer version has used (its `user_version` beyond this version's migrations) is refused: the server stops, saying which schema it found and where the copies are, instead of running against tables it doesn't know. An update that doesn't start puts back its own copy by itself (section 5). To go back to an older version by hand, stop the server and put back the copy made before that version's successor migrated: `cp config/backups/playarr-<version>-schema-<n>.db config/playarr.db`, removing `playarr.db-wal` and `playarr.db-shm` beside it.
 
 ## 3. The Docker image
 
@@ -98,7 +98,10 @@ The NAS is a UGREEN DXP2800 running UGOS (Debian 12). Lidarr runs in its own com
 | `compose.override.yaml` | Your own mounts; never overwritten |
 | `.env` (mode 600) | `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR`, `PLAYARR_DIR` (written by the deploy) plus any lines of your own |
 | `src/` | The deployed source (`src/REVISION` holds its commit): the build context |
-| `DEPLOYED`, `LATEST` | The commit running, and the newest on GitHub `main` at the last check |
+| `DEPLOYED`, `LATEST` | The commit running, and the newest on its channel at the last check (empty on stable without a release) |
+| `RELEASE` | On stable, the newest release's tag at the last check |
+| `ROLLED_BACK` | A commit that didn't start and was rolled back: not tried again until a newer one (or `--force`) |
+| `src.previous/`, `compose.yaml.previous` | While an update runs, what was running, put back if the new version doesn't start |
 | `config/` | The database: keep and back up. `config/backups/` holds the copies made before migrations |
 | `cache/` | Artwork, covers, transitions: safe to delete |
 | `update/` | Shared between Playarr and the updater (section 5) |
@@ -111,7 +114,7 @@ Logs: `sudo docker compose -f /volume1/docker/playarr/compose.yaml logs -f`. Bac
 
 Run from a development machine. It reads the SSH settings from `.env`, plus `NAS_DIR` (default `/volume1/docker/playarr`), `NAS_MUSIC_DIR` (default `/volume2/data/media/music`), `NAS_LIDARR_URL` (default `LIDARR_URL`) and `NAS_SUDO_PASSWORD` (default `SSH_PASSWORD`). It never prints secrets.
 
-- **Default**: copies `docker/update.sh` to the NAS and runs it with sudo, so the NAS downloads and builds the latest commit on GitHub `main`. It warns if this checkout's HEAD differs from GitHub's `main`: push first.
+- **Default**: copies `docker/update.sh` to the NAS and runs it with sudo, so the NAS updates itself on its channel (`main`, on a NAS set up before there were channels) once the commit's checks have passed on GitHub: right after a push, it says it's waiting for them. It warns if this checkout's HEAD differs from GitHub's `main`: push first.
 - **`--local`**: streams `git archive HEAD` into `src/` instead, so only committed code goes (no `.env`, no local data), copies `compose.yaml` and `update.sh` from it, removes `DEPLOYED` (so the next update rebuilds GitHub's commit), and runs `docker compose up -d --build --remove-orphans`. Use it for work that isn't pushed.
 - Either way it rewrites the four managed `.env` lines and keeps the NAS's other lines, then waits for `/api/health` and reports Lidarr, music access and the track count.
 - **`--with-data`**: also copies this machine's database, as a `VACUUM INTO` snapshot (consistent even while the local server runs), only if the NAS has none. **`--force-data`** replaces the NAS's, stopping Playarr first.
@@ -120,24 +123,41 @@ The image is always built on the NAS itself (x86_64): there's no registry and no
 
 ## 5. Updates
 
+### Channels
+
+- **Stable** installs the newest release of `PLAYARR_REPO` (default `nicolabortignon/playarr`): the tag GitHub's releases API calls latest (pre-releases and drafts don't count), resolved to its commit as `refs/tags/<tag>`. Until the repository has a release, a stable install stays where it is and says so; that isn't a failure.
+- **Edge** installs the newest commit on `main`.
+
+A new install starts on stable. One whose Settings → Updates were saved before there were channels (a `settings.json` without `channel`) stays on edge, as it was: the owner's NAS deploys every push that way. Switching from edge to stable installs the newest release at the next check, even when it's older than what's running; if that release can't use the database a newer version migrated, it refuses to start, and the update goes back (below).
+
 ### `update.sh`
 
-`docker/update.sh` lives in the deploy folder and does one update. It asks GitHub's API for the commit at the ref (`main` unless `--ref X`) of `PLAYARR_REPO` (default `nicolabortignon/playarr`) and writes it to `LATEST`. If that's already `DEPLOYED` (and there's no `--force`), it stops. Otherwise it:
+`docker/update.sh` lives in the deploy folder and does one update. It takes the channel from `--channel stable|edge`, or else from `update/settings.json` by the updater's rule (below), read with nothing but `dd`, `tr`, `sed` and `case`; `--ref X` deploys a branch, tag or commit by hand instead. It asks GitHub's API for the channel's newest commit (one call for edge, two for stable) and writes it to `LATEST`, and on stable the release's tag to `RELEASE`. If that's already `DEPLOYED` (and there's no `--force`), it stops. A commit in `ROLLED_BACK` isn't tried again (until `--force`). Otherwise:
 
-1. downloads the tarball from codeload (no git needed);
-2. swaps it into `src/` and writes `REVISION`;
-3. copies over `compose.yaml` and the commit's own `update.sh`;
-4. runs `docker compose up -d --build --remove-orphans`;
-5. polls the health URL for up to two minutes (40 × 3 s);
-6. writes `DEPLOYED` only once Playarr answers.
+1. **The gate.** It asks GitHub for the commit's check runs named "Server and web" (`/commits/<sha>/check-runs?check_name=…`, the job in `.github/workflows/server-web.yml`), one more call. Every run must have completed with success. None yet, or one still running: it stays and says the commit is waiting for its checks, and asks again next time. One failed (or was canceled or skipped): it stays and says which commit failed. A rebuild of the commit running (`--force`) skips the gate.
+2. It downloads the tarball from codeload (no git needed) and swaps it into `src/`, keeping the old one as `src.previous/`, and writes `REVISION`.
+3. It copies over `compose.yaml` (keeping the old one as `compose.yaml.previous`) and the commit's own `update.sh`. The new `update.sh` stays even if the version doesn't start, so a fix to the script is never held back by the copy it replaces.
+4. It tags the running container's image `playarr:previous` (compose names the image `playarr:latest`, so there's a name to put back), and notes the database copies the new version already has in `config/backups`.
+5. It runs `docker compose up -d --build --remove-orphans`.
+6. It waits for a real health check: `/api/health` answering `"database":{"ok":true}`, and again 10 s later, within five minutes (`PLAYARR_HEALTH_WAIT` seconds; for the updater, set it in `compose.override.yaml` when migrations take longer). Not `ok`, which is false whenever Lidarr or the music can't be reached: an outage of those never fails or rolls back an update. Each request gets up to 45 s, longer than Lidarr's own 30 s timeout, which the health route waits on. A version from before the `database` field passes with any answer of its own, as all did before.
+7. Up: it writes `DEPLOYED`, removes `ROLLED_BACK` and the kept files, and prunes old images (`playarr:previous` stays until the next update, for going back by hand).
 
-A failed build leaves the running container alone. Further details:
+A failed build leaves the running container alone, and puts the old `src/` and `compose.yaml` back. When the new version doesn't come up (or its container couldn't start after the old one was removed), it goes back within the same run:
 
-- A lock directory (`.update.lock`) allows one run at a time.
+- it prints the new container's last 20 log lines and stops it;
+- if the new version made a copy of the database in this run, it migrated: the previous version would refuse the database, so `update.sh` removes `playarr.db-wal` and `playarr.db-shm` and moves that copy (the earliest schema, if it made more than one) over `config/playarr.db`. Copies it made in earlier runs are left alone, since the database has moved on since; with no copy from this run, the database stays as it is;
+- it puts back `compose.yaml` and `src/`, tags `playarr:previous` as `playarr:latest`, runs `docker compose up -d --no-build --no-deps --force-recreate playarr`, waits for the same health check, and records the commit in `ROLLED_BACK`.
+
+Its exit status tells the updater what happened: 0 up to date or updated; 3 waiting for checks; 4 checks failed; 5 no release yet; 6 rolled back (now, or earlier: `ROLLED_BACK`); anything else failed. Lines starting with `✗` say what went wrong. Further details:
+
+- A lock directory (`.update.lock`) allows one run at a time; GitHub's answers go inside it.
 - It records `PLAYARR_DIR=<its folder>` in `.env`.
 - It creates `update/` (mode 0775, owned like the folder) before compose would create it as root.
 - When run as root, it keeps files owned by the folder's owner.
-- `--quiet` prints only changes and failures, and failures start with `✗`.
+- `--quiet` prints only changes, waits and failures.
+- With no curl it uses wget, reading GitHub's status from the headers `wget -S` prints. It needs no jq.
+
+Without signing in, GitHub allows 60 API calls an hour from an address. A check makes one when up to date on edge (two on stable), and at most three when there's something to install. When the limit is used up, the check fails saying so, and the next one tries again.
 
 The first `sudo sh update.sh` on a machine also builds and starts the updater.
 
@@ -151,11 +171,23 @@ Every 30 s, `updater.sh`:
 
 1. writes a heartbeat to `status.json`;
 2. reads `settings.json`;
-3. runs `update.sh --quiet` when a Check now is waiting (`update/request`), or when automatic updates are on and the interval has passed.
+3. runs `update.sh --quiet --channel <channel>` when a Check now is waiting (`update/request`), or when automatic updates are on and the interval has passed.
 
-Inside the updater, `update.sh` rebuilds only `playarr` (`--no-deps`, since `PLAYARR_UPDATER=1`) and checks health at `http://playarr:4000/api/health`. While it runs, the heartbeat goes on every 3 s. When an update succeeds, a one-off container from the updater image (`playarr-updater-refresh`) recreates the updater. It can't recreate itself, because compose stops the old container before starting the new one, which would cut the command off halfway. The last state, error, `lastCheck` and `lastUpdate` survive a restart.
+The channel is `stable` when there's no `settings.json` yet, `edge` when it has no `channel`, and the `channel` it has when that's exactly `stable` or `edge`. Anything else (another value, another type, a file jq can't read) installs nothing: the check fails with "Settings → Updates has a channel this updater doesn't know: choose Stable or Edge again".
 
-Only `main` of `PLAYARR_REPO` can be deployed this way: the updater passes no `--ref`. GitHub serves fork commits through the parent repository's API, so a free-form ref from Settings would let anyone who can reach Settings deploy a fork.
+From `update.sh`'s exit status it records `state` and `outcome`: waiting for checks (`waiting`) and no release yet (`noRelease`) are `idle`, not failures; checks failed (`checksFailed`) and rolled back (`rolledBack`) are `failed`, with the `✗` line as the error, as for any other failure.
+
+Inside the updater, `update.sh` rebuilds only `playarr` (`--no-deps`, since `PLAYARR_UPDATER=1`) and checks health at `http://playarr:4000/api/health`. While it runs, the heartbeat goes on every 3 s. When an update succeeds, a one-off container from the updater image (`playarr-updater-refresh`) recreates the updater. It can't recreate itself, because compose stops the old container before starting the new one, which would cut the command off halfway. A rollback leaves the updater as it is. The last state, error, outcome, channel, `lastCheck` and `lastUpdate` survive a restart.
+
+Only `PLAYARR_REPO`'s releases or its `main` can be deployed this way: the updater passes a channel, never a `--ref`. GitHub serves fork commits through the parent repository's API, so a free-form ref from Settings would let anyone who can reach Settings deploy a fork. A release's tag comes from the repository's own releases API, never from Settings, and is resolved as `refs/tags/<tag>`, so it's never read as a commit.
+
+### Going from the `update.sh` before channels
+
+The NAS runs the `update.sh` of the version it has deployed, which copies the new commit's over itself, so the new script first runs with what the old one left: `DEPLOYED`, `LATEST`, a `status.json` without `outcome` or `channel`, a `settings.json` without `channel`, an image never tagged `playarr:previous`, and maybe no `config/backups`. It reads that as edge, tags the running image before its first update, goes back without a database copy when there's none from its run, and the updater keeps the old status. The old script deploys the commit that brings all this without a gate (it has none); every update after that is gated. `apps/server/src/update/scripts.test.ts` runs exactly that: the old script, frozen in `fixtures/update-before-channels.sh`, installs the new one, then the new updater updates from what it left, and goes back from there.
+
+### The scripts' tests
+
+`apps/server/src/update/scripts.test.ts` runs `update.sh` and `updater.sh` for real, with every POSIX shell it finds (`sh`, `dash`, and `busybox sh` with busybox's own tools, as in the updater's Alpine image), in a temporary deploy folder. curl, wget, docker, tar and sleep are stubs that log their calls and answer from files; jq is the real one. They run with the server's tests, so CI (which installs busybox) checks the scripts before any NAS runs them.
 
 ### The `update/` folder protocol
 
@@ -163,31 +195,32 @@ Nothing in `update/` is trusted by the updater, and nothing in it is ever run.
 
 | File | Written by | Read by | Notes |
 |---|---|---|---|
-| `settings.json` | Playarr | updater | `{enabled, intervalMinutes}`. jq reads only `enabled == true` and an interval of 15, 60, 360 or 1440 (anything else counts as 60). It must be a regular file, not a symlink |
+| `settings.json` | Playarr | updater | `{enabled, intervalMinutes, channel}`. jq reads only `enabled == true`, an interval of 15, 60, 360 or 1440 (anything else counts as 60) and a `channel` of exactly `stable` or `edge` (see above). It must be a regular file, not a symlink |
 | `request` | Playarr | updater | Its existence asks for a check (the content is a timestamp); the updater deletes it |
-| `status.json` | updater | Playarr | `state` (`idle`, `checking`, `failed`), `heartbeat`, `lastCheck`, `lastUpdate` (Unix seconds), `deployed`, `latest`, and `error` when failed |
+| `status.json` | updater | Playarr | `state` (`idle`, `checking`, `failed`), `heartbeat`, `lastCheck`, `lastUpdate` (Unix seconds), `deployed`, `latest`, `error` when failed, and from the last check `outcome` (`waiting`, `checksFailed`, `noRelease`, `rolledBack`), `channel` and, on stable, `release`. `deployed`, `latest` and `release` come from `update.sh`'s files in the deploy folder, never from the old status |
 | `last.log` | updater | Playarr | The last run's output only |
 
 Both sides write to a temporary file and rename it into place. The updater writes its temporary files in the deploy folder, which Playarr can't write to, so a rename replaces any symlink planted in `update/` rather than writing through it.
 
 ### Settings → Updates
 
-`apps/server/src/update/bridge.ts` (`UpdateBridge`) is all Playarr knows about updates: it never talks to Docker. `info()` returns the settings (defaults: off, 60 minutes), the parsed status (SHAs and numbers validated, the error capped at 500 characters), whether a request is waiting, and the last 60 lines of `last.log` (from at most its last 64 KB). Updates are `available` only when all three hold:
+`apps/server/src/update/bridge.ts` (`UpdateBridge`) is all Playarr knows about updates: it never talks to Docker. `info()` returns the settings (defaults: off, 60 minutes, and the channel by the updater's rule; a value the updater would refuse reads as edge until it's chosen again), the parsed status (SHAs, numbers, the outcome, channel and tag validated, the error capped at 500 characters), whether a request is waiting, and the last 60 lines of `last.log` (from at most its last 64 KB). Saving writes the channel too, so settings saved once never fall back to the rule. Updates are `available` only when all three hold:
 
 - `UPDATE_DIR` is set. Otherwise: "Automatic updates need the Docker setup".
 - The folder is writable.
 - The heartbeat is under 180 s old. Otherwise the panel says to run `update.sh` once.
 
-The routes in `apps/server/src/routes/settings.ts` are `GET /api/settings/updates`, `PUT /api/settings/updates` (`enabled`, `intervalMinutes`) and `POST /api/settings/updates/check`. All are admin-only; before the server is set up, they work from the home network only. A missing or unwritable folder answers 409, and bad values 400.
+The routes in `apps/server/src/routes/settings.ts` are `GET /api/settings/updates`, `PUT /api/settings/updates` (`enabled`, `intervalMinutes`, `channel`: `stable` or `edge`, never a repository, branch or commit) and `POST /api/settings/updates/check`. All are admin-only; before the server is set up, they work from the home network only. A missing or unwritable folder answers 409, and bad values 400.
 
-The panel (`apps/web/src/components/UpdatesPanel.tsx`) shows:
+The panel (`apps/web/src/components/UpdatesPanel.tsx`, and `UpdatesPanel.swift` in the iOS app) shows:
 
-- the running version and commit, the latest on GitHub, and whether an update is available;
+- the running version and commit, and the newest on the last check's channel: "Latest on main: 9f8e7d6" or "Latest release: v0.7.0 · 9f8e7d6", then "Up to date", "A newer version is available", or why it isn't installed ("Waiting for its checks", "Its checks failed", "It didn’t start"); "Latest release: none yet" on stable without one;
+- the channel, Stable or Edge, with what it installs;
 - an on/off switch and an interval;
 - Check now;
-- the last result, with the log.
+- the last result, with the log: "Updated to v0.7.0", "Already up to date", "v0.7.0 is waiting for its checks on GitHub", "No release yet: Playarr stays on this version until the first one", or a failure in `update.sh`'s words, such as "9f8e7d6 failed its checks on GitHub, so Playarr stays on 1a2b3c4." or "9f8e7d6 didn't start, so Playarr went back to 1a2b3c4 (rolled back)".
 
-It polls every 5 s while a check is waiting or running, and every minute otherwise. When `deployed` changes under an open page, it offers a Reload.
+It polls every 5 s while a check is waiting or running, and every minute otherwise. When `deployed` changes under an open page, it offers a Reload. The iOS panel shows the channel only for servers that have one.
 
 ## 6. Versioning
 
@@ -197,12 +230,14 @@ The version is compiled into the server (`tsup` defines `__APP_VERSION__`; `src/
 
 ## 7. Releasing
 
-There's no separate release step:
+For edge installs (the owner's NAS among them) there's no separate release step:
 
 1. Commit on `main`; the hook raises the version.
-2. Push to GitHub.
-3. The NAS picks the commit up at its next scheduled check. It's set to every 15 minutes in Settings → Updates; the default is hourly. Check now, `pnpm deploy:nas` or `sudo sh update.sh` on the NAS do it at once.
+2. Push to GitHub. CI runs the "Server and web" check on the commit.
+3. The NAS picks the commit up at its first scheduled check after the check has passed. It's set to every 15 minutes in Settings → Updates; the default is hourly. Check now, `pnpm deploy:nas` or `sudo sh update.sh` on the NAS do it at once (once the check has passed).
 
-Watch the result in Settings → Updates or the compose logs. CI is two workflows: `.github/workflows/server-web.yml` typechecks and tests the shared packages, the server and the web app on every push and pull request, on the Docker image's Node (the web's smoke tests need a server, so they're skipped there); `.github/workflows/ios.yml` tests the iOS app and uploads TestFlight builds.
+Stable installs follow GitHub releases: publish one on a commit whose check has passed, its tag named after the version (`gh release create v0.6.600 --target <commit> --generate-notes`), and each picks it up at its next check. Pre-releases and drafts don't count.
+
+Watch the result in Settings → Updates or the compose logs. CI is three workflows: `.github/workflows/server-web.yml` typechecks and tests the shared packages, the server and the web app on every push and pull request, on the Docker image's Node (the web's smoke tests need a server, so they're skipped there), and its job's check run, "Server and web", is what the updater waits for; `.github/workflows/ios-contracts.yml` checks the iOS app's models against the server's answers; `.github/workflows/ios.yml` tests the iOS app and uploads TestFlight builds.
 
 See also [../decisions.md](../decisions.md) for why things are this way.
