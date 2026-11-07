@@ -45,6 +45,8 @@ Albums and songs, wherever they're answered, carry their cover's colors once the
 | `GET/HEAD /stream/:fileId` | the file as it is, with byte ranges | signed in |
 | `GET/HEAD /stream/:fileId/lossless.wav` | ALAC or AIFF as a lossless WAV, for browsers that can't play them | signed in |
 | `GET/HEAD /stream/:fileId/levelled.wav?gain=` | the song at its even-volume level, 16-bit 44.1 kHz WAV, gain ±20 dB | signed in |
+| `GET/HEAD /stream/:fileId/aac?kbps=&start=`, `/levelled.aac?gain=&kbps=&start=` | the song encoded as it's asked for: AAC in fragmented MP4 at 128 or 256 kbps, from sample `start` (44.1 kHz), leveled at `gain`; every sample where the file has it. 503 with `Retry-After` when too many are encoding | signed in |
+| `GET/HEAD /stream/:fileId/opus`, `/levelled.opus` | the same as Opus (no client plays it yet) | signed in |
 | `GET /art/:kind/:id/:type`, `/art/copy/:id`, `/art/remote?url=` | Lidarr artwork, a folder file's picture, allowlisted remote artwork; resized WebP, cached | signed in |
 | `GET /art/playlist/:id`, `/art/playlist/:id/preview` | a playlist's generated cover, a candidate cover | signed in |
 | `POST /api/levels` | even-volume gains (track and album) for up to 50 songs | signed in |

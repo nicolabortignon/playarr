@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tempDir } from '../catalog/testFixtures.ts';
-import { ffmpegPcmArgs, ffmpegPcmStream } from './source.ts';
+import { ffmpegEncodeArgs, ffmpegEncodedStream, ffmpegPcmArgs, ffmpegPcmStream, type EncodeOptions } from './source.ts';
 
 /** True if `needle` appears as a contiguous run inside `haystack`; returns its index or -1. */
 function indexOfRun(haystack: string[], needle: string[]): number {
@@ -94,6 +94,52 @@ describe('ffmpegPcmArgs', () => {
   });
 });
 
+describe('ffmpegEncodeArgs', () => {
+  const FROM_START: EncodeOptions = { codec: 'aac', kbps: 128, skipSamples: 0, leadSamples: 1088, samples: 89_288 };
+
+  it('encodes AAC as ADTS, every sample counted in the filters at 44.1 kHz: the silence before the song, then exactly so many samples', () => {
+    expect(ffmpegEncodeArgs('/music/a.flac', FROM_START)).toEqual([
+      ...['-hide_banner', '-loglevel', 'error', '-nostdin'],
+      ...['-i', '/music/a.flac', '-map', '0:a:0', '-vn', '-sn', '-dn'],
+      ...['-af', 'aresample=44100,adelay=1088S:all=1,apad=whole_len=89288,atrim=end_sample=89288'],
+      ...['-ac', '2', '-c:a', 'aac', '-b:a', '128k', '-f', 'adts'],
+      ...['-fflags', '+bitexact', '-flags:a', '+bitexact', '-'],
+    ]);
+  });
+
+  it('seeks before the input, drops the samples up to the start, and applies the gain', () => {
+    const args = ffmpegEncodeArgs('/music/a.flac', { codec: 'aac', kbps: 256, seekSeconds: 0.97, skipSamples: 235, leadSamples: 0, samples: 45_188, gainDb: -6.5 });
+    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
+    expect(indexOfRun(args, ['-ss', '0.97'])).toBeGreaterThanOrEqual(0);
+    expect(indexOfRun(args, ['-af', 'aresample=44100,atrim=start_sample=235,volume=-6.5dB,apad=whole_len=45188,atrim=end_sample=45188'])).toBeGreaterThan(args.indexOf('-i'));
+    expect(indexOfRun(args, ['-b:a', '256k'])).toBeGreaterThanOrEqual(0);
+  });
+
+  it('encodes Opus with libopus at a constant bitrate, in 20 ms packets at 48 kHz, as Ogg', () => {
+    const args = ffmpegEncodeArgs('/music/a.flac', { ...FROM_START, codec: 'opus', leadSamples: 0, samples: 88_200 });
+    expect(indexOfRun(args, ['-c:a', 'libopus', '-b:a', '128k', '-vbr', 'off', '-application', 'audio', '-frame_duration', '20', '-ar', '48000', '-f', 'ogg'])).toBeGreaterThan(0);
+  });
+
+  it('passes the path as one argument right after -i, whatever it contains', () => {
+    const path = "/music/it's -ss 5; rm -rf.flac";
+    const args = ffmpegEncodeArgs(path, FROM_START);
+    expect(args[args.indexOf('-i') + 1]).toBe(path);
+  });
+
+  it.each([
+    ['another codec', { codec: 'mp3' as 'aac' }],
+    ['a bitrate not on offer', { kbps: 192 }],
+    ['a NaN seek', { seekSeconds: Number.NaN }],
+    ['a negative seek', { seekSeconds: -1 }],
+    ['a fraction of a sample to skip', { skipSamples: 1.5 }],
+    ['negative silence', { leadSamples: -1 }],
+    ['no samples', { samples: 0 }],
+    ['a gain no song needs', { gainDb: 40 }],
+  ])('rejects %s', (_label, change) => {
+    expect(() => ffmpegEncodeArgs('/music/a.flac', { ...FROM_START, ...change })).toThrow(RangeError);
+  });
+});
+
 describe('ffmpegPcmStream', () => {
   /** A stand-in for ffmpeg: a shell script doing `body`, whatever arguments it's given. */
   function fakeFfmpeg(body: string) {
@@ -116,6 +162,20 @@ describe('ffmpegPcmStream', () => {
       expect(await read(ffmpegPcmStream(ffmpeg.bin, '/music/a.flac', { ...OPTS, priority: 'normal' }))).toBe('pcm bytes');
     } finally {
       ffmpeg.cleanup();
+    }
+  });
+
+  it('hands on what ffmpeg encodes, given the encode’s arguments', async () => {
+    const t = tempDir();
+    const argsFile = join(t.dir, 'args');
+    const ffmpeg = fakeFfmpeg(`echo "$@" > '${argsFile}'; printf 'adts frames'`);
+    try {
+      const opts: EncodeOptions = { codec: 'aac', kbps: 128, skipSamples: 0, leadSamples: 1088, samples: 2000, priority: 'normal' };
+      expect(await read(ffmpegEncodedStream(ffmpeg.bin, '/music/a.flac', opts))).toBe('adts frames');
+      expect(readFileSync(argsFile, 'utf8').trim()).toBe(ffmpegEncodeArgs('/music/a.flac', opts).join(' '));
+    } finally {
+      ffmpeg.cleanup();
+      t.cleanup();
     }
   });
 

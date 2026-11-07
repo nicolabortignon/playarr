@@ -5,7 +5,7 @@ import { createServer } from 'node:net';
 import { posix } from 'node:path';
 import { PassThrough, type Readable } from 'node:stream';
 import { cleanRcloneError, type Rclone } from './rclone.ts';
-import { ffmpegPcmArgs, ffmpegPcmStream, PCM_MAX_BUFFER, type ByteRange, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
+import { ffmpegEncodedStream, ffmpegPcmArgs, ffmpegPcmStream, PCM_MAX_BUFFER, type ByteRange, type EncodeOptions, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
 import { lowPriority } from '../lowPriority.ts';
 
 /** A free loopback port (tiny race between closing and rclone binding; a failed start retries once). */
@@ -203,11 +203,19 @@ export class RcloneMediaSource implements MediaSource {
   }
 
   pcmStream(path: string, opts: PcmStreamOptions): Readable {
-    // The URL is known once rclone serves the share: until then the audio waits in a pass-through.
+    return this.viaUrl(path, (url) => ffmpegPcmStream(this.tools.ffmpeg ?? 'ffmpeg', url, opts));
+  }
+
+  encodedStream(path: string, opts: EncodeOptions): Readable {
+    return this.viaUrl(path, (url) => ffmpegEncodedStream(this.tools.ffmpeg ?? 'ffmpeg', url, opts));
+  }
+
+  /** ffmpeg on the file's loopback URL. The URL is known once rclone serves the share: until then the audio waits in a pass-through. */
+  private viaUrl(path: string, run: (url: string) => Readable): Readable {
     const out = new PassThrough();
     this.urlFor(path).then(
       (url) => {
-        const decoded = ffmpegPcmStream(this.tools.ffmpeg ?? 'ffmpeg', url, opts);
+        const decoded = run(url);
         decoded.on('error', (err) => out.destroy(err));
         out.on('close', () => decoded.destroy());
         decoded.pipe(out);

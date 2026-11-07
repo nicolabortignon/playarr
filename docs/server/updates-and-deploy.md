@@ -38,6 +38,7 @@ Configuration comes from environment variables, validated with zod in `apps/serv
 | `DATA_DIR` | `data` | The SQLite database: accounts, favorites, playlists, history, analysis. Keep and back up. Copies made before migrations go in `backups/` inside it (see below) |
 | `CACHE_DIR` | `.cache` | Artwork, covers, rendered transitions. Safe to delete |
 | `ART_CACHE_MB`, `TRANSITIONS_CACHE_MB` | `2048`, `1024` | Cache caps, least recently used trimmed first |
+| `ENCODES_MAX`, `ENCODES_PER_ACCOUNT`, `ENCODE_CACHE_MB` | `8`, `4`, `128` | Songs encoded at once for High and Normal streams, in all and for one account, and the memory finished ones are kept in (see [streaming-and-art.md](streaming-and-art.md#2-encoded-streams-streamfileidaac)) |
 | `WEB_DIST` | `../../web/dist` from the server build | The built web app to serve |
 | `LIDARR_URL`, `LIDARR_API_KEY` | unset | Seed the Lidarr source once; Settings → Sources owns it afterwards (see [sources-and-catalog.md](sources-and-catalog.md)) |
 | `MEDIA_SOURCE`, `PATH_MAP` | `none`, empty | How Lidarr's files are read (`local`, `ssh`, `sftp`), and `lidarrPrefix=playarrPrefix` pairs |

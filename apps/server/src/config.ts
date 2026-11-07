@@ -17,6 +17,11 @@ const schema = z.object({
   ART_CACHE_MB: z.coerce.number().positive().default(2048),
   // Rendered transitions (DJ mix) are trimmed to this size the same way.
   TRANSITIONS_CACHE_MB: z.coerce.number().positive().default(1024),
+  // Encoded streams (High and Normal quality, for mobile data): at most this many songs encoded at once, and
+  // for any one account; finished streams are kept in memory up to ENCODE_CACHE_MB, for players asking again.
+  ENCODES_MAX: z.coerce.number().int().positive().default(8),
+  ENCODES_PER_ACCOUNT: z.coerce.number().int().positive().default(4),
+  ENCODE_CACHE_MB: z.coerce.number().positive().default(128),
   // User data (favorites…). Unlike the cache, don't delete this.
   DATA_DIR: z.string().default('data'),
   WEB_DIST: z.string().optional(),

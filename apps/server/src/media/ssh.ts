@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { PassThrough, type Readable } from 'node:stream';
 import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
-import { ffmpegPcmArgs, type ByteRange, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
+import { ffmpegEncodeArgs, ffmpegPcmArgs, type ByteRange, type EncodeOptions, type FileStat, type MediaSource, type PcmOptions, type PcmStreamOptions } from './source.ts';
 
 export interface SshOptions {
   host: string;
@@ -168,7 +168,17 @@ export class SshExecMediaSource implements MediaSource {
   }
 
   pcmStream(path: string, opts: PcmStreamOptions): Readable {
-    const args = ffmpegPcmArgs(path, opts).map(shellQuote).join(' ');
+    return this.ffmpegStream(ffmpegPcmArgs(path, opts), opts);
+  }
+
+  /** Encoded on the host as pcmStream decodes there: only the encoded audio crosses the network. */
+  encodedStream(path: string, opts: EncodeOptions): Readable {
+    return this.ffmpegStream(ffmpegEncodeArgs(path, opts), opts);
+  }
+
+  /** ffmpeg on the host with these arguments (checked numbers and quoted paths only), its stdout as it comes. */
+  private ffmpegStream(ffmpegArgs: string[], opts: { priority?: 'low' | 'normal'; signal?: AbortSignal }): Readable {
+    const args = ffmpegArgs.map(shellQuote).join(' ');
     const nice = opts.priority === 'normal' ? '' : 'nice -n 10 ';
     const out = new PassThrough();
     this.shell.exec(`${nice}${shellQuote(this.ffmpeg)} ${args}`).then(
@@ -178,7 +188,9 @@ export class SshExecMediaSource implements MediaSource {
         opts.signal?.addEventListener('abort', abort, { once: true });
         out.on('close', () => channel.close());
         channel.stderr.on('data', (d: Buffer) => (err = (err + d).slice(-2000)));
-        channel.on('data', (d: Buffer) => out.write(d));
+        // Held back while the reader is (an encoded stream far enough ahead of its listeners pauses).
+        channel.on('data', (d: Buffer) => !out.write(d) && channel.pause());
+        out.on('drain', () => channel.resume());
         channel.on('close', (code: number | null) => {
           opts.signal?.removeEventListener('abort', abort);
           if (code === 0) out.end();

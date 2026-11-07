@@ -25,6 +25,7 @@ import { Playlists } from './playlists.ts';
 import { LidarrClient } from './lidarr/client.ts';
 import { CoverColorStore } from './library/coverColorStore.ts';
 import { Library } from './library/library.ts';
+import { EncodedStreams } from './media/encoded.ts';
 import { createMediaSource } from './media/index.ts';
 import { hasRclone } from './media/rclone.ts';
 import { apiRoutes } from './routes/api.ts';
@@ -197,7 +198,14 @@ serverRoutes(app, { info });
 apiRoutes(app, { config, lidarr, library, media, requestSettings });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders, colors: coverColors });
-streamRoutes(app, { library, files, loudness: analyzer });
+// Songs encoded as they're asked for (High and Normal quality), one encode per stream however many ask.
+const encoded = new EncodedStreams({
+  maxRunning: config.ENCODES_MAX,
+  maxPerAccount: config.ENCODES_PER_ACCOUNT,
+  cacheBytes: config.ENCODE_CACHE_MB * 1024 * 1024,
+  log: app.log,
+});
+streamRoutes(app, { library, files, loudness: analyzer, encoded });
 levelRoutes(app, { analyzer, library });
 // New cue points make new plans: the transitions made from the old ones are deleted.
 mixMapRoutes(app, {
@@ -237,6 +245,7 @@ if (existsSync(webDist)) await serveWebApp(app, webDist);
 
 const shutdown = async () => {
   library.stop();
+  encoded.close();
   await media.close();
   await folders.closeAll();
   await bonjour?.stop();

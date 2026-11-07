@@ -22,7 +22,83 @@ export interface MediaSource {
   pcm?(path: string, opts: PcmOptions): Promise<Buffer>;
   /** Decode as pcm does, handing the audio on as it comes: for whole songs, and for what someone listens to. */
   pcmStream?(path: string, opts: PcmStreamOptions): Readable;
+  /**
+   * Decode and encode with ffmpeg where the files are, handing on the encoded audio as it comes: ADTS for AAC,
+   * Ogg for Opus (media/encoded.ts makes the stream from it). Absent if this source can't.
+   */
+  encodedStream?(path: string, opts: EncodeOptions): Readable;
   close(): Promise<void>;
+}
+
+/** What encodedStream encodes (see encodeInput in media/encoded.ts, which works it out). */
+export interface EncodeOptions {
+  codec: 'aac' | 'opus';
+  kbps: number;
+  /** Start decoding this many seconds in, before decoding (a time the format seeks to exactly). */
+  seekSeconds?: number;
+  /** Samples (44.1 kHz) decoded and dropped before the first one encoded. */
+  skipSamples: number;
+  /** Samples of silence encoded before the decoded audio. */
+  leadSamples: number;
+  /** Samples (44.1 kHz) encoded in all: silence made up where the song comes up short, the rest cut off. */
+  samples: number;
+  /** Turn the audio up or down by this many dB (even volume). */
+  gainDb?: number;
+  /** 'low' (the default) for work nobody is waiting on; 'normal' for what someone listens to. */
+  priority?: 'low' | 'normal';
+  signal?: AbortSignal;
+}
+
+/** The bitrates (kbps) an encode may ask for. */
+const ENCODE_KBPS = new Set([128, 256]);
+
+/** Refuse anything but sane numbers, as checkPcmOptions does: they end up on a command line (over SSH too). */
+function checkEncodeOptions({ codec, kbps, seekSeconds, skipSamples, leadSamples, samples, gainDb }: EncodeOptions): void {
+  if (codec !== 'aac' && codec !== 'opus') throw new RangeError(`Invalid codec: ${String(codec)}`);
+  if (!ENCODE_KBPS.has(kbps)) throw new RangeError(`Invalid bitrate: ${kbps}`);
+  if (seekSeconds !== undefined && !(Number.isFinite(seekSeconds) && seekSeconds >= 0)) throw new RangeError(`Invalid seek: ${seekSeconds}`);
+  for (const [name, n] of [['skipSamples', skipSamples], ['leadSamples', leadSamples]] as const) {
+    if (!Number.isInteger(n) || n < 0) throw new RangeError(`Invalid ${name}: ${n}`);
+  }
+  if (!Number.isInteger(samples) || samples <= 0) throw new RangeError(`Invalid samples: ${samples}`);
+  if (gainDb !== undefined && !(Number.isFinite(gainDb) && Math.abs(gainDb) <= MAX_GAIN_DB)) throw new RangeError(`Invalid gain: ${gainDb}`);
+}
+
+/**
+ * ffmpeg arguments that decode `path` and encode it, the encoded audio on stdout. Everything happens at
+ * 44.1 kHz in the filters, sample by sample: resampled first, then the samples before the stream's first
+ * dropped (`atrim`), the silence before the song's start put in (`adelay`), the gain applied, and the length made
+ * exact (`apad` then `atrim`), so the encoder is fed exactly `samples` samples whatever the decode gives. A seek
+ * (`-ss` before `-i`) only ever goes to a time the format seeks to exactly; `atrim` does the rest.
+ *
+ * AAC is ffmpeg's own encoder (always there), as ADTS; Opus is libopus at a constant bitrate, as Ogg. The output
+ * is bitexact (no version strings), so the same file and arguments always encode to the same bytes.
+ */
+export function ffmpegEncodeArgs(path: string, opts: EncodeOptions): string[] {
+  checkEncodeOptions(opts);
+  const { codec, kbps, seekSeconds, skipSamples, leadSamples, samples, gainDb } = opts;
+  const filters = [
+    'aresample=44100',
+    ...(skipSamples ? [`atrim=start_sample=${skipSamples}`] : []),
+    ...(leadSamples ? [`adelay=${leadSamples}S:all=1`] : []),
+    ...(gainDb ? [`volume=${Number(gainDb.toFixed(2))}dB`] : []),
+    `apad=whole_len=${samples}`,
+    `atrim=end_sample=${samples}`,
+  ];
+  const encoder =
+    codec === 'aac'
+      ? ['-c:a', 'aac', '-b:a', `${kbps}k`, '-f', 'adts']
+      : ['-c:a', 'libopus', '-b:a', `${kbps}k`, '-vbr', 'off', '-application', 'audio', '-frame_duration', '20', '-ar', '48000', '-f', 'ogg'];
+  return [
+    ...['-hide_banner', '-loglevel', 'error', '-nostdin'],
+    ...(seekSeconds ? ['-ss', seconds(seekSeconds)] : []),
+    ...['-i', path],
+    ...['-map', '0:a:0', '-vn', '-sn', '-dn'],
+    ...['-af', filters.join(',')],
+    ...['-ac', '2'],
+    ...encoder,
+    ...['-fflags', '+bitexact', '-flags:a', '+bitexact', '-'],
+  ];
 }
 
 export interface PcmOptions {
@@ -129,7 +205,17 @@ export function ffmpegPcmArgs(path: string, opts: PcmOptions): string[] {
  * (the listener went away).
  */
 export function ffmpegPcmStream(ffmpeg: string, input: string, opts: PcmStreamOptions): Readable {
-  const child = spawn(ffmpeg, ffmpegPcmArgs(input, opts), { stdio: ['ignore', 'pipe', 'pipe'], signal: opts.signal });
+  return ffmpegStream(ffmpeg, ffmpegPcmArgs(input, opts), opts);
+}
+
+/** Runs ffmpeg on this machine to encode `input` (a path, or a URL ffmpeg can read), as ffmpegPcmStream decodes. */
+export function ffmpegEncodedStream(ffmpeg: string, input: string, opts: EncodeOptions): Readable {
+  return ffmpegStream(ffmpeg, ffmpegEncodeArgs(input, opts), opts);
+}
+
+/** ffmpeg's stdout as a stream that fails if ffmpeg does, and stops ffmpeg as soon as it's closed. */
+function ffmpegStream(ffmpeg: string, args: string[], opts: { priority?: 'low' | 'normal'; signal?: AbortSignal }): Readable {
+  const child = spawn(ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'], signal: opts.signal });
   if (opts.priority !== 'normal') lowPriority(child);
   const out = new PassThrough();
   let stderr = '';

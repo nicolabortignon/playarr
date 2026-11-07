@@ -1,6 +1,6 @@
 # Streaming and artwork
 
-How the server sends songs, transition files, pictures and lyrics to the players. The code lives in `apps/server/src/routes/stream.ts`, `routes/levels.ts`, `routes/transitions.ts`, `routes/art.ts` and `routes/lyrics.ts`, with `media/levelled.ts` (WAV streams), `analysis/loudness.ts` (loudness), `catalog/files.ts` (where a file's bytes are), `catalog/build.ts` and `catalog/folderArt.ts` (which picture an album gets), `library/coverColors.ts` and `library/coverColorStore.ts` (covers' colors), `discover/art.ts` (remote images) and `lyrics/lyrics.ts`.
+How the server sends songs, transition files, pictures and lyrics to the players. The code lives in `apps/server/src/routes/stream.ts`, `routes/levels.ts`, `routes/transitions.ts`, `routes/art.ts` and `routes/lyrics.ts`, with `media/encoded.ts` and `media/mp4.ts` (encoded streams), `media/levelled.ts` (WAV streams), `analysis/loudness.ts` (loudness), `catalog/files.ts` (where a file's bytes are), `catalog/build.ts` and `catalog/folderArt.ts` (which picture an album gets), `library/coverColors.ts` and `library/coverColorStore.ts` (covers' colors), `discover/art.ts` (remote images) and `lyrics/lyrics.ts`.
 
 Every route here answers only for songs the account may hear, through its view of the catalog ([accounts-and-access.md](accounts-and-access.md#each-accounts-catalog)). None of them needs Playarr's own header (an `<audio>` or `<img>` element can't send one); once the server is set up, they need a session like every other route.
 
@@ -30,9 +30,99 @@ Chrome and Firefox can't play Apple Lossless or AIFF (`wavFallbackOf` in `packag
 
 ---
 
-## 2. Even volume: levelled streams
+## 2. Encoded streams: `/stream/:fileId/aac`
 
-Settings → Playback → Even out the volume. iPhones ignore an audio element's volume, so the levelling is done in the audio itself.
+Settings → Playback → Streaming quality ([../web.md](../web.md#10-settings-panels)). At High (256 kbps) or Normal (128 kbps) a song isn't sent as its file: the server encodes it as it's asked for, AAC-LC at 44.1 kHz in stereo, in fragmented MP4 (`media/encoded.ts`, `media/mp4.ts`, the routes in `routes/stream.ts`). An hour at Normal is about 58 MB, at High about 115 MB, against 300 to 600 MB for lossless files.
+
+### The routes
+
+| path | what |
+|---|---|
+| `GET/HEAD /stream/:fileId/aac?kbps=&start=` | the song encoded, from its sample `start` on |
+| `GET/HEAD /stream/:fileId/levelled.aac?gain=&kbps=&start=` | the same at its even-volume level: `gain` dB (at most ±20) applied before it's encoded |
+| `GET/HEAD /stream/:fileId/opus`, `/levelled.opus` | the same as Opus (see [Opus](#opus) below) |
+
+- **`kbps`**: `128` (when left out) or `256`; anything else is 400.
+- **`start`**: where the stream starts in the song, in samples at 44.1 kHz: an integer, 0 when left out. 400 if it isn't an integer of 0 or more, or is at or past the song's end. Its first sample is the song's sample `start`, whatever the file's format: an MP3, whose seeking lands only near a time, is decoded from its start to get there.
+- **`gain`**, on the leveled routes, as on `levelled.wav`; the plain routes ignore it.
+- **The song's length** is the one loudness analysis counted, when it measured this very file; otherwise the file's header says (exact for FLAC, Apple Lossless, WAV and AIFF; for an MP3 an estimate, so the stream's end may be cut or padded a little), and a song measured from an older version of its file is measured again. Neither known: 404.
+- **Caching.** The `ETag` is made of the file's size and modification time, the song's length, `start`, `gain`, the codec and bitrate, and the layout's version (`ENCODED_VERSION`, bumped whenever the same arguments would give other bytes); 304 on `If-None-Match`. `Cache-Control: private, max-age=86400`, `Content-Type: audio/mp4`.
+
+What they answer:
+
+- **200 or 206**: the stream, with byte ranges as for `/stream` (416 past its end). Its length is declared at once, before a sample is encoded, as an upper bound (see [the layout](#the-layout)): AVFoundation won't play a stream of unknown length. A range within the init segment is answered at once; one past what's encoded waits for it.
+- **404**: the server can't make it. No ffmpeg where the file is (an SFTP source), or the song's length is unknown. Play the song's own file (or `levelled.wav`).
+- **502**: the encode failed before its first fragment, or took more than 20 s to make it (`FIRST_FRAGMENT_MS`). Play the song's own file.
+- **503** with `Retry-After: 5`: too many songs are being encoded (below). Ask again after that.
+
+### How a stream is made
+
+- **Where the files are**, as the WAV streams are decoded: ffmpeg on this server for its own folders and SMB shares (reading rclone's loopback address), on the host for SSH sources, so only the encoded audio crosses the network. A Lidarr library's files are encoded as `MEDIA_SOURCE` reads them. SFTP sources have no ffmpeg (404).
+- **ffmpeg's own AAC encoder** (every ffmpeg has it) writes ADTS, whose frames the server checks (AAC-LC, 44.1 kHz, stereo) and puts into fragmented MP4 itself. Everything before the encoder happens at 44.1 kHz, sample by sample: resampling, dropping the samples before the stream's first, silence before the song's start, the gain, and the length made exact (`ffmpegEncodeArgs` in `media/source.ts`). ffmpeg seeks in the file before decoding only to a time on a 10 ms grid, which formats that seek exactly land on exactly; MP3s are decoded from their start. The output is bitexact, so the same file and arguments give the same bytes.
+- **One encode per stream**, shared by everyone reading it at once (an `<audio>` element's ranges, the device keeping the song). It runs up to 1 MiB past the furthest reader, then waits for them (`READ_AHEAD`): a stream heard over a slow connection is encoded as it's heard. One nobody reads any more is stopped after 10 s. Finished streams stay in memory up to `ENCODE_CACHE_MB` (128), the least recently read going first, so the same stream asked for again is sent at once.
+- **Limits.** At most `ENCODES_MAX` (8) encodes at once, and `ENCODES_PER_ACCOUNT` (4) for any one account. Encodes nobody reads any more are stopped first to make room (for an account at its own limit, only its own).
+
+### Why AAC in fragmented MP4
+
+- **Every player Playarr has plays it**: Safari on a Mac, iPhone and iPad, and every iPhone browser (AVFoundation); Chrome and Firefox, on computers and Android; the iOS app's AudioFileStream and AVAudioFile. Opus in MP4 doesn't play in older Safari, and Apple's decoders put it off by samples (see [Opus](#opus)). ffmpeg's own AAC encoder is in every ffmpeg, so nothing more is needed on a NAS.
+- **A plain MP4** lists every frame's size in its header, before the audio: not known until the song is encoded, so a player would wait for all of it. Fragmented MP4 says up front what the stream holds and lists each fragment's frames as they're made, so the stream goes out as it's encoded.
+- **Bare ADTS**, which needs no container, can't say what to trim: AVPlayer plays it 2112 samples late and guesses its duration, and Apple's AudioFile decodes it 2112 samples late too (both measured).
+
+### The layout
+
+Every stream is laid out so that any player can put every sample exactly where it is in the song.
+
+```
+ftyp        M4A , with mp42 and isom
+moov        mvhd (the song's samples from start as its duration), one trak (mdhd at 44,100;
+            esds: AAC-LC, 44.1 kHz, stereo; no samples), mvex (mehd, trex),
+            udta → meta → ilst: iTunSMPB
+moof, mdat  the first fragment: 43 frames, about a second
+moof, mdat  then 431 frames each, about 10 s
+…
+free        padding to the declared length; its last 64 bytes are zeros
+```
+
+- **Frames and priming.** An AAC frame holds 1024 samples. A stream holds `ceil((2112 + valid) / 1024)` frames: 2112 samples of priming, then the song's `valid = length − start` samples from `start`, then padding to the end of the last frame. The priming is the encoder's own delay (1024 samples) and the 1088 samples of the song before `start` (silence before the song's first sample), fed to the encoder first so it's warmed up on the song itself when sample `start` comes. 2112 is also the priming of Apple's encoder, which AVFoundation takes for granted.
+- **iTunSMPB** says so, as iTunes writes it: ` 00000000 00000840 <padding, 8 hex digits> <valid, 16 hex digits>` and eight more zeros (0x840 is 2112). AudioFileStream, AVAudioFile and AVAssetReader read it as the packet table (`mPrimingFrames` 2112, `mNumberValidFrames`, `mRemainderFrames`) and trim by it. There's no edit list: AVFoundation would take 2112 samples off twice.
+- **Fragments**: `tfhd` with default-base-is-moof, `tfdt` (version 1: the decode time of the fragment's first sample, priming included) and `trun` with the data offset and each frame's size. The first fragment is short so a request is answered at once; the others are long because AVPlayer reads every fragment's header before it plays (below).
+- **The free box** fills the stream to its declared length: 20% over the bitrate, plus 16 KiB, which ffmpeg's encoder never reaches over a song (a stream that would overrun is cut short there, and logged). A player may stop reading where it starts. One that reads it uses up to a fifth more data than the bitrate.
+
+Decoded and trimmed by iTunSMPB, sample *k* of a stream is the song's sample `start + k` at 44.1 kHz, exactly. So a song's encoded stream and its own file line up to the sample, and DJ transitions, cut to the sample of the song's file, join either the same way ([../mixing.md](../mixing.md)).
+
+### Measured
+
+`media/encoded.alignment.test.ts` holds it, on a click track: 8 s of quiet noise with a one-sample click every 57,331 samples from sample 10,000.
+
+- **Apple's decoders** (where `afconvert` is: macOS). The track encoded by Apple's AAC encoder (priming 2112, as the server's streams have), run through the server's encode job into a stream, decoded by AudioFile with its packet table: exactly the song's length, every click on its sample. The same frames as bare ADTS, which can't say what to trim, put every click 2112 samples late: the test sees the trimming, not just its absence.
+- **ffmpeg** (where ffmpeg is). The server's real encode, from the start and from sample 100,003 at −6 dB, decoded by ffmpeg, and by `afconvert` too on a Mac: every click on its sample, at the gain asked for. The Mac this was built on had no ffmpeg, so this half hasn't run yet; it runs on any machine that has it.
+- **By hand, on macOS 27.2.** Streams from the real routes, played by AVPlayer (what Safari's `<audio>` plays through) and recorded through an audio tap: every click lands where the WAV of the same song puts it, from the start, from sample 140,003 (its duration 8.825329 s, exact), and after a seek within the stream (AVPlayer seeks by the fragments' `tfdt`, exactly). The iOS app's two decoders read the same stream exactly too, AudioFileStream trimming by the packet table and AVAudioFile (seeks included), and so does AVAssetReader.
+- **Not measured**: Chrome and Firefox, which play MP4 through their own demuxers (Chrome through FFmpeg's, which reads iTunSMPB's priming, by its source). So with DJ mix on, the web plays songs' own files there ([../web.md](../web.md#6-the-player)).
+
+### Safari reads the whole stream before it plays
+
+AVPlayer (Safari, and every browser on an iPhone) asks for a stream's first two bytes, for its length, then reads every fragment's `moof` before it starts, page by page, whether or not the stream has a `sidx` or an `mfra` (both measured). So an encoded stream starts in Safari once it's all encoded: a four-minute song about five seconds after it's asked for, on a server encoding at 40 to 50 times real time (the 10 s fragments keep the reading to a few dozen requests). Seeking afterwards is instant and exact. The web loads the next song 30 s before it's due, so songs still follow each other without a gap; the first song, or one skipped to, waits. An HLS playlist of the same fragments, or Media Source Extensions (ManagedMediaSource on iOS 17.1 and later), would start sooner; neither is done yet.
+
+Bare ADTS starts at once in AVPlayer, but 2112 samples late and with a guessed duration: not used.
+
+### Opus
+
+`/opus` and `/levelled.opus` are libopus at a constant bitrate, 48 kHz, 20 ms packets, in fragmented MP4: the pre-skip (312) in `dOps`, and the edit list the Opus-in-ISOBMFF spec asks for. Nothing in Playarr plays them. AudioFileStream leaves the pre-skip in (176 samples late at 44.1 kHz), AVAssetReader comes within a sample, and no browser was measured. They're there for a client that measures its own.
+
+### For the iOS app
+
+- Ask for `aac`, or `levelled.aac` with the song's gain, never Opus; `kbps` 128 or 256; `start` 0 for a song from its start.
+- Read it as an M4A file (AudioFileStream opened with `kAudioFileM4AType`, as `StreamDecoder` opens an `m4a`; or AVAudioFile and AVAssetReader on a copy on the device) and trim by its packet table (`kAudioFileStreamProperty_PacketTableInfo`): after the 2112 primed samples, the first decoded sample is the song's sample `start`; stop after `mNumberValidFrames`.
+- To seek, ask for a new stream from `start` (samples at 44.1 kHz), or seek within what's downloaded by its fragments.
+- After a broken connection, resume with a range from the last byte received: the same URL is the same bytes. (A server update that brings another ffmpeg could change them under the same `ETag`; resuming across one garbles a frame at the join, as it would in any file replaced meanwhile.)
+- 503: wait `Retry-After` seconds and ask again. 404 or 502: play the song's own file.
+- A download may stop at the `free` box.
+
+---
+
+## 3. Even volume: leveled streams
+
+Settings → Playback → Even out the volume. iPhones ignore an audio element's volume, and an element's volume only turns a song down, so on phones and tablets the web levels songs in the audio itself: a leveled stream. Desktop browsers turn each song by a gain in Web Audio instead, up as well as down, playing its own file ([../web.md](../web.md#6-the-player)). The iOS app levels songs in its own audio engine.
 
 ### Loudness analysis
 
@@ -52,13 +142,13 @@ Songs not measured yet are queued at once, ahead of everything, and the rest of 
 
 The song decoded with the gain applied, as a 16-bit stereo 44.1 kHz WAV (`media/levelled.ts`). The gain may be at most ±20 dB (400 otherwise). Because loudness analysis counted the samples, the file's length is known before a byte is decoded: every byte is at a known place, so a range from anywhere is decoded from that exact sample, and players seek, buffer and join songs as in any file. Formats whose seeking lands only near a time are decoded from the start to reach it exactly.
 
-It answers 404, and the player plays the song's own file instead, when the song isn't measured yet, when its file changed since (it's then measured again), or when its source can't decode. The `ETag` includes the gain. The stream is uncompressed, about 1.4 Mbit/s.
+It answers 404, and the player plays the song's own file instead, when the song isn't measured yet, when its file changed since (it's then measured again), or when its source can't decode. The `ETag` includes the gain. The stream is uncompressed, about 1.4 Mbit/s: at High and Normal the web asks for `levelled.aac` instead, the same encoded ([2](#2-encoded-streams-streamfileidaac)).
 
 DJ transitions are rendered at the gains the two songs play at ([../mixing.md](../mixing.md)); with even volume off, the player sends no gains.
 
 ---
 
-## 3. Transition files: `/transitions/:file`
+## 4. Transition files: `/transitions/:file`
 
 DJ mix transitions are rendered by the server in the background, then played between song A and song B. How they're planned and rendered is in [../mixing.md](../mixing.md).
 
@@ -68,7 +158,7 @@ DJ mix transitions are rendered by the server in the background, then played bet
 
 ---
 
-## 4. Artwork
+## 5. Artwork
 
 ### Which picture an album or artist gets
 
@@ -112,7 +202,7 @@ Nothing waits for them; a cover not read yet just has no colors. They're read:
 
 ---
 
-## 5. Lyrics
+## 6. Lyrics
 
 `GET /api/tracks/:id/lyrics` (`lyrics/lyrics.ts`) looks in order for:
 
