@@ -1,3 +1,4 @@
+import { Smartphone } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button } from '../components/Button';
@@ -5,6 +6,7 @@ import { Wordmark } from '../components/Nav';
 import { InlineError } from '../components/States';
 import { TextField } from '../components/TextField';
 import { deviceName, signedIn, switchTo, useAccounts } from '../lib/accounts';
+import { APP_STORE_LIVE, APP_STORE_URL, appRedeemLink, onIPhoneOrIPad } from '../lib/appLink';
 import type { SignInResponse } from '@playarr/shared';
 import { api, ApiError } from '../lib/api';
 import { elsewhere, publicAddress, signInThere } from '../lib/publicAddress';
@@ -78,6 +80,27 @@ function PublicAddress({ publicUrl }: { publicUrl: string | undefined }) {
 }
 
 const Problem = ({ error }: { error: string | null }) => (error ? <InlineError error={error} /> : null);
+
+/** On an iPhone or iPad, the setup code opened in the Playarr app instead, and (once it's on sale) where to get it. */
+function InTheApp({ code }: { code: string }) {
+  if (!code || !onIPhoneOrIPad()) return null;
+  return (
+    <div className="mb-8 border-b border-line pb-8">
+      <p className="mb-4 type-body text-paper-dim">Have the Playarr app? Choose your password there instead.</p>
+      <Button to={appRedeemLink(window.location.origin, code)} variant="secondary" size="large" icon={<Smartphone />} className="w-full">
+        Open in the Playarr app
+      </Button>
+      {APP_STORE_LIVE && (
+        <p className="mt-4 type-small text-muted">
+          Don’t have it yet?{' '}
+          <a href={APP_STORE_URL} className="text-paper-dim underline underline-offset-2 hover:text-paper">
+            Get it on the App Store
+          </a>
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** Sign in: or continue as an account already signed in on this device. `?add=1` adds another. */
 export function SignInPage() {
@@ -175,6 +198,7 @@ export function RedeemPage() {
 
   return (
     <AuthLayout title="Choose your password" subtitle={server?.name}>
+      <InTheApp code={code.trim()} />
       <form onSubmit={submit} className="space-y-4">
         <TextField label="Setup code" value={code} onChange={(e) => setCode(e.target.value)} autoCapitalize="characters" autoComplete="one-time-code" spellCheck={false} required />
         <TextField label="New password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" required />

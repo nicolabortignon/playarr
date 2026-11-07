@@ -47,6 +47,8 @@ Removing an account deletes its plays, mixes, favorites, playlists and ListenBra
 
 Redeeming (`POST /api/auth/redeem`) sets the password and signs the device in. A password that's too short leaves the code unused.
 
+On an iPhone or iPad, the web's `/redeem` page also offers "Open in the Playarr app": the app's `playarr://redeem?server=<origin>&code=…` link, the origin being the address the page was opened at. Once the app is on sale, a link to the App Store goes under it (`APP_STORE_LIVE` in `apps/web/src/lib/appLink.ts`). Universal links, which would open the app from the https link itself, need a domain the app is built with, and every server has its own; they wait for a Playarr domain.
+
 ---
 
 ## 2. Sessions and tokens

@@ -90,6 +90,8 @@ The scripts:
 5. Brings App Store Connect in line with the listing: version, text, age rating, price, availability, review details, screenshots, build.
 6. Submits for review. Once approved, it goes on sale by itself.
 
+Once it's on sale, set `APP_STORE_LIVE` to `true` in `apps/web/src/lib/appLink.ts`, so the web's setup-code page links to the App Store.
+
 `DRY_RUN=1` skips the tests, changes nothing and prints every write it would make. A version already in review or on sale is left alone. App Privacy ("Data Not Collected") has no API, so it's set on the website.
 
 ## 7. Screenshots

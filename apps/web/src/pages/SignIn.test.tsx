@@ -97,6 +97,19 @@ describe('sign-in pages', () => {
     expect(redeem).toHaveBeenCalledWith(expect.objectContaining({ code: 'ABCD2345', password: 'sams password', platform: 'web' }));
   });
 
+  it('opens a setup link in the app on an iPhone, and not on a computer', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue(SERVER);
+    const ua = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) Mobile/15E148');
+    renderAt('/redeem?code=ABCD2345');
+    const open = await screen.findByRole('link', { name: 'Open in the Playarr app' });
+    expect(open.getAttribute('href')).toBe(`playarr://redeem?server=${encodeURIComponent(window.location.origin)}&code=ABCD2345`);
+    cleanup();
+    ua.mockReturnValue('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0');
+    renderAt('/redeem?code=ABCD2345');
+    await screen.findByLabelText('Setup code');
+    expect(screen.queryByRole('link', { name: 'Open in the Playarr app' })).toBeNull();
+  });
+
   it('sets up the owner’s account, then opens Settings → Accounts', async () => {
     vi.spyOn(api, 'server').mockResolvedValue({ ...SERVER, setup: true });
     const setup = vi.spyOn(api, 'setup').mockResolvedValue({ token: 'tok-1', account: NICOLA });

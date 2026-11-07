@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; fourth of four (after [robustness and scale]
 
 **Goal:** someone who downloads the app without a server understands it in a minute; an invited member goes from the invite to music in under two minutes; the owner's first steps lead to music, not settings; and the household shares requests and playlists like a family, not a set of strangers.
 
-**Where it stands (2026-11-06):** not started; plans 5 to 7, on the apps' design and flows, were taken first.
+**Where it stands (2026-11-07):** 2 done, but for universal links, which wait for a Playarr domain; the rest not started.
 
 ## 1. The welcome screen explains itself — S–M
 
@@ -12,7 +12,9 @@ The iOS welcome offers only "Add a server" (`SignIn/WelcomeView.swift`). Add:
 - "New to Playarr?": what it is, what you need (a server at home), and a link to setting one up.
 - "Try it without a server": the demo library the app already has (`Demo/`), clearly marked as a demo, with a way back. It also makes App Review independent of the owner's home server.
 
-## 2. Invites open the app — S
+## 2. Invites open the app — S — done 2026-11-07
+
+*Done: the redeem page's "Open in the Playarr app" on iPhones and iPads; its App Store link shows once the app is on sale (`APP_STORE_LIVE`). Universal links need a domain the app is built with, and every server has its own, so they wait for a Playarr domain.*
 
 Setup codes link to `https://<server>/redeem?code=` (`apps/server/src/accounts/setupCodes.ts`), which opens the web page; the app only understands `playarr://redeem`. The redeem page gets "Open in the Playarr app" (the `playarr://` link, with the server address) and an App Store link; later, universal links (`apple-app-site-association` served by the server) so the https link opens the app directly.
 
