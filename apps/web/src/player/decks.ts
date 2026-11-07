@@ -45,10 +45,13 @@ export function levelDb(track: Track, level: TrackLevel, s: QueueState): number 
 
 /**
  * How much to play a song at by its element's volume (0–1), for a song playing its own file: only
- * down, as an element can't go above full volume (its levelled stream turns quiet songs up).
+ * down, as an element can't go above full volume (its levelled stream turns quiet songs up). Played
+ * through Web Audio (`unclamped`, desktop), up as well as down.
  */
-export function levelGain(track: Track, level: TrackLevel | undefined, s: QueueState): number {
-  return level ? Math.min(1, 10 ** (levelDb(track, level, s) / 20)) : 1;
+export function levelGain(track: Track, level: TrackLevel | undefined, s: QueueState, unclamped = false): number {
+  if (!level) return 1;
+  const gain = 10 ** (levelDb(track, level, s) / 20);
+  return unclamped ? gain : Math.min(1, gain);
 }
 
 /** Equal-power fade: `x` from 0 (silent) to 1 (full). */

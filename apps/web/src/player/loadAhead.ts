@@ -2,8 +2,10 @@ import type { Track } from '@playarr/shared';
 import { useEffect } from 'react';
 import { sized } from '../lib/api';
 import { preloadImage } from '../lib/prefetch';
+import { type Quality, usePrefs } from '../lib/prefs';
+import { playQuality } from '../lib/quality';
 import { useUI } from '../lib/ui';
-import { canKeepOffline, keepSong, keptAsPlayed, reconcileOffline, touchSong, useOffline, workerReady } from './offline';
+import { canKeepOffline, type Download, isDownloaded, keepSong, keptAsPlayed, reconcileOffline, touchSong, useOffline, workerReady } from './offline';
 import { currentTrack, usePlayer, type RepeatMode } from './store';
 
 /** Upcoming songs to have on the device on a good connection. */
@@ -13,6 +15,8 @@ const SETTLE_MS = 2500;
 /** Cover sizes the player shows (mini player, player bar, accent sampling) and Now Playing adds. */
 const PLAYER_ART = [44, 56, 96];
 const NOW_PLAYING_ART = [300, 560];
+/** The lowest stream quality: every copy of a song is at least this good. */
+const LOWEST: Quality = 'normal';
 
 type QueueState = { queue: Track[]; order: number[]; pos: number; repeat: RepeatMode };
 
@@ -64,19 +68,32 @@ function replan() {
   void pump();
 }
 
-/** Download what the plan is missing, one song at a time. */
+/**
+ * The next song of `plan` to keep: one not on the device at `quality` yet. A song of a download is the downloads'
+ * to keep, at their own quality: any copy of it will do here.
+ */
+export function nextToLoad(
+  plan: Track[],
+  { songs, pins }: { songs: Record<number, { url: string }>; pins: Record<string, Download> },
+  quality: Quality,
+  skipped: ReadonlySet<number> = new Set(),
+): Track | undefined {
+  return plan.find((t) => !skipped.has(t.fileId) && !keptAsPlayed(t, songs, isDownloaded(t.fileId, { pins }) ? LOWEST : quality));
+}
+
+/** Download what the plan is missing, one song at a time, at the quality songs stream at on this connection. */
 async function pump() {
   if (job) return;
   for (;;) {
-    const { songs } = useOffline.getState();
-    const next = plan.find((t) => !keptAsPlayed(t, songs) && !skipped.has(t.fileId));
+    const quality = playQuality();
+    const next = nextToLoad(plan, useOffline.getState(), quality, skipped);
     if (!next) return;
     const abort = new AbortController();
     job = { fileId: next.fileId, abort };
     const current = currentTrack(usePlayer.getState());
     const protect = new Set([...plan.map((t) => t.fileId), ...(current ? [current.fileId] : [])]);
     try {
-      if (!(await keepSong(next, { signal: abort.signal, protect }))) skipped.add(next.fileId);
+      if (!(await keepSong(next, { signal: abort.signal, protect, quality }))) skipped.add(next.fileId);
     } catch {
       if (!abort.signal.aborted) skipped.add(next.fileId);
     } finally {
@@ -116,6 +133,10 @@ export function useLoadAhead() {
       if (now && now.fileId !== currentTrack(prev)?.fileId) touchSong(now.fileId);
     });
     const offLimit = useOffline.subscribe((s, prev) => s.limit !== prev.limit && retry());
+    // Another quality for this connection (or DJ mix asking for songs' own files): songs are kept at that one from now on.
+    const offQuality = usePrefs.subscribe(
+      (s, prev) => (s.wifiQuality !== prev.wifiQuality || s.cellularQuality !== prev.cellularQuality || s.transitions !== prev.transitions) && retry(),
+    );
     window.addEventListener('online', retry);
     connection()?.addEventListener('change', retry);
     navigator.serviceWorker?.addEventListener('controllerchange', retry);
@@ -124,6 +145,7 @@ export function useLoadAhead() {
       clearTimeout(timer);
       offPlayer();
       offLimit();
+      offQuality();
       window.removeEventListener('online', retry);
       connection()?.removeEventListener('change', retry);
       navigator.serviceWorker?.removeEventListener('controllerchange', retry);

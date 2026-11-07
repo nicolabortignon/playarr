@@ -3,7 +3,8 @@ import type { Track } from '@playarr/shared';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { api } from '../lib/api';
-import { djFadeSeconds, usePrefs } from '../lib/prefs';
+import { djFadeSeconds, usePrefs, type Quality } from '../lib/prefs';
+import { playQuality } from '../lib/quality';
 import { toast } from '../lib/toast';
 import {
   canKeepOffline,
@@ -49,14 +50,25 @@ let pairJob: { key: string; fromFileId: number; toFileId: number; abort: AbortCo
 let running = false;
 let warnedFull = false;
 
-/** The next song of a download to fetch: downloads in the order they were added, songs in order. */
-export function nextToDownload(pins: Record<string, { addedAt: number; tracks: Track[] }>, songs: Record<number, { url: string }>, failed: Record<number, string>) {
+/**
+ * The next song of a download to fetch: downloads in the order they were added, songs in order. A song kept at a
+ * quality below the downloads' (`quality`) is fetched again.
+ */
+export function nextToDownload(
+  pins: Record<string, { addedAt: number; tracks: Track[] }>,
+  songs: Record<number, { url: string }>,
+  failed: Record<number, string>,
+  quality: Quality = 'original',
+) {
   for (const d of Object.values(pins).sort((a, b) => a.addedAt - b.addedAt)) {
-    const t = d.tracks.find((t) => !keptAsPlayed(t, songs) && !(t.fileId in failed));
+    const t = d.tracks.find((t) => !keptAsPlayed(t, songs, quality) && !(t.fileId in failed));
     if (t) return t;
   }
   return undefined;
 }
+
+/** The quality downloads are kept at here (Settings → Playback → Streaming quality, Downloads). */
+const downloadQuality = () => playQuality(usePrefs.getState().downloadQuality);
 
 /**
  * The next transition a download is missing: downloads in the order they were added, pairs in their
@@ -170,7 +182,7 @@ async function pump() {
   try {
     for (;;) {
       const { pins, songs } = useOffline.getState();
-      const next = nextToDownload(pins, songs, useDownloadState.getState().failed);
+      const next = nextToDownload(pins, songs, useDownloadState.getState().failed, downloadQuality());
       if (!navigator.onLine) return;
       if (!next) {
         if (await keepNextTransition()) continue;
@@ -179,7 +191,7 @@ async function pump() {
       const abort = new AbortController();
       job = { fileId: next.fileId, abort };
       try {
-        const kept = await keepSong(next, { signal: abort.signal, protect: pinnedFiles(pins), pinned: true });
+        const kept = await keepSong(next, { signal: abort.signal, protect: pinnedFiles(pins), pinned: true, quality: downloadQuality() });
         if (!kept) {
           fail(next.fileId, 'Not enough space on this device');
           if (!warnedFull) {
@@ -241,12 +253,14 @@ export function useDownloads() {
       // A download removed mid-song: stop fetching it.
       if (job && !pinnedFiles(s.pins).has(job.fileId)) job.abort.abort();
       // Songs come before transitions, and a removed download's transitions aren't wanted.
-      if (pairJob && (!s.pins[pairJob.key] || nextToDownload(s.pins, s.songs, useDownloadState.getState().failed))) pairJob.abort.abort();
+      if (pairJob && (!s.pins[pairJob.key] || nextToDownload(s.pins, s.songs, useDownloadState.getState().failed, downloadQuality()))) pairJob.abort.abort();
       if (Object.keys(s.pins).length < Object.keys(prev.pins).length) retry();
       else void pump();
     });
-    // Switched to DJ mix: downloads made before fetch their transitions now.
+    // Switched to DJ mix: downloads made before fetch their transitions now. A better quality for downloads: songs
+    // kept below it are fetched again.
     const offPrefs = usePrefs.subscribe((s, prev) => {
+      if (s.downloadQuality !== prev.downloadQuality) void pump();
       if (s.transitions === prev.transitions) return;
       if (s.transitions !== 'dj') pairJob?.abort.abort();
       else void pump();

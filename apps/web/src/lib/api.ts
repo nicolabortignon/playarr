@@ -95,26 +95,53 @@ export const signInRedirect = {
   },
 };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    // X-Playarr: the server only accepts changes from Playarr's own pages (other sites can't send it).
-    headers: {
-      Accept: 'application/json',
-      'X-Playarr': '1',
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-  });
-  if (!res.ok) {
-    // Signed out (or never signed in) on a server with accounts. The sign-in calls answer 401 themselves.
-    if (res.status === 401 && !path.startsWith('/api/auth/')) signInRedirect.go();
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new ApiError(body?.error ?? `Request failed (${res.status})`, res.status);
+/**
+ * How long a request may take, answer and all: long enough for a slow connection, short enough that one that hung
+ * (a dead spot the browser still counts as online) fails, to be tried again or reported, rather than waiting for good.
+ */
+export const TIMEOUT_MS = 15_000;
+/** Calls the server takes its time over: checking a source, organizing files, asking MusicBrainz or Lidarr, making a mix. */
+export const SLOW_MS = 120_000;
+
+async function request<T>(path: string, init: RequestInit = {}, timeout = TIMEOUT_MS): Promise<T> {
+  // The caller's signal still stops it; so does the time running out.
+  const controller = new AbortController();
+  const stop = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) stop();
+  init.signal?.addEventListener('abort', stop);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeout);
+  try {
+    const res = await fetch(path, {
+      ...init,
+      signal: controller.signal,
+      // X-Playarr: the server only accepts changes from Playarr's own pages (other sites can't send it).
+      headers: {
+        Accept: 'application/json',
+        'X-Playarr': '1',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+    });
+    if (!res.ok) {
+      // Signed out (or never signed in) on a server with accounts. The sign-in calls answer 401 themselves.
+      if (res.status === 401 && !path.startsWith('/api/auth/')) signInRedirect.go();
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new ApiError(body?.error ?? `Request failed (${res.status})`, res.status);
+    }
+    return (res.status === 204 ? undefined : await res.json()) as T;
+  } catch (err) {
+    if (timedOut) throw new ApiError('The Playarr server took too long to answer', 0);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener('abort', stop);
   }
-  return (res.status === 204 ? undefined : res.json()) as Promise<T>;
 }
 
-const get = <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal });
+const get = <T>(path: string, signal?: AbortSignal, timeout?: number) => request<T>(path, { signal }, timeout);
 
 export const api = {
   health: () => get<HealthStatus>('/api/health'),
@@ -131,15 +158,15 @@ export const api = {
   search: (q: string, signal?: AbortSignal) =>
     get<SearchResults>(`/api/search?q=${encodeURIComponent(q)}`, signal),
   discover: (q: string, signal?: AbortSignal) =>
-    get<DiscoverResults>(`/api/discover/search?q=${encodeURIComponent(q)}`, signal),
+    get<DiscoverResults>(`/api/discover/search?q=${encodeURIComponent(q)}`, signal, SLOW_MS),
   discoverArtist: (mbid: string, signal?: AbortSignal) =>
-    get<DiscoverArtistDetail>(`/api/discover/artists/${mbid}`, signal),
-  similarArtists: (mbid: string, signal?: AbortSignal) => get<DiscoverArtist[]>(`/api/discover/artists/${mbid}/similar`, signal),
+    get<DiscoverArtistDetail>(`/api/discover/artists/${mbid}`, signal, SLOW_MS),
+  similarArtists: (mbid: string, signal?: AbortSignal) => get<DiscoverArtist[]>(`/api/discover/artists/${mbid}/similar`, signal, SLOW_MS),
   findArtist: (name: string, signal?: AbortSignal) =>
-    get<ArtistMatch>(`/api/discover/artist-lookup?name=${encodeURIComponent(name)}`, signal),
+    get<ArtistMatch>(`/api/discover/artist-lookup?name=${encodeURIComponent(name)}`, signal, SLOW_MS),
   requests: () => get<AlbumRequest[]>('/api/requests'),
   requestAlbum: (ref: AlbumRef) =>
-    request<AlbumRequest>('/api/requests', { method: 'POST', body: JSON.stringify(ref) }),
+    request<AlbumRequest>('/api/requests', { method: 'POST', body: JSON.stringify(ref) }, SLOW_MS),
   removeRequest: (mbid: string) => request<void>(`/api/requests/${mbid}`, { method: 'DELETE' }),
   favorites: () => get<FavoriteTrack[]>('/api/favorites'),
   /** `favoritedAt`: when it was first favorited, putting a favorite taken back where it was in the list. */
@@ -170,40 +197,40 @@ export const api = {
   /** A candidate cover drawn from the playlist's current songs (for the picker). */
   playlistCoverPreview: (id: number, layout: CoverLayout, variant: number) => `/art/playlist/${id}/preview?layout=${layout}&variant=${variant}`,
   playlistRecommendations: (id: number, variant = 0) =>
-    get<Recommendations>(`/api/playlists/${id}/recommendations?variant=${variant}`),
+    get<Recommendations>(`/api/playlists/${id}/recommendations?variant=${variant}`, undefined, SLOW_MS),
   sources: () => get<SourcesResponse>('/api/settings/sources'),
   addSource: (input: SourceInput) =>
-    request<SourceInfo>('/api/settings/sources', { method: 'POST', body: JSON.stringify(input) }),
+    request<SourceInfo>('/api/settings/sources', { method: 'POST', body: JSON.stringify(input) }, SLOW_MS),
   updateSource: (id: number, input: SourceInput) =>
-    request<SourceInfo>(`/api/settings/sources/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
-  removeSource: (id: number) => request<void>(`/api/settings/sources/${id}`, { method: 'DELETE' }),
+    request<SourceInfo>(`/api/settings/sources/${id}`, { method: 'PATCH', body: JSON.stringify(input) }, SLOW_MS),
+  removeSource: (id: number) => request<void>(`/api/settings/sources/${id}`, { method: 'DELETE' }, SLOW_MS),
   reorderSources: (ids: number[]) =>
     request<SourcesResponse>('/api/settings/sources/order', { method: 'PUT', body: JSON.stringify({ ids }) }),
   testSource: (body: { id?: number; url?: string; apiKey?: string }) =>
-    request<SourceTestResult>('/api/settings/sources/test', { method: 'POST', body: JSON.stringify(body) }),
+    request<SourceTestResult>('/api/settings/sources/test', { method: 'POST', body: JSON.stringify(body) }, SLOW_MS),
   rescanSource: (id: number) => request<void>(`/api/settings/sources/${id}/rescan`, { method: 'POST' }),
   /** Folders on this server, or over a (possibly unsaved) SSH, SFTP or SMB connection. */
   browseFolders: (req: FolderBrowseRequest) =>
-    request<FolderListing>('/api/settings/folders/browse', { method: 'POST', body: JSON.stringify(req) }),
+    request<FolderListing>('/api/settings/folders/browse', { method: 'POST', body: JSON.stringify(req) }, SLOW_MS),
   /** Which folder locations this server can reach (SMB needs rclone). */
   folderAccess: () => get<FolderAccessOptions>('/api/settings/folders/access'),
   review: (id: number) => get<ReviewGroup[]>(`/api/settings/sources/${id}/review`),
   trackMetadata: (id: number) => get<TrackMetadata>(`/api/tracks/${id}/metadata`),
-  rematchFile: (fileId: number) => request<RematchResult>(`/api/files/${fileId}/rematch`, { method: 'POST' }),
+  rematchFile: (fileId: number) => request<RematchResult>(`/api/files/${fileId}/rematch`, { method: 'POST' }, SLOW_MS),
   reviewAction: (id: number, action: ReviewAction) =>
-    request<void>(`/api/settings/sources/${id}/review`, { method: 'POST', body: JSON.stringify(action) }),
-  rematchSource: (id: number) => request<void>(`/api/settings/sources/${id}/rematch`, { method: 'POST' }),
-  organizePlan: (id: number) => get<OrganizePlan>(`/api/settings/sources/${id}/organize`),
+    request<void>(`/api/settings/sources/${id}/review`, { method: 'POST', body: JSON.stringify(action) }, SLOW_MS),
+  rematchSource: (id: number) => request<void>(`/api/settings/sources/${id}/rematch`, { method: 'POST' }, SLOW_MS),
+  organizePlan: (id: number) => get<OrganizePlan>(`/api/settings/sources/${id}/organize`, undefined, SLOW_MS),
   organize: (id: number, moves: string[]) =>
-    request<OrganizeResult>(`/api/settings/sources/${id}/organize`, { method: 'POST', body: JSON.stringify({ moves }) }),
+    request<OrganizeResult>(`/api/settings/sources/${id}/organize`, { method: 'POST', body: JSON.stringify({ moves }) }, SLOW_MS),
   undoOrganize: (id: number, batchId: number) =>
-    request<{ restored: number }>(`/api/settings/sources/${id}/organize/undo`, { method: 'POST', body: JSON.stringify({ batchId }) }),
+    request<{ restored: number }>(`/api/settings/sources/${id}/organize/undo`, { method: 'POST', body: JSON.stringify({ batchId }) }, SLOW_MS),
   matching: () => get<MatchingSettings>('/api/settings/matching'),
   saveMatching: (acoustidKey: string) =>
-    request<MatchingSettings>('/api/settings/matching', { method: 'PUT', body: JSON.stringify({ acoustidKey }) }),
+    request<MatchingSettings>('/api/settings/matching', { method: 'PUT', body: JSON.stringify({ acoustidKey }) }, SLOW_MS),
   requestSettings: () => get<RequestSettingsInfo>('/api/settings/requests'),
   saveRequestSettings: (patch: RequestSettingsPatch) =>
-    request<RequestSettingsInfo>('/api/settings/requests', { method: 'PUT', body: JSON.stringify(patch) }),
+    request<RequestSettingsInfo>('/api/settings/requests', { method: 'PUT', body: JSON.stringify(patch) }, SLOW_MS),
   updates: () => get<UpdateInfo>('/api/settings/updates'),
   saveUpdates: (patch: UpdateSettingsPatch) =>
     request<UpdateInfo>('/api/settings/updates', { method: 'PUT', body: JSON.stringify(patch) }),
@@ -262,23 +289,23 @@ export const api = {
   setCues: (recordingId: string, cues: { mixIn: number | null; mixOut: number | null }) =>
     request<CuePoints>(`/api/recordings/${encodeURIComponent(recordingId)}/cues`, { method: 'PUT', body: JSON.stringify(cues) }),
   radio: (seeds: string[], exclude: string[] = [], count = 25) =>
-    request<Track[]>('/api/radio', { method: 'POST', body: JSON.stringify({ seeds, exclude, count }) }),
+    request<Track[]>('/api/radio', { method: 'POST', body: JSON.stringify({ seeds, exclude, count }) }, SLOW_MS),
   /** Feeling lucky: 15 songs put together now, from one that suits the hour. */
-  lucky: () => request<LuckyMix>(`/api/lucky?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }),
-  mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`),
-  mix: (key: string) => get<MixDetail>(`/api/mixes/${key}?tz=${encodeURIComponent(timeZone())}`),
+  lucky: () => request<LuckyMix>(`/api/lucky?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }, SLOW_MS),
+  mixes: () => get<MixSummary[]>(`/api/mixes?tz=${encodeURIComponent(timeZone())}`, undefined, SLOW_MS),
+  mix: (key: string) => get<MixDetail>(`/api/mixes/${key}?tz=${encodeURIComponent(timeZone())}`, undefined, SLOW_MS),
   regenerateMix: (key: string) =>
-    request<MixDetail>(`/api/mixes/${key}/regenerate?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }),
+    request<MixDetail>(`/api/mixes/${key}/regenerate?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }, SLOW_MS),
   saveMix: (key: string) =>
-    request<PlaylistDetail>(`/api/mixes/${key}/save?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }),
+    request<PlaylistDetail>(`/api/mixes/${key}/save?tz=${encodeURIComponent(timeZone())}`, { method: 'POST' }, SLOW_MS),
   mixSettings: () => get<MixSettingsInfo>('/api/settings/mixes'),
   saveMixSettings: (patch: MixSettingsPatch) =>
     request<MixSettingsInfo>('/api/settings/mixes', { method: 'PUT', body: JSON.stringify(patch) }),
   listenBrainz: () => get<ListenBrainzInfo>('/api/settings/listenbrainz'),
   saveListenBrainz: (patch: { token?: string; enabled?: boolean }) =>
-    request<ListenBrainzInfo>('/api/settings/listenbrainz', { method: 'PUT', body: JSON.stringify(patch) }),
+    request<ListenBrainzInfo>('/api/settings/listenbrainz', { method: 'PUT', body: JSON.stringify(patch) }, SLOW_MS),
   disconnectListenBrainz: () => request<ListenBrainzInfo>('/api/settings/listenbrainz', { method: 'DELETE' }),
-  sendEarlierListens: () => request<ListenBrainzInfo>('/api/settings/listenbrainz/earlier', { method: 'POST' }),
+  sendEarlierListens: () => request<ListenBrainzInfo>('/api/settings/listenbrainz/earlier', { method: 'POST' }, SLOW_MS),
   clearHistory: () => request<MixSettingsInfo>('/api/settings/mixes/history', { method: 'DELETE' }),
 };
 

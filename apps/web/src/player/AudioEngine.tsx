@@ -1,13 +1,13 @@
 import { type TransitionPlan, valueAt } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { useEffect, useRef } from 'react';
-import { playableUrl } from '../lib/playable';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
+import { isAppleWebKit } from '../lib/quality';
 import { toast } from '../lib/toast';
-import { canSetVolume, continues, fadeCurve, fadeSeconds, isDesktop, levelDb, levelGain, playsAlbum, silentClip, upNext } from './decks';
+import { canSetVolume, continues, fadeCurve, fadeSeconds, levelDb, levelGain, playsAlbum, silentClip, upNext } from './decks';
 import { useDownloads } from './downloads';
 import { healQueue } from './healQueue';
-import { levelledStreamFailed, levelledUrl, loadedAt, loadLevels, streamGain, useLevels } from './levels';
+import { levelledStreamFailed, loadedAt, loadLevels, playsThroughGraph, useLevels } from './levels';
 import { canLiveMix, type LiveMix, type LiveMixPlayback, PREPARE_BUDGET_MS, playLiveMix, prepareLiveMix } from './liveMix';
 import { useLoadAhead } from './loadAhead';
 import { loadMixMaps, mixMapOf } from './mixMaps';
@@ -33,6 +33,7 @@ import { setPulseSource, useMetered } from './pulse';
 import { useAutoplay } from './radio';
 import { fellAsleep, sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, nextByPress, takeNextPresses, useClock, useCurrentTrack, usePlayer } from './store';
+import { chooseStream, encodedStreamFailed, streamsEncoded } from './streams';
 import { readyTransition, type ReadyTransition, upcomingPlan, useTransition, useUpcomingTransition } from './transitions';
 
 /** Have the next song loaded this long before the current one ends. */
@@ -105,10 +106,29 @@ const IN_STEP_START_WATCH_MS = 1500;
 const MIN_TAIL_S = 1;
 /** At a cut on the beat, B's own file starts silenced up to this long before its start, to be in step there. */
 const CUT_PRE_ROLL_S = 0.5;
-/** A song's stream that breaks off is asked for again this many times before playback stops with an error. */
-const STREAM_RETRIES = 3;
-/** The most a live mix turns its audio up (its songs' levels, 12 dB): the levels never ask for more. */
-const MAX_LIVE_GAIN = 10 ** (12 / 20);
+/**
+ * A song's stream that breaks off is asked for again after these waits (ms) while the server answers, then the
+ * player goes on to the next song…
+ */
+const RETRY_DELAYS_MS = [1000, 3000, 8000];
+/** …but while the server can't be reached at all (a dead spot, the server restarting), again every this long until it can. */
+const UNREACHABLE_RETRY_MS = 15_000;
+/** Played on this far (s) past where it broke off, a song's stream is fine again: its quick tries start afresh. */
+const RECOVERED_S = 10;
+/** Offline this long with the song waiting for the network, a song kept on this device plays instead (see skipToKept). */
+const OFFLINE_SKIP_MS = 30_000;
+/** Online, the song playing stuck waiting for its stream this long is asked for again from where it is. */
+const STUCK_MS = 8000;
+const WATCH_MS = 1000;
+/** Songs in a row that won't play before the player stops trying the next one. */
+const MAX_FAILURES_IN_A_ROW = 3;
+/**
+ * A seek this far (s) past what a song's encoded stream has loaded asks for the stream from there instead of
+ * waiting for the encoder to get there (see seekSong).
+ */
+const SEEK_AHEAD_S = 10;
+/** The most Web Audio turns a song up (a song's level, or a live mix's: 12 dB): the levels never ask for more. */
+const MAX_GAIN = 10 ** (12 / 20);
 
 interface Fade {
   out: HTMLAudioElement;
@@ -249,8 +269,15 @@ export function AudioEngine() {
   const overlapTimer = useRef<ReturnType<typeof setInterval>>(undefined);
   /** Transition files that wouldn't play: not tried again. */
   const failedBridges = useRef(new Set<string>());
-  /** Stream retries left for a song (see retryStream). */
-  const streamRetries = useRef<{ fileId: number; left: number } | null>(null);
+  /**
+   * A song's stream getting going again after it broke off (see recover): where in the song it broke off, its
+   * quick tries so far, and what's waited on meanwhile.
+   */
+  const recovery = useRef<{ fileId: number; time: number; tries: number; cancel?: () => void } | null>(null);
+  /** Songs in a row that wouldn't play (see moveOn). */
+  const failures = useRef(0);
+  /** The playing deck last seen moving on (see the watchdog): its song time, and when (performance.now()). */
+  const progress = useRef<{ deck: HTMLAudioElement | null; time: number; at: number; played: boolean }>({ deck: null, time: 0, at: 0, played: false });
   /** Elements the engine keeps silent while they get in step (iPhones; see inStep). */
   const silenced = useRef(new WeakSet<HTMLAudioElement>());
   /** The transition ending in the changeover being brought into step: its level still holds until it's over. */
@@ -280,23 +307,49 @@ export function AudioEngine() {
   /** The element making the sound: the transition's while one plays. */
   const playingDeck = () => (bridging() ? bridge.current : active());
 
-  function load(deck: HTMLAudioElement, t: Track) {
+  /**
+   * Load a song into a deck, ready to play from `at` seconds into it (see chooseStream): a copy kept on this
+   * device, or the server's stream at the quality songs play at here, the song's own file or its encoded
+   * stream (which starts at `at`: its offset). Even volume: on a desktop Web Audio's gain on the way out, up
+   * as well as down; elsewhere the song's levelled stream once its level is known, turned in the audio itself.
+   * Answers where the file starts in the song.
+   */
+  function load(deck: HTMLAudioElement, t: Track, at = 0): number {
+    const choice = chooseStream(t, usePlayer.getState(), at);
     loaded.current.set(deck, t);
     deck.dataset.fileId = String(t.fileId);
-    delete deck.dataset.offset;
+    if (choice.offset) deck.dataset.offset = String(choice.offset);
+    else delete deck.dataset.offset;
+    if (choice.encoded) deck.dataset.encoded = String(choice.encoded);
+    else delete deck.dataset.encoded;
+    if (choice.graph !== undefined) deck.dataset.gain = String(choice.graph);
+    else delete deck.dataset.gain;
     pendingTimes.current.delete(deck);
-    // Even volume: the song's levelled stream once its level is known, turned in the audio itself (so
-    // on iPhones too, and up as well as down); else its own file.
-    const db = streamGain(t, usePlayer.getState());
-    setLevelled(deck, t, db);
-    deck.src = db === undefined ? playableUrl(t) : levelledUrl(t, db);
+    setLevelled(deck, t, choice.baked, choice.graph);
+    deck.src = choice.url;
+    freshFile(deck);
+    return choice.offset;
   }
 
-  /** Marks the gain an element plays its song at (its levelled stream's), or that it plays it at its own volume. */
-  function setLevelled(deck: HTMLAudioElement, t: Track, db: number | undefined) {
+  /** A deck has a new file: the watchdog minds it once it has played. */
+  function freshFile(deck: HTMLAudioElement) {
+    if (progress.current.deck === deck) progress.current = { ...progress.current, played: false };
+  }
+
+  /** Load a song into a deck at `time` in it (see load). */
+  function loadAt(deck: HTMLAudioElement, t: Track, time: number) {
+    const offset = load(deck, t, time);
+    if (time > 0) setTimeOnLoad(deck, Math.max(0, time - offset));
+  }
+
+  /**
+   * Marks the gain made into what an element plays (its levelled stream's), or that it plays its song at its own
+   * volume; and the gain the song plays at in all (Web Audio's, on a desktop), for the transitions around it.
+   */
+  function setLevelled(deck: HTMLAudioElement, t: Track, db: number | undefined, graph?: number) {
     if (db === undefined) delete deck.dataset.levelled;
     else deck.dataset.levelled = String(db);
-    loadedAt(t, db);
+    loadedAt(t, db ?? graph);
   }
 
   /**
@@ -307,13 +360,25 @@ export function AudioEngine() {
     loaded.current.set(deck, t);
     deck.dataset.fileId = String(t.fileId);
     deck.dataset.offset = String(offset);
+    delete deck.dataset.encoded;
+    delete deck.dataset.gain;
     // Rendered at B's level along with the transition, when it was asked for one.
     setLevelled(deck, t, levels?.b || undefined);
     deck.src = url;
+    freshFile(deck);
+  }
+
+  /**
+   * B after a transition, from where the transition leaves it: its remainder file, rendered by the server for a song
+   * that can't be started exactly at a time, unless B streams encoded here, which starts at any sample.
+   */
+  function cueAfterTransition(deck: HTMLAudioElement, t: Track, r: ReadyTransition) {
+    if (r.continuationUrl && !streamsEncoded(t, usePlayer.getState())) loadRemainder(deck, t, r.continuationUrl, r.plan.bResume, r.levels);
+    else cue(deck, t, r.plan.bResume);
   }
 
   const holds = (deck: HTMLAudioElement | null, t: Track | undefined) => !!deck && !!t && deck.dataset.fileId === String(t.fileId);
-  /** Where the deck's file starts in its song: 0, or later for a song's remainder. */
+  /** Where the deck's file starts in its song: 0, or later for a song's remainder or a stream from a time on. */
   const offsetOf = (deck: HTMLAudioElement) => Number(deck.dataset.offset ?? 0);
   const songTime = (deck: HTMLAudioElement) => offsetOf(deck) + deck.currentTime;
 
@@ -354,27 +419,29 @@ export function AudioEngine() {
   }
 
   /**
-   * Move a deck to a time in its song. Before a remainder file starts, that means the song's own file:
-   * true then, as the deck has stopped to load it.
+   * Move a deck to a time in its song. Before a remainder file or a stream from a time on starts, that means
+   * loading the song again from there; so does a time well past what a song's encoded stream has loaded, which
+   * the server then encodes from that time rather than the browser waiting for it to get there (not in
+   * WebKit, which has read the whole stream's layout before it plays, and seeks in it exactly: see
+   * docs/server/streaming-and-art.md). True when it loaded, as the deck has stopped for it.
    */
   function seekSong(deck: HTMLAudioElement, time: number): boolean {
     const offset = offsetOf(deck);
     const t = loaded.current.get(deck);
-    if (time >= offset || !t) {
+    const farAhead = !!deck.dataset.encoded && !isAppleWebKit() && time > Math.max(bufferedEnd(deck), songTime(deck)) + SEEK_AHEAD_S;
+    if (!t || (time >= offset && !farAhead)) {
       setTimeOnLoad(deck, Math.max(0, time - offset));
       return false;
     }
     switching.current = true;
-    load(deck, t);
-    setTimeOnLoad(deck, time);
+    loadAt(deck, t, time);
     return true;
   }
 
   /** Have a deck hold this song at this time, loading it if it doesn't. True if it loaded (so it stopped). */
   function cue(deck: HTMLAudioElement, t: Track, time: number) {
     if (holds(deck, t)) return seekSong(deck, time);
-    load(deck, t);
-    setTimeOnLoad(deck, time);
+    loadAt(deck, t, time);
     return true;
   }
 
@@ -404,20 +471,28 @@ export function AudioEngine() {
         return known ? 10 ** (levelDb(t, known, s) / 20) : 1;
       };
       const gain = bridgeGain(l.mix.plan, Math.max(0, l.playback.time()), fullLevel(l.from), fullLevel(l.to));
-      l.playback.setVolume(s.muted ? 0 : Math.max(0, Math.min(MAX_LIVE_GAIN, s.volume * s.volume * sleepGain() * gain)));
+      l.playback.setVolume(s.muted ? 0 : Math.max(0, Math.min(MAX_GAIN, s.volume * s.volume * sleepGain() * gain)));
     }
   }
 
-  /** Each element's volume: the volume set, the song's level, and where it is in a fade. */
+  /**
+   * Each element's level: the volume set, the song's level, and where it is in a fade. At most full volume, but
+   * through the graph (a desktop), where a gain turns quiet songs up too.
+   */
   function levelOf(deck: HTMLAudioElement): { muted: boolean; level: number } {
     const s = usePlayer.getState();
     const { levelVolume } = usePrefs.getState();
     const { levels } = useLevels.getState();
     const settable = canSetVolume();
-    // A song playing its levelled stream is at its level already; one playing its own file is turned
-    // down by its element's volume (where that can be set).
-    const level = (t: Track | undefined, d?: HTMLAudioElement) =>
-      d?.dataset.levelled !== undefined ? 1 : settable && levelVolume && t ? levelGain(t, levels[t.recordingId], s) : 1;
+    const routed = !!graph.current?.routed(deck);
+    // A song playing its levelled stream is at its level already. One playing its own file (or its encoded stream,
+    // or a kept copy) is turned by its gain in the graph on a desktop, at the level it was loaded at (or as its
+    // level is now, if it wasn't known then); elsewhere down by its element's volume, where that can be set.
+    const level = (t: Track | undefined, d?: HTMLAudioElement) => {
+      if (d?.dataset.levelled !== undefined || !levelVolume || !t || !settable) return 1;
+      if (d?.dataset.gain !== undefined) return routed ? 10 ** (Number(d.dataset.gain) / 20) : Math.min(1, 10 ** (Number(d.dataset.gain) / 20));
+      return levelGain(t, levels[t.recordingId], s, routed);
+    };
     const o = overlap.current;
     const m = mix.current ?? o?.ending ?? endingMix.current;
     const joined = o?.graphUntil !== undefined ? 1 : o?.startedAt == null ? 0 : (performance.now() - o.startedAt) / OVERLAP_MS;
@@ -434,7 +509,7 @@ export function AudioEngine() {
     else if (f?.in === deck) v *= fadeCurve((songTime(deck) - f.inStart) / f.seconds);
     if (o?.out === deck) v *= evenGain(1 - joined);
     else if (o?.in === deck) v *= evenGain(joined);
-    return { muted, level: Math.max(0, Math.min(1, v)) };
+    return { muted, level: Math.max(0, Math.min(routed ? MAX_GAIN : 1, v)) };
   }
 
   /** An element's level: its own volume, or (playing through the graph) its gain there, the element at full volume. */
@@ -456,7 +531,7 @@ export function AudioEngine() {
    * element played through Web Audio goes silent there when the screen locks (see isDesktop).
    */
   function ensureGraph() {
-    if (!isDesktop() || !canSetVolume() || typeof AudioContext === 'undefined' || typeof AudioContext.prototype?.createMediaElementSource !== 'function') return;
+    if (!playsThroughGraph()) return;
     const context = (audioContext.current ??= new AudioContext());
     if (!graph.current) {
       graph.current = JoinGraph.create(context);
@@ -755,8 +830,7 @@ export function AudioEngine() {
     br.dataset.url = r.url;
     br.src = r.url;
     next.preload = 'auto';
-    if (r.continuationUrl) loadRemainder(next, to, r.continuationUrl, r.plan.bResume, r.levels);
-    else cue(next, to, r.plan.bResume);
+    cueAfterTransition(next, to, r);
     void loadLevels([to]);
     mix.current = { transition: r, from, to, bridging: false, switched: false };
   }
@@ -1174,7 +1248,7 @@ export function AudioEngine() {
     const br = bridge.current;
     const incoming = standby();
     if (bridging() !== m || !br || !incoming) return;
-    const { plan, continuationUrl } = m.transition;
+    const { plan } = m.transition;
     mix.current = null;
     clearTimeout(bridgeTimer.current);
     cancelStall();
@@ -1229,8 +1303,7 @@ export function AudioEngine() {
         swap();
         const deck = active()!;
         handoffFailed.current = true;
-        if (continuationUrl) loadRemainder(deck, m.to, continuationUrl, plan.bResume, m.transition.levels);
-        else cue(deck, m.to, plan.bResume);
+        cueAfterTransition(deck, m.to, m.transition);
         if (usePlayer.getState().playing) void play(deck);
       },
     );
@@ -1656,6 +1729,8 @@ export function AudioEngine() {
   useEffect(() => {
     // A file getting in step (iPhones) takes over now: whatever plays next goes on from there.
     stepping.current?.finish();
+    // A song that was waiting for its stream (or the network) isn't any more.
+    stopRecovery();
     const deck = active();
     if (!deck) return;
     clearTimeout(handoffTimer.current);
@@ -1773,9 +1848,8 @@ export function AudioEngine() {
         useClock.setState({ time: resume, duration: track.duration, buffered: 0, error: null });
       } else {
         switching.current = true;
-        load(deck, track);
+        loadAt(deck, track, resume);
         useClock.setState({ time: resume, duration: track.duration, buffered: 0, error: null });
-        if (resume > 0) setTimeOnLoad(deck, resume);
       }
     } else {
       // Played again from the start (repeat one, "previous" near the start): it counts as heard through.
@@ -1831,6 +1905,15 @@ export function AudioEngine() {
 
   // Presses of Next come here first, within the press (see takeNext).
   useEffect(() => takeNextPresses(takeNext), []);
+
+  // The watchdog on the song playing (see watch); and nothing left waiting once the player is gone.
+  useEffect(() => {
+    const timer = setInterval(watch, WATCH_MS);
+    return () => {
+      clearInterval(timer);
+      stopRecovery();
+    };
+  }, []);
 
   useEffect(() => {
     sounding = () => {
@@ -2006,6 +2089,7 @@ export function AudioEngine() {
     onTimeUpdate: (e) => {
       if (!isActive(e)) return tickFade();
       const deck = e.currentTarget;
+      moved(deck);
       useClock.setState({ time: songTime(deck) });
       if (!deck.paused) playTracker.tick(songTime(deck));
       // A live mix on its way decides what comes next.
@@ -2028,6 +2112,9 @@ export function AudioEngine() {
     onPlaying: (e) => {
       if (!isActive(e)) return;
       switching.current = false;
+      // Playing (again): songs in a row didn't fail.
+      failures.current = 0;
+      moved(e.currentTarget, true);
       useClock.setState({ loading: false, error: null });
       updatePosition();
     },
@@ -2048,7 +2135,7 @@ export function AudioEngine() {
     onEnded: (e) => {
       if (!isActive(e)) return tickFade();
       // Played through: a later play of it gets its stream retries afresh.
-      streamRetries.current = null;
+      stopRecovery();
       // The song ended before a live mix out of it could start: on to the next song as usual.
       if (live.current) stopLive(live.current);
       playTracker.finish('ended');
@@ -2070,45 +2157,171 @@ export function AudioEngine() {
     onError: (e) => {
       const deck = e.currentTarget;
       const t = loaded.current.get(deck);
-      // A levelled stream that won't play (its loudness being measured again, a server that can't
-      // decode it): the song's own file from now on.
-      const levelled = !!t && deck.dataset.levelled !== undefined && offsetOf(deck) === 0;
-      if (levelled) levelledStreamFailed(t);
       if (!isActive(e)) {
-        // The next song didn't load: it loads again the usual way when its turn comes.
+        // A stream the server makes for this player (levelled, encoded) that won't play for the next song: its own
+        // file when its turn comes. The next song didn't load: it loads again the usual way then.
+        if (t && navigator.onLine && deck.error?.code !== MEDIA_ERR_NETWORK) unmade(deck, t);
         if (deck.getAttribute('src') !== silentClip()) delete deck.dataset.fileId;
         return;
       }
-      if (t && (levelled || offsetOf(deck) > 0)) {
-        // The song's remainder file went away (its mix points edited, the server's cache trimmed), or its
-        // levelled stream won't play: its own file from the same point does as well.
-        const time = songTime(deck);
-        switching.current = true;
-        load(deck, t);
-        setTimeOnLoad(deck, time);
-        if (usePlayer.getState().playing) void play(deck);
-        return;
-      }
       switching.current = false;
-      if (skipToKept()) return;
-      if (t && retryStream(deck, t)) return;
-      void reportError(deck);
+      if (t) recover(deck, t);
+      else void moveOnFrom(deck);
     },
   };
 
+  /** A stream the server made for this player won't play for this song: it plays its own file from now on. */
+  function unmade(deck: HTMLAudioElement, t: Track): boolean {
+    const remainder = offsetOf(deck) > 0 && deck.dataset.encoded === undefined;
+    if (deck.dataset.levelled !== undefined && !remainder) levelledStreamFailed(t);
+    if (deck.dataset.encoded !== undefined) encodedStreamFailed(t);
+    return remainder || deck.dataset.levelled !== undefined || deck.dataset.encoded !== undefined;
+  }
+
   /**
-   * A song's stream broke off (the server busy for a while, the network gone for a moment): ask for it
-   * again from where it stopped, a few times for each song. False once its retries are used up.
+   * The song playing stopped loading, or won't play. Offline, it waits where it is for the network (see
+   * waitForNetwork). A stream the server makes for this player that won't play (a levelled stream whose song
+   * is being measured again, an encoded one the server can't make, a remainder file its cache let go) gives
+   * way to the song's own file, from the same point. A stream that broke off is asked for again from where
+   * it stopped, after a moment, longer each time (RETRY_DELAYS_MS), and for as long as the server can't be
+   * reached at all; one the server serves that still won't play, or a song that won't play at all, gives way
+   * to the next song.
    */
-  function retryStream(deck: HTMLAudioElement, t: Track): boolean {
-    if (streamRetries.current?.fileId !== t.fileId) streamRetries.current = { fileId: t.fileId, left: STREAM_RETRIES };
-    if (streamRetries.current.left-- <= 0) return false;
+  function recover(deck: HTMLAudioElement, t: Track) {
     const time = songTime(deck);
+    if (!navigator.onLine) return waitForNetwork(deck, t, time);
+    const brokeOff = deck.error?.code === MEDIA_ERR_NETWORK;
+    if (!brokeOff && unmade(deck, t)) return reload(deck, t, time);
+    const r = recoveryFor(t, time);
+    if (brokeOff && r.tries < RETRY_DELAYS_MS.length) return retryLater(deck, t, time, RETRY_DELAYS_MS[r.tries++]!);
+    // Out of quick tries, or it won't play at all: what does the server say?
+    useClock.setState({ loading: true });
+    let calledOff = false;
+    r.cancel = () => {
+      r.cancel = undefined;
+      calledOff = true;
+    };
+    void whyNot(deck).then((reason) => {
+      if (calledOff || !stillPlays(deck, t) || recovery.current !== r) return;
+      r.cancel = undefined;
+      // Out of reach (a dead spot that still counts as online, the server restarting): on trying until it answers.
+      if (reason === null) return retryLater(deck, t, time, UNREACHABLE_RETRY_MS);
+      moveOn(reason);
+    });
+  }
+
+  /**
+   * The song's recovery under way (whatever it waited on called off: what comes next replaces it), or a new one;
+   * either way from `time`, where the song broke off last.
+   */
+  function recoveryFor(t: Track, time: number) {
+    const r = recovery.current?.fileId === t.fileId ? recovery.current : (recovery.current = { fileId: t.fileId, time, tries: 0 });
+    r.cancel?.();
+    r.time = time;
+    return r;
+  }
+
+  /** The deck playing `t` still does: nothing else has been played meanwhile. */
+  const stillPlays = (deck: HTMLAudioElement, t: Track) => active() === deck && loaded.current.get(deck)?.fileId === t.fileId;
+
+  /** The song again from `time`, playing if the player is. */
+  function reload(deck: HTMLAudioElement, t: Track, time: number) {
     switching.current = true;
-    load(deck, t);
-    setTimeOnLoad(deck, time);
+    loadAt(deck, t, time);
     if (usePlayer.getState().playing) void play(deck);
-    return true;
+  }
+
+  /** The song again from `time` after `ms` (or, should the connection have gone meanwhile, once it's back). */
+  function retryLater(deck: HTMLAudioElement, t: Track, time: number, ms: number) {
+    const r = recovery.current!;
+    useClock.setState({ loading: true });
+    const timer = setTimeout(() => {
+      r.cancel = undefined;
+      if (!stillPlays(deck, t) || recovery.current !== r) return;
+      if (!navigator.onLine) return waitForNetwork(deck, t, time);
+      reload(deck, t, time);
+    }, ms);
+    r.cancel = () => clearTimeout(timer);
+  }
+
+  /**
+   * Offline: the song waits where it was for the connection to come back, and goes on from there. Offline for
+   * long, a song kept on this device plays instead (see skipToKept).
+   */
+  function waitForNetwork(deck: HTMLAudioElement, t: Track, time: number) {
+    const r = recoveryFor(t, time);
+    useClock.setState({ loading: true });
+    const back = () => {
+      r.cancel?.();
+      if (stillPlays(deck, t) && recovery.current === r) reload(deck, t, time);
+    };
+    const giveUp = setTimeout(() => {
+      if (!navigator.onLine && stillPlays(deck, t) && recovery.current === r && skipToKept()) r.cancel?.();
+    }, OFFLINE_SKIP_MS);
+    window.addEventListener('online', back);
+    r.cancel = () => {
+      r.cancel = undefined;
+      window.removeEventListener('online', back);
+      clearTimeout(giveUp);
+    };
+  }
+
+  /** Nothing is being waited for any more (the song changed): what was, is called off. */
+  function stopRecovery() {
+    recovery.current?.cancel?.();
+    recovery.current = null;
+  }
+
+  /**
+   * A song that won't play: it says why, and the next one plays. Several in a row, the trouble isn't the
+   * songs': it stops there, as at the end of the queue.
+   */
+  function moveOn(reason: string) {
+    stopRecovery();
+    useClock.setState({ loading: false, error: reason });
+    toast(reason, 'error');
+    const p = usePlayer.getState();
+    const more = p.pos + 1 < p.order.length || (p.repeat === 'all' && p.order.length > 1);
+    if (++failures.current >= MAX_FAILURES_IN_A_ROW || !more) {
+      failures.current = 0;
+      p.setPlaying(false);
+      return;
+    }
+    p.nextNow();
+  }
+
+  async function moveOnFrom(deck: HTMLAudioElement) {
+    moveOn((await whyNot(deck)) ?? 'Cannot reach the Playarr server');
+  }
+
+  /**
+   * The watchdog: online, the song playing stuck waiting for its stream (the connection hung rather than broke)
+   * is asked for again from where it is; offline, it waits for the network. Only once it has played: a stream
+   * still starting may take its time (Safari reads a whole encoded stream's layout before it starts).
+   */
+  function watch() {
+    const deck = active();
+    const p = progress.current;
+    if (!deck || !p.played || p.deck !== deck || deck.paused || !usePlayer.getState().playing || bridging() || live.current || recovery.current?.cancel) return;
+    const t = loaded.current.get(deck);
+    if (!t || deck.readyState >= 3 /* HAVE_FUTURE_DATA */ || performance.now() - p.at < STUCK_MS) return;
+    progress.current = { ...p, at: performance.now() };
+    const time = songTime(deck);
+    if (!navigator.onLine) return waitForNetwork(deck, t, time);
+    reload(deck, t, time);
+  }
+
+  /**
+   * The playing deck's song time moved on (or it started playing): the watchdog leaves it alone. Played on well
+   * past where it last broke off, a song gets its quick tries afresh.
+   */
+  function moved(deck: HTMLAudioElement, played = false) {
+    const p = progress.current;
+    const time = songTime(deck);
+    const r = recovery.current;
+    if (r && !r.cancel && r.fileId === loaded.current.get(deck)?.fileId && time > r.time + RECOVERED_S) recovery.current = null;
+    if (p.deck === deck && p.time === time && !played) return;
+    progress.current = { deck, time, at: performance.now(), played: played || (p.deck === deck && p.played) };
   }
 
   // The transition's element: its events count while it plays the transition.
@@ -2204,22 +2417,25 @@ function updatePositionState(position: number, duration: number, playbackRate: n
 const MEDIA_ERR_NETWORK = 2;
 const MEDIA_ERR_DECODE = 3;
 
-/** <audio> errors carry little detail, so ask the server why the stream failed. */
-async function reportError(audio: HTMLAudioElement) {
-  if (!audio.src) return;
+/** The server not answering why a stream failed within this long counts as out of reach. */
+const WHY_NOT_MS = 10_000;
+
+/** <audio> errors carry little detail, so ask the server why the stream failed; null when it can't be reached. */
+async function whyNot(audio: HTMLAudioElement): Promise<string | null> {
+  if (!audio.src) return 'Playback failed';
   const code = audio.error?.code;
-  let message = 'Playback failed';
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), WHY_NOT_MS);
   try {
-    const res = await fetch(audio.src, { headers: { Range: 'bytes=0-1' } });
-    if (!res.ok) message = ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? message;
+    const res = await fetch(audio.src, { headers: { Range: 'bytes=0-1' }, signal: abort.signal });
+    if (!res.ok) return ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? 'Playback failed';
     // The file is there: its stream kept breaking off, it's damaged, or the browser can't play its format.
-    else if (code === MEDIA_ERR_NETWORK) message = 'The song kept stopping loading: the Playarr server or the network is too busy';
-    else if (code === MEDIA_ERR_DECODE) message = 'This file couldn’t be decoded: it may be damaged';
-    else message = 'This file format is not supported by your browser';
+    if (code === MEDIA_ERR_NETWORK) return 'The song kept stopping loading: the Playarr server or the network is too busy';
+    if (code === MEDIA_ERR_DECODE) return 'This file couldn’t be decoded: it may be damaged';
+    return 'This file format is not supported by your browser';
   } catch {
-    message = 'Cannot reach the Playarr server';
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
-  useClock.setState({ loading: false, error: message });
-  usePlayer.getState().setPlaying(false);
-  toast(message, 'error');
 }

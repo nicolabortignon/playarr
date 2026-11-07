@@ -8,9 +8,24 @@ import { usePrefs } from '../lib/prefs';
 import { useToasts } from '../lib/toast';
 import { useJoins } from '../player/joins';
 import { useLevels } from '../player/levels';
+import { useOffline } from '../player/offline';
 import { useClock, usePlayer } from '../player/store';
 import { useTransition } from '../player/transitions';
 import { gridPosition, keyName, sectionAt, StatsForNerds } from './StatsForNerds';
+
+/** The element the engine plays the song on, as it marks how (none: the engine isn't there). */
+const engine = vi.hoisted(() => ({ element: undefined as HTMLAudioElement | undefined }));
+vi.mock('../player/AudioEngine', () => ({
+  soundingNow: () => (engine.element ? { element: engine.element, transition: false, live: false } : undefined),
+}));
+
+/** The engine plays song 1 from `src`, marked as it marks it (levelled, gain, encoded, offset). */
+function playing(src: string, marks: Record<string, string> = {}) {
+  const element = document.createElement('audio');
+  element.setAttribute('src', src);
+  Object.assign(element.dataset, { fileId: '1', ...marks });
+  engine.element = element;
+}
 
 const track = (id: number) =>
   ({
@@ -98,6 +113,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  engine.element = undefined;
+  useOffline.setState({ songs: {} });
 });
 
 describe('the beat grid', () => {
@@ -158,12 +175,33 @@ describe('Stats for nerds', () => {
   });
 
   it('shows the loudness measured and the gain the stream plays at', async () => {
+    playing('/stream/1/levelled.wav?gain=-6', { levelled: '-6' });
     view();
     await expectRow('Measured', '−9.0 LUFS · peak −0.3 dBFS');
     await expectRow('Gains', 'track −5.0 dB · album −6.0 dB');
     await expectRow('Applied', '−6.0 dB in the stream (album gain)');
     await expectRow('Heard at', '≈ −15.0 LUFS');
     await expectRow('Stream', 'leveled WAV at −6.0 dB');
+  });
+
+  it('shows a song leveled by its gain in Web Audio, from its own file (a desktop)', async () => {
+    playing('/stream/1', { gain: '-6' });
+    view();
+    await expectRow('Stream', 'its own file');
+    await expectRow('Applied', '−6.0 dB in Web Audio (album gain)');
+    await expectRow('Heard at', '≈ −15.0 LUFS');
+  });
+
+  it('shows an encoded stream, from where it was asked for, and one kept on this device', async () => {
+    playing(`/stream/1/levelled.aac?gain=-6&kbps=128&start=${30 * 44_100}`, { encoded: '128', offset: '30', levelled: '-6' });
+    view();
+    await expectRow('Stream', 'AAC 128 kbps, encoded on the server · from 0:30.0 · leveled at −6.0 dB');
+    await expectRow('Applied', '−6.0 dB in the stream (album gain)');
+    cleanup();
+    useOffline.setState({ songs: { 1: { url: '/stream/1/aac?kbps=256', bytes: 1, usedAt: 0 } } });
+    playing('/stream/1/aac?kbps=256');
+    view();
+    await expectRow('Stream', 'AAC 256 kbps, kept on this device');
   });
 
   it('shows the playback, the file and the sound', async () => {

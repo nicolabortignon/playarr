@@ -77,6 +77,54 @@ describe('PlaybackPanel transitions', () => {
   });
 });
 
+describe('PlaybackPanel streaming quality', () => {
+  const group = (name: string) => within(screen.getByRole('radiogroup', { name }));
+  const chosen = (name: string) => group(name).getByRole('radio', { checked: true }).textContent;
+  const notTold = /doesn’t say when it’s on mobile data/;
+
+  beforeEach(() => usePrefs.setState({ wifiQuality: 'original', cellularQuality: 'normal', downloadQuality: 'original' }));
+  afterEach(() => {
+    delete (navigator as { connection?: unknown }).connection;
+    vi.restoreAllMocks();
+  });
+
+  it('sets a quality for Wi-Fi, for mobile data and for downloads', () => {
+    view();
+    expect([chosen('On Wi-Fi'), chosen('On mobile data'), chosen('Downloads')]).toEqual(['Original', 'Normal', 'Original']);
+    fireEvent.click(group('On Wi-Fi').getByRole('radio', { name: 'High' }));
+    fireEvent.click(group('On mobile data').getByRole('radio', { name: 'Original' }));
+    fireEvent.click(group('Downloads').getByRole('radio', { name: 'Normal' }));
+    expect(usePrefs.getState()).toMatchObject({ wifiQuality: 'high', cellularQuality: 'original', downloadQuality: 'normal' });
+  });
+
+  it('says plainly where the browser can’t tell it’s on mobile data, and what to do instead', () => {
+    view();
+    expect(screen.getByText(notTold).textContent).toContain('choose High or Normal for Wi-Fi');
+    cleanup();
+    Object.defineProperty(navigator, 'connection', { configurable: true, value: Object.assign(new EventTarget(), { type: 'cellular' }) });
+    view();
+    expect(screen.queryByText(notTold)).toBeNull();
+  });
+
+  it('says DJ mix plays songs’ own files outside Safari', () => {
+    usePrefs.setState({ transitions: 'dj' });
+    view();
+    expect(screen.getByText(/With DJ mix, this browser plays songs’ own files/)).toBeTruthy();
+    cleanup();
+    vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
+    view();
+    expect(screen.queryByText(/With DJ mix, this browser/)).toBeNull();
+  });
+
+  it('is read-only when an admin has locked Playback for this account', async () => {
+    view({ id: 2, username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null, hasPassword: true, locked: ['playback'] });
+    await screen.findByText('Only an admin can change Playback for your account.');
+    fireEvent.click(group('On Wi-Fi').getByRole('radio', { name: 'Normal' }));
+    fireEvent.click(group('Downloads').getByRole('radio', { name: 'High' }));
+    expect(usePrefs.getState()).toMatchObject({ wifiQuality: 'original', downloadQuality: 'original' });
+  });
+});
+
 describe('PlaybackPanel keyboard shortcuts', () => {
   const pointer = (fine: boolean) =>
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(any-pointer: fine)' && fine, media: query, addEventListener() {}, removeEventListener() {} }));

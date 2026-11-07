@@ -3,7 +3,8 @@ import type { Track } from '@playarr/shared';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { api } from '../lib/api';
-import { usePrefs } from '../lib/prefs';
+import { type Quality, usePrefs } from '../lib/prefs';
+import { useToasts } from '../lib/toast';
 import { AudioEngine } from './AudioEngine';
 import { canSetVolume } from './decks';
 import { useJoins } from './joins';
@@ -128,6 +129,11 @@ afterEach(() => {
 
 const song = (id: number, albumId = id) =>
   ({ id, fileId: id, recordingId: `r${id}`, albumId, discNumber: 1, trackNumber: 1, duration: 200, title: `Song ${id}`, streamUrl: `/stream/${id}` }) as Track;
+/** A song in FLAC, about 900 kbps: the server encodes it at High and Normal. */
+const flac = (id: number, albumId = id) =>
+  ({ ...song(id, albumId), size: 22_500_000, format: { codec: 'FLAC', container: 'flac', lossless: true, bits: 16, sampleRate: 44_100 } }) as Track;
+/** A song in MP3 at 160 kbps: about Normal's size already, so it plays as it is at Normal. */
+const mp3 = (id: number) => ({ ...song(id), size: 4_000_000, format: { codec: 'MP3', container: 'mp3', lossless: false, bitrate: 160 } }) as Track;
 
 /** Time passes: timers due run, and what they start. */
 const wait = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
@@ -366,35 +372,121 @@ describe('AudioEngine', () => {
     expect(useSleep.getState().endOfSong).toBe(false);
   });
 
-  it('offline, skips to the next song on this device when one can’t load', async () => {
-    const [a] = await start([song(1), song(2), song(3)]);
-    useOffline.setState({ songs: { 3: { url: '/stream/3', bytes: 1, usedAt: 0 } } });
+  /** The browser goes offline (until `back()`), as navigator.onLine and its events say. */
+  function goOffline() {
     const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
-    await act(async () => {
-      a.dispatchEvent(new Event('error'));
-    });
-    await settle();
-    expect(now()).toBe(3);
-    online.mockRestore();
-    useOffline.setState({ songs: {} });
-  });
-
-  it('asks again for a song whose stream broke off, from where it stopped, before giving up', async () => {
-    const fetchMock = vi.fn(async () => new Response('ab', { status: 206 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const [a] = await start([song(1), song(2)]);
-    await at(a, 50);
-    Object.defineProperty(a, 'error', { configurable: true, value: { code: 2 } });
-    const breakOff = async () => {
-      Object.defineProperty(a, 'readyState', { configurable: true, value: 0 });
-      a.setAttribute('src', '/stream/1#broken'); // the element reloads only when its src is set
+    onTestFinished(() => online.mockRestore());
+    window.dispatchEvent(new Event('offline'));
+    return async () => {
+      online.mockReturnValue(true);
       await act(async () => {
-        a.dispatchEvent(new Event('error'));
+        window.dispatchEvent(new Event('online'));
       });
       await settle();
     };
-    for (let i = 0; i < 3; i++) {
-      await breakOff();
+  }
+
+  /**
+   * A deck's stream breaks off (MediaError 2), or won't play at all (4): its element has nothing to play, though
+   * it isn't paused (as browsers do).
+   */
+  async function breakOff(deck: HTMLAudioElement, code = 2) {
+    Object.defineProperty(deck, 'error', { configurable: true, value: { code } });
+    Object.defineProperty(deck, 'readyState', { configurable: true, value: 0 });
+    deck.setAttribute('src', `${deck.getAttribute('src')}#broken`); // to see it asked for again
+    await act(async () => {
+      deck.dispatchEvent(new Event('error'));
+    });
+    await settle();
+  }
+
+  it('rides out the network going for 20 s mid-song: once it’s back, the song goes on where it was', async () => {
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 95);
+    const back = goOffline();
+    await breakOff(a);
+    await wait(20_000);
+    // Waiting for the network, the song where it was.
+    expect(now()).toBe(1);
+    expect(src(a)).toBe('/stream/1#broken');
+    expect(useClock.getState()).toMatchObject({ loading: true, error: null });
+    expect(usePlayer.getState().playing).toBe(true);
+    await back();
+    expect(src(a)).toBe('/stream/1');
+    a.dispatchEvent(new Event('loadedmetadata'));
+    expect(fake(a).time).toBe(95);
+    expect(fake(a).paused).toBe(false);
+    expect(now()).toBe(1);
+  });
+
+  it('rides out the network going for 20 s while the song only stalls, without an error: it waits for the network, then goes on', async () => {
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 95);
+    const back = goOffline();
+    // The buffer runs dry: the element waits for data, no error.
+    Object.defineProperty(a, 'readyState', { configurable: true, value: 2 });
+    a.setAttribute('src', '/stream/1#stalled');
+    await act(async () => {
+      a.dispatchEvent(new Event('waiting'));
+    });
+    await wait(20_000);
+    // Not asked for again while there's no network to ask over.
+    expect(src(a)).toBe('/stream/1#stalled');
+    expect(now()).toBe(1);
+    await back();
+    expect(src(a)).toBe('/stream/1');
+    expect(fake(a).time).toBe(95);
+    expect(fake(a).paused).toBe(false);
+    expect(now()).toBe(1);
+  });
+
+  it('asks again for an encoded stream from the very sample it stopped at, once the network is back', async () => {
+    usePrefs.setState({ wifiQuality: 'normal' });
+    onTestFinished(() => {
+      usePrefs.setState({ wifiQuality: 'original' });
+    });
+    const [a] = await start([flac(1), flac(2)]);
+    expect(src(a)).toBe('/stream/1/aac?kbps=128');
+    await at(a, 95.5);
+    const back = goOffline();
+    await breakOff(a);
+    await wait(20_000);
+    await back();
+    expect(src(a)).toBe(`/stream/1/aac?kbps=128&start=${95.5 * 44_100}`);
+    expect(a.dataset.offset).toBe('95.5');
+    a.dispatchEvent(new Event('loadedmetadata'));
+    expect(fake(a).time).toBe(0);
+    expect(clock()).toBe(95.5);
+  });
+
+  it('offline for long, skips to the next song on this device', async () => {
+    const [a] = await start([song(1), song(2), song(3)]);
+    useOffline.setState({ songs: { 3: { url: '/stream/3', bytes: 1, usedAt: 0 } } });
+    onTestFinished(() => {
+      useOffline.setState({ songs: {} });
+    });
+    goOffline();
+    await breakOff(a);
+    // It waits for the network a while first: a dead spot often passes.
+    await wait(29_000);
+    expect(now()).toBe(1);
+    await wait(1000);
+    expect(now()).toBe(3);
+  });
+
+  it('asks again for a song whose stream broke off, from where it stopped, waiting longer each time, then plays the next', async () => {
+    const fetchMock = vi.fn(async () => new Response('ab', { status: 206 }));
+    vi.stubGlobal('fetch', fetchMock);
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 50);
+    for (const delay of [1000, 3000, 8000]) {
+      await breakOff(a);
+      await wait(delay - 20);
+      expect(src(a)).toBe('/stream/1#broken');
+      await wait(20);
       expect(src(a)).toBe('/stream/1');
       a.dispatchEvent(new Event('loadedmetadata'));
       expect(fake(a).time).toBe(50);
@@ -402,11 +494,139 @@ describe('AudioEngine', () => {
       expect(useClock.getState().error).toBeNull();
     }
     expect(fetchMock).not.toHaveBeenCalled();
-    await breakOff();
+    // Still breaking off though the server serves it: the next song, saying why.
+    await breakOff(a);
+    expect(fetchMock).toHaveBeenCalledWith(new URL('/stream/1#broken', location.href).href, expect.objectContaining({ headers: { Range: 'bytes=0-1' } }));
+    expect(now()).toBe(2);
+    expect(useToasts.getState().toasts.at(-1)).toMatchObject({ message: 'The song kept stopping loading: the Playarr server or the network is too busy', tone: 'error' });
+    expect(usePlayer.getState().playing).toBe(true);
+  });
+
+  it('gives a song that played on well past where it broke off its quick tries afresh', async () => {
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 50);
+    await breakOff(a);
+    await wait(1000);
+    expect(src(a)).toBe('/stream/1');
+    await at(a, 61); // played on
+    await breakOff(a);
+    await wait(1000);
+    expect(src(a)).toBe('/stream/1');
+  });
+
+  it('keeps asking, while the server can’t be reached at all, until it answers', async () => {
+    const fetchMock = vi.fn(async () => Promise.reject(new TypeError('Failed to fetch')));
+    vi.stubGlobal('fetch', fetchMock);
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 50);
+    for (const delay of [1000, 3000, 8000]) {
+      await breakOff(a);
+      await wait(delay);
+    }
+    for (let i = 0; i < 3; i++) {
+      await breakOff(a);
+      await wait(15_000);
+      expect(src(a)).toBe('/stream/1');
+      expect(now()).toBe(1);
+    }
+    expect(useClock.getState().error).toBeNull();
+  });
+
+  it('counts a server that doesn’t say within 10 s why the stream broke off as out of reach', async () => {
+    const hung = vi.fn(
+      (_url: string, init: RequestInit) => new Promise((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))),
+    );
+    vi.stubGlobal('fetch', hung);
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 50);
+    for (const delay of [1000, 3000, 8000]) {
+      await breakOff(a);
+      await wait(delay);
+    }
+    await breakOff(a);
+    expect(hung).toHaveBeenCalledTimes(1);
+    await wait(10_000 + 15_000 - 20);
+    expect(src(a)).toBe('/stream/1#broken');
+    await wait(20);
+    expect(src(a)).toBe('/stream/1');
     expect(now()).toBe(1);
-    expect(useClock.getState().error).toBe('The song kept stopping loading: the Playarr server or the network is too busy');
+  });
+
+  it('plays the next song when one won’t play at all, and stops after a few in a row', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Cannot read audio file: gone' }), { status: 502 })));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const decks = await start([song(1), song(2), song(3), song(4), song(5)]);
+    for (const d of decks) slow.set(d, 'never'); // the songs after it never start
+    const playing = () => decks.find((d) => src(d) === `/stream/${now()}`)!;
+    await breakOff(playing(), 4);
+    expect(now()).toBe(2);
+    expect(useToasts.getState().toasts.at(-1)).toMatchObject({ message: 'Cannot read audio file: gone', tone: 'error' });
+    expect(usePlayer.getState().playing).toBe(true);
+    await breakOff(playing(), 4);
+    expect(now()).toBe(3);
+    await breakOff(playing(), 4);
+    // Three in a row: the trouble isn't the songs'. It stops there, saying why.
+    expect(now()).toBe(3);
     expect(usePlayer.getState().playing).toBe(false);
-    vi.unstubAllGlobals();
+    expect(useClock.getState().error).toBe('Cannot read audio file: gone');
+  });
+
+  it('counts songs that won’t play afresh once one plays', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Cannot read audio file: gone' }), { status: 502 })));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const decks = await start([song(1), song(2), song(3), song(4), song(5)]);
+    for (const d of decks) slow.set(d, 'never');
+    const playing = () => decks.find((d) => src(d) === `/stream/${now()}`)!;
+    await breakOff(playing(), 4);
+    await breakOff(playing(), 4);
+    expect(now()).toBe(3);
+    await act(async () => {
+      playing().dispatchEvent(new Event('playing'));
+    });
+    await breakOff(playing(), 4);
+    await breakOff(playing(), 4);
+    expect(now()).toBe(5);
+    expect(usePlayer.getState().playing).toBe(true);
+  });
+
+  it('asks again for a song stuck waiting for its stream 8 s while online, from where it is: once it has played', async () => {
+    const [a] = await start([song(1), song(2)]);
+    await at(a, 30);
+    Object.defineProperty(a, 'readyState', { configurable: true, value: 2 });
+    a.setAttribute('src', '/stream/1#stuck');
+    await act(async () => {
+      a.dispatchEvent(new Event('waiting'));
+    });
+    await wait(7000);
+    expect(src(a)).toBe('/stream/1#stuck');
+    await wait(2000);
+    expect(src(a)).toBe('/stream/1');
+    a.dispatchEvent(new Event('loadedmetadata'));
+    expect(fake(a).time).toBe(30);
+    expect(fake(a).paused).toBe(false);
+  });
+
+  it('leaves a song still starting to take its time (Safari reads a whole encoded stream first)', async () => {
+    const decks = await start([song(1), song(2)]);
+    for (const d of decks) slow.set(d, 'never');
+    await act(async () => usePlayer.getState().next());
+    await settle();
+    const deck = decks.find((d) => src(d) === '/stream/2')!;
+    Object.defineProperty(deck, 'readyState', { configurable: true, value: 1 });
+    deck.setAttribute('src', '/stream/2#starting');
+    await wait(20_000);
+    expect(src(deck)).toBe('/stream/2#starting');
+    expect(now()).toBe(2);
   });
 
   /** Levels already known for these songs (by recording id): songs no other test has asked about. */
@@ -462,6 +682,162 @@ describe('AudioEngine', () => {
     usePrefs.getState().setLevelVolume(false);
     await settle();
     expect(fake(a).volume).toBe(1);
+  });
+
+  describe('stream quality', () => {
+    /** The streaming qualities set (Settings → Playback → Streaming quality). */
+    function quality(set: { wifiQuality?: Quality; cellularQuality?: Quality }) {
+      usePrefs.setState(set);
+      onTestFinished(() => {
+        usePrefs.setState({ wifiQuality: 'original', cellularQuality: 'normal' });
+      });
+    }
+    /** The browser says what connection it's on (Chrome on Android). */
+    function connection(info: { type?: string; saveData?: boolean }) {
+      Object.defineProperty(navigator, 'connection', { configurable: true, value: Object.assign(new EventTarget(), info) });
+      onTestFinished(() => {
+        delete (navigator as { connection?: unknown }).connection;
+      });
+    }
+    /** The browser is WebKit (Safari, or any browser on an iPhone). */
+    function webKit() {
+      const vendor = vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.');
+      onTestFinished(() => vendor.mockRestore());
+    }
+
+    it('streams songs encoded at the quality set for Wi-Fi', async () => {
+      quality({ wifiQuality: 'high' });
+      const [a, b] = await start([flac(1), flac(2)]);
+      expect(src(a)).toBe('/stream/1/aac?kbps=256');
+      expect(a.dataset.offset).toBeUndefined();
+      await at(a, 175);
+      expect(src(b)).toBe('/stream/2/aac?kbps=256');
+    });
+
+    it('streams at mobile data’s quality where the browser says it’s on mobile data, or saving data', async () => {
+      quality({ wifiQuality: 'original', cellularQuality: 'normal' });
+      connection({ type: 'cellular' });
+      const [a] = await start([flac(1)]);
+      expect(src(a)).toBe('/stream/1/aac?kbps=128');
+      cleanup();
+      connection({ type: 'wifi', saveData: true });
+      const [b] = await start([flac(2)]);
+      expect(src(b)).toBe('/stream/2/aac?kbps=128');
+      cleanup();
+      connection({ type: 'wifi' });
+      const [c] = await start([flac(3)]);
+      expect(src(c)).toBe('/stream/3');
+    });
+
+    it('plays a file already about the quality’s size as it is', async () => {
+      quality({ wifiQuality: 'normal' });
+      const [a] = await start([mp3(1)]);
+      expect(src(a)).toBe('/stream/1');
+    });
+
+    it('levels an encoded song in the stream itself where the volume can’t be set (iPhone)', async () => {
+      vi.mocked(canSetVolume).mockReturnValue(false);
+      quality({ wifiQuality: 'normal' });
+      knownLevels({ r91: { track: -6 } });
+      const [a] = await start([flac(91)]);
+      expect(src(a)).toBe('/stream/91/levelled.aac?gain=-6&kbps=128');
+      expect(fake(a).volume).toBe(1);
+    });
+
+    it('seeks in an encoded stream as in a file, and asks for it from a time well past what it has loaded', async () => {
+      quality({ wifiQuality: 'normal' });
+      const [a] = await start([flac(1), flac(2)]);
+      await at(a, 20);
+      Object.defineProperty(a, 'buffered', { configurable: true, value: { length: 1, start: () => 0, end: () => 60 } });
+      // Within a few seconds of what it has loaded: the browser gets there.
+      await act(async () => useClock.getState().seek(65));
+      await settle();
+      expect(src(a)).toBe('/stream/1/aac?kbps=128');
+      expect(fake(a).time).toBe(65);
+      // Well past it: encoded from there instead.
+      await act(async () => useClock.getState().seek(150));
+      await settle();
+      expect(src(a)).toBe(`/stream/1/aac?kbps=128&start=${150 * 44_100}`);
+      expect(a.dataset.offset).toBe('150');
+      expect(fake(a).time).toBe(0);
+      expect(fake(a).paused).toBe(false);
+      expect(clock()).toBe(150);
+      // Back before where that stream starts: from there again.
+      await act(async () => useClock.getState().seek(100.25));
+      await settle();
+      expect(src(a)).toBe(`/stream/1/aac?kbps=128&start=${100.25 * 44_100}`);
+    });
+
+    it('seeks anywhere in an encoded stream in Safari, which has read its whole layout', async () => {
+      webKit();
+      quality({ wifiQuality: 'normal' });
+      const [a] = await start([flac(1), flac(2)]);
+      await at(a, 20);
+      await act(async () => useClock.getState().seek(150));
+      await settle();
+      expect(src(a)).toBe('/stream/1/aac?kbps=128');
+      expect(fake(a).time).toBe(150);
+    });
+
+    it('goes on from the song’s own file, from where it was, when its encoded stream won’t play', async () => {
+      quality({ wifiQuality: 'normal' });
+      const [a] = await start([flac(97), flac(98)]);
+      expect(src(a)).toBe('/stream/97/aac?kbps=128');
+      await at(a, 50);
+      await breakOff(a, 4);
+      expect(src(a)).toBe('/stream/97');
+      a.dispatchEvent(new Event('loadedmetadata'));
+      expect(fake(a).time).toBe(50);
+      expect(fake(a).paused).toBe(false);
+      expect(useClock.getState().error).toBeNull();
+    });
+
+    it('plays a copy kept on this device at least as good as the quality wanted, and offline any copy', async () => {
+      quality({ wifiQuality: 'high' });
+      useOffline.setState({ songs: { 1: { url: '/stream/1/aac?kbps=128', bytes: 1, usedAt: 0 }, 2: { url: '/stream/2', bytes: 1, usedAt: 0 } } });
+      onTestFinished(() => {
+        useOffline.setState({ songs: {} });
+      });
+      // Kept at Normal, below High: streamed.
+      const [a] = await start([flac(1)]);
+      expect(src(a)).toBe('/stream/1/aac?kbps=256');
+      cleanup();
+      // Its own file kept: better than High.
+      const [b] = await start([flac(2)]);
+      expect(src(b)).toBe('/stream/2');
+      cleanup();
+      goOffline();
+      const [c] = await start([flac(1)]);
+      expect(src(c)).toBe('/stream/1/aac?kbps=128');
+    });
+
+    it('plays songs’ own files with DJ mix, outside Safari: an encoded stream isn’t known to line up with transitions there', async () => {
+      quality({ wifiQuality: 'normal' });
+      usePrefs.setState({ transitions: 'dj', crossfade: 6 });
+      const [a] = await start([flac(1), flac(2)]);
+      expect(src(a)).toBe('/stream/1');
+    });
+
+    it('streams encoded with DJ mix in Safari, the next song after a transition from where it leaves it rather than a remainder file', async () => {
+      webKit();
+      quality({ wifiQuality: 'normal' });
+      usePrefs.setState({ transitions: 'dj', crossfade: 6 });
+      transitionReady(1, 2, { continuationUrl: '/transitions/abc-rest.flac' });
+      const [a, b, bridge] = await start([flac(1), flac(2)]);
+      expect(src(a)).toBe('/stream/1/aac?kbps=128');
+      await at(a, 145);
+      expect(src(b)).toBe(`/stream/2/aac?kbps=128&start=${32 * 44_100}`);
+      expect(b.dataset.offset).toBe('32');
+      await at(a, 169.99);
+      await overlap();
+      await at(bridge, 12.1);
+      await at(bridge, 23.99);
+      expect(fake(b).paused).toBe(false);
+      expect(fake(b).time).toBe(0);
+      await at(b, 10);
+      expect(clock()).toBe(42);
+      expect(now()).toBe(2);
+    });
   });
 
   describe('DJ transitions', () => {
@@ -915,6 +1291,8 @@ describe('AudioEngine', () => {
         graph.instance = null;
         vi.unstubAllGlobals();
       });
+      /** The gain the graph plays an element at now. */
+      const levelIn = (g: ReturnType<typeof fakeGraph>, el: HTMLMediaElement) => g.setLevel.mock.calls.filter(([e]) => e === el).at(-1)?.[1] as number;
 
       /** Into a transition with a 2 s lead, through the graph, up to the transition file playing (silenced) in step with A by their times. */
       async function intoLead() {
@@ -1020,10 +1398,42 @@ describe('AudioEngine', () => {
         // From the transition (B alone) to B's own file, heard at the same level: no step.
         const [from, to, fromLevel, toLevel, seconds] = g.crossfade.mock.calls.at(-1) as unknown as [unknown, unknown, number, number, number];
         expect([from, to, seconds]).toEqual([bridge, b, 0.08]);
-        // The transition holds B at its own level, turned down to B's here; B's own file is its levelled stream, down already.
+        // The transition holds B at its own level, turned down to B's here; B's own file is turned down as much by its gain.
         expect(fromLevel).toBeCloseTo(10 ** (-6 / 20), 2);
-        expect(src(b)).toContain('levelled.wav?gain=-6');
-        expect(toLevel).toBe(1);
+        expect(src(b)).toBe('/stream/2');
+        expect(toLevel).toBeCloseTo(10 ** (-6 / 20), 2);
+      });
+
+      it('levels songs by their gain in the graph, from their own files: quiet ones turned up too', async () => {
+        const before = useLevels.getState().levels;
+        onTestFinished(() => useLevels.setState({ levels: before }));
+        useLevels.setState((st) => ({ levels: { ...st.levels, r1: { track: 4 }, r2: { track: -6 } } }));
+        const g = fakeGraph([]);
+        const [a, b] = await start([song(1), song(2)]);
+        document.dispatchEvent(new Event('pointerdown'));
+        await settle();
+        expect(src(a)).toBe('/stream/1');
+        expect(levelIn(g, a)).toBeCloseTo(10 ** (4 / 20), 3);
+        await at(a, 199.99);
+        expect(now()).toBe(2);
+        expect(src(b)).toBe('/stream/2');
+        expect(levelIn(g, b)).toBeCloseTo(10 ** (-6 / 20), 3);
+      });
+
+      it('levels a song kept on this device like a streamed one', async () => {
+        const before = useLevels.getState().levels;
+        onTestFinished(() => useLevels.setState({ levels: before }));
+        useLevels.setState((st) => ({ levels: { ...st.levels, r1: { track: 3 } } }));
+        useOffline.setState({ songs: { 1: { url: '/stream/1', bytes: 1, usedAt: 0 } } });
+        onTestFinished(() => {
+          useOffline.setState({ songs: {} });
+        });
+        const g = fakeGraph([]);
+        const [a] = await start([song(1), song(2)]);
+        document.dispatchEvent(new Event('pointerdown'));
+        await settle();
+        expect(src(a)).toBe('/stream/1');
+        expect(levelIn(g, a)).toBeCloseTo(10 ** (3 / 20), 3);
       });
 
       it('lines up by the players’ times when the sound can’t be measured, and says why', async () => {

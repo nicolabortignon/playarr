@@ -6,6 +6,8 @@ import { persist } from 'zustand/middleware';
 import type { TransitionAnswer } from '../lib/api';
 import { AUDIO_CACHE } from '../lib/cacheNames';
 import { playableUrl } from '../lib/playable';
+import type { Quality } from '../lib/prefs';
+import { atLeast, keptUrl, qualityOfUrl, sizeAt } from '../lib/quality';
 
 const MB = 1024 ** 2;
 const GB = 1024 ** 3;
@@ -96,12 +98,27 @@ export const isDownloaded = (fileId: number, s: Pick<OfflineState, 'pins'>) => p
 /** Downloaded and on this device: what the "on this device" mark means. */
 export const useIsDownloaded = (fileId: number) => useOffline((s) => fileId in s.songs && isDownloaded(fileId, s));
 
+/** The copy of a song kept on this device plays in this browser: not its own Apple Lossless file kept before Chrome was given its WAV. */
+const playsHere = (track: Pick<Track, 'streamUrl' | 'format'>, url: string) => qualityOfUrl(url) !== 'original' || url === playableUrl(track);
+
 /**
- * Kept on this device as this browser plays it. An Apple Lossless file kept before Chrome was given its WAV isn't:
- * it's fetched again, as the WAV.
+ * Kept on this device as this browser plays it, at `quality` or better (High and Normal are encoded streams,
+ * lib/quality.ts). One that doesn't play here is fetched again, as one that does.
  */
-export const keptAsPlayed = (track: Pick<Track, 'fileId' | 'streamUrl' | 'format'>, songs: Record<number, Pick<KeptSong, 'url'>>) =>
-  songs[track.fileId]?.url === playableUrl(track);
+export function keptAsPlayed(track: Pick<Track, 'fileId' | 'streamUrl' | 'format'>, songs: Record<number, Pick<KeptSong, 'url'>>, quality: Quality = 'original') {
+  const url = songs[track.fileId]?.url;
+  return !!url && playsHere(track, url) && atLeast(qualityOfUrl(url), quality);
+}
+
+/**
+ * The copy of a song kept on this device to play instead of streaming it, if there's one that plays here:
+ * offline, whatever its quality; online, one at least as good as the quality wanted.
+ */
+export function keptCopy(track: Pick<Track, 'fileId' | 'streamUrl' | 'format'>, want: Quality): string | undefined {
+  const url = useOffline.getState().songs[track.fileId]?.url;
+  if (!url || !playsHere(track, url)) return undefined;
+  return !navigator.onLine || atLeast(qualityOfUrl(url), want) ? url : undefined;
+}
 
 export const keptBytes = (songs: Record<number, KeptSong>) => Object.values(songs).reduce((sum, s) => sum + s.bytes, 0);
 
@@ -191,20 +208,22 @@ export function evictions(songs: Record<number, KeptSong>, need: number, limit: 
 let generation = 0;
 
 /**
- * Download a song and keep it on this device, making room by dropping the least recently used.
- * Resolves false when it won't fit; rejects on network errors and when aborted.
+ * Download a song and keep it on this device at `quality` (its own file, or its encoded stream: see
+ * keptUrl), making room by dropping the least recently used. Resolves false when it won't fit; rejects
+ * on network errors and when aborted.
  */
 export async function keepSong(
   track: Track,
-  { signal, protect, pinned = false }: { signal: AbortSignal; protect: ReadonlySet<number>; pinned?: boolean },
+  { signal, protect, pinned = false, quality = 'original' }: { signal: AbortSignal; protect: ReadonlySet<number>; pinned?: boolean; quality?: Quality },
 ): Promise<boolean> {
   const started = generation;
   const { songs, pins } = useOffline.getState();
   const { rest } = splitKept(songs, pins);
+  const size = sizeAt(track, quality);
   // A download only needs room on the device; other kept songs go first if it's short.
-  const room = pinned ? await roomOnDevice(rest, track.size, protect) : evictions(rest, track.size, await effectiveLimit(), protect);
+  const room = pinned ? await roomOnDevice(rest, size, protect) : evictions(rest, size, await effectiveLimit(), protect);
   if (!room) return false;
-  const url = playableUrl(track);
+  const url = keptUrl(track, quality);
   const res = await fetch(url, { signal });
   if (res.status !== 200 || !res.body) {
     void res.body?.cancel();
@@ -213,7 +232,7 @@ export async function keepSong(
   await dropSongs(room);
 
   const expected = Number(res.headers.get('content-length'));
-  const total = expected || track.size;
+  const total = expected || size;
   let loaded = 0;
   let reported = 0;
   const progress = () => useOffline.setState({ active: { fileId: track.fileId, loaded, total } });
@@ -370,7 +389,8 @@ export function downloadProgress(d: Download, songs: Record<number, KeptSong>) {
 export async function reconcileOffline() {
   if (!canKeepOffline) return;
   const cache = await caches.open(AUDIO_CACHE);
-  const stored = new Set((await cache.keys()).map((r) => new URL(r.url).pathname));
+  // Path and query: a song kept as an encoded stream is known by both (/stream/7/aac?kbps=128).
+  const stored = new Set((await cache.keys()).map((r) => new URL(r.url).pathname + new URL(r.url).search));
   const { songs } = useOffline.getState();
   const known = new Set(Object.values(songs).map((s) => s.url));
   await Promise.all([...stored].filter((url) => !known.has(url)).map((url) => cache.delete(url)));

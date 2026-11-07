@@ -1,7 +1,20 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ACCENTS, crossfadeSeconds, djFadeSeconds, PREFS_KEY, usePrefs } from './prefs';
 
-const defaults = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, transitions: 'off', crossfade: 0, levelVolume: true, statsForNerds: false } as const;
+const defaults = {
+  accent: 'album',
+  motion: 'system',
+  formatBadges: true,
+  recordPlays: true,
+  autoplay: true,
+  transitions: 'off',
+  crossfade: 0,
+  levelVolume: true,
+  statsForNerds: false,
+  wifiQuality: 'original',
+  cellularQuality: 'normal',
+  downloadQuality: 'original',
+} as const;
 const stored = (state: Record<string, unknown>) =>
   localStorage.setItem(PREFS_KEY, JSON.stringify({ state, version: 1 }));
 
@@ -27,9 +40,33 @@ describe('device preferences', () => {
     setCrossfade(6);
     setLevelVolume(false);
     setStatsForNerds(true);
-    const saved = { accent: ACCENTS[2], motion: 'reduce', formatBadges: false, recordPlays: false, autoplay: false, transitions: 'dj', crossfade: 6, levelVolume: false, statsForNerds: true };
+    usePrefs.getState().setQuality('wifiQuality', 'high');
+    usePrefs.getState().setQuality('cellularQuality', 'original');
+    usePrefs.getState().setQuality('downloadQuality', 'normal');
+    const saved = {
+      accent: ACCENTS[2],
+      motion: 'reduce',
+      formatBadges: false,
+      recordPlays: false,
+      autoplay: false,
+      transitions: 'dj',
+      crossfade: 6,
+      levelVolume: false,
+      statsForNerds: true,
+      wifiQuality: 'high',
+      cellularQuality: 'original',
+      downloadQuality: 'normal',
+    };
     expect(usePrefs.getState()).toMatchObject(saved);
     expect(JSON.parse(localStorage.getItem(PREFS_KEY)!).state).toEqual(saved);
+  });
+
+  it('reads saved stream qualities back, and falls back to the default for one it does not know', async () => {
+    stored({ wifiQuality: 'normal', cellularQuality: 'lossy', downloadQuality: 256 });
+    await usePrefs.persist.rehydrate();
+    expect(usePrefs.getState()).toMatchObject({ wifiQuality: 'normal', cellularQuality: 'normal', downloadQuality: 'original' });
+    usePrefs.getState().setQuality('wifiQuality', 'best' as 'high');
+    expect(usePrefs.getState().wifiQuality).toBe('original');
   });
 
   it('reads saved preferences back', async () => {

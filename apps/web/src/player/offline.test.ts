@@ -2,9 +2,9 @@ import type { TransitionPlan } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { api, type TransitionAnswer } from '../lib/api';
-import { usePrefs } from '../lib/prefs';
+import { type Quality, usePrefs } from '../lib/prefs';
 import { keepNextTransition, nextToDownload, useDownloadState } from './downloads';
-import { loadAheadPlan } from './loadAhead';
+import { loadAheadPlan, nextToLoad } from './loadAhead';
 import {
   addDownload,
   downloadProgress,
@@ -41,6 +41,16 @@ describe('load-ahead plan', () => {
   it('puts the current song first on repeat-one, and leaves it out on request', () => {
     expect(ids(loadAheadPlan(at(0, 'one'), 1))).toEqual([1, 2]);
     expect(ids(loadAheadPlan(at(0), 1, false))).toEqual([2]);
+  });
+
+  it('keeps the songs not on the device at the quality wanted, leaving a download’s songs as the downloads kept them', () => {
+    const plan = [track(1), track(2), track(3)];
+    const songs = { 1: { url: '/stream/1/aac?kbps=128' }, 2: { url: '/stream/2/aac?kbps=128' }, 3: { url: '/stream/3' } };
+    const pins = { 'album:2': { key: 'album:2', title: 'Two', href: '/albums/2', tracks: [track(2)], addedAt: 1 } };
+    expect(nextToLoad(plan, { songs, pins: {} }, 'high')?.fileId).toBe(1);
+    expect(nextToLoad(plan, { songs, pins: {} }, 'high', new Set([1]))?.fileId).toBe(2);
+    expect(nextToLoad(plan, { songs, pins }, 'high', new Set([1]))).toBeUndefined();
+    expect(nextToLoad(plan, { songs, pins: {} }, 'normal')).toBeUndefined();
   });
 
   it('lists each file once, and nothing for an empty queue', () => {
@@ -128,6 +138,20 @@ describe('keeping songs', () => {
     expect(keptAsPlayed(alac, useOffline.getState().songs)).toBe(true);
   });
 
+  it('keeps a song at the quality asked for, as its encoded stream, and fetches it again for a better one', async () => {
+    useOffline.setState({ limit: 100_000 });
+    const flac = { ...track(4, 400), duration: 1, format: { codec: 'FLAC', container: 'flac', lossless: true, bitrate: 900 } } as Track;
+    const keepAt = (quality: Quality) => keepSong(flac, { signal: new AbortController().signal, protect: new Set([4]), quality });
+    expect(await keepAt('normal')).toBe(true);
+    expect([...store.keys()]).toEqual(['/stream/4/aac?kbps=128']);
+    expect(useOffline.getState().songs[4]).toMatchObject({ url: '/stream/4/aac?kbps=128', bytes: 400 });
+    expect(keptAsPlayed(flac, useOffline.getState().songs, 'normal')).toBe(true);
+    expect(keptAsPlayed(flac, useOffline.getState().songs, 'high')).toBe(false);
+    expect(await keepAt('high')).toBe(true);
+    expect([...store.keys()]).toEqual(['/stream/4/aac?kbps=256']);
+    expect(keptAsPlayed(flac, useOffline.getState().songs, 'original')).toBe(false);
+  });
+
   it('makes room by dropping the song played longest ago', async () => {
     await keep(track(4, 400));
     await keep(track(5, 500));
@@ -186,6 +210,14 @@ describe('downloads', () => {
     const left = Object.values(useOffline.getState().songs).reduce((sum, s) => sum + s.bytes, 0);
     expect(left).toBeLessThanOrEqual(1000);
     expect(store.size).toBe(Object.keys(useOffline.getState().songs).length);
+  });
+
+  it('fetches again a download’s song kept below the downloads’ quality', () => {
+    const pins = { a: { addedAt: 1, tracks: [track(1), track(2)] } };
+    const songs = { 1: { url: '/stream/1/aac?kbps=128' }, 2: { url: '/stream/2' } };
+    expect(nextToDownload(pins, songs, {}, 'normal')).toBeUndefined();
+    expect(nextToDownload(pins, songs, {}, 'high')?.fileId).toBe(1);
+    expect(nextToDownload(pins, songs, {})?.fileId).toBe(1);
   });
 
   it('fetches downloads in the order they were added, skipping what failed', () => {

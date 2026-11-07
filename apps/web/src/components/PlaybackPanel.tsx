@@ -1,7 +1,8 @@
 import { Fragment } from 'react';
 import { Link } from 'react-router';
 import { useHasKeyboard } from '../lib/keyboard';
-import { CROSSFADES, usePrefs, type Transitions } from '../lib/prefs';
+import { CROSSFADES, usePrefs, type Quality, type Transitions } from '../lib/prefs';
+import { encodedJoinsExact, tellsMobileData } from '../lib/quality';
 import { useLocked } from '../lib/queries';
 import { canSetVolume } from '../player/decks';
 import { OfflineStorage } from './OfflineStorage';
@@ -11,6 +12,13 @@ import { Keys, SHORTCUT_SIDES } from './Shortcuts';
 
 /** Lengths offered once Crossfade is chosen: 0 seconds would just be Off. */
 const CROSSFADE_LENGTHS = CROSSFADES.filter((s) => s > 0).map((s) => ({ value: s, label: `${s} s` }));
+
+/** Stream qualities, best first (lib/quality.ts). */
+const QUALITY_OPTIONS: { value: Quality; label: string }[] = [
+  { value: 'original', label: 'Original' },
+  { value: 'high', label: 'High' },
+  { value: 'normal', label: 'Normal' },
+];
 
 /** Settings → Playback: for this device, unless an admin has locked it for this account (then read-only). */
 export function PlaybackPanel() {
@@ -25,6 +33,10 @@ export function PlaybackPanel() {
   const setCrossfade = usePrefs((s) => s.setCrossfade);
   const levelVolume = usePrefs((s) => s.levelVolume);
   const setLevelVolume = usePrefs((s) => s.setLevelVolume);
+  const wifiQuality = usePrefs((s) => s.wifiQuality);
+  const cellularQuality = usePrefs((s) => s.cellularQuality);
+  const downloadQuality = usePrefs((s) => s.downloadQuality);
+  const setQuality = usePrefs((s) => s.setQuality);
   const settable = canSetVolume();
   // Only where there's a keyboard to press them on (lib/keyboard.ts): not on a phone, nor a tablet without one.
   const keyboard = useHasKeyboard();
@@ -100,6 +112,46 @@ export function PlaybackPanel() {
             )}
           </div>
         </div>
+      </SettingsSection>
+      <SettingsSection
+        title="Streaming quality"
+        description="Original streams each song’s own file as it is: lossless takes 300 MB an hour or more. High and Normal stream it made smaller on the server as it plays: High at 256 kbps, about 120 MB an hour and hard to tell from the original; Normal at 128 kbps, about 60 MB. A file already that small plays as it is."
+      >
+        <div className="divide-y divide-line">
+          <div className="py-3">
+            <div className="mb-3 type-body text-paper">On Wi-Fi</div>
+            <Choice label="On Wi-Fi" options={QUALITY_OPTIONS} value={wifiQuality} onChange={(q) => setQuality('wifiQuality', q)} disabled={locked} />
+          </div>
+          <div className="py-3">
+            <div className="mb-3 type-body text-paper">On mobile data</div>
+            <Choice
+              label="On mobile data"
+              options={QUALITY_OPTIONS}
+              value={cellularQuality}
+              onChange={(q) => setQuality('cellularQuality', q)}
+              disabled={locked}
+            />
+            {!tellsMobileData() && (
+              <p className="mt-3 type-small text-muted">
+                This browser doesn’t say when it’s on mobile data, so songs stream at the Wi-Fi quality everywhere. To use less data away from home,
+                choose High or Normal for Wi-Fi.
+              </p>
+            )}
+          </div>
+          <div className="py-3">
+            <div className="mb-3 type-body text-paper">Downloads</div>
+            <Choice label="Downloads" options={QUALITY_OPTIONS} value={downloadQuality} onChange={(q) => setQuality('downloadQuality', q)} disabled={locked} />
+            <p className="mt-3 type-small text-muted">
+              Songs downloaded for listening offline. Choose a better quality and those downloaded below it are fetched again.
+            </p>
+          </div>
+        </div>
+        {transitions === 'dj' && !encodedJoinsExact() && (
+          <p className="mt-3 type-small text-muted">
+            With DJ mix, this browser plays songs’ own files, so the transitions land exactly on the beat. Safari, on a Mac, iPhone or iPad, can
+            stream them smaller and still mix them.
+          </p>
+        )}
       </SettingsSection>
       <OfflineStorage />
       {keyboard && (

@@ -10,7 +10,8 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 
 ## Server
 
-- Formats browsers can't play beyond Apple Lossless and AIFF (WMA, APE, WavPack, DSD; Ogg and Opus on older Safari): a stream they can, once plan 2's transcoding exists. *(PLAN.md browser format notes)*
+- Formats browsers can't play beyond Apple Lossless and AIFF (WMA, APE, WavPack, DSD; Ogg and Opus on older Safari): plan 2's encoded stream could stand in for them at Original too (at High and Normal it already does for files bigger than the stream). *(PLAN.md browser format notes)*
+- Encoded streams: Safari starts one only once it's all encoded (a few seconds a song), which an HLS playlist of the same fragments or Media Source Extensions would shorten; Chrome's and Firefox's placing of their samples isn't measured, so DJ mix plays songs' own files there; and transitions and B's remainders stay FLAC on mobile data. *(plan 2)*
 - ReplayGain tags (as an alternative to Playarr's own loudness) and EQ. *(PLAN.md roadmap phase 6)*
 - Lidarr: interactive release picking from inside Playarr. *(PLAN.md roadmap phase 6)*
 - Live library updates through Lidarr's SignalR feed instead of the 10-minute refresh. *(PLAN.md roadmap phase 6)*

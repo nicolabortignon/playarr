@@ -20,6 +20,13 @@ const FIRST_CROSSFADE: Crossfade = 6;
 export const TRANSITIONS = ['off', 'crossfade', 'dj'] as const;
 export type Transitions = (typeof TRANSITIONS)[number];
 
+/**
+ * How songs come from the server: each song's own file, or encoded as AAC at 256 kbps (High) or 128 kbps
+ * (Normal) as it's asked for (lib/quality.ts).
+ */
+export const QUALITIES = ['original', 'high', 'normal'] as const;
+export type Quality = (typeof QUALITIES)[number];
+
 interface Prefs {
   accent: AccentPref;
   motion: MotionPref;
@@ -39,6 +46,12 @@ interface Prefs {
   levelVolume: boolean;
   /** An overlay with everything known about the song playing: tempo, beat grid, sections, loudness, stream. */
   statsForNerds: boolean;
+  /** How songs stream on Wi-Fi, or wherever the browser doesn't say it's on mobile data. */
+  wifiQuality: Quality;
+  /** How songs stream where the browser says it's on mobile data, or Data Saver is on. */
+  cellularQuality: Quality;
+  /** How downloads (and nothing else) are kept on this device. */
+  downloadQuality: Quality;
   setAccent(a: AccentPref): void;
   setMotion(m: MotionPref): void;
   setFormatBadges(on: boolean): void;
@@ -48,14 +61,44 @@ interface Prefs {
   setCrossfade(seconds: Crossfade): void;
   setLevelVolume(on: boolean): void;
   setStatsForNerds(on: boolean): void;
+  setQuality(which: 'wifiQuality' | 'cellularQuality' | 'downloadQuality', quality: Quality): void;
 }
 
-type Saved = Pick<Prefs, 'accent' | 'motion' | 'formatBadges' | 'recordPlays' | 'autoplay' | 'transitions' | 'crossfade' | 'levelVolume' | 'statsForNerds'>;
+type Saved = Pick<
+  Prefs,
+  | 'accent'
+  | 'motion'
+  | 'formatBadges'
+  | 'recordPlays'
+  | 'autoplay'
+  | 'transitions'
+  | 'crossfade'
+  | 'levelVolume'
+  | 'statsForNerds'
+  | 'wifiQuality'
+  | 'cellularQuality'
+  | 'downloadQuality'
+>;
 
 export const PREFS_KEY = 'playarr.prefs';
-const DEFAULTS: Saved = { accent: 'album', motion: 'system', formatBadges: true, recordPlays: true, autoplay: true, transitions: 'off', crossfade: 0, levelVolume: true, statsForNerds: false };
+const DEFAULTS: Saved = {
+  accent: 'album',
+  motion: 'system',
+  formatBadges: true,
+  recordPlays: true,
+  autoplay: true,
+  transitions: 'off',
+  crossfade: 0,
+  levelVolume: true,
+  statsForNerds: false,
+  wifiQuality: 'original',
+  cellularQuality: 'normal',
+  downloadQuality: 'original',
+};
 
 const isTransitions = (v: unknown): v is Transitions => (TRANSITIONS as readonly unknown[]).includes(v);
+
+const isQuality = (v: unknown): v is Quality => (QUALITIES as readonly unknown[]).includes(v);
 
 const isAccent = (v: unknown): v is AccentPref => v === 'album' || (ACCENTS as readonly unknown[]).includes(v);
 
@@ -75,6 +118,9 @@ function clean(saved: unknown): Saved {
     crossfade: transitions !== 'off' && crossfade === 0 ? FIRST_CROSSFADE : crossfade,
     levelVolume: typeof s.levelVolume === 'boolean' ? s.levelVolume : DEFAULTS.levelVolume,
     statsForNerds: typeof s.statsForNerds === 'boolean' ? s.statsForNerds : DEFAULTS.statsForNerds,
+    wifiQuality: isQuality(s.wifiQuality) ? s.wifiQuality : DEFAULTS.wifiQuality,
+    cellularQuality: isQuality(s.cellularQuality) ? s.cellularQuality : DEFAULTS.cellularQuality,
+    downloadQuality: isQuality(s.downloadQuality) ? s.downloadQuality : DEFAULTS.downloadQuality,
   };
 }
 
@@ -96,11 +142,12 @@ export const usePrefs = create<Prefs>()(
       setCrossfade: (crossfade) => set({ crossfade: CROSSFADES.includes(crossfade) ? crossfade : DEFAULTS.crossfade }),
       setLevelVolume: (levelVolume) => set({ levelVolume }),
       setStatsForNerds: (statsForNerds) => set({ statsForNerds }),
+      setQuality: (which, quality) => set({ [which]: isQuality(quality) ? quality : DEFAULTS[which] }),
     }),
     {
       name: PREFS_KEY,
       version: 1,
-      partialize: ({ accent, motion, formatBadges, recordPlays, autoplay, transitions, crossfade, levelVolume, statsForNerds }) => ({
+      partialize: ({
         accent,
         motion,
         formatBadges,
@@ -110,6 +157,22 @@ export const usePrefs = create<Prefs>()(
         crossfade,
         levelVolume,
         statsForNerds,
+        wifiQuality,
+        cellularQuality,
+        downloadQuality,
+      }) => ({
+        accent,
+        motion,
+        formatBadges,
+        recordPlays,
+        autoplay,
+        transitions,
+        crossfade,
+        levelVolume,
+        statsForNerds,
+        wifiQuality,
+        cellularQuality,
+        downloadQuality,
       }),
       merge: (saved, current) => ({ ...current, ...clean(saved) }),
     },

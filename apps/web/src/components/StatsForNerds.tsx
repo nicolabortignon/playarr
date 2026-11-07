@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { cn } from '../lib/cn';
 import { formatDetails, formatTime } from '../lib/format';
 import { crossfadeSeconds, usePrefs } from '../lib/prefs';
+import { QUALITY_KBPS, qualityOfUrl } from '../lib/quality';
 import { useMixMaps, useTrackMetadata } from '../lib/queries';
 import { toastWithUndo } from '../lib/toast';
 import { soundingNow, type Sounding } from '../player/AudioEngine';
@@ -198,8 +199,7 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
   const queue = usePlayer(useShallow((s) => ({ queue: s.queue, order: s.order, pos: s.pos, repeat: s.repeat })));
   const { playing, mixMode } = usePlayer(useShallow((s) => ({ playing: s.playing, mixMode: s.mixMode })));
   const prefs = usePrefs(useShallow((s) => ({ transitions: s.transitions, crossfade: s.crossfade, levelVolume: s.levelVolume })));
-  const loadedDb = useLevels((s) => s.loaded[track.fileId]);
-  const kept = useOffline((s) => track.fileId in s.songs);
+  const keptUrl = useOffline((s) => s.songs[track.fileId]?.url);
   const transition = useTransition(useShallow((s) => ({ fromFileId: s.fromFileId, result: s.result })));
   const sound = soundingNow();
   const element = sound?.element ?? undefined;
@@ -219,7 +219,7 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
       <Group title="Playback">
         <Row label="Position" value={`${at(time)} / ${at(clock.duration)} · ${clock.loading ? 'loading' : playing ? 'playing' : 'paused'}`} />
         <Row label="Buffer" value={clock.buffered > time ? `${(clock.buffered - time).toFixed(1)} s ahead` : 'none ahead'} />
-        <Row label="Stream" value={streamOf(sound, loadedDb, kept)} />
+        <Row label="Stream" value={streamOf(sound, keptUrl)} />
         <Row label="Element" value={element && elementState(element)} />
         <Row label="URL" value={element?.currentSrc && <span className="break-all">{shortUrl(element.currentSrc)}</span>} />
         <Row label="Format" value={track.format && formatDetails(track.format)} />
@@ -279,7 +279,7 @@ function Details({ track, time, map, grid, level }: { track: Track; time: number
       )}
 
       <Group title="Loudness">
-        <Loudness track={track} level={level} loadedDb={loadedDb} levelVolume={prefs.levelVolume} queue={queue} />
+        <Loudness track={track} level={level} element={element} levelVolume={prefs.levelVolume} queue={queue} />
       </Group>
 
       {meta?.analysis && (
@@ -331,25 +331,42 @@ function shortUrl(url: string): string {
   return url.startsWith(location.origin) ? url.slice(location.origin.length) : url;
 }
 
-function streamOf(sound: Sounding | undefined, loadedDb: number | null | undefined, kept: boolean): string {
+/** The gain (dB) made into what an element plays (its levelled stream's), as the engine marks it. */
+const levelledDb = (element: HTMLAudioElement | undefined) => (element?.dataset.levelled !== undefined ? Number(element.dataset.levelled) : undefined);
+/** The gain (dB) Web Audio plays an element's song at (a desktop), as the engine marks it. */
+const graphDb = (element: HTMLAudioElement | undefined) => (element?.dataset.gain !== undefined ? Number(element.dataset.gain) : undefined);
+
+function streamOf(sound: Sounding | undefined, keptUrl: string | undefined): string {
   if (sound?.live) return 'live mix (Web Audio)';
   if (sound?.transition) return 'DJ transition, made on the server';
-  const offset = Number(sound?.element?.dataset.offset ?? 0);
+  const element = sound?.element ?? undefined;
+  const offset = Number(element?.dataset.offset ?? 0);
+  const levelled = levelledDb(element);
+  if (element?.dataset.encoded) {
+    return [`AAC ${element.dataset.encoded} kbps, encoded on the server`, offset > 0 && `from ${at(offset)}`, levelled !== undefined && `leveled at ${dB(levelled)}`]
+      .filter(Boolean)
+      .join(' · ');
+  }
   if (offset > 0) return `the rest after the transition, from ${at(offset)}`;
-  if (typeof loadedDb === 'number') return `leveled WAV at ${dB(loadedDb)}`;
-  return kept ? 'its own file, kept on this device' : 'its own file';
+  if (levelled !== undefined) return `leveled WAV at ${dB(levelled)}`;
+  if (keptUrl && element?.getAttribute('src') === keptUrl) {
+    const quality = qualityOfUrl(keptUrl);
+    return quality === 'original' ? 'its own file, kept on this device' : `AAC ${QUALITY_KBPS[quality]} kbps, kept on this device`;
+  }
+  return 'its own file';
 }
 
 function Loudness({
   track,
   level,
-  loadedDb,
+  element,
   levelVolume,
   queue,
 }: {
   track: Track;
   level?: TrackLevel;
-  loadedDb: number | null | undefined;
+  /** The element playing the song: how it's leveled. */
+  element: HTMLAudioElement | undefined;
   levelVolume: boolean;
   queue: QueueState;
 }) {
@@ -358,9 +375,12 @@ function Loudness({
   let applied: number | undefined;
   let how: string;
   if (!levelVolume) how = 'none: even volume is off';
-  else if (typeof loadedDb === 'number') {
-    applied = loadedDb;
-    how = `${dB(loadedDb)} in the stream (${which(loadedDb)})`;
+  else if (levelledDb(element) !== undefined) {
+    applied = levelledDb(element)!;
+    how = `${dB(applied)} in the stream (${which(applied)})`;
+  } else if (graphDb(element) !== undefined) {
+    applied = graphDb(element)!;
+    how = `${dB(applied)} in Web Audio (${which(applied)})`;
   } else if (canSetVolume()) {
     const db = levelDb(track, level, queue);
     applied = Math.min(0, db);
