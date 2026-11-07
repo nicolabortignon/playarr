@@ -1,8 +1,9 @@
+import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { albumKey, normalize } from '../library/search.ts';
 import { songNameKey } from './keys.ts';
-import { CatalogStore } from './store.ts';
-import { FLAC, freshDb, mezzanine } from './testFixtures.ts';
+import { CatalogStore, syncDigest } from './store.ts';
+import { creativeCommons, FLAC, FLAC_24, freshDb, mezzanine } from './testFixtures.ts';
 
 function setup() {
   const store = new CatalogStore(freshDb());
@@ -474,5 +475,151 @@ describe('CatalogStore: organizing', () => {
     expect(store.movesOf(id, batch).map((m) => m.from)).toEqual(['a', 'c']);
     store.markUndone(store.movesOf(id, batch).map((m) => m.id));
     expect(store.lastMoveBatch(id)).toBeUndefined();
+  });
+});
+
+describe('CatalogStore: syncs that change nothing', () => {
+  const TABLES = ['catalog_artists', 'catalog_albums', 'catalog_tracks', 'copies'];
+  /** Marks every row of the catalog, so `written` can tell which were written since. */
+  const mark = (db: DatabaseSync) => TABLES.forEach((table) => db.exec(`UPDATE ${table} SET updated_at = 'marked'`));
+  /** The ids written since `mark`, table by table: artists, albums, songs, files. */
+  const written = (db: DatabaseSync) =>
+    TABLES.map((table) => (db.prepare(`SELECT id FROM ${table} WHERE updated_at <> 'marked' ORDER BY id`).all() as { id: number }[]).map((r) => r.id));
+
+  function setup() {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    const sourceId = store.addSource('lidarr', 'Lidarr');
+    return { db, store, sourceId };
+  }
+
+  it('writes nothing when a source reports what it reported last time, and says so', () => {
+    const { db, store, sourceId } = setup();
+    expect(store.applySync(sourceId, mezzanine())).toBe(true);
+    const generation = store.generation;
+    mark(db);
+    const synced = store.source(sourceId)!.lastSyncAt;
+    // A new answer from the source, the same as the last.
+    expect(store.applySync(sourceId, mezzanine())).toBe(false);
+    expect(store.generation).toBe(generation);
+    expect(written(db)).toEqual([[], [], [], []]);
+    // It still synced: Settings shows when.
+    expect(store.source(sourceId)!.lastSyncAt! >= synced!).toBe(true);
+  });
+
+  it('compares row by row when the catalog moved since, and writes only what differs', () => {
+    const { db, store, sourceId } = setup();
+    store.applySync(sourceId, mezzanine());
+    // Another source's sync since: the same answer is compared again, not taken as read.
+    store.applySync(store.addSource('folder', 'Music'), creativeCommons());
+    mark(db);
+    const generation = store.generation;
+    expect(store.applySync(sourceId, mezzanine())).toBe(false);
+    expect(written(db)).toEqual([[], [], [], []]);
+    expect(store.generation).toBe(generation);
+  });
+
+  it('writes a tag edit, and nothing else', () => {
+    const { db, store, sourceId } = setup();
+    store.applySync(sourceId, mezzanine());
+    mark(db);
+    const edited = mezzanine();
+    edited.tracks[0] = { ...edited.tracks[0]!, title: 'Risingson (Edit)' };
+    expect(store.applySync(sourceId, edited)).toBe(true);
+    expect(store.load().tracks.find((t) => t.id === 701)!.meta.title).toBe('Risingson (Edit)');
+    expect(written(db)).toEqual([[], [], [701], []]);
+  });
+
+  it('writes a file replaced at the same size, and a file moved', () => {
+    const { store, sourceId } = setup();
+    store.applySync(sourceId, mezzanine());
+    // The same size, another file: a 24-bit master in place of the CD rip, at the same path.
+    const replaced = mezzanine();
+    replaced.copies[0] = { ...replaced.copies[0]!, format: FLAC_24 };
+    expect(store.applySync(sourceId, replaced)).toBe(true);
+    expect(store.load().copies.find((c) => c.id === 9000)!.format).toEqual(FLAC_24);
+    // Lidarr moved the file (the same track file, a new path).
+    const moved = mezzanine();
+    moved.copies[0] = { ...moved.copies[0]!, format: FLAC_24, path: '/music/Massive Attack/Mezzanine (1998)/01.flac' };
+    expect(store.applySync(sourceId, moved)).toBe(true);
+    expect(store.load().copies.find((c) => c.id === 9000)!.path).toBe('/music/Massive Attack/Mezzanine (1998)/01.flac');
+  });
+
+  it('writes a song no longer reported, and Lidarr’s album list changing', () => {
+    const { store, sourceId } = setup();
+    const three = mezzanine();
+    three.tracks.push({ ...three.tracks[0]!, key: 'mb:rg-1#rec-3', preferredId: 702, recordingId: 'rec-3', title: 'Teardrop', trackNumber: 3 });
+    store.applySync(sourceId, three);
+    expect(store.applySync(sourceId, mezzanine())).toBe(true);
+    expect(store.load().sourceTracks.map((s) => s.trackId).sort()).toEqual([700, 701]);
+    const fewer = mezzanine();
+    fewer.lidarrAlbums = fewer.lidarrAlbums!.slice(0, 1);
+    expect(store.applySync(sourceId, fewer)).toBe(true);
+    expect(store.load().sources[0]!.state.lidarrAlbums).toHaveLength(1);
+  });
+
+  it('keeps the later source’s metadata where two of the same trust report one album, as before', () => {
+    const store = new CatalogStore(freshDb());
+    const a = store.addSource('folder', 'A');
+    const b = store.addSource('folder', 'B');
+    const as = (source: string) => {
+      const sync = mezzanine();
+      sync.metaRank = 2;
+      sync.albums[0]!.title = `Mezzanine (${source})`;
+      sync.copies = sync.copies.map((c) => ({ ...c, ref: `${source}/${c.ref}`, preferredId: undefined }));
+      return sync;
+    };
+    for (let i = 0; i < 2; i++) {
+      store.applySync(a, as('A'));
+      store.applySync(b, as('B'));
+    }
+    expect(store.load().albums[0]!.meta.title).toBe('Mezzanine (B)');
+    // B first now: A's comes last, and wins.
+    store.reorderSources([b, a]);
+    store.applySync(b, as('B'));
+    store.applySync(a, as('A'));
+    expect(store.load().albums[0]!.meta.title).toBe('Mezzanine (A)');
+  });
+
+  it('holds a sync only until anything else changes what the library is built from', () => {
+    const { store, sourceId } = setup();
+    const sync = mezzanine();
+    store.applySync(sourceId, sync);
+    const digest = syncDigest(sync);
+    expect(store.holds(sourceId, digest)).toBe(true);
+    const other = store.addSource('folder', 'Music');
+    expect(store.holds(sourceId, digest)).toBe(false);
+    store.applySync(sourceId, sync);
+    expect(store.holds(sourceId, digest)).toBe(true);
+    store.updateSource(other, { enabled: false });
+    expect(store.holds(sourceId, digest)).toBe(false);
+    store.applySync(sourceId, sync);
+    store.reorderSources([other, sourceId]);
+    expect(store.holds(sourceId, digest)).toBe(false);
+    store.applySync(sourceId, sync);
+    store.removeSource(sourceId);
+    expect(store.holds(sourceId, digest)).toBe(false);
+  });
+
+  it('refuses a sync that says nothing changed when the catalog doesn’t hold its last one, keeping what it has', () => {
+    const { store, sourceId } = setup();
+    store.applySync(sourceId, mezzanine());
+    expect(() => store.applySync(sourceId, { artists: [], albums: [], tracks: [], copies: [], digest: 'elsewhere', unchanged: true })).toThrow(/read again/);
+    expect(store.load().copies).toHaveLength(2);
+  });
+
+  it('applies the same sync in full after a restart, which may follow a migration that cleared dates', () => {
+    const db = freshDb();
+    const store = new CatalogStore(db);
+    const folder = store.addSource('folder', 'Music');
+    const sync = mezzanine();
+    sync.addedAt = 'firstSeen';
+    store.applySync(folder, sync);
+    db.exec('UPDATE copies SET added_at = NULL; UPDATE catalog_albums SET added_at = NULL;');
+    // The next run's store has applied nothing yet: it compares, and dates the files and the album again.
+    const restarted = new CatalogStore(db);
+    expect(restarted.applySync(folder, sync)).toBe(true);
+    expect(restarted.load().copies.every((c) => c.addedAt)).toBe(true);
+    expect(restarted.load().albums[0]!.addedAt).toBeTruthy();
   });
 });

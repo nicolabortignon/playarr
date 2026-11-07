@@ -7,7 +7,10 @@ import type { CatalogSource, SourceSync } from './types.ts';
 /** Lidarr's library as a catalog source: validated MusicBrainz metadata, files as Lidarr imported them. */
 export class LidarrSource implements CatalogSource {
   readonly kind = 'lidarr' as const;
-  /** File lengths, by track file id and size, for songs MusicBrainz has no length for. */
+  /**
+   * File lengths, by track file id, size and import date, for songs MusicBrainz has no length for. Kept from sync to
+   * sync (the adapter lasts while the source's settings do): a file imported again is measured again.
+   */
   private readonly fileLengths = new Map<string, number>();
 
   constructor(private readonly lidarr: LidarrClient) {}
@@ -132,7 +135,7 @@ export class LidarrSource implements CatalogSource {
   }
 }
 
-const lengthKey = (file: LidarrTrackFile) => `${file.id}:${file.size}`;
+const lengthKey = (file: LidarrTrackFile) => `${file.id}:${file.size}:${file.dateAdded}`;
 
 /** Lidarr's .NET TimeSpans ("00:01:18.2666666", "1.02:03:04") in whole seconds; 0 if absent. */
 export function timeSpanSeconds(span: string | undefined): number {

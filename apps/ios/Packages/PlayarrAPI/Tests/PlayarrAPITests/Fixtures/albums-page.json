@@ -1,0 +1,34 @@
+{
+  "albums": [
+    {
+      "id": 70,
+      "title": "Mezzanine",
+      "artistId": 7,
+      "artistName": "Massive Attack",
+      "year": 1998,
+      "releaseDate": "2026-11-03T12:00:00.000Z",
+      "albumType": "Album",
+      "secondaryTypes": [],
+      "genres": [
+        "trip hop"
+      ],
+      "duration": 677,
+      "trackCount": 2,
+      "totalTrackCount": 11,
+      "coverUrl": "/art/album/70/cover?v=1",
+      "addedAt": "2026-11-03T12:00:00.000Z",
+      "mbid": "rg-1",
+      "format": {
+        "codec": "FLAC",
+        "container": "flac",
+        "bits": 16,
+        "sampleRate": 44100,
+        "lossless": true
+      },
+      "coverColor": "#2a4b8d",
+      "coverAccent": "#527bcb"
+    }
+  ],
+  "total": 1,
+  "version": "a1b2c3d4.1"
+}

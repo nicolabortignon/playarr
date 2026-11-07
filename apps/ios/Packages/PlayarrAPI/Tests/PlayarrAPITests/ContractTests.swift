@@ -35,6 +35,8 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("artist", ArtistDetail.self),
         Contract("artist-tracks", [Track].self),
         Contract("albums", [Album].self),
+        Contract("albums-page", AlbumPage.self),
+        Contract("artists-page", ArtistPage.self),
         Contract("albums-random", [Album].self),
         Contract("album", AlbumDetail.self),
         Contract("tracks-random", [Track].self),

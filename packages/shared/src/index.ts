@@ -136,6 +136,26 @@ export interface HealthStatus {
 
 export type AlbumSort = 'title' | 'artist' | 'year' | 'added';
 
+/**
+ * GET /api/albums with `offset`: one page of the albums, in the order asked for, and how many there are in all. Every
+ * page comes from the library at `version`: a later page with another version was read after the library changed,
+ * so the pages before it may have moved (start again from the first).
+ */
+export interface AlbumPage {
+  albums: Album[];
+  total: number;
+  /** The library's version the page was read from; opaque, compare it for equality only. */
+  version: string;
+}
+
+/** GET /api/artists with `offset`: one page of the artists, A to Z, as AlbumPage. */
+export interface ArtistPage {
+  artists: Artist[];
+  total: number;
+  /** As AlbumPage's. */
+  version: string;
+}
+
 export interface FavoriteTrack extends Track {
   favoritedAt: string;
 }

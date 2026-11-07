@@ -195,6 +195,28 @@ describe('Mixes', () => {
     }
   });
 
+  it('still hands a library that doesn’t change to the analyzer every hour, so what failed is tried again', async () => {
+    const { mixes, analyzer } = setup();
+    const reads = vi.spyOn(analyzer, 'mixSummaries');
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(at('2026-11-01T10:00:00Z').getTime());
+    try {
+      await mixes.radio(['rec-200'], [], 25);
+      expect(analyzer.ensure).toHaveBeenCalledTimes(1);
+      const songs = vi.mocked(analyzer.ensure).mock.calls[0]![0];
+      clock.mockReturnValue(at('2026-11-01T10:30:00Z').getTime());
+      await mixes.radio(['rec-200'], [], 25);
+      expect(analyzer.ensure).toHaveBeenCalledTimes(1);
+      // An hour on, the songs kept (not read again) are asked about again.
+      clock.mockReturnValue(at('2026-11-01T11:00:00Z').getTime());
+      await mixes.radio(['rec-200'], [], 25);
+      expect(analyzer.ensure).toHaveBeenCalledTimes(2);
+      expect(analyzer.ensure).toHaveBeenLastCalledWith(songs, { audio: false });
+      expect(reads).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('follows one household time zone, whichever device asks', async () => {
     const { mixes, store } = setup();
     const rome = await mixes.list('Europe/Rome', at('2026-11-01T10:05:00Z'));

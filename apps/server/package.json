@@ -13,6 +13,7 @@
     "start": "node --env-file-if-exists=../../.env --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "bench:library": "node --expose-gc --disable-warning=ExperimentalWarning --import tsx src/testing/benchLibrary.ts",
     "reset-password": "tsx --env-file-if-exists=../../.env --disable-warning=ExperimentalWarning src/cli.ts reset-password"
   },
   "devDependencies": {

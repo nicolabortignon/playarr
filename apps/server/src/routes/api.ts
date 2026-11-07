@@ -1,5 +1,5 @@
 import type { AlbumSort, HealthStatus, RequestSettings } from '@playarr/shared';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Config } from '../config.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
@@ -14,6 +14,34 @@ function clampInt(raw: string | undefined, fallback: number, max: number) {
 }
 
 const notFound = (reply: FastifyReply, what: string) => reply.code(404).send({ error: `${what} not found` });
+
+/** A page of a list: 100 at a time unless asked otherwise, at most 500. */
+const PAGE = { limit: 100, max: 500 };
+
+/**
+ * The page a list's query asks for: `offset` (from 0; a bad one is the first page) and `limit`. Null without an
+ * `offset`, for the whole list as the routes always answered, which the apps already out there read.
+ */
+function pageOf(query: { offset?: string; limit?: string }): { offset: number; limit: number } | null {
+  if (query.offset === undefined) return null;
+  const offset = Number.parseInt(query.offset, 10);
+  return { offset: Number.isFinite(offset) && offset > 0 ? offset : 0, limit: clampInt(query.limit, PAGE.limit, PAGE.max) };
+}
+
+/**
+ * Tags an answer with a weak ETag, to be asked about every time (`private, no-cache`: it's one account's library), and
+ * says whether the client already has it: its If-None-Match names this tag, weakly compared, or is `*`.
+ */
+function fresh(req: FastifyRequest, reply: FastifyReply, tag: string): boolean {
+  const etag = `W/"${tag}"`;
+  reply.header('etag', etag).header('cache-control', 'private, no-cache');
+  const held = req.headers['if-none-match'];
+  if (!held) return false;
+  return held.split(',').some((each) => {
+    const t = each.trim();
+    return t === '*' || t === etag || `W/${t}` === etag;
+  });
+}
 
 export function apiRoutes(
   app: FastifyInstance,
@@ -72,7 +100,16 @@ export function apiRoutes(
     return library.stats();
   });
 
-  app.get('/api/artists', (req) => libraryOf(library, req).artists());
+  // The albums and artists lists, whole as always, or a page at a time with `offset` (AlbumPage, ArtistPage). Both are
+  // tagged with the library they were read from, so a client asking again with If-None-Match gets a 304, not 5 MB
+  // of a collector's albums again. The tag is read before the list, so a list can only be newer than its tag, never
+  // older: at worst a client fetches it once more.
+  app.get<{ Querystring: { offset?: string; limit?: string } }>('/api/artists', async (req, reply) => {
+    const view = libraryOf(library, req);
+    const page = pageOf(req.query);
+    if (fresh(req, reply, `${await view.listTag('artists')}${page ? `-${page.offset}.${page.limit}` : ''}`)) return reply.code(304).send();
+    return page ? view.artistPage(page.offset, page.limit) : view.artists();
+  });
 
   app.get<{ Params: { id: string } }>('/api/artists/:id', async (req, reply) => {
     return (await libraryOf(library, req).artist(Number(req.params.id))) ?? notFound(reply, 'Artist');
@@ -82,10 +119,15 @@ export function apiRoutes(
     libraryOf(library, req).artistTracks(Number(req.params.id)),
   );
 
-  app.get<{ Querystring: { sort?: string; limit?: string } }>('/api/albums', (req) => {
+  app.get<{ Querystring: { sort?: string; limit?: string; offset?: string } }>('/api/albums', async (req, reply) => {
+    const view = libraryOf(library, req);
     const sort = ALBUM_SORTS.includes(req.query.sort as AlbumSort) ? (req.query.sort as AlbumSort) : 'artist';
-    const limit = req.query.limit ? clampInt(req.query.limit, 50, 10_000) : undefined;
-    return libraryOf(library, req).albums(sort, limit);
+    const page = pageOf(req.query);
+    // Without an offset, `limit` is the first so many, as it always was.
+    const limit = !page && req.query.limit ? clampInt(req.query.limit, 50, 10_000) : undefined;
+    const tag = `${await view.listTag('albums')}-${sort}${page ? `-${page.offset}.${page.limit}` : limit ? `-${limit}` : ''}`;
+    if (fresh(req, reply, tag)) return reply.code(304).send();
+    return page ? view.albumPage(sort, page.offset, page.limit) : view.albums(sort, limit);
   });
 
   app.get<{ Querystring: { limit?: string } }>('/api/albums/random', (req) =>

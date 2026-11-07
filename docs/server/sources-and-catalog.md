@@ -52,6 +52,23 @@ A source that fails keeps its last sync in the catalog and gets its error in `la
 - Removing or reordering sources rebuilds from the stored catalog without syncing (`reload`).
 - When matches land, `rebuildSoon` (10 s debounce) re-applies each folder's *cached* scan with the new matches, without walking the folder or asking Lidarr again.
 
+### Refreshes that find nothing new
+
+Most refreshes find nothing new. On a collector's library (100,000 songs), writing everything again and rebuilding the library anyway kept the server busy for seconds every ten minutes, so nothing that hasn't changed is written or rebuilt:
+
+- **Rows are compared before they're written.** `applySync` reads what the catalog holds for the source (a whole table at once from 1,000 rows, else row by row) and writes only the artists, albums and songs whose metadata, rank, album or recording differ, and the copies whose song, path, size, format or date differ. It says whether it wrote anything.
+- **A sync like the last one isn't even compared.** Every sync has a digest (`SourceSync.digest`): a SHA-1 of everything in it (`syncDigest`), or for a folder of what its catalog is made from (below). The store remembers each source's last digest and the catalog's **generation** right after applying it. The generation (`CatalogStore.generation`) goes up with every write the library is built from: catalog rows, copies, reported songs, and sources added, removed, changed or moved. The same digest on a catalog still at that generation would change nothing, so only `last_sync_at` is written. This is remembered for the server's run: after a restart, each source's first sync is compared row by row.
+- **A folder whose files are as they were isn't read.** `FolderSource.sync` lists the folder, then makes its digest from the listing (each file's path, size, mtime and creation time), the source's match decisions and the releases they bring (`matchGeneration`), and the catalog's generation, since untagged files join what the catalog holds by name (`scanDigest`). When the store holds that digest, no tags are read and no catalog is made: the sync comes back `unchanged`, without its rows. If anything wrote to the catalog in between, `applySync` refuses it, the last sync stays, and the next refresh reads the folder in full.
+- **Matching looks at a scan once.** The matcher hears of every scan with its digest and skips one it has looked at already, unless MusicBrainz failed for some of it.
+- **The library rebuilds only when the catalog moved.** `Library.refresh` compares the catalog's generation with the one its snapshot was built from. While it's the same, the snapshot stays (only its `refreshedAt` moves), the log says "Library refreshed, nothing changed", and listeners still hear of the refresh, as they retry artwork and cover colors that failed. A rebuild from the cached scans after matches that changes nothing is dropped the same way.
+- **Statements are prepared once** and kept for the store's life (`sql` in `catalog/store.ts`).
+
+After a change, the next scan of a folder reads it in full once more, as the catalog its untagged songs join has moved; the one after is quick again. Two sources that report the same artist, album or song with different metadata at the same rank (two folders tagged differently, say) still write it on every refresh, each in turn, the lower one winning as before: a library like that rebuilds on every refresh, as it always did. `pnpm -C apps/server bench:library` measures all this on a synthetic library of 100,000 songs (`src/testing/syntheticLibrary.ts`): there, a refresh that finds nothing new takes about 75 ms for a folder and 270 ms for Lidarr, where it took 6.5 and 4.4 s.
+
+### The library in memory
+
+`Library` builds its snapshot from the catalog's rows (`buildCatalog`) and keeps with it what answering needs, worked out once per snapshot rather than on every request: songs by id, recording and name, artists by name, and every name search looks at, already normalized (`normalize` in `library/search.ts`), so a search over 100,000 songs reads prepared strings (about 15 ms, where normalizing every name on every search took 120). The albums in each order the lists ask for, and the artists A to Z, are sorted the first time they're asked for and kept until the next snapshot. Each account limited to some sources gets a view built the same way, once per snapshot (`Library.view`).
+
 ### `meta_rank`: whose metadata wins
 
 Each row remembers how trusted its metadata is. Lower wins: Lidarr 0, a MusicBrainz match 1, folder tags 2 (`FOLDER_META_RANK`, `MATCHED_META_RANK` in `catalog/folder.ts`). An upsert only replaces `meta` when its rank is the same or more trusted (`upsert` in `catalog/store.ts`). So a folder scan never overwrites Lidarr's titles. At the same rank, the most recent sync wins, which means the source lower down in Settings.
@@ -76,7 +93,7 @@ Lidarr copies are dated by when Lidarr imported the file. Folder copies are date
 
 ## 4. Lidarr sources
 
-`LidarrSource` (`catalog/lidarr.ts`) reads Lidarr's artists, albums, tracks and track files, four artists at a time, for artists with at least one file. When MusicBrainz has no length for a song, it asks Lidarr for the file's length once and remembers it. Lidarr's files are read through `MEDIA_SOURCE` and `PATH_MAP` (see [streaming-and-art.md](streaming-and-art.md)).
+`LidarrSource` (`catalog/lidarr.ts`) reads Lidarr's artists, albums, tracks and track files, four artists at a time, for artists with at least one file. When MusicBrainz has no length for a song, it asks Lidarr for the file's length once and remembers it from sync to sync, until the file is imported again (the adapter lasts while the source's settings do). Lidarr's files are read through `MEDIA_SOURCE` and `PATH_MAP` (see [streaming-and-art.md](streaming-and-art.md)).
 
 - **At most one Lidarr.** The whole server shares one `LidarrClient`, which `SourceManager.active()` points at the first enabled Lidarr source, or leaves unconfigured. A second Lidarr source is refused (409).
 - **Optional.** Without one, Lidarr calls fail fast with 503, and requests and Discover are hidden (`routes/api.ts`).
@@ -84,7 +101,7 @@ Lidarr copies are dated by when Lidarr imported the file. Folder copies are date
 
 ## 5. Folder sources
 
-`FolderSource` (`catalog/folderSource.ts`) walks the folder for audio files (`flac mp3 m4a m4b aac ogg oga opus wav aif aiff`). It skips hidden files and folders and doesn't follow symlinks. Tags are read with music-metadata only for files whose size or mtime changed since `folder_files` last saw them. Unreadable files are skipped. If the folder itself is missing, the sync fails, so the last scan stays rather than every song vanishing.
+`FolderSource` (`catalog/folderSource.ts`) walks the folder for audio files (`flac mp3 m4a m4b aac ogg oga opus wav aif aiff`). It skips hidden files and folders and doesn't follow symlinks. Tags are read with music-metadata only for files whose size or mtime changed since `folder_files` last saw them, and not at all when the folder is as the catalog holds it (§3). Unreadable files are skipped. If the folder itself is missing, the sync fails, so the last scan stays rather than every song vanishing.
 
 `folderSync` (`catalog/folder.ts`) turns the files into catalog rows:
 - **Tags first**, then folder and file names: `Artist/Album/01 Title.flac`. Years and `[FLAC]`-style notes are trimmed from album folder names.

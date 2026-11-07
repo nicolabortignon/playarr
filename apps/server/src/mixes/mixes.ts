@@ -26,6 +26,11 @@ const CHECK_EVERY_MS = 60_000;
 const SONG_CACHE_STEP = 100;
 /** …or fewer, once the last read is this old: a library smaller than a step, and analysis's last songs, are seen too. */
 const SONG_CACHE_MS = 5 * 60_000;
+/**
+ * Songs kept for a library that doesn't change still go to the analyzer this often, as they did when every refresh had
+ * them read again: what failed to be analyzed is tried again a day later, and month-old tags are looked up again.
+ */
+const ENSURE_EVERY_MS = 60 * 60_000;
 /** Feeling Lucky's length, and how many presses' first songs (and songs) the next press avoids. */
 export const LUCKY_SONGS = 15;
 const LUCKY_REMEMBERED_SEEDS = 20;
@@ -86,7 +91,7 @@ export class Mixes {
   private inflight = new Map<number, Promise<void>>();
   private timer: NodeJS.Timeout | null = null;
   /** Songs as the mixes see them, per set of sources, until the library or what's known about its songs changes. */
-  private songCache = new Map<string, { key: string; coarse: string; at: number; songs: Song[] }>();
+  private songCache = new Map<string, { key: string; coarse: string; at: number; ensuredAt: number; songs: Song[] }>();
   /** Songs being read, by set of sources and cache key: two asking at once wait for the same read. */
   private songReads = new Map<string, Promise<Song[]>>();
   /** What the last Feeling Lucky presses gave, by account (newest first): the next press goes elsewhere. */
@@ -398,13 +403,19 @@ export class Mixes {
     const key = [library.version, settings.analyzeLibrary, ...counts].join(':');
     const coarse = [library.version, settings.analyzeLibrary, ...counts.map((n) => Math.floor(n / SONG_CACHE_STEP))].join(':');
     const cached = this.songCache.get(sources);
-    if (cached && (cached.key === key || (cached.coarse === coarse && Date.now() - cached.at < SONG_CACHE_MS))) return cached.songs;
+    if (cached && (cached.key === key || (cached.coarse === coarse && Date.now() - cached.at < SONG_CACHE_MS))) {
+      if (Date.now() - cached.ensuredAt >= ENSURE_EVERY_MS) {
+        cached.ensuredAt = Date.now();
+        analyzer.ensure(cached.songs.map((s) => s.track.recordingId), { audio: settings.analyzeLibrary });
+      }
+      return cached.songs;
+    }
     const reading = `${sources}|${key}`;
     let read = this.songReads.get(reading);
     if (!read) {
       read = this.readSongs(settings, library)
         .then((songs) => {
-          this.songCache.set(sources, { key, coarse, at: Date.now(), songs });
+          this.songCache.set(sources, { key, coarse, at: Date.now(), ensuredAt: Date.now(), songs });
           return songs;
         })
         .finally(() => this.songReads.delete(reading));

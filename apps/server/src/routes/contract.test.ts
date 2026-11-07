@@ -6,7 +6,9 @@
 // the values), so a fixture still checks the TypeScript type against the Swift one.
 import { MIX_MAP_VERSION, type MixMap, type TransitionAnswer, type TransitionPlan } from '@playarr/mix';
 import type {
+  AlbumPage,
   AlbumRequest,
+  ArtistPage,
   Availability,
   DiscoverAlbum,
   DiscoverArtist,
@@ -154,6 +156,17 @@ describe('contract fixtures', () => {
       ['track-metadata', '/api/tracks/700/metadata'],
       ['lyrics', '/api/tracks/700/lyrics'],
     ]);
+    // The lists a page at a time, with `offset`. A page's version names this run of the server, another on every
+    // run: pinned, so recording again changes the fixtures only when their shape changes.
+    const pages: [name: string, url: string][] = [
+      ['albums-page', '/api/albums?sort=added&offset=0&limit=50'],
+      ['artists-page', '/api/artists?offset=0&limit=50'],
+    ];
+    for (const [name, url] of pages) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.json()).toMatchObject({ total: 1, version: expect.any(String) });
+      recordFixture(name, res, (page: AlbumPage | ArtistPage) => ({ ...page, version: 'a1b2c3d4.1' }));
+    }
     const random = await app.inject({ method: 'GET', url: '/api/tracks/random' });
     expect(random.json()).toHaveLength(2);
     recordFixture('tracks-random', random, (tracks: Track[]) => tracks.sort((a, b) => a.id - b.id));

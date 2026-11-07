@@ -1,6 +1,7 @@
 import type { AudioFormat } from '@playarr/shared';
+import { createHash } from 'node:crypto';
 import { relative } from 'node:path';
-import type { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { albumKey as albumNameKey, normalize } from '../library/search.ts';
 import { songNameKey } from './keys.ts';
 import type { MbReleaseInfo } from './mbRelease.ts';
@@ -115,35 +116,122 @@ export interface MatchCounts {
   ignored: number;
 }
 
+/** A catalog row as it is now, to tell whether a sync changes it. */
+interface StoredRow {
+  id: number;
+  meta_rank: number;
+  meta: string;
+  [column: string]: string | number;
+}
+
+/** A copy as it is now, with the song it belongs to. */
+interface StoredCopy {
+  id: number;
+  source_ref: string;
+  track_id: number;
+  path: string;
+  size: number;
+  format: string;
+  added_at: string | null;
+  recording_id: string;
+}
+
+/** A catalog table's rows a sync may touch, by key; with every id the table has, when it was read whole. */
+interface StoredRows {
+  byKey: Map<string, StoredRow>;
+  ids?: Set<number>;
+}
+
+/** From how many rows a sync reads a whole catalog table at once rather than row by row (one read is ~4x faster per row). */
+const READ_WHOLE_TABLE = 1000;
+
+/**
+ * What a source's sync holds, as one SHA-1: two syncs with the same digest are the same sync. A sync is never changed
+ * once a source has handed it over.
+ */
+export function syncDigest(sync: SourceSync): string {
+  const hash = createHash('sha1');
+  for (const part of [sync.artists, sync.albums, sync.tracks, sync.copies, sync.lidarrAlbums ?? null, sync.metaRank ?? 0, sync.addedAt ?? 'source']) {
+    hash.update(JSON.stringify(part)).update('\n');
+  }
+  return hash.digest('base64');
+}
+
 /** The catalog in SQLite: what each source reported, with permanent Playarr ids. */
 export class CatalogStore {
+  /** Statements prepared once: preparing costs more than running a small one, and a sync runs hundreds of thousands. */
+  private readonly statements = new Map<string, StatementSync>();
+  /**
+   * Goes up whenever what the library is built from changes: catalog rows, copies, the songs sources report, or the
+   * sources themselves (added, removed, changed, moved, their state). The library rebuilds only when it has moved.
+   */
+  private catalogGeneration = 0;
+  /** Each source's last sync applied, and the generation right after: a sync with the same digest, on a catalog still at that generation, would change nothing. */
+  private readonly applied = new Map<number, { digest: string; generation: number }>();
+  /** Goes up with each folder source's match decisions; `releases` with every MusicBrainz release saved. Folder scans read both. */
+  private readonly matchGenerations = new Map<number, number>();
+  private releaseGeneration = 0;
+
   constructor(private readonly db: DatabaseSync) {}
 
+  get generation(): number {
+    return this.catalogGeneration;
+  }
+
+  /** How many times this folder source's match decisions, or any saved release, have changed (in this run). */
+  matchGeneration(sourceId: number): string {
+    return `${this.matchGenerations.get(sourceId) ?? 0}.${this.releaseGeneration}`;
+  }
+
+  /** Whether the catalog holds this sync of the source as it applied it, untouched since (see applySync). */
+  holds(sourceId: number, digest: string): boolean {
+    const last = this.applied.get(sourceId);
+    return last?.digest === digest && last.generation === this.catalogGeneration;
+  }
+
+  private sql(text: string): StatementSync {
+    let statement = this.statements.get(text);
+    if (!statement) this.statements.set(text, (statement = this.db.prepare(text)));
+    return statement;
+  }
+
+  private changed() {
+    this.catalogGeneration++;
+  }
+
+  private matchesChanged(sourceId: number) {
+    this.matchGenerations.set(sourceId, (this.matchGenerations.get(sourceId) ?? 0) + 1);
+  }
+
   addSource(kind: SourceKind, name: string, settings: Record<string, unknown> = {}): number {
-    const { next } = this.db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM sources').get() as {
+    const { next } = this.sql('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM sources').get() as {
       next: number;
     };
-    const res = this.db
-      .prepare('INSERT INTO sources (kind, name, position, settings, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(kind, name, next, JSON.stringify(settings), new Date().toISOString());
+    const res = this.sql('INSERT INTO sources (kind, name, position, settings, created_at) VALUES (?, ?, ?, ?, ?)').run(
+      kind,
+      name,
+      next,
+      JSON.stringify(settings),
+      new Date().toISOString(),
+    );
+    this.changed();
     return Number(res.lastInsertRowid);
   }
 
   /** The first source of this kind, created if there is none. */
   ensureSource(kind: SourceKind, name: string): number {
-    const row = this.db.prepare('SELECT id FROM sources WHERE kind = ? ORDER BY position LIMIT 1').get(kind) as
+    const row = this.sql('SELECT id FROM sources WHERE kind = ? ORDER BY position LIMIT 1').get(kind) as
       | { id: number }
       | undefined;
     return row?.id ?? this.addSource(kind, name);
   }
 
   hasData(): boolean {
-    return !!this.db.prepare('SELECT 1 FROM copies LIMIT 1').get();
+    return !!this.sql('SELECT 1 FROM copies LIMIT 1').get();
   }
 
   listSources(): SourceRecord[] {
-    const rows = this.db
-      .prepare(
+    const rows = this.sql(
         'SELECT id, kind, name, position, enabled, settings, state, last_sync_at, last_error FROM sources ORDER BY position',
       )
       .all() as {
@@ -175,30 +263,34 @@ export class CatalogStore {
   }
 
   updateSource(id: number, patch: { name?: string; enabled?: boolean; settings?: Record<string, unknown> }) {
-    if (patch.name !== undefined) this.db.prepare('UPDATE sources SET name = ? WHERE id = ?').run(patch.name, id);
+    if (patch.name !== undefined) this.sql('UPDATE sources SET name = ? WHERE id = ?').run(patch.name, id);
     if (patch.enabled !== undefined) {
-      this.db.prepare('UPDATE sources SET enabled = ? WHERE id = ?').run(patch.enabled ? 1 : 0, id);
+      this.sql('UPDATE sources SET enabled = ? WHERE id = ?').run(patch.enabled ? 1 : 0, id);
     }
     if (patch.settings !== undefined) {
-      this.db.prepare('UPDATE sources SET settings = ? WHERE id = ?').run(JSON.stringify(patch.settings), id);
+      this.sql('UPDATE sources SET settings = ? WHERE id = ?').run(JSON.stringify(patch.settings), id);
     }
+    this.changed();
   }
 
   /** Delete a source and its copies. Catalog rows stay, so their ids are never reused. */
   removeSource(id: number) {
     this.db.exec('BEGIN');
     try {
-      this.db.prepare('DELETE FROM copies WHERE source_id = ?').run(id);
-      this.db.prepare('DELETE FROM source_tracks WHERE source_id = ?').run(id);
-      this.db.prepare('DELETE FROM folder_files WHERE source_id = ?').run(id);
-      this.db.prepare('DELETE FROM folder_matches WHERE source_id = ?').run(id);
-      this.db.prepare('DELETE FROM file_moves WHERE source_id = ?').run(id);
-      this.db.prepare('DELETE FROM sources WHERE id = ?').run(id);
+      this.sql('DELETE FROM copies WHERE source_id = ?').run(id);
+      this.sql('DELETE FROM source_tracks WHERE source_id = ?').run(id);
+      this.sql('DELETE FROM folder_files WHERE source_id = ?').run(id);
+      this.sql('DELETE FROM folder_matches WHERE source_id = ?').run(id);
+      this.sql('DELETE FROM file_moves WHERE source_id = ?').run(id);
+      this.sql('DELETE FROM sources WHERE id = ?').run(id);
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    this.applied.delete(id);
+    this.matchesChanged(id);
+    this.changed();
   }
 
   /** Rewrite positions in this order. `ids` must list every source exactly once. */
@@ -212,17 +304,25 @@ export class CatalogStore {
     }
     this.db.exec('BEGIN');
     try {
-      const update = this.db.prepare('UPDATE sources SET position = ? WHERE id = ?');
+      const update = this.sql('UPDATE sources SET position = ? WHERE id = ?');
       ids.forEach((id, i) => update.run(i, id));
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    // At the same trust, the source lower down wins: every source applies its next sync again, in the new order.
+    this.changed();
+  }
+
+  /** When each source last synced, by id: what the library's stats say it was refreshed at. */
+  syncTimes(): Map<number, string | undefined> {
+    const rows = this.sql('SELECT id, last_sync_at FROM sources').all() as { id: number; last_sync_at: string | null }[];
+    return new Map(rows.map((r) => [r.id, r.last_sync_at ?? undefined]));
   }
 
   setSyncError(id: number, error: string | null) {
-    this.db.prepare('UPDATE sources SET last_error = ? WHERE id = ?').run(error, id);
+    this.sql('UPDATE sources SET last_error = ? WHERE id = ?').run(error, id);
   }
 
   /**
@@ -233,8 +333,7 @@ export class CatalogStore {
    * has as many unidentified songs as songs not matched, and those left as tagged on albums of unknown length.
    */
   sourceCounts(): Map<number, SourceCounts> {
-    const rows = this.db
-      .prepare(
+    const rows = this.sql(
         `WITH size AS (
            SELECT a.id AS album_id,
              MAX(COUNT(t.id), IFNULL(json_extract(a.meta, '$.totalTrackCount'), 0)) AS total,
@@ -273,128 +372,162 @@ export class CatalogStore {
   }
 
   appSetting(key: string): string | undefined {
-    const row = this.db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key) as { value: string } | undefined;
+    const row = this.sql('SELECT value FROM app_settings WHERE key = ?').get(key) as { value: string } | undefined;
     return row?.value;
   }
 
   setAppSetting(key: string, value: string) {
-    this.db
-      .prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+    this.sql('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
       .run(key, value);
   }
 
-  /** Replace what this source has with `sync`, all or nothing. */
-  applySync(sourceId: number, sync: SourceSync) {
+  /**
+   * Replace what this source has with `sync`, all or nothing, writing only what differs from what the catalog holds;
+   * true when anything changed. Comparing first is what lets a refresh that finds nothing new leave the catalog (and
+   * the library built from it) alone. A sync with the same digest as the source's last one, on a catalog nothing has
+   * written to since, would change nothing: it isn't even compared (an `unchanged` sync comes without its rows).
+   */
+  applySync(sourceId: number, sync: SourceSync): boolean {
     const now = new Date().toISOString();
+    const digest = sync.digest ?? syncDigest(sync);
+    if (this.holds(sourceId, digest)) {
+      this.sql('UPDATE sources SET last_sync_at = ? WHERE id = ?').run(now, sourceId);
+      return false;
+    }
+    // Only a source that has just been told the catalog holds its last sync says so (FolderSource): another write
+    // came in between. Its last sync stays, and the next refresh reads the source in full.
+    if (sync.unchanged) throw new Error('The library changed during the scan; it will be read again on the next refresh');
     const rank = sync.metaRank ?? 0;
+    let wrote = false;
     this.db.exec('BEGIN');
     try {
+      const artists = this.storedRows('catalog_artists', sync.artists.map((a) => a.key), []);
       const artistIds = new Map<string, number>();
       for (const { key, preferredId, metaRank, ...meta } of sync.artists) {
-        artistIds.set(key, this.upsert('catalog_artists', key, preferredId, {}, meta, now, metaRank ?? rank));
+        const row = this.upsert('catalog_artists', artists, key, preferredId, {}, meta, now, metaRank ?? rank);
+        artistIds.set(key, row.id);
+        wrote ||= row.wrote;
       }
+      const albums = this.storedRows('catalog_albums', sync.albums.map((a) => a.key), ['artist_id']);
       const albumIds = new Map<string, number>();
       for (const { key, preferredId, artistKey, metaRank, ...meta } of sync.albums) {
         const artistId = artistIds.get(artistKey);
         if (artistId === undefined) throw new Error(`Album ${key} refers to unknown artist ${artistKey}`);
-        albumIds.set(
-          key,
-          this.upsert('catalog_albums', key, preferredId, { artist_id: artistId }, meta, now, metaRank ?? rank),
-        );
+        const row = this.upsert('catalog_albums', albums, key, preferredId, { artist_id: artistId }, meta, now, metaRank ?? rank);
+        albumIds.set(key, row.id);
+        wrote ||= row.wrote;
       }
+      const tracks = this.storedRows('catalog_tracks', sync.tracks.map((t) => t.key), ['album_id', 'recording_id']);
       const trackIds = new Map<string, number>();
+      // Each song's album as the catalog has it: a more trusted source's, where that one keeps the row.
+      const albumOf = new Map<number, number>();
       for (const { key, preferredId, albumKey, recordingId, metaRank, ...meta } of sync.tracks) {
         const albumId = albumIds.get(albumKey);
         if (albumId === undefined) throw new Error(`Track ${key} refers to unknown album ${albumKey}`);
-        trackIds.set(
+        const row = this.upsert(
+          'catalog_tracks',
+          tracks,
           key,
-          this.upsert(
-            'catalog_tracks',
-            key,
-            preferredId,
-            { album_id: albumId, recording_id: recordingId },
-            meta,
-            now,
-            metaRank ?? rank,
-          ),
+          preferredId,
+          { album_id: albumId, recording_id: recordingId },
+          meta,
+          now,
+          metaRank ?? rank,
         );
+        trackIds.set(key, row.id);
+        albumOf.set(row.id, tracks.byKey.get(key)!.album_id as number);
+        wrote ||= row.wrote;
       }
-      // Which song each of this source's files belonged to, to follow songs whose id changes.
-      const before = new Map(
+      // This source's files as they are, with the song each belonged to, to follow songs whose id changes.
+      const stored = new Map(
         (
-          this.db
-            .prepare(
-              'SELECT c.source_ref AS ref, t.recording_id AS rec FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE c.source_id = ?',
-            )
-            .all(sourceId) as { ref: string; rec: string }[]
-        ).map((r) => [r.ref, r.rec]),
+          this.sql(
+            `SELECT c.id, c.source_ref, c.track_id, c.path, c.size, c.format, c.added_at, t.recording_id
+             FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE c.source_id = ?`,
+          ).all(sourceId) as unknown as StoredCopy[]
+        ).map((c) => [c.source_ref, c]),
       );
       // The songs this source had a file of, so a song new to it moves its album to the front.
-      const had = new Set(
-        (this.db.prepare('SELECT DISTINCT track_id AS id FROM copies WHERE source_id = ?').all(sourceId) as { id: number }[]).map((r) => r.id),
-      );
+      const had = new Set([...stored.values()].map((c) => c.track_id));
       const recordingOf = new Map(sync.tracks.map((t) => [t.key, t.recordingId]));
       const moves = new Map<string, string>();
-      const seen = new Set<number>();
+      // Each file the source reports, by id, with its song and the date it's kept with.
+      const seen = new Map<number, { trackId: number; addedAt: string | null }>();
       const dating: CopyDating = {
         mode: sync.addedAt ?? 'source',
         // A folder added to a library that already has music is new to it, whenever its files arrived on disk.
-        ownTimes: !this.db.prepare('SELECT 1 FROM copies LIMIT 1').get(),
+        ownTimes: !this.sql('SELECT 1 FROM copies LIMIT 1').get(),
       };
       for (const copy of sync.copies) {
         const trackId = trackIds.get(copy.trackKey);
         if (trackId === undefined) throw new Error(`Copy ${copy.ref} refers to unknown track ${copy.trackKey}`);
-        const was = before.get(copy.ref);
+        const was = stored.get(copy.ref)?.recording_id;
         const is = recordingOf.get(copy.trackKey);
         if (was && is && was !== is && was.startsWith('local:') && !is.startsWith('local:')) moves.set(was, is);
-        seen.add(this.upsertCopy(sourceId, copy, trackId, now, dating));
+        const row = this.upsertCopy(sourceId, stored, copy, trackId, now, dating);
+        seen.set(row.id, { trackId, addedAt: row.addedAt });
+        wrote ||= row.wrote;
       }
       for (const [from, to] of moves) this.moveRecording(from, to);
       // The songs this source reports, including ones it has no file for (missing songs).
-      this.db.prepare('DELETE FROM source_tracks WHERE source_id = ?').run(sourceId);
-      const report = this.db.prepare('INSERT OR IGNORE INTO source_tracks (source_id, track_id) VALUES (?, ?)');
-      for (const trackId of new Set(trackIds.values())) report.run(sourceId, trackId);
+      const reported = new Set(trackIds.values());
+      const before = new Set(
+        (this.sql('SELECT track_id FROM source_tracks WHERE source_id = ?').all(sourceId) as { track_id: number }[]).map((r) => r.track_id),
+      );
+      const unreport = this.sql('DELETE FROM source_tracks WHERE source_id = ? AND track_id = ?');
+      for (const trackId of before) if (!reported.has(trackId)) wrote = unreport.run(sourceId, trackId).changes > 0 || wrote;
+      const report = this.sql('INSERT OR IGNORE INTO source_tracks (source_id, track_id) VALUES (?, ?)');
+      for (const trackId of reported) if (!before.has(trackId)) wrote = report.run(sourceId, trackId).changes > 0 || wrote;
       // Files the source no longer has. Catalog rows stay, so their ids are never reused.
-      const remove = this.db.prepare('DELETE FROM copies WHERE id = ?');
-      for (const { id } of this.db.prepare('SELECT id FROM copies WHERE source_id = ?').all(sourceId) as {
-        id: number;
-      }[]) {
-        if (!seen.has(id)) remove.run(id);
-      }
+      const remove = this.sql('DELETE FROM copies WHERE id = ?');
+      for (const { id } of stored.values()) if (!seen.has(id)) wrote = remove.run(id).changes > 0 || wrote;
       // An album is dated by when it last got a song: its earliest copy at first, then the date of each
       // song new to a source (a folder added later with one of its songs). A file replaced for a song
       // the source already had (upgrades, organizing) never makes an old album look new.
-      this.db
-        .prepare(
-          `UPDATE catalog_albums SET added_at = (
-             SELECT MIN(c.added_at) FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE t.album_id = catalog_albums.id
-           )
-           WHERE added_at IS NULL
-             AND id IN (SELECT t.album_id FROM copies c JOIN catalog_tracks t ON t.id = c.track_id WHERE c.source_id = ?)`,
-        )
-        .run(sourceId);
-      const bump = this.db.prepare(
-        `UPDATE catalog_albums SET added_at = MAX(IFNULL(added_at, ''), (
-           SELECT MAX(c.added_at) FROM copies c WHERE c.source_id = ? AND c.track_id = ?
-         ))
-         WHERE id = (SELECT album_id FROM catalog_tracks WHERE id = ?)
-           AND EXISTS (SELECT 1 FROM copies c WHERE c.source_id = ? AND c.track_id = ? AND c.added_at IS NOT NULL)`,
+      const albumsHere = new Set([...seen.values()].map((c) => albumOf.get(c.trackId)!));
+      const undated = (this.sql('SELECT id FROM catalog_albums WHERE added_at IS NULL').all() as { id: number }[]).filter((a) =>
+        albumsHere.has(a.id),
       );
-      const fresh = this.db.prepare('SELECT DISTINCT track_id AS id FROM copies WHERE source_id = ?').all(sourceId) as { id: number }[];
-      for (const { id } of fresh) if (!had.has(id)) bump.run(sourceId, id, id, sourceId, id);
-      const state: SourceState = { lidarrAlbums: sync.lidarrAlbums };
-      this.db
-        .prepare('UPDATE sources SET state = ?, last_sync_at = ? WHERE id = ?')
-        .run(JSON.stringify(state), now, sourceId);
+      if (undated.length) {
+        const dated = this.sql(
+          `UPDATE catalog_albums SET added_at = first.added_at
+           FROM (
+             SELECT t.album_id AS id, MIN(c.added_at) AS added_at FROM copies c JOIN catalog_tracks t ON t.id = c.track_id
+             GROUP BY t.album_id
+           ) AS first
+           WHERE catalog_albums.id = first.id AND catalog_albums.added_at IS NULL AND first.added_at IS NOT NULL
+             AND catalog_albums.id IN (SELECT value FROM json_each(?))`,
+        ).run(JSON.stringify(undated.map((a) => a.id)));
+        wrote ||= dated.changes > 0;
+      }
+      // Each album's newest file of a song new to this source: the album moves up to it.
+      const latest = new Map<number, string>();
+      for (const { trackId, addedAt } of seen.values()) {
+        if (had.has(trackId) || !addedAt) continue;
+        const albumId = albumOf.get(trackId)!;
+        if (addedAt > (latest.get(albumId) ?? '')) latest.set(albumId, addedAt);
+      }
+      const bump = this.sql(`UPDATE catalog_albums SET added_at = ? WHERE id = ? AND IFNULL(added_at, '') < ?`);
+      for (const [albumId, addedAt] of latest) wrote = bump.run(addedAt, albumId, addedAt).changes > 0 || wrote;
+      const state = JSON.stringify({ lidarrAlbums: sync.lidarrAlbums } satisfies SourceState);
+      const stateWas = (this.sql('SELECT state FROM sources WHERE id = ?').get(sourceId) as { state: string | null } | undefined)?.state;
+      if (state !== stateWas) {
+        this.sql('UPDATE sources SET state = ? WHERE id = ?').run(state, sourceId);
+        wrote = true;
+      }
+      this.sql('UPDATE sources SET last_sync_at = ? WHERE id = ?').run(now, sourceId);
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    if (wrote) this.changed();
+    this.applied.set(sourceId, { digest, generation: this.catalogGeneration });
+    return wrote;
   }
 
   load(): CatalogRows {
-    const all = <T>(sql: string) => this.db.prepare(sql).all() as T[];
+    const all = <T>(sql: string) => this.sql(sql).all() as T[];
     return {
       sources: all<{
         id: number;
@@ -461,8 +594,7 @@ export class CatalogStore {
 
   /** The last scan's view of a folder source's files, by path relative to the folder. */
   folderFiles(sourceId: number): Map<string, { size: number; mtimeMs: number; tags: TagInfo | null }> {
-    const rows = this.db
-      .prepare('SELECT rel_path, size, mtime_ms, tags FROM folder_files WHERE source_id = ?')
+    const rows = this.sql('SELECT rel_path, size, mtime_ms, tags FROM folder_files WHERE source_id = ?')
       .all(sourceId) as { rel_path: string; size: number; mtime_ms: number; tags: string | null }[];
     return new Map(
       rows.map((r) => [r.rel_path, { size: r.size, mtimeMs: r.mtime_ms, tags: r.tags ? (JSON.parse(r.tags) as TagInfo) : null }]),
@@ -478,18 +610,17 @@ export class CatalogStore {
         copies: (CopyRow & { ref: string })[];
       }
     | undefined {
-    const t = this.db.prepare('SELECT id, album_id, recording_id, meta FROM catalog_tracks WHERE id = ?').get(trackId) as
+    const t = this.sql('SELECT id, album_id, recording_id, meta FROM catalog_tracks WHERE id = ?').get(trackId) as
       | { id: number; album_id: number; recording_id: string; meta: string }
       | undefined;
     if (!t) return undefined;
-    const a = this.db.prepare('SELECT id, artist_id, meta FROM catalog_albums WHERE id = ?').get(t.album_id) as
+    const a = this.sql('SELECT id, artist_id, meta FROM catalog_albums WHERE id = ?').get(t.album_id) as
       | { id: number; artist_id: number; meta: string }
       | undefined;
-    const ar = a && (this.db.prepare('SELECT id, meta FROM catalog_artists WHERE id = ?').get(a.artist_id) as { id: number; meta: string } | undefined);
+    const ar = a && (this.sql('SELECT id, meta FROM catalog_artists WHERE id = ?').get(a.artist_id) as { id: number; meta: string } | undefined);
     if (!a || !ar) return undefined;
     const copies = (
-      this.db
-        .prepare('SELECT id, source_id, source_ref, path, size, format, added_at FROM copies WHERE track_id = ?')
+      this.sql('SELECT id, source_id, source_ref, path, size, format, added_at FROM copies WHERE track_id = ?')
         .all(trackId) as { id: number; source_id: number; source_ref: string; path: string; size: number; format: string; added_at: string | null }[]
     ).map((c) => ({
       id: c.id,
@@ -511,10 +642,10 @@ export class CatalogStore {
 
   /** One folder file's cached tags, and how it was matched. */
   folderFileDetails(sourceId: number, rel: string): { tags: TagInfo | null; match?: { state: string; score?: number } } | undefined {
-    const file = this.db.prepare('SELECT tags FROM folder_files WHERE source_id = ? AND rel_path = ?').get(sourceId, rel) as
+    const file = this.sql('SELECT tags FROM folder_files WHERE source_id = ? AND rel_path = ?').get(sourceId, rel) as
       | { tags: string | null }
       | undefined;
-    const match = this.db.prepare('SELECT state, score FROM folder_matches WHERE source_id = ? AND rel_path = ?').get(sourceId, rel) as
+    const match = this.sql('SELECT state, score FROM folder_matches WHERE source_id = ? AND rel_path = ?').get(sourceId, rel) as
       | { state: string; score: number | null }
       | undefined;
     if (!file && !match) return undefined;
@@ -530,16 +661,20 @@ export class CatalogStore {
     changed: { rel: string; size: number; mtimeMs: number; tags: TagInfo | null }[],
     present: string[],
   ) {
+    const keep = new Set(present);
+    const gone = (this.sql('SELECT rel_path FROM folder_files WHERE source_id = ?').all(sourceId) as { rel_path: string }[])
+      .map((r) => r.rel_path)
+      .filter((rel) => !keep.has(rel));
+    if (!changed.length && !gone.length) return;
     this.db.exec('BEGIN');
     try {
-      const save = this.db.prepare(
+      const save = this.sql(
         `INSERT INTO folder_files (source_id, rel_path, size, mtime_ms, tags) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (source_id, rel_path) DO UPDATE SET size = excluded.size, mtime_ms = excluded.mtime_ms, tags = excluded.tags`,
       );
       for (const f of changed) save.run(sourceId, f.rel, f.size, f.mtimeMs, f.tags ? JSON.stringify(f.tags) : null);
-      const keep = new Set(present);
-      const remove = this.db.prepare('DELETE FROM folder_files WHERE source_id = ? AND rel_path = ?');
-      for (const rel of this.folderFiles(sourceId).keys()) if (!keep.has(rel)) remove.run(sourceId, rel);
+      const remove = this.sql('DELETE FROM folder_files WHERE source_id = ? AND rel_path = ?');
+      for (const rel of gone) remove.run(sourceId, rel);
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
@@ -603,31 +738,28 @@ export class CatalogStore {
 
   /** A song got its real id: its favorites, playlist entries, analysis and plays follow it. */
   private moveRecording(from: string, to: string) {
-    this.db
-      .prepare(
+    this.sql(
         `INSERT OR IGNORE INTO favorites (account_id, recording_id, track_id, title, artist_name, album_title, created_at)
          SELECT account_id, ?, track_id, title, artist_name, album_title, created_at FROM favorites WHERE recording_id = ?`,
       )
       .run(to, from);
-    this.db.prepare('DELETE FROM favorites WHERE recording_id = ?').run(from);
-    this.db.prepare('UPDATE playlist_items SET recording_id = ? WHERE recording_id = ?').run(to, from);
-    this.db
-      .prepare(
+    this.sql('DELETE FROM favorites WHERE recording_id = ?').run(from);
+    this.sql('UPDATE playlist_items SET recording_id = ? WHERE recording_id = ?').run(to, from);
+    this.sql(
         `INSERT OR IGNORE INTO track_features (recording_id, version, features, error, analyzed_at)
          SELECT ?, version, features, error, analyzed_at FROM track_features WHERE recording_id = ?`,
       )
       .run(to, from);
-    this.db.prepare('DELETE FROM track_features WHERE recording_id = ?').run(from);
+    this.sql('DELETE FROM track_features WHERE recording_id = ?').run(from);
     // Its listening history too, or a matched song would lose its plays to the mixes. (Its track id may
     // change with the match: the history keeps the recording, which is what the mixes go by.)
-    this.db.prepare('UPDATE OR IGNORE plays SET recording_id = ?, track_id = NULL WHERE recording_id = ?').run(to, from);
-    this.db.prepare('DELETE FROM plays WHERE recording_id = ?').run(from);
+    this.sql('UPDATE OR IGNORE plays SET recording_id = ?, track_id = NULL WHERE recording_id = ?').run(to, from);
+    this.sql('DELETE FROM plays WHERE recording_id = ?').run(from);
   }
 
   /** A folder source's match decisions, by path relative to the folder. */
   matches(sourceId: number): Map<string, MatchRecord> {
-    const rows = this.db
-      .prepare(
+    const rows = this.sql(
         'SELECT rel_path, group_key, state, overlay, candidates, score, file_size, file_mtime FROM folder_matches WHERE source_id = ?',
       )
       .all(sourceId) as {
@@ -659,7 +791,7 @@ export class CatalogStore {
 
   saveMatches(sourceId: number, records: MatchRecord[]) {
     const now = new Date().toISOString();
-    const save = this.db.prepare(
+    const save = this.sql(
       `INSERT INTO folder_matches (source_id, rel_path, group_key, state, overlay, candidates, score, file_size, file_mtime, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (source_id, rel_path) DO UPDATE SET group_key = excluded.group_key, state = excluded.state,
@@ -687,17 +819,19 @@ export class CatalogStore {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    this.matchesChanged(sourceId);
   }
 
   /** Forget the matches of these files, user decisions included (Show metadata → Match again). */
   forgetMatches(sourceId: number, rels: string[]) {
-    const forget = this.db.prepare('DELETE FROM folder_matches WHERE source_id = ? AND rel_path = ?');
+    const forget = this.sql('DELETE FROM folder_matches WHERE source_id = ? AND rel_path = ?');
     for (const rel of rels) forget.run(sourceId, rel);
+    this.matchesChanged(sourceId);
   }
 
   /** Which source and song a file (copy) belongs to. */
   copy(fileId: number): { sourceId: number; ref: string; trackId: number } | undefined {
-    const row = this.db.prepare('SELECT source_id, source_ref, track_id FROM copies WHERE id = ?').get(fileId) as
+    const row = this.sql('SELECT source_id, source_ref, track_id FROM copies WHERE id = ?').get(fileId) as
       | { source_id: number; source_ref: string; track_id: number }
       | undefined;
     return row ? { sourceId: row.source_id, ref: row.source_ref, trackId: row.track_id } : undefined;
@@ -705,7 +839,8 @@ export class CatalogStore {
 
   /** Forget automatic results (user decisions stay), so the source is matched again. */
   clearMatches(sourceId: number) {
-    this.db.prepare("DELETE FROM folder_matches WHERE source_id = ? AND state NOT IN ('manual', 'ignored')").run(sourceId);
+    this.sql("DELETE FROM folder_matches WHERE source_id = ? AND state NOT IN ('manual', 'ignored')").run(sourceId);
+    this.matchesChanged(sourceId);
   }
 
   /**
@@ -715,8 +850,7 @@ export class CatalogStore {
    * a song once however many files it has, as sourceCounts counts them.
    */
   matchCounts(): Map<number, MatchCounts> {
-    const rows = this.db
-      .prepare(
+    const rows = this.sql(
         `SELECT c.source_id AS id,
            COUNT(DISTINCT CASE
              WHEN m.state IN ('auto', 'manual') THEN c.track_id
@@ -736,16 +870,16 @@ export class CatalogStore {
   }
 
   cachedRelease(releaseId: string): MbReleaseInfo | undefined {
-    const row = this.db.prepare('SELECT data FROM mb_releases WHERE release_id = ?').get(releaseId) as
+    const row = this.sql('SELECT data FROM mb_releases WHERE release_id = ?').get(releaseId) as
       | { data: string }
       | undefined;
     return row ? (JSON.parse(row.data) as MbReleaseInfo) : undefined;
   }
 
   saveRelease(release: MbReleaseInfo) {
-    this.db
-      .prepare('INSERT OR REPLACE INTO mb_releases (release_id, data, fetched_at) VALUES (?, ?, ?)')
+    this.sql('INSERT OR REPLACE INTO mb_releases (release_id, data, fetched_at) VALUES (?, ?, ?)')
       .run(release.id, JSON.stringify(release), new Date().toISOString());
+    this.releaseGeneration++;
   }
 
   /** Each audio file of a folder source with where the merged catalog puts it. */
@@ -788,36 +922,33 @@ export class CatalogStore {
   renameFolderFile(sourceId: number, fromRel: string, toRel: string, toPath: string) {
     this.db.exec('BEGIN');
     try {
-      this.db
-        .prepare('UPDATE copies SET source_ref = ?, path = ? WHERE source_id = ? AND source_ref = ?')
+      this.sql('UPDATE copies SET source_ref = ?, path = ? WHERE source_id = ? AND source_ref = ?')
         .run(toRel, toPath, sourceId, fromRel);
-      this.db
-        .prepare('UPDATE folder_files SET rel_path = ? WHERE source_id = ? AND rel_path = ?')
+      this.sql('UPDATE folder_files SET rel_path = ? WHERE source_id = ? AND rel_path = ?')
         .run(toRel, sourceId, fromRel);
-      this.db
-        .prepare('UPDATE folder_matches SET rel_path = ? WHERE source_id = ? AND rel_path = ?')
+      this.sql('UPDATE folder_matches SET rel_path = ? WHERE source_id = ? AND rel_path = ?')
         .run(toRel, sourceId, fromRel);
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    this.matchesChanged(sourceId);
+    this.changed();
   }
 
   nextMoveBatch(): number {
-    return (this.db.prepare('SELECT COALESCE(MAX(batch), 0) + 1 AS next FROM file_moves').get() as { next: number }).next;
+    return (this.sql('SELECT COALESCE(MAX(batch), 0) + 1 AS next FROM file_moves').get() as { next: number }).next;
   }
 
   logMove(sourceId: number, batch: number, fromRel: string, toRel: string) {
-    this.db
-      .prepare('INSERT INTO file_moves (batch, source_id, from_rel, to_rel, moved_at) VALUES (?, ?, ?, ?, ?)')
+    this.sql('INSERT INTO file_moves (batch, source_id, from_rel, to_rel, moved_at) VALUES (?, ?, ?, ?, ?)')
       .run(batch, sourceId, fromRel, toRel, new Date().toISOString());
   }
 
   /** A batch's moves not undone yet, in the order they happened. */
   movesOf(sourceId: number, batch: number): { id: number; from: string; to: string }[] {
-    return this.db
-      .prepare(
+    return this.sql(
         'SELECT id, from_rel AS "from", to_rel AS "to" FROM file_moves WHERE source_id = ? AND batch = ? AND undone_at IS NULL ORDER BY id',
       )
       .all(sourceId, batch) as { id: number; from: string; to: string }[];
@@ -825,14 +956,13 @@ export class CatalogStore {
 
   markUndone(ids: number[]) {
     const now = new Date().toISOString();
-    const mark = this.db.prepare('UPDATE file_moves SET undone_at = ? WHERE id = ?');
+    const mark = this.sql('UPDATE file_moves SET undone_at = ? WHERE id = ?');
     for (const id of ids) mark.run(now, id);
   }
 
   /** The newest batch with moves left to undo. */
   lastMoveBatch(sourceId: number): { id: number; files: number; at: string } | undefined {
-    const row = this.db
-      .prepare(
+    const row = this.sql(
         `SELECT batch AS id, COUNT(*) AS files, MAX(moved_at) AS at FROM file_moves
          WHERE source_id = ? AND undone_at IS NULL GROUP BY batch ORDER BY batch DESC LIMIT 1`,
       )
@@ -840,42 +970,79 @@ export class CatalogStore {
     return row ?? undefined;
   }
 
-  /** Insert or update a catalog row by key; returns its id. Metadata changes only if `rank` is at least as trusted. */
+  /**
+   * The rows of a catalog table with these keys, as they are now: for a big sync the whole table in one read (with
+   * every id taken, so ids are checked without asking), for a small one row by row.
+   */
+  private storedRows(table: CatalogTable, keys: string[], columns: string[]): StoredRows {
+    const select = `SELECT id, key, meta_rank, meta${columns.map((c) => `, ${c}`).join('')} FROM ${table}`;
+    if (keys.length >= READ_WHOLE_TABLE) {
+      const rows = this.sql(select).all() as unknown as (StoredRow & { key: string })[];
+      return { byKey: new Map(rows.map((r) => [r.key, r])), ids: new Set(rows.map((r) => r.id)) };
+    }
+    const one = this.sql(`${select} WHERE key = ?`);
+    const byKey = new Map<string, StoredRow>();
+    for (const key of keys) {
+      const row = one.get(key) as unknown as StoredRow | undefined;
+      if (row) byKey.set(key, row);
+    }
+    return { byKey };
+  }
+
+  /**
+   * Insert or update a catalog row by key, writing only when it differs; returns its id. Metadata changes only if
+   * `rank` is at least as trusted.
+   */
   private upsert(
     table: CatalogTable,
+    stored: StoredRows,
     key: string,
     preferredId: number | undefined,
     columns: Record<string, string | number>,
     meta: object,
     now: string,
     rank: number,
-  ): number {
+  ): { id: number; wrote: boolean } {
     const names = Object.keys(columns);
     const values = Object.values(columns);
-    const existing = this.db.prepare(`SELECT id, meta_rank FROM ${table} WHERE key = ?`).get(key) as
-      | { id: number; meta_rank: number }
-      | undefined;
+    const json = JSON.stringify(meta);
+    const existing = stored.byKey.get(key);
     if (existing) {
-      if (rank <= existing.meta_rank) {
-        const sets = [...names.map((n) => `${n} = ?`), 'meta = ?', 'meta_rank = ?', 'updated_at = ?'].join(', ');
-        this.db
-          .prepare(`UPDATE ${table} SET ${sets} WHERE id = ?`)
-          .run(...values, JSON.stringify(meta), rank, now, existing.id);
+      if (rank > existing.meta_rank) return { id: existing.id, wrote: false };
+      if (rank === existing.meta_rank && json === existing.meta && names.every((n) => existing[n] === columns[n])) {
+        return { id: existing.id, wrote: false };
       }
-      return existing.id;
+      const sets = [...names.map((n) => `${n} = ?`), 'meta = ?', 'meta_rank = ?', 'updated_at = ?'].join(', ');
+      this.sql(`UPDATE ${table} SET ${sets} WHERE id = ?`).run(...values, json, rank, now, existing.id);
+      stored.byKey.set(key, { ...existing, ...columns, meta: json, meta_rank: rank });
+      return { id: existing.id, wrote: true };
     }
     const cols = ['id', 'key', ...names, 'meta', 'meta_rank', 'updated_at'];
-    const res = this.db
-      .prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
-      .run(this.freeId(table, preferredId), key, ...values, JSON.stringify(meta), rank, now);
-    return Number(res.lastInsertRowid);
+    const res = this.sql(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(
+      this.freeId(table, preferredId, stored.ids),
+      key,
+      ...values,
+      json,
+      rank,
+      now,
+    );
+    const id = Number(res.lastInsertRowid);
+    stored.byKey.set(key, { id, ...columns, meta: json, meta_rank: rank });
+    stored.ids?.add(id);
+    return { id, wrote: true };
   }
 
-  private upsertCopy(sourceId: number, copy: SourceCopy, trackId: number, now: string, dating: CopyDating): number {
+  /** Insert or update one of a source's files, writing only when it differs; returns its id and the date it's kept with. */
+  private upsertCopy(
+    sourceId: number,
+    stored: Map<string, StoredCopy>,
+    copy: SourceCopy,
+    trackId: number,
+    now: string,
+    dating: CopyDating,
+  ): { id: number; addedAt: string | null; wrote: boolean } {
     const own = isoDate(copy.addedAt);
-    const existing = this.db
-      .prepare('SELECT id, added_at FROM copies WHERE source_id = ? AND source_ref = ?')
-      .get(sourceId, copy.ref) as { id: number; added_at: string | null } | undefined;
+    const existing = stored.get(copy.ref);
     // Folders: when Playarr first found the file (its own time only when it's the library's first music,
     // never ahead of now).
     // Lidarr: when Lidarr imported it.
@@ -887,25 +1054,42 @@ export class CatalogStore {
           : dating.ownTimes && own && own < now
             ? own
             : now;
-    const fields = [trackId, copy.path, copy.size, JSON.stringify(copy.format), addedAt, now] as const;
+    const format = JSON.stringify(copy.format);
     if (existing) {
-      this.db
-        .prepare('UPDATE copies SET track_id = ?, path = ?, size = ?, format = ?, added_at = ?, updated_at = ? WHERE id = ?')
-        .run(...fields, existing.id);
-      return existing.id;
+      if (
+        existing.track_id === trackId &&
+        existing.path === copy.path &&
+        existing.size === copy.size &&
+        existing.format === format &&
+        existing.added_at === addedAt
+      ) {
+        return { id: existing.id, addedAt, wrote: false };
+      }
+      this.sql('UPDATE copies SET track_id = ?, path = ?, size = ?, format = ?, added_at = ?, updated_at = ? WHERE id = ?').run(
+        trackId,
+        copy.path,
+        copy.size,
+        format,
+        addedAt,
+        now,
+        existing.id,
+      );
+      stored.set(copy.ref, { ...existing, track_id: trackId, path: copy.path, size: copy.size, format, added_at: addedAt });
+      return { id: existing.id, addedAt, wrote: true };
     }
-    const res = this.db
-      .prepare(
-        `INSERT INTO copies (id, source_id, source_ref, track_id, path, size, format, added_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(this.freeId('copies', copy.preferredId), sourceId, copy.ref, ...fields);
-    return Number(res.lastInsertRowid);
+    const res = this.sql(
+      `INSERT INTO copies (id, source_id, source_ref, track_id, path, size, format, added_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(this.freeId('copies', copy.preferredId), sourceId, copy.ref, trackId, copy.path, copy.size, format, addedAt, now);
+    const id = Number(res.lastInsertRowid);
+    stored.set(copy.ref, { id, source_ref: copy.ref, track_id: trackId, path: copy.path, size: copy.size, format, added_at: addedAt, recording_id: '' });
+    return { id, addedAt, wrote: true };
   }
 
   /** The preferred id if no row has it, else null so AUTOINCREMENT picks one never used before. */
-  private freeId(table: CatalogTable | 'copies', preferred: number | undefined): number | null {
+  private freeId(table: CatalogTable | 'copies', preferred: number | undefined, taken?: Set<number>): number | null {
     if (preferred === undefined) return null;
-    return this.db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(preferred) ? null : preferred;
+    if (taken) return taken.has(preferred) ? null : preferred;
+    return this.sql(`SELECT 1 FROM ${table} WHERE id = ?`).get(preferred) ? null : preferred;
   }
 }

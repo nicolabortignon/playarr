@@ -1,0 +1,18 @@
+{
+  "artists": [
+    {
+      "id": 7,
+      "name": "Massive Attack",
+      "sortName": "Massive Attack",
+      "genres": [
+        "trip hop"
+      ],
+      "albumCount": 1,
+      "trackCount": 2,
+      "mbid": "art-1",
+      "imageUrl": "/art/album/70/cover?v=1"
+    }
+  ],
+  "total": 1,
+  "version": "a1b2c3d4.1"
+}

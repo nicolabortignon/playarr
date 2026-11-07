@@ -4,9 +4,11 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 **Goal:** Playarr holds up on a collector's library (100k tracks) and in daily use: no stalls on the server's event loop or the iPhone's main thread, nothing lost when storage fills or two tabs are open, sessions and connections that can be trusted, and enough logging to diagnose a user's problem.
 
-**Where it stands (2026-11-06):** not started; plans 5 to 7, on the apps' design and flows, were taken first.
+**Where it stands (2026-11-07):** §1 done on the server and the web; the iOS app's paging is next, from the server's contract. §6 done on iOS. The rest not started.
 
-## 1. Big libraries — M
+## 1. Big libraries — M — server and web done 2026-11-07
+
+*Done on the server and the web, measured on a synthetic library of 100,000 songs (`pnpm -C apps/server bench:library`): a refresh that finds nothing new takes 73 ms for a folder and 270 ms for Lidarr, where it took 6.5 and 4.4 s; search answers in 5 to 20 ms, about 100 ms at worst (nothing found, then what's near), where it took 110 to 335; `/api/albums` and `/api/artists` come a page at a time with `offset`, and carry an ETag ([api.md](../server/api.md)); the web's Albums page opens with its first 120 albums (58 KB) rather than all of them (4.4 MB). Left: the iOS app paging its albums list; the build in a worker, as a refresh that does find a change still holds the event loop for 1.5 to 3.5 s at this size (scanning the folder, comparing every row, then building).*
 
 - Measure first: a 100k-track synthetic library (a fixture generator), timing catalog refresh, the albums list, search and memory; the existing stall monitor records event-loop stalls.
 - Catalog refresh: cache prepared statements, skip writes when nothing changed (compare a hash of meta, path, size and format), skip the rebuild when no source changed (`apps/server/src/catalog/store.ts` `applySync`, `library/library.ts`). Later, the build in a worker.

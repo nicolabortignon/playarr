@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
@@ -27,8 +28,8 @@ export class FolderSource implements CatalogSource {
       readTags?: (path: string, size: number) => Promise<TagInfo | null>;
       /** How many files to read at once; defaults to what the filesystem handles. */
       concurrency?: number;
-      /** After each scan: hand new and changed files to the matcher. */
-      onScanned?: (sourceId: number) => void;
+      /** After each scan: hand new and changed files to the matcher, with the scan's digest (SourceSync.digest). */
+      onScanned?: (sourceId: number, digest: string) => void;
     },
   ) {}
 
@@ -39,6 +40,13 @@ export class FolderSource implements CatalogSource {
     if (!(await fs.stat(root))?.dir) throw new Error(`Folder not found: ${root}`);
 
     const files = await fs.listAudio(root);
+    // The folder as the catalog holds it, and nothing since: no tags to read, nothing to apply. (The matcher still
+    // hears of the scan: it tries again after a scan what it couldn't look up.)
+    const same = scanDigest('scan', files, store.matchGeneration(sourceId), store.generation);
+    if (store.holds(sourceId, same)) {
+      this.opts.onScanned?.(sourceId, same);
+      return { artists: [], albums: [], tracks: [], copies: [], digest: same, unchanged: true };
+    }
     const cache = store.folderFiles(sourceId);
     const changed: { rel: string; size: number; mtimeMs: number; tags: TagInfo | null }[] = [];
     const entries: FolderEntry[] = [];
@@ -54,8 +62,10 @@ export class FolderSource implements CatalogSource {
       if (tags) entries.push({ ...f, tags });
     });
     store.saveFolderFiles(sourceId, changed, files.map((f) => f.rel));
-    const sync = this.catalog(entries);
-    this.opts.onScanned?.(sourceId);
+    // Taken again as the scan is made: matches may have landed while the tags were read.
+    const digest = scanDigest('scan', files, store.matchGeneration(sourceId), store.generation);
+    const sync = { ...this.catalog(entries), digest };
+    this.opts.onScanned?.(sourceId, digest);
     return sync;
   }
 
@@ -69,7 +79,8 @@ export class FolderSource implements CatalogSource {
     for (const [rel, f] of store.folderFiles(sourceId)) {
       if (f.tags) entries.push({ rel, path: posix.join(root, rel), size: f.size, mtimeMs: f.mtimeMs, tags: f.tags });
     }
-    return this.catalog(entries);
+    const digest = scanDigest('cached', entries, store.matchGeneration(sourceId), store.generation);
+    return { ...this.catalog(entries), digest };
   }
 
   private catalog(entries: FolderEntry[]): SourceSync {
@@ -91,6 +102,19 @@ export class FolderSource implements CatalogSource {
     }
     return folderSync(entries, store.nameIndex(), releases);
   }
+}
+
+/**
+ * What a folder's catalog is made from, as one SHA-1 (SourceSync.digest): its files as listed (from the last scan's
+ * cache, for `cached`), its match decisions and the releases they bring (`matches`, CatalogStore.matchGeneration), and
+ * the catalog's generation, as untagged files join what it holds by name. The same digest, the same catalog: folderSync
+ * makes it from nothing else.
+ */
+export function scanDigest(kind: 'scan' | 'cached', files: FoundFile[], matches: string, generation: number): string {
+  const sorted = files.every((f, i) => i === 0 || files[i - 1]!.rel < f.rel) ? files : [...files].sort((a, b) => (a.rel < b.rel ? -1 : 1));
+  const hash = createHash('sha1').update(`${kind}\n${matches}\n${generation}\n`);
+  for (const f of sorted) hash.update(`${f.rel}\0${f.path}\0${f.size}\0${f.mtimeMs}\0${f.createdMs ?? ''}\n`);
+  return hash.digest('base64');
 }
 
 /** Audio files under `root`, skipping hidden files and folders, not following symlinks. */

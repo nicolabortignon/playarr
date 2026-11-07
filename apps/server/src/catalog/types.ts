@@ -91,6 +91,16 @@ export interface SourceSync {
    * arrived on disk.
    */
   addedAt?: 'source' | 'firstSeen';
+  /**
+   * Stands for everything in the sync: two syncs of one source with the same digest are the same sync (a folder's
+   * is a digest of what it was made from). Without one, the catalog takes a SHA-1 of the sync itself (syncDigest).
+   */
+  digest?: string;
+  /**
+   * The source has nothing new since its sync with this digest, which the catalog holds as it applied it
+   * (CatalogStore.holds): no rows come with it, and nothing is applied.
+   */
+  unchanged?: true;
 }
 
 export interface CatalogSource {

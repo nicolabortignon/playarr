@@ -1,5 +1,10 @@
+const ASCII = /^[\x00-\x7f]*$/;
+
 /** Lowercase, strip diacritics and punctuation so "L’Impératrice" matches "limperatrice". */
 export function normalize(s: string): string {
+  // Plain ASCII, most names, has no accents to strip and no letters or digits beyond a–z and 0–9: the same
+  // result as below, several times faster, which a library of 100,000 songs feels.
+  if (ASCII.test(s)) return s.toLowerCase().replace(/['`]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   return s
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -9,18 +14,61 @@ export function normalize(s: string): string {
     .trim();
 }
 
+/**
+ * How well each text matches `query` (both normalized), as scoreMatch scores one: for scoring many texts against
+ * one query, with the query's parts worked out once.
+ */
+export function matchScorer(query: string): (text: string) => number {
+  const spaced = ` ${query}`;
+  const words = query.split(' ');
+  const several = words.length > 1;
+  return (t) => {
+    if (!t) return 0;
+    if (t === query) return 100;
+    if (t.startsWith(query)) return 80;
+    if (t.includes(spaced)) return 60;
+    if (t.includes(query)) return 40;
+    // Every query word appears somewhere (e.g. "punk daft").
+    return several && words.every((w) => t.includes(w)) ? 20 : 0;
+  };
+}
+
 /** 0 = no match; higher is better. `query` must already be normalized. */
 export function scoreMatch(query: string, text: string): number {
-  const t = normalize(text);
-  if (!t) return 0;
-  if (t === query) return 100;
-  if (t.startsWith(query)) return 80;
-  if (t.includes(` ${query}`)) return 60;
-  if (t.includes(query)) return 40;
-  // Every query word appears somewhere (e.g. "punk daft").
-  const words = query.split(' ');
-  if (words.length > 1 && words.every((w) => t.includes(w))) return 20;
-  return 0;
+  return matchScorer(query)(normalize(text));
+}
+
+/**
+ * How near each text is to `query` (both normalized), as scoreNearMatch scores one, for scoring many texts. Only
+ * the words of a text about as long as a query word are compared letter by letter, and a text run together only
+ * when its length is close: the same scores, without taking every name apart.
+ */
+export function nearScorer(query: string): (text: string) => number {
+  const joined = query.replaceAll(' ', '');
+  const joinedSlack = slack(joined);
+  const words = query.split(' ').map((q) => ({ q, max: slack(q) }));
+  return (t) => {
+    if (!t) return 0;
+    let spaces = 0;
+    for (let i = 0; i < t.length; i++) if (t.charCodeAt(i) === 32) spaces++;
+    if (Math.abs(t.length - spaces - joined.length) <= joinedSlack) {
+      const whole = editDistance(joined, spaces ? t.replaceAll(' ', '') : t, joinedSlack);
+      if (whole <= joinedSlack) return 10 - whole;
+    }
+    let off = 0;
+    for (const { q, max } of words) {
+      let best = max + 1;
+      for (let start = 0; start <= t.length && best > 0; ) {
+        let end = t.indexOf(' ', start);
+        if (end === -1) end = t.length;
+        if (Math.abs(end - start - q.length) <= max) best = Math.min(best, editDistance(q, t.slice(start, end), max));
+        start = end + 1;
+      }
+      if (best > max) return 0;
+      off += best;
+    }
+    return 10 - off;
+  };
 }
 
 /**
@@ -29,24 +77,7 @@ export function scoreMatch(query: string, text: string): number {
  * whole query within a few letters of the whole text, run together ("daftpunk", "radio head").
  */
 export function scoreNearMatch(query: string, text: string): number {
-  const t = normalize(text);
-  if (!t) return 0;
-  const joined = query.replaceAll(' ', '');
-  const whole = editDistance(joined, t.replaceAll(' ', ''), slack(joined));
-  if (whole <= slack(joined)) return 10 - whole;
-  const words = t.split(' ');
-  let off = 0;
-  for (const q of query.split(' ')) {
-    const max = slack(q);
-    let best = max + 1;
-    for (const w of words) {
-      best = Math.min(best, editDistance(q, w, max));
-      if (best === 0) break;
-    }
-    if (best > max) return 0;
-    off += best;
-  }
-  return 10 - off;
+  return nearScorer(query)(normalize(text));
 }
 
 /** How many letters a word may be off and still be near: none for short words, where any change makes another word. */

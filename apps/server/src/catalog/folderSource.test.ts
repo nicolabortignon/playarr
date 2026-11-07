@@ -1,11 +1,11 @@
-import { mkdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocalFolderFs, type FolderFs } from './folderFs.ts';
 import { FolderSource } from './folderSource.ts';
 import { CatalogStore } from './store.ts';
 import { readTags } from './tags.ts';
-import { FLAC, flacBytes, freshDb, tempDir } from './testFixtures.ts';
+import { FLAC, flacBytes, freshDb, mezzanine, tempDir } from './testFixtures.ts';
 
 let cleanup = () => {};
 afterEach(() => cleanup());
@@ -93,7 +93,7 @@ describe('FolderSource', () => {
     const sync = await source.sync();
     expect(sync.copies.find((c) => c.ref.endsWith('Angel.flac'))!.trackKey).toBe('mb:rg-1#rec-1');
     expect(sync.tracks.map((t) => t.key)).toContain('mb:rg-1#rec-2'); // the rest of the release, missing
-    expect(onScanned).toHaveBeenCalledWith(sourceId);
+    expect(onScanned).toHaveBeenCalledWith(sourceId, sync.digest);
   });
 
   it('rebuilds from the last scan without touching the folder or the matcher', async () => {
@@ -175,5 +175,73 @@ describe('FolderSource', () => {
     expect(sync.copies.map((c) => c.ref)).toEqual(['Burial/Archangel.flac']);
     expect(sync.copies[0]!.path).toBe('/volume1/music/Burial/Archangel.flac');
     expect(fs.readTags).toHaveBeenCalledWith('/volume1/music/Burial/Archangel.flac', 1200);
+  });
+});
+
+describe('FolderSource: a folder that hasn’t changed', () => {
+  /** A scan, applied as a refresh applies it. */
+  async function scan(s: ReturnType<typeof setup>) {
+    const sync = await s.source.sync();
+    s.store.applySync(s.sourceId, sync);
+    return sync;
+  }
+  const titles = (store: CatalogStore) => store.load().tracks.filter((t) => store.load().copies.some((c) => c.trackId === t.id)).map((t) => t.meta.title).sort();
+
+  it('reads and applies nothing when the folder is as the catalog holds it', async () => {
+    const s = setup();
+    await scan(s);
+    // The second scan files untagged songs with what the first one found: it may still change something.
+    await scan(s);
+    s.read.mockClear();
+    const sync = await scan(s);
+    expect(sync.unchanged).toBe(true);
+    expect(sync.copies).toEqual([]);
+    expect(s.read).not.toHaveBeenCalled();
+    expect(s.store.applySync(s.sourceId, await s.source.sync())).toBe(false);
+    expect(titles(s.store)).toEqual(['Angel', 'Archangel']);
+  });
+
+  it('reads again what changed on disk: a tag edit, a file replaced at the same size, a moved file and a removed one', async () => {
+    const s = setup();
+    await scan(s);
+    await scan(s);
+    const angel = 'Massive Attack/Mezzanine/01 Angel.flac';
+    const touch = (rel: string, at: number) => utimesSync(join(s.dir, rel), new Date(at), new Date(at));
+    // A tag edit.
+    s.put(angel, flacBytes({ TITLE: 'Angel (Remastered)', ALBUM: 'Mezzanine', ALBUMARTIST: 'Massive Attack' }));
+    touch(angel, Date.now() + 60_000);
+    s.read.mockClear();
+    expect((await scan(s)).unchanged).toBeUndefined();
+    expect(s.read).toHaveBeenCalledTimes(1);
+    expect(titles(s.store)).toContain('Angel (Remastered)');
+    // Another file of the same size in its place.
+    const same = flacBytes({ TITLE: 'Angel (Remastered)', ALBUM: 'Mezzanine', ALBUMARTIST: 'Massive Attack' }).length;
+    const other = flacBytes({ TITLE: 'Angel (Remixed!!!)', ALBUM: 'Mezzanine', ALBUMARTIST: 'Massive Attack' });
+    expect(other.length).toBe(same);
+    s.put(angel, other);
+    touch(angel, Date.now() + 120_000);
+    expect((await scan(s)).unchanged).toBeUndefined();
+    expect(titles(s.store)).toContain('Angel (Remixed!!!)');
+    // Moved into a folder of its own.
+    mkdirSync(join(s.dir, 'Burial/Untrue'), { recursive: true });
+    renameSync(join(s.dir, 'Burial/Archangel.flac'), join(s.dir, 'Burial/Untrue/Archangel.flac'));
+    expect((await scan(s)).unchanged).toBeUndefined();
+    expect(s.store.load().copies.map((c) => c.path.slice(s.dir.length + 1)).sort()).toEqual(['Burial/Untrue/Archangel.flac', angel]);
+    // Gone.
+    rmSync(join(s.dir, 'Burial/Untrue/Archangel.flac'));
+    expect((await scan(s)).unchanged).toBeUndefined();
+    expect(s.store.load().copies).toHaveLength(1);
+  });
+
+  it('reads again when its matches change, or another source changes what untagged songs join', async () => {
+    const s = setup();
+    await scan(s);
+    await scan(s);
+    s.store.saveMatches(s.sourceId, [{ rel: 'Burial/Archangel.flac', groupKey: 'g', state: 'unmatched', size: 1, mtimeMs: 1 }]);
+    expect((await scan(s)).unchanged).toBeUndefined();
+    expect((await scan(s)).unchanged).toBe(true);
+    const lidarr = s.store.addSource('lidarr', 'Lidarr');
+    s.store.applySync(lidarr, mezzanine());
+    expect((await scan(s)).unchanged).toBeUndefined();
   });
 });

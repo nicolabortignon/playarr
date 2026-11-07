@@ -50,6 +50,16 @@ describe('SourceManager', () => {
     expect(lidarr.configured).toBe(false);
   });
 
+  it('keeps a source’s adapter from refresh to refresh until its settings change, so what it remembers lasts', () => {
+    const { store, manager } = setup();
+    manager.seedFromEnv(ENV);
+    const id = store.listSources()[0]!.id;
+    const [first] = manager.active();
+    expect(manager.active()[0]!.source).toBe(first!.source);
+    manager.update(id, { settings: { url: 'http://nas:8686', apiKey: 'another-key' } });
+    expect(manager.active()[0]!.source).not.toBe(first!.source);
+  });
+
   it('never sends secrets, and hides settings from remote visitors', () => {
     const { manager } = setup();
     manager.seedFromEnv(ENV);

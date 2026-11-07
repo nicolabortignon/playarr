@@ -1,12 +1,16 @@
+import type { Album, AlbumSort, Artist, SearchResults } from '@playarr/shared';
 import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
+import { buildCatalog, type Catalog } from '../catalog/build.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { twoSources } from '../accounts/testAccess.ts';
-import { CC_REC, freshDb, mezzanine, MP3 } from '../catalog/testFixtures.ts';
+import { CC_REC, creativeCommons, freshDb, mezzanine, MP3 } from '../catalog/testFixtures.ts';
 import type { CatalogSource, SourceSync } from '../catalog/types.ts';
 import { coverArtArchive, remoteArtUrl } from '../discover/art.ts';
+import { syntheticLibrary } from '../testing/syntheticLibrary.ts';
 import { CoverColorStore } from './coverColorStore.ts';
 import { Library, stripAlbum } from './library.ts';
+import { albumKey, normalize, scoreMatch, scoreNearMatch } from './search.ts';
 
 const log = { info: () => {}, error: () => {} };
 const png = (color: string) => sharp({ create: { width: 64, height: 64, channels: 3, background: color } }).png().toBuffer();
@@ -56,7 +60,8 @@ describe('Library', () => {
     const b = store.addSource('folder', 'Drive');
     const lidarrSync = vi.fn(async () => mezzanine());
     const folderSync = vi.fn(async () => ({ artists: [], albums: [], tracks: [], copies: [] }));
-    const cached = vi.fn(() => ({ artists: [], albums: [], tracks: [], copies: [] }));
+    // Matches landed since: the folder's last scan now makes an album of its own.
+    const cached = vi.fn(() => creativeCommons());
     const library = new Library(
       store,
       () => [
@@ -73,7 +78,7 @@ describe('Library', () => {
     expect(folderSync).toHaveBeenCalledTimes(1);
     expect(cached).toHaveBeenCalledTimes(1);
     expect(refreshed).toHaveBeenCalledTimes(2);
-    expect((await library.albums()).map((x) => x.title)).toEqual(['Mezzanine']);
+    expect((await library.albums()).map((x) => x.title).sort()).toEqual(['Mezzanine', 'Royalty Free']);
   });
 
   it('syncs sources in order, so later ones see what earlier ones reported', async () => {
@@ -256,5 +261,236 @@ describe('library views', () => {
     expect(mp3.format.codec).toBe('MP3');
     expect(await library.view([cc]).file(9000)).toBeUndefined();
     expect(await library.view([cc]).file(mp3.fileId)).toMatchObject({ sourceId: cc });
+  });
+});
+
+describe('Library: refreshes that find nothing new', () => {
+  function twoSourcesOf(syncs: { lidarr: () => SourceSync; folder: () => SourceSync }) {
+    const store = new CatalogStore(freshDb());
+    const lidarr = store.addSource('lidarr', 'Lidarr');
+    const folder = store.addSource('folder', 'Drive');
+    const library = new Library(
+      store,
+      () =>
+        store
+          .listSources()
+          .filter((s) => s.enabled)
+          .map((s) => ({ id: s.id, source: { kind: s.kind, sync: async () => (s.id === lidarr ? syncs.lidarr() : syncs.folder()) } })),
+      log,
+    );
+    return { store, library, lidarr, folder };
+  }
+
+  it('keeps its snapshot, and still tells its listeners (they try again what failed)', async () => {
+    const { library } = twoSourcesOf({ lidarr: mezzanine, folder: creativeCommons });
+    const refreshed = vi.fn();
+    library.onRefresh(refreshed);
+    await library.refresh();
+    const version = library.version;
+    const tracks = await library.allTracks();
+    await library.refresh();
+    expect(library.version).toBe(version);
+    expect(await library.allTracks()).toBe(tracks);
+    expect(refreshed).toHaveBeenCalledTimes(2);
+  });
+
+  it('rebuilds when a source has something new, is turned off, moved or removed', async () => {
+    let title = 'Mezzanine';
+    const { store, library, lidarr, folder } = twoSourcesOf({
+      lidarr: () => {
+        const sync = mezzanine();
+        sync.albums[0]!.title = title;
+        return sync;
+      },
+      folder: creativeCommons,
+    });
+    await library.refresh();
+    let version = library.version;
+    const rebuilt = async (change: () => void) => {
+      change();
+      await library.refresh();
+      const moved = library.version > version;
+      version = library.version;
+      return moved;
+    };
+    expect(await rebuilt(() => (title = 'Mezzanine (Remastered)'))).toBe(true);
+    expect((await library.albums()).map((a) => a.title)).toContain('Mezzanine (Remastered)');
+    expect(await rebuilt(() => {})).toBe(false);
+    expect(await rebuilt(() => store.updateSource(folder, { enabled: false }))).toBe(true);
+    expect((await library.albums()).map((a) => a.title)).toEqual(['Mezzanine (Remastered)']);
+    expect(await rebuilt(() => store.updateSource(folder, { enabled: true }))).toBe(true);
+    expect(await rebuilt(() => store.reorderSources([folder, lidarr]))).toBe(true);
+    expect(await rebuilt(() => store.removeSource(folder))).toBe(true);
+    expect((await library.albums()).map((a) => a.title)).toEqual(['Mezzanine (Remastered)']);
+  });
+
+  it('says it was refreshed just now, as its sources were, and so do the views of some of them', async () => {
+    const { library, lidarr, folder } = twoSourcesOf({ lidarr: mezzanine, folder: creativeCommons });
+    await library.refresh();
+    const first = (await library.stats())!.refreshedAt;
+    // One view built before the refresh, one after it.
+    expect((await library.view([folder]).stats())!.refreshedAt).toBe(first);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await library.refresh();
+    const now = (await library.stats())!.refreshedAt;
+    expect(now > first).toBe(true);
+    expect((await library.view([folder]).stats())!.refreshedAt).toBe(now);
+    expect((await library.view([lidarr]).stats())!.refreshedAt > first).toBe(true);
+  });
+
+  it('leaves its snapshot after a rebuild from the last scan that changes nothing, and tells no one', async () => {
+    const store = new CatalogStore(freshDb());
+    const folder = store.addSource('folder', 'Drive');
+    const library = new Library(store, () => [{ id: folder, source: { kind: 'folder', sync: async () => creativeCommons(), cached: () => creativeCommons() } }], log);
+    const refreshed = vi.fn();
+    library.onRefresh(refreshed);
+    await library.refresh();
+    const version = library.version;
+    await library.rebuild();
+    expect(library.version).toBe(version);
+    expect(refreshed).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The library's indexes and sorted lists (plan 3 §1) against the plain ways they replaced, on a synthetic library
+ * with the variety of real tags: names in several scripts, featured artists, compilations, editions.
+ */
+describe('Library at a collector’s size', () => {
+  const setup = async () => {
+    const lib = syntheticLibrary({ tracks: 1500 });
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('lidarr', 'Lidarr');
+    /** What Lidarr reports: change it, and the next refresh finds the change. */
+    const lidarr = { sync: lib.lidarr() };
+    // Names of nothing but punctuation, which search sees as no text at all: the band !!!, an album "…", a song "?".
+    lidarr.sync.artists[0]!.name = '!!!';
+    lidarr.sync.albums[1]!.title = '…';
+    lidarr.sync.tracks[2]!.title = '?';
+    const library = new Library(store, () => [{ id, source: { kind: 'lidarr', sync: async () => lidarr.sync } }], log);
+    await library.refresh();
+    // The same rows build the same catalog, in the same order: what the library had before its indexes.
+    return { lib, lidarr, library, catalog: buildCatalog(store.load()) };
+  };
+
+  /** Search as it was: every name normalized again on every search, each album and song's two texts joined first. */
+  function searchedPlainly(catalog: Catalog, query: string, limit = 20): SearchResults {
+    const q = normalize(query);
+    if (!q) return { artists: [], albums: [], tracks: [] };
+    const rank = <T>(items: Iterable<T>, fields: (item: T) => string[], score = scoreMatch) =>
+      [...items]
+        .map((item) => ({ item, score: Math.max(...fields(item).map((f) => score(q, f))) }))
+        .filter((r) => r.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map((r) => r.item);
+    const found: SearchResults = {
+      artists: rank(catalog.artists.values(), (a) => [a.name]),
+      albums: rank(catalog.albums.values(), (a) => [a.title, `${a.artistName} ${a.title}`]),
+      tracks: rank(catalog.tracks, (t) => [t.title, `${t.artistName} ${t.title}`]),
+    };
+    if (found.artists.length || found.albums.length || found.tracks.length) return found;
+    const near: SearchResults = {
+      artists: rank(catalog.artists.values(), (a) => [a.name], scoreNearMatch),
+      albums: rank(catalog.albums.values(), (a) => [`${a.artistName} ${a.title}`], scoreNearMatch),
+      tracks: rank(catalog.tracks, (t) => [`${t.artistName} ${t.title}`], scoreNearMatch),
+    };
+    return near.artists.length || near.albums.length || near.tracks.length ? { ...near, near: true } : found;
+  }
+
+  const ids = (found: SearchResults) => ({
+    artists: found.artists.map((a) => a.id),
+    albums: found.albums.map((a) => a.id),
+    tracks: found.tracks.map((t) => t.id),
+    near: found.near,
+  });
+
+  it('finds what searching every name afresh found, in the same order', async () => {
+    const { lib, library, catalog } = await setup();
+    const queries = [
+      ...lib.queries.map((x) => x.q),
+      // Accents, other scripts, punctuation alone, a final sigma, numbers, several words in another order.
+      'ÆGIR', 'sørensen', 'ελένη', 'ΝΎΧΤΑ', '東京', '!!!', '   ', '', '2011', 'remaster', 'deluxe edition', 'night love', 'a',
+    ];
+    for (const q of queries) {
+      expect(ids(await library.search(q)), q).toEqual(ids(searchedPlainly(catalog, q)));
+      expect(ids(await library.search(q, 5)), `${q}, 5`).toEqual(ids(searchedPlainly(catalog, q, 5)));
+    }
+    // Some found something, some something near, some nothing: each way was compared.
+    const results = await Promise.all(queries.map((q) => library.search(q)));
+    expect(results.some((r) => r.near)).toBe(true);
+    expect(results.some((r) => !r.near && r.tracks.length)).toBe(true);
+    expect(results.some((r) => !r.artists.length && !r.albums.length && !r.tracks.length)).toBe(true);
+  });
+
+  it('finds artists, albums and songs by name as looking through them all did', async () => {
+    const { library, catalog } = await setup();
+    // The first artist of each name, as looking through them in order found.
+    const byName = (name: string) => {
+      for (const [mbid, id] of catalog.artistIdByMbid) if (normalize(catalog.artists.get(id)?.name ?? '') === normalize(name)) return { id, mbid };
+      return undefined;
+    };
+    for (const artist of [...catalog.artists.values()].slice(0, 200)) {
+      expect(await library.artistByName(artist.name.toUpperCase()), artist.name).toEqual(byName(artist.name));
+    }
+    expect(await library.artistByName('Nobody At All')).toBeUndefined();
+    // The last album of each artist and title (editions too), as a map of them all kept.
+    const albumIds = new Map([...catalog.albums.values()].map((a) => [albumKey(a.artistName, a.title), a.id]));
+    for (const album of [...catalog.albums.values()].slice(0, 300)) {
+      expect(await library.albumIdByName(album.artistName, album.title), album.title).toBe(albumIds.get(albumKey(album.artistName, album.title)));
+    }
+    for (const track of catalog.tracks.slice(0, 300)) {
+      expect((await library.trackByName(track.artistName, track.title))?.title, track.title).toBe(track.title);
+    }
+  });
+
+  it('sorts the albums and artists as comparing names one pair at a time did', async () => {
+    const { library, catalog } = await setup();
+    const sortName = (a: Artist, b: Artist) => a.sortName.localeCompare(b.sortName, undefined, { sensitivity: 'base' });
+    const plainly: Record<AlbumSort, (a: Album, b: Album) => number> = {
+      title: (a, b) => a.title.localeCompare(b.title),
+      artist: (a, b) => {
+        const aa = catalog.artists.get(a.artistId);
+        const ba = catalog.artists.get(b.artistId);
+        return (aa && ba ? sortName(aa, ba) : 0) || (a.releaseDate ?? '').localeCompare(b.releaseDate ?? '');
+      },
+      year: (a, b) => (b.releaseDate ?? '').localeCompare(a.releaseDate ?? ''),
+      added: (a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''),
+    };
+    for (const sort of ['title', 'artist', 'year', 'added'] as const) {
+      const expected = [...catalog.albums.values()].sort(plainly[sort]).map((a) => a.id);
+      expect((await library.albums(sort)).map((a) => a.id), sort).toEqual(expected);
+      expect((await library.albums(sort, 25)).map((a) => a.id), `${sort}, 25`).toEqual(expected.slice(0, 25));
+    }
+    expect((await library.artists()).map((a) => a.id)).toEqual([...catalog.artists.values()].sort(sortName).map((a) => a.id));
+  });
+
+  it('pages through the albums and artists, the pages together making the whole list', async () => {
+    const { library } = await setup();
+    for (const sort of ['title', 'artist', 'year', 'added'] as const) {
+      const whole = await library.albums(sort);
+      const pages = [];
+      for (let offset = 0; offset < whole.length; offset += 37) pages.push(await library.albumPage(sort, offset, 37));
+      expect(pages.flatMap((p) => p.albums)).toEqual(whole);
+      expect(new Set(pages.map((p) => `${p.total} ${p.version}`))).toEqual(new Set([`${whole.length} ${library.listVersion}`]));
+      expect((await library.albumPage(sort, whole.length, 37)).albums).toEqual([]);
+    }
+    const artists = await library.artists();
+    const first = await library.artistPage(0, 100);
+    expect(first).toEqual({ artists: artists.slice(0, 100), total: artists.length, version: library.listVersion });
+    expect((await library.artistPage(100, 100)).artists).toEqual(artists.slice(100, 200));
+  });
+
+  it('sorts again for a new snapshot, under a new version', async () => {
+    const { lib, lidarr, library } = await setup();
+    const before = await library.albumPage('title', 0, 5);
+    // Lidarr's first album is now called something that comes first.
+    lidarr.sync = lib.lidarr();
+    lidarr.sync.albums[0]!.title = '000 First of All';
+    await library.refresh();
+    const after = await library.albumPage('title', 0, 5);
+    expect(after.albums[0]!.title).toBe('000 First of All');
+    expect(after.version).not.toBe(before.version);
+    expect(after.total).toBe(before.total);
   });
 });

@@ -140,6 +140,14 @@ describe('LidarrSource', () => {
 
     await source.sync();
     expect(client.trackFile).toHaveBeenCalledTimes(1);
+
+    // The file imported again in its place (same id and size, another recording): measured again.
+    Object.assign(client, {
+      trackFilesForArtist: async (id: number) =>
+        id === 1 ? [file(1000, 'flac'), { ...file(1001, 'mp3'), dateAdded: '2026-11-07T10:00:00Z' }, file(1002, 'flac')] : [],
+      trackFile: vi.fn(async (id: number) => ({ ...file(id, 'mp3'), audioTags: { duration: '00:02:00' } })),
+    });
+    expect((await source.sync()).tracks.map((t) => t.duration)).toEqual([379, 120]);
   });
 
   it('reads Lidarr time spans', () => {

@@ -31,12 +31,18 @@ export class SourceError extends Error {
 /** Sources as Settings manages them: rows in the database, turned into catalog adapters. */
 interface MatcherHandle {
   pendingGroups(sourceId: number): number;
-  enqueue(sourceId: number): void;
+  /** After a scan, with its digest (SourceSync.digest). */
+  enqueue(sourceId: number, scan?: string): void;
 }
 
 export class SourceManager {
   private matcher?: MatcherHandle;
   private folders?: Pick<FolderAccess, 'create' | 'get' | 'release'>;
+  /**
+   * Each source's adapter, kept while what it was made from stays (Lidarr's address and key; a folder's path and
+   * filesystem): what an adapter remembers between syncs (the lengths it asked Lidarr for) lasts.
+   */
+  private readonly adapters = new Map<number, { made: unknown[]; source: CatalogSource }>();
 
   constructor(
     private readonly store: CatalogStore,
@@ -86,25 +92,39 @@ export class SourceManager {
         const settings = s.settings as LidarrSettings;
         if (!settings.url || !settings.apiKey) continue;
         this.lidarr.configure(settings.url, settings.apiKey);
-        list.push({ id: s.id, source: new LidarrSource(this.lidarr) });
+        list.push({ id: s.id, source: this.adapter(s.id, [settings.url, settings.apiKey], () => new LidarrSource(this.lidarr)) });
         lidarrSet = true;
       } else if (s.kind === 'folder') {
         const root = (s.settings as FolderSettings).path;
         const fs = root ? this.folderFs(s) : undefined;
         if (root && fs) {
-          const source = new FolderSource({
-            sourceId: s.id,
-            root,
-            store: this.store,
-            fs,
-            onScanned: (id) => this.matcher?.enqueue(id),
-          });
+          const source = this.adapter(
+            s.id,
+            [root, fs],
+            () =>
+              new FolderSource({
+                sourceId: s.id,
+                root,
+                store: this.store,
+                fs,
+                onScanned: (id, digest) => this.matcher?.enqueue(id, digest),
+              }),
+          );
           list.push({ id: s.id, source });
         }
       }
     }
     if (!lidarrSet) this.lidarr.configure('', '');
     return list;
+  }
+
+  /** The source's adapter, made again only when what it's made from has changed. */
+  private adapter(id: number, made: unknown[], make: () => CatalogSource): CatalogSource {
+    const kept = this.adapters.get(id);
+    if (kept && kept.made.length === made.length && kept.made.every((m, i) => m === made[i])) return kept.source;
+    const source = make();
+    this.adapters.set(id, { made, source });
+    return source;
   }
 
   list(opts: { includeSettings: boolean; syncing: boolean }): SourceInfo[] {
@@ -163,6 +183,7 @@ export class SourceManager {
     if (!this.store.source(id)) throw new SourceError('Source not found', 404);
     this.store.removeSource(id);
     this.folders?.release(id);
+    this.adapters.delete(id);
     this.active();
   }
 

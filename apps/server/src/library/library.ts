@@ -1,10 +1,11 @@
-import type { Album, AlbumDetail, AlbumSort, Artist, ArtistDetail, LibraryStats, SearchResults, Track } from '@playarr/shared';
+import type { Album, AlbumDetail, AlbumPage, AlbumSort, Artist, ArtistDetail, ArtistPage, LibraryStats, SearchResults, Track } from '@playarr/shared';
+import { randomBytes } from 'node:crypto';
 import { buildCatalog, type Catalog, type FileRecord, type LidarrAlbumRef } from '../catalog/build.ts';
 import type { CatalogRows, CatalogStore } from '../catalog/store.ts';
 import type { CatalogSource } from '../catalog/types.ts';
 import { coverImage, type CoverImage } from './coverColorStore.ts';
 import type { CoverColors } from './coverColors.ts';
-import { albumKey, normalize, primaryArtist, scoreMatch, scoreNearMatch } from './search.ts';
+import { albumKey, baseTitle, matchScorer, nearScorer, normalize, primaryArtist } from './search.ts';
 
 export type { FileRecord, LidarrAlbumRef };
 
@@ -17,16 +18,45 @@ export interface CoverColorSource {
   onRead(listener: (key: string, colors: CoverColors | undefined) => void): void;
 }
 
+/**
+ * Every name search looks at, normalized once when the snapshot is built rather than for every song on every
+ * search (100,000 songs made each search take over 100 ms). Lined up with the lists they name.
+ */
+interface SearchIndex {
+  artists: Artist[];
+  artistNames: string[];
+  albums: AlbumDetail[];
+  albumTitles: string[];
+  /** "artist title", as one text. */
+  albumFull: string[];
+  /** Lined up with the snapshot's tracks. */
+  trackTitles: string[];
+  trackFull: string[];
+}
+
 export interface Snapshot extends Catalog {
   albumIdByKey: Map<string, number>;
   trackById: Map<number, Track>;
   trackByRecording: Map<string, Track>;
   trackByName: Map<string, Track>;
+  /** Artists with a MusicBrainz id by normalized name: the first of each name, as artistByName finds it. */
+  artistByName: Map<string, { id: number; mbid: string }>;
   /** `album/<id>` and `artist/<id>` of every /art/… URL the snapshot's albums and artists use. */
   artwork: Set<string>;
   /** The albums whose cover each image is (by `coverImage` key), to color them when it's read. */
   albumsByCover: Map<string, AlbumDetail[]>;
+  search: SearchIndex;
+  /** The albums in each order lists ask for, and the artists A to Z: sorted once, when first asked for. */
+  sorted: { albums: Map<AlbumSort, AlbumDetail[]>; artists?: Artist[] };
 }
+
+/** Tells this run of the server from the last in the versions it hands out: the library's version starts over at each start. */
+const RUN = randomBytes(4).toString('hex');
+
+/** Compares as `localeCompare` does, without making a collator for every comparison (a 10,000-album sort makes ~150,000). */
+const collator = new Intl.Collator();
+/** Ignoring case and accents, as artists are sorted. */
+const byBase = new Intl.Collator(undefined, { sensitivity: 'base' });
 
 /**
  * The library as someone may see it. The Library itself shows every source; `library.view(sources)`
@@ -36,6 +66,8 @@ export interface Snapshot extends Catalog {
 export abstract class LibraryView {
   /** Goes up with every new snapshot, so others can tell when what they derived from it is out of date. */
   abstract readonly version: number;
+  /** Goes up with every cover whose colors are read (albums and their songs carry them, outside of any snapshot). */
+  protected abstract readonly painted: number;
   /** The sources shown, in id order; null for every source. */
   abstract readonly sources: SourceFilter;
   /** The snapshot, waiting for the first one if need be. */
@@ -44,6 +76,24 @@ export abstract class LibraryView {
   protected abstract current(): Snapshot | null;
   /** The snapshot built so far, without building one (even if it's out of date). */
   protected abstract existing(): Snapshot | null;
+
+  /**
+   * The library's version as clients see it, in pages of a list (AlbumPage.version): another snapshot, or another run
+   * of the server, makes another.
+   */
+  get listVersion(): string {
+    return `${RUN}.${this.version}`;
+  }
+
+  /**
+   * Names what this view's albums or artists list says now, for an ETag, once there's a library to list: it changes
+   * with the snapshot, the server's run and (for albums, which carry their covers' colors) every cover read, and
+   * differs between views, as another account's sources make another library.
+   */
+  async listTag(list: 'albums' | 'artists'): Promise<string> {
+    await this.ready();
+    return [list, this.listVersion, ...(list === 'albums' ? [this.painted] : []), ...(this.sources ? [this.sources.join('.')] : [])].join('-');
+  }
 
   /** Every album cover whose colors can be read, once each, newest albums first (for CoverColorStore's fill). */
   coverImages(): CoverImage[] {
@@ -64,9 +114,23 @@ export abstract class LibraryView {
     return this.current()?.albumsByCover.has(key) ?? false;
   }
 
-  /** A cover was just read: the albums it's the cover of, and their songs, take its colors at once. */
-  colorCover(key: string, colors: CoverColors | undefined) {
-    for (const album of this.existing()?.albumsByCover.get(key) ?? []) paint(album, colors);
+  /**
+   * A refresh found nothing new: the snapshot built so far, if any, says it's as recent as the last sync of the
+   * sources it shows (`sources`: every source, as the library has them).
+   */
+  restamp(sources: readonly { id: number; lastSyncAt?: string }[]) {
+    const snap = this.existing();
+    if (!snap) return;
+    const shown = this.sources && new Set(this.sources);
+    const at = sources.flatMap((s) => (s.lastSyncAt && (!shown || shown.has(s.id)) ? [s.lastSyncAt] : [])).sort().at(-1);
+    if (at) snap.stats = { ...snap.stats, refreshedAt: at };
+  }
+
+  /** A cover was just read: the albums it's the cover of, and their songs, take its colors at once. True if there were any. */
+  colorCover(key: string, colors: CoverColors | undefined): boolean {
+    const albums = this.existing()?.albumsByCover.get(key) ?? [];
+    for (const album of albums) paint(album, colors);
+    return albums.length > 0;
   }
 
   /** Every artwork URL the library references (for cache warming). */
@@ -110,12 +174,7 @@ export abstract class LibraryView {
 
   /** Library artist by name (ignoring case and accents), with its MusicBrainz id. */
   async artistByName(name: string): Promise<{ id: number; mbid: string } | undefined> {
-    const snap = await this.ready();
-    const want = normalize(name);
-    for (const [mbid, id] of snap.artistIdByMbid) {
-      if (normalize(snap.artists.get(id)?.name ?? '') === want) return { id, mbid };
-    }
-    return undefined;
+    return (await this.ready()).artistByName.get(normalize(name));
   }
 
   async stats(): Promise<LibraryStats | undefined> {
@@ -123,8 +182,13 @@ export abstract class LibraryView {
   }
 
   async artists(): Promise<Artist[]> {
-    const snap = await this.ready();
-    return [...snap.artists.values()].sort(bySortName);
+    return [...sortedArtists(await this.ready())];
+  }
+
+  /** One page of the artists, A to Z, and how many there are in all. */
+  async artistPage(offset: number, limit: number): Promise<ArtistPage> {
+    const all = sortedArtists(await this.ready());
+    return { artists: all.slice(offset, offset + limit), total: all.length, version: this.listVersion };
   }
 
   async artist(id: number): Promise<ArtistDetail | undefined> {
@@ -147,20 +211,14 @@ export abstract class LibraryView {
   }
 
   async albums(sort: AlbumSort = 'artist', limit?: number): Promise<Album[]> {
-    const snap = await this.ready();
-    const list = [...snap.albums.values()].map(stripAlbum);
-    const cmp: Record<AlbumSort, (a: Album, b: Album) => number> = {
-      title: (a, b) => a.title.localeCompare(b.title),
-      artist: (a, b) => {
-        const aa = snap.artists.get(a.artistId);
-        const ba = snap.artists.get(b.artistId);
-        return (aa && ba ? bySortName(aa, ba) : 0) || (a.releaseDate ?? '').localeCompare(b.releaseDate ?? '');
-      },
-      year: (a, b) => (b.releaseDate ?? '').localeCompare(a.releaseDate ?? ''),
-      added: (a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''),
-    };
-    list.sort(cmp[sort]);
-    return limit ? list.slice(0, limit) : list;
+    const sorted = sortedAlbums(await this.ready(), sort);
+    return (limit ? sorted.slice(0, limit) : sorted).map(stripAlbum);
+  }
+
+  /** One page of the albums in this order, and how many there are in all. */
+  async albumPage(sort: AlbumSort, offset: number, limit: number): Promise<AlbumPage> {
+    const sorted = sortedAlbums(await this.ready(), sort);
+    return { albums: sorted.slice(offset, offset + limit).map(stripAlbum), total: sorted.length, version: this.listVersion };
   }
 
   async randomAlbums(count: number): Promise<Album[]> {
@@ -208,40 +266,55 @@ export abstract class LibraryView {
     const snap = await this.ready();
     const q = normalize(query);
     if (!q) return { artists: [], albums: [], tracks: [] };
+    const { search: index } = snap;
 
-    const rank = <T>(items: Iterable<T>, fields: (item: T) => string[], score = scoreMatch) =>
-      [...items]
-        .map((item) => ({ item, score: Math.max(...fields(item).map((f) => score(q, f))) }))
-        .filter((r) => r.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit)
-        .map((r) => r.item);
-
+    const exact = matchScorer(q);
     const found: SearchResults = {
-      artists: rank(snap.artists.values(), (a) => [a.name]),
-      albums: rank(snap.albums.values(), (a) => [a.title, `${a.artistName} ${a.title}`]).map(stripAlbum),
-      tracks: rank(snap.tracks, (t) => [t.title, `${t.artistName} ${t.title}`]),
+      artists: best(index.artists, [index.artistNames], exact, limit),
+      albums: best(index.albums, [index.albumTitles, index.albumFull], exact, limit).map(stripAlbum),
+      tracks: best(snap.tracks, [index.trackTitles, index.trackFull], exact, limit),
     };
     if (found.artists.length || found.albums.length || found.tracks.length) return found;
 
     // Nothing as typed: what's a letter or two away, for a typo ("radiohed"). Only then, as it reads every name.
+    const close = nearScorer(q);
     const near: SearchResults = {
-      artists: rank(snap.artists.values(), (a) => [a.name], scoreNearMatch),
-      albums: rank(snap.albums.values(), (a) => [`${a.artistName} ${a.title}`], scoreNearMatch).map(stripAlbum),
-      tracks: rank(snap.tracks, (t) => [`${t.artistName} ${t.title}`], scoreNearMatch),
+      artists: best(index.artists, [index.artistNames], close, limit),
+      albums: best(index.albums, [index.albumFull], close, limit).map(stripAlbum),
+      tracks: best(snap.tracks, [index.trackFull], close, limit),
     };
     return near.artists.length || near.albums.length || near.tracks.length ? { ...near, near: true } : found;
   }
+}
+
+/**
+ * The `limit` items scoring highest on any of their texts (each list of `texts` lined up with `items`), best first,
+ * in the items' own order where scores tie; none scoring 0.
+ */
+function best<T>(items: T[], texts: string[][], score: (text: string) => number, limit: number): T[] {
+  const hits: { index: number; score: number }[] = [];
+  for (let i = 0; i < items.length; i++) {
+    let top = 0;
+    for (const list of texts) top = Math.max(top, score(list[i]!));
+    if (top > 0) hits.push({ index: i, score: top });
+  }
+  return hits
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, limit)
+    .map((hit) => items[hit.index]!);
 }
 
 /** The whole library: every enabled source, synced into the catalog and served from memory. */
 export class Library extends LibraryView {
   readonly sources = null;
   version = 0;
+  protected painted = 0;
   lastError: string | null = null;
   private snapshot: Snapshot | null = null;
   /** The rows the snapshot was built from: views build theirs from the same rows. */
   private rows: CatalogRows | null = null;
+  /** The catalog's generation the rows were read at (CatalogStore.generation): while it stays, so do they. */
+  private rowsGeneration = -1;
   /** One view per distinct set of sources, shared by every account with that set. */
   private readonly views = new Map<string, LibraryView>();
   private inflight: Promise<void> | null = null;
@@ -269,16 +342,24 @@ export class Library extends LibraryView {
     const key = ids.join(',');
     let view = this.views.get(key);
     if (!view) {
-      view = new SourceView(ids, { version: () => this.version, rows: () => this.rows, ready: () => this.ready(), colors: this.colors });
+      view = new SourceView(ids, {
+        version: () => this.version,
+        painted: () => this.painted,
+        rows: () => this.rows,
+        ready: () => this.ready(),
+        colors: this.colors,
+      });
       this.views.set(key, view);
     }
     return view;
   }
 
   /** Colors the library's albums and every view's. */
-  override colorCover(key: string, colors: CoverColors | undefined) {
-    super.colorCover(key, colors);
-    for (const view of this.views.values()) view.colorCover(key, colors);
+  override colorCover(key: string, colors: CoverColors | undefined): boolean {
+    let any = super.colorCover(key, colors);
+    for (const view of this.views.values()) any = view.colorCover(key, colors) || any;
+    if (any) this.painted++;
+    return any;
   }
 
   protected current(): Snapshot | null {
@@ -294,10 +375,34 @@ export class Library extends LibraryView {
     return this.snapshot!;
   }
 
-  private setSnapshot(rows: CatalogRows) {
+  /** The catalog as it is now, with the generation it's at. */
+  private load(): { rows: CatalogRows; generation: number } {
+    return { generation: this.store.generation, rows: this.store.load() };
+  }
+
+  private setSnapshot({ rows, generation }: { rows: CatalogRows; generation: number }) {
     this.rows = rows;
+    this.rowsGeneration = generation;
     this.snapshot = toSnapshot(buildCatalog(rows), this.colors);
     this.version++;
+  }
+
+  /**
+   * Whether the catalog changed since the snapshot was built: a source had something new, or one was added, removed,
+   * changed or moved.
+   */
+  private get stale(): boolean {
+    return !this.snapshot || this.store.generation !== this.rowsGeneration;
+  }
+
+  /** Nothing changed: the snapshot stands, and it and every view's are as recent as the sources' syncs just now. */
+  private touch() {
+    if (!this.rows) return;
+    const synced = this.store.syncTimes();
+    // Views built from these rows later take the new times too.
+    for (const source of this.rows.sources) source.lastSyncAt = synced.get(source.id) ?? source.lastSyncAt;
+    this.restamp(this.rows.sources);
+    for (const view of this.views.values()) view.restamp(this.rows.sources);
   }
 
   /** Called after every successful refresh. */
@@ -308,7 +413,7 @@ export class Library extends LibraryView {
   /** Serve the catalog saved by a previous run, so a restart doesn't wait on the sources. */
   loadStored(): boolean {
     if (!this.store.hasData()) return false;
-    this.setSnapshot(this.store.load());
+    this.setSnapshot(this.load());
     this.log.info(`Library loaded from the database: ${this.snapshot!.stats.albums} albums`);
     return true;
   }
@@ -320,7 +425,7 @@ export class Library extends LibraryView {
 
   /** Rebuild from the stored catalog without syncing, e.g. after a source was removed or reordered. */
   reload() {
-    this.setSnapshot(this.store.load());
+    this.setSnapshot(this.load());
     for (const listener of this.listeners) listener(this);
   }
 
@@ -334,19 +439,24 @@ export class Library extends LibraryView {
   }
 
   /**
-   * Sync every source (or just `only`; the others keep their last sync) into the catalog and rebuild.
-   * Concurrent callers share one refresh.
+   * Sync every source (or just `only`; the others keep their last sync) into the catalog and rebuild, unless
+   * nothing changed. Concurrent callers share one refresh.
    */
   refresh(only?: number): Promise<void> {
     const started = Date.now();
     this.inflight ??= this.build(only)
-      .then((rows) => {
-        this.setSnapshot(rows);
+      .then((loaded) => {
+        if (loaded) this.setSnapshot(loaded);
+        else this.touch();
         this.lastError = null;
         const s = this.snapshot!.stats;
+        const took = `${((Date.now() - started) / 1000).toFixed(1)}s`;
         this.log.info(
-          `Library refreshed: ${s.artists} artists, ${s.albums} albums, ${s.tracks} tracks in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+          loaded
+            ? `Library refreshed: ${s.artists} artists, ${s.albums} albums, ${s.tracks} tracks in ${took}`
+            : `Library refreshed, nothing changed: ${s.tracks} tracks in ${took}`,
         );
+        // Listeners warm artwork and read covers' colors, trying again what failed before: they hear of every refresh.
         for (const listener of this.listeners) listener(this);
       })
       .catch((err: Error) => {
@@ -360,7 +470,8 @@ export class Library extends LibraryView {
     return this.inflight;
   }
 
-  private async build(only?: number): Promise<CatalogRows> {
+  /** Sync the sources into the catalog: the catalog to build from, or null when it hasn't changed (the snapshot stands). */
+  private async build(only?: number): Promise<{ rows: CatalogRows; generation: number } | null> {
     const sources = this.syncSources().filter((s) => only === undefined || s.id === only);
     const failures: Error[] = [];
     // In Settings order: later sources match their files against what earlier ones reported.
@@ -376,7 +487,9 @@ export class Library extends LibraryView {
     // One unreachable source shouldn't hide the others: its last sync stays in the catalog.
     if (failures.length && failures.length === sources.length) throw failures[0];
     for (const err of failures) this.log.error(`A source failed to sync: ${err.message}`);
-    return this.store.load();
+    // No source had anything new, and none was added, removed, changed or moved: rebuilding 100,000 songs for
+    // nothing kept the server busy for seconds every ten minutes.
+    return this.stale ? this.load() : null;
   }
 
   /**
@@ -394,7 +507,9 @@ export class Library extends LibraryView {
         this.log.error(`Rebuilding a source failed: ${(err as Error).message}`);
       }
     }
-    this.setSnapshot(this.store.load());
+    // Matches that change nothing the catalog holds (songs still not found, say) leave the snapshot as it is.
+    if (!this.stale) return;
+    this.setSnapshot(this.load());
     this.log.info(`Library rebuilt from the last scan in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     for (const listener of this.listeners) listener(this);
   }
@@ -427,6 +542,7 @@ class SourceView extends LibraryView {
     readonly sources: readonly number[],
     private readonly library: {
       version: () => number;
+      painted: () => number;
       rows: () => CatalogRows | null;
       ready: () => Promise<unknown>;
       colors?: CoverColorSource;
@@ -437,6 +553,10 @@ class SourceView extends LibraryView {
 
   get version(): number {
     return this.library.version();
+  }
+
+  protected get painted(): number {
+    return this.library.painted();
   }
 
   protected current(): Snapshot | null {
@@ -461,6 +581,31 @@ class SourceView extends LibraryView {
   }
 }
 
+/** The albums in an order lists ask for, sorted on first asking and kept with the snapshot. */
+function sortedAlbums(snap: Snapshot, sort: AlbumSort): AlbumDetail[] {
+  let sorted = snap.sorted.albums.get(sort);
+  if (!sorted) {
+    const cmp: Record<AlbumSort, (a: AlbumDetail, b: AlbumDetail) => number> = {
+      title: (a, b) => collator.compare(a.title, b.title),
+      artist: (a, b) => {
+        const aa = snap.artists.get(a.artistId);
+        const ba = snap.artists.get(b.artistId);
+        return (aa && ba ? bySortName(aa, ba) : 0) || collator.compare(a.releaseDate ?? '', b.releaseDate ?? '');
+      },
+      year: (a, b) => collator.compare(b.releaseDate ?? '', a.releaseDate ?? ''),
+      added: (a, b) => collator.compare(b.addedAt ?? '', a.addedAt ?? ''),
+    };
+    sorted = [...snap.albums.values()].sort(cmp[sort]);
+    snap.sorted.albums.set(sort, sorted);
+  }
+  return sorted;
+}
+
+/** The artists A to Z, sorted on first asking and kept with the snapshot. */
+function sortedArtists(snap: Snapshot): Artist[] {
+  return (snap.sorted.artists ??= [...snap.artists.values()].sort(bySortName));
+}
+
 function toSnapshot(catalog: Catalog, colors?: CoverColorSource): Snapshot {
   const albumsByCover = new Map<string, AlbumDetail[]>();
   for (const album of catalog.albums.values()) {
@@ -472,14 +617,42 @@ function toSnapshot(catalog: Catalog, colors?: CoverColorSource): Snapshot {
     const found = colors?.get(key);
     if (found) paint(album, found);
   }
+  // Names repeat (an artist's on each of their songs, "Intro" on many albums): each is normalized once.
+  const normalized = new Map<string, string>();
+  const norm = (s: string) => {
+    let n = normalized.get(s);
+    if (n === undefined) normalized.set(s, (n = normalize(s)));
+    return n;
+  };
+  // normalize("artist title") is normalize("artist") + " " + normalize("title"): the space between them is one.
+  const both = (a: string, b: string) => (a && b ? `${a} ${b}` : a || b);
+  const artists = [...catalog.artists.values()];
+  const albums = [...catalog.albums.values()];
+  const trackTitles = catalog.tracks.map((t) => norm(t.title));
+  const artistByName = new Map<string, { id: number; mbid: string }>();
+  for (const [mbid, id] of catalog.artistIdByMbid) {
+    const name = norm(catalog.artists.get(id)?.name ?? '');
+    if (!artistByName.has(name)) artistByName.set(name, { id, mbid });
+  }
   return {
     ...catalog,
-    albumIdByKey: new Map([...catalog.albums.values()].map((a) => [albumKey(a.artistName, a.title), a.id])),
+    albumIdByKey: new Map(albums.map((a) => [`${norm(a.artistName)}|${norm(baseTitle(a.title) || a.title)}`, a.id])),
     trackById: new Map(catalog.tracks.map((t) => [t.id, t])),
     trackByRecording: indexByRecording(catalog.tracks),
-    trackByName: indexByName(catalog.tracks),
+    trackByName: indexByName(catalog.tracks, trackTitles, norm),
+    artistByName,
     artwork: artworkKeys(catalog),
     albumsByCover,
+    search: {
+      artists,
+      artistNames: artists.map((a) => norm(a.name)),
+      albums,
+      albumTitles: albums.map((a) => norm(a.title)),
+      albumFull: albums.map((a) => both(norm(a.artistName), norm(a.title))),
+      trackTitles,
+      trackFull: catalog.tracks.map((t, i) => both(norm(t.artistName), trackTitles[i]!)),
+    },
+    sorted: { albums: new Map() },
   };
 }
 
@@ -511,7 +684,7 @@ export function stripAlbum({ tracks: _t, overview: _o, discCount: _d, missingTra
 }
 
 function bySortName(a: Artist, b: Artist) {
-  return a.sortName.localeCompare(b.sortName, undefined, { sensitivity: 'base' });
+  return byBase.compare(a.sortName, b.sortName);
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -524,13 +697,15 @@ function shuffle<T>(arr: T[]): T[] {
 
 export const songKey = (artistName: string, title: string) => `${normalize(artistName)}|${normalize(title)}`;
 
-function indexByName(tracks: Track[]): Map<string, Track> {
+/** Songs by artist and title, the lead artist's too (`titles` lined up with `tracks`, normalized). */
+function indexByName(tracks: Track[], titles: string[], norm: (s: string) => string): Map<string, Track> {
   const map = new Map<string, Track>();
-  for (const t of tracks) {
-    for (const key of new Set([songKey(t.artistName, t.title), songKey(primaryArtist(t.artistName), t.title)])) {
+  tracks.forEach((t, i) => {
+    const title = titles[i]!;
+    for (const key of new Set([`${norm(t.artistName)}|${title}`, `${norm(primaryArtist(t.artistName))}|${title}`])) {
       if (!map.has(key)) map.set(key, t);
     }
-  }
+  });
   return map;
 }
 

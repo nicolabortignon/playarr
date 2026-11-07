@@ -108,11 +108,21 @@ export class Matcher {
   private readonly queue = new Set<number>();
   private running = false;
   private readonly pending = new Map<number, number>();
+  /** The scan (its digest, SourceSync.digest) each source's matching is to look at next. */
+  private readonly scans = new Map<number, string>();
+  /**
+   * The scan each source's matching last looked at and left nothing to try again in. A scan with the same digest is
+   * the same files and matches: there's nothing new in it, and looking took a third of a second at 100,000 files.
+   */
+  private readonly lookedAt = new Map<number, string>();
 
   constructor(private readonly deps: MatcherDeps) {}
 
-  /** Match whatever is new in this source (after a scan). */
-  enqueue(sourceId: number) {
+  /** Match whatever is new in this source (after a scan, with the scan's digest). */
+  enqueue(sourceId: number, scan?: string) {
+    if (scan !== undefined && this.lookedAt.get(sourceId) === scan && !this.queue.has(sourceId)) return;
+    if (scan === undefined) this.scans.delete(sourceId);
+    else this.scans.set(sourceId, scan);
     this.queue.add(sourceId);
     void this.run();
   }
@@ -137,6 +147,9 @@ export class Matcher {
   }
 
   async matchSource(sourceId: number) {
+    const scan = this.scans.get(sourceId);
+    this.scans.delete(sourceId);
+    this.lookedAt.delete(sourceId);
     const groups = this.groups(sourceId);
     this.pending.set(sourceId, groups.length);
     let unsaved = 0;
@@ -160,6 +173,7 @@ export class Matcher {
       }
     }
     if (unsaved) this.deps.onMatched();
+    if (scan !== undefined && !failed) this.lookedAt.set(sourceId, scan);
     this.retryLater(sourceId, failed);
   }
 

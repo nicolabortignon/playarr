@@ -178,6 +178,20 @@ public struct AlbumDetail: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// GET /api/albums with `offset`: one page of the albums, in the order asked for, and how many there are in all. Every page comes from the library at `version`: a later page with another version was read after the library changed, so the pages before it may have moved (start again from the first).
+public struct AlbumPage: Codable, Hashable, Sendable {
+    public var albums: [Album]
+    public var total: Int
+    /// The library's version the page was read from; opaque, compare it for equality only.
+    public var version: String
+
+    public init(albums: [Album], total: Int, version: String) {
+        self.albums = albums
+        self.total = total
+        self.version = version
+    }
+}
+
 /// Identifies an album by name; the server resolves it to a MusicBrainz release group on request.
 public struct AlbumRef: Codable, Hashable, Sendable {
     /// MusicBrainz release-group id, when known.
@@ -445,6 +459,20 @@ public struct ArtistMatch: Codable, Hashable, Sendable {
     public init(mbid: String, artistId: Int? = nil) {
         self.mbid = mbid
         self.artistId = artistId
+    }
+}
+
+/// GET /api/artists with `offset`: one page of the artists, A to Z, as AlbumPage.
+public struct ArtistPage: Codable, Hashable, Sendable {
+    public var artists: [Artist]
+    public var total: Int
+    /// As AlbumPage's.
+    public var version: String
+
+    public init(artists: [Artist], total: Int, version: String) {
+        self.artists = artists
+        self.total = total
+        self.version = version
     }
 }
 

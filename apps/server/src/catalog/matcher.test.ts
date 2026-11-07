@@ -451,3 +451,36 @@ describe('Matcher', () => {
     await vi.waitFor(() => expect(matcher.reviewGroups(sourceId)[0]!.candidates[0]!.detailed).toBe(true));
   });
 });
+
+describe('Matcher: scans it has looked at', () => {
+  /** Matching's pass over the source is over. */
+  const done = (matcher: Matcher, sourceId: number) => vi.waitFor(() => expect(matcher.pendingGroups(sourceId)).toBe(0));
+
+  it('looks at a scan once, while nothing was left to try again: the same scan again has nothing new', async () => {
+    const { matcher, store, sourceId } = setup(mezzanineFiles, { hits: [] });
+    const looks = vi.spyOn(store, 'folderFiles');
+    matcher.enqueue(sourceId, 'scan-1');
+    await done(matcher, sourceId);
+    expect(looks).toHaveBeenCalledTimes(1);
+    expect([...store.matches(sourceId).values()].map((m) => m.state)).toEqual(['unmatched', 'unmatched']);
+    matcher.enqueue(sourceId, 'scan-1');
+    expect(looks).toHaveBeenCalledTimes(1);
+    // Another scan, or asked without one (Match again, the retries): looked at.
+    matcher.enqueue(sourceId, 'scan-2');
+    await done(matcher, sourceId);
+    matcher.enqueue(sourceId);
+    await done(matcher, sourceId);
+    expect(looks).toHaveBeenCalledTimes(3);
+  });
+
+  it('looks at the same scan again when MusicBrainz failed for some of it', async () => {
+    const { matcher, store, sourceId, mb } = setup(mezzanineFiles);
+    mb.searchReleases.mockRejectedValue(new Error('MusicBrainz 503'));
+    const looks = vi.spyOn(store, 'folderFiles');
+    matcher.enqueue(sourceId, 'scan-1');
+    await done(matcher, sourceId);
+    matcher.enqueue(sourceId, 'scan-1');
+    await done(matcher, sourceId);
+    expect(looks).toHaveBeenCalledTimes(2);
+  });
+});
