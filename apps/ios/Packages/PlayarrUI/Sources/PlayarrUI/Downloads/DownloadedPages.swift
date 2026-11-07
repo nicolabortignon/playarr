@@ -16,6 +16,17 @@ extension PinnedDownload {
   }
 }
 
+extension PinnedDownload {
+  /// The covers a download's pages show, with the size they're kept at: its own as a tile, its songs' (their albums')
+  /// as rows.
+  public var keptCovers: [String: Int] {
+    var covers: [String: Int] = [:]
+    for track in tracks { if let path = track.coverUrl { covers[path] = ImageCache.keptRowSize } }
+    if let coverUrl { covers[coverUrl] = ImageCache.keptCoverSize }
+    return covers
+  }
+}
+
 /// The sort Library → Albums opens with, as its query key names it.
 private enum AlbumSortName {
   static let library = QueryKey.albums(.artist).parts[0]
@@ -27,5 +38,11 @@ extension View {
   public func pinningDownloadedPages(_ store: DownloadStore?, pin: @escaping (Set<[String]>) -> Void) -> some View {
     let keys = Set(store?.downloads.flatMap(\.pageKeys) ?? [])
     return onChange(of: keys, initial: true) { _, keys in pin(keys) }
+  }
+
+  /// Keeps the covers of downloads for as long as they're downloaded (`ImageCache.setKept`), fetched as each comes.
+  public func keepingDownloadedCovers(_ store: DownloadStore?, images: ImageCache?) -> some View {
+    let covers = (store?.downloads ?? []).reduce(into: [String: Int]()) { all, d in all.merge(d.keptCovers) { max($0, $1) } }
+    return task(id: covers) { await images?.setKept(covers) }
   }
 }

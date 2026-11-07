@@ -32,6 +32,7 @@ public struct RootView: View {
             .task(id: model.store.active) { await model.checkActiveServer() }
             .task(id: model.store.activeAccount) { model.syncSession() }
             .pinningDownloadedPages(model.session?.player.downloads) { model.session?.queries.setPinned($0) }
+            .keepingDownloadedCovers(model.session?.player.downloads, images: model.session?.images)
     }
 
     @ViewBuilder private var content: some View {

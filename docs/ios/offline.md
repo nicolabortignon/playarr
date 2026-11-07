@@ -17,12 +17,13 @@ Each server and account has one folder, `Application Support/Playarr/<serverId>/
 | `stream/transition-<name>` | Transition files the player fetched while playing (not downloads'). |
 | `offline/transitions/<name>` | Downloads' transition files and MP3 continuations, under the server's names (content keys). |
 | `offline/resume/` | Resume data of interrupted background downloads. |
+| `offline/images/` | Downloads' covers (`ImageCache.setKept`): each download's own at 480 px, its songs' at 160, fetched once it's downloaded, plus the sizes shown since; offline the nearest stands in at any size. Removed with their download. |
 | `offline.json` | The manifest (`OfflineManifest`): every kept song file with its size and last use, downloads' transition files, and the downloads themselves. Written off the main thread a second after it last changed, and at once when the app goes to the background (`DownloadStore.flushSaves`). |
 | `queries/` | The query cache's answers (§8). |
 | `pending-plays.json`, `queue.json`, `resume.json` | Play reports waiting to go, the saved queue, and where it was in the song. |
 | `levels.json` | The even-volume levels of the songs heard most lately, so songs kept as you listen play leveled offline (`LevelStore`). |
 
-`OfflineFolder.prepare()` marks `stream/` and `offline/` `isExcludedFromBackup`: none of it goes to iCloud backups, since it can all be downloaded again. iOS never clears Application Support on its own. Covers are the exception: they live in `Caches/Playarr/<serverId>/<accountId>/images/` (`AccountSession.imageFolder`), which the system may empty.
+`OfflineFolder.prepare()` marks `stream/` and `offline/` `isExcludedFromBackup`: none of it goes to iCloud backups, since it can all be downloaded again. iOS never clears Application Support on its own. Other covers are the exception: they live in `Caches/Playarr/<serverId>/<accountId>/images/` (`AccountSession.imageFolder`), which the system may empty.
 
 ## 2. One book-keeper
 

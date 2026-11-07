@@ -42,7 +42,6 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - iPhone Duo App Store screenshots, required from April 2027 for apps built with the iOS 27.1 SDK. *(phase 11, "Not in this phase")*
 - Accessibility Nutrition Labels on the App Store, once the device checks pass. *(phase 11, "Not in this phase")*
 - Mac and CarPlay. *(iOS app design)*
-- Covers of downloaded albums kept beyond the image cache, so they always show offline. *(phase 7, "Not in this phase")*
 - Seeking inside a DJ transition abandons the mix rather than seeking within it. *(phase 5)*
 - Sideways Now Playing, parts of the spec not built: the tracklist on the iPad and Duo (they still show four songs of Up next), the stage centring the open line with the time left, the header's actions moving into ⋯ at accessibility sizes, Increase Contrast flattening the backdrop, VoiceOver actions on tracklist lines, Undo after swiping a line away. *(sideways Now Playing spec)*
 - `ScreenTour` shots of the stage, lyrics sideways and a DJ-mix join. *(sideways Now Playing spec)*

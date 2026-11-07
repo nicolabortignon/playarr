@@ -86,7 +86,8 @@ public final class AccountSession {
     }
     let queries = QueryCache(directory: folder.appending(path: "queries", directoryHint: .isDirectory))
     queries.setPinned(Set(player.downloads.downloads.flatMap(\.pageKeys)))
-    let images = ImageCache(directory: imageFolder(for: record.key), media: media)
+    // Downloads' covers in the account's folder, which the system never empties.
+    let images = ImageCache(directory: imageFolder(for: record.key), keptDirectory: folder.appending(path: "offline/images"), media: media)
     Task {
       await queries.removeExpired()
       await images.prune()

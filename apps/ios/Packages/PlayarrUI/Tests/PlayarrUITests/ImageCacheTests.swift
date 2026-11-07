@@ -34,6 +34,41 @@ import Testing
     #expect(await next.data("/art/album/70/cover", size: 320) == Data("jpeg bytes".utf8))
   }
 
+  func cache(keptIn kept: URL, _ handler: @escaping FakeServer.Handler) -> ImageCache {
+    let media = MediaURLs(baseURL: URL(string: "http://\(host)")!, token: "tok")
+    return ImageCache(directory: directory, keptDirectory: kept, media: media, session: FakeServer.session(host: host, handler), retryDelay: .zero)
+  }
+
+  @Test func keepsDownloadsCoversWhereTheSystemDoesntEmptyAndShowsThemOfflineAtAnySize() async throws {
+    let kept = FileManager.default.temporaryDirectory.appending(path: "kept-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let asked = Mutex<[String]>([])
+    let online = cache(keptIn: kept) { request in
+      asked.withLock { $0.append(request.url!.query() ?? "") }
+      return (200, "cover \(request.url!.query() ?? "")")
+    }
+    await online.setKept(["/art/album/70/cover": ImageCache.keptCoverSize, "/art/album/71/cover": ImageCache.keptRowSize])
+    #expect(asked.withLock { $0 }.sorted() == ["size=160", "size=480"])
+    // Kept already: not asked again.
+    await online.setKept(["/art/album/70/cover": ImageCache.keptCoverSize, "/art/album/71/cover": ImageCache.keptRowSize])
+    #expect(asked.withLock { $0.count } == 2)
+
+    // The system emptied Caches; offline, the kept cover stands in at whatever size a page asks for.
+    try? FileManager.default.removeItem(at: directory)
+    let offline = cache(keptIn: kept) { _ in (503, "") }
+    await offline.setKept(["/art/album/70/cover": ImageCache.keptCoverSize, "/art/album/71/cover": ImageCache.keptRowSize])
+    #expect(await offline.data("/art/album/70/cover", size: 960) == Data("cover size=480".utf8))
+    #expect(await offline.data("/art/album/70/cover", size: 160) == Data("cover size=480".utf8))
+    #expect(await offline.data("/art/album/71/cover", size: 320) == Data("cover size=160".utf8))
+    // Not a download's: nothing to stand in.
+    #expect(await offline.data("/art/album/72/cover", size: 320) == nil)
+
+    // A download removed: its covers go.
+    await offline.setKept(["/art/album/71/cover": ImageCache.keptRowSize])
+    #expect(await offline.data("/art/album/70/cover", size: 480) == nil)
+    let left = try FileManager.default.contentsOfDirectory(atPath: kept.path(percentEncoded: false))
+    #expect(left.count == 1)
+  }
+
   @Test func triesOnceMoreAfterAFailure() async {
     let asked = Mutex(0)
     let images = cache { request in
