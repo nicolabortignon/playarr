@@ -47,6 +47,17 @@ export function endOfSongLine({ time, duration, next, plan, ready, bar, fade = 0
   return left <= NEXT_LEAD_S ? `Next: ${next.title}` : undefined;
 }
 
+/** The last bar's line where the whole one won't fit (the mini player): the title was said a moment before. */
+export const NEXT_BAR_SHORT = 'Mixing on the next bar';
+
+/**
+ * What `line` says where it's short of room: the last bar's "Mixing into Teardrop on the next bar" says "Mixing on the
+ * next bar" (as the iOS app's `EndOfSong.Words`); undefined for a line that can be cut short at its end.
+ */
+export function shortEndOfSongLine(line: string): string | undefined {
+  return line.startsWith('Mixing into ') && line.endsWith(' on the next bar') ? NEXT_BAR_SHORT : undefined;
+}
+
 /**
  * `endOfSongLine` for the song playing, re-rendering only when the words change. Nothing when the sleep timer stops
  * the music after this song: nothing follows it. Once a blend out of it is heard (player/blend.ts), "Mixing into

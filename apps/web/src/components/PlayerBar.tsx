@@ -1,6 +1,6 @@
 import type { Track } from '@playarr/shared';
 import { List, Maximize2, Play, Quote, SkipForward, Volume1, Volume2, VolumeX } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { sized } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -11,7 +11,7 @@ import { useUI, type SideColumnView } from '../lib/ui';
 import { useColumnLayout } from '../lib/useMediaQuery';
 import { openNowPlaying } from '../lib/viewTransitions';
 import { playAlbum } from '../player/actions';
-import { useEndOfSongLine } from '../player/endOfSong';
+import { shortEndOfSongLine, useEndOfSongLine } from '../player/endOfSong';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
 import { Button } from './Button';
 import { Cover } from './Cover';
@@ -163,19 +163,55 @@ function Idle() {
  */
 function Subtitle({ track, link }: { track: Track; link?: boolean }) {
   const ending = useEndOfSongLine();
-  if (ending) {
-    return (
-      <span key={ending} className="block animate-fade truncate type-small text-muted">
-        {ending}
-      </span>
-    );
-  }
+  if (ending) return <EndingLine key={ending} text={ending} short={shortEndOfSongLine(ending)} />;
   return link ? (
     <Link to={`/artists/${track.artistId}`} className="block truncate type-small text-muted hover:text-paper-dim hover:underline">
       {track.artistName}
     </Link>
   ) : (
     <span className="block truncate type-small text-muted">{track.artistName}</span>
+  );
+}
+
+/**
+ * The end-of-song line on one line: where the whole of it won't fit (the mini player on a phone), the last bar's says
+ * "Mixing on the next bar" instead, rather than losing "on the next bar" off its end. The whole line is measured, out
+ * of sight, against the room there is; a screen reader hears it whole either way.
+ */
+function EndingLine({ text, short }: { text: string; short?: string }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const whole = useRef<HTMLSpanElement>(null);
+  const [cramped, setCramped] = useState(false);
+  useLayoutEffect(() => {
+    const room = box.current;
+    const line = whole.current;
+    if (!short || !room || !line) return;
+    const measure = () => setCramped(line.scrollWidth > room.clientWidth);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(room);
+    return () => watch.disconnect();
+  }, [short]);
+  return (
+    <span ref={box} className="relative block animate-fade truncate type-small text-muted">
+      {short && cramped ? (
+        <>
+          <span aria-hidden="true">{short}</span>
+          <span className="sr-only">{text}</span>
+        </>
+      ) : (
+        text
+      )}
+      {/* The whole line, measured: drawn by CSS from an attribute, so it's never a second copy of the words. */}
+      {short && (
+        <span
+          ref={whole}
+          aria-hidden="true"
+          data-text={text}
+          className="invisible absolute top-0 left-0 whitespace-nowrap after:content-[attr(data-text)]"
+        />
+      )}
+    </span>
   );
 }
 

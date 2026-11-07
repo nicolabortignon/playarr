@@ -154,6 +154,30 @@ describe('the end of a song', () => {
     expect(screen.getByText('Mixing into Teardrop')).toBeTruthy();
   });
 
+  it('says "Mixing on the next bar" where the whole line won’t fit, and reads it whole', async () => {
+    // The whole line is 320 px; the mini player has 200.
+    const owner = (name: string) => (Object.getOwnPropertyDescriptor(HTMLElement.prototype, name) ? HTMLElement.prototype : Element.prototype);
+    const scroll = vi.spyOn(owner('scrollWidth'), 'scrollWidth', 'get').mockImplementation(function (this: Element) {
+      return this instanceof HTMLElement && this.dataset.text ? 320 : 0;
+    });
+    const client = vi.spyOn(owner('clientWidth'), 'clientWidth', 'get').mockReturnValue(200);
+    try {
+      usePrefs.setState({ transitions: 'dj' });
+      const plan = { style: 'long', aStart: 180, beats: 32 } as TransitionPlan;
+      useTransition.setState({ fromFileId: 1, toFileId: 2, result: { status: 'ready', plan, url: '/transitions/1.flac' } });
+      view('/', <MiniPlayer />);
+      await at(178.5);
+      expect(screen.getByText('Mixing on the next bar')).toBeTruthy();
+      expect(screen.getByText('Mixing into Teardrop on the next bar').className).toContain('sr-only');
+      // Then mixing: a line that can lose its end, said as it is.
+      await at(182);
+      expect(screen.getByText('Mixing into Teardrop')).toBeTruthy();
+    } finally {
+      scroll.mockRestore();
+      client.mockRestore();
+    }
+  });
+
   it('keeps saying it’s mixing for as long as the blend is heard, even once the transitions store has let its answer go', async () => {
     usePrefs.setState({ transitions: 'dj' });
     const plan = { style: 'long', aStart: 180, beats: 32 } as TransitionPlan;

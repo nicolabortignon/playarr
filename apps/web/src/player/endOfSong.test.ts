@@ -1,6 +1,6 @@
 import type { TransitionPlan } from '@playarr/mix';
 import { describe, expect, it } from 'vitest';
-import { endOfSongLine, NEXT_LEAD_S } from './endOfSong';
+import { endOfSongLine, NEXT_BAR_SHORT, NEXT_LEAD_S, shortEndOfSongLine } from './endOfSong';
 
 const next = { title: 'Teardrop' };
 const blend = (aStart: number, style: TransitionPlan['style'] = 'long') => ({ style, aStart });
@@ -48,5 +48,13 @@ describe('the end of a song, in the player’s subtitle', () => {
     }
     // The ten seconds count to where the plan has the song give way.
     expect(endOfSongLine({ duration: 200, next, plan: blend(180, 'fade'), ready: true, time: 169 })).toBeUndefined();
+  });
+
+  it('has a short form only for the last bar, where the title was said a moment before', () => {
+    expect(shortEndOfSongLine('Mixing into Teardrop on the next bar')).toBe(NEXT_BAR_SHORT);
+    expect(shortEndOfSongLine('Mixing into Teardrop')).toBeUndefined();
+    expect(shortEndOfSongLine('Next: Teardrop')).toBeUndefined();
+    // A title that happens to end so is still the title.
+    expect(shortEndOfSongLine('Next: Mixing on the next bar')).toBeUndefined();
   });
 });
