@@ -40,12 +40,19 @@ public struct QuickPlay {
     session.player.play(favorites.map(\.track), source: PlaySource(label: "Favorites", href: "/favorites"))
   }
 
-  /// Home's Feeling lucky: 15 songs put together on the server now, starting from one that suits the hour.
-  public func feelingLucky() async throws(Failure) {
+  /// Home's Feeling lucky: 15 songs put together on the server now, starting from one that suits the hour; `mix`, the
+  /// songs when the button asked for them ahead (`NextLucky`), else they're asked for now (apps/web/src/player/actions.ts
+  /// `feelingLucky(mix)`). The songs it plays.
+  @discardableResult
+  public func feelingLucky(_ mix: Task<LuckyMix, any Error>? = nil) async throws(Failure) -> [Track] {
     let session = try signedIn()
-    let lucky = try await ask(session) { try await $0.send(API.Mixes.lucky()) }
+    let lucky = try await ask(session) { api in
+      if let mix { return try await mix.value }
+      return try await api.send(API.Mixes.lucky())
+    }
     guard !lucky.tracks.isEmpty else { throw .emptyLibrary }
     session.player.play(lucky.tracks, source: PlaySource(label: "Feeling lucky · \(lucky.subtitle)", href: "/"))
+    return lucky.tracks
   }
 
   /// The song playing, then songs like it ("<title> radio").

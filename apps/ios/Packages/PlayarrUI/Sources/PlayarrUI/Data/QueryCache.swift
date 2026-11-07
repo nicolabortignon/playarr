@@ -47,6 +47,12 @@ public final class QueryCache {
     return (stored.value, stored.updatedAt)
   }
 
+  /// The answers in memory whose keys are named one of `names`, as `T`: what has been loaded already, whatever its
+  /// parts (Feeling lucky's covers at hand, as the web's `getQueriesData`).
+  public func values<T: Codable & Sendable>(named names: Set<String>, as type: T.Type = T.self) -> [T] {
+    memory.compactMap { key, entry in names.contains(key.name) ? entry.value as? T : nil }
+  }
+
   /// No answer yet, or it's older than `after` seconds.
   public func isStale(_ key: QueryKey, after: TimeInterval) -> Bool {
     guard let updatedAt = memory[key]?.updatedAt else { return true }

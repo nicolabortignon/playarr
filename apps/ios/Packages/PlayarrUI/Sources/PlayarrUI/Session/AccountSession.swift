@@ -29,6 +29,8 @@ public final class AccountSession {
   public var picking: PlaylistPick?
   /// What this account searched for lately on this device (Search's empty page).
   public let recentSearches: RecentSearches
+  /// Feeling lucky's next press, asked for once one looks likely.
+  let nextLucky: NextLucky
 
   /// `recentSearches`: where the account's recent searches are kept on this device (nil: in memory only).
   public init(
@@ -55,6 +57,7 @@ public final class AccountSession {
     playlists = PlaylistsStore(api: api, queries: queries, toasts: toasts)
     mixes = MixesStore(api: api, queries: queries)
     self.recentSearches = RecentSearches(file: recentSearches)
+    nextLucky = NextLucky(api: api, queries: queries, images: images)
   }
 
   /// The account's folder: Application Support/Playarr/<server id>/<account id>/ (queue, plays, stream cache, answers,

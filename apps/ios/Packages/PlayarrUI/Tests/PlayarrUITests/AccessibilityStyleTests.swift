@@ -34,4 +34,11 @@ import Testing
     let back = Twinkle.pose(0, at: 1.2)
     #expect(back.0 == 1 && back.2 == 1)
   }
+
+  /// SwiftUI can draw an animation's frames off the main thread (iOS 26), where a closure of `body` traps (build 684):
+  /// the stars are drawn by functions outside the main actor, which run on any thread.
+  @Test func drawsTheStarsOffTheMainThread() async {
+    let stars = await Task.detached { String(describing: type(of: Twinkle.stars(at: 0.3))) }.value
+    #expect(stars.contains("Canvas"))
+  }
 }

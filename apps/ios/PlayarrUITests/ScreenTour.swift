@@ -342,6 +342,28 @@ final class ScreenTour: XCTestCase {
     }
   }
 
+  /// Feeling lucky dealing a hand of covers from behind it, slowed down to be caught mid-deal (`-UITestsSlowFan`, Debug
+  /// builds only): Home's, held a moment first as a finger is, so the songs are asked for as it touches. On the iPad also
+  /// the idle player bar's, outlined, its songs slow to come (`-UITestsSlowLucky`): the covers at hand go out while they're
+  /// picked, before the bar turns to the song playing.
+  @MainActor
+  func testFeelingLuckyDealsAHand() throws {
+    let pad = onIPad
+    if pad { XCUIDevice.shared.orientation = .landscapeLeft }
+    defer { XCUIDevice.shared.orientation = .portrait }
+    launch(["-UITests", "-UITestsDemo", "-UITestsSlowFan", "12"])
+    _ = app.staticTexts["8 songs across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
+    let onHome = app.scrollViews.buttons["Feeling lucky"].firstMatch
+    if onHome.waitForExistence(timeout: 5) {
+      onHome.press(forDuration: 0.5)
+      shot("01c-feeling-lucky", after: 2.5)
+    }
+    guard pad else { return }
+    launch(["-UITests", "-UITestsDemo", "-UITestsSlowFan", "12", "-UITestsSlowLucky"])
+    let inBar = app.descendants(matching: .any)["playerBar"].buttons["Feeling lucky"]
+    if tap(inBar, timeout: 10) { shot("01d-feeling-lucky-player-bar", after: 2.5) }
+  }
+
   /// The iPhone held sideways: Home, the gatefold pages, the artist, Library, Search and Now Playing's sleeve.
   @MainActor
   func testTheMainScreensSideways() throws {

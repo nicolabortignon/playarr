@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import PlayarrAPI
 import PlayarrUI
 import SwiftUI
 
@@ -48,6 +49,8 @@ struct PlayarrApp: App {
   /// `-UITestsTurnToOpen` turns on Settings → Appearance → Turn to open, and `-UITestsRestore` brings back where the
   /// last run was (otherwise each run starts on Home).
   /// `-UITestsDownloads` (Debug builds) opens Library → Downloads on made-up downloads (`DownloadsDemoView`).
+  /// For the screen tour (Debug builds), `-UITestsSlowFan <times>` slows Feeling lucky's fan of covers down (`CoverFan`),
+  /// and with the demo `-UITestsSlowLucky` has its songs take 8 seconds to come.
   static func makeModel() -> AppModel {
     let arguments = ProcessInfo.processInfo.arguments
     if arguments.contains("-UITestsRequests") {
@@ -57,7 +60,7 @@ struct PlayarrApp: App {
     }
     if arguments.contains("-UITestsDemo") {
       // -UITestsOffline: a server that can't be reached. -UITestsLongQueue: 5,000 songs queued, paused.
-      let model = AppModel.demo(api: arguments.contains("-UITestsOffline") ? OfflineAPI() : nil)
+      let model = AppModel.demo(api: arguments.contains("-UITestsOffline") ? OfflineAPI() : demoAPI(arguments))
       model.restoresPlace = arguments.contains("-UITestsRestore")
       model.appearance.turnToOpen = arguments.contains("-UITestsTurnToOpen")
       if arguments.contains("-UITestsLongQueue"), let player = model.session?.player {
@@ -72,5 +75,13 @@ struct PlayarrApp: App {
       return model
     }
     return .live()
+  }
+
+  /// The demo's own server, unless `-UITestsSlowLucky` (Debug builds) has its Feeling lucky take its time.
+  private static func demoAPI(_ arguments: [String]) -> (any APISending)? {
+    #if DEBUG
+      if arguments.contains("-UITestsSlowLucky") { return SlowLuckyAPI() }
+    #endif
+    return nil
   }
 }
