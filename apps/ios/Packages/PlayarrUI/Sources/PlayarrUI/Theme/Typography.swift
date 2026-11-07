@@ -12,9 +12,10 @@ public enum Typography {
   static let sans = "Schibsted Grotesk"
   static let display = "Gloock"
   static let mono = "DM Mono"
+  static let monoMedium = "DMMono-Medium"
 
-  /// Makes the bundled fonts available to this process and puts the navigation bars' titles in them. Once, before the
-  /// first screen (later calls do nothing).
+  /// Makes the bundled fonts available to this process and puts the navigation bars' titles in them, bolder while Bold
+  /// Text is on. Once, before the first screen (later calls do nothing).
   @MainActor public static func register() {
     guard !registered else { return }
     registered = true
@@ -24,6 +25,19 @@ public enum Typography {
       CTFontManagerRegisterFontsForURL(file as CFURL, .process, nil)
     }
     #if canImport(UIKit)
+      styleBars()
+      // Bars made from now on take the new weight; the ones on screen keep theirs until they're made again.
+      NotificationCenter.default.addObserver(forName: UIAccessibility.boldTextStatusDidChangeNotification, object: nil, queue: .main) { _ in
+        MainActor.assumeIsolated { styleBars() }
+      }
+    #endif
+  }
+
+  #if canImport(UIKit)
+    /// The navigation bars' titles in the bundled fonts: their weights a step up while Bold Text is on, as the system's
+    /// would be (Gloock, which has one weight, stays as it is).
+    @MainActor private static func styleBars() {
+      let bold = UIAccessibility.isBoldTextEnabled
       let bar = UINavigationBar.appearance()
       let appearance = UINavigationBarAppearance()
       if let title = UIFont(name: display, size: size(.largeTitle)) {
@@ -31,13 +45,13 @@ public enum Typography {
         bar.largeTitleTextAttributes = attributes
         appearance.largeTitleTextAttributes = attributes
       }
-      if let title = UIFont(name: sans, size: size(.headline))?.withWeight(.semibold) {
+      if let title = UIFont(name: sans, size: size(.headline))?.withWeight(bold ? .bold : .semibold) {
         let attributes: [NSAttributedString.Key: Any] = [.font: UIFontMetrics(forTextStyle: .headline).scaledFont(for: title)]
         bar.titleTextAttributes = attributes
         appearance.titleTextAttributes = attributes
       }
       // The count under a page's title ("128 albums", `pageHeader(_:count:)`): the meta role, DM Mono in `.muted`.
-      if let count = UIFont(name: mono, size: size(.caption)) {
+      if let count = UIFont(name: bold ? monoMedium : mono, size: size(.caption)) {
         let muted = UIColor { UIColor(white: 1, alpha: Muted.opacity($0.accessibilityContrast == .high ? .increased : .standard)) }
         let attributes: [NSAttributedString.Key: Any] = [.font: UIFontMetrics(forTextStyle: .caption1).scaledFont(for: count), .foregroundColor: muted]
         appearance.subtitleTextAttributes = attributes
@@ -45,8 +59,8 @@ public enum Typography {
       }
       // The system's look otherwise; the bar at the scroll edge is drawn from it.
       bar.standardAppearance = appearance
-    #endif
-  }
+    }
+  #endif
 
   @MainActor private static var registered = false
 
@@ -110,6 +124,23 @@ extension Font {
 
   public static func mono(size: CGFloat, weight: Font.Weight = .regular) -> Font {
     .custom(Typography.mono, fixedSize: size).weight(weight)
+  }
+}
+
+extension View {
+  /// Bold Text (Settings → Accessibility) for the bundled fonts, which don't follow it by themselves as the system's do:
+  /// while it's on, text is set semibold (the system's step up from regular). A weight given on a view itself
+  /// (`.fontWeight`, `.bold()`) still wins; one given in a font gives way, so a heavier one is set on the view.
+  public func followsBoldText() -> some View {
+    modifier(BoldText())
+  }
+}
+
+private struct BoldText: ViewModifier {
+  @Environment(\.legibilityWeight) private var legibility
+
+  func body(content: Content) -> some View {
+    content.fontWeight(legibility == .bold ? .semibold : nil)
   }
 }
 

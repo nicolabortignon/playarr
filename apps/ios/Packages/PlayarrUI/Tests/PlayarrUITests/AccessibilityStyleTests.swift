@@ -16,6 +16,21 @@ import Testing
     #expect(Muted.opacity(.increased) == 0.65)
   }
 
+  /// The bundled fonts don't follow Bold Text by themselves (the system's do): `followsBoldText` sets them semibold,
+  /// which draws the same words wider, and leaves them be without it.
+  @MainActor @Test func setsTheBundledFontsBolderWithBoldText() {
+    Typography.register()
+    func width(_ legibility: LegibilityWeight) -> Int {
+      let text = Text("Hello wonderful world of music").font(.sans(.body)).followsBoldText().environment(\.legibilityWeight, legibility)
+      return ImageRenderer(content: text.fixedSize()).cgImage?.width ?? 0
+    }
+    let regular = width(.regular)
+    #expect(regular > 0)
+    #expect(width(.bold) > regular)
+    let unfollowed = ImageRenderer(content: Text("Hello wonderful world of music").font(.sans(.body)).fixedSize()).cgImage?.width
+    #expect(unfollowed == regular)
+  }
+
   @Test func tapsTheSameForTheSameKindOfThing() {
     #expect(Haptic.toast(isError: true) == .error)
     #expect(Haptic.toast(isError: false) == .success)

@@ -10,12 +10,16 @@ public struct RootView: View {
     }
 
     public var body: some View {
-        if let trial = model.trial {
-            // Trying it without a server: the demo's own app, until it's left.
-            RootView(model: trial)
-        } else {
-            app
+        Group {
+            if let trial = model.trial {
+                // Trying it without a server: the demo's own app, until it's left.
+                RootView(model: trial)
+            } else {
+                app
+            }
         }
+        // Outside every sheet, so they follow it too.
+        .followsBoldText()
     }
 
     private var app: some View {

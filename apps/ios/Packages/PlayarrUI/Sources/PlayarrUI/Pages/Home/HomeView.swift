@@ -205,7 +205,8 @@ private struct ListeningButton: View {
           .overlay {
             Circle().fill(.black.opacity(0.45))
             Image(systemName: playing ? "pause.fill" : "play.fill")
-              .font(.icon(.small, weight: .bold))
+              .font(.icon(.small))
+              .fontWeight(.bold)
               .foregroundStyle(.white)
               .contentTransition(.symbolEffect(.replace))
           }

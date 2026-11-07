@@ -132,7 +132,8 @@ private struct HoldingMark: View {
 
   private func mark(_ symbol: String, fill: Color, ink: Color) -> some View {
     Image(systemName: symbol)
-      .font(.sans(size: 11, weight: .bold))
+      .font(.sans(size: 11))
+      .fontWeight(.bold)
       .foregroundStyle(ink)
       .frame(width: 20, height: 20)
       .background(fill, in: Circle())

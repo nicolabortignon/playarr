@@ -81,7 +81,7 @@ struct AppearancePanel: View {
         }
       }
       .frame(width: 36, height: 36)
-      .overlay { if chosen { Image(systemName: "checkmark").font(.footnote.weight(.bold)).foregroundStyle(.black) } }
+      .overlay { if chosen { Image(systemName: "checkmark").font(.footnote).fontWeight(.bold).foregroundStyle(.black) } }
     }
     .buttonStyle(.plain)
     .accessibilityLabel(accent.name)
