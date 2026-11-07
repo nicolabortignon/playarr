@@ -202,6 +202,6 @@ There's no separate release step:
 2. Push to GitHub.
 3. The NAS picks the commit up at its next scheduled check. It's set to every 15 minutes in Settings → Updates; the default is hourly. Check now, `pnpm deploy:nas` or `sudo sh update.sh` on the NAS do it at once.
 
-Watch the result in Settings → Updates or the compose logs. The only CI is `.github/workflows/ios.yml`, which tests the iOS app and uploads TestFlight builds; the server and web tests run locally.
+Watch the result in Settings → Updates or the compose logs. CI is two workflows: `.github/workflows/server-web.yml` typechecks and tests the shared packages, the server and the web app on every push and pull request, on the Docker image's Node (the web's smoke tests need a server, so they're skipped there); `.github/workflows/ios.yml` tests the iOS app and uploads TestFlight builds.
 
 See also [../decisions.md](../decisions.md) for why things are this way.

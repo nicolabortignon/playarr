@@ -6,7 +6,7 @@ Agreed 2026-11-05 from the iOS, server, web and product reviews. First of four p
 
 Already done: the last password can no longer be reset or removed, which reopened the server in setup mode to anyone (`accounts.ts` `keepAPassword`, 2026-11-05).
 
-**Where it stands (2026-11-07):** 1 and 6 done; 2 under way (the copy before migrations and the refusal of a newer database are done); 3, 4 and 5 under way.
+**Where it stands (2026-11-07):** 1 and 6 done; 2 under way (CI, the copy before migrations and the refusal of a newer database are done; the updater's part is left); 3, 4 and 5 under way.
 
 ## 1. The web app survives a deploy and a page error — S — done 2026-11-05
 
@@ -23,7 +23,7 @@ After a deploy, a tab on the old build that opens a lazy page asks for a chunk t
 
 Nothing runs the server or web tests before the updater builds `main` (`.github/workflows/` has only `ios.yml`); migrations run at startup with no copy of the database (`apps/server/src/db.ts`); `docker/update.sh` replaces the container and prunes the old image, so there's nothing to go back to; the health check passes any body starting with `{`.
 
-- `.github/workflows/server-web.yml`: typecheck and tests for `packages/*`, `apps/server` and `apps/web` on every push and pull request.
+- `.github/workflows/server-web.yml`: typecheck and tests for `packages/*`, `apps/server` and `apps/web` on every push and pull request. *Done 2026-11-07, on Node 24 (the Docker image's), with ffmpeg.*
 - The updater deploys only commits whose checks passed on GitHub (or tags, see the next point).
 - Stable and edge: tagged releases are the default channel; following `main` becomes an opt-in setting (Settings → Updates). Owners from the App Store get stable.
 - Before running migrations, `VACUUM INTO /config/backups/playarr-<version>-<sha>.db`, keeping the last 5. *Done 2026-11-07, named `playarr-<version>-schema-<n>.db`: every commit raises the version, so it names the commit, and the schema says what the copy holds.*
