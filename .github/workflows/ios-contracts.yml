@@ -1,0 +1,51 @@
+# The API the iOS app relies on. A push changes the server within 15 minutes, but copies of the app from the App
+# Store lag by weeks, so when the shared types, the server or the app change: the Swift models must match the
+# TypeScript types, every endpoint family the app calls is recorded afresh from the server's routes, and the app's
+# contract tests decode what was recorded. A server change that would break apps already on phones fails here.
+# (docs/ios/conventions.md §4, "The server's side"; docs/ios/release.md says when to raise minAppVersion instead.)
+name: iOS contracts
+
+on:
+  push:
+    paths: ['packages/**', 'apps/server/**', 'apps/ios/**', '.github/workflows/ios-contracts.yml']
+  pull_request:
+    paths: ['packages/**', 'apps/server/**', 'apps/ios/**', '.github/workflows/ios-contracts.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # As ios.yml's.
+  XCODE_VERSION: '26.6'
+
+jobs:
+  contracts:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: The Swift models match the TypeScript types
+        run: node apps/ios/scripts/gen-models.mjs --check
+
+      - name: Record the server's answers afresh
+        run: RECORD_FIXTURES=1 pnpm -C apps/server exec vitest run src/routes/contract.test.ts
+
+      - name: The app decodes them
+        run: swift test --disable-sandbox --package-path apps/ios/Packages/PlayarrAPI --filter ContractTests

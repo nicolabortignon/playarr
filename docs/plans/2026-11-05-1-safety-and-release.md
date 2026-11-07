@@ -6,7 +6,7 @@ Agreed 2026-11-05 from the iOS, server, web and product reviews. First of four p
 
 Already done: the last password can no longer be reset or removed, which reopened the server in setup mode to anyone (`accounts.ts` `keepAPassword`, 2026-11-05).
 
-**Where it stands (2026-11-07):** 1 and 6 done; 2 under way (CI, the copy before migrations and the refusal of a newer database are done; the updater's part is left); 3, 4 and 5 under way.
+**Where it stands (2026-11-07):** 1, 5 and 6 done; 2 under way (CI, the copy before migrations and the refusal of a newer database are done; the updater's part is left); 3 and 4 under way.
 
 ## 1. The web app survives a deploy and a page error — S — done 2026-11-05
 
@@ -46,12 +46,12 @@ When the public address fails (including on certificate errors, which captive po
 - An account whose session can't open (Keychain token missing after a restore, engine setup failing) shows a reason and a way out instead of a spinner for ever: a missing token signs the account out; an engine failure offers Retry (`RootView.swift`, `AppModel.swift`; today the error toast goes to a `ToastsView` that isn't on screen).
 - The UI-test launch arguments and `PLAYARR_UITEST_TOKEN` sign-in only in Debug builds (`apps/ios/Playarr/PlayarrApp.swift`, `PlayarrUI/AppModel+UITests.swift`).
 
-## 5. The API can't break shipped apps unnoticed — S
+## 5. The API can't break shipped apps unnoticed — S — done 2026-11-07
 
 A push changes the server within 15 minutes; App Store copies of the app lag by weeks. The conventions doc promised `ios-contracts.yml`; it was never written, and `make models-check` runs nowhere.
 
-- `.github/workflows/ios-contracts.yml` on changes to `packages/**`, `apps/server/**` or `apps/ios/**`: `gen-models.mjs --check`, re-record the contract fixtures, run `ContractTests`.
-- A written rule for when to raise `minAppVersion`, in `docs/ios/release.md`.
+- `.github/workflows/ios-contracts.yml` on changes to `packages/**`, `apps/server/**` or `apps/ios/**`: `gen-models.mjs --check`, re-record the contract fixtures, run `ContractTests`. *Done 2026-11-07.*
+- A written rule for when to raise `minAppVersion`, in `docs/ios/release.md`. *Done 2026-11-07.*
 
 ## 6. Requests are user data — S — done 2026-11-05
 

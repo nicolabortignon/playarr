@@ -55,7 +55,7 @@ make -C /tmp/playarr-tf/apps/ios beta-upload
 
 ## 4. GitHub Actions
 
-`.github/workflows/ios.yml` is the only iOS workflow. It runs on every push and pull request that changes `apps/ios/**` or the workflow itself, on `macos-26` with Xcode 26.6 (`XCODE_VERSION`; check the runner image's list before changing it), with a 90-minute limit:
+`.github/workflows/ios.yml` tests and uploads the app. It runs on every push and pull request that changes `apps/ios/**` or the workflow itself, on `macos-26` with Xcode 26.6 (`XCODE_VERSION`; check the runner image's list before changing it), with a 90-minute limit:
 
 1. Check out with the full history (the build number is the commit count, and "What to Test" reads the log).
 2. `make -C apps/ios bootstrap`.
@@ -64,6 +64,18 @@ make -C /tmp/playarr-tf/apps/ios beta-upload
 5. On pushes to `main` only: write the key from the `ASC_KEY_P8_BASE64` secret, run `make -C apps/ios beta-upload` with `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID` from secrets and `IOS_BUNDLE_ID` set in the workflow, then remove the key whatever happened.
 
 Pull requests never see the secrets. On `main` a run is never cancelled mid-upload: a newer push waits, and replaces any run still waiting. Elsewhere a newer push cancels the running one. There's no release job yet: App Store releases run from the Mac.
+
+`.github/workflows/ios-contracts.yml` guards the copies of the app already on phones. On every push and pull request that changes `packages/**`, `apps/server/**` or `apps/ios/**`, it checks `Models.generated.swift` against the TypeScript types (`gen-models.mjs --check`), records every endpoint family afresh from the server's routes (`RECORD_FIXTURES=1`, `contract.test.ts`) and runs `ContractTests` on what was recorded. A server change whose answers the app can't decode fails there, before anyone merges or pushes it further.
+
+### When to raise `minAppVersion`
+
+The server's `MIN_APP_VERSION` (`apps/server/src/routes/server.ts`) is the oldest app it works with: an older app shows "update required" and nothing else. Copies from the App Store update days or weeks after a release, and some never do, so raising it locks people out until they update. Raise it only when the server can't keep an older app working:
+
+- an answer older apps decode changes shape: a field they read is removed, renamed, retyped or made optional;
+- a route they call is removed or answers differently (another status, another meaning);
+- what they send stops being accepted.
+
+Prefer keeping the old shape alongside the new one (a new field, a new route, a query parameter the old app doesn't send) and dropping it a release or two later. Adding a field, a route or an optional parameter never needs a raise. When a raise is needed, set it to the first App Store version that handles the change, only once that version is on sale, and say so in the commit. The contract tests pass for the app in the repository, not for older copies: a raise is a judgment made from this list, not from CI.
 
 ## 5. The App Store listing
 
