@@ -9,6 +9,13 @@ extension API {
             Endpoint(.get, "/api/albums", query: Endpoint<[Album]>.items(["sort": sort.rawValue, "limit": limit.map(String.init)]))
         }
 
+        /// `limit` albums in `sort`'s order from `offset` (0 first): a page, or all of them from an older server.
+        public static func albumPage(sort: AlbumSort, offset: Int, limit: Int) -> Endpoint<AlbumsAnswer> {
+            Endpoint(
+                .get, "/api/albums",
+                query: [.init(name: "sort", value: sort.rawValue), .init(name: "offset", value: String(offset)), .init(name: "limit", value: String(limit))])
+        }
+
         public static func randomAlbums(limit: Int = 12) -> Endpoint<[Album]> {
             Endpoint(.get, "/api/albums/random", query: [.init(name: "limit", value: String(limit))])
         }

@@ -112,7 +112,7 @@ The query cache (`PlayarrUI/Data/QueryCache.swift`, in `queries/`) keeps the lib
 
 | Download | Pages kept |
 |---|---|
-| album | `["album", id]` and `["albums", "artist"]`, the list Library → Albums opens with |
+| album | `["album", id]` and `["albums", "artist"]`, the first page of the list Library → Albums opens with (the rest come as it scrolls, online) |
 | playlist | `["playlist", id]` and `["playlists"]` |
 | mix | `["mix", key]` and `["mixes"]`; the mix page reads `QueryKey.mix` |
 | Favorites | `["favorites"]` |

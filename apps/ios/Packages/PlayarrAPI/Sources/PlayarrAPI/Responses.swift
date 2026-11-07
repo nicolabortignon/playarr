@@ -4,6 +4,29 @@ public struct NoContent: Decodable, Sendable, Equatable {
     public init(from decoder: any Decoder) throws {}
 }
 
+/// GET /api/albums with `offset`: a page of the albums (plan 3 §1), or, from a server older than pages (before 0.6.564,
+/// which leaves `offset` out), all of them at once.
+public enum AlbumsAnswer: Decodable, Sendable, Equatable {
+    case page(AlbumPage)
+    case whole([Album])
+
+    public init(from decoder: any Decoder) throws {
+        if let page = try? AlbumPage(from: decoder) {
+            self = .page(page)
+        } else {
+            self = .whole(try [Album](from: decoder))
+        }
+    }
+
+    /// As a page: the whole list is one page holding every album.
+    public var page: AlbumPage {
+        switch self {
+        case .page(let page): page
+        case .whole(let albums): AlbumPage(albums: albums, total: albums.count, version: "")
+        }
+    }
+}
+
 /// POST /api/plays.
 public struct Recorded: Codable, Sendable, Equatable {
     public var recorded: Int
