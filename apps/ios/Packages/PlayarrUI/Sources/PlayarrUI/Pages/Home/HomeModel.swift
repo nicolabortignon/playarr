@@ -118,6 +118,32 @@ final class HomeModel {
     return Query(.randomAlbums(seed: seed), cache: session.queries, staleAfter: .infinity) { try await api.send(API.Library.randomAlbums(limit: 12)) }
   }
 
+  /// "Morning", "Afternoon", "Evening" or "Late night": the parts of the day Vibes of the hour uses (5 to 12, 12 to 17,
+  /// 17 to 22, 22 to 5; `partOfDay` in apps/web/src/pages/Home.tsx).
+  static func partOfDay(hour: Int) -> String {
+    switch hour {
+    case 5..<12: "Morning"
+    case 12..<17: "Afternoon"
+    case 17..<22: "Evening"
+    default: "Late night"
+    }
+  }
+
+  /// Home's greeting: "Morning, Alex.", "Late night, Alex.": the part of the day and the account's name, else its
+  /// username (docs/design.md, Moments).
+  static func greeting(name: String, username: String, hour: Int) -> String {
+    let name = name.trimmingCharacters(in: .whitespaces)
+    return "\(partOfDay(hour: hour)), \(name.isEmpty ? username : name)."
+  }
+
+  /// The hour on this device's clock, and how long until the next one starts (a second into it): when the greeting
+  /// may change.
+  static func hour(at now: Date, calendar: Calendar = .current) -> (hour: Int, untilNext: Duration) {
+    let hour = calendar.component(.hour, from: now)
+    let next = calendar.nextDate(after: now, matching: DateComponents(minute: 0, second: 0), matchingPolicy: .nextTime) ?? now
+    return (hour, .seconds(max(0, next.timeIntervalSince(now)) + 1))
+  }
+
   /// December: this year. January: last year. Otherwise none.
   static func reviewYear(now: Date, calendar: Calendar = .current) -> Int? {
     let parts = calendar.dateComponents([.year, .month], from: now)

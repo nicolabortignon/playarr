@@ -19,6 +19,24 @@ import Testing
     #expect(Route(href: "/nowhere") == nil)
   }
 
+  @Test func aPageOpenedFromACardGrowsFromThatCard() {
+    let router = AppRouter()
+    var now = ContinuousClock.now
+    router.now = { now }
+    let pressed = CoverZoom.Source()
+    router.open(.album(70), from: pressed)
+    #expect(router.paths[.home] == [.album(70)])
+    #expect(router.zoom(for: .album(70)) == pressed)
+    #expect(router.zoom(for: .album(71)) == nil)
+    // A page made later for the same album (a link that pushes it without the router) comes in as any other.
+    now += .seconds(2)
+    #expect(router.zoom(for: .album(70)) == nil)
+    // Opened another way: no card to grow from.
+    router.open(.album(70), from: pressed)
+    router.open(.album(70))
+    #expect(router.zoom(for: .album(70)) == nil)
+  }
+
   @Test func opensPagesOnTheCurrentTab() {
     let router = AppRouter()
     router.select(.library)

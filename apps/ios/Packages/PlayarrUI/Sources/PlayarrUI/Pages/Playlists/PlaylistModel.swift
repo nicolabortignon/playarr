@@ -127,7 +127,7 @@ final class PlaylistModel {
     let id = id
     guard await change({ try await $0.send(API.Playlists.update(id: id, shared: shared)) }), !shared else { return }
     let session = session
-    session.toasts.undo("Stopped sharing “\(name)”") { [weak self] in
+    session.toasts.removed("Stopped sharing “\(name)”") { [weak self] in
       Task {
         // The page may have closed since: the playlist is shared again all the same.
         guard let restored = await Self.share(id, session: session) else { return }
@@ -168,7 +168,7 @@ final class PlaylistModel {
     let message = "Removed “\(item.title)” from “\(playlist.name)”"
     guard item.track != nil else { return session.toasts.push(message) }
     let session = session
-    session.toasts.undo(message) { [weak self] in
+    session.toasts.removed(message) { [weak self] in
       Task {
         // The page may have closed since: the playlist is put right all the same.
         guard let restored = await Self.restore(item.recordingId, after: after, at: index, in: id, session: session) else { return }

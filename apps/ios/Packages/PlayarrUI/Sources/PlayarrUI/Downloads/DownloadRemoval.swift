@@ -9,6 +9,6 @@ enum DownloadRemoval {
     store.remove(download.key)
     let message = OfflineWording.removed(download.title)
     guard let toasts else { return store.announce(message, false) }
-    toasts.undo(message) { store.restore(download) }
+    toasts.removed(message) { store.restore(download) }
   }
 }

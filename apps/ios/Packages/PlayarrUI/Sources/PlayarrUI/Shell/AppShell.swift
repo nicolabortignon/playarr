@@ -27,8 +27,9 @@ struct AppShell: View {
       .overlay(alignment: .top) { ToastsView().environment(model.toasts).environment(model.theme) }
       .overlay { stats }
     }
-    .overlay(alignment: .top) { ToastsView() }
+    .overlay(alignment: .top) { ToastsView(haptics: !router.nowPlaying) }
     .overlay { stats }
+    .background { FinishedDownloads(downloads: session.player.downloads, toasts: model.toasts) }
     .sheet(isPresented: Binding(get: { model.showingAccounts }, set: { model.showingAccounts = $0 })) { AccountSwitcherView(model: model) }
     .addToPlaylistSheet(session, active: !router.nowPlaying)
     .trackSheets(player: session.player, active: !router.nowPlaying)

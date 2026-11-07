@@ -57,14 +57,15 @@ struct ActionRow<Action: View, More: View>: View {
   private func row(_ compaction: ActionRowCompaction) -> some View {
     HStack(spacing: compaction.tight ? 6 : 10) {
       Button(action: play) {
-        // As wide as the widest of Play, Pause and Resume, so playing or pausing moves nothing.
+        // As wide as the widest of Play, Pause and Resume, so playing or pausing moves nothing; the triangle turns into
+        // the two bars and back (docs/design.md, Moments).
         let label = SteadyLabel(
           playState.label, systemImage: playState.systemImage, among: PlayState.allCases.map { ($0.label, $0.systemImage) })
         if compaction.tight { label.labelStyle(.titleOnly) } else { label }
       }
       .buttonStyle(.pill(.primary, size: .large))
       .accessibilityLabel("\(playState.label) \(title)")
-      .sensoryFeedback(.selection, trigger: playState == .playing)
+      .sensoryFeedback(Haptic.playPause, trigger: playState == .playing)
       .disabled(disabled)
       shuffleButton(compact: compaction.shuffle)
         .disabled(disabled)

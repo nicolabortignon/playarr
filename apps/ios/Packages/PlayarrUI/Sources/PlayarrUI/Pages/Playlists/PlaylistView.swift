@@ -15,6 +15,8 @@ struct PlaylistView: View {
   @State private var details = ""
   @State private var pickingCover = false
   @State private var confirmingDelete = false
+  /// Bumped as a song lands in its new place: a tick, as in the queue.
+  @State private var reordered = 0
   @Environment(\.verticalSizeClass) private var verticalSizeClass
 
   init(id: Int, session: AccountSession) {
@@ -70,13 +72,20 @@ struct PlaylistView: View {
         ForEach(Array(model.items.enumerated()), id: \.element.itemId) { index, item in
           row(item, at: index)
         }
-        .onMove(perform: model.mine ? { source, destination in Task { await model.move(fromOffsets: source, toOffset: destination) } } : nil)
+        .onMove(perform: model.mine ? { move($0, $1) } : nil)
       }
       if model.mine, !model.items.isEmpty {
         RecommendationsSection(playlist: model)
       }
     }
     .listStyle(.plain)
+    .sensoryFeedback(Haptic.reorder, trigger: reordered)
+  }
+
+  /// A song dragged to its new place (lifted by the list as it goes): sent on the drop, with a tick.
+  private func move(_ source: IndexSet, _ destination: Int) {
+    reordered += 1
+    Task { await model.move(fromOffsets: source, toOffset: destination) }
   }
 
   /// The page's own cover (without the name drawn on it: it's beside it), which opens the cover picker on your own

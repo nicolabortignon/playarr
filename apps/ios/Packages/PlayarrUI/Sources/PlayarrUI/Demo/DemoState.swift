@@ -28,9 +28,12 @@ final class DemoState: Sendable {
       return library.withLock { $0.favorites }
     case (.put, "favorites", 2):
       guard let track = Demo.tracks.first(where: { $0.recordingId == second }) else { throw Self.notFound }
+      // Taken back: at the time it was first favorited, so where it was in the list.
+      let taken = try body.flatMap { try JSONDecoder().decode(FavoriteInput.self, from: $0).favoritedAt }
       library.withLock { state in
         if !state.favorites.contains(where: { $0.recordingId == track.recordingId }) {
-          state.favorites.insert(FavoriteTrack(track, favoritedAt: Date().formatted(.iso8601)), at: 0)
+          let favorite = FavoriteTrack(track, favoritedAt: taken ?? Date().formatted(.iso8601))
+          state.favorites = taken == nil ? [favorite] + state.favorites : FavoritesStore.inPlace(favorite, in: state.favorites)
         }
       }
       return NoBody()
@@ -127,6 +130,7 @@ final class DemoState: Sendable {
     var shared: Bool?
   }
 
+  private struct FavoriteInput: Decodable { var favoritedAt: String? }
   private struct Order: Decodable { var itemIds: [Int] }
   private struct CoverInput: Decodable {
     var layout: CoverLayout

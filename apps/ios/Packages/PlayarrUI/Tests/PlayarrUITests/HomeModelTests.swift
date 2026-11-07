@@ -14,6 +14,23 @@ import Testing
     #expect(HomeModel.reviewYear(now: date("2026-11-03T12:00:00Z"), calendar: calendar) == nil)
   }
 
+  @Test func greetsByThePartOfTheDayAndName() {
+    // The parts of the day Vibes of the hour uses (apps/web/src/pages/Home.test.tsx's).
+    #expect([4, 5, 11, 12, 16, 17, 21, 22, 0].map { HomeModel.partOfDay(hour: $0) } == [
+      "Late night", "Morning", "Morning", "Afternoon", "Afternoon", "Evening", "Evening", "Late night", "Late night",
+    ])
+    #expect(HomeModel.greeting(name: "Alex", username: "alex", hour: 9) == "Morning, Alex.")
+    #expect(HomeModel.greeting(name: " ", username: "alex", hour: 23) == "Late night, alex.")
+  }
+
+  @Test func readsTheHourAgainASecondIntoTheNext() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    let now = HomeModel.hour(at: Format.parseDate("2026-11-07T16:59:30Z")!, calendar: calendar)
+    #expect(now.hour == 16)
+    #expect(now.untilNext == .seconds(31))
+  }
+
   @Test func showsTheArtistsOfTheLatestAlbumsFirstThenTheBiggest() {
     // Ported from apps/web/src/pages/Home.test.ts.
     let artists = (0..<300).map { i in Artist(id: i, name: "\(i)", sortName: "\(i)", genres: [], albumCount: i % 7, trackCount: 1) }

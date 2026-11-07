@@ -19,6 +19,39 @@ struct OfflineWordingTests {
       == "Mezzanine needs 480 MB, and 120 MB is free. Remove some downloads in Library → Downloads.")
   }
 
+  /// Mezzanine's first two songs, downloaded; `kept`, the songs on the device (downloads.test.ts's).
+  private static let mezzanine = PinnedDownload(
+    key: "album:70", title: "Mezzanine", href: "/albums/70", tracks: Array(Demo.mezzanineTracks.prefix(2)), addedAt: Date(timeIntervalSince1970: 1))
+
+  private static func kept(_ ids: Int...) -> [Int: KeptFile] {
+    Dictionary(uniqueKeysWithValues: ids.map { ($0, KeptFile(file: "stream/\($0).flac", bytes: 1000, usedAt: Date(timeIntervalSince1970: 1))) })
+  }
+
+  @Test func aFinishedDownloadIsOneWhoseLastSongJustArrived() {
+    let pins = [Self.mezzanine.key: Self.mezzanine]
+    let (first, second) = (Self.mezzanine.tracks[0].fileId, Self.mezzanine.tracks[1].fileId)
+    let one = OfflineManifest(songs: Self.kept(first), pins: pins)
+    let both = OfflineManifest(songs: Self.kept(first, second), pins: pins)
+    #expect(OfflineWording.justDownloaded(before: one, after: both).map(\.title) == ["Mezzanine"])
+    #expect(OfflineWording.justDownloaded(before: one, after: one).isEmpty)
+    // Added (or put back by an Undo) with every song here already: its button says so.
+    #expect(OfflineWording.justDownloaded(before: OfflineManifest(songs: Self.kept(first, second)), after: both).isEmpty)
+    // Whole before, whole still.
+    #expect(OfflineWording.justDownloaded(before: both, after: OfflineManifest(songs: Self.kept(first, second, 9999), pins: pins)).isEmpty)
+    // A downloaded playlist given a new song: whole again once it has come.
+    var more = Self.mezzanine
+    more.tracks.append(Demo.mezzanineTracks[2])
+    let waiting = OfflineManifest(songs: Self.kept(first, second), pins: [more.key: more])
+    let arrived = OfflineManifest(songs: Self.kept(first, second, Demo.mezzanineTracks[2].fileId), pins: [more.key: more])
+    #expect(OfflineWording.justDownloaded(before: both, after: waiting).isEmpty)
+    #expect(OfflineWording.justDownloaded(before: waiting, after: arrived).map(\.title) == ["Mezzanine"])
+  }
+
+  @Test func aFinishedDownloadSaysWhichDeviceItsOn() {
+    #expect(OfflineWording.onThisDevice("Mezzanine", device: "iPhone") == "“Mezzanine” is on this iPhone")
+    #expect(OfflineWording.onThisDevice("Late night", device: "iPad") == "“Late night” is on this iPad")
+  }
+
   @Test func aDownloadsRowCountsSongsBytesAndFailures() {
     let d = PinnedDownload(key: "album:1", title: "Mezzanine", subtitle: "Massive Attack", href: "/albums/1", tracks: [])
     #expect(OfflineWording.rowDetail(d, DownloadProgress(done: 11, total: 11, bytes: 484 * mb)) == "Massive Attack · 11 songs · 484 MB")

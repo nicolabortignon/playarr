@@ -2,13 +2,17 @@ import PlayarrAPI
 import SwiftUI
 
 /// An album from MusicBrainz: cover, title, artist and year, what kind it is (or how much of it is here), and its
-/// Request button. Opens the album when any of it is here, else the artist's discography (components/Discover.tsx).
+/// Request button. Opens the album when any of it is here, growing from the cover (`CoverZoom`), else the artist's
+/// discography (components/Discover.tsx).
 struct DiscoverAlbumCard: View {
   let album: DiscoverAlbum
   var highlighted = false
   var width: CGFloat = ShelfCard.width
   /// On the artist's own page, where their name says nothing: what it is and when ("EP · 2019") instead, and no badge.
   var onArtistPage = false
+  @Environment(AccountSession.self) private var session
+  /// What the album's page grows from: this card's cover.
+  @State private var zoom = CoverZoom.Source()
 
   init(album: DiscoverAlbum, highlighted: Bool = false, width: CGFloat = ShelfCard.width, onArtistPage: Bool = false) {
     self.album = album
@@ -34,10 +38,11 @@ struct DiscoverAlbumCard: View {
   var body: some View {
     let byline = Self.byline(album, onArtistPage: onArtistPage)
     VStack(alignment: .leading, spacing: 10) {
-      NavigationLink(value: DiscoverDestination.card(album).route) {
+      Button(action: open) {
         VStack(alignment: .leading, spacing: 8) {
           Cover(path: album.coverUrl, points: width, label: album.title)
             .frame(width: width, height: width)
+            .zoomSource(zoom)
             .saturation(album.availability.state == .available || highlighted ? 1 : 0.85)
             .overlay(alignment: .topLeading) {
               if album.availability.state != .available, !onArtistPage {
@@ -63,5 +68,11 @@ struct DiscoverAlbumCard: View {
     }
     .frame(width: width, alignment: .leading)
     .id(album.mbid)
+  }
+
+  /// The album's page, growing from the cover, or the artist's discography.
+  private func open() {
+    let route = DiscoverDestination.card(album).route
+    if case .album = route { session.router.open(route, from: zoom) } else { session.router.open(route) }
   }
 }

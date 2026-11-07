@@ -3,8 +3,8 @@ import SwiftUI
 
 /// An album in a grid or shelf: its cover, title (in the accent color while it plays), artist, year, and "3 of 11"
 /// when songs are missing (apps/web/src/components/Cards.tsx). On the artist's own page their name says nothing, so
-/// it says what the album is instead ("EP · 2019"). A long press opens the album's menu, Play and Shuffle first
-/// (`PlayableMenu.album`).
+/// it says what the album is instead ("EP · 2019"). The album's page grows from its cover, and shrinks back into it
+/// (`CoverZoom`). A long press opens the album's menu, Play and Shuffle first (`PlayableMenu.album`).
 struct AlbumCard: View {
   let album: Album
   var width: CGFloat?
@@ -13,13 +13,16 @@ struct AlbumCard: View {
 
   @Environment(AccountSession.self) private var session
   @Environment(Theme.self) private var theme
+  /// What the album's page grows from: this card's cover.
+  @State private var zoom = CoverZoom.Source()
 
   var body: some View {
     let current = session.player.queue.currentTrack?.albumId == album.id
-    NavigationLink(value: Route.album(album.id)) {
+    Button { session.router.open(.album(album.id), from: zoom) } label: {
       VStack(alignment: .leading, spacing: 6) {
         Cover(path: album.coverUrl, points: width ?? 180, label: album.title)
           .coverShadow(.shelf)
+          .zoomSource(zoom)
         Text(album.title).typeRole(.body).essentialLineLimit().foregroundStyle(current ? theme.accent.color : .paper)
         Text(subtitle).typeRole(.small).essentialLineLimit().foregroundStyle(.paperDim)
       }

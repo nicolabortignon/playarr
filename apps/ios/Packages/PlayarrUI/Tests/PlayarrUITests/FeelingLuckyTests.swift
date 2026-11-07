@@ -91,6 +91,15 @@ private func cover(_ album: Int) -> String { "/art/album/\(album)/cover" }
     #expect(asked(api) == 2)
   }
 
+  /// The success tap goes by the presses that found songs: one that found none says so in a toast instead.
+  @Test func landsOnlyWhenItFoundSongs() async {
+    let model = FeelingLuckyModel(clock: TestClock())
+    await model.press(session(), still: true)
+    #expect(model.landings == 1)
+    await model.press(session(mix: LuckyMix(tracks: [], subtitle: "")), still: true)
+    #expect(model.landings == 1)
+  }
+
   @Test func keepsWhatWasAskedAheadTwoMinutes() async {
     var now = Date(timeIntervalSince1970: 1_800_000_000)
     let session = session()

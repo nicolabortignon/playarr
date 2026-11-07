@@ -17,13 +17,13 @@ extension Demo {
     duration: 1033, covers: mix.covers, hue: mix.hue, generatedAt: mix.generatedAt, refreshesAt: mix.refreshesAt,
     tracks: mezzanineTracks)
 
-  /// A month of listening (or a calendar year): Massive Attack most of all.
+  /// A month of listening (or a calendar year): Massive Attack most of all, three days running (a new record).
   static func stats(range: String) -> ListeningStats {
     var hours = Array(repeating: 0.0, count: 24)
     hours[21] = 125
     hours[8] = 30
     return ListeningStats(
-      range: range, to: when, minutes: 155, plays: 31, songs: 8, artists: 2, days: 6, newArtists: 1, longestStreak: 3, currentStreak: 2,
+      range: range, to: when, minutes: 155, plays: 31, songs: 8, artists: 2, days: 6, newArtists: 1, longestStreak: 3, currentStreak: 3,
       topArtists: [.init(artist: artist, plays: 20, minutes: 110), .init(artist: otherArtist, plays: 11, minutes: 45)],
       topAlbums: [.init(album: albums[0], plays: 14, minutes: 80)],
       topTracks: mezzanineTracks.map { .init(track: $0, plays: 5) }, topGenres: [.init(genre: "trip hop", minutes: 155)],

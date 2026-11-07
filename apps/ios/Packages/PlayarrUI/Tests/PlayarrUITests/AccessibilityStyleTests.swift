@@ -19,7 +19,13 @@ import Testing
   @Test func tapsTheSameForTheSameKindOfThing() {
     #expect(Haptic.toast(isError: true) == .error)
     #expect(Haptic.toast(isError: false) == .success)
+    // Plan 7 §7's four kinds: a toggle, a success, a selection tick, a warning.
     #expect(Haptic.toggle == .selection)
+    #expect(Haptic.success == .success)
+    #expect(Haptic.selection == .selection)
+    #expect(Haptic.warning == .warning)
+    #expect(Haptic.reorder == Haptic.selection)
+    #expect(Haptic.dropped == Haptic.success)
   }
 }
 

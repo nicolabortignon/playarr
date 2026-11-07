@@ -46,14 +46,14 @@ public final class RecentSearches {
   public func remove(_ query: String, toasts: ToastCenter) {
     let before = list
     forget(query)
-    toasts.undo("Removed “\(query)” from recent searches") { [weak self] in self?.restore(before) }
+    toasts.removed("Removed “\(query)” from recent searches") { [weak self] in self?.restore(before) }
   }
 
   /// Clear: all of them at once, with Undo.
   public func removeAll(toasts: ToastCenter) {
     let before = list
     clear()
-    toasts.undo("Cleared recent searches") { [weak self] in self?.restore(before) }
+    toasts.removed("Cleared recent searches") { [weak self] in self?.restore(before) }
   }
 
   /// Counts `query` once it has sat still for `settled`; the wait is called off (the task cancelled) when the words

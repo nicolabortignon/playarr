@@ -13,6 +13,14 @@ import Testing
     #expect(try await api.send(API.Favorites.list()).map(\.title) == ["Angel"])
   }
 
+  @Test func putsASongHeartedAgainBackWhereItWas() async throws {
+    let api = DemoAPI()
+    _ = try await api.send(API.Favorites.add(recordingId: "rec-700"))
+    // Inertia Creeps, first favorited before Risingson (1 November), goes back after it.
+    _ = try await api.send(API.Favorites.add(recordingId: "rec-703", favoritedAt: "2026-10-01T00:00:00.000Z"))
+    #expect(try await api.send(API.Favorites.list()).map(\.title) == ["Angel", "Risingson", "Inertia Creeps"])
+  }
+
   @Test func makesFillsReordersAndDeletesAPlaylist() async throws {
     let api = DemoAPI()
     let made = try await api.send(API.Playlists.create(name: "UI test"))

@@ -27,6 +27,30 @@ import Testing
     #expect(StatsModel(range: "2024", session: session).range == "2024")
   }
 
+  @Test func flagsAStreakStillGoingThatEqualsTheLongest() {
+    var stats = Listening.stats()
+    (stats.longestStreak, stats.currentStreak) = (5, 5)
+    #expect(StatsModel.isNewRecord(stats))
+    stats.currentStreak = 4
+    #expect(!StatsModel.isNewRecord(stats))
+    // A day isn't a streak to celebrate, and a server from before it says nothing.
+    (stats.longestStreak, stats.currentStreak) = (1, 1)
+    #expect(!StatsModel.isNewRecord(stats))
+    (stats.longestStreak, stats.currentStreak) = (3, nil)
+    #expect(!StatsModel.isNewRecord(stats))
+  }
+
+  @Test func theHeadlineCountsUpToItselfOverASecondAndAHalf() {
+    #expect(CountUp.shown(1792, after: .zero) == 0)
+    let along = [0.1, 0.3, 0.6, 1.0].map { CountUp.shown(1792, after: .seconds($0)) ?? 1792 }
+    #expect(along == along.sorted())
+    // Quick at first, then settling: most of the way there by half time.
+    #expect((CountUp.shown(1792, after: .milliseconds(700)) ?? 1792) > 1600)
+    // Landed: the real number shows in its place.
+    #expect(CountUp.shown(1792, after: CountUp.duration) == nil)
+    #expect(CountUp.shown(1792, after: .seconds(5)) == nil)
+  }
+
   @Test func saysTheReportInTheWebsWords() {
     let stats = Listening.stats()
     #expect(StatsModel.summary(stats) == "37 songs by 12 artists, on 9 days.")

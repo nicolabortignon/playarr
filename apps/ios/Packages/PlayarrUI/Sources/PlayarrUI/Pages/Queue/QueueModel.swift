@@ -68,7 +68,7 @@ struct QueueModel {
     let followedBy = position + 1 < ids.count ? ids[position + 1] : nil
     player.remove(at: player.queue.pos + 1 + position)
     let player = self.player
-    session.toasts.undo("Removed “\(track.title)” from the queue") { [weak player] in
+    session.toasts.removed("Removed “\(track.title)” from the queue") { [weak player] in
       guard let player else { return }
       let q = player.queue
       var coming = Array(q.order.dropFirst(q.pos + 1))
@@ -104,7 +104,7 @@ struct QueueModel {
     let song = player.queue.currentTrack?.id
     player.clearUpcoming()
     let player = self.player
-    session.toasts.undo("Cleared \(Format.plural(ids.count, "song")) from the queue") { [weak player] in
+    session.toasts.removed("Cleared \(Format.plural(ids.count, "song")) from the queue") { [weak player] in
       guard let player else { return }
       let q = player.queue
       // The same entry of the same queue: a new queue reuses the indices.

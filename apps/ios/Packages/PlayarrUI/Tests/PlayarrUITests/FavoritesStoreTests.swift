@@ -58,6 +58,78 @@ import Testing
     #expect(favorites.isFavorite("rec-703"))
   }
 
+  /// Angel, favorited in March, then Risingson in January: newest first, Angel leads (FavoriteButton.test.tsx's).
+  static let january = "2026-01-01T00:00:00.000Z"
+  static let twoFavorites = [
+    FavoriteTrack(Listening.angel, favoritedAt: "2026-03-01T00:00:00.000Z"), FavoriteTrack(Listening.risingson, favoritedAt: january),
+  ]
+
+  @Test func putsASongHeartedAgainBackWhereItWasNotAtTheTop() async {
+    api.on(.get, "/api/favorites", Self.twoFavorites)
+    api.on(.delete, "/api/favorites/rec-701", json: "")
+    api.on(.put, "/api/favorites/rec-701", json: "")
+    let favorites = store()
+    await favorites.load()
+    api.on(.get, "/api/favorites", [Self.twoFavorites[0]])
+    await favorites.toggle(Listening.risingson)
+    #expect(favorites.tracks?.map(\.title) == ["Angel"])
+    api.on(.get, "/api/favorites", Self.twoFavorites)
+    let gate = Gate()
+    api.hold(.put, "/api/favorites/rec-701", until: gate)
+    let hearting = Task { await favorites.toggle(Listening.risingson) }
+    while api.calls(.put, "/api/favorites/rec-701").isEmpty { await Task.yield() }
+    // At once, where it was: after Angel, favorited since.
+    #expect(favorites.tracks?.map(\.title) == ["Angel", "Risingson"])
+    #expect(api.bodies(.put, "/api/favorites/rec-701") == [#"{"favoritedAt":"2026-01-01T00:00:00.000Z"}"#])
+    await gate.open()
+    await hearting.value
+    #expect(favorites.tracks?.map(\.title) == ["Angel", "Risingson"])
+    // Away from Favorites, nothing in view went: no toast.
+    #expect(toasts.toasts.isEmpty)
+  }
+
+  @Test func onFavoritesSaysTheSongWasRemovedWithUndoPuttingItBack() async throws {
+    api.on(.get, "/api/favorites", Self.twoFavorites)
+    api.on(.delete, "/api/favorites/rec-701", json: "")
+    api.on(.put, "/api/favorites/rec-701", json: "")
+    let favorites = store()
+    await favorites.load()
+    favorites.pagesShown = 1
+    api.on(.get, "/api/favorites", [Self.twoFavorites[0]])
+    await favorites.toggle(Listening.risingson)
+    let toast = try #require(toasts.toasts.first)
+    #expect(toast.message == "Removed “Risingson” from Favorites")
+    #expect(toast.action?.label == "Undo")
+    #expect(toast.removal)
+    api.on(.get, "/api/favorites", Self.twoFavorites)
+    toasts.perform(toast)
+    while api.calls(.get, "/api/favorites").count < 3 { await Task.yield() }
+    #expect(api.bodies(.put, "/api/favorites/rec-701") == [#"{"favoritedAt":"2026-01-01T00:00:00.000Z"}"#])
+    #expect(favorites.tracks?.map(\.title) == ["Angel", "Risingson"])
+    #expect(favorites.isFavorite("rec-701"))
+  }
+
+  @Test func heartsASongForTheFirstTimeAsOfNow() async {
+    api.on(.get, "/api/favorites", Self.twoFavorites)
+    api.on(.put, "/api/favorites/rec-703", json: "")
+    let favorites = store()
+    await favorites.load()
+    favorites.pagesShown = 1
+    api.on(.get, "/api/favorites", [FavoriteTrack(Listening.inertia, favoritedAt: "2026-11-07T10:00:00.000Z")] + Self.twoFavorites)
+    await favorites.toggle(Listening.inertia)
+    #expect(api.calls(.put, "/api/favorites/rec-703").map(\.body) == [nil])
+    #expect(favorites.tracks?.first?.title == "Inertia Creeps")
+    // Hearting takes nothing out: no toast, even on Favorites.
+    #expect(toasts.toasts.isEmpty)
+  }
+
+  @Test func putsAFavoriteTakenBackBeforeTheFirstOneFavoritedBeforeIt() {
+    let february = FavoriteTrack(Listening.inertia, favoritedAt: "2026-02-01T00:00:00.000Z")
+    #expect(FavoritesStore.inPlace(february, in: Self.twoFavorites).map(\.title) == ["Angel", "Inertia Creeps", "Risingson"])
+    let oldest = FavoriteTrack(Listening.inertia, favoritedAt: "2025-06-01T00:00:00.000Z")
+    #expect(FavoritesStore.inPlace(oldest, in: Self.twoFavorites).last?.title == "Inertia Creeps")
+  }
+
   @Test func opensWithTheFavoritesKeptLastTime() {
     let queries = QueryCache(directory: nil)
     queries.set([Demo.favorite], for: .favorites)

@@ -4,6 +4,10 @@ import SwiftUI
 /// pages, with the mini player above the tab bar. iPad windows narrower than the web's desktop width get it too.
 struct TabShell: View {
   let session: AccountSession
+  /// Album pages grow from the cards pressed to open them (`CoverZoom`): every card is its own source, so the tabs'
+  /// stacks share one namespace, set on the tabs as a whole (pages pushed take their surroundings from there, as in the
+  /// iPad's split view).
+  @Namespace private var covers
 
   var body: some View {
     let router = session.router
@@ -16,6 +20,7 @@ struct TabShell: View {
         }
       }
     }
+    .environment(\.coverZoom, covers)
     .minimizingTabBar()
     .miniPlayer(isShown: session.player.queue.currentTrack != nil) { MiniPlayer(session: session) }
   }

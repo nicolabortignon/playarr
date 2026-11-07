@@ -4,7 +4,8 @@ import Observation
 /// Short messages at the top of the screen, as the web's toasts (apps/web/src/lib/toast.ts): at most three at a time,
 /// gone after 3.5 s (7 s for errors). The same message twice shows once; a repeat with a button replaces the one before
 /// it. A toast with a button stays until the button is used or it's dismissed, unless it has a timeout: an Undo goes
-/// after 6 s (`undo(_:undo:done:)`), held while VoiceOver or the pointer is on it (`hold(_:_:)`).
+/// after 6 s (`undo(_:undo:done:)`, or `removed(_:undo:done:)` for something taken out), held while VoiceOver or the
+/// pointer is on it (`hold(_:_:)`).
 @MainActor @Observable
 public final class ToastCenter {
   public enum Tone: Sendable { case info, error }
@@ -26,6 +27,8 @@ public final class ToastCenter {
     public let action: Action?
     /// With a button, it still goes by itself after this long (an Undo for something small); nil: it stays.
     public let timeout: Duration?
+    /// Something taken out of a list, with Undo (`removed(_:undo:done:)`): felt as a warning (`Haptic.toast(_:)`).
+    public let removal: Bool
     /// Runs once the toast goes without its button used: a removal that waits for its Undo to pass is made then.
     let done: (@MainActor () -> Void)?
   }
@@ -48,7 +51,8 @@ public final class ToastCenter {
   }
 
   public func push(
-    _ message: String, tone: Tone = .info, action: Action? = nil, timeout: Duration? = nil, done: (@MainActor () -> Void)? = nil
+    _ message: String, tone: Tone = .info, action: Action? = nil, timeout: Duration? = nil, removal: Bool = false,
+    done: (@MainActor () -> Void)? = nil
   ) {
     let same = toasts.filter { $0.message == message }
     // Every song failing for the same reason says so once. A new Undo replaces the one before it, which then can't be
@@ -58,7 +62,7 @@ public final class ToastCenter {
       return
     }
     remove(same)
-    let toast = Toast(id: nextId, message: message, tone: tone, action: action, timeout: timeout, done: done)
+    let toast = Toast(id: nextId, message: message, tone: tone, action: action, timeout: timeout, removal: removal, done: done)
     nextId += 1
     let all = toasts + [toast]
     toasts = Array(all.suffix(Self.limit))
@@ -70,6 +74,12 @@ public final class ToastCenter {
   /// the Undo has gone unused, for a change that waits until it can no longer be taken back.
   public func undo(_ message: String, undo: @escaping @MainActor () -> Void, done: (@MainActor () -> Void)? = nil) {
     push(message, action: Action("Undo", run: undo), timeout: Self.undoTime, done: done)
+  }
+
+  /// Something taken out of a list, with Undo: "Removed “Teardrop” from the queue · Undo" (docs/design.md, "Taking
+  /// things back"). As `undo(_:undo:done:)`, felt as a warning rather than a success.
+  public func removed(_ message: String, undo: @escaping @MainActor () -> Void, done: (@MainActor () -> Void)? = nil) {
+    push(message, action: Action("Undo", run: undo), timeout: Self.undoTime, removal: true, done: done)
   }
 
   /// Takes a toast away (its time is up, or it was put off): what waited on it goes ahead.

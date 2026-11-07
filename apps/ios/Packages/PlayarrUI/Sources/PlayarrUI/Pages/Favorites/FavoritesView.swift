@@ -45,6 +45,9 @@ struct FavoritesView: View {
     .titleInBar("Favorites")
     .task { await favorites.load() }
     .refreshable { await favorites.load() }
+    // A song un-hearted while this shows leaves the list in view: it says so, with Undo.
+    .onAppear { favorites.pagesShown += 1 }
+    .onDisappear { favorites.pagesShown -= 1 }
   }
 
   private func buttons(_ tracks: [Track]) -> some View {
@@ -78,14 +81,13 @@ struct FavoritesCover: View {
     )
     .aspectRatio(1, contentMode: .fit)
     .overlay {
-      GeometryReader { box in
-        Image(systemName: "heart.fill")
-          .resizable()
-          .scaledToFit()
-          .frame(width: box.size.width * 0.34)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-      }
-      .foregroundStyle(.paper)
+      // A third of the cover's width, scaled rather than measured: a GeometryReader's closure can be called off the main
+      // thread while SwiftUI draws an animation (iOS 26), and trap there.
+      Image(systemName: "heart.fill")
+        .resizable()
+        .scaledToFit()
+        .scaleEffect(0.34)
+        .foregroundStyle(.paper)
     }
     .clipShape(RoundedRectangle(cornerRadius: Radius.cover))
     .overlay(RoundedRectangle(cornerRadius: Radius.cover).strokeBorder(.white.opacity(0.1)))

@@ -17,6 +17,8 @@ final class FeelingLuckyModel {
   private(set) var deal: FanDeal?
   /// Each press deals afresh.
   private(set) var presses = 0
+  /// Presses that found songs, now playing: the success tap goes by it (none when it found nothing and said so).
+  private(set) var landings = 0
 
   @ObservationIgnored private let clock: any Clock<Duration>
 
@@ -50,6 +52,7 @@ final class FeelingLuckyModel {
         deal = Self.atHand(hand, lucky)
       }
     let covers = FanCover.fan(await QuickPlay.feelingLucky(session: session, mix: next.answer))
+    if !covers.isEmpty { landings += 1 }
     let landing = covers.last
     // Its picture first, so it doesn't come out blank; with nothing at hand to deal, the others' too, dealt instead.
     if let landing, !still {

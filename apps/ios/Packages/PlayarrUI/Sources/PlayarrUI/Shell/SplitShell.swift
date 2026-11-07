@@ -11,6 +11,9 @@ struct SplitShell: View {
   /// The screen's keyboard is up: the player bar steps aside until it's put away (`ShellLayout.barStepsAside`).
   @State private var typing = false
   @Environment(\.reducesMotion) private var reducesMotion
+  /// Album pages grow from the cards pressed to open them (`CoverZoom`): set on the split view, as the pages pushed in
+  /// the detail column take their surroundings from it rather than from the column's stack.
+  @Namespace private var covers
 
   var body: some View {
     let router = session.router
@@ -25,6 +28,7 @@ struct SplitShell: View {
       }
       .id(router.sidebar)
     }
+    .environment(\.coverZoom, covers)
     .inspector(isPresented: Binding(get: { router.column != nil }, set: { if !$0 { router.column = nil } })) {
       SideColumnView(session: session)
         .inspectorColumnWidth(min: 300, ideal: 340, max: 440)

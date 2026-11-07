@@ -30,6 +30,7 @@ public struct DownloadButton: View {
   @State private var shortOfRoom: (needed: Int64, free: Int64)?
   /// Undo for a removal.
   @Environment(AccountSession.self) private var session: AccountSession?
+  @Environment(\.reducesMotion) private var reducesMotion
 
   public init(store: DownloadStore, item: DownloadItem, tracks: [Track]) {
     self.store = store
@@ -49,7 +50,8 @@ public struct DownloadButton: View {
         .contentTransition(.symbolEffect(.replace))
     }
     .buttonStyle(.outlinedIcon(progress: progress))
-    .animation(Motion.standard, value: stage)
+    // The arrow turns into the tick as the ring closes; at once under Reduce Motion.
+    .animation(reducesMotion ? nil : Motion.standard, value: stage)
     .disabled(songs.isEmpty)
     .accessibilityLabel(OfflineWording.buttonLabel(phase, title: item.title))
     .accessibilityAddTraits(phase == .notDownloaded ? [] : .isSelected)
@@ -106,7 +108,10 @@ public struct DownloadButton: View {
       return
     }
     add()
-    store.announce(OfflineWording.started(item.title), false)
+    // Every song here already (kept as you listened): it says so at once, rather than when the last one comes.
+    let whole = store.progress(of: item.key).map { $0.total > 0 && $0.isComplete } ?? false
+    let said = whole ? OfflineWording.onThisDevice(item.title, device: OfflineWording.device) : OfflineWording.started(item.title)
+    store.announce(said, false)
   }
 
   private func add() {

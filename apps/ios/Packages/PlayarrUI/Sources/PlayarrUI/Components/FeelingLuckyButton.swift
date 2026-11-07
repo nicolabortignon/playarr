@@ -37,7 +37,8 @@ struct FeelingLuckyButton: View {
     .onChange(of: focused) { _, focused in if focused { prepare() } }
     .accessibilityLabel("Feeling lucky")
     .accessibilityHint("Plays 15 songs picked for this hour, new every time")
-    .sensoryFeedback(.success, trigger: model.picking, condition: Self.landed)
+    // The songs found and playing; a toast says so when there are none.
+    .sensoryFeedback(Haptic.success, trigger: model.landings)
   }
 
   @ViewBuilder private var fan: some View {
@@ -51,12 +52,6 @@ struct FeelingLuckyButton: View {
 
   private func prepare() {
     model.prepare(session, still: reducesMotion)
-  }
-
-  /// When the success tap comes: the songs have been picked. A function outside the main actor, as SwiftUI keeps it to
-  /// call later.
-  nonisolated static func landed(_ wasPicking: Bool, _ picking: Bool) -> Bool {
-    wasPicking && !picking
   }
 }
 

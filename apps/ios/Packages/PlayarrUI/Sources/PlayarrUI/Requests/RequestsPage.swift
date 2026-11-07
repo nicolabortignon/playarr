@@ -67,7 +67,7 @@ private struct RequestsList: View {
   /// Off the list at once, with Undo; the server forgets it once the Undo has gone.
   private func remove(_ request: AlbumRequest) {
     requests.hide(request)
-    session.toasts.undo("Removed “\(request.title)” from Requests") {
+    session.toasts.removed("Removed “\(request.title)” from Requests") {
       requests.unhide(request)
     } done: {
       Task { await requests.remove(request) }

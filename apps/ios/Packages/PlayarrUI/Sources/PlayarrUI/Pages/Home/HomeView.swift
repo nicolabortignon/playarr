@@ -9,6 +9,8 @@ struct HomeView: View {
   @Environment(AccountSession.self) private var session
   @Environment(\.verticalSizeClass) private var verticalSizeClass
   @Environment(\.dynamicTypeSize) private var typeSize
+  /// The hour on this device's clock, for the greeting: moves on as the hour does.
+  @State private var hour = HomeModel.hour(at: Date()).hour
 
   init(session: AccountSession) {
     _model = State(initialValue: HomeModel(session: session))
@@ -34,6 +36,15 @@ struct HomeView: View {
     .navigationTitle("")
     .inlineTitle()
     .task { await model.load() }
+    // The greeting follows the time of day: the hour is read as Home shows, then a second into each new one (or as the
+    // app comes back after it).
+    .task {
+      while !Task.isCancelled {
+        let now = HomeModel.hour(at: Date())
+        hour = now.hour
+        try? await Task.sleep(for: now.untilNext)
+      }
+    }
     .refreshable { await model.refresh() }
     .overlay {
       if let failure = model.failure {
@@ -52,7 +63,7 @@ struct HomeView: View {
     let layout = sideways ? AnyLayout(HStackLayout(alignment: .bottom, spacing: 24)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 20))
     return layout {
       VStack(alignment: .leading, spacing: sideways ? 8 : 20) {
-        Text("Hi, \(greetingName).")
+        Text(HomeModel.greeting(name: session.account.name, username: session.account.username, hour: hour))
           .font(.display(.largeTitle))
           .lineLimit(1)
           .minimumScaleFactor(0.6)
@@ -77,12 +88,6 @@ struct HomeView: View {
       }
     }
     .padding(.horizontal, 20)
-  }
-
-  /// The account's name, else its username.
-  private var greetingName: String {
-    let name = session.account.name.trimmingCharacters(in: .whitespaces)
-    return name.isEmpty ? session.account.username : name
   }
 
   private var mixes: some View {
@@ -167,7 +172,7 @@ struct HomeView: View {
             .frame(width: 44, height: 44)
         }
         .accessibilityLabel("Reshuffle")
-        .sensoryFeedback(.selection, trigger: model.seed)
+        .sensoryFeedback(Haptic.selection, trigger: model.seed)
       }
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 24) {
         ForEach(model.rediscover.value ?? []) { AlbumCard(album: $0) }
@@ -187,6 +192,7 @@ private struct ListeningButton: View {
   let player: Player
   let toggle: () -> Void
   @Environment(Theme.self) private var theme
+  @Environment(\.reducesMotion) private var reducesMotion
 
   var body: some View {
     Button(action: toggle) {
@@ -218,7 +224,8 @@ private struct ListeningButton: View {
       .contentShape(Capsule())
     }
     .buttonStyle(.plain)
-    .animation(.snappy(duration: 0.35), value: playing)
+    // Play's triangle turns into Pause's bars as the button draws in; at once under Reduce Motion.
+    .animation(reducesMotion ? nil : .snappy(duration: 0.35), value: playing)
     .accessibilityLabel(playing ? "Pause \(track.title)" : "Resume \(track.title)")
   }
 }

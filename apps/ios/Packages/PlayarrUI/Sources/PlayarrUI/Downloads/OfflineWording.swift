@@ -2,6 +2,10 @@ import Foundation
 import PlayarrAPI
 import PlayarrPlayer
 
+#if canImport(UIKit)
+  import UIKit
+#endif
+
 /// The words of the web's download screens (DownloadButton.tsx, pages/Downloads.tsx, OfflineStorage.tsx), worked out
 /// apart from the views so they're tested.
 enum OfflineWording {
@@ -36,6 +40,35 @@ enum OfflineWording {
 
   static func started(_ title: String) -> String { "Downloading “\(title)”" }
   static func removed(_ title: String) -> String { "Removed “\(title)” from this device" }
+  /// "“Mezzanine” is on this iPhone": every song of a download is here (`onThisDevice` in
+  /// apps/web/src/player/downloads.ts, which says "this device").
+  static func onThisDevice(_ title: String, device: String) -> String { "“\(title)” is on this \(device)" }
+
+  /// What this device is called in "on this iPhone": iPhone or iPad (Mac for the iPad app on a Mac).
+  @MainActor static var device: String {
+    #if os(iOS)
+      if ProcessInfo.processInfo.isiOSAppOnMac { return "Mac" }
+      return UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+    #else
+      return "Mac"
+    #endif
+  }
+
+  /// Downloads whose last song arrived between `before` and `after`, in the order they were added: the ring has closed
+  /// into its tick. Not one whole as it's added (its button says so at once) or put back by an Undo
+  /// (`justDownloaded` in apps/web/src/player/downloads.ts).
+  static func justDownloaded(before: OfflineManifest, after: OfflineManifest) -> [PinnedDownload] {
+    OfflineRules.inOrder(after.pins).filter { download in
+      guard let was = before.pins[download.key] else { return false }
+      return !isWhole(was, in: before) && isWhole(download, in: after)
+    }
+  }
+
+  /// Every song of the download is on the device.
+  private static func isWhole(_ download: PinnedDownload, in manifest: OfflineManifest) -> Bool {
+    let progress = OfflineRules.progress(of: download, in: manifest)
+    return progress.total > 0 && progress.isComplete
+  }
   static func noRoomMessage(_ title: String, needed: Int64, free: Int64) -> String {
     "\(title) needs \(ByteCount.format(needed)), and \(ByteCount.format(free)) is free. Remove some downloads in Library → Downloads."
   }

@@ -74,6 +74,13 @@ final class StatsModel {
     "\(Format.plural(stats.songs, "song")) by \(Format.plural(stats.artists, "artist")), on \(Format.plural(stats.days, "day"))."
   }
 
+  /// The streak going on is the period's longest, and more than a day: a new record, flagged (pages/Stats.tsx
+  /// isNewRecord).
+  static func isNewRecord(_ stats: ListeningStats) -> Bool {
+    let current = stats.currentStreak ?? 0
+    return current > 1 && current == stats.longestStreak
+  }
+
   /// The four figures under the minutes.
   static func tiles(_ stats: ListeningStats, locale: Locale = .current) -> [(label: String, value: String)] {
     [

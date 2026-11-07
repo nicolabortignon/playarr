@@ -32,6 +32,12 @@ import Testing
         #expect(sent["mode"] as? String == "party")
     }
 
+    @Test func sendsWhenAFavoriteTakenBackWasFirstMade() throws {
+        #expect(try API.Favorites.add(recordingId: "rec-1").bodyData() == nil)
+        let sent = try body(API.Favorites.add(recordingId: "rec-1", favoritedAt: "2026-01-02T03:04:05.000Z"))
+        #expect(sent as? [String: String] == ["favoritedAt": "2026-01-02T03:04:05.000Z"])
+    }
+
     @Test func runsEveryAnalysisAsAll() {
         #expect(API.Analysis.run(nil).path == "/api/analysis/all")
         #expect(API.Analysis.run(.beats).path == "/api/analysis/beats")

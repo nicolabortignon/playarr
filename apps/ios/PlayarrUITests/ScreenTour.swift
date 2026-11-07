@@ -200,10 +200,18 @@ final class ScreenTour: XCTestCase {
     if tap(tab("Library")) { tap(tab("Library"), timeout: 1) }
     if tap(button(beginningWith: "Favorites"), timeout: 2) {
       shot("17-favorites")
+      // Un-hearting takes the song out of the list in view: the toast says so, with Undo, which puts it back where it was.
+      if tap(app.buttons["Remove “Risingson” from Favorites"].firstMatch, timeout: 2) {
+        shot("17b-favorites-removed", after: 0.8)
+        if tap(app.buttons["Undo"].firstMatch, timeout: 2) { shot("17c-favorites-undone", after: 1.5) }
+      }
       back()
     }
     if tap(button(beginningWith: "Your listening"), timeout: 2) {
+      // A streak still going that's the longest has its flag.
       shot("20-stats", after: 2)
+      // The year in review, which slides up like a sleeve.
+      if tap(app.buttons["2026"].firstMatch, timeout: 2) { shot("20b-stats-year", after: 2) }
       back()
     }
     if tap(button(beginningWith: "Made for you"), timeout: 2) {
@@ -415,7 +423,9 @@ final class ScreenTour: XCTestCase {
       sidebar("newPlaylist").swipeDown(velocity: .fast)
       app.descendants(matching: .any)["sidebar.playlist.1000"].firstMatch.swipeDown(velocity: .fast)
     }
-    // Home can take a while to settle after the sidebar's swipes.
+    // Home can take a while to settle after the sidebar's swipes, and a swipe can open the playlist it starts on: Home
+    // again first. The album's page grows from its card.
+    tap(sidebar("home"), timeout: 2)
     if tap(app.buttons["Mezzanine, Massive Attack · 1998 · 3 of 5"].firstMatch, timeout: 10) {
       shot("02-album")
       if tap(app.buttons["Play Mezzanine"]) {

@@ -20,6 +20,10 @@ public final class AppRouter {
   public var focusSearch = false
   /// A query for Search to take (`search(_:)`); Search clears it once it has.
   public var searchQuery: String?
+  /// The card the page opened last was pressed on (`open(_:from:)`), for that page to grow from as it's made.
+  @ObservationIgnored private var zoom: (route: Route, source: CoverZoom.Source, at: ContinuousClock.Instant)?
+  /// The time, for how fresh `zoom` is.
+  @ObservationIgnored var now: () -> ContinuousClock.Instant = { .now }
 
   public init() {}
 
@@ -47,8 +51,22 @@ public final class AppRouter {
     detail = []
   }
 
+  /// Opens a page from the cover of a card pressed: it grows from it, and shrinks back into it (`CoverZoom`).
+  func open(_ route: Route, from source: CoverZoom.Source) {
+    open(route)
+    zoom = (route, source, now())
+  }
+
+  /// The card a page for `route` grows from: the one just pressed to open it. A page made a moment later (a link that
+  /// pushes the same album without the router, a stack made again) comes in as any other.
+  func zoom(for route: Route) -> CoverZoom.Source? {
+    guard let zoom, zoom.route == route, now() - zoom.at < .seconds(1) else { return nil }
+    return zoom.source
+  }
+
   /// Opens a page on top of the current tab, or of the detail column.
   public func open(_ route: Route) {
+    zoom = nil
     switch layout {
     case .tabs: paths[tab, default: []].append(route)
     case .split: detail.append(route)

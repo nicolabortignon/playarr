@@ -50,35 +50,15 @@ struct StatsView: View {
   }
 
   @ViewBuilder private func report(_ stats: ListeningStats) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      // A kicker, in the kicker's color: the accent is for what can be tapped.
-      if model.isYear { Kicker(text: "Year in review") }
-      // The big numbers are in the display face, without figures of one width: those set "1,792" as "1 , 792".
-      HStack(alignment: .firstTextBaseline, spacing: 10) {
-        Text(Format.number(Int(stats.minutes.rounded()))).font(.display(size: 60, relativeTo: .largeTitle))
-        Text("minutes").font(.sans(.title3)).foregroundStyle(.paperDim)
-      }
-      Text(StatsModel.summary(stats)).foregroundStyle(.secondary)
-      Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 16) {
-        let tiles = StatsModel.tiles(stats)
-        GridRow { tile(tiles[0]); tile(tiles[1]) }
-        GridRow { tile(tiles[2]); tile(tiles[3]) }
-      }
-      .padding(.top, 12)
+    // The first screen: a year in review slides out like a sleeve, afresh for each year. A year's own parts go by the
+    // report shown, not the period picked: the last one stays on screen while the next loads.
+    let year = StatsModel.isYear(stats.range)
+    VStack(alignment: .leading, spacing: 32) {
+      headline(stats, year: year)
+      if year, let top = stats.topArtists.first { artistOfTheYear(top, first: stats.firstSong) }
     }
-    if model.isYear, let top = stats.topArtists.first {
-      NavigationLink(value: Route.artist(top.artist.id)) {
-        HStack(alignment: .bottom, spacing: 16) {
-          Cover(path: top.artist.imageUrl, points: 120, label: top.artist.name, circle: true).frame(width: 120, height: 120)
-          VStack(alignment: .leading, spacing: 4) {
-            Kicker(text: "Your artist of the year")
-            Text(top.artist.name).font(.display(.title))
-            Text(artistLine(top, first: stats.firstSong)).font(.sans(.subheadline)).foregroundStyle(.secondary)
-          }
-        }
-      }
-      .buttonStyle(.plain)
-    }
+    .modifier(SleeveOut(active: year))
+    .id(stats.range)
     section("Top artists") {
       ForEach(Array(stats.topArtists.enumerated()), id: \.element.artist.id) { index, item in
         NavigationLink(value: Route.artist(item.artist.id)) {
@@ -143,6 +123,41 @@ struct StatsView: View {
     }
   }
 
+  /// The minutes, counting up as the report opens, the line under them and the four figures, a longest streak that's
+  /// the one going on flagged as a new record.
+  private func headline(_ stats: ListeningStats, year: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      // A kicker, in the kicker's color: the accent is for what can be tapped.
+      if year { Kicker(text: "Year in review") }
+      // The big numbers are in the display face, without figures of one width: those set "1,792" as "1 , 792".
+      HStack(alignment: .firstTextBaseline, spacing: 10) {
+        CountUp(value: Int(stats.minutes.rounded())).font(.display(size: 60, relativeTo: .largeTitle))
+        Text("minutes").font(.sans(.title3)).foregroundStyle(.paperDim)
+      }
+      Text(StatsModel.summary(stats)).foregroundStyle(.secondary)
+      Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 16) {
+        let tiles = StatsModel.tiles(stats)
+        GridRow { tile(tiles[0]); tile(tiles[1], flag: StatsModel.isNewRecord(stats)) }
+        GridRow { tile(tiles[2]); tile(tiles[3]) }
+      }
+      .padding(.top, 12)
+    }
+  }
+
+  private func artistOfTheYear(_ top: ListeningStats.TopArtistsItem, first: ListeningStats.FirstSong?) -> some View {
+    NavigationLink(value: Route.artist(top.artist.id)) {
+      HStack(alignment: .bottom, spacing: 16) {
+        Cover(path: top.artist.imageUrl, points: 120, label: top.artist.name, circle: true).frame(width: 120, height: 120)
+        VStack(alignment: .leading, spacing: 4) {
+          Kicker(text: "Your artist of the year")
+          Text(top.artist.name).font(.display(.title))
+          Text(artistLine(top, first: first)).font(.sans(.subheadline)).foregroundStyle(.secondary)
+        }
+      }
+    }
+    .buttonStyle(.plain)
+  }
+
   /// The report while it loads: the minutes, the line under them, the four figures, then the top artists.
   private var skeleton: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -167,10 +182,11 @@ struct StatsView: View {
     }
   }
 
-  private func tile(_ tile: (label: String, value: String)) -> some View {
+  private func tile(_ tile: (label: String, value: String), flag: Bool = false) -> some View {
     VStack(alignment: .leading, spacing: 6) {
       Text(tile.label).font(.sans(.footnote)).foregroundStyle(.muted)
       Text(tile.value).font(.display(size: 30, relativeTo: .title))
+      if flag { RecordFlag().padding(.top, 2) }
     }
   }
 

@@ -1,13 +1,26 @@
 import PlayarrPlayer
 import SwiftUI
 
-/// The page for a route: the same in every tab's stack (and, later, in an iPad split view).
+/// The page for a route: the same in every tab's stack (and, later, in an iPad split view). Opened from a card, it grows
+/// from the card's cover, and shrinks back into it (`CoverZoom`).
 struct RouteDestination: View {
   let route: Route
   let session: AccountSession
   @Environment(Theme.self) private var theme
+  /// The card it was opened from, taken as the page is made, so a card pressed later doesn't move where it goes back to.
+  @State private var grewFrom: CoverZoom.Source?
+
+  init(route: Route, session: AccountSession) {
+    self.route = route
+    self.session = session
+    _grewFrom = State(initialValue: session.router.zoom(for: route))
+  }
 
   var body: some View {
+    page.grows(from: grewFrom)
+  }
+
+  @ViewBuilder private var page: some View {
     switch route {
     case .album(let id): AlbumView(id: id, session: session, theme: theme)
     case .artist(let id): ArtistView(id: id, session: session)

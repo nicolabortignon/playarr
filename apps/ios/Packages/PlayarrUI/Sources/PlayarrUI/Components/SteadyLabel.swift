@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// A `Label` as wide as the widest of the words it may show, so a button changing its words (Play, Pause, Resume)
-/// moves nothing beside it.
+/// moves nothing beside it. A new icon turns into the next one rather than swapping (Play's triangle splitting into
+/// Pause's two bars, over 200 ms), and is simply there under Reduce Motion.
 struct SteadyLabel: View {
   /// One of the titles and icons it may show.
   struct Alternative: Hashable, Sendable {
@@ -13,6 +14,10 @@ struct SteadyLabel: View {
   let systemImage: String
   /// Every title and icon it may show.
   let alternatives: [Alternative]
+  @Environment(\.reducesMotion) private var reducesMotion
+
+  /// How long an icon takes to turn into the next (docs/design.md, Moments: Play and Pause are one shape).
+  static let morph = Animation.easeInOut(duration: 0.2)
 
   init(_ title: String, systemImage: String, among alternatives: [(title: String, systemImage: String)]) {
     self.title = title
@@ -26,7 +31,12 @@ struct SteadyLabel: View {
       // it draws an animation off the main thread (iOS 26), and a closure made in `body` is the main actor's, which
       // traps there (build 684, pressing Play).
       ForEach(alternatives, id: \.self, content: Self.room(for:))
-      Label(title, systemImage: systemImage)
+      Label {
+        Text(title)
+      } icon: {
+        Image(systemName: systemImage).contentTransition(.symbolEffect(.replace))
+      }
+      .animation(reducesMotion ? nil : Self.morph, value: systemImage)
     }
   }
 
