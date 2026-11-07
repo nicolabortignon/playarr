@@ -10,12 +10,21 @@ public final class QueryCache {
   /// After this an answer is shown but asked again (the web's default `staleTime`).
   public static let defaultStaleAfter: TimeInterval = 5 * 60
 
+  /// Answers kept in memory: the most recently used, beyond which the least recently used go (those kept on disk can
+  /// be read back from there), so a long evening of browsing doesn't keep every page it opened (plan 3 §2).
+  static let memoryLimit = 300
+  /// Writes kept to wait for in `flush`: the newest (the older ones are done by then).
+  static let writesKept = 64
+
   private struct Entry {
     var value: any Sendable
     var updatedAt: Date
+    /// When it was last read or written (`uses` then), for letting the least recently used go.
+    var usedAt = 0
   }
 
   private var memory: [QueryKey: Entry] = [:]
+  private var uses = 0
   private var inFlight: [QueryKey: Task<any Sendable, any Error>] = [:]
   private var writes: [Task<Void, Never>] = []
   private let disk: QueryDisk?
@@ -37,13 +46,17 @@ public final class QueryCache {
 
   /// The answer kept for `key` and when it came, from memory or else from disk; nil if none (or older than 7 days).
   public func cached<T: Codable & Sendable>(_ key: QueryKey, as type: T.Type = T.self) -> (value: T, updatedAt: Date)? {
-    if let entry = memory[key], let value = entry.value as? T { return (value, entry.updatedAt) }
+    if let entry = memory[key], let value = entry.value as? T {
+      uses += 1
+      memory[key]?.usedAt = uses
+      return (value, entry.updatedAt)
+    }
     guard keepsOnDisk(key), let disk, let stored = disk.read(T.self, file: key.fileName) else { return nil }
     guard pinned.contains(key) || now().timeIntervalSince(stored.updatedAt) < Self.keepFor else {
       disk.remove(file: key.fileName)
       return nil
     }
-    memory[key] = Entry(value: stored.value, updatedAt: stored.updatedAt)
+    remember(stored.value, updatedAt: stored.updatedAt, for: key)
     return (stored.value, stored.updatedAt)
   }
 
@@ -82,10 +95,23 @@ public final class QueryCache {
   /// Keeps `value` as the answer for `key` now (in memory, and on disk when kept).
   public func set<T: Codable & Sendable>(_ value: T, for key: QueryKey) {
     let updatedAt = now()
-    memory[key] = Entry(value: value, updatedAt: updatedAt)
+    remember(value, updatedAt: updatedAt, for: key)
     guard keepsOnDisk(key), let disk else { return }
     let file = key.fileName
     writes.append(Task.detached { await disk.write(value, updatedAt: updatedAt, file: file) })
+    if writes.count > Self.writesKept { writes.removeFirst(writes.count - Self.writesKept) }
+  }
+
+  /// Keeps an answer in memory, letting the least recently used go beyond `memoryLimit` (never a download's page, nor
+  /// one being asked for).
+  private func remember(_ value: any Sendable, updatedAt: Date, for key: QueryKey) {
+    uses += 1
+    memory[key] = Entry(value: value, updatedAt: updatedAt, usedAt: uses)
+    let over = memory.count - Self.memoryLimit
+    guard over > 0 else { return }
+    let oldest = memory.lazy.filter { !self.pinned.contains($0.key) && self.inFlight[$0.key] == nil && $0.key != key }
+      .sorted { $0.value.usedAt < $1.value.usedAt }.prefix(over).map(\.key)
+    for gone in oldest { memory[gone] = nil }
   }
 
   /// Every answer named `name` is asked again the next time it's shown.

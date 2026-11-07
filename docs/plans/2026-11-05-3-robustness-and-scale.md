@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 **Goal:** Playarr holds up on a collector's library (100k tracks) and in daily use: no stalls on the server's event loop or the iPhone's main thread, nothing lost when storage fills or two tabs are open, sessions and connections that can be trusted, and enough logging to diagnose a user's problem.
 
-**Where it stands (2026-11-07):** §1 done but for the build in a worker; §6 done on iOS. The rest not started.
+**Where it stands (2026-11-07):** §1 done but for the build in a worker; §2 partly done; §6 done on iOS. The rest not started.
 
 ## 1. Big libraries — M — done 2026-11-07, but for the build in a worker
 
@@ -16,7 +16,9 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 - An ETag from the library version on `/api/albums` and `/api/artists`; paging where lists get long; iOS and web page or index the albums list.
 - **Done when**, at 100k tracks, a no-change refresh takes under 1 s, search answers in under 200 ms and the albums page opens in under 2 s.
 
-## 2. iOS: the main thread belongs to the audio — M
+## 2. iOS: the main thread belongs to the audio — M — partly done 2026-11-07
+
+*Done: the queue and the downloads' list are written off the main thread, a second after they last changed and at once when the app goes to the background (`JSONWriter`), and where it is in the song is saved on its own (`resume.json`); covers are decoded off the main thread and kept decoded (`PreparedImages`, 48 MB); the query cache keeps the 300 answers used most recently in memory; the clock ticks twice a second while paused. Left: cached answers read from disk off the main thread, sideways Now Playing reading the time only in leaf views, polling paused in the background (but the requests' watch, which notifies), and the measurement in Instruments on a device.*
 
 - Queue and download-manifest saves move into an actor with debounced writes; the resume position is saved on its own (`Player.swift`, `JSONFile.swift`, `DownloadStore.swift`).
 - Cached answers decoded off the main thread (`QueryCache.swift`, `Query.swift`).

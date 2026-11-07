@@ -54,7 +54,8 @@ public final class DownloadStore {
   @ObservationIgnored private let cache: StreamCache
   @ObservationIgnored private let transport: any DownloadTransport
   @ObservationIgnored private let backend: any PlayerBackend
-  @ObservationIgnored private let saved: JSONFile<OfflineManifest>
+  /// The list of downloads and kept files, written off the main thread a moment after it changes.
+  @ObservationIgnored private let saved: JSONWriter<OfflineManifest>
   @ObservationIgnored private let capacity: @Sendable () -> Int64?
   @ObservationIgnored private let now: @Sendable () -> Date
   @ObservationIgnored private let poller: TransitionPoller
@@ -99,7 +100,7 @@ public final class DownloadStore {
     self.now = now
     poller = TransitionPoller(timing: poll)
     folder.prepare()
-    saved = JSONFile(folder.manifest)
+    saved = JSONWriter(folder.manifest)
     manifest = saved.read() ?? OfflineManifest()
     reconcile()
     pinsChanged()
@@ -292,6 +293,7 @@ public final class DownloadStore {
   public func appMovedToBackground() {
     inBackground = true
     pump()
+    flushSaves()
   }
 
   public func appBecameActive() {
@@ -698,6 +700,9 @@ public final class DownloadStore {
   }
 
   private func save() { saved.write(manifest) }
+
+  /// Writes the list now rather than in a moment (the app going to the background or closing).
+  public func flushSaves() { saved.flush() }
 
   /// A download was added, changed its songs, or went: the songs the "on this device" mark goes by follow.
   private func pinsChanged() { pinnedFileIds = OfflineRules.pinnedSongs(manifest.pins) }

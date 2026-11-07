@@ -41,12 +41,18 @@ struct Cover: View {
   private func load() async {
     missing = false
     let size = ImageCache.pixels(points: points, scale: scale)
+    let url = session.images.url(path, size: size)
+    // Already decoded: at once, with no trip off the main thread.
+    if let ready = PreparedImages.shared.image(for: url) {
+      image = ready
+      return
+    }
     guard let data = await session.images.data(path, size: size) else {
       image = nil
       missing = true
       return
     }
-    image = Image.decoded(data)
+    image = await PreparedImages.shared.prepare(data, for: url)
     missing = false
   }
 }

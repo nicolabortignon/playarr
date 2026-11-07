@@ -60,7 +60,10 @@ public final class Player {
   @ObservationIgnored private let backend: any PlayerBackend
   @ObservationIgnored private let cache: StreamCache
   @ObservationIgnored private let reports: PlayReportQueue
-  @ObservationIgnored private let saved: JSONFile<QueueState>
+  /// The queue, written off the main thread a moment after it changes.
+  @ObservationIgnored private let saved: JSONWriter<QueueState>
+  /// Where in the song it is, written every 5 s on its own (a small file, not the whole queue).
+  @ObservationIgnored private let resumePoint: JSONFile<ResumePoint>
   @ObservationIgnored private let makeEngine: () throws -> AudioEngine
   @ObservationIgnored private var tracker: PlayTracker
   @ObservationIgnored private(set) var loaded: (entry: Entry, item: EngineItem)?
@@ -91,6 +94,8 @@ public final class Player {
   /// The song is waiting out a dead spot (Settings → Copy diagnostics says so).
   public var isStalled: Bool { stalled != nil }
   @ObservationIgnored private var seekedSinceTick = false
+  /// The clock is ticking twice a second (`tickInterval`): playing again, it goes back to 10 at once.
+  @ObservationIgnored private var tickingSlowly = false
 
   /// The next song's mix couldn't be placed in time: it follows gapless (Stats for nerds says so).
   public var upcomingMixMissed: Bool { upcoming.map { missedMixes.contains($0.item.id) } ?? false }
@@ -107,6 +112,16 @@ public final class Player {
   /// While the phone is online, a stalled song is tried again after these waits; then it gives up and says why (tests:
   /// shorter).
   @ObservationIgnored var stallRetries: [Duration] = [.seconds(2), .seconds(5), .seconds(10), .seconds(20), .seconds(30)]
+
+  /// Where in the current song it was, saved every 5 s beside the queue; taken at launch when it's the same song at the
+  /// same place in the queue.
+  struct ResumePoint: Codable, Sendable, Equatable {
+    var at: Double
+    var pos: Int
+    var trackId: Int
+
+    func matches(_ queue: QueueState) -> Bool { queue.pos == pos && queue.currentTrack?.id == trackId }
+  }
 
   /// With DJ mix the engine keeps 2.5 s scheduled (not 10), so a press of Next mixes a few seconds after it.
   static let djScheduleAhead = 2.5
@@ -166,8 +181,11 @@ public final class Player {
     self.cache = cache
     self.reports = reports
     self.makeEngine = build
-    saved = JSONFile(directory.appending(path: "queue.json"))
-    queue = saved.read() ?? QueueState()
+    saved = JSONWriter(directory.appending(path: "queue.json"))
+    resumePoint = JSONFile(directory.appending(path: "resume.json"))
+    var restored = saved.read() ?? QueueState()
+    if let point = resumePoint.read(), point.matches(restored) { restored.resumeAt = point.at }
+    queue = restored
     engine = try build()
     tracker = PlayTracker { _ in }
     tracker = PlayTracker { [weak self] plays in self?.report(plays) }
@@ -191,15 +209,25 @@ public final class Player {
     Task { await reports.retry() }
   }
 
-  /// Runs the 10 Hz clock (the app calls this once; tests call `tick()` themselves).
+  /// Runs the clock (the app calls this once; tests call `tick()` themselves): 10 times a second while something moves,
+  /// twice a second while it's all paused (plan 3 §2).
   public func start() {
     ticker?.cancel()
     ticker = Task { [weak self] in
       while !Task.isCancelled {
-        try? await Task.sleep(for: .milliseconds(100))
+        let wait = self?.tickInterval ?? .milliseconds(100)
+        self?.tickingSlowly = wait > .milliseconds(100)
+        try? await Task.sleep(for: wait)
         self?.tick()
       }
     }
+  }
+
+  /// 10 a second while a song plays or loads, or a preview plays; twice a second otherwise, which is enough for the
+  /// sleep timer, the downloads and the saves.
+  var tickInterval: Duration {
+    let moving = queue.playing || previews != nil || engine.state == .loading || engine.state == .buffering
+    return moving ? .milliseconds(100) : .milliseconds(500)
   }
 
   // MARK: The queue (as store.ts)
@@ -315,7 +343,17 @@ public final class Player {
   public func appWillTerminate() {
     tracker.finish(.closed)
     queue.resumeAt = time
+    flushSaves()
+  }
+
+  /// The app is going to the background, or closing: the queue, where it is in the song and the downloads' list are
+  /// written now rather than in a moment.
+  public func flushSaves() {
+    _queue.resumeAt = time
     saved.write(queue)
+    saved.flush()
+    saveResumePoint()
+    downloads.flushSaves()
   }
 
   /// The account is switched away from: the song so far is reported, the queue saved, the engine stopped, and the lock
@@ -366,9 +404,11 @@ public final class Player {
     }
     if loaded != nil, now.timeIntervalSince(lastSaved) >= 5 {
       // Past the queue's observation (`_queue`, the macro's storage): nothing shows where to resume, and a change to
-      // `queue` every 5 s redrew every view of it, closing any menu open on one of them.
+      // `queue` every 5 s redrew every view of it, closing any menu open on one of them. The place goes to a file of
+      // its own: the queue itself is written when it changes.
       _queue.resumeAt = time
-      save(at: now)
+      lastSaved = now
+      saveResumePoint()
     }
   }
 
@@ -387,8 +427,9 @@ public final class Player {
 
   /// Brings the engine, levels, radio, prefetch, Now Playing and the saved queue in line with `queue`.
   private func sync() {
-    // Playing again: the goodnight is over.
+    // Playing again: the goodnight is over, and the clock ticks 10 times a second again, from now.
     if queue.playing { sleep.wake() }
+    if queue.playing, tickingSlowly, ticker != nil { start() }
     let entry = currentEntry
     if entry != loaded?.entry || (entry != nil && queue.playing && engine.state == .idle) {
       loadCurrent(entry)
@@ -673,6 +714,11 @@ public final class Player {
   private func save(at now: Date = Date()) {
     lastSaved = now
     saved.write(queue)
+  }
+
+  private func saveResumePoint() {
+    guard let track = queue.currentTrack else { return }
+    resumePoint.write(ResumePoint(at: time, pos: queue.pos, trackId: track.id))
   }
 
   private func report(_ plays: [PlayReport]) {

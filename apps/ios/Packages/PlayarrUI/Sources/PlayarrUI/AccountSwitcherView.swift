@@ -72,6 +72,8 @@ struct AccountSwitcherView: View {
     }
 
     private func signOut(_ record: AccountRecord) {
+        // The open account's list of downloads is written a moment after it changes: now, to be counted as it is.
+        if record.key == model.session?.key { model.session?.player.downloads.flushSaves() }
         if let kept = KeptForAccount.of(record.key, name: record.account.name) {
             leaving = kept
         } else {

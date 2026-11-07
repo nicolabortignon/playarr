@@ -44,7 +44,10 @@ extension Player {
       // Going to the background (inactive comes first, while new tasks still start at once): downloads hand the
       // system more songs, so they go on with the app closed.
       NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak player] _ in
-        MainActor.assumeIsolated { player?.downloads.appMovedToBackground() }
+        MainActor.assumeIsolated {
+          player?.downloads.appMovedToBackground()
+          player?.flushSaves()
+        }
       }
       NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak player] _ in
         MainActor.assumeIsolated { player?.downloads.appBecameActive() }

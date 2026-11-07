@@ -21,13 +21,41 @@ struct PlayerTests {
     #expect(player.time == 42)
   }
 
-  @Test func savesTheQueueAsItChanges() throws {
+  @Test func savesTheQueueAMomentAfterItChanges() async throws {
     let directory = temporaryDirectory()
+    let file = JSONFile<QueueState>(directory.appending(path: "queue.json"))
     let player = try Player.testing(directory: directory)
     player.play([song(1), song(2), song(3)], startAt: 1)
-    let saved = try #require(JSONFile<QueueState>(directory.appending(path: "queue.json")).read())
-    #expect(saved.pos == 1)
+    player.next()
+    // Off the main thread, once the changes stop for a moment: one write for the two.
+    #expect(file.read() == nil)
+    try await Task.sleep(for: .seconds(1.3))
+    let saved = try #require(file.read())
+    #expect(saved.pos == 2)
     #expect(saved.queue.count == 3)
+  }
+
+  @Test func ticksTenTimesASecondWhilePlayingTwiceWhilePaused() async throws {
+    let player = try Player.testing()
+    #expect(player.tickInterval == .milliseconds(500))
+    player.play([song(1)])
+    #expect(player.tickInterval == .milliseconds(100))
+    try await player.play(for: 0.5)
+    player.setPlaying(false)
+    #expect(player.tickInterval == .milliseconds(500))
+  }
+
+  @Test func takesTheSavedPlaceInTheSongWhenItsTheSameSong() throws {
+    let directory = temporaryDirectory()
+    var saved = QueueState()
+    saved.playTracks([song(1), song(2)], startIndex: 1)
+    saved.resumeAt = 10
+    JSONFile<QueueState>(directory.appending(path: "queue.json")).write(saved)
+    JSONFile<Player.ResumePoint>(directory.appending(path: "resume.json")).write(Player.ResumePoint(at: 61, pos: 1, trackId: 2))
+    #expect(try Player.testing(directory: directory).time == 61)
+    // Another song's place isn't taken.
+    JSONFile<Player.ResumePoint>(directory.appending(path: "resume.json")).write(Player.ResumePoint(at: 61, pos: 0, trackId: 1))
+    #expect(try Player.testing(directory: directory).time == 10)
   }
 
   @Test func savesWhereItIsEveryFiveSecondsWithoutRedrawingTheQueue() async throws {
@@ -41,9 +69,9 @@ struct PlayerTests {
     withObservationTracking { _ = player.queue } onChange: { redrawn.withLock { $0 = true } }
     player.tick(now: Date() + 6)
     #expect(!redrawn.withLock { $0 })
-    let saved = try #require(JSONFile<QueueState>(directory.appending(path: "queue.json")).read())
-    #expect(saved.resumeAt > 1)
-    #expect(saved.resumeAt == player.time)
+    let point = try #require(JSONFile<Player.ResumePoint>(directory.appending(path: "resume.json")).read())
+    #expect(point.at > 1)
+    #expect(point == Player.ResumePoint(at: player.time, pos: 0, trackId: 1))
   }
 
   @Test func anAlbumInOrderNeverFadesOtherSongsDo() throws {

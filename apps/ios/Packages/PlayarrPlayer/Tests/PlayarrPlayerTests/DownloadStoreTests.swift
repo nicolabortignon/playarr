@@ -23,7 +23,9 @@ final class StoreRig {
     if open { self.open() }
   }
 
+  /// Opens the store, as at a launch: the one before, if any, closed as the app does, its list written.
   func open() {
+    store?.flushSaves()
     let room = self.room
     store = DownloadStore(
       folder: folder, settings: settings, cache: cache, transport: transport, backend: backend,
@@ -130,6 +132,7 @@ struct DownloadStoreTests {
     #expect(rig.store.download("album:1") == removed)
     #expect(rig.store.isDownloaded(4) && rig.store.isDownloaded(5))
     #expect(rig.store.progress(of: "album:1") == DownloadProgress(done: 2, total: 2, bytes: 2000))
+    rig.store.flushSaves()
     #expect(JSONFile<OfflineManifest>(rig.folder.manifest).read()?.pins["album:1"] == removed)
   }
 
@@ -304,6 +307,7 @@ struct DownloadStoreTests {
     rig.store.add(album([4, 5]))
     await eventually { !rig.store.keptLevels.isEmpty }
     #expect(rig.store.keptLevels == ["rec-4": TrackLevel(track: -5, album: -3)])
+    rig.store.flushSaves()
     #expect(JSONFile<OfflineManifest>(rig.folder.manifest).read()?.pins["album:1"]?.levels.count == 1)
     // And the player hears of them at once, for playing the album offline before the next launch.
     #expect(learned == ["rec-4": TrackLevel(track: -5, album: -3)])
@@ -318,6 +322,7 @@ struct DownloadStoreTests {
     #expect(rig.store.manifest == OfflineManifest())
     await eventually { rig.folder.songFiles().isEmpty }
     #expect(rig.folder.songFiles().isEmpty)
+    rig.store.flushSaves()
     #expect(JSONFile<OfflineManifest>(rig.folder.manifest).read() == OfflineManifest())
   }
 
@@ -325,6 +330,8 @@ struct DownloadStoreTests {
     let rig = StoreRig()
     rig.store.add(album([4]))
     await rig.finish(4, bytes: 300)
+    // Its player wrote the list as it was closed (an account switched away from).
+    rig.store.flushSaves()
     #expect(DownloadStore.summary(of: rig.folder) == (downloads: 1, bytes: 300) )
     await DownloadStore.removeEverything(in: rig.folder, transport: rig.transport)
     #expect(DownloadStore.summary(of: rig.folder) == (downloads: 0, bytes: 0))

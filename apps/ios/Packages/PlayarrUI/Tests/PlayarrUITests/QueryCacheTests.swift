@@ -19,6 +19,22 @@ import Testing
     #expect(next.cached(.search("mezz"), as: [String].self) == nil)
   }
 
+  @Test func keepsTheMostRecentlyUsedAnswersInMemory() {
+    let cache = QueryCache(directory: nil)
+    let limit = QueryCache.memoryLimit
+    for id in 1...limit { cache.set("album \(id)", for: .album(id)) }
+    // Read since: it's among the recently used.
+    #expect(cache.cached(.album(1), as: String.self)?.value == "album 1")
+    cache.set("album \(limit + 1)", for: .album(limit + 1))
+    cache.set("album \(limit + 2)", for: .album(limit + 2))
+    #expect(cache.cached(.album(1), as: String.self) != nil)
+    // The two least recently used went.
+    #expect(cache.cached(.album(2), as: String.self) == nil)
+    #expect(cache.cached(.album(3), as: String.self) == nil)
+    #expect(cache.cached(.album(4), as: String.self) != nil)
+    #expect(cache.cached(.album(limit + 2), as: String.self) != nil)
+  }
+
   @Test func neverKeepsAShuffle() {
     #expect(QueryKey.albums(.added, limit: 14).isKept)
     #expect(!QueryKey.randomAlbums(seed: 0).isKept)
