@@ -86,6 +86,12 @@ Accounts, sessions, setup codes, the 401 rules and Bonjour are described in [../
 ## 5. Swift
 
 - **Concurrency.** Strict concurrency. UI state is `@MainActor @Observable` classes; networking and audio I/O are actors or `Sendable` types.
+- **Closures kept by a framework.** A closure made in a view's `body` is the main actor's, and it traps if it's called off the main thread (build 684). SwiftUI can draw a sheet's or an animation's frames off the main thread (iOS 26), and frameworks call their handlers on threads of their own. So these closures come from a `nonisolated static func` that returns them:
+  - a `Canvas` renderer (`Canvas(renderer: Self.drawing(…))`);
+  - `TimelineView` content;
+  - CoreMotion's, Network's and AVFoundation's handlers.
+
+  A `Shape`'s `path(in:)` is nonisolated already. Measure with `onGeometryChange`, whose transform is `@Sendable`, rather than a `GeometryReader` whose content draws, and keep `ForEach` out of `ViewThatFits`.
 - **Names** mirror the web's where the thing exists there (`Track`, `Album`, `PlaylistDetail`, `TransitionPlan`, `MixMap`); generated types keep their TypeScript names. Extensions go in `Type+Feature.swift` (`AccountSession+Shell.swift`, `Format+Listening.swift`).
 - **Files.** One primary type per file, named after it. No force unwraps in app code (the demo library's constants are the only ones).
 - **Indentation.** Match the file. `PlayarrAPI` mostly uses 4 spaces, everything else 2; the generated models use 4. There's no formatter.

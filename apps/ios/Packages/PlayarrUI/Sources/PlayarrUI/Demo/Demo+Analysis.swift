@@ -33,4 +33,11 @@ extension Demo {
       coldStart: false, coldEnd: false, soundStart: 0, soundEnd: track.duration - 0.5, beatsFrom: .model, phraseEnergy: energy,
       edgesStable: true)
   }
+
+  /// The mix maps of the demo songs recorded as `recordingIds`, keyed by recording: the player's and Edit mix points'.
+  public static func mixMaps(_ recordingIds: [String]) -> [String: MixMapEntry] {
+    var maps: [String: MixMapEntry] = [:]
+    for track in tracks where recordingIds.contains(track.recordingId) { maps[track.recordingId] = mixMap(track) }
+    return maps
+  }
 }

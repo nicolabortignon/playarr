@@ -12,6 +12,10 @@ import Testing
     #expect(try await api.send(API.Library.lyrics(trackId: 700)).lyrics == Demo.lyrics)
     #expect(try await api.send(API.Library.lyrics(trackId: 701)).lyrics == nil)
     #expect(try await api.send(API.Playback.radio(seeds: ["rec-700"])).count == 3)
+    // Edit mix points draws the mix map the player plans with; a song the demo has no analysis for has none.
+    let maps = try await api.send(API.Playback.mixMaps(ids: ["rec-700", "rec-702"]))
+    #expect(maps.keys.sorted() == ["rec-700"])
+    #expect(maps["rec-700"]?.bpm == 80)
   }
 
   @Test func readsTheArtistsDiscographyAsMusicBrainzWould() async throws {

@@ -173,21 +173,12 @@ struct PhraseEnergyStrip: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       HStack(spacing: 8) {
-        GeometryReader { geo in
-          ZStack(alignment: .bottomLeading) {
-            HStack(alignment: .bottom, spacing: 1) {
-              ForEach(strip.bars.indices, id: \.self) { k in
-                let bar = strip.bars[k]
-                RoundedRectangle(cornerRadius: 1)
-                  .fill(color(bar.state))
-                  .frame(height: geo.size.height * bar.height)
-              }
-            }
-            marker(.cyan, at: strip.introAt, width: geo.size.width)
-            marker(.pink, at: strip.outroAt, width: geo.size.width)
-          }
-        }
-        .frame(height: 20)
+        // Drawn by a function outside the main actor, not a GeometryReader's closure made here: SwiftUI can draw an
+        // animation's frames off the main thread (iOS 26), where that would trap (build 684). The markers reach 2
+        // points past the bars, above and below.
+        Canvas(renderer: Self.drawing(strip))
+          .frame(height: 20 + 2 * Self.overhang)
+          .padding(.vertical, -Self.overhang)
         Text(strip.energyNow)
       }
       HStack(spacing: 12) {
@@ -200,16 +191,32 @@ struct PhraseEnergyStrip: View {
     .accessibilityLabel("Phrase energy, now \(strip.energyNow); \(strip.introLabel); \(strip.outroLabel)")
   }
 
-  private func color(_ state: NerdStats.EnergyStrip.State) -> Color {
+  /// How far the intro's and the outro's lines reach past the bars.
+  nonisolated static let overhang: CGFloat = 2
+
+  /// The bars side by side, 1 point apart, each as tall as its phrase's energy, then the intro's and outro's lines.
+  nonisolated static func drawing(_ strip: NerdStats.EnergyStrip) -> (inout GraphicsContext, CGSize) -> Void {
+    { context, size in
+      let height = size.height - 2 * overhang
+      let count = CGFloat(strip.bars.count)
+      let width = count > 0 ? max(0, (size.width - (count - 1)) / count) : 0
+      for (k, bar) in strip.bars.enumerated() {
+        let tall = height * bar.height
+        let rect = CGRect(x: CGFloat(k) * (width + 1), y: overhang + height - tall, width: width, height: tall)
+        context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(color(bar.state)))
+      }
+      for (line, at) in [(Color.cyan, strip.introAt), (Color.pink, strip.outroAt)] {
+        context.fill(Path(CGRect(x: at * size.width, y: 0, width: 1, height: size.height)), with: .color(line))
+      }
+    }
+  }
+
+  nonisolated static func color(_ state: NerdStats.EnergyStrip.State) -> Color {
     switch state {
     case .unmeasured: .primary.opacity(0.05)
     case .now: .accentColor
     case .past: .primary.opacity(0.35)
     case .future: .primary.opacity(0.15)
     }
-  }
-
-  private func marker(_ color: Color, at x: Double, width: CGFloat) -> some View {
-    Rectangle().fill(color).frame(width: 1).offset(x: x * width).padding(.vertical, -2)
   }
 }

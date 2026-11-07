@@ -33,10 +33,6 @@ public struct DemoPlayerBackend: PlayerBackend {
 
   /// How long before a song's end the demo's quick mixes start, about.
   static let mixFromEnd = 16.0
-  public func mixMaps(_ recordingIds: [String]) async throws -> [String: MixMapEntry] {
-    var maps: [String: MixMapEntry] = [:]
-    for track in Demo.tracks where recordingIds.contains(track.recordingId) { maps[track.recordingId] = Demo.mixMap(track) }
-    return maps
-  }
+  public func mixMaps(_ recordingIds: [String]) async throws -> [String: MixMapEntry] { Demo.mixMaps(recordingIds) }
   public func transitionRequest(_ path: String) -> URLRequest { URLRequest(url: Demo.baseURL.appending(path: path)) }
 }
