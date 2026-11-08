@@ -280,7 +280,10 @@ export const api = {
   redeem: (body: { code: string; password: string; device: string; platform: string }) =>
     request<SignInResponse>('/api/auth/redeem', { method: 'POST', body: JSON.stringify(body) }),
   signOut: () => request<void>('/api/auth/sign-out', { method: 'POST' }),
-  switchAccount: (token: string) => request<Account>('/api/auth/switch', { method: 'POST', body: JSON.stringify({ token }) }),
+  /** Listen as an account: a token just signed in with, or one the server keeps in this browser as a cookie. */
+  switchAccount: (who: { token: string } | { accountId: number }) => request<Account>('/api/auth/switch', { method: 'POST', body: JSON.stringify(who) }),
+  /** A token an older version kept in localStorage, for the server to keep as a cookie no script can read. */
+  keepSignIn: (token: string) => request<Account>('/api/auth/keep', { method: 'POST', body: JSON.stringify({ token }) }),
   accounts: () => get<ListedAccount[]>('/api/accounts'),
   createAccount: (body: AccountInput) => request<CreatedAccount>('/api/accounts', { method: 'POST', body: JSON.stringify(body) }),
   updateAccount: (id: number, patch: Partial<AccountInput>) => request<Account>(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),

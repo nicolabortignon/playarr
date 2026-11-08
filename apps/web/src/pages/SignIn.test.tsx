@@ -52,7 +52,7 @@ describe('sign-in pages', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByText('Albums page')).toBeTruthy();
     expect(signIn).toHaveBeenCalledWith(expect.objectContaining({ username: 'nicola', password: 'correct horse', platform: 'web' }));
-    expect(swap).toHaveBeenCalledWith('tok-1');
+    expect(swap).toHaveBeenCalledWith({ token: 'tok-1' });
     expect(useAccounts.getState().accounts.map((a) => a.accountId)).toEqual([1]);
   });
 
@@ -68,12 +68,12 @@ describe('sign-in pages', () => {
 
   it('continues as an account already signed in on this device', async () => {
     vi.spyOn(api, 'server').mockResolvedValue(SERVER);
-    remember({ token: 'tok-2', account: SAM });
+    remember({ account: SAM });
     const swap = vi.spyOn(api, 'switchAccount').mockResolvedValue(SAM);
     renderAt('/sign-in');
     fireEvent.click(await screen.findByRole('button', { name: 'Continue as Sam' }));
     expect(await screen.findByText('Home page')).toBeTruthy();
-    expect(swap).toHaveBeenCalledWith('tok-2');
+    expect(swap).toHaveBeenCalledWith({ accountId: 2 });
   });
 
   it('sends visitors of a server nobody has set up to set it up', async () => {
@@ -172,7 +172,7 @@ describe('the public address (PUBLIC_URL)', () => {
     vi.spyOn(api, 'server').mockResolvedValue(PUBLIC);
     vi.spyOn(api, 'signIn').mockResolvedValue({ token: 'tok-1', account: NICOLA });
     vi.spyOn(api, 'redeem').mockResolvedValue({ token: 'tok-3', account: SAM });
-    vi.spyOn(api, 'switchAccount').mockImplementation(async (token) => (token === 'tok-1' ? NICOLA : SAM));
+    vi.spyOn(api, 'switchAccount').mockImplementation(async (who) => ('token' in who && who.token === 'tok-1' ? NICOLA : SAM));
     const go = vi.spyOn(publicAddress, 'go').mockImplementation(() => {});
     renderAt('/sign-in?next=%2Falbums');
     fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'Nicola ' } });

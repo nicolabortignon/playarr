@@ -103,7 +103,8 @@ Details in [../mixes.md](../mixes.md).
 | `GET /reachable/:token` | the reachability check's own request, through the proxy: the answer to a token of a check that's running, once; a plain 404 for anything else; 30 a minute per visitor ([https.md](https.md)) | open |
 | `POST /api/auth/setup` | claim the server: the owner's username and password | setup |
 | `POST /api/auth/sign-in`, `/api/auth/redeem` | sign in; choose a password with a setup code (both rate-limited per address) | open |
-| `POST /api/auth/switch` | make a token this browser's session cookie (authenticates by the token) | open |
+| `POST /api/auth/switch` | make a token this browser's session cookie, `{ token }` or `{ accountId }` for the token kept for that account in a cookie, and keep it so (authenticates by the token) | open |
+| `POST /api/auth/keep` | keep a token an older web app had in localStorage as that account's cookie, `playarr_kept_<id>` ([accounts-and-access.md](accounts-and-access.md)) | open |
 | `GET /api/auth/proof?id=&nonce=` | the server at an app's home address proving it holds the app's session, asked without the token (rate-limited per address; see [accounts-and-access.md](accounts-and-access.md#8-the-home-address)) | open |
 | `GET /api/auth/me`, `POST /api/auth/sign-out` | who's signed in; sign this device out | session |
 | `GET\|POST /api/accounts`, `DELETE /api/accounts/:id`, `POST /api/accounts/:id/reset` | list, create (with a setup code), remove, reset a password; create and reset refused in setup mode | admin |

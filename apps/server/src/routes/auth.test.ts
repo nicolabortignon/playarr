@@ -77,12 +77,42 @@ describe('auth routes', () => {
     recordFixture('auth-sign-in', signedIn, (answer) => ({ ...answer, token: 'token' }));
     const switched = await post('/api/auth/switch', { token });
     expect(switched.json()).toMatchObject({ id: 1, username: 'home' });
-    expect(switched.headers['set-cookie']).toBe(`playarr_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000`);
+    expect(switched.headers['set-cookie']).toEqual([
+      `playarr_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000`,
+      `playarr_kept_1=${token}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=34560000`,
+    ]);
     expect((await app.inject({ url: '/api/auth/me', headers: { cookie: `playarr_session=${token}` } })).json()).toMatchObject({ id: 1 });
     const me = await app.inject({ url: '/api/auth/me', headers: { authorization: `Bearer ${token}` } });
     expect(me.json()).toMatchObject({ id: 1 });
     recordFixture('auth-me', me);
     expect((await post('/api/auth/switch', { token: 'nope' })).statusCode).toBe(401);
+  });
+
+  it('keeps each account signed in on the browser as a cookie no script reads, and switches to it by its id', async () => {
+    const { app, accounts, sessions, post } = setup();
+    await accounts.setPassword(1, 'correct horse');
+    const sam = accounts.create({ username: 'sam', name: 'Sam', role: 'member' });
+    const mine = sessions.create(1, 'Mac', 'web').token;
+    const sams = sessions.create(sam.id, 'Mac', 'web').token;
+    // A token an older web app kept in localStorage becomes a cookie, sent only to /api/auth.
+    const kept = await post('/api/auth/keep', { token: sams });
+    expect(kept.json()).toMatchObject({ id: sam.id });
+    expect(kept.headers['set-cookie']).toBe(`playarr_kept_${sam.id}=${sams}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=34560000`);
+    expect((await post('/api/auth/keep', { token: 'nope' })).statusCode).toBe(401);
+    const cookie = `playarr_session=${mine}; playarr_kept_1=${mine}; playarr_kept_${sam.id}=${sams}`;
+    const switched = await post('/api/auth/switch', { accountId: sam.id }, { headers: { cookie } });
+    expect(switched.json()).toMatchObject({ id: sam.id });
+    expect(switched.headers['set-cookie']).toContain(`playarr_session=${sams}; Path=/; HttpOnly; SameSite=Lax; Max-Age=34560000`);
+    expect((await app.inject({ url: '/api/auth/me', headers: { cookie: `playarr_session=${sams}` } })).json()).toMatchObject({ id: sam.id });
+    // Not kept here, or kept under another account's name: nothing to switch to.
+    expect((await post('/api/auth/switch', { accountId: 9 }, { headers: { cookie } })).statusCode).toBe(401);
+    const misfiled = await post('/api/auth/switch', { accountId: 1 }, { headers: { cookie: `playarr_kept_1=${sams}` } });
+    expect(misfiled.statusCode).toBe(401);
+    // A kept sign-in that has ended is forgotten.
+    sessions.remove(sam.id, sessions.list(sam.id)[0]!.id);
+    const ended = await post('/api/auth/switch', { accountId: sam.id }, { headers: { cookie } });
+    expect(ended.statusCode).toBe(401);
+    expect(ended.headers['set-cookie']).toBe(`playarr_kept_${sam.id}=; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=0`);
   });
 
   it('signs in without a device or platform, recording the defaults', async () => {
@@ -98,7 +128,7 @@ describe('auth routes', () => {
     await accounts.setPassword(1, 'correct horse');
     const { token } = sessions.create(1, 'Mac', 'web');
     const res = await post('/api/auth/switch', { token }, { headers: { 'x-forwarded-proto': 'https' } });
-    expect(res.headers['set-cookie']).toMatch(/; Secure$/);
+    expect(res.headers['set-cookie']).toEqual([expect.stringMatching(/; Secure$/), expect.stringMatching(/; Secure$/)]);
   });
 
   it('turns sign-ins away after 10 failures from an address, and only from that address', async () => {
@@ -158,7 +188,10 @@ describe('auth routes', () => {
     const phone = sessions.create(1, 'iPhone', 'ios').token;
     const res = await post('/api/auth/sign-out', {}, { headers: { cookie: `playarr_session=${here}` } });
     expect(res.statusCode).toBe(204);
-    expect(res.headers['set-cookie']).toBe('playarr_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    expect(res.headers['set-cookie']).toEqual([
+      'playarr_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'playarr_kept_1=; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=0',
+    ]);
     expect((await app.inject({ url: '/api/auth/me', headers: { cookie: `playarr_session=${here}` } })).statusCode).toBe(401);
     expect((await app.inject({ url: '/api/auth/me', headers: { authorization: `Bearer ${phone}` } })).statusCode).toBe(200);
   });

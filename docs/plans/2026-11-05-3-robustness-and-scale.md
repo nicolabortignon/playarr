@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 **Goal:** Playarr holds up on a collector's library (100k tracks) and in daily use: no stalls on the server's event loop or the iPhone's main thread, nothing lost when storage fills or two tabs are open, sessions and connections that can be trusted, and enough logging to diagnose a user's problem.
 
-**Where it stands (2026-11-08):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §3 done but for checks in a real browser; §4 partly done (the headers, health's details for admins only, sessions that end, a sign-in budget for outside the home, SSH host keys; left: the full policy and the web's storage on signing out); §5 and §6 done. §7 as we go.
+**Where it stands (2026-11-08):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §3 done but for checks in a real browser; §4 done but for the full Content-Security-Policy; §5 and §6 done. §7 as we go.
 
 ## 1. Big libraries — M — done 2026-11-07, but for the build in a worker
 
@@ -36,9 +36,11 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 - Live mix reads only the bytes it needs from kept files (`liveMix.ts` `songBytes`).
 - **Done when** a full quota or a second tab never deletes a kept song.
 
-## 4. Sessions, headers and SSH — S–M — partly done 2026-11-07
+## 4. Sessions, headers and SSH — S–M — done 2026-11-08 but for the full policy
 
-*Done: every answer carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: frame-ancestors 'self'`, the web app's files, streams, art and transitions included (`securityHeaders.ts`); the rest of a policy waits until it can be checked in a browser, as a wrong one blanks the app. `/api/health` tells everyone whether things are fine, in the same shape as before, and only admins Lidarr's version and why Lidarr or the music can't be reached ([api.md](../server/api.md)). Sessions end after 90 days unused and a year after they began (`accounts/sessions.ts`). Failed sign-ins and codes from outside the home network share a budget of 100 in 15 minutes beside each address's own 10, and addresses with nothing recent are forgotten (`accounts/rateLimit.ts`). Left: the full policy, and on the web clearing the service worker's API cache on signing out and keeping other accounts' tokens out of localStorage in the clear.*
+*Done: every answer carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: frame-ancestors 'self'`, the web app's files, streams, art and transitions included (`securityHeaders.ts`); the rest of a policy waits until it can be checked in a browser, as a wrong one blanks the app. `/api/health` tells everyone whether things are fine, in the same shape as before, and only admins Lidarr's version and why Lidarr or the music can't be reached ([api.md](../server/api.md)). Sessions end after 90 days unused and a year after they began (`accounts/sessions.ts`). Failed sign-ins and codes from outside the home network share a budget of 100 in 15 minutes beside each address's own 10, and addresses with nothing recent are forgotten (`accounts/rateLimit.ts`). Left: the full policy.*
+
+*Done on the web (2026-11-08): signing out deletes the service worker's copies of API answers, as switching accounts did. No token is kept where a script can read it: the server keeps each account signed in on the browser as an HttpOnly cookie of its own, sent only to `/api/auth` (`playarr_kept_<id>`), and switching names the account (`POST /api/auth/switch` with `{ accountId }`); localStorage lists only who's signed in. Tokens an older version kept there go over once to `POST /api/auth/keep` and leave it ([accounts-and-access.md](../server/accounts-and-access.md)).*
 
 *Done, SSH (2026-11-07): SSH and SFTP sources record the host key's fingerprint on first use, in their settings (`hostKey`), and refuse any other key before logging in; saving the source trusts a new key, with a saved password typed again for it; a saved password goes only to the host, port and user it was saved for, else 400 (`media/ssh.ts`, `catalog/folderAccess.ts`, `catalog/sources.ts`).*
 

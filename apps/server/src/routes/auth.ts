@@ -2,7 +2,7 @@ import type { Account, AuthProof, SignInResponse } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AccountError, checkPassword, type Accounts } from '../accounts/accounts.ts';
-import { sessionCookie } from '../accounts/auth.ts';
+import { KEPT_COOKIE, keptCookie, readCookie, sessionCookie } from '../accounts/auth.ts';
 import { RateLimiter } from '../accounts/rateLimit.ts';
 import { requireLocalSetup } from '../accounts/rights.ts';
 import type { Sessions } from '../accounts/sessions.ts';
@@ -16,7 +16,9 @@ const device = {
 const setupInput = z.object({ username: z.string().trim().min(1).max(64), name: z.string().trim().min(1).max(40), password: z.string().max(200), ...device });
 const signInInput = z.object({ username: z.string().trim().min(1).max(64), password: z.string().min(1).max(200), ...device });
 const redeemInput = z.object({ code: z.string().trim().min(1).max(32), password: z.string().max(200), ...device });
-const switchInput = z.object({ token: z.string().min(1).max(200) });
+const tokenInput = z.object({ token: z.string().min(1).max(200) });
+/** A token (just signed in), or an account whose token this browser keeps as a cookie. */
+const switchInput = z.union([tokenInput, z.object({ accountId: z.number().int().positive() })]);
 // An HMAC-SHA256 in base64url, and a nonce of at least 128 random bits.
 const proofInput = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{43}$/), nonce: z.string().regex(/^[A-Za-z0-9_-]{22,128}$/) });
 
@@ -105,7 +107,7 @@ export function authRoutes(
     const auth = req.auth;
     if (!auth?.session) return reply.code(401).send({ error: 'Nobody is signed in', setup: accounts.setupMode() });
     sessions.remove(auth.account.id, auth.session.id);
-    if (auth.session.via === 'cookie') reply.header('set-cookie', sessionCookie(req, null));
+    if (auth.session.via === 'cookie') reply.header('set-cookie', [sessionCookie(req, null), keptCookie(req, auth.account.id, null)]);
     return reply.code(204).send();
   });
 
@@ -127,14 +129,32 @@ export function authRoutes(
     return answer;
   });
 
-  // The web keeps a token per account signed in on the device; switching makes one the cookie.
+  // The web keeps each account signed in on the browser (`keptCookie`); switching makes one's token the session cookie:
+  // a token just signed in with, or the one kept for an account. Either is kept from then on.
   app.post('/api/auth/switch', (req, reply) => {
     const parsed = switchInput.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'A token or an account is required' });
+    const asked = 'accountId' in parsed.data ? parsed.data.accountId : undefined;
+    const token = asked === undefined ? (parsed.data as { token: string }).token : readCookie(req.headers.cookie, `${KEPT_COOKIE}${asked}`);
+    const session = token ? sessions.resolve(token) : undefined;
+    const account = session && (asked === undefined || session.accountId === asked) ? accounts.get(session.accountId) : undefined;
+    if (!account || !token) {
+      // A kept sign-in that has ended goes.
+      if (asked !== undefined) reply.header('set-cookie', keptCookie(req, asked, null));
+      return reply.code(401).send({ error: 'That sign-in has ended: sign in again', setup: accounts.setupMode() });
+    }
+    reply.header('set-cookie', [sessionCookie(req, token), keptCookie(req, account.id, token)]);
+    return account;
+  });
+
+  // Tokens an older web app kept in localStorage, handed over once to be kept as cookies no script can read.
+  app.post('/api/auth/keep', (req, reply) => {
+    const parsed = tokenInput.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'A token is required' });
     const session = sessions.resolve(parsed.data.token);
     const account = session && accounts.get(session.accountId);
     if (!account) return reply.code(401).send({ error: 'That sign-in has ended: sign in again', setup: accounts.setupMode() });
-    reply.header('set-cookie', sessionCookie(req, parsed.data.token));
+    reply.header('set-cookie', keptCookie(req, account.id, parsed.data.token));
     return account;
   });
 }

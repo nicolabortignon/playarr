@@ -9,6 +9,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
+import { keepTokens } from './lib/accounts';
 import { watchForUpdates } from './lib/appUpdate';
 import { forgetStaleBuildReload, reloadIntoNewBuild } from './lib/staleBuild';
 import { persistOptions, queryClient } from './lib/queryClient';
@@ -21,6 +22,8 @@ import { routes } from './routes';
 startTabs();
 void hydratePlayer();
 void hydrateOffline();
+// Accounts' tokens an older version kept in localStorage go to the server, to be kept as cookies scripts can't read.
+void keepTokens();
 
 const router = createBrowserRouter(routes);
 watchForUpdates();

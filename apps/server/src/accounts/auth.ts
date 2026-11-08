@@ -5,6 +5,11 @@ import type { Accounts } from './accounts.ts';
 import type { Sessions } from './sessions.ts';
 
 export const SESSION_COOKIE = 'playarr_session';
+/**
+ * The web keeps each account signed in on the browser as a cookie of its own, playarr_kept_<account id>, for switching
+ * to it: HttpOnly, so no script can read a token, and sent only to /api/auth (`keptCookie`).
+ */
+export const KEPT_COOKIE = 'playarr_kept_';
 /** How long the browser keeps the session cookie: its longest (the session itself lasts until signed out). */
 const COOKIE_MAX_AGE = 400 * 86_400;
 
@@ -40,6 +45,7 @@ const OPEN = new Set([
   'POST /api/auth/redeem',
   'POST /api/auth/setup',
   'POST /api/auth/switch',
+  'POST /api/auth/keep',
   'GET /api/auth/proof',
 ]);
 
@@ -66,6 +72,16 @@ const overHttps = (req: FastifyRequest) => req.protocol === 'https' || req.heade
 /** The Set-Cookie value that makes `token` this browser's session, or ends it (null). */
 export function sessionCookie(req: FastifyRequest, token: string | null): string {
   const parts = [`${SESSION_COOKIE}=${token ?? ''}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${token ? COOKIE_MAX_AGE : 0}`];
+  if (overHttps(req)) parts.push('Secure');
+  return parts.join('; ');
+}
+
+/**
+ * The Set-Cookie value that keeps `token` in this browser for switching to `accountId` later, or forgets it (null):
+ * only Playarr's own pages send it (SameSite=Strict), and only to /api/auth.
+ */
+export function keptCookie(req: FastifyRequest, accountId: number, token: string | null): string {
+  const parts = [`${KEPT_COOKIE}${accountId}=${token ?? ''}`, 'Path=/api/auth', 'HttpOnly', 'SameSite=Strict', `Max-Age=${token ? COOKIE_MAX_AGE : 0}`];
   if (overHttps(req)) parts.push('Secure');
   return parts.join('; ');
 }

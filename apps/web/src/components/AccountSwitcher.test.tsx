@@ -31,15 +31,15 @@ const view = () =>
 describe('AccountSwitcher', () => {
   it('switches between the accounts signed in on this device, or adds one', async () => {
     vi.spyOn(api, 'me').mockResolvedValue(NICOLA);
-    remember({ token: 'tok-1', account: NICOLA });
-    remember({ token: 'tok-2', account: SAM });
+    remember({ account: NICOLA });
+    remember({ account: SAM });
     const swap = vi.spyOn(api, 'switchAccount').mockResolvedValue(SAM);
     view();
     expect(await screen.findByText('Not Nicola?')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Add account' }).getAttribute('href')).toBe('/sign-in?add=1');
     expect(screen.queryByRole('button', { name: 'Listen as Nicola' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Listen as Sam' }));
-    await waitFor(() => expect(swap).toHaveBeenCalledWith('tok-2'));
+    await waitFor(() => expect(swap).toHaveBeenCalledWith({ accountId: 2 }));
   });
 
   it('stays out of sight while nobody is signed in (setup mode)', async () => {
