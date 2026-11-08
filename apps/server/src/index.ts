@@ -199,7 +199,7 @@ const requests = new Requests(lidarr, musicbrainz, library, { db, legacyFile: re
   qualityProfileId: config.LIDARR_QUALITY_PROFILE_ID,
   metadataProfileId: config.LIDARR_METADATA_PROFILE_ID,
 });
-const discover = new Discover(lidarr, musicbrainz, library, requests);
+const discover = new Discover(lidarr, musicbrainz, requests);
 const recommendations = new Recommendations(playlists, favorites, requests, musicbrainz);
 
 // Every request's account (req.auth), from a Bearer token or the session cookie; 401 once set up.
@@ -232,7 +232,7 @@ mixMapRoutes(app, {
 });
 transitionRoutes(app, { transitions, library, unavailableReason: 'DJ mixing needs audio analysis, which is off on this server' });
 lyricsRoutes(app, { lyrics, library });
-discoverRoutes(app, { discover, requests });
+discoverRoutes(app, { discover, requests, library });
 favoriteRoutes(app, { favorites, library, recommendations });
 playlistRoutes(app, { playlists, recommendations, covers, library });
 mixRoutes(app, {

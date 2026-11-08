@@ -324,6 +324,7 @@ describe('contract fixtures', () => {
         remove: async () => {},
         approve: async () => approved,
       } as unknown as Requests,
+      library: {} as Library,
     });
     await recordGets(app, [
       ['discover-search', '/api/discover/search?q=massive'],

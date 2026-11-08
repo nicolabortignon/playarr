@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { AlbumRef, AlbumRequest, Availability, AvailabilityState, RequestSettings } from '@playarr/shared';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
 import type { LidarrAlbum, LidarrCommand, LidarrLookupAlbum, LidarrQueueItem } from '../lidarr/types.ts';
-import type { Library, LidarrAlbumRef } from '../library/library.ts';
+import type { Library, LibraryView, LidarrAlbumRef } from '../library/library.ts';
 import { albumKey, baseTitle, normalize } from '../library/search.ts';
 import { coverArtArchive, remoteArtUrl } from './art.ts';
 import { creditName, releaseGroupRank, type MusicBrainz } from './musicbrainz.ts';
@@ -81,6 +81,8 @@ export interface RequestViewer {
   /** The account asking: without accounts, the owner's. */
   accountId: number;
   everyone: boolean;
+  /** The library as the account may see it, when it hears only some sources: no link to an album outside them. */
+  library?: LibraryView;
 }
 
 /** Without accounts (and in tests): the owner, who sees every request. */
@@ -91,6 +93,9 @@ const OWNER: RequestViewer = { accountId: 1, everyone: true };
  * this as its message.
  */
 const WAITING_FOR_APPROVAL: Availability = { state: 'waiting', message: 'Waiting for approval' };
+
+/** An album in the library but outside the sources the account asking hears. */
+const NOT_HEARD = 'In a source this account doesn’t hear';
 
 /** The states of a request still on its way to the library: seen in one again, it hasn't arrived after all. */
 const ON_ITS_WAY: ReadonlySet<AvailabilityState> = new Set(['searching', 'downloading', 'importing', 'waiting']);
@@ -270,7 +275,7 @@ export class Requests {
    * admin's answer instead, unless it has gone to Lidarr and Lidarr still wants it (asking again then only searches
    * again, as anyone may). Asking for an album someone already asked for joins their request.
    */
-  async request(ref: AlbumRef, requestedBy?: number, options: { askFirst?: boolean } = {}): Promise<AlbumRequest> {
+  async request(ref: AlbumRef, requestedBy?: number, options: { askFirst?: boolean; library?: LibraryView } = {}): Promise<AlbumRequest> {
     await this.loaded;
     const settings = this.settingsForRequests();
     const lookup = await this.find(ref);
@@ -301,7 +306,8 @@ export class Requests {
       this.save(stored);
       if (requestedBy !== undefined) this.addAsker(mbid, requestedBy, now);
       this.requests.set(mbid, stored);
-      return { ...this.publicFields(stored), availability: withSongs(WAITING_FOR_APPROVAL, songsOf(known)), mine: true, approval: 'waiting' };
+      const availability = await seenBy(withSongs(WAITING_FOR_APPROVAL, songsOf(known)), options.library);
+      return { ...this.publicFields(stored), availability, mine: true, approval: 'waiting' };
     }
 
     const sent = await this.send(lookup, known, settings, existing, {
@@ -310,7 +316,7 @@ export class Requests {
       ...(existing && existing.status !== 'approved' ? { decidedBy: requestedBy, decidedAt: now } : {}),
     });
     if (requestedBy !== undefined) this.addAsker(mbid, requestedBy, now);
-    return { ...this.publicFields(sent.stored), availability: sent.availability, mine: requestedBy !== undefined };
+    return { ...this.publicFields(sent.stored), availability: await seenBy(sent.availability, options.library), mine: requestedBy !== undefined };
   }
 
   /**
@@ -512,7 +518,7 @@ export class Requests {
     return Promise.all(
       shown.map(async (r) => {
         const availability = r.status === 'approved' ? (statuses.get(r.mbid) ?? { state: 'waiting' }) : await this.answerOf(r, viewer, names);
-        return this.describeFor(r, viewer, availability, askers.get(r.mbid) ?? []);
+        return this.describeFor(r, viewer, await seenBy(availability, viewer.library), askers.get(r.mbid) ?? []);
       }),
     );
   }
@@ -548,8 +554,15 @@ export class Requests {
     for (const mbid of new Set(mbids)) one.run(now, accountId, mbid);
   }
 
-  /** Availability for an album known only by name (e.g. a Deezer song's album). */
-  async availabilityByName(artistName: string, albumTitle: string): Promise<Availability> {
+  /**
+   * Availability for an album known only by name (e.g. a Deezer song's album). `seen`: the library as the account asking
+   * may see it, when that's only some sources.
+   */
+  async availabilityByName(artistName: string, albumTitle: string, seen?: LibraryView): Promise<Availability> {
+    return seenBy(await this.everyonesByName(artistName, albumTitle), seen);
+  }
+
+  private async everyonesByName(artistName: string, albumTitle: string): Promise<Availability> {
     await this.loaded;
     const albumId = await this.library.albumIdByName(artistName, albumTitle);
     const album = albumId ? await this.library.album(albumId) : undefined;
@@ -565,8 +578,15 @@ export class Requests {
     return songs ? { state: 'partial', ...songs } : { state: 'none' };
   }
 
-  /** Availability for any release group, whether or not Playarr requested it. */
-  async availability(mbid: string): Promise<Availability> {
+  /**
+   * Availability for any release group, whether or not Playarr requested it. `seen`: the library as the account asking
+   * may see it, when that's only some sources.
+   */
+  async availability(mbid: string, seen?: LibraryView): Promise<Availability> {
+    return seenBy(await this.everyones(mbid), seen);
+  }
+
+  private async everyones(mbid: string): Promise<Availability> {
     await this.loaded;
     const known = await this.library.albumByMbid(mbid);
     const songs = songsOf(known);
@@ -707,7 +727,7 @@ export class Requests {
     const names = this.names();
     const now =
       availability ?? (r.status === 'approved' ? ((await this.statuses()).get(r.mbid) ?? { state: 'waiting' }) : await this.answerOf(r, viewer, names));
-    return this.describeFor(this.requests.get(r.mbid) ?? r, viewer, now, this.askers(r.mbid).get(r.mbid) ?? []);
+    return this.describeFor(this.requests.get(r.mbid) ?? r, viewer, await seenBy(now, viewer.library), this.askers(r.mbid).get(r.mbid) ?? []);
   }
 
   /** A request for `viewer`: whether they asked for it and whether that's news to them, and for an admin who else did. */
@@ -755,6 +775,19 @@ function songsOf(known: LidarrAlbumRef | undefined): Songs | undefined {
   return known?.albumId !== undefined && known.have !== undefined
     ? { albumId: known.albumId, have: known.have, ...(known.total !== undefined ? { total: known.total } : {}) }
     : undefined;
+}
+
+/**
+ * Availability as an account that hears only some sources has it (`seen`, its view of the library): Lidarr's progress
+ * and the household's requests as they are, but no link to an album outside its sources. Such an album, whole, is
+ * still in the library (asking for it again would bring nothing); with only some of its songs there, the rest can be
+ * asked for as if none were.
+ */
+async function seenBy(availability: Availability, seen: LibraryView | undefined): Promise<Availability> {
+  const { albumId, have: _have, total: _total, ...rest } = availability;
+  if (!seen?.sources || albumId === undefined || (await seen.album(albumId))) return availability;
+  if (rest.state === 'partial') return { state: 'none' };
+  return rest.state === 'available' ? { ...rest, message: NOT_HEARD } : rest;
 }
 
 /** A request's progress, plus the songs already here (so the album can still be opened). */

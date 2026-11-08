@@ -42,6 +42,8 @@ Album ids are not resolved per search result: a Deezer song only knows its artis
 
 Every album and song result carries an `availability`, from `Requests.availability` (by release-group id) or `availabilityByName` (artist and album title). Names are compared with `albumKey` (`library/search.ts`): accents, case and punctuation ignored, and edition suffixes stripped by `baseTitle`, so "Mezzanine (Deluxe)" and "Mezzanine - 2005 Remaster" both match "Mezzanine". The states are `available`, `partial` (some of its songs are here), one of the request states (section 5), or `none`. It's answered from the library snapshot, so it's instant.
 
+**Accounts that hear only some sources.** What Discover finds is the same for everyone, but its links into the library come from the account's own view of it (`libraryOf` in `accounts/rights.ts`), so they never lead to a page that isn't there for it: an artist outside its sources has no `artistId` (the link opens the Discover artist page), and availability is narrowed by `seenBy` in `discover/requests.ts`. An album in the library but outside its sources is still `available`, without an `albumId` and with "In a source this account doesn't hear" as its message, so the apps show In library without a way in, and Request isn't offered (asking again would bring nothing); with only some of its songs there, it's `none`, the rest to be asked for. A request's progress loses the songs already here outside them. The same goes for Songs like these and the account's own list of requests.
+
 Links follow what is known (`apps/web/src/lib/links.ts`):
 
 - Library songs link straight to their artist and album pages.

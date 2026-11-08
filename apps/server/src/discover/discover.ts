@@ -8,7 +8,7 @@ import type {
 } from '@playarr/shared';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { LidarrImage, LidarrLookupAlbum, LidarrLookupArtist } from '../lidarr/types.ts';
-import type { Library } from '../library/library.ts';
+import type { LibraryView } from '../library/library.ts';
 import { normalize } from '../library/search.ts';
 import { coverArtArchive, remoteArtUrl } from './art.ts';
 import { deezerArtistPicture, deezerArtistTopTracks, searchDeezerTracks, type DeezerTrack } from './deezer.ts';
@@ -26,16 +26,19 @@ const VERSION_WORDS = /\b(remix|mix|live|edit|version|dub|bootleg|cover|instrume
  * - artists & albums: Lidarr's metadata search (results carry MusicBrainz ids, ready to request), or MusicBrainz
  *   itself on a server without Lidarr, so search never stops at the library
  * - songs: Deezer (popularity-ranked); their album is resolved to MusicBrainz when requested
+ *
+ * What's out there is the same for everyone; the links into the library (an artist's page, an album's) come from
+ * `library`, the library as the account asking may see it, so an account that hears only some sources never gets one
+ * it can't open.
  */
 export class Discover {
   constructor(
     private readonly lidarr: LidarrClient,
     private readonly mb: MusicBrainz,
-    private readonly library: Library,
     private readonly requests: Requests,
   ) {}
 
-  async search(query: string, signal?: AbortSignal): Promise<DiscoverResults> {
+  async search(query: string, library: LibraryView, signal?: AbortSignal): Promise<DiscoverResults> {
     const q = query.trim();
     if (q.length < 2) return { artists: [], albums: [], tracks: [] };
     const nq = normalize(q);
@@ -67,12 +70,12 @@ export class Discover {
     const songArtist = songs.find((s) => nq.includes(normalize(s.artist.name)))?.artist.name;
 
     if (!lidarr) {
-      const found = await this.searchMusicBrainz(q, nq, songArtist, signal);
+      const found = await this.searchMusicBrainz(q, nq, songArtist, library, signal);
       if (!found && deezer.status === 'rejected') throw new Error(`Search failed: ${(deezer.reason as Error).message}`);
       const artists = found?.artists ?? [];
       const albums = found?.albums ?? [];
       const knownMbids = new Map([...albums.map((a) => [normalize(a.artistName), a.artistMbid] as const), ...artists.map((a) => [normalize(a.name), a.mbid] as const)]);
-      return { artists, albums, tracks: await Promise.all(songs.map((t) => this.deezerTrack(t, knownMbids))) };
+      return { artists, albums, tracks: await Promise.all(songs.map((t) => this.deezerTrack(t, knownMbids, library))) };
     }
 
     // Artists: Lidarr matches by name, so keep the ones the query actually names.
@@ -103,9 +106,9 @@ export class Discover {
     }
 
     return {
-      artists: await Promise.all(lookupArtists.slice(0, 6).map((a) => this.toArtist(a))),
-      albums: await Promise.all(albums.map((a) => this.lookupAlbum(a))),
-      tracks: await Promise.all(songs.map((t) => this.deezerTrack(t, knownMbids))),
+      artists: await Promise.all(lookupArtists.slice(0, 6).map((a) => this.toArtist(a, library))),
+      albums: await Promise.all(albums.map((a) => this.lookupAlbum(a, library))),
+      tracks: await Promise.all(songs.map((t) => this.deezerTrack(t, knownMbids, library))),
     };
   }
 
@@ -118,6 +121,7 @@ export class Discover {
     q: string,
     nq: string,
     songArtist: string | undefined,
+    library: LibraryView,
     signal?: AbortSignal,
   ): Promise<{ artists: DiscoverArtist[]; albums: DiscoverAlbum[] } | undefined> {
     const found = await this.mb.searchArtists(q, signal).catch(() => undefined);
@@ -149,7 +153,7 @@ export class Discover {
 
     return {
       artists: await mapLimit(named.slice(0, 6), 3, async (a): Promise<DiscoverArtist> => {
-        const artistId = await this.library.artistIdByMbid(a.id);
+        const artistId = await library.artistIdByMbid(a.id);
         const imageUrl = remoteArtUrl(await deezerArtistPicture(a.name, normalize, signal).catch(() => undefined));
         return {
           mbid: a.id,
@@ -163,15 +167,15 @@ export class Discover {
       albums: await Promise.all(
         albums.map((rg) => {
           const lead = rg['artist-credit']?.[0]?.artist;
-          return this.mbAlbum(rg, owner?.name ?? creditName(rg['artist-credit']), owner?.id ?? lead?.id ?? '');
+          return this.mbAlbum(rg, owner?.name ?? creditName(rg['artist-credit']), owner?.id ?? lead?.id ?? '', library);
         }),
       ),
     };
   }
 
   /** Name → MusicBrainz artist, for links from songs that only know a name: library, Lidarr, then MusicBrainz. */
-  async findArtist(name: string, signal?: AbortSignal): Promise<ArtistMatch | undefined> {
-    const owned = await this.library.artistByName(name);
+  async findArtist(name: string, library: LibraryView, signal?: AbortSignal): Promise<ArtistMatch | undefined> {
+    const owned = await library.artistByName(name);
     if (owned) return { mbid: owned.mbid, artistId: owned.id };
     const want = normalize(name);
     const hits = await this.lidarr.search(name).catch(() => []);
@@ -180,18 +184,18 @@ export class Discover {
       const found = await this.mb.searchArtists(name, signal).catch(() => []);
       mbid = (found.find((a) => normalize(a.name) === want) ?? found.find((a) => a.score >= 95))?.id;
     }
-    return mbid ? { mbid, artistId: await this.library.artistIdByMbid(mbid) } : undefined;
+    return mbid ? { mbid, artistId: await library.artistIdByMbid(mbid) } : undefined;
   }
 
   /**
    * Artists like this one, from ListenBrainz (who real listeners play alongside them), most similar first.
    * Those in the library carry their Playarr id and photo; the others a Deezer photo where it has one.
    */
-  async similarArtists(mbid: string, signal?: AbortSignal): Promise<DiscoverArtist[]> {
+  async similarArtists(mbid: string, library: LibraryView, signal?: AbortSignal): Promise<DiscoverArtist[]> {
     const similar = (await similarArtists(mbid, signal)).slice(0, SIMILAR_ARTISTS);
-    const owned = new Map((await this.library.artists()).map((a) => [a.id, a]));
+    const owned = new Map((await library.artists()).map((a) => [a.id, a]));
     return mapLimit(similar, 4, async (s): Promise<DiscoverArtist> => {
-      const artistId = await this.library.artistIdByMbid(s.artist_mbid);
+      const artistId = await library.artistIdByMbid(s.artist_mbid);
       const mine = artistId !== undefined ? owned.get(artistId) : undefined;
       const imageUrl =
         mine?.imageUrl ?? remoteArtUrl(await deezerArtistPicture(s.name, normalize, signal).catch(() => undefined));
@@ -206,7 +210,7 @@ export class Discover {
     });
   }
 
-  async artist(mbid: string, signal?: AbortSignal): Promise<DiscoverArtistDetail> {
+  async artist(mbid: string, library: LibraryView, signal?: AbortSignal): Promise<DiscoverArtistDetail> {
     const [info, groups] = await Promise.allSettled([
       this.lidarr.artistByMbid(mbid),
       this.mb.artistReleaseGroups(mbid, signal),
@@ -223,11 +227,11 @@ export class Discover {
         .filter((rg) => ['Album', 'EP'].includes(rg['primary-type'] ?? ''))
         .filter((rg) => !(rg['secondary-types'] ?? []).some((t) => HIDDEN_SECONDARY.has(t)))
         .sort(byNewest)
-        .map((rg) => this.mbAlbum(rg, name, mbid)),
+        .map((rg) => this.mbAlbum(rg, name, mbid, library)),
     );
     const base = lookup
-      ? await this.toArtist(lookup)
-      : { mbid, name, genres: [], artistId: await this.library.artistIdByMbid(mbid) };
+      ? await this.toArtist(lookup, library)
+      : { mbid, name, genres: [], artistId: await library.artistIdByMbid(mbid) };
     return {
       ...base,
       overview: lookup?.overview || undefined,
@@ -236,18 +240,18 @@ export class Discover {
     };
   }
 
-  private async toArtist(a: LidarrLookupArtist): Promise<DiscoverArtist> {
+  private async toArtist(a: LidarrLookupArtist, library: LibraryView): Promise<DiscoverArtist> {
     return {
       mbid: a.foreignArtistId,
       name: a.artistName,
       disambiguation: a.disambiguation || undefined,
       imageUrl: remoteArtUrl(image(a.images, 'poster') ?? image(a.images, 'fanart')),
       genres: (a.genres ?? []).slice(0, 3),
-      artistId: await this.library.artistIdByMbid(a.foreignArtistId),
+      artistId: await library.artistIdByMbid(a.foreignArtistId),
     };
   }
 
-  private async lookupAlbum(a: LidarrLookupAlbum): Promise<DiscoverAlbum> {
+  private async lookupAlbum(a: LidarrLookupAlbum, library: LibraryView): Promise<DiscoverAlbum> {
     return {
       mbid: a.foreignAlbumId,
       title: a.title,
@@ -257,11 +261,11 @@ export class Discover {
       type: a.albumType,
       secondaryTypes: a.secondaryTypes ?? [],
       coverUrl: remoteArtUrl(image(a.images, 'cover')) ?? remoteArtUrl(coverArtArchive(a.foreignAlbumId)),
-      availability: await this.requests.availability(a.foreignAlbumId),
+      availability: await this.requests.availability(a.foreignAlbumId, library),
     };
   }
 
-  private async mbAlbum(rg: MbReleaseGroup, artistName: string, artistMbid: string): Promise<DiscoverAlbum> {
+  private async mbAlbum(rg: MbReleaseGroup, artistName: string, artistMbid: string, library: LibraryView): Promise<DiscoverAlbum> {
     return {
       mbid: rg.id,
       title: rg.title,
@@ -271,13 +275,13 @@ export class Discover {
       type: rg['primary-type'] ?? 'Album',
       secondaryTypes: rg['secondary-types'] ?? [],
       coverUrl: remoteArtUrl(coverArtArchive(rg.id)),
-      availability: await this.requests.availability(rg.id),
+      availability: await this.requests.availability(rg.id, library),
     };
   }
 
-  private async deezerTrack(t: DeezerTrack, knownMbids: Map<string, string>): Promise<DiscoverTrack> {
+  private async deezerTrack(t: DeezerTrack, knownMbids: Map<string, string>, library: LibraryView): Promise<DiscoverTrack> {
     const artistMbid = knownMbids.get(normalize(t.artist.name));
-    const owned = artistMbid ? undefined : await this.library.artistByName(t.artist.name);
+    const owned = artistMbid ? undefined : await library.artistByName(t.artist.name);
     return {
       id: `deezer:${t.id}`,
       title: t.title,
@@ -286,9 +290,9 @@ export class Discover {
       duration: t.duration,
       coverUrl: remoteArtUrl(t.album.cover_medium),
       album: { artistName: t.artist.name, albumTitle: t.album.title },
-      availability: await this.requests.availabilityByName(t.artist.name, t.album.title),
+      availability: await this.requests.availabilityByName(t.artist.name, t.album.title, library),
       artistMbid: artistMbid ?? owned?.mbid,
-      artistId: owned?.id ?? (artistMbid ? await this.library.artistIdByMbid(artistMbid) : undefined),
+      artistId: owned?.id ?? (artistMbid ? await library.artistIdByMbid(artistMbid) : undefined),
     };
   }
 }

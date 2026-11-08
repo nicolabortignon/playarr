@@ -133,7 +133,7 @@ What that means in practice ([api.md](api.md) lists every route):
 
 An account that hears only some sources gets a `LibraryView` of the catalog: the same catalog built from only the copies in those sources (`library.view(sources)` in `library/library.ts`). A song exists for it when it has a copy there, an album or artist when it has such a song, and a song's `fileId` is the best copy the account may hear. One view is made per distinct set of sources and shared by every account with that set; it rebuilds when the library changes. Routes narrow with `libraryOf(library, req)`, or `visibleRecordings` for lists of recording ids.
 
-This covers the catalog and search, `/stream`, `/art`, `/transitions`, levels, mix maps and cue points, lyrics, metadata, favorites, playlists, mixes, radio, stats and Jump back in. Discover's search and its "in your library" links are the whole server's; the list of requests is the account's own (an admin's, everyone's). How the catalog itself is built is in [sources-and-catalog.md](sources-and-catalog.md).
+This covers the catalog and search, `/stream`, `/art`, `/transitions`, levels, mix maps and cue points, lyrics, metadata, favorites, playlists, mixes, radio, stats and Jump back in. What Discover's search finds is the whole server's, but its links into the library come from the account's view, so they never lead to a page that isn't there for it ([discover-and-requests.md](discover-and-requests.md#3-already-own-it-artist-and-album-links)); the list of requests is the account's own (an admin's, everyone's). How the catalog itself is built is in [sources-and-catalog.md](sources-and-catalog.md).
 
 ---
 

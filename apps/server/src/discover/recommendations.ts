@@ -170,9 +170,9 @@ export class Recommendations {
           m.artistId = await library.artistIdByMbid(artistMbid);
         }
         if (groupMbid) m.album!.mbid = groupMbid;
-        const byMbid = groupMbid ? await this.requests.availability(groupMbid) : undefined;
+        const byMbid = groupMbid ? await this.requests.availability(groupMbid, library) : undefined;
         m.availability =
-          byMbid && byMbid.state !== 'none' ? byMbid : await this.requests.availabilityByName(m.artistName, m.albumTitle);
+          byMbid && byMbid.state !== 'none' ? byMbid : await this.requests.availabilityByName(m.artistName, m.albumTitle, library);
       }),
     );
     return { owned, missing, seedCount: seeds.length };

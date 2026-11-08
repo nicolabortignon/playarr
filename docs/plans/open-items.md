@@ -20,7 +20,6 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - Skip copies on an offline or unreachable source (today they stay in the catalog and fail to play). *(sources design)*
 - Merge and key unmatched folder songs by fingerprint (today they keep `local:<hash>` ids for good). *(sources design, sources phase 3)*
 - A loose song's menu listing the other releases it's on. *(sources design)*
-- Discover's "in your library" links come from the whole library, so an account limited to some sources can get a link that 404s. *(iOS phase 1 accounts plan)*
 - Levels for accounts limited to some sources: loudness is measured on the full library's best copy, so an account whose only copy is another file hears that song unlevelled. *(iOS phase 1 accounts plan)*
 - Check on the NAS that internet visitors never look like home-network addresses (Docker's userland proxy can rewrite source addresses); it matters while a server is in setup mode. *(PLAN.md decisions log, 2026-10-30)*
 - Try matching, SSH, SFTP, SMB, AcoustID and fpcalc against real hosts and a real collection; the plans only verified them with tests and fakes. *(sources phases 4, 5, 6)*

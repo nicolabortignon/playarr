@@ -124,8 +124,16 @@ export function RequestButton({
   switch (state) {
     case 'available':
       if (large) return null;
+      // Without an album to open: in a source this account doesn't hear (its message says so).
+      if (albumId === undefined) {
+        return (
+          <StatusBadge icon={<Check className="text-success" />} title={message} className={className}>
+            In library
+          </StatusBadge>
+        );
+      }
       return (
-        <Button size="small" icon={<Check className="text-success" />} onClick={stop(() => albumId && navigate(`/albums/${albumId}`))} className={className}>
+        <Button size="small" icon={<Check className="text-success" />} onClick={stop(() => navigate(`/albums/${albumId}`))} className={className}>
           In library
         </Button>
       );

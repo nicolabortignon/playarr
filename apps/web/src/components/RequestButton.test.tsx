@@ -59,6 +59,12 @@ describe('RequestButton', () => {
     expect(screen.queryByRole('button', { name: /^request/i })).toBeNull();
   });
 
+  it('says In library without a way in for an album in a source the account doesn’t hear', () => {
+    renderButton({ state: 'available', message: 'In a source this account doesn’t hear' });
+    expect(screen.getByTitle('In a source this account doesn’t hear').textContent).toBe('In library');
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
   it('shows how a request is going as a status, not a button', () => {
     for (const [availability, status] of [
       [{ state: 'searching' }, 'Searching'],

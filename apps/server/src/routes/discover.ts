@@ -1,8 +1,9 @@
 import type { AlbumRef, RequestsSeen } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Discover } from '../discover/discover.ts';
-import { accountId, requireAdmin, requireCanRequest, requestsWaitForApproval, seesEveryRequest } from '../accounts/rights.ts';
+import { accountId, libraryOf, requireAdmin, requireCanRequest, requestsWaitForApproval, seesEveryRequest, sourcesOf } from '../accounts/rights.ts';
 import { RequestError, type Requests, type RequestViewer } from '../discover/requests.ts';
+import type { Library, LibraryView } from '../library/library.ts';
 
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -12,8 +13,10 @@ function fail(reply: FastifyReply, err: unknown) {
   return reply.code(502).send({ error: (err as Error).message });
 }
 
-export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover; requests: Requests }) {
+export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover; requests: Requests; library: Library }) {
   const { discover, requests } = deps;
+  /** The library as the request's account may see it: Discover's links into it, and requests' albums, go only there. */
+  const seen = (req: FastifyRequest): LibraryView => libraryOf(deps.library, req);
 
   /**
    * Abort upstream work when the client gives up (e.g. typed a newer query).
@@ -29,7 +32,7 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
 
   app.get<{ Querystring: { q?: string } }>('/api/discover/search', async (req, reply) => {
     try {
-      return await discover.search(req.query.q ?? '', abortOnDisconnect(reply));
+      return await discover.search(req.query.q ?? '', seen(req), abortOnDisconnect(reply));
     } catch (err) {
       return fail(reply, err);
     }
@@ -38,7 +41,7 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
   app.get<{ Params: { mbid: string } }>('/api/discover/artists/:mbid', async (req, reply) => {
     if (!MBID.test(req.params.mbid)) return reply.code(400).send({ error: 'Invalid MusicBrainz id' });
     try {
-      return await discover.artist(req.params.mbid, abortOnDisconnect(reply));
+      return await discover.artist(req.params.mbid, seen(req), abortOnDisconnect(reply));
     } catch (err) {
       return fail(reply, err);
     }
@@ -47,7 +50,7 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
   app.get<{ Params: { mbid: string } }>('/api/discover/artists/:mbid/similar', async (req, reply) => {
     if (!MBID.test(req.params.mbid)) return reply.code(400).send({ error: 'Invalid MusicBrainz id' });
     try {
-      return await discover.similarArtists(req.params.mbid, abortOnDisconnect(reply));
+      return await discover.similarArtists(req.params.mbid, seen(req), abortOnDisconnect(reply));
     } catch (err) {
       return fail(reply, err);
     }
@@ -57,15 +60,19 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
     const name = req.query.name?.trim();
     if (!name) return reply.code(400).send({ error: 'name is required' });
     try {
-      const match = await discover.findArtist(name, abortOnDisconnect(reply));
+      const match = await discover.findArtist(name, seen(req), abortOnDisconnect(reply));
       return match ?? reply.code(404).send({ error: `Couldn’t find “${name}” on MusicBrainz` });
     } catch (err) {
       return fail(reply, err);
     }
   });
 
-  /** A member's own requests; an admin's every request. */
-  const viewer = (req: FastifyRequest): RequestViewer => ({ accountId: accountId(req), everyone: seesEveryRequest(req) });
+  /** A member's own requests; an admin's every request. Albums outside the account's sources aren't linked to. */
+  const viewer = (req: FastifyRequest): RequestViewer => ({
+    accountId: accountId(req),
+    everyone: seesEveryRequest(req),
+    ...(sourcesOf(req) === null ? {} : { library: seen(req) }),
+  });
 
   app.get('/api/requests', (req) => requests.list(viewer(req)));
 
@@ -81,7 +88,7 @@ export function discoverRoutes(app: FastifyInstance, deps: { discover: Discover;
       return await requests.request(
         { mbid, releaseMbid, artistName: artistName ?? '', albumTitle: albumTitle ?? '' },
         req.auth?.account.id,
-        { askFirst: requestsWaitForApproval(req) },
+        { askFirst: requestsWaitForApproval(req), library: seen(req) },
       );
     } catch (err) {
       req.log.warn({ err, mbid, artistName, albumTitle }, 'album request failed');

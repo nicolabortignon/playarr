@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { freshDb, tempDir } from '../catalog/testFixtures.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { LidarrLookupAlbum } from '../lidarr/types.ts';
-import type { Library, LidarrAlbumRef } from '../library/library.ts';
+import type { Library, LibraryView, LidarrAlbumRef } from '../library/library.ts';
 import type { MusicBrainz } from './musicbrainz.ts';
 import { type RequestDefaults, Requests, type RequestViewer } from './requests.ts';
 
@@ -287,6 +287,44 @@ describe('Requests', () => {
     await requests.request({ artistName: 'N Sync', albumTitle: 'No Strings Attached' });
     expect(mb.searchArtists).toHaveBeenCalledWith('N Sync');
     expect(lidarr.albumByMbid).toHaveBeenCalledWith(MBID);
+  });
+
+  describe('for an account that hears only some sources', () => {
+    /** Its view of the library, holding the albums with these ids. */
+    const view = (...albums: number[]) =>
+      ({ sources: [2], album: vi.fn(async (id: number) => (albums.includes(id) ? {} : undefined)) }) as unknown as LibraryView;
+    const NOT_HEARD = { state: 'available', message: 'In a source this account doesn’t hear' };
+
+    it('never links to an album outside them: a whole one is in the library, part of one is still to ask for', async () => {
+      const { requests, library } = setup();
+      library.albumByMbid.mockResolvedValue({ monitored: false, albumId: 5 });
+      expect(await requests.availability(MBID, view())).toEqual(NOT_HEARD);
+      expect(await requests.availability(MBID, view(5))).toEqual({ state: 'available', albumId: 5 });
+      library.albumByMbid.mockResolvedValue({ monitored: false, albumId: 5, have: 1, total: 12 });
+      expect(await requests.availability(MBID, view())).toEqual({ state: 'none' });
+      expect(await requests.availability(MBID, view(5))).toEqual({ state: 'partial', albumId: 5, have: 1, total: 12 });
+      library.albumIdByName.mockResolvedValue(5);
+      library.album.mockResolvedValue({ trackCount: 10, totalTrackCount: 10 });
+      expect(await requests.availabilityByName('Massive Attack', 'Mezzanine', view())).toEqual(NOT_HEARD);
+    });
+
+    it('shows its requests’ progress without the songs that are here only outside them', async () => {
+      const { requests, library } = setup({}, {}, {}, household());
+      library.albumByMbid.mockResolvedValue({ monitored: false, albumId: 5, have: 1, total: 12 });
+      const searching = { state: 'searching', message: 'Searching indexers…' };
+      expect((await requests.request(ref, 2, { library: view() })).availability).toEqual(searching);
+      expect(await requests.availability(MBID, view())).toEqual(searching);
+      // One who hears every source still has the songs here, and the album to open.
+      expect(await requests.availability(MBID)).toEqual({ ...searching, albumId: 5, have: 1, total: 12 });
+    });
+
+    it('says a request that arrived outside them is in a source it doesn’t hear', async () => {
+      const { requests, library } = setup({}, {}, {}, household());
+      await requests.request(ref, 2, { library: view() });
+      library.albumByMbid.mockResolvedValue({ monitored: true, lidarrId: 42, albumId: 5 });
+      expect((await requests.list({ accountId: 2, everyone: false, library: view() }))[0]?.availability).toEqual(NOT_HEARD);
+      expect((await requests.list({ accountId: 2, everyone: false }))[0]?.availability).toEqual({ state: 'available', albumId: 5 });
+    });
   });
 
   describe('belonging to whoever asked', () => {
