@@ -91,6 +91,15 @@ import Testing
     #expect(list(queue(Demo.mezzanineTracks, pos: 0, from: "/mixes/vibes")).line(at: 2)?.joinBefore == Tracklist.Join.none)
   }
 
+  @Test func mixesAnAlbumsSongsInOrderWhereTheQueueOnlyHappensToHaveThem() {
+    // Feeling lucky (or a playlist) with Angel before Risingson: DJ mix blends them as the player does, the mix in words.
+    let lucky = list(queue(Demo.mezzanineTracks, pos: 0, from: "/"), .dj)
+    #expect(lucky.line(at: 1)?.joinBefore == .dj)
+    #expect(lucky.line(at: 2)?.joinBefore == .djLater)
+    // Without DJ mix they're heard as one wherever they come from.
+    #expect(list(queue(Demo.mezzanineTracks, pos: 0, from: "/"), .crossfade).line(at: 1)?.joinBefore == .continues)
+  }
+
   @Test func saysWhatComesAfterTheLastSongAndHowMuchIsLeft() {
     let mix = [Demo.mezzanineTracks[0], Demo.dummyTracks[0], Demo.protectionTracks[0]]
     #expect(list(queue(mix, pos: 0, from: "/mixes/vibes")).end == "The queue ends here")

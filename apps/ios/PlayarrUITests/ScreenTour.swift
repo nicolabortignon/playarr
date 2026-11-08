@@ -631,7 +631,8 @@ final class ScreenTour: XCTestCase {
     if tap(inBar, timeout: 10) { shot("01d-feeling-lucky-player-bar", after: 2.5) }
   }
 
-  /// The iPhone held sideways: Home, the gatefold pages, the artist, Library, Search and Now Playing's sleeve.
+  /// The iPhone held sideways: Home, the gatefold pages, the artist, Library, Search and Now Playing's sleeve: its lyrics,
+  /// the stage, and a DJ mix's next transition under the open line.
   @MainActor
   func testTheMainScreensSideways() throws {
     try XCTSkipIf(onIPad, "The iPad has its own tour")
@@ -661,6 +662,13 @@ final class ScreenTour: XCTestCase {
         shot("04b-lyrics")
         tap(app.buttons["Lyrics"])
       }
+      // The stage, as 12 s untouched while playing would bring it: the controls fade and the open line moves to the
+      // middle, the time left under it. Another tap on the cover brings the controls back.
+      let cover = app.descendants(matching: .any)["Mezzanine cover"].firstMatch
+      if tap(cover) {
+        shot("04d-stage", after: 2)
+        cover.tap()
+      }
       // As the song ends, what comes next in the open line, in the artist's place. Sought upright (19 s before the end):
       // sideways, the test's drag on the sleeve's seek bar lands anywhere.
       XCUIDevice.shared.orientation = .portrait
@@ -670,6 +678,17 @@ final class ScreenTour: XCTestCase {
       tap(app.buttons["Close now playing"], timeout: 2)
     }
     if tap(tab("Search")) { shot("07-search") }
+    app.terminate()
+
+    // DJ mix (Feeling lucky's queue of every album): under the open line, the mix into the next song in words; the
+    // pairs further down, not planned yet, joined by a faint dotted line. The mix is asked for once Angel has played 5 s.
+    XCUIDevice.shared.orientation = .portrait
+    launch(["-UITests", "-UITestsDemo", "-UITestsDJ"])
+    _ = app.staticTexts["8 songs across 3 albums, 45 min of music waiting in your library."].waitForExistence(timeout: 10)
+    if tap(app.buttons["Feeling lucky"].firstMatch, timeout: 10), tap(app.buttons["Open now playing"], timeout: 10) {
+      XCUIDevice.shared.orientation = .landscapeLeft
+      shot("08-dj-mix", after: 8)
+    }
   }
 
   /// The iPad, sideways as it's mostly held: Home (the idle player bar), an album, the player bar's song menu, the

@@ -97,7 +97,7 @@ Everything right of a 28-point gutter, at the full height:
 - **Numbers:** an album played in order from its page (not shuffled) carries the record's numbers, disc-track on multi-disc albums ("2-04"). Songs radio adds after it, and every other queue, are numbered by place from the song playing: 1 is next.
 - **Each line:** the title; the artist when the source isn't one album or artist; the album when it differs from the line above (so a mix reads "Massive Attack · Blue Lines"); the offline mark; the length, after the tempo on a regular-width window (`SongLength`).
 - **Joins** between lines say how one song becomes the next (`Tracklist.Join`):
-  - same album, in order (`JoinRules.continues`): a hairline down the number column;
+  - same album, in order (`JoinRules.continues`): a hairline down the number column; with DJ mix, only where the queue plays that album or its artist (`DJJoin.playsAlbum`), as the player has it: in Feeling lucky, a playlist or a mix such songs are mixed like any others;
   - DJ mix: under the open line, the next transition in words (`TransitionLine`, which opens the transition sheet); pairs further down get a faint dotted joiner, since only the next pair is planned;
   - crossfade: a fade glyph with the seconds ("6 s"), never inside an album;
   - off: plain spacing.

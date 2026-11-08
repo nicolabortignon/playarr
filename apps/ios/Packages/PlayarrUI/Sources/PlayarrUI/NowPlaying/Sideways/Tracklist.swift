@@ -112,7 +112,9 @@ public struct Tracklist: Equatable, Sendable {
 
   private func join(_ a: Track?, _ b: Track, at orderPos: Int) -> Join {
     guard let a else { return .none }
-    if JoinRules.continues(a, b) { return .continues }
+    // An album's songs in order are heard as one; with DJ mix, only where the queue plays that album (or its artist), as
+    // the player has it (DJJoin.playsAlbum): in Feeling lucky, a playlist or a mix they're mixed like any others.
+    if JoinRules.continues(a, b), transitions != .dj || DJJoin.playsAlbum(queue.source, a) { return .continues }
     switch transitions {
     case .dj: return orderPos == queue.pos + 1 ? .dj : orderPos > queue.pos + 1 ? .djLater : .none
     case .crossfade:
