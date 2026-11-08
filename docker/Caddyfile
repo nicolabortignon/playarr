@@ -1,0 +1,19 @@
+# Caddy in front of Playarr: docker/compose.yaml's https profile (COMPOSE_PROFILES=https and PLAYARR_DOMAIN in .env;
+# docs/server/https.md). For the domain it gets a certificate from Let's Encrypt and renews it by itself, which needs
+# ports 80 and 443 to reach it from the internet, sends http:// visitors to https://, and hands every request to
+# Playarr on the compose network, with the visitor's address and protocol in X-Forwarded-For and -Proto (Playarr
+# believes them from Caddy alone).
+#
+# Without PLAYARR_DOMAIN the site below has no address, and Caddy stops at once with "server block without any key is
+# global configuration, and if used, it must be first": set it in .env.
+{
+	# HTTP/1.1 and HTTP/2 only: the router forwards TCP, so HTTP/3 (UDP) would be offered in vain.
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$PLAYARR_DOMAIN} {
+	# As it is, streamed: songs answer byte ranges, so nothing here compresses or buffers.
+	reverse_proxy playarr:4000
+}

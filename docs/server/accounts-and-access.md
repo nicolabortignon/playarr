@@ -80,7 +80,7 @@ Each account sees its own devices and can sign any of them out; admins can for e
 3. **Setup mode**: no valid session needed; `req.auth` is the owner, with no session.
 4. **Otherwise** `req.auth` is null, and a request under `/api/`, `/stream/`, `/art/` or `/transitions/` gets 401 (`{ setup: false }`), unless it's one of the open routes:
 
-`GET /api/server`, `GET /api/health`, `POST /api/auth/sign-in`, `/redeem`, `/setup` and `/switch`, and `GET /api/auth/proof` (section 8). `/api/health` tells an unsigned caller whether Lidarr, the music files and the database work, but not the library's size; why Lidarr or the music can't be reached, and Lidarr's version, only an admin hears ([api.md](api.md#library)). The web app's own pages are served to anyone.
+`GET /api/server`, `GET /api/health`, `POST /api/auth/sign-in`, `/redeem`, `/setup` and `/switch`, and `GET /api/auth/proof` (section 8). `/api/health` tells an unsigned caller whether Lidarr, the music files and the database work, but not the library's size; why Lidarr or the music can't be reached, and Lidarr's version, only an admin hears ([api.md](api.md#library)). The web app's own pages are served to anyone, and so is `GET /reachable/:token`, outside `/api/`: the reachability check's own request arriving through the proxy, which answers only tokens of a check that's running and a plain 404 to anything else ([https.md](https.md)).
 
 ---
 
@@ -102,7 +102,9 @@ Once set up, the home network gives no rights: admins change settings from anywh
 
 ### Behind a reverse proxy
 
-`TRUST_PROXY` (`trustProxyOf` in `config.ts`) tells Fastify which proxies to believe about the visitor's address, host and protocol: `true` (any; only when nothing else can reach the port), or comma-separated addresses, CIDRs, or `loopback`, `linklocal`, `uniquelocal`. A hop count is refused as a configuration error, since Fastify 5 would silently trust nobody. It affects sign-in limits, setup-code links and the cookie's `Secure` flag; it never makes a proxied request count as the home network. `PUBLIC_URL` is the address clients should use (setup links, `GET /api/server`).
+`TRUST_PROXY` (`trustProxyOf` in `config.ts`) tells Fastify which proxies to believe about the visitor's address, host and protocol: `true` (any; only when nothing else can reach the port), comma-separated addresses, CIDRs, or `loopback`, `linklocal`, `uniquelocal`, or instead the proxies' names. A hop count is refused as a configuration error, since Fastify 5 would silently trust nobody. It affects sign-in limits, setup-code links and the cookie's `Secure` flag; it never makes a proxied request count as the home network. `PUBLIC_URL` is the address clients should use (setup links, `GET /api/server`); Settings → Away from home checks that it reaches this server over HTTPS ([https.md](https.md)).
+
+A name (`playarr-caddy`, a container on the compose network) is believed at the addresses it has now, and only as the one proxy in front (`proxyNames.ts`): looked up as an absolute name every 30 s, and again at once, at most every 5 s, when a request with forwarded headers comes from a home address that isn't one of them, since Docker gives a container a new address when it's made again. Only home addresses count. Names and addresses don't mix in one list. The https profile's `PLAYARR_DOMAIN` makes `TRUST_PROXY` `playarr-caddy` and `PUBLIC_URL` `https://<domain>` unless they're set.
 
 ---
 
@@ -121,7 +123,7 @@ Once set up, the home network gives no rights: admins change settings from anywh
 
 What that means in practice ([api.md](api.md) lists every route):
 
-- **Admins** change settings: sources and folders, matching, requests, updates, how mixes are made, analysis, library refresh, rematching a file, and accounts. Members can read the source list (without connection settings) and Settings → Mixes, and get "Only an admin can change this".
+- **Admins** change settings: sources and folders, matching, requests, updates, how mixes are made, analysis, library refresh, rematching a file, and accounts; and they run Away from home's check of the public address. Members can read the source list (without connection settings) and Settings → Mixes, and get "Only an admin can change this".
 - **Each account** has its own ListenBrainz link and listening history (`requireOwn`), favorites, playlists (private unless shared with the server; a shared one its owner makes collaborative takes songs from everyone, who add, move and remove them, while the rest stays its owner's), mixes, radio and stats.
 - **Members** may rename themselves (only the name) and see and sign out their own devices.
 - **Requests** need the account's "can request" right; Discover itself is open to every signed-in account. A request belongs to whoever asked: members list and take back their own, admins see everyone's and approve or decline those from accounts that ask first.

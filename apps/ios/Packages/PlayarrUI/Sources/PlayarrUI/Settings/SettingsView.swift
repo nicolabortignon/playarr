@@ -122,6 +122,7 @@ struct SettingsPanelView: View {
     case .analysis: AnalysisPanel(api: session.api, isAdmin: isAdmin)
     case .requests: RequestsPanel(api: session.api, isAdmin: isAdmin, requestsChanged: { session.discover.invalidate([.requests, .health]) })
     case .updates: UpdatesPanel(api: session.api, isAdmin: isAdmin)
+    case .away: AwayFromHomePanel(api: session.api, isAdmin: isAdmin)
     }
   }
 

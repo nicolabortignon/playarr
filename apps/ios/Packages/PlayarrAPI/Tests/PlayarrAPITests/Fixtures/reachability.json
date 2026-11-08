@@ -1,0 +1,37 @@
+{
+  "verdict": "unconfirmed",
+  "summary": "This server couldn’t confirm it from inside your home: open https://music.example.com on a phone on mobile data to be sure.",
+  "publicUrl": "https://music.example.com",
+  "steps": [
+    {
+      "id": "address",
+      "label": "Public address",
+      "status": "ok",
+      "detail": "https://music.example.com"
+    },
+    {
+      "id": "dns",
+      "label": "Name lookup",
+      "status": "ok",
+      "detail": "music.example.com is 203.0.113.7."
+    },
+    {
+      "id": "connect",
+      "label": "Connection",
+      "status": "fail",
+      "detail": "No answer from 203.0.113.7 on port 443 within 5 s.",
+      "fix": "Many home routers don’t let a machine reach the home’s own public address from inside (no hairpin NAT), so this can fail even when phones outside get through: open https://music.example.com on a phone on mobile data, Wi-Fi off, to be sure. If it doesn’t open there either, check that the router forwards ports 80 and 443 (TCP) to this machine and that Caddy is running (docker compose ps). If your internet provider shares one public address among many homes (CGNAT), forwarding can’t work: use Tailscale instead."
+    },
+    {
+      "id": "certificate",
+      "label": "Certificate",
+      "status": "skipped"
+    },
+    {
+      "id": "playarr",
+      "label": "This server answers",
+      "status": "skipped"
+    }
+  ],
+  "checkedAt": "2026-11-03T12:00:00.000Z"
+}

@@ -2286,6 +2286,168 @@ public struct PlaylistSummary: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// POST /api/settings/reachability/check: whether phones away from home reach this server at PUBLIC_URL over HTTPS, checked from the server itself, which asks its own public address the way a phone would.
+public struct ReachabilityCheck: Codable, Hashable, Sendable {
+    public var verdict: ReachabilityVerdict
+    /// The verdict in a sentence: "Phones away from home can reach this server at https://music.example.com."
+    public var summary: String
+    /// PUBLIC_URL as checked; absent when it isn't set.
+    public var publicUrl: String?
+    public var steps: [ReachabilityStep]
+    /// When it ran (ISO 8601).
+    public var checkedAt: String
+
+    public init(verdict: ReachabilityVerdict, summary: String, publicUrl: String? = nil, steps: [ReachabilityStep], checkedAt: String) {
+        self.verdict = verdict
+        self.summary = summary
+        self.publicUrl = publicUrl
+        self.steps = steps
+        self.checkedAt = checkedAt
+    }
+}
+
+/// How a step went; skipped when an earlier one failed.
+public enum ReachabilityStatus: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case ok
+    case warn
+    case fail
+    case skipped
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [ReachabilityStatus] = [.ok, .warn, .fail, .skipped]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "ok": self = .ok
+        case "warn": self = .warn
+        case "fail": self = .fail
+        case "skipped": self = .skipped
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .ok: "ok"
+        case .warn: "warn"
+        case .fail: "fail"
+        case .skipped: "skipped"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+public struct ReachabilityStep: Codable, Hashable, Sendable, Identifiable {
+    public var id: ReachabilityStepKind
+    /// What it checks: "Connection".
+    public var label: String
+    public var status: ReachabilityStatus
+    /// What it found: "music.example.com is 203.0.113.7", "The certificate has expired."
+    public var detail: String?
+    /// What to do about it, when it isn't ok.
+    public var fix: String?
+
+    public init(id: ReachabilityStepKind, label: String, status: ReachabilityStatus, detail: String? = nil, fix: String? = nil) {
+        self.id = id
+        self.label = label
+        self.status = status
+        self.detail = detail
+        self.fix = fix
+    }
+}
+
+/// The reachability check's steps, in the order they run.
+public enum ReachabilityStepKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case address
+    case dns
+    case connect
+    case certificate
+    case playarr
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [ReachabilityStepKind] = [.address, .dns, .connect, .certificate, .playarr]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "address": self = .address
+        case "dns": self = .dns
+        case "connect": self = .connect
+        case "certificate": self = .certificate
+        case "playarr": self = .playarr
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .address: "address"
+        case .dns: "dns"
+        case .connect: "connect"
+        case .certificate: "certificate"
+        case .playarr: "playarr"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+/// What the check concluded: reachable when every step passed, unreachable when one failed for sure, unconfirmed when the server couldn't tell from inside the home (many routers don't let a machine reach its own public address).
+public enum ReachabilityVerdict: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case reachable
+    case unreachable
+    case unconfirmed
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [ReachabilityVerdict] = [.reachable, .unreachable, .unconfirmed]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "reachable": self = .reachable
+        case "unreachable": self = .unreachable
+        case "unconfirmed": self = .unconfirmed
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .reachable: "reachable"
+        case .unreachable: "unreachable"
+        case .unconfirmed: "unconfirmed"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 public struct Recommendations: Codable, Hashable, Sendable {
     /// Similar songs you already have.
     public var owned: [RecommendedTrack]

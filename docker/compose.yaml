@@ -1,6 +1,7 @@
 # Playarr as a standalone service on the NAS (deployed by docker/deploy.mjs into /volume1/docker/playarr),
 # at http://<nas>:4000. Settings come from .env next to this file: LIDARR_URL, LIDARR_API_KEY, MUSIC_DIR,
-# and optionally PUBLIC_URL, TRUST_PROXY and SERVER_NAME (see .env.example; empty when unset).
+# and optionally PUBLIC_URL, TRUST_PROXY and SERVER_NAME, and for HTTPS at your own domain COMPOSE_PROFILES=https
+# with PLAYARR_DOMAIN (see .env.example; empty when unset).
 name: playarr
 
 services:
@@ -25,6 +26,9 @@ services:
       # proxy to believe about the visitor. Empty means unset, as if the line weren't here.
       PUBLIC_URL: ${PUBLIC_URL:-}
       TRUST_PROXY: ${TRUST_PROXY:-}
+      # HTTPS through Caddy (below): the domain it serves Playarr at. Unless PUBLIC_URL and TRUST_PROXY are set,
+      # Playarr's address is then https://<domain>, and the only proxy it believes is Caddy, found by its name.
+      PLAYARR_DOMAIN: ${PLAYARR_DOMAIN:-}
       SERVER_NAME: ${SERVER_NAME:-}
     volumes:
       - ${MUSIC_DIR}:/data/media/music:ro
@@ -35,6 +39,8 @@ services:
       # (update.sh replaces this file): put them in compose.override.yaml next to it, see
       # compose.override.example.yaml.
     ports:
+      # The home network's way in. Never forward it on the router: through Docker's port mapping a visitor can look
+      # like a home address, which matters before the owner has claimed the server. HTTPS goes through Caddy.
       - "4000:4000"
     # Healthy while /api/health answers with the database working (what update.sh waits for), not `ok`, which is false
     # whenever Lidarr or the music can't be reached. The timeout outlasts Lidarr's own 30 s, which the health route
@@ -45,6 +51,28 @@ services:
       timeout: 45s
       retries: 3
       start_period: 5m
+    restart: unless-stopped
+
+  # HTTPS at your own domain (docs/server/https.md), only with COMPOSE_PROFILES=https in .env: Caddy answers on
+  # ports 80 and 443, gets and renews a certificate for PLAYARR_DOMAIN from Let's Encrypt by itself, and hands every
+  # request to Playarr over this project's network. Forward 80 and 443 on the router to this machine.
+  # Named like its container rather than plain caddy: compose merges services of the same name, and a caddy of an
+  # owner's own in compose.override.yaml must stay as it is.
+  playarr-caddy:
+    image: caddy:2
+    container_name: playarr-caddy
+    profiles: ["https"]
+    environment:
+      PLAYARR_DOMAIN: ${PLAYARR_DOMAIN:-}
+    volumes:
+      # The deployed commit's Caddyfile (update.sh replaces ./src); to use your own, mount it over this one in
+      # compose.override.yaml.
+      - ./src/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data # certificates and their keys (keep)
+      - ./caddy/config:/config
+    ports:
+      - "80:80"
+      - "443:443"
     restart: unless-stopped
 
   # Settings → Updates: rebuilds Playarr from GitHub, its newest release or main, when asked (docker/updater.sh).

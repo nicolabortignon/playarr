@@ -253,6 +253,8 @@ The row never wraps, and doesn't scroll (that would clip Play's glow). When it d
   | Sources, Accounts | `FolderOpen`, `Users` | none | |
   | Made for you, Analysis | `Sparkles`, `AudioWaveform` | none | |
   | Requests, Updates | `Binoculars`, `CircleArrowUp` | none | |
+  | Away from home | `Globe` | none | |
+  | A check's step: passed, not certain, failed, not checked | `Check`, `TriangleAlert`, `X`, `Minus` | `checkmark`, `exclamationmark.triangle`, `xmark`, `minus` | in `success`, `warning`, `danger` and muted |
   | Tune your mixes | `SlidersHorizontal` | `slider.horizontal.3` | |
   | Lidarr, a folder, a remote folder | `Server`, `Folder`, `Network` | `server.rack`, `folder`, `network` | |
   | Sync now | `RefreshCw` | `arrow.triangle.2.circlepath` | |

@@ -1,9 +1,10 @@
-import { AudioLines, AudioWaveform, Binoculars, ChevronLeft, CircleArrowUp, FolderOpen, Palette, Sparkles, Users, type LucideIcon } from 'lucide-react';
+import { AudioLines, AudioWaveform, Binoculars, ChevronLeft, CircleArrowUp, FolderOpen, Globe, Palette, Sparkles, Users, type LucideIcon } from 'lucide-react';
 import { useId, type ComponentType } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { AccountsPanel } from '../components/AccountsPanel';
 import { AnalysisPanel } from '../components/AnalysisPanel';
 import { AppearancePanel } from '../components/AppearancePanel';
+import { AwayFromHomePanel } from '../components/AwayFromHomePanel';
 import { Button } from '../components/Button';
 import { MixesPanel } from '../components/MixesPanel';
 import { PlaceLabel, placeLink } from '../components/Nav';
@@ -33,6 +34,7 @@ const PLAYBACK: Panel = { id: 'playback', label: 'Playback', icon: AudioLines, s
 const APPEARANCE: Panel = { id: 'appearance', label: 'Appearance', icon: Palette, scope: DEVICE, Panel: AppearancePanel };
 const SOURCES: Panel = { id: 'sources', label: 'Sources', icon: FolderOpen, Panel: SourcesPanel };
 const ACCOUNTS: Panel = { id: 'accounts', label: 'Accounts', icon: Users, scope: 'Who signs in to this server, and what each account may hear and change.', Panel: AccountsPanel };
+const AWAY: Panel = { id: 'away', label: 'Away from home', icon: Globe, scope: 'How phones and computers reach this server when they’re away from home.', Panel: AwayFromHomePanel };
 const MIXES: Panel = { id: 'mixes', label: 'Made for you', icon: Sparkles, scope: EVERYONE, Panel: MixesPanel };
 const ANALYSIS: Panel = { id: 'analysis', label: 'Analysis', icon: AudioWaveform, scope: EVERYONE, Panel: AnalysisPanel };
 const REQUESTS: Panel = { id: 'requests', label: 'Requests', icon: Binoculars, scope: EVERYONE, Panel: RequestsPanel };
@@ -48,12 +50,13 @@ interface Group {
 /**
  * Settings in groups, named and ordered as the iOS app's: this device's, then the server's for an admin; for a member,
  * their account's (their name and devices, their mixes and ListenBrainz), then the server's, which they can read but
- * not change. Your listening isn't a setting: it's in Library and the account menu (/settings/listening opens it).
+ * not change (Away from home, a check only an admin can run, isn't among them). Your listening isn't a setting: it's in
+ * Library and the account menu (/settings/listening opens it).
  */
 export function useSettingsGroups(): Group[] {
   const member = useIsMember();
   const device: Group = { title: 'This device', note: DEVICE, panels: [PLAYBACK, APPEARANCE] };
-  if (!member) return [device, { title: 'Server', note: EVERYONE, panels: [SOURCES, ACCOUNTS, MIXES, ANALYSIS, REQUESTS, UPDATES] }];
+  if (!member) return [device, { title: 'Server', note: EVERYONE, panels: [SOURCES, ACCOUNTS, AWAY, MIXES, ANALYSIS, REQUESTS, UPDATES] }];
   return [
     device,
     { title: 'Your account', panels: [ACCOUNTS, MIXES] },

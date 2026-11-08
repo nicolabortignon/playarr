@@ -16,6 +16,9 @@ import Testing
     let maps = try await api.send(API.Playback.mixMaps(ids: ["rec-700", "rec-702"]))
     #expect(maps.keys.sorted() == ["rec-700"])
     #expect(maps["rec-700"]?.bpm == 80)
+    // Settings → Away from home, as an admin sees it.
+    let check = try await api.send(API.Settings.checkReachability())
+    #expect(check.verdict == .reachable && check.steps.allSatisfy { $0.status == .ok })
   }
 
   @Test func readsTheArtistsDiscographyAsMusicBrainzWould() async throws {

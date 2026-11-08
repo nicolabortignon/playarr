@@ -2,10 +2,13 @@ import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import type { ServerInfo } from '@playarr/shared';
 import Fastify from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { authHook } from '../accounts/auth.ts';
+import { account } from '../accounts/testAccess.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { freshDb } from '../catalog/testFixtures.ts';
 import { loadConfig } from '../config.ts';
+import { Reachability } from '../reachability/reachability.ts';
 import { recordFixture } from '../testing/recordFixture.ts';
 import { VERSION } from '../version.ts';
 import { MIN_APP_VERSION, serverId, serverInfo, serverRoutes } from './server.ts';
@@ -57,5 +60,59 @@ describe('server identity', () => {
   it('reads SERVER_NAME and BONJOUR from the environment', () => {
     expect(loadConfig({ SERVER_NAME: 'NAS', BONJOUR: 'off' })).toMatchObject({ SERVER_NAME: 'NAS', BONJOUR: 'off' });
     expect(loadConfig({}).BONJOUR).toBe('on');
+  });
+});
+
+describe('the reachability check’s token route', () => {
+  /** The server's open routes on a server whose owner has set a password, behind the real auth hook. */
+  function setUp(now = () => Date.now()) {
+    let issued: string | undefined;
+    const reachability = new Reachability({
+      publicUrl: 'https://music.example.com',
+      lookup: async () => [{ address: '203.0.113.7', family: 4 }],
+      // Holds the check open on its own request, so the test can ask for the token meanwhile.
+      fetch: async (url) => {
+        issued = url.pathname.split('/').at(-1);
+        return { status: 200, body: JSON.stringify({ answer: (await answered)!.json().answer }) };
+      },
+      now,
+    });
+    let answer!: (res: Awaited<ReturnType<typeof app.inject>>) => void;
+    const answered = new Promise<Awaited<ReturnType<typeof app.inject>>>((resolve) => (answer = resolve));
+    const app = Fastify();
+    app.decorateRequest('auth', null);
+    app.addHook('onRequest', authHook({ accounts: { get: () => undefined, owner: () => account(1, { role: 'admin' }), setupMode: () => false }, sessions: { resolve: () => undefined } }));
+    serverRoutes(app, { info: () => ({ id: 'id', name: 'Playarr', version: '0', minAppVersion: MIN_APP_VERSION, setup: false }), reachability });
+    return { app, reachability, issued: () => issued, answer };
+  }
+
+  it('answers this server’s own token, once, to anyone, signed in or not', async () => {
+    const { app, reachability, issued, answer } = setUp();
+    const check = reachability.check();
+    await vi.waitFor(() => expect(issued()).toBeDefined());
+    const res = await app.inject({ url: `/reachable/${issued()}` });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json())).toEqual(['answer']);
+    expect(res.headers['cache-control']).toBe('no-store');
+    answer(res);
+    expect((await check).verdict).toBe('reachable');
+    // Answered: gone.
+    expect((await app.inject({ url: `/reachable/${issued()}` })).statusCode).toBe(404);
+  });
+
+  it('says nothing about tokens it never made, answered or forgot: the same 404 for each', async () => {
+    const { app } = setUp();
+    const unknown = await app.inject({ url: '/reachable/made-up' });
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json()).toEqual({ error: 'Not found' });
+    // Open only outside /api/: the check itself stays behind sign-in.
+    expect((await app.inject({ url: '/api/settings/reachability/check', method: 'POST', headers: { 'x-playarr': '1' } })).statusCode).toBe(401);
+  });
+
+  it('turns away a visitor asking more than 30 times a minute', async () => {
+    const { app } = setUp(() => 0);
+    for (let i = 0; i < 30; i++) expect((await app.inject({ url: `/reachable/guess-${i}`, remoteAddress: '198.51.100.9' })).statusCode).toBe(404);
+    expect((await app.inject({ url: '/reachable/guess', remoteAddress: '198.51.100.9' })).statusCode).toBe(429);
+    expect((await app.inject({ url: '/reachable/guess', remoteAddress: '198.51.100.10' })).statusCode).toBe(404);
   });
 });

@@ -22,6 +22,7 @@ const IPAD = 1032;
 
 function view(path: string, me: Account = ALEX) {
   vi.spyOn(api, 'me').mockResolvedValue(me);
+  vi.spyOn(api, 'server').mockResolvedValue({ id: 'id', name: 'NAS', version: '0.7.0', minAppVersion: '1.0.0', setup: false });
   const router = createMemoryRouter(
     [
       { path: '/settings/listening', element: <ListeningMoved /> },
@@ -56,7 +57,7 @@ describe('Settings on a phone', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeTruthy();
     expect(groups()).toEqual([
       ['This device', ['Playback', 'Appearance']],
-      ['Server', ['Sources', 'Accounts', 'Made for you', 'Analysis', 'Requests', 'Updates']],
+      ['Server', ['Sources', 'Accounts', 'Away from home', 'Made for you', 'Analysis', 'Requests', 'Updates']],
     ]);
     expect(screen.queryByRole('navigation', { name: 'Settings' })).toBeNull();
     // Your listening isn't a setting any more.
@@ -108,7 +109,7 @@ describe('Settings on a wide screen', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeTruthy();
     expect(column()).toEqual([
       ['This device', ['Playback', 'Appearance']],
-      ['Server', ['Sources', 'Accounts', 'Made for you', 'Analysis', 'Requests', 'Updates']],
+      ['Server', ['Sources', 'Accounts', 'Away from home', 'Made for you', 'Analysis', 'Requests', 'Updates']],
     ]);
     const nav = screen.getByRole('navigation', { name: 'Settings' });
     expect(within(nav).getByRole('link', { name: 'Playback' }).getAttribute('aria-current')).toBe('page');
@@ -122,10 +123,10 @@ describe('Settings on a wide screen', () => {
     width(IPAD);
     const router = view('/settings');
     const nav = await screen.findByRole('navigation', { name: 'Settings' });
-    for (const name of ['Appearance', 'Sources', 'Accounts', 'Made for you', 'Analysis', 'Requests', 'Updates', 'Playback']) {
+    for (const name of ['Appearance', 'Sources', 'Accounts', 'Away from home', 'Made for you', 'Analysis', 'Requests', 'Updates', 'Playback']) {
       fireEvent.click(within(nav).getByRole('link', { name }));
       expect(within(nav).getByRole('link', { name }).getAttribute('aria-current')).toBe('page');
-      expect(router.state.location.pathname).toBe(`/settings/${{ 'Made for you': 'mixes' }[name] ?? name.toLowerCase()}`);
+      expect(router.state.location.pathname).toBe(`/settings/${{ 'Made for you': 'mixes', 'Away from home': 'away' }[name] ?? name.toLowerCase()}`);
     }
   });
 

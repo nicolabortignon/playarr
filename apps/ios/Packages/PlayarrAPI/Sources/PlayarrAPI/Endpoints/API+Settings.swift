@@ -1,5 +1,5 @@
 extension API {
-    /// Settings: sources, matching, requests, updates (admin), mixes and ListenBrainz (per account).
+    /// Settings: sources, matching, requests, updates, away from home (admin), mixes and ListenBrainz (per account).
     public enum Settings {
         public static func sources() -> Endpoint<SourcesResponse> { Endpoint(.get, "/api/settings/sources") }
         public static func addSource(_ input: SourceInput) -> Endpoint<SourceInfo> { Endpoint(.post, "/api/settings/sources", body: input) }
@@ -38,6 +38,8 @@ extension API {
         public static func updates() -> Endpoint<UpdateInfo> { Endpoint(.get, "/api/settings/updates") }
         public static func saveUpdates(_ patch: UpdateSettingsPatch) -> Endpoint<UpdateInfo> { Endpoint(.put, "/api/settings/updates", body: patch) }
         public static func checkForUpdates() -> Endpoint<UpdateInfo> { Endpoint(.post, "/api/settings/updates/check") }
+        /// The server asks its own public address over HTTPS, the way a phone would (a few seconds at most).
+        public static func checkReachability() -> Endpoint<ReachabilityCheck> { Endpoint(.post, "/api/settings/reachability/check") }
         public static func mixes() -> Endpoint<MixSettingsInfo> { Endpoint(.get, "/api/settings/mixes") }
         public static func saveMixes(_ patch: MixSettingsPatch) -> Endpoint<MixSettingsInfo> { Endpoint(.put, "/api/settings/mixes", body: patch) }
         /// Forgets everything played; the mixes are made again.

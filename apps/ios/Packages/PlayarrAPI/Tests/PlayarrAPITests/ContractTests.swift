@@ -68,6 +68,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("matching", MatchingSettings.self),
         Contract("request-settings", RequestSettingsInfo.self),
         Contract("updates", UpdateInfo.self),
+        Contract("reachability", ReachabilityCheck.self),
         Contract("analysis-progress", AnalysisProgress.self),
         // Playback
         Contract("plays", Recorded.self),

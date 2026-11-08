@@ -238,7 +238,7 @@ That fetches the page's data, its header image (for an album, at the size its he
 
 ## 10. Settings panels
 
-`pages/Settings.tsx` puts the panels in groups, named and ordered as the iOS app's (`useSettingsGroups`): **This device** (Playback, Appearance), then for an admin **Server** (Sources, Accounts, Made for you, Analysis, Requests, Updates). A member gets **Your account** (Accounts and Made for you: their name and devices, their mixes and ListenBrainz) before **Server** (Sources, Analysis, Requests, Updates), which they can read but not change.
+`pages/Settings.tsx` puts the panels in groups, named and ordered as the iOS app's (`useSettingsGroups`): **This device** (Playback, Appearance), then for an admin **Server** (Sources, Accounts, Away from home, Made for you, Analysis, Requests, Updates). A member gets **Your account** (Accounts and Made for you: their name and devices, their mixes and ListenBrainz) before **Server** (Sources, Analysis, Requests, Updates), which they can read but not change; Away from home, a check only an admin can run, isn't theirs.
 
 - **Where the page is at least `page-lg` wide** (784 px: a 1024 px window, or 1364 while the queue column is open; `usePageLg`, `lib/useMediaQuery.ts`, as the layout changes rather than only its styles), a column of the same groups sits beside the open panel, under the "Settings" header (`SettingsColumn`): each group's name as a kicker, each panel's glyph and name as the sidebar draws its places (`placeLink`, `PlaceLabel`), the open one lit and marked `aria-current="page"`, and for a member "Only an admin can change these." under the server's. The column is 192 wide and stays in view as the panel scrolls; every panel is in it at any width, so nothing scrolls sideways. The panel's scope is the line above it, and `/settings` opens Playback.
 - **Narrower** (a phone, a window under 1024 px), `/settings` is that list (`NavRow`s, each group's scope under it, the app's version at the foot). A row opens its panel under its own name, with Settings above it to go back: back in history when it came from the list, else to the list.
@@ -251,6 +251,7 @@ Each panel says who it applies to:
 | Appearance | This device: accent, motion, format badges |
 | Sources | Server-wide; editable by admins (before setup, from the home network) |
 | Accounts | Server-wide: who signs in and what each account may hear and change |
+| Away from home | How phones and computers reach the server away from home: its public address, Check now (the server's own check, step by step, with what to fix; `components/AwayFromHomePanel.tsx`, [server/https.md](server/https.md)) and a link to the guide |
 | Made for you, Analysis, Requests, Updates | Server-wide ("These settings apply to everyone"); Made for you also has ListenBrainz |
 
 Your listening isn't a setting: it's at `/stats`, in Library and the account menu.

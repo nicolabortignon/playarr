@@ -11,7 +11,7 @@ import Testing
     #expect(titles(groups) == ["This device", "Server"])
     #expect(groups[0].panels == [.playback, .appearance])
     #expect(groups[0].note == "These settings are for this device.")
-    #expect(groups[1].panels.map(\.title) == ["Sources", "Accounts", "Made for you", "Analysis", "Requests", "Updates"])
+    #expect(groups[1].panels.map(\.title) == ["Sources", "Accounts", "Away from home", "Made for you", "Analysis", "Requests", "Updates"])
     #expect(groups[1].note == "These settings apply to everyone.")
   }
 
@@ -25,11 +25,13 @@ import Testing
   }
 
   @Test func listsEveryPanelOnceAndYourListeningNowhere() {
-    // Your listening is a place, in Library and the account menu: it isn't a setting.
+    // Your listening is a place, in Library and the account menu: it isn't a setting. Away from home is a check only
+    // an admin can run.
     for role in [AccountRole.admin, .member] {
       let panels = SettingsGroup.groups(for: role).flatMap(\.panels)
       #expect(Set(panels).count == panels.count)
-      #expect(Set(panels) == [.playback, .appearance, .sources, .accounts, .mixes, .analysis, .requests, .updates])
+      let everyone: Set<SettingsPanel> = [.playback, .appearance, .sources, .accounts, .mixes, .analysis, .requests, .updates]
+      #expect(Set(panels) == (role == .admin ? everyone.union([.away]) : everyone))
     }
   }
 }

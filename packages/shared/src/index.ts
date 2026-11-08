@@ -753,6 +753,46 @@ export interface UpdateInfo extends UpdateSettings {
   log?: string;
 }
 
+// ── Settings → Away from home: reachable from outside over HTTPS? ───────────
+
+/** The reachability check's steps, in the order they run. */
+export type ReachabilityStepKind = 'address' | 'dns' | 'connect' | 'certificate' | 'playarr';
+
+/** How a step went; skipped when an earlier one failed. */
+export type ReachabilityStatus = 'ok' | 'warn' | 'fail' | 'skipped';
+
+/**
+ * What the check concluded: reachable when every step passed, unreachable when one failed for sure, unconfirmed when
+ * the server couldn't tell from inside the home (many routers don't let a machine reach its own public address).
+ */
+export type ReachabilityVerdict = 'reachable' | 'unreachable' | 'unconfirmed';
+
+export interface ReachabilityStep {
+  id: ReachabilityStepKind;
+  /** What it checks: "Connection". */
+  label: string;
+  status: ReachabilityStatus;
+  /** What it found: "music.example.com is 203.0.113.7", "The certificate has expired." */
+  detail?: string;
+  /** What to do about it, when it isn't ok. */
+  fix?: string;
+}
+
+/**
+ * POST /api/settings/reachability/check: whether phones away from home reach this server at PUBLIC_URL over HTTPS,
+ * checked from the server itself, which asks its own public address the way a phone would.
+ */
+export interface ReachabilityCheck {
+  verdict: ReachabilityVerdict;
+  /** The verdict in a sentence: "Phones away from home can reach this server at https://music.example.com." */
+  summary: string;
+  /** PUBLIC_URL as checked; absent when it isn't set. */
+  publicUrl?: string;
+  steps: ReachabilityStep[];
+  /** When it ran (ISO 8601). */
+  checkedAt: string;
+}
+
 // ── Song metadata (track menu → Show metadata) ───────────────────────────────
 
 /** A file's own tags (folder sources), as read from the file. */

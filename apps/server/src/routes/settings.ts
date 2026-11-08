@@ -1,6 +1,7 @@
 import type {
   FolderAccessOptions,
   MatchingSettings,
+  ReachabilityCheck,
   RequestSettings,
   RequestSettingsInfo,
   SourcesResponse,
@@ -14,6 +15,7 @@ import type { CatalogStore } from '../catalog/store.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
 import type { Library } from '../library/library.ts';
 import { isAdmin, requireAdmin } from '../accounts/rights.ts';
+import type { Reachability } from '../reachability/reachability.ts';
 import { UpdateError, type UpdateBridge } from '../update/bridge.ts';
 
 /** Where a folder is, and how to reach it over SSH, SFTP or SMB. */
@@ -148,6 +150,8 @@ export function settingsRoutes(
     lidarr: Pick<LidarrClient, 'configured' | 'rootFolders' | 'qualityProfiles' | 'metadataProfiles'>;
     /** Settings → Updates, through the folder shared with the updater container. */
     updates: Pick<UpdateBridge, 'info' | 'save' | 'requestCheck'>;
+    /** Settings → Away from home: whether the server answers at PUBLIC_URL over HTTPS. */
+    reachability: Pick<Reachability, 'check'>;
   },
 ) {
   const { sources, library, matcher, organizer } = deps;
@@ -362,4 +366,7 @@ export function settingsRoutes(
       return updates.info();
     }),
   );
+
+  // Settings → Away from home: the server asks its own public address, the way a phone would (a few seconds at most).
+  app.post('/api/settings/reachability/check', editable, (): Promise<ReachabilityCheck> => deps.reachability.check());
 }

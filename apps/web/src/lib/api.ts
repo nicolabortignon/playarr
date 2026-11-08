@@ -40,6 +40,7 @@ import type {
   PlaylistDetail,
   PlaylistSummary,
   PlayReport,
+  ReachabilityCheck,
   Recommendations,
   RematchResult,
   RequestAccess,
@@ -265,6 +266,7 @@ export const api = {
   saveUpdates: (patch: UpdateSettingsPatch) =>
     request<UpdateInfo>('/api/settings/updates', { method: 'PUT', body: JSON.stringify(patch) }),
   checkForUpdates: () => request<UpdateInfo>('/api/settings/updates/check', { method: 'POST' }),
+  checkReachability: () => request<ReachabilityCheck>('/api/settings/reachability/check', { method: 'POST' }),
   /** keepalive: a report sent as the page closes still arrives. */
   reportPlays: (plays: PlayReport[]) =>
     request<{ recorded: number }>('/api/plays', { method: 'POST', body: JSON.stringify({ plays }), keepalive: true }),

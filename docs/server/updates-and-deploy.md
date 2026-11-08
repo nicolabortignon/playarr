@@ -1,6 +1,6 @@
 # Running, deploying and updating Playarr
 
-This covers how Playarr runs on a development machine, how it's packaged as a Docker image, how it's deployed to the NAS, and how it keeps itself up to date from GitHub. The files live in `docker/` (image, compose stack, deploy and update scripts), `apps/server/src/config.ts` (environment), `apps/server/src/update` (Settings → Updates) and `scripts/` plus `.githooks/` (versioning).
+This covers how Playarr runs on a development machine, how it's packaged as a Docker image, how it's deployed to the NAS, and how it keeps itself up to date from GitHub. The files live in `docker/` (image, compose stack with its optional Caddy, deploy and update scripts), `apps/server/src/config.ts` (environment), `apps/server/src/update` (Settings → Updates) and `scripts/` plus `.githooks/` (versioning). Getting a public HTTPS address, with Caddy or Tailscale, is its own page: [https.md](https.md).
 
 For how the server is put together, see [../architecture.md](../architecture.md); for its routes, [api.md](api.md).
 
@@ -48,7 +48,8 @@ Configuration comes from environment variables, validated with zod in `apps/serv
 | `LIBRARY_REFRESH_MINUTES` | `10` | Catalog sync interval |
 | `LIDARR_ROOT_FOLDER`, `LIDARR_QUALITY_PROFILE_ID`, `LIDARR_METADATA_PROFILE_ID` | unset | Fallbacks for Settings → Requests |
 | `MUSICBRAINZ_CONTACT` | `self-hosted` | The contact MusicBrainz asks clients to send |
-| `PUBLIC_URL`, `TRUST_PROXY` | unset | The address clients use, and which reverse proxy to believe (addresses or CIDRs, `loopback`, or `true`; not a hop count) |
+| `PUBLIC_URL`, `TRUST_PROXY` | unset | The address clients use, and which reverse proxy to believe (addresses or CIDRs, `loopback`, the proxies' names such as `playarr-caddy`, or `true`; not a hop count). Settings → Away from home checks the address ([https.md](https.md)) |
+| `PLAYARR_DOMAIN` | unset | The domain the https profile's Caddy serves Playarr at; makes `PUBLIC_URL` `https://<domain>` and `TRUST_PROXY` `playarr-caddy` unless they're set |
 | `LOCAL_HOSTNAMES` | empty | Extra host names that count as the home network (read in `net.ts`); see [accounts-and-access.md](accounts-and-access.md) |
 | `SERVER_NAME`, `BONJOUR` | machine name, `on` | What apps call the server, and whether it's advertised as `_playarr._tcp` |
 | `UPDATE_DIR` | unset | The folder shared with the updater (compose sets `/update`) |
@@ -74,7 +75,7 @@ The image doesn't set a user: compose does.
 
 ## 4. The compose stack and the NAS
 
-`docker/compose.yaml` (project name `playarr`) has two services.
+`docker/compose.yaml` (project name `playarr`) has two services, and a third, `playarr-caddy`, under the profile `https`.
 
 **`playarr`** is built from `./src` with `docker/Dockerfile`. It runs as `${PUID:-1000}:${PGID:-10}`, like the other containers on the NAS, so files in `config/` and `cache/` belong to the NAS user. It listens on port `4000:4000`. Its mounts:
 
@@ -82,11 +83,13 @@ The image doesn't set a user: compose does.
 - `./config` → `/config` and `./cache` → `/cache`;
 - `./update` → `/update`, with `UPDATE_DIR=/update`.
 
-From `.env` it passes `LIDARR_URL`, `LIDARR_API_KEY`, `TZ` (default `Europe/London`), and `PUBLIC_URL`, `TRUST_PROXY` and `SERVER_NAME` (empty means unset).
+From `.env` it passes `LIDARR_URL`, `LIDARR_API_KEY`, `TZ` (default `Europe/London`), and `PUBLIC_URL`, `TRUST_PROXY`, `PLAYARR_DOMAIN` and `SERVER_NAME` (empty means unset).
 
 Its health check, which `docker ps` and the NAS's container list show, asks `/api/health` every 30 s with the image's `wget` and passes while the answer has `"database":{"ok":true`: not `ok`, which is false whenever Lidarr or the music can't be reached. Each check gets 45 s, longer than Lidarr's own 30 s timeout, which the health route waits on. Three failures in a row make the container unhealthy, and failures in the first five minutes don't count, so a start that migrates the database has time to. Docker only reports it: nothing restarts the container for it, and `update.sh` makes its own check (section 5).
 
 **`updater`** is described in section 5.
+
+**`playarr-caddy`** (`caddy:2`; named like its container so that a `caddy` service of an owner's own in `compose.override.yaml` isn't merged into it) exists only with `COMPOSE_PROFILES=https` in `.env`: HTTPS at the owner's domain, `PLAYARR_DOMAIN`. It publishes ports 80 and 443, gets and renews the certificate from Let's Encrypt by itself, and proxies to `playarr:4000` over the project's network (`docker/Caddyfile`, mounted from `src/docker/`: Caddy reads the deployed commit's copy when it starts). Its certificates are in `caddy/data`. Without the profile nothing about it exists, not even a network. Setting it up, and why Playarr believes it by name rather than by a pinned address: [https.md](https.md).
 
 `compose.yaml` is replaced on every update, so local mounts go in `compose.override.yaml` next to it, which compose merges in and no script touches. `docker/compose.override.example.yaml` shows the pattern: host folders mounted read-only under `/host` with their names kept (`/volume2` → `/host/volume2`), and read-write for a folder Playarr should organise. Bonjour needs host networking; with the port mapping, iOS adds the server by address.
 
@@ -98,7 +101,7 @@ The NAS is a UGREEN DXP2800 running UGOS (Debian 12). Lidarr runs in its own com
 |---|---|
 | `compose.yaml`, `update.sh` | Copied from the deployed commit on each deploy |
 | `compose.override.yaml` | Your own mounts; never overwritten |
-| `.env` (mode 600) | `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR`, `PLAYARR_DIR` (written by the deploy) plus any lines of your own |
+| `.env` (mode 600) | `LIDARR_URL`, `LIDARR_API_KEY`, `MUSIC_DIR`, `PLAYARR_DIR` (written by the deploy) plus any lines of your own (`PUBLIC_URL`, `COMPOSE_PROFILES`, `PLAYARR_DOMAIN`, …) |
 | `src/` | The deployed source (`src/REVISION` holds its commit): the build context |
 | `DEPLOYED`, `LATEST` | The commit running, and the newest on its channel at the last check (empty on stable without a release) |
 | `RELEASE` | On stable, the newest release's tag at the last check |
@@ -106,6 +109,7 @@ The NAS is a UGREEN DXP2800 running UGOS (Debian 12). Lidarr runs in its own com
 | `src.previous/`, `compose.yaml.previous` | While an update runs, what was running, put back if the new version doesn't start |
 | `config/` | The database: keep and back up. `config/backups/` holds the copies made before migrations |
 | `cache/` | Artwork, covers, transitions: safe to delete |
+| `caddy/` | With the https profile: Caddy's certificates and their keys. Keep |
 | `update/` | Shared between Playarr and the updater (section 5) |
 
 **UGOS permissions.** Inherited ACLs on `/volume1/docker` leave unpacked files at mode 770 and new files readable by everyone. So the image makes its build output world-readable (the app runs as uid 1000, not root), and the deploy `chmod 600`s `.env` as well as setting a umask, which on its own isn't enough.
@@ -140,7 +144,7 @@ A new install starts on stable. One whose Settings → Updates were saved before
 2. It downloads the tarball from codeload (no git needed) and swaps it into `src/`, keeping the old one as `src.previous/`, and writes `REVISION`.
 3. It copies over `compose.yaml` (keeping the old one as `compose.yaml.previous`) and the commit's own `update.sh`. The new `update.sh` stays even if the version doesn't start, so a fix to the script is never held back by the copy it replaces.
 4. It tags the running container's image `playarr:previous` (compose names the image `playarr:latest`, so there's a name to put back), and notes the database copies the new version already has in `config/backups`.
-5. It runs `docker compose up -d --build --remove-orphans`.
+5. It runs `docker compose up -d --build --remove-orphans`, which starts Caddy too while `COMPOSE_PROFILES=https`.
 6. It waits for a real health check: `/api/health` answering `"database":{"ok":true}`, and again 10 s later, within five minutes (`PLAYARR_HEALTH_WAIT` seconds; for the updater, set it in `compose.override.yaml` when migrations take longer). Not `ok`, which is false whenever Lidarr or the music can't be reached: an outage of those never fails or rolls back an update. Each request gets up to 45 s, longer than Lidarr's own 30 s timeout, which the health route waits on. A version from before the `database` field passes with any answer of its own, as all did before.
 7. Up: it writes `DEPLOYED`, removes `ROLLED_BACK` and the kept files, and prunes old images (`playarr:previous` stays until the next update, for going back by hand).
 
@@ -179,7 +183,7 @@ The channel is `stable` when there's no `settings.json` yet, `edge` when it has 
 
 From `update.sh`'s exit status it records `state` and `outcome`: waiting for checks (`waiting`) and no release yet (`noRelease`) are `idle`, not failures; checks failed (`checksFailed`) and rolled back (`rolledBack`) are `failed`, with the `✗` line as the error, as for any other failure.
 
-Inside the updater, `update.sh` rebuilds only `playarr` (`--no-deps`, since `PLAYARR_UPDATER=1`) and checks health at `http://playarr:4000/api/health`. While it runs, the heartbeat goes on every 3 s. When an update succeeds, a one-off container from the updater image (`playarr-updater-refresh`) recreates the updater. It can't recreate itself, because compose stops the old container before starting the new one, which would cut the command off halfway. A rollback leaves the updater as it is. The last state, error, outcome, channel, `lastCheck` and `lastUpdate` survive a restart.
+Inside the updater, `update.sh` rebuilds only `playarr` (`--no-deps`, since `PLAYARR_UPDATER=1`), plus `playarr-caddy` while the https profile is on, and checks health at `http://playarr:4000/api/health`. It names `playarr-caddy` only then, reading `COMPOSE_PROFILES` as compose does (the environment, else `.env`): compose starts a service named on its command line whatever the profiles say. While it runs, the heartbeat goes on every 3 s. When an update succeeds, a one-off container from the updater image (`playarr-updater-refresh`) recreates the updater. It can't recreate itself, because compose stops the old container before starting the new one, which would cut the command off halfway. A rollback leaves the updater as it is. The last state, error, outcome, channel, `lastCheck` and `lastUpdate` survive a restart.
 
 Only `PLAYARR_REPO`'s releases or its `main` can be deployed this way: the updater passes a channel, never a `--ref`. GitHub serves fork commits through the parent repository's API, so a free-form ref from Settings would let anyone who can reach Settings deploy a fork. A release's tag comes from the repository's own releases API, never from Settings, and is resolved as `refs/tags/<tag>`, so it's never read as a commit.
 

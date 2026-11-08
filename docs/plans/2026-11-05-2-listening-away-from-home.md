@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; second of four (after [safety and release](2
 
 **Goal:** a member on mobile data, away from home, presses play and it plays: quickly, at a sensible size, over HTTPS, and keeps playing through a dead spot. Today every client streams the original file (24-bit FLAC included), the web's even volume streams uncompressed WAV (about 1.4 Mbit/s, on by default), HTTPS is a manual job for the owner, and a blip stops playback for good.
 
-**Where it stands (2026-11-07):** 1, 2 and 5 done. Left: 4's HomePod trial and 3.
+**Where it stands (2026-11-07):** 1, 2 and 5 done; 3 (HTTPS) built, to try with a fresh owner and a real router. Left: that trial, and 4's HomePod trial.
 
 ## 1. Transcoding and a quality setting — M–L — done 2026-11-07
 
@@ -24,11 +24,13 @@ Agreed 2026-11-05 from the reviews; second of four (after [safety and release](2
 
 On desktop the audio already goes through Web Audio: apply the level with a gain node on the song's own stream and keep `levelled.*` for where volume can't be set (iOS Safari). Songs kept on the device then level the same way as streamed ones (today they play unlevelled). (`apps/web/src/player/levels.ts`, `AudioEngine.tsx`.)
 
-## 3. HTTPS that an owner can actually set up — M
+## 3. HTTPS that an owner can actually set up — M — built 2026-11-07, to try with a fresh owner
 
 - An optional Caddy service in `docker/compose.yaml` (profile `https`), with the owner's domain in `.env`; a Tailscale guide as the no-domain alternative.
 - Settings → Server: "Reachable from outside over HTTPS?", checked from the server against its public address, with what to fix when it isn't.
 - **Done when** a fresh owner gets a working public HTTPS address following the docs in under 15 minutes.
+
+*Done: `docker/compose.yaml`'s `playarr-caddy` service (Caddy) under the profile `https` (`COMPOSE_PROFILES=https` and `PLAYARR_DOMAIN` in `.env`), with `docker/Caddyfile` and its certificates in `caddy/`; `update.sh` and the updater start it only then. Playarr believes Caddy alone, by its name on the compose network (`TRUST_PROXY` now takes names, `proxyNames.ts`), and `PLAYARR_DOMAIN` makes `PUBLIC_URL` `https://<domain>`. The guide, [server/https.md](../server/https.md), covers Caddy with your own domain and Tailscale without one. Settings → Away from home (web and iOS, admins) runs the server's check of its own address (`POST /api/settings/reachability/check`, `apps/server/src/reachability/`): address, name lookup, connection, certificate, and a one-time token only this server can answer (`GET /reachable/:token`), each with what to fix, and "unconfirmed" with "try a phone on mobile data" where a router without hairpin NAT may be in the way. Left: the 15-minute trial by a fresh owner with a real domain and router, and Tailscale's steps on a real NAS.*
 
 ## 4. AirPlay — S — done but for the HomePod trial
 

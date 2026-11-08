@@ -3,7 +3,7 @@ import PlayarrAPI
 /// Settings' panels (apps/web/src/pages/Settings.tsx), minus Profiles (accounts replaced them). Playback and Appearance
 /// are this device's; the rest are the server's. Your listening isn't a setting: it's in Library and the account menu.
 public enum SettingsPanel: String, Hashable, Sendable, CaseIterable, Codable {
-  case playback, appearance, sources, mixes, analysis, requests, updates, accounts
+  case playback, appearance, sources, mixes, analysis, requests, updates, accounts, away
   #if DEBUG
     case playerLab = "player-lab"
   #endif
@@ -18,6 +18,7 @@ public enum SettingsPanel: String, Hashable, Sendable, CaseIterable, Codable {
     case .requests: "Requests"
     case .updates: "Updates"
     case .accounts: "Accounts"
+    case .away: "Away from home"
     #if DEBUG
       case .playerLab: "Player lab"
     #endif
@@ -27,7 +28,8 @@ public enum SettingsPanel: String, Hashable, Sendable, CaseIterable, Codable {
 
 /// A group of Settings' list (docs/design.md, "Patterns"): This device · Your account · Server, named and ordered as
 /// the web's. An admin has this device's, then the server's; a member has this device's, their account's (their name
-/// and devices, their mixes and ListenBrainz), then the server's, which they can read but not change.
+/// and devices, their mixes and ListenBrainz), then the server's, which they can read but not change (not Away from
+/// home: a check only an admin can run).
 public struct SettingsGroup: Equatable, Sendable {
   public let title: String
   public let panels: [SettingsPanel]
@@ -41,7 +43,7 @@ public struct SettingsGroup: Equatable, Sendable {
   public static func groups(for role: AccountRole) -> [SettingsGroup] {
     let device = SettingsGroup(title: "This device", panels: [.playback, .appearance], note: thisDevice)
     guard role != .admin else {
-      return [device, SettingsGroup(title: "Server", panels: [.sources, .accounts, .mixes, .analysis, .requests, .updates], note: everyone)]
+      return [device, SettingsGroup(title: "Server", panels: [.sources, .accounts, .away, .mixes, .analysis, .requests, .updates], note: everyone)]
     }
     return [
       device,

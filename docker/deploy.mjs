@@ -73,7 +73,7 @@ try {
     // Where the updater container mounts this folder (the same path as here: see compose.yaml).
     `PLAYARR_DIR=${DIR}`,
   ];
-  // The NAS's own lines (PUBLIC_URL, TRUST_PROXY, SERVER_NAME, …) are kept and these four replaced; an
+  // The NAS's own lines (PUBLIC_URL, TRUST_PROXY, SERVER_NAME, COMPOSE_PROFILES, PLAYARR_DOMAIN, …) are kept and these four replaced; an
   // unreadable .env stops the deploy rather than losing them (grep answers 1 for "nothing left", 2 for errors).
   const managed = settings.map((line) => line.split('=')[0]).join('|');
   const env = `${DIR}/.env`;

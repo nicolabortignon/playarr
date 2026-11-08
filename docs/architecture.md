@@ -38,7 +38,7 @@ pnpm workspaces (`pnpm-workspace.yaml`: `apps/*`, `packages/*`), except the iOS 
 | `apps/ios` | SwiftUI app for iPhone and iPad: XcodeGen spec, Makefile, three Swift packages, App Store Connect scripts. |
 | `packages/shared` | The API contracts as TypeScript types, the byte-range parser (`range.ts`) used by the server and the service worker, and which lossless formats need a WAV fallback (`playable.ts`). The iOS models are generated from it. |
 | `packages/mix` | DJ mixing with no dependencies: analysis, the planner, the renderer, blend ordering. Runs on the server and in the browser. |
-| `docker/` | Dockerfile, compose stack, the updater container, `update.sh`, `deploy.mjs`. |
+| `docker/` | Dockerfile, compose stack (with an optional Caddy for HTTPS), the updater container, `update.sh`, `deploy.mjs`. |
 | `scripts/` | `bump-version.mjs` (pre-commit hook), `ios-sim/` (`pnpm sim`, iOS Safari in the Simulator), `beat-this/` (exporting the beat model). |
 | `docs/` | These docs. |
 
@@ -70,6 +70,6 @@ Shared rules keep them in step: the planner in `packages/mix` is deterministic, 
 
 ## Deployment
 
-One Docker image (Node 24 Alpine with ffmpeg, chromaprint and rclone), usually run on the same host as Lidarr with the music mounted read-only at the path Lidarr uses. A second container, the updater, is the only one with the Docker socket and installs new versions on a timer (Settings → Updates): the newest GitHub release on stable, or `main` on edge, once its checks pass, going back to the version that was running when a new one doesn't start. User data lives in `DATA_DIR` (back it up); caches in `CACHE_DIR` (safe to delete). See [server/updates-and-deploy.md](server/updates-and-deploy.md).
+One Docker image (Node 24 Alpine with ffmpeg, chromaprint and rclone), usually run on the same host as Lidarr with the music mounted read-only at the path Lidarr uses. A second container, the updater, is the only one with the Docker socket and installs new versions on a timer (Settings → Updates): the newest GitHub release on stable, or `main` on edge, once its checks pass, going back to the version that was running when a new one doesn't start. User data lives in `DATA_DIR` (back it up); caches in `CACHE_DIR` (safe to delete). See [server/updates-and-deploy.md](server/updates-and-deploy.md). For listening away from home, a third container, Caddy, gives it HTTPS at the owner's domain when `.env` turns on its profile; Tailscale is the way without a domain ([server/https.md](server/https.md)).
 
 The owner's own install runs on a UGREEN NAS; pushing to GitHub `main` is the release, and the NAS updates itself.

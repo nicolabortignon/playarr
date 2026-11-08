@@ -9,6 +9,8 @@ import { SourceManager } from '../catalog/sources.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { flacBytes, freshDb, mezzanine, tempDir } from '../catalog/testFixtures.ts';
 import { LidarrClient } from '../lidarr/client.ts';
+import { ProbeError } from '../reachability/probe.ts';
+import { Reachability } from '../reachability/reachability.ts';
 import { recordFixture } from '../testing/recordFixture.ts';
 import { startSshServer } from '../testing/sshServer.ts';
 import { UpdateBridge } from '../update/bridge.ts';
@@ -18,7 +20,7 @@ const HOME = '192.168.1.20';
 const AWAY = '203.0.113.5';
 const lidarr = { kind: 'lidarr', name: 'Lidarr', settings: { url: 'http://lidarr:8686', apiKey: 'secret-key' } };
 
-function setup(matcher = fakeMatcher(), lidarrClient = fakeLidarr(), updates = new UpdateBridge(undefined)) {
+function setup(matcher = fakeMatcher(), lidarrClient = fakeLidarr(), updates = new UpdateBridge(undefined), reachability = new Reachability()) {
   const store = new CatalogStore(freshDb());
   const sources = new SourceManager(store, new LidarrClient(), { info: () => {} });
   const library = { refresh: vi.fn(async () => {}), reload: vi.fn(), refreshing: false };
@@ -33,6 +35,7 @@ function setup(matcher = fakeMatcher(), lidarrClient = fakeLidarr(), updates = n
     shares: false,
     lidarr: lidarrClient,
     updates,
+    reachability,
   });
   return { app, store, sources, library, matcher, lidarr: lidarrClient };
 }
@@ -430,6 +433,54 @@ describe('settings routes', () => {
       expect(put.statusCode).toBe(409);
       expect(put.json().error).toMatch(/Docker/);
       expect((await app.inject({ method: 'POST', url: `${url}/check`, remoteAddress: HOME })).statusCode).toBe(409);
+    });
+  });
+
+  describe('away from home', () => {
+    const url = '/api/settings/reachability/check';
+    /** https://music.example.com, whose name resolves to the home's public address, behind a router that doesn't loop back. */
+    const behindRouter = () =>
+      new Reachability({
+        publicUrl: 'https://music.example.com',
+        lookup: async () => [{ address: '203.0.113.7', family: 4 }],
+        fetch: async () => Promise.reject(new ProbeError('connect ETIMEDOUT', 'connect', 'ETIMEDOUT')),
+      });
+
+    it('is for admins, and before setup the home network, only', async () => {
+      const reachability = behindRouter();
+      const check = vi.spyOn(reachability, 'check');
+      const { app } = setup(fakeMatcher(), fakeLidarr(), new UpdateBridge(undefined), reachability);
+      expect((await app.inject({ method: 'POST', url, remoteAddress: AWAY })).statusCode).toBe(403);
+      expect(check).not.toHaveBeenCalled();
+
+      const members = setup(fakeMatcher(), fakeLidarr(), new UpdateBridge(undefined), reachability).app;
+      actAs(members, [account(1, { role: 'admin' }), account(2)]);
+      expect((await members.inject({ method: 'POST', url, headers: asAccount(2), remoteAddress: HOME })).statusCode).toBe(403);
+      expect(check).not.toHaveBeenCalled();
+    });
+
+    it('checks the public address from the server, step by step, saying what to do', async () => {
+      const { app } = setup(fakeMatcher(), fakeLidarr(), new UpdateBridge(undefined), behindRouter());
+      const res = await app.inject({ method: 'POST', url, remoteAddress: HOME });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        verdict: 'unconfirmed',
+        publicUrl: 'https://music.example.com',
+        steps: [
+          { id: 'address', status: 'ok' },
+          { id: 'dns', status: 'ok', detail: 'music.example.com is 203.0.113.7.' },
+          { id: 'connect', status: 'fail', fix: expect.stringMatching(/mobile data/) },
+          { id: 'certificate', status: 'skipped' },
+          { id: 'playarr', status: 'skipped' },
+        ],
+      });
+      recordFixture('reachability', res);
+    });
+
+    it('says to set PUBLIC_URL when it isn’t set, without asking the network', async () => {
+      const res = await setup().app.inject({ method: 'POST', url, remoteAddress: HOME });
+      expect(res.json().verdict).toBe('unreachable');
+      expect(res.json().steps[0]).toMatchObject({ id: 'address', status: 'fail', detail: 'PUBLIC_URL isn’t set.' });
     });
   });
 });

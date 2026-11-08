@@ -2,6 +2,9 @@ import { isIP } from 'node:net';
 import { posix } from 'node:path';
 import { z } from 'zod';
 
+/** A public domain name: labels of letters, digits and dashes, with at least one dot. */
+const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
 const schema = z.object({
   // Optional: copied into Settings → Sources on first start, then managed there.
   LIDARR_URL: z
@@ -31,8 +34,17 @@ const schema = z.object({
     .transform((u) => u.replace(/\/+$/, ''))
     .optional(),
   // Behind a reverse proxy: which proxies to believe about the visitor (X-Forwarded-For, -Host, -Proto).
-  // true, or comma-separated addresses/CIDRs (see trustProxyOf).
+  // true, or comma-separated addresses/CIDRs, or the proxies' names (see trustProxyOf).
   TRUST_PROXY: z.string().optional(),
+  // docker/compose.yaml's https profile: the domain Caddy serves Playarr at (music.example.com). Unless they're set,
+  // PUBLIC_URL is then https://<domain> and the only proxy believed is Caddy (TRUST_PROXY=playarr-caddy).
+  PLAYARR_DOMAIN: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .transform((d) => d.replace(/^https:\/\//, '').replace(/\/+$/, ''))
+    .pipe(z.string().regex(DOMAIN, 'the name only, e.g. music.example.com'))
+    .optional(),
   // The folder shared with the updater container (Settings → Updates). docker/compose.yaml sets /update.
   UPDATE_DIR: z.string().optional(),
   // What apps call this server (GET /api/server, Bonjour); the machine's name when unset.
@@ -71,17 +83,28 @@ const schema = z.object({
   SSH_PASSWORD: z.string().optional(),
 });
 
-/** Fastify's `trustProxy`: false (no proxy), true (any), or the proxies' addresses. */
+/**
+ * Which proxies to believe: false (none), true (any), or a list of their addresses, CIDRs and ranges, or of their
+ * names. Fastify takes the first three as they are; names are looked up (proxyNames.ts).
+ */
 export type TrustProxy = boolean | string[];
 
 export type Config = z.infer<typeof schema> & { pathMap: [from: string, to: string][]; folderRoots: string[]; trustProxy: TrustProxy };
 
+/** The https profile's Caddy, by its service name on the compose network (docker/compose.yaml). */
+export const CADDY = 'playarr-caddy';
+
 /** proxy-addr's names for address ranges, accepted in TRUST_PROXY's list. */
 const RANGES = new Set(['loopback', 'linklocal', 'uniquelocal']);
+/** A host name: dot-separated labels of letters, digits and dashes. */
+const NAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+
+/** A proxy named in TRUST_PROXY (playarr-caddy), rather than given by its address: believed at the addresses the name has. */
+export const isProxyName = (entry: string) => !RANGES.has(entry) && isIP(entry) === 0 && !/^[\d.]+$/.test(entry) && NAME.test(entry);
 
 /**
- * TRUST_PROXY as Fastify takes it; throws on anything else. Not a hop count: Fastify 5 refuses those as
- * unsafe (a visitor reaching the server directly could forge the hops) and would trust nobody.
+ * TRUST_PROXY as Fastify takes it, or the proxies' names; throws on anything else. Not a hop count: Fastify 5 refuses
+ * those as unsafe (a visitor reaching the server directly could forge the hops) and would trust nobody.
  */
 export function trustProxyOf(value: string | undefined): TrustProxy {
   const v = value?.trim() ?? '';
@@ -91,9 +114,13 @@ export function trustProxyOf(value: string | undefined): TrustProxy {
   const list = v.split(',').map((a) => a.trim()).filter(Boolean);
   for (const entry of list) {
     const [address, bits, extra] = entry.split('/');
-    const ok = RANGES.has(entry) || (isIP(address!) !== 0 && extra === undefined && (bits === undefined || /^\d{1,3}$/.test(bits)));
-    if (!ok) throw new Error(`Invalid configuration:\n  TRUST_PROXY: "${entry}" is not true, an address, a CIDR, loopback, linklocal or uniquelocal`);
+    const ok =
+      RANGES.has(entry) || isProxyName(entry) || (isIP(address!) !== 0 && extra === undefined && (bits === undefined || /^\d{1,3}$/.test(bits)));
+    if (!ok) throw new Error(`Invalid configuration:\n  TRUST_PROXY: "${entry}" is not true, an address, a CIDR, loopback, linklocal, uniquelocal or a name`);
   }
+  // Names are looked up and the rest goes to Fastify as it is: one or the other, so each is believed exactly as said.
+  const names = list.filter(isProxyName).length;
+  if (names > 0 && names < list.length) throw new Error('Invalid configuration:\n  TRUST_PROXY: give the proxies’ addresses or their names, not both');
   return list;
 }
 
@@ -117,5 +144,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     .map((r) => r.trim())
     .filter((r) => r.startsWith('/'))
     .map((r) => posix.normalize(r).replace(/(.)\/+$/, '$1'));
-  return { ...parsed.data, pathMap, folderRoots: folderRoots.length ? folderRoots : ['/'], trustProxy: trustProxyOf(parsed.data.TRUST_PROXY) };
+  // Caddy (the https profile) serves Playarr at PLAYARR_DOMAIN: that's its address, and Caddy the proxy to believe,
+  // unless PUBLIC_URL and TRUST_PROXY say otherwise.
+  const domain = parsed.data.PLAYARR_DOMAIN;
+  return {
+    ...parsed.data,
+    PUBLIC_URL: parsed.data.PUBLIC_URL ?? (domain ? `https://${domain}` : undefined),
+    pathMap,
+    folderRoots: folderRoots.length ? folderRoots : ['/'],
+    trustProxy: parsed.data.TRUST_PROXY === undefined && domain ? [CADDY] : trustProxyOf(parsed.data.TRUST_PROXY),
+  };
 }

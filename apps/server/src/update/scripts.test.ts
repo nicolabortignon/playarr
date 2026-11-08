@@ -387,6 +387,40 @@ for (const shell of SHELLS) {
       expect(w.read('config/playarr.db')).toBe('the live database\n');
     });
 
+    it('from the updater, brings Caddy up too while the https profile is on, reading it as compose does', async () => {
+      // .env's last COMPOSE_PROFILES line, quotes, spaces and a comment dropped; the environment's over it, even empty.
+      const cases: [env: string, profiles: string | undefined, services: string][] = [
+        ['', undefined, 'playarr'],
+        ['COMPOSE_PROFILES=https\n', undefined, 'playarr playarr-caddy'],
+        ['COMPOSE_PROFILES="https,tools" # HTTPS\n', undefined, 'playarr playarr-caddy'],
+        ['  COMPOSE_PROFILES = https\n', undefined, 'playarr playarr-caddy'],
+        ['COMPOSE_PROFILES=https\nCOMPOSE_PROFILES=\n', undefined, 'playarr'],
+        ['COMPOSE_PROFILES=httpsish\n', undefined, 'playarr'],
+        ['', 'https', 'playarr playarr-caddy'],
+        ['COMPOSE_PROFILES=https\n', '', 'playarr'],
+      ];
+      await Promise.all(
+        cases.map(async ([env, profiles, services]) => {
+          const w = nas(shell);
+          w.put('.env', `LIDARR_URL=http://lidarr:8686\nPLAYARR_DIR=${w.deploy}\n${env}`);
+          w.answer(checksOf(NEW), green());
+          w.health('img-new', [200, HEALTHY]);
+          const res = await w.update(['--quiet'], { PLAYARR_UPDATER: '1', ...(profiles === undefined ? {} : { COMPOSE_PROFILES: profiles }) });
+          expect(res.code, `${env} ${profiles}`).toBe(0);
+          expect(w.compose(), `${env} ${profiles}`).toEqual([`docker compose up -d --build --no-deps --remove-orphans ${services}`]);
+        }),
+      );
+    });
+
+    it('by hand, starts everything the profiles turn on, naming nothing', async () => {
+      const w = nas(shell);
+      w.put('.env', `LIDARR_URL=http://lidarr:8686\nPLAYARR_DIR=${w.deploy}\nCOMPOSE_PROFILES=https\n`);
+      w.answer(checksOf(NEW), green());
+      w.health('img-new', [200, HEALTHY]);
+      expect((await w.update(['--quiet'])).code).toBe(0);
+      expect(w.compose()).toEqual(['docker compose up -d --build --remove-orphans']);
+    });
+
     it('stays on the running version while the checks are pending, and installs once they pass', async () => {
       const w = nas(shell);
       w.answer(checksOf(NEW), [200, checkRuns()], [200, checkRuns(checkRun('in_progress', null))], green());

@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { LogController } from 'fastify';
 import { loadConfig } from './config.ts';
+import { proxyNamesOf } from './proxyNames.ts';
+import { Reachability } from './reachability/reachability.ts';
 import { Analyzer } from './analysis/analyzer.ts';
 import { BeatModelThread } from './analysis/beatModelThread.ts';
 import { DspThread } from './analysis/dspThread.ts';
@@ -64,9 +66,12 @@ import { readMixSettings } from './mixes/settings.ts';
 import { serveWebApp } from './webApp.ts';
 
 const config = loadConfig();
+// Proxies TRUST_PROXY names (playarr-caddy, with the https profile's PLAYARR_DOMAIN) are believed at the addresses their
+// names have now, looked up again as they change; addresses and ranges go to Fastify as they are.
+const proxyNames = proxyNamesOf(config.trustProxy);
 const app = Fastify({
   // Behind a reverse proxy (TRUST_PROXY): the visitor's address, host and protocol from the proxy's headers.
-  trustProxy: config.trustProxy,
+  trustProxy: proxyNames?.trusts ?? config.trustProxy,
   logger: { level: process.env.LOG_LEVEL ?? 'info' },
   logController: new LogController({ disableRequestLogging: process.env.LOG_REQUESTS !== '1' }),
   // Each request's id, on its log lines and its answer: the client's x-request-id when it's a sane token, or a new one.
@@ -75,6 +80,7 @@ const app = Fastify({
 // Every answer: nosniff and frame-ancestors, and its request id. Every 4xx and 5xx logged; the answers counted.
 securityHeaders(app);
 const requestLog = logRequests(app);
+proxyNames?.start((message) => app.log.warn(message));
 
 // One Lidarr client for the whole server; the Lidarr source in Settings points it at a Lidarr (or not).
 const lidarr = new LidarrClient();
@@ -202,7 +208,9 @@ app.addHook('onRequest', authHook({ accounts, sessions }));
 authRoutes(app, { accounts, sessions, setupCodes });
 accountRoutes(app, { accounts, sessions, setupCodes, publicUrl: config.PUBLIC_URL });
 const info = () => serverInfo({ store, name: config.SERVER_NAME, setupMode: () => accounts.setupMode(), ownerUsername: () => accounts.owner().username, publicUrl: config.PUBLIC_URL });
-serverRoutes(app, { info });
+// Settings → Away from home: whether the server answers at PUBLIC_URL over HTTPS, asked from the server itself.
+const reachability = new Reachability({ publicUrl: config.PUBLIC_URL });
+serverRoutes(app, { info, reachability });
 apiRoutes(app, { config, lidarr, library, media, requestSettings, db });
 metadataRoutes(app, { store, library, pathMap: config.pathMap, features: (ids) => analyzer.features(ids), matcher, lidarr });
 artRoutes(app, { art, cacheDir: resolve(config.CACHE_DIR), library, files, folders, colors: coverColors });
@@ -239,7 +247,7 @@ mixRoutes(app, {
 });
 // Settings → Updates: files shared with the updater container (UPDATE_DIR, set by docker/compose.yaml).
 const updates = new UpdateBridge(config.UPDATE_DIR);
-settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares, lidarr, updates });
+settingsRoutes(app, { sources, library, matcher, store, organizer, fingerprints, shares, lidarr, updates, reachability });
 statusRoutes(app, {
   musicbrainz,
   matching: () => store.listSources().reduce((n, s) => n + matcher.pendingGroups(s.id), 0),
@@ -271,6 +279,7 @@ const shutdown = async () => {
   await app.close();
   clearTimeout(cut);
   library.stop();
+  proxyNames?.stop();
   encoded.close();
   analyzer.close();
   // A render a moment from done is let finish (its file is then complete); one that isn't is cut off.

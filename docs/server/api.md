@@ -100,6 +100,7 @@ Details in [../mixes.md](../mixes.md).
 |---|---|---|
 | `GET /api/server` | server id, name, version, oldest app version, setup mode, public URL; the owner's username in setup mode | open |
 | `GET /api/diagnostics` | what someone helping with a problem asks first (`ServerDiagnostics`, below) | admin |
+| `GET /reachable/:token` | the reachability check's own request, through the proxy: the answer to a token of a check that's running, once; a plain 404 for anything else; 30 a minute per visitor ([https.md](https.md)) | open |
 | `POST /api/auth/setup` | claim the server: the owner's username and password | setup |
 | `POST /api/auth/sign-in`, `/api/auth/redeem` | sign in; choose a password with a setup code (both rate-limited per address) | open |
 | `POST /api/auth/switch` | make a token this browser's session cookie (authenticates by the token) | open |
@@ -121,13 +122,14 @@ Details in [../mixes.md](../mixes.md).
 | `GET /api/settings/folders`, `POST /api/settings/folders/browse`, `GET /api/settings/folders/access` | browse folders on the server or over SSH, SFTP or SMB; whether SMB is available | admin |
 | `GET\|PUT /api/settings/matching`, `/api/settings/requests` | matching settings (the AcoustID key); where requests go in Lidarr | admin |
 | `GET\|PUT /api/settings/updates`, `POST /api/settings/updates/check` | automatic updates ([updates-and-deploy.md](updates-and-deploy.md)) | admin |
+| `POST /api/settings/reachability/check` | Away from home: the server asks its own `PUBLIC_URL` over HTTPS, the way a phone would, and answers each step (address, name lookup, connection, certificate, this server answering) with what to fix; a few seconds at most, one check at a time ([https.md](https.md)) | admin |
 | `GET /api/settings/mixes`; `PUT /api/settings/mixes` | Settings → Mixes with the caller's history; changing how mixes are made | own; admin |
 | `DELETE /api/settings/mixes/history` | forget the account's listening history | own |
 | `GET\|PUT\|DELETE /api/settings/listenbrainz`, `POST /api/settings/listenbrainz/earlier` | the account's ListenBrainz link; send earlier plays | own |
 | `GET /api/analysis/progress` | each analysis's progress over the library | signed in |
 | `POST /api/analysis/:kind` | queue beat, sound, loudness or tag analysis (or all) for the library | admin |
 
-Anything else that isn't under `/api/`, `/stream/`, `/art/` or `/transitions/` is the web app (`index.html` for unknown GETs), served to anyone.
+Anything else that isn't under `/api/`, `/stream/`, `/art/` or `/transitions/` is the web app (`index.html` for unknown GETs), served to anyone, except `/reachable/:token` above.
 
 ---
 
@@ -142,7 +144,7 @@ Anything else that isn't under `/api/`, `/stream/`, `/art/` or `/transitions/` i
 - **Recovery.** A forgotten owner password is reset on the server host (`reset-password`), never over the network. The last password on the server can't be reset or removed.
 - **Headers.** Every answer, the web app's files, streams, art and transitions included, carries `X-Content-Type-Options: nosniff` (a browser takes the content type as given, so nothing served runs as a script it wasn't sent as) and `Content-Security-Policy: frame-ancestors 'self'` (only Playarr's own pages may show it in a frame, which is what `X-Frame-Options` did; so Playarr can't be embedded in another site's page, a dashboard's included). Only that directive so far: a full policy waits until it can be checked in a browser, as a wrong one blanks the app. A route that sets either header itself keeps its own (`securityHeaders.ts`).
 - **Request ids and logs.** Every answer carries `X-Request-Id`: the client's own when it sends a sane one (up to 64 letters, digits, `.`, `_` and `-`), otherwise a new UUID. It's the `reqId` on every log line about the request. Every 4xx (at info) and 5xx (at error, with the error and its stack) is logged with that id, the account when someone is signed in, the method, the route as registered (`/api/albums/:id`; a path no route matched by its first segment, `/api/*`), the status and how long it took; never the URL, query, body, headers or tokens (`requestLog.ts`).
-- **Not yet.** Playarr itself speaks plain HTTP; HTTPS needs a reverse proxy in front of it.
+- **HTTPS.** Playarr itself speaks plain HTTP: HTTPS comes from a proxy in front of it, such as the compose stack's optional Caddy (`COMPOSE_PROFILES=https`) or `tailscale serve` ([https.md](https.md)). Settings → Away from home checks it from the server.
 
 ---
 

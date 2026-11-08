@@ -17,6 +17,7 @@ How Playarr works today, part by part. The code is the final word; these pages s
 - [server/discover-and-requests.md](server/discover-and-requests.md): searching beyond the library, requesting albums through Lidarr, and the recommendations for playlists and Favorites.
 - [server/playlist-covers.md](server/playlist-covers.md): playlist covers drawn from how the songs sound.
 - [server/updates-and-deploy.md](server/updates-and-deploy.md): the Docker image, configuration, the NAS deployment, automatic updates and the release flow.
+- [server/https.md](server/https.md): a public HTTPS address for listening away from home, with Caddy and your own domain or with Tailscale, and the check in Settings → Away from home.
 - [server/api.md](server/api.md): every route, grouped, with who may call it.
 
 ## Listening and mixing
@@ -40,9 +41,9 @@ How Playarr works today, part by part. The code is the final word; these pages s
 ## Plans (work not finished)
 
 - [plans/2026-11-05-1-safety-and-release.md](plans/2026-11-05-1-safety-and-release.md): nothing a push does can blank the app, lose data or leak a credential; every release can be undone. *Done (the gate still to be seen on the NAS; of 4, the check of past uploads' warnings left).*
-- [plans/2026-11-05-2-listening-away-from-home.md](plans/2026-11-05-2-listening-away-from-home.md): transcoding and quality settings, HTTPS an owner can set up, AirPlay, riding out dead spots. *Transcoding, even volume without the WAV and dead spots done on both apps; AirPlay but for the HomePod trial; HTTPS left.*
-- [plans/2026-11-05-3-robustness-and-scale.md](plans/2026-11-05-3-robustness-and-scale.md): 100k-track libraries, the main thread, storage, sessions, logging, code health. *Big libraries done but for the build in a worker; the main thread partly; logging on iOS; the rest left.*
-- [plans/2026-11-05-4-first-run-and-household.md](plans/2026-11-05-4-first-run-and-household.md): the welcome screen, invites that open the app, requests that belong to someone, shared playlists. *Done but for requests by person (under way) and universal links.*
+- [plans/2026-11-05-2-listening-away-from-home.md](plans/2026-11-05-2-listening-away-from-home.md): transcoding and quality settings, HTTPS an owner can set up, AirPlay, riding out dead spots. *Transcoding, even volume without the WAV and dead spots done on both apps; AirPlay but for the HomePod trial; HTTPS built, to try with a fresh owner and a real router.*
+- [plans/2026-11-05-3-robustness-and-scale.md](plans/2026-11-05-3-robustness-and-scale.md): 100k-track libraries, the main thread, storage, sessions, logging, code health. *Big libraries done but for the build in a worker; the main thread but for the measurement on a device; shutdown, timeouts, logging and diagnostics done; sessions, headers and SSH host keys but for the full policy and the web's sign-out; storage under way; code health as we go.*
+- [plans/2026-11-05-4-first-run-and-household.md](plans/2026-11-05-4-first-run-and-household.md): the welcome screen, invites that open the app, requests that belong to someone, shared playlists. *Done but for universal links (waiting for a Playarr domain) and web push for requests.*
 - [plans/2026-11-05-5-ui-consistency.md](plans/2026-11-05-5-ui-consistency.md): one design language across pages and both apps: a design doc, one set of buttons, one action row, one page header, rows and cards, icons, words, empty and error states, and a web screen tour. *Done on both apps.*
 - [plans/2026-11-05-6-ux-flows.md](plans/2026-11-05-6-ux-flows.md): touch at desktop width, Undo for removals, one song menu, pages that lead with Play, a player that's never dead, Settings on a phone, search without dead ends, keyboard and VoiceOver. *Done on both apps; a few smaller things left.*
 - [plans/2026-11-05-7-delight.md](plans/2026-11-05-7-delight.md): things that move from where they came from, an app that keeps time with the music, covers as objects, one voice, small rituals, scrubbing you can see, haptics. *Done on both apps (iOS 2026-11-07); the bigger ideas wait until they're asked for.*

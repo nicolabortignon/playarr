@@ -21,7 +21,20 @@ extension Demo {
     ],
     canEdit: true)
 
-  /// Settings' server panels on the demo server: Accounts, Sources, Made for you, Analysis, Requests and Updates.
+  /// Settings → Away from home on the demo server: reachable at its own domain, every step passed.
+  static let reachability = ReachabilityCheck(
+    verdict: .reachable, summary: "Phones away from home can reach this server at https://music.example.com.",
+    publicUrl: "https://music.example.com",
+    steps: [
+      ReachabilityStep(id: .address, label: "Public address", status: .ok, detail: "https://music.example.com"),
+      ReachabilityStep(id: .dns, label: "Name lookup", status: .ok, detail: "music.example.com is 203.0.113.7."),
+      ReachabilityStep(id: .connect, label: "Connection", status: .ok, detail: "Connected to 203.0.113.7 on port 443."),
+      ReachabilityStep(id: .certificate, label: "Certificate", status: .ok, detail: "From Let’s Encrypt, valid until January 30, 2027."),
+      ReachabilityStep(id: .playarr, label: "This server answers", status: .ok, detail: "This Playarr answered at https://music.example.com."),
+    ],
+    checkedAt: when)
+
+  /// Settings' server panels on the demo server: Accounts, Sources, Made for you, Analysis, Requests, Updates and Away from home.
   static var settingsRoutes: [(method: HTTPMethod, path: String, answer: any Encodable & Sendable)] {
     let me = ListedAccount(
       id: account.id, username: account.username, name: account.name, role: account.role, canRequest: account.canRequest,
@@ -69,6 +82,7 @@ extension Demo {
           status: .init(state: .idle, lastCheck: checked, lastUpdate: checked - 3 * 86_400, deployed: commit, latest: commit),
           requested: false)
       ),
+      (.post, "/api/settings/reachability/check", reachability),
     ]
   }
 

@@ -24,9 +24,10 @@
 # First time on a machine that already runs Playarr:
 #   cd /volume1/docker/playarr && sudo wget -qO update.sh https://raw.githubusercontent.com/nicolabortignon/playarr/main/docker/update.sh && sudo sh update.sh
 #
-# Keeps ./config (favorites, playlists, analysis), ./cache and .env. compose.yaml is replaced by the deployed commit's
-# copy: put your own mounts in compose.override.yaml, which is never touched, and settings compose.yaml passes through
-# (PUBLIC_URL, TRUST_PROXY, SERVER_NAME, …) in .env.
+# Keeps ./config (favorites, playlists, analysis), ./cache, ./caddy (HTTPS certificates) and .env. compose.yaml is
+# replaced by the deployed commit's copy: put your own mounts in compose.override.yaml, which is never touched, and
+# settings compose.yaml passes through (PUBLIC_URL, TRUST_PROXY, SERVER_NAME, COMPOSE_PROFILES, PLAYARR_DOMAIN, …)
+# in .env.
 set -eu
 
 REPO="${PLAYARR_REPO:-nicolabortignon/playarr}"
@@ -99,6 +100,16 @@ fi
 mkdir -p "$DIR/update" || fail "Couldn't create $DIR/update"
 chmod 0775 "$DIR/update" 2>/dev/null || true
 if [ -n "$OWNER" ]; then chown "$OWNER" "$DIR/update" 2>/dev/null || true; fi
+
+# The profiles compose uses, as it reads them: COMPOSE_PROFILES from the environment, else its last line in .env
+# (quotes, spaces and a comment after the value dropped).
+profiles() {
+  if [ -n "${COMPOSE_PROFILES+set}" ]; then
+    printf '%s' "$COMPOSE_PROFILES"
+    return
+  fi
+  sed -n 's/^[[:space:]]*COMPOSE_PROFILES[[:space:]]*=//p' "$DIR/.env" 2>/dev/null | tail -n 1 | sed 's/[[:space:]]#.*//' | tr -d "\"' \r"
+}
 
 # fetch URL SECONDS: the body on stdout, with curl or wget; fails on HTTP errors, or after SECONDS.
 fetch() {
@@ -389,12 +400,16 @@ if [ -n "$PREVIOUS" ] && ! $DOCKER tag "$PREVIOUS" playarr:previous >/dev/null 2
 COPIES_BEFORE="$(copies_of "$NEW_VERSION")"
 
 step "Building and restarting (the first build takes a few minutes)"
-# No -f: compose picks up compose.yaml and, if present, compose.override.yaml.
+# No -f: compose picks up compose.yaml and, if present, compose.override.yaml. Profiles come from .env too:
+# COMPOSE_PROFILES=https adds Caddy (HTTPS at your own domain).
 if [ "${PLAYARR_UPDATER:-}" = 1 ]; then
-  # From the updater: rebuild Playarr only; the updater refreshes itself afterwards.
-  UP="up -d --build --no-deps --remove-orphans playarr"
+  # From the updater: rebuild Playarr only, and bring Caddy up to date when its profile is on; the updater refreshes
+  # itself afterwards. Caddy is named only then: compose starts a service named here whatever the profiles say.
+  SERVICES=playarr
+  case ",$(profiles)," in *,https,*) SERVICES="playarr playarr-caddy" ;; esac
+  UP="up -d --build --no-deps --remove-orphans $SERVICES"
 else
-  # Also builds and starts the updater (Settings → Updates).
+  # Also builds and starts the updater (Settings → Updates), and Caddy when its profile is on.
   UP="up -d --build --remove-orphans"
 fi
 # shellcheck disable=SC2086 # $UP is words

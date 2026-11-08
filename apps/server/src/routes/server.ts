@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import type { FastifyInstance } from 'fastify';
 import type { CatalogStore } from '../catalog/store.ts';
+import { REACHABLE_PATH, type Reachability } from '../reachability/reachability.ts';
 import { VERSION } from '../version.ts';
 
 /** The oldest iOS app this server works with: raised when an API change would break older apps. */
@@ -42,7 +43,23 @@ export function serverInfo(deps: {
   };
 }
 
-/** Open to anyone: how an app recognises a server before signing in. */
-export function serverRoutes(app: FastifyInstance, deps: { info: () => ServerInfo }) {
+/**
+ * Open to anyone: how an app recognizes a server before signing in, and how the server recognizes itself at its
+ * public address (Settings → Away from home).
+ */
+export function serverRoutes(app: FastifyInstance, deps: { info: () => ServerInfo; reachability?: Pick<Reachability, 'answer' | 'allows'> }) {
   app.get('/api/server', (): ServerInfo => deps.info());
+
+  // The reachability check's own request, through the proxy, without a session: the answer to a token this server
+  // made for a check that's running, once. Anything else is a plain 404, the same for a token never made, already
+  // answered or expired, so it tells nobody anything; and at most 30 a minute per visitor.
+  const { reachability } = deps;
+  if (reachability) {
+    app.get<{ Params: { token: string } }>(`${REACHABLE_PATH}/:token`, (req, reply) => {
+      reply.header('cache-control', 'no-store');
+      if (!reachability.allows(req.ip)) return reply.code(429).send({ error: 'Too many requests' });
+      const answer = reachability.answer(req.params.token);
+      return answer ? { answer } : reply.code(404).send({ error: 'Not found' });
+    });
+  }
 }
