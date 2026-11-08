@@ -5,7 +5,6 @@ import { nextByPress, takeNextPresses, usePlayer } from './store';
 const song = (id: number) => ({ id, fileId: id, recordingId: `r${id}`, duration: 200 }) as Track;
 
 beforeEach(() => {
-  localStorage.clear();
   usePlayer.setState({ queue: [], order: [], pos: -1, playing: false, mixMode: 'auto' });
 });
 
@@ -15,7 +14,6 @@ describe('mix mode for the queue', () => {
     usePlayer.getState().playTracks([song(1), song(2)]);
     usePlayer.getState().setMixMode('party');
     expect(usePlayer.getState().mixMode).toBe('party');
-    expect(JSON.parse(localStorage.getItem('playarr.player')!).state.mixMode).toBe('party');
   });
 
   it('goes back to Auto when something new is played', () => {
@@ -34,12 +32,11 @@ describe('mix mode for the queue', () => {
 });
 
 describe('starting a song somewhere', () => {
-  it('asks the engine once to start the song it loads at a time, never kept for a reload', () => {
+  it('asks the engine once to start the song it loads at a time (never saved: playerRecord.test.ts)', () => {
     usePlayer.getState().playTracks([song(1), song(2)], 0, { at: 30 });
     expect(usePlayer.getState().startAt).toBe(30);
     usePlayer.getState().jumpTo(1, { at: 12 });
     expect(usePlayer.getState().startAt).toBe(12);
-    expect(JSON.parse(localStorage.getItem('playarr.player')!).state.startAt).toBeUndefined();
     usePlayer.getState().jumpTo(0);
     expect(usePlayer.getState().startAt).toBeNull();
   });

@@ -15,6 +15,8 @@ import { usePlayer } from '../player/store';
 /** Library → Downloads: albums, playlists and mixes on this device, playable without a connection. */
 export function DownloadsPage() {
   const pins = useOffline((s) => s.pins);
+  // Not "nothing yet" for the moment it takes to read what's kept.
+  const hydrated = useOffline((s) => s.hydrated);
   const downloads = Object.values(pins).sort((a, b) => b.addedAt - a.addedAt);
   return (
     <div className="px-5 pt-8 pb-16 md:px-10 md:pt-14">
@@ -25,7 +27,7 @@ export function DownloadsPage() {
           title="Downloads need a secure connection."
           hint="Browsers only keep music on a device over HTTPS."
         />
-      ) : !downloads.length ? (
+      ) : !hydrated ? null : !downloads.length ? (
         <EmptyState
           icon={ArrowDownToLine}
           title="Nothing in the record bag yet."

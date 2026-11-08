@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
 import { toast } from '../lib/toast';
 import { currentTrack, usePlayer } from './store';
+import { useTabs } from './tabs';
 
 /** Songs to base what comes next on: the last few played. */
 const SEEDS = 5;
@@ -23,13 +24,15 @@ export async function startRadio(track: Track) {
 
 /**
  * Keep the music going: when the last song of the queue starts (and nothing repeats), add songs like
- * the last few, so playback carries on without a gap. Settings → Playback can turn it off.
+ * the last few, so playback carries on without a gap. Settings → Playback can turn it off. Only the tab
+ * that plays does it (player/tabs.ts): the others follow its queue.
  */
 export function useAutoplay() {
   const fileId = usePlayer((s) => currentTrack(s)?.fileId);
+  const leading = useTabs((s) => s.leading);
   useEffect(() => {
     const s = usePlayer.getState();
-    if (fileId === undefined || !usePrefs.getState().autoplay || s.repeat !== 'off' || s.pos !== s.order.length - 1) return;
+    if (!leading || fileId === undefined || !usePrefs.getState().autoplay || s.repeat !== 'off' || s.pos !== s.order.length - 1) return;
     const played = s.order.slice(0, s.pos + 1).map((i) => s.queue[i]!);
     const seeds = played.slice(-SEEDS).map((t) => t.recordingId);
     let cancelled = false;
@@ -44,5 +47,5 @@ export function useAutoplay() {
     return () => {
       cancelled = true;
     };
-  }, [fileId]);
+  }, [fileId, leading]);
 }

@@ -4,7 +4,7 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 
 **Goal:** Playarr holds up on a collector's library (100k tracks) and in daily use: no stalls on the server's event loop or the iPhone's main thread, nothing lost when storage fills or two tabs are open, sessions and connections that can be trusted, and enough logging to diagnose a user's problem.
 
-**Where it stands (2026-11-07):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §3 under way; §4 partly done (the headers, health's details for admins only, sessions that end, a sign-in budget for outside the home, SSH host keys; left: the full policy and the web's storage on signing out); §5 and §6 done. §7 as we go.
+**Where it stands (2026-11-08):** §1 done but for the build in a worker; §2 done but for the measurement on a device; §3 done but for checks in a real browser; §4 partly done (the headers, health's details for admins only, sessions that end, a sign-in budget for outside the home, SSH host keys; left: the full policy and the web's storage on signing out); §5 and §6 done. §7 as we go.
 
 ## 1. Big libraries — M — done 2026-11-07, but for the build in a worker
 
@@ -27,7 +27,9 @@ Agreed 2026-11-05 from the reviews; third of four (after [listening away from ho
 - Polling stops in the background; the 10 Hz tick slows while paused.
 - **Done when** a 10k-song queue shows no hitch over 50 ms in Instruments while a DJ mix plays.
 
-## 3. Web: storage that can't lose downloads — M
+## 3. Web: storage that can't lose downloads — M — done 2026-11-07 but for checks in a real browser
+
+*Done: download progress is a store of its own that isn't saved (`useActiveDownload`). The player and what's kept are saved in IndexedDB (`lib/saved.ts`), half a second after they change, one write at a time, and at once as the page hides; a write that fails is logged and tried again with the next change, and never clears anything. The queue is saved compacted (`player/queueCodec.ts`: 1.3 MB for 10,000 songs, where it was 5), and where the song is under a key of its own. Both are read once as the app opens, and nothing resumes, downloads, loads ahead or deletes audio before then; the first time, from localStorage, whose copy goes once IndexedDB has them. One tab plays (`player/tabs.ts`, the Web Lock `playarr.leader`): it alone downloads, loads ahead, reports plays and deletes audio; the others follow its records, pass it their queue edits and say "Playing in another tab"; playing in one of them takes over, and the old one pauses and lets go. A change to what's kept is made again on the record as it's stored, holding the lock `playarr.offline`, so two tabs never lose each other's songs, and only the tab that plays deletes, choosing from that record. Audio the record doesn't know is adopted, not deleted (`reconcileOffline`). Live mix reads only the slice of a kept file it needs. The tests use fake locks, channels and IndexedDB (`player/storage.test.ts`). Left, in Chrome and Safari: that a slice of a kept file costs less than reading it whole (Chrome keeps cached files as blobs on disk, Safari may copy them); that playing in a second tab starts its audio within the press while the first one stops; that what waits is written as a tab closes.*
 
 - Download progress in a store that isn't saved; the player and offline stores persisted to IndexedDB (`idb-keyval` is already there) through debounced, error-catching writes; `resumeAt` in its own key; the queue compacted (`player/store.ts`, `player/offline.ts`).
 - One leader tab (`navigator.locks`) runs downloads, load-ahead and play reports; other tabs follow its saved state and say "playing in another tab".

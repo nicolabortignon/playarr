@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { healQueue } from './player/healQueue';
-import { useOffline } from './player/offline';
+import { useActiveDownload, useOffline } from './player/offline';
 import { usePlayer } from './player/store';
 import { useToasts } from './lib/toast';
 import { useUI } from './lib/ui';
@@ -21,7 +21,8 @@ afterEach(() => {
   cleanup();
   usePlayer.setState({ queue: [], order: [], pos: -1, playing: false });
   useToasts.setState({ toasts: [] });
-  useOffline.setState({ songs: {}, active: null });
+  useOffline.setState({ songs: {} });
+  useActiveDownload.setState({ active: null });
   useUI.setState({ nowPlayingOpen: false });
   // Each test asserts on its own console errors only.
   errors.length = 0;
@@ -413,10 +414,8 @@ describe.skipIf(!reachable)('Playarr web against live server (pnpm dev:server)',
     const [first, second, third] = album.tracks as [Track, Track, Track];
     usePlayer.setState({ queue: album.tracks, order: album.tracks.map((_, i) => i), pos: 0, playing: false });
     // As the load-ahead leaves it: the playing song kept, the next one half downloaded.
-    useOffline.setState({
-      songs: { [first.fileId]: { url: first.streamUrl, bytes: first.size, usedAt: Date.now() } },
-      active: { fileId: second.fileId, loaded: second.size / 2, total: second.size },
-    });
+    useOffline.setState({ songs: { [first.fileId]: { url: first.streamUrl, bytes: first.size, usedAt: Date.now() } } });
+    useActiveDownload.setState({ active: { fileId: second.fileId, loaded: second.size / 2, total: second.size } });
 
     renderAt('/queue');
     await screen.findByText('Up next', { exact: false });

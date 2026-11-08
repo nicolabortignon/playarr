@@ -125,14 +125,16 @@ The Motion setting maps to Motion's `reducedMotion`, and to `data-motion` on `<h
 
 The app opens with the last data on screen and refreshes it in the background. Polled status (health, the MusicBrainz queue, requests, updates) isn't persisted.
 
-**Zustand stores**, and what persists to `localStorage`:
+**Zustand stores**, and what's saved of them (in `localStorage`, but for the two in IndexedDB):
 
-| Store | Holds | Persisted as |
+| Store | Holds | Saved as |
 |---|---|---|
-| `usePlayer` (`player/store.ts`) | The queue, play order, position, shuffle, repeat, volume, mute, resume point, "Playing from" source, mix mode | `playarr.player` (not `playing`) |
+| `usePlayer` (`player/store.ts`) | The queue, play order, position, shuffle, repeat, volume, mute, resume point, "Playing from" source, mix mode, and whether its saved record has been read (`hydrated`) | IndexedDB, below (not `playing` nor `startAt`) |
 | `useClock` (`player/store.ts`) | The playhead and duration, and `seek` | no |
 | `usePrefs` (`lib/prefs.ts`) | Settings → Playback and Appearance: accent, motion, format badges, count plays, autoplay, transitions (off / crossfade / DJ mix), crossfade length, even volume, streaming quality on Wi-Fi, on mobile data and for downloads, Stats for nerds | `playarr.prefs` (unknown values cleaned on load) |
-| `useOffline` (`player/offline.ts`) | Songs kept on the device, downloads, the size limit, the download in progress | `playarr.offline` (not the progress) |
+| `useOffline` (`player/offline.ts`) | Songs kept on the device, downloads, the size limit, and whether they've been read (`hydrated`) | IndexedDB, below |
+| `useActiveDownload` (`player/offline.ts`) | The download in progress, for its ring (in every tab: the one downloading tells the others) | no |
+| `useTabs` (`player/tabs.ts`) | Whether this tab is the one that plays, and whether another one is playing (§6, One tab plays) | no |
 | `useAccounts` (`lib/accounts.ts`) | Accounts signed in on this device, with their session tokens | `playarr.accounts` (written by hand) |
 | `useUI` (`lib/ui.ts`) | Now Playing and lyrics open, the column beside the page, the shortcuts, open dialogs, and for the player's cover growing into Now Playing and back, which cover carries the name meanwhile (`coverMorph`) and whether Now Playing grew rather than slid | no |
 | `useRecentSearches` (`lib/recentSearches.ts`) | Recent searches, by account | `playarr.recentSearches` |
@@ -140,6 +142,19 @@ The app opens with the last data on screen and refreshes it in the background. P
 | `useLevels`, `useTransition`, `useBlend`, `useMetered`, `useJoins`, `useDownloadState`, `useSleep`, `useToasts` | Even-volume levels, the transition for the current pair, the DJ blend being heard (`player/blend.ts`), whether the song playing goes through the meter (`player/pulse.ts`), join measurements, download failures this session, the sleep timer (and when it last stopped the music, for Now Playing's goodnight), toasts | no |
 
 Play reports waiting to be sent are kept in `playarr.pendingPlays`. Invite links made on this device are kept in `playarr.invites` until they expire (`lib/invites.ts`), to copy again: the server keeps only a hash of each setup code, so it can't hand one out twice.
+
+**The player and what's kept on the device** are saved in IndexedDB, in the query cache's database (`lib/saved.ts`):
+
+- `playarr.player.queue`: the queue, compacted (`player/queueCodec.ts`): each album's details once, then each song as a row of its own values, about 130 bytes a song where a whole track takes 540, so a queue of 10,000 songs is 1.3 MB rather than 5. It's written only when the queue changes.
+- `playarr.player`: the play order, position, shuffle, repeat, volume, mute, "Playing from" and mix mode (`player/playerRecord.ts`).
+- `playarr.player.resumeAt`: where the song is, on its own, so the queue isn't written again every few seconds as it plays.
+- `playarr.offline.songs`, `playarr.offline.pins` and `playarr.offline.limit` (`player/offline.ts`): the songs on the device by file id (their address, size and when they were last played), the downloads, and the limit.
+
+Each is written half a second after it changes, one write at a time, and at once while the page is hidden or going away. A write that fails (storage full, a private window) is logged once and tried again with the next change: what's here stays as it is, and a failed write never clears anything. Only the tab that plays (§6) writes the player's record and keeps or deletes songs; downloads and the limit can change in any tab. A change to what's kept is made at once and held as a change until it's written: the write, holding the Web Lock `playarr.offline`, makes it again on the record as it's stored then. So no tab writes over another's newer record, and a failed write loses nothing. Each tab tells the others what it wrote, and they read it again.
+
+Both are read once as the app opens (`hydratePlayer`, `hydrateOffline`, from `main.tsx`), and `hydrated` says when. Until then the queue is empty, so nothing resumes (the player bar shows nothing rather than its offers, Downloads nothing rather than its empty state), and nothing downloads, loads ahead or deletes audio. Something played before the queue is read keeps its queue, with the saved settings.
+
+The first time, both are read from where they were kept in `localStorage` (`playarr.player` and `playarr.offline`), and that copy is removed once IndexedDB has them. Where IndexedDB won't open (an older browser's private window), the `localStorage` copy is read, and nothing kept on the device is deleted that session.
 
 **Per-device preferences** are the `usePrefs` values. An admin can lock Playback or Appearance for an account (`useLocked`, from `/api/auth/me`). The panel then shows read-only.
 
@@ -173,7 +188,8 @@ Plain elements keep playing on a locked iPhone, which is why the player uses the
 - **The end of a song** (`player/endOfSong.ts`): from ten seconds before a song gives way, the mini player's and the player bar's subtitle says what comes next ("Next: Teardrop"). With DJ mix blending the two on the beat, it says "Mixing into Teardrop on the next bar" through the last bar before the blend (four beats at the song's tempo, else two seconds), then "Mixing into Teardrop" until the next song takes over: from the transitions store's plan until the blend starts, then from the blend the engine says is heard (`useBlend`, §6), as the store can let its answer go at the mix point. The ten seconds count to the plan's mix point with DJ mix, else to the song's end less Crossfade's overlap; nothing follows a song the sleep timer stops after.
 - **Keeping time** (`player/pulse.ts`). The engine tells the rest of the app where the music is (`setPulseSource`): the song's time as it's heard (less the graph's delay), the meter while the song playing goes through it (`useMetered`), and the DJ transition being heard. One loop of animation frames (`onPulse`), running only while something listens, hands each frame to the now-playing bars, Now Playing's glow and a blend's covers, which set their styles themselves rather than re-rendering. The beat comes from the song's mix map (`songBeat`: its tempo, first beat and downbeat), only where its grid holds (`gridStable`); without one the bars loop and there's no glow. The bars' levels are the meter's bass (40–200 Hz), middle (200 Hz–2 kHz) and treble (2–10 kHz), each read against the loudest it has lately been (about 24 dB under it reads as silence; that loudest falls back about 1.4 dB a second), so the volume doesn't matter and a quiet song moves them as much as a loud one.
 - **DJ blends you can see** (`player/blend.ts`). From the start of a long blend or a quick mix until the song being left has faded out of it (`overlapOf`: where its gain reaches nothing), whatever happens meanwhile (the switch to the next song, a pause), `useBlend` holds the two songs and the plan; a skip or a seek out of the transition ends it, and a fade or straight on is no blend. Transitions played from the server's file and skips mixed live both count. The mini player and the player bar show both covers (`PlayerCover`), and Now Playing says "Mixing into Teardrop".
-- **Play reports** (`player/playTracker.ts`). A song counts as a play after 30 s heard, or half of a shorter song; seeks don't count. A song left after 3 s counts as a skip. Reports go to `/api/plays` with `keepalive`, one request at a time. Unsent ones wait in `localStorage` (at most 300). "Count what this device plays" turns them off.
+- **Play reports** (`player/playTracker.ts`). A song counts as a play after 30 s heard, or half of a shorter song; seeks don't count. A song left after 3 s counts as a skip. Reports go to `/api/plays` with `keepalive`, one request at a time, from the tab that plays only (below). Unsent ones wait in `localStorage` (at most 300). "Count what this device plays" turns them off.
+- **One tab plays** (`player/tabs.ts`). Of the tabs open on a device, the one holding the Web Lock `playarr.leader` plays (no other tab's engine loads a song), saves the player, downloads, loads ahead, reports plays, starts radio when the queue ends, and deletes kept audio. The others wait in line for the lock, so one of them takes over when it closes. They read its records again whenever it says it wrote them (over the BroadcastChannel `playarr.tabs`), pass it their queue edits (Play next, Add to queue, removing and reordering, shuffle, repeat, volume, mix mode) as well as making them at once, and their rings follow its download. While it plays, their player bar and mini player say "Playing in another tab" in place of the artist. Playing anything in one of them takes the lock from it (`steal`), at once, within the press, so the audio can start: the old leader pauses, reports the song it was playing and lets go, and the new one carries on its downloads. Without Web Locks, every tab is its own leader.
 - **Riding out a dead spot.** The song playing goes on where it was whatever the connection does:
   - **A stream that breaks off** (MediaError 2) is asked for again from where it stopped, after 1, 3 and 8 s (`RETRY_DELAYS_MS`). Still breaking off, the server is asked why (two bytes of the stream, or an encoded stream's headers, as a GET would start encoding it): out of reach (a dead spot the browser still counts as online, the server restarting), it's asked for again every 15 s until it answers; answering, the song gives way to the next, the reason in a toast. A song that plays on 10 s past where it broke off gets its quick tries afresh. A seek while it waits asks for the stream from there instead.
   - **Offline** (`navigator.onLine`), the song waits where it is, and goes on from there once `online` fires. Offline for 30 s, the next song kept on the device plays instead.
@@ -204,10 +220,10 @@ Plain elements keep playing on a locked iPhone, which is why the player uses the
 - It waits **2.5 s** for the queue to settle, so skipping through tracks downloads nothing.
 - It downloads one song at a time, and aborts one that drops out of the plan.
 - **Offline, data saver or 2G**: nothing. **Cellular**: one song ahead, not the current one.
-- It only runs while a service worker controls the page.
+- It only runs while a service worker controls the page, in the tab that plays (§6), once what's kept has been read (§4).
 - It also preloads the next cover at the player's sizes, plus Now Playing's sizes when that's open.
 
-**Keeping a song** (`player/offline.ts`) fetches the whole file (a 200, not a range) and writes it to `playarr-audio`. The index (URL, bytes, last used) is in `useOffline`. Load-ahead keeps songs at the quality they stream at on this connection, downloads at the downloads' quality (Original unless chosen otherwise): its own file, or its encoded stream from the start (`keptUrl`), whose address says its quality (`qualityOfUrl`). A copy kept below the quality wanted is fetched again, and the better copy replaces it, except that load-ahead leaves a download's songs as the downloads kept them (`nextToLoad`); with DJ mix outside Safari, that's songs' own files. Space for songs kept this way:
+**Keeping a song** (`player/offline.ts`) fetches the whole file (a 200, not a range) and writes it to `playarr-audio`. The index (URL, bytes, last used) is in `useOffline`, saved in IndexedDB (§4). Load-ahead keeps songs at the quality they stream at on this connection, downloads at the downloads' quality (Original unless chosen otherwise): its own file, or its encoded stream from the start (`keptUrl`), whose address says its quality (`qualityOfUrl`). A copy kept below the quality wanted is fetched again, and the better copy replaces it, except that load-ahead leaves a download's songs as the downloads kept them (`nextToLoad`); with DJ mix outside Safari, that's songs' own files. Space for songs kept this way:
 
 - the default limit is **2 GB**, with choices of Off, 512 MB, 1, 2, 5 or 10 GB in Settings → Playback;
 - it's capped at half the browser's quota;
@@ -216,7 +232,7 @@ Plain elements keep playing on a locked iPhone, which is why the player uses the
 
 **Downloads** (`player/downloads.ts`, the Download buttons, the Downloads page) pin an album, playlist, mix or Favorites to the device. Their songs:
 
-- download in the order the downloads were added, one song at a time, whenever the device is online;
+- download in the order the downloads were added, one song at a time, whenever the device is online, in the tab that plays (§6);
 - don't count towards the limit and never make room for others;
 - may fill the browser's quota up to 90%, dropping load-ahead songs first. When that's not enough, a toast says the device is full.
 
@@ -224,7 +240,13 @@ With DJ mix on, the transitions between a download's songs are fetched too, once
 
 When a download's last song arrives, its ring closes into the tick and a toast says so: "“Mezzanine” is on this device" (`justDownloaded`, `useDownloads`); downloading something whose songs are all on the device already says it at once, in place of "Downloading “Mezzanine”".
 
-A small ⤓ after a title marks the songs of a download (`OfflineMark`, `useIsDownloaded`), and a ring shows one downloading. Songs only loaded ahead get no mark: the mark means the song will be there offline.
+A small ⤓ after a title marks the songs of a download (`OfflineMark`, `useIsDownloaded`), and a ring shows one downloading (`useActiveDownload`, in every tab). Songs only loaded ahead get no mark: the mark means the song will be there offline.
+
+**Losing the record never loses a song.** Kept audio is deleted only by the tab that plays (Remove all in another tab asks it to) and, Remove all aside, only once the record has been read. To make room, fit the limit or drop a transition no download has any more, it deletes holding the record's lock and chooses from the record as it's stored then, another tab's newest downloads included: never a song of a download, nor the files of a transition being kept (`deleteSongs`). When a tab becomes the one that plays (as the app opens, or taking over), it makes the record and `playarr-audio` agree once the record is read (`reconcileOffline`):
+
+- a file the record doesn't know is adopted, not deleted: its file id is in its address (`/stream/<fileId>…`, a transition's from its own), its size in its headers, and it counts as a song kept as you listen, so it goes only when room is needed (a song a download lists is that download's again);
+- a song whose file the browser has cleared is forgotten;
+- a second copy of a song goes, and the record's stays.
 
 ## 9. Prefetching
 

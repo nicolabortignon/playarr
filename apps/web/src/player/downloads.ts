@@ -22,6 +22,7 @@ import {
   workerReady,
 } from './offline';
 import { playsAlbum } from './decks';
+import { isLeader, useTabs } from './tabs';
 import { useTransition } from './transitions';
 
 /** Downloads keep the transitions the player asks for by default: a queue's mix mode starts out 'auto'. */
@@ -108,7 +109,7 @@ const clashesWithPlayer = (fromFileId: number, toFileId: number) => {
  * again until it's rendered, then keep its files. False when there's none to fetch.
  */
 export async function keepNextTransition(): Promise<boolean> {
-  if (usePrefs.getState().transitions !== 'dj') return false;
+  if (usePrefs.getState().transitions !== 'dj' || !isLeader()) return false;
   const { pins, songs } = useOffline.getState();
   const next = nextTransition(pins, songs, useDownloadState.getState().skippedPairs, (from, to) => clashesWithPlayer(from.fileId, to.fileId));
   if (!next) return false;
@@ -177,13 +178,14 @@ function skip(pair: string, reason: string) {
  * asks once a few wait).
  */
 async function pump() {
-  if (running || !canKeepOffline || !workerReady() || !navigator.onLine) return;
+  if (running || !mayDownload() || !workerReady() || !navigator.onLine) return;
   running = true;
   try {
     for (;;) {
       const { pins, songs } = useOffline.getState();
       const next = nextToDownload(pins, songs, useDownloadState.getState().failed, downloadQuality());
-      if (!navigator.onLine) return;
+      // Offline, or another tab plays (and downloads) now.
+      if (!navigator.onLine || !mayDownload()) return;
       if (!next) {
         if (await keepNextTransition()) continue;
         return;
@@ -244,9 +246,29 @@ function retry() {
   void pump();
 }
 
-/** Keeps downloads complete: fetches what they're missing, stops fetching what's no longer wanted. */
+/** Only the tab that plays downloads (player/tabs.ts), and only once it has read what's kept. */
+const mayDownload = () => canKeepOffline && isLeader() && useOffline.getState().hydrated;
+
+/**
+ * Keeps downloads complete: fetches what they're missing, stops fetching what's no longer wanted. In the tab that plays
+ * only; in every tab, a toast says when a download is complete.
+ */
 export function useDownloads() {
+  const leading = useTabs((s) => s.leading);
+  const hydrated = useOffline((s) => s.hydrated);
+
+  // A download's last song arrived: the ring closes into its tick, and a toast says it's here (plan 7 §5).
+  useEffect(
+    () =>
+      useOffline.subscribe((s, prev) => {
+        if (s.songs === prev.songs && s.pins === prev.pins) return;
+        for (const d of justDownloaded(prev, s)) toast(onThisDevice(d.title));
+      }),
+    [],
+  );
+
   useEffect(() => {
+    if (!leading || !hydrated) return;
     void pump();
     const off = useOffline.subscribe((s, prev) => {
       if (s.pins === prev.pins) return;
@@ -265,11 +287,6 @@ export function useDownloads() {
       if (s.transitions !== 'dj') pairJob?.abort.abort();
       else void pump();
     });
-    // A download's last song arrived: the ring closes into its tick, and a toast says it's here (plan 7 §5).
-    const offDone = useOffline.subscribe((s, prev) => {
-      if (s.songs === prev.songs && s.pins === prev.pins) return;
-      for (const d of justDownloaded(prev, s)) toast(onThisDevice(d.title));
-    });
     // The player moved on to another pair: one left aside for it may be fetched now (or must wait).
     const offPlayer = useTransition.subscribe((s, prev) => {
       if (s.fromFileId === prev.fromFileId && s.toFileId === prev.toFileId) return;
@@ -280,13 +297,13 @@ export function useDownloads() {
     navigator.serviceWorker?.addEventListener('controllerchange', retry);
     return () => {
       off();
-      offDone();
       offPrefs();
       offPlayer();
       window.removeEventListener('online', retry);
       navigator.serviceWorker?.removeEventListener('controllerchange', retry);
+      // No longer the tab that plays: the one that is carries on.
       job?.abort.abort();
       pairJob?.abort.abort();
     };
-  }, []);
+  }, [leading, hydrated]);
 }

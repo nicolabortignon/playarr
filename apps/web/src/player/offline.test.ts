@@ -16,6 +16,7 @@ import {
   setOfflineLimit,
   splitKept,
   transitionFileId,
+  useActiveDownload,
   useOffline,
 } from './offline';
 import { useTransition } from './transitions';
@@ -115,7 +116,7 @@ describe('keeping songs', () => {
       });
       return new Response(body, { headers: { 'Content-Length': String(size) } });
     });
-    useOffline.setState({ songs: {}, pins: {}, limit: 1000, active: null });
+    useOffline.setState({ songs: {}, pins: {}, limit: 1000 });
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -125,7 +126,7 @@ describe('keeping songs', () => {
     expect(await keep(track(4, 400))).toBe(true);
     expect(store.get('/stream/4')?.byteLength).toBe(400);
     expect(useOffline.getState().songs[4]).toMatchObject({ url: '/stream/4', bytes: 400 });
-    expect(useOffline.getState().active).toBeNull();
+    expect(useActiveDownload.getState().active).toBeNull();
   });
 
   it('fetches again, as its WAV, an Apple Lossless song kept as the file this browser can’t play', async () => {
@@ -164,11 +165,11 @@ describe('keeping songs', () => {
     expect(await keep(track(20, 2000))).toBe(false);
     const abort = new AbortController();
     const pending = keep(track(6, 600), abort.signal);
-    await vi.waitFor(() => expect(useOffline.getState().active?.fileId).toBe(6));
+    await vi.waitFor(() => expect(useActiveDownload.getState().active?.fileId).toBe(6));
     abort.abort();
     await expect(pending).rejects.toThrow();
     expect(useOffline.getState().songs).toEqual({});
-    expect(useOffline.getState().active).toBeNull();
+    expect(useActiveDownload.getState().active).toBeNull();
   });
 });
 
@@ -182,7 +183,7 @@ describe('downloads', () => {
       const size = Number(url.split('/').pop()) * 100;
       return new Response(new Uint8Array(size), { headers: { 'Content-Length': String(size) } });
     });
-    useOffline.setState({ songs: {}, pins: {}, limit: 1000, active: null });
+    useOffline.setState({ songs: {}, pins: {}, limit: 1000 });
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -272,7 +273,7 @@ describe('download transitions', () => {
     usePrefs.setState({ transitions: 'dj', crossfade: 0 });
     useDownloadState.setState({ failed: {}, skippedPairs: {} });
     useTransition.setState({ fromFileId: null, toFileId: null, result: null, ready: undefined });
-    useOffline.setState({ songs: keptSongs(4, 5, 6), pins: {}, limit: 1000, active: null });
+    useOffline.setState({ songs: keptSongs(4, 5, 6), pins: {}, limit: 1000 });
     transition = vi.spyOn(api, 'transition');
   });
   afterEach(() => {

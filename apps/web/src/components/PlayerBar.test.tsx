@@ -10,6 +10,7 @@ import { useUI } from '../lib/ui';
 import { useBlend } from '../player/blend';
 import { useSleep } from '../player/sleep';
 import { useClock, usePlayer } from '../player/store';
+import { useTabs } from '../player/tabs';
 import { useTransition } from '../player/transitions';
 import { MiniPlayer, PlayerBar } from './PlayerBar';
 
@@ -208,5 +209,41 @@ describe('the end of a song', () => {
     await at(195);
     expect(screen.getByText('Next: Teardrop')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Radiohead' })).toBeNull();
+  });
+});
+
+describe('in a tab that follows another', () => {
+  afterEach(() => useTabs.setState({ leading: true, elsewhere: false }));
+
+  it('says the song plays in another tab, where its artist goes, in the bar and the mini player', () => {
+    usePlayer.setState({ queue: [track(1)], order: [0], pos: 0, playing: false });
+    useTabs.setState({ leading: false, elsewhere: true });
+    view('/');
+    expect(screen.getByText('Song 1')).toBeTruthy();
+    expect(screen.getByText('Playing in another tab')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Radiohead' })).toBeNull();
+    cleanup();
+    view('/', <MiniPlayer />);
+    expect(screen.getByText('Playing in another tab')).toBeTruthy();
+  });
+
+  it('shows the song as usual when the other tab has stopped', () => {
+    usePlayer.setState({ queue: [track(1)], order: [0], pos: 0, playing: false });
+    useTabs.setState({ leading: false, elsewhere: false });
+    view('/');
+    expect(screen.getByRole('link', { name: 'Radiohead' })).toBeTruthy();
+    expect(screen.queryByText('Playing in another tab')).toBeNull();
+  });
+});
+
+describe('before the saved queue is read', () => {
+  afterEach(() => usePlayer.setState({ hydrated: true }));
+
+  it('shows neither the song nor what to play instead', () => {
+    usePlayer.setState({ hydrated: false });
+    vi.spyOn(api, 'recentAlbums').mockResolvedValue([OK_COMPUTER]);
+    view('/');
+    expect(screen.queryByText('Heard last')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Feeling lucky' })).toBeNull();
   });
 });

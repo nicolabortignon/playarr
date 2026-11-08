@@ -298,13 +298,28 @@ describe('prepareLiveMix', () => {
     expect(await prepare(track(1, { format: mp3 }), track(2))).not.toBeNull();
   });
 
-  it('plays a song kept on this device from the cache', async () => {
+  it('mixes from a song kept on this device, reading only the start it needs: a slice of the file, not all of it', async () => {
     useOffline.setState({ songs: { 2: { url: '/stream/2', bytes: 10 * MB, usedAt: 0 } } });
-    const match = vi.fn(async () => new Response(new ArrayBuffer(16)));
+    const slices: [number, number | undefined][] = [];
+    const file = {
+      size: 10 * MB,
+      slice(start: number, end?: number) {
+        slices.push([start, end]);
+        return new Blob([new Uint8Array(16)]);
+      },
+    };
+    const kept = { blob: vi.fn(async () => file), arrayBuffer: vi.fn(async () => new ArrayBuffer(10 * MB)) };
+    const match = vi.fn(async () => kept);
     vi.stubGlobal('caches', { match });
     expect(await prepare()).not.toBeNull();
     expect(match).toHaveBeenCalledWith('/stream/2', { cacheName: 'playarr-audio' });
     expect(fetches.map((f) => f.url)).toEqual(['/stream/1']);
+    // B's first 36 s or so of its 300: about 3.5 MB of its 10, never the whole file.
+    expect(kept.arrayBuffer).not.toHaveBeenCalled();
+    expect(slices).toHaveLength(1);
+    expect(slices[0]![0]).toBe(0);
+    expect(slices[0]![1]).toBeGreaterThan(0.12 * 10 * MB);
+    expect(slices[0]![1]).toBeLessThan(0.5 * 10 * MB);
   });
 
   it.each([

@@ -1,7 +1,8 @@
 import type { MixMode } from '@playarr/mix';
 import type { Track } from '@playarr/shared';
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { canSave } from '../lib/saved';
+import { isLeader, post } from './tabs';
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
@@ -11,7 +12,7 @@ export interface PlaySource {
   href: string;
 }
 
-interface PlayerState {
+export interface PlayerState {
   /** Tracks in the order they were added. */
   queue: Track[];
   /** Play order: indices into `queue` (identity unless shuffled). */
@@ -33,6 +34,8 @@ interface PlayerState {
   source?: PlaySource;
   /** How this queue is mixed when transitions are DJ mix: Auto, Party (longer blends) or no mixing. */
   mixMode: MixMode;
+  /** The saved queue has been read (player/playerRecord.ts): until then the queue is empty, and nothing resumes. */
+  hydrated: boolean;
 
   /** `at`: start the song there (seconds) instead of its beginning. */
   playTracks: (tracks: Track[], startIndex?: number, opts?: { shuffle?: boolean; source?: PlaySource; at?: number }) => void;
@@ -68,7 +71,7 @@ function shuffled<T>(arr: T[]): T[] {
   return a;
 }
 
-const MIX_MODES: readonly MixMode[] = ['auto', 'party', 'off'];
+export const MIX_MODES: readonly MixMode[] = ['auto', 'party', 'off'];
 
 const range = (n: number) => Array.from({ length: n }, (_, i) => i);
 
@@ -105,166 +108,186 @@ export function takeNextPresses(take: () => boolean): () => void {
   };
 }
 
-export const usePlayer = create<PlayerState>()(
-  persist(
-    (set, get) => ({
-      queue: [],
-      order: [],
-      pos: -1,
-      playing: false,
-      shuffle: false,
-      repeat: 'off',
-      volume: 1,
-      muted: false,
-      restartToken: 0,
-      resumeAt: 0,
-      startAt: null,
+/**
+ * Edits a tab that follows another (player/tabs.ts) passes to the tab that plays, which saves them for every tab. It
+ * makes them itself too, until that tab's record comes back. (Anything that plays makes the tab the leader instead:
+ * player/playerRecord.ts.)
+ */
+export const QUEUE_EDITS = [
+  'playNext',
+  'addToQueue',
+  'removeAt',
+  'move',
+  'setUpcoming',
+  'clearUpcoming',
+  'toggleShuffle',
+  'cycleRepeat',
+  'setVolume',
+  'toggleMute',
+  'setMixMode',
+] as const satisfies readonly (keyof PlayerState)[];
+export type QueueEdit = (typeof QUEUE_EDITS)[number];
+/** Edits by place in the play order: the leader makes them only on the same queue at the same song, or they'd land on others. */
+const BY_PLACE = new Set<QueueEdit>(['removeAt', 'move', 'setUpcoming']);
+
+function forward(s: Pick<PlayerState, 'pos' | 'order'>, action: QueueEdit, args: unknown[]) {
+  if (isLeader()) return;
+  post({ type: 'do', action, args, ...(BY_PLACE.has(action) ? { at: { pos: s.pos, length: s.order.length } } : {}) });
+}
+
+export const usePlayer = create<PlayerState>()((set, get) => ({
+  queue: [],
+  order: [],
+  pos: -1,
+  playing: false,
+  shuffle: false,
+  repeat: 'off',
+  volume: 1,
+  muted: false,
+  restartToken: 0,
+  resumeAt: 0,
+  startAt: null,
+  mixMode: 'auto',
+  // Nothing to read without IndexedDB (in tests, say).
+  hydrated: !canSave(),
+
+  playTracks: (tracks, startIndex = 0, opts) => {
+    if (!tracks.length) return;
+    const shuffle = opts?.shuffle ?? get().shuffle;
+    const start = opts?.shuffle ? Math.floor(Math.random() * tracks.length) : startIndex;
+    const order = shuffle ? [start, ...shuffled(range(tracks.length).filter((i) => i !== start))] : range(tracks.length);
+    set({
+      queue: tracks,
+      order,
+      pos: shuffle ? 0 : start,
+      shuffle,
+      source: opts?.source,
+      // A party mode picked for the last queue shouldn't carry over to something new.
       mixMode: 'auto',
+      playing: true,
+      resumeAt: 0,
+      startAt: opts?.at ?? null,
+      restartToken: get().restartToken + 1,
+    });
+  },
 
-      playTracks: (tracks, startIndex = 0, opts) => {
-        if (!tracks.length) return;
-        const shuffle = opts?.shuffle ?? get().shuffle;
-        const start = opts?.shuffle ? Math.floor(Math.random() * tracks.length) : startIndex;
-        const order = shuffle
-          ? [start, ...shuffled(range(tracks.length).filter((i) => i !== start))]
-          : range(tracks.length);
-        set({
-          queue: tracks,
-          order,
-          pos: shuffle ? 0 : start,
-          shuffle,
-          source: opts?.source,
-          // A party mode picked for the last queue shouldn't carry over to something new.
-          mixMode: 'auto',
-          playing: true,
-          resumeAt: 0,
-          startAt: opts?.at ?? null,
-          restartToken: get().restartToken + 1,
-        });
-      },
+  playNext: (tracks) => {
+    const { queue, order, pos } = get();
+    if (pos < 0) return get().playTracks(tracks);
+    forward(get(), 'playNext', [tracks]);
+    const base = queue.length;
+    set({
+      queue: [...queue, ...tracks],
+      order: [...order.slice(0, pos + 1), ...tracks.map((_, i) => base + i), ...order.slice(pos + 1)],
+    });
+  },
 
-      playNext: (tracks) => {
-        const { queue, order, pos } = get();
-        if (pos < 0) return get().playTracks(tracks);
-        const base = queue.length;
-        set({
-          queue: [...queue, ...tracks],
-          order: [...order.slice(0, pos + 1), ...tracks.map((_, i) => base + i), ...order.slice(pos + 1)],
-        });
-      },
+  addToQueue: (tracks) => {
+    const { queue, order, pos } = get();
+    if (pos < 0) return get().playTracks(tracks);
+    forward(get(), 'addToQueue', [tracks]);
+    const base = queue.length;
+    set({ queue: [...queue, ...tracks], order: [...order, ...tracks.map((_, i) => base + i)] });
+  },
 
-      addToQueue: (tracks) => {
-        const { queue, order, pos } = get();
-        if (pos < 0) return get().playTracks(tracks);
-        const base = queue.length;
-        set({ queue: [...queue, ...tracks], order: [...order, ...tracks.map((_, i) => base + i)] });
-      },
+  jumpTo: (orderPos, opts) => {
+    if (orderPos < 0 || orderPos >= get().order.length) return;
+    set({ pos: orderPos, playing: true, resumeAt: 0, startAt: opts?.at ?? null, restartToken: get().restartToken + 1 });
+  },
 
-      jumpTo: (orderPos, opts) => {
-        if (orderPos < 0 || orderPos >= get().order.length) return;
-        set({ pos: orderPos, playing: true, resumeAt: 0, startAt: opts?.at ?? null, restartToken: get().restartToken + 1 });
-      },
+  removeAt: (orderPos) => {
+    const { order, pos } = get();
+    if (orderPos === pos || orderPos < 0 || orderPos >= order.length) return;
+    forward(get(), 'removeAt', [orderPos]);
+    // Leave the track in `queue` (indices stay valid); just drop it from the play order.
+    set({ order: order.filter((_, i) => i !== orderPos), pos: orderPos < pos ? pos - 1 : pos });
+  },
 
-      removeAt: (orderPos) => {
-        const { order, pos } = get();
-        if (orderPos === pos || orderPos < 0 || orderPos >= order.length) return;
-        // Leave the track in `queue` (indices stay valid); just drop it from the play order.
-        set({ order: order.filter((_, i) => i !== orderPos), pos: orderPos < pos ? pos - 1 : pos });
-      },
+  move: (fromPos, toPos) => {
+    const { order, pos } = get();
+    if (fromPos === toPos) return;
+    forward(get(), 'move', [fromPos, toPos]);
+    const next = [...order];
+    const [item] = next.splice(fromPos, 1);
+    next.splice(toPos, 0, item!);
+    const current = order[pos]!;
+    set({ order: next, pos: next.indexOf(current) });
+  },
 
-      move: (fromPos, toPos) => {
-        const { order, pos } = get();
-        if (fromPos === toPos) return;
-        const next = [...order];
-        const [item] = next.splice(fromPos, 1);
-        next.splice(toPos, 0, item!);
-        const current = order[pos]!;
-        set({ order: next, pos: next.indexOf(current) });
-      },
+  setUpcoming: (queueIndices) => {
+    const { order, pos, queue } = get();
+    forward(get(), 'setUpcoming', [queueIndices]);
+    const valid = queueIndices.filter((i) => i >= 0 && i < queue.length && i !== order[pos]);
+    set({ order: [...order.slice(0, pos + 1), ...valid] });
+  },
 
-      setUpcoming: (queueIndices) => {
-        const { order, pos, queue } = get();
-        const valid = queueIndices.filter((i) => i >= 0 && i < queue.length && i !== order[pos]);
-        set({ order: [...order.slice(0, pos + 1), ...valid] });
-      },
+  clearUpcoming: () => {
+    const { order, pos } = get();
+    forward(get(), 'clearUpcoming', []);
+    set({ order: order.slice(0, pos + 1) });
+  },
 
-      clearUpcoming: () => {
-        const { order, pos } = get();
-        set({ order: order.slice(0, pos + 1) });
-      },
+  next: (auto = false) => {
+    if (!auto) {
+      if (takenOver()) return;
+      return get().nextNow();
+    }
+    const { repeat, restartToken } = get();
+    if (repeat === 'one') return set({ restartToken: restartToken + 1, resumeAt: 0 });
+    // End of queue: stop at the last track.
+    if (!moveOn(get, set)) set({ playing: false, resumeAt: 0, restartToken: restartToken + 1 });
+  },
 
-      next: (auto = false) => {
-        if (!auto) {
-          if (takenOver()) return;
-          return get().nextNow();
-        }
-        const { repeat, restartToken } = get();
-        if (repeat === 'one') return set({ restartToken: restartToken + 1, resumeAt: 0 });
-        // End of queue: stop at the last track.
-        if (!moveOn(get, set)) set({ playing: false, resumeAt: 0, restartToken: restartToken + 1 });
-      },
+  nextNow: () => {
+    moveOn(get, set);
+  },
 
-      nextNow: () => {
-        moveOn(get, set);
-      },
+  prev: (currentTime) => {
+    const { pos, order, repeat, restartToken } = get();
+    if (currentTime > 3 || (pos === 0 && repeat !== 'all')) {
+      return set({ restartToken: restartToken + 1, resumeAt: 0 });
+    }
+    set({ pos: pos > 0 ? pos - 1 : order.length - 1, playing: true, resumeAt: 0 });
+  },
 
-      prev: (currentTime) => {
-        const { pos, order, repeat, restartToken } = get();
-        if (currentTime > 3 || (pos === 0 && repeat !== 'all')) {
-          return set({ restartToken: restartToken + 1, resumeAt: 0 });
-        }
-        set({ pos: pos > 0 ? pos - 1 : order.length - 1, playing: true, resumeAt: 0 });
-      },
+  setPlaying: (playing) => set({ playing }),
+  toggle: () => get().pos >= 0 && set({ playing: !get().playing }),
 
-      setPlaying: (playing) => set({ playing }),
-      toggle: () => get().pos >= 0 && set({ playing: !get().playing }),
+  toggleShuffle: () => {
+    const { shuffle, order, pos, queue } = get();
+    forward(get(), 'toggleShuffle', []);
+    if (pos < 0) return set({ shuffle: !shuffle });
+    const current = order[pos]!;
+    if (!shuffle) {
+      // Keep history, shuffle only what's upcoming.
+      const upcoming = shuffled(order.slice(pos + 1));
+      set({ shuffle: true, order: [...order.slice(0, pos + 1), ...upcoming] });
+    } else {
+      // Restore original queue order, continuing from the current track.
+      const restored = range(queue.length).filter((i) => order.includes(i));
+      set({ shuffle: false, order: restored, pos: restored.indexOf(current) });
+    }
+  },
 
-      toggleShuffle: () => {
-        const { shuffle, order, pos, queue } = get();
-        if (pos < 0) return set({ shuffle: !shuffle });
-        const current = order[pos]!;
-        if (!shuffle) {
-          // Keep history, shuffle only what's upcoming.
-          const upcoming = shuffled(order.slice(pos + 1));
-          set({ shuffle: true, order: [...order.slice(0, pos + 1), ...upcoming] });
-        } else {
-          // Restore original queue order, continuing from the current track.
-          const restored = range(queue.length).filter((i) => order.includes(i));
-          set({ shuffle: false, order: restored, pos: restored.indexOf(current) });
-        }
-      },
+  cycleRepeat: () => {
+    forward(get(), 'cycleRepeat', []);
+    set({ repeat: ({ off: 'all', all: 'one', one: 'off' } as const)[get().repeat] });
+  },
 
-      cycleRepeat: () =>
-        set({ repeat: ({ off: 'all', all: 'one', one: 'off' } as const)[get().repeat] }),
-
-      setVolume: (volume) => set({ volume: Math.min(1, Math.max(0, volume)), muted: false }),
-      toggleMute: () => set({ muted: !get().muted }),
-      setResumeAt: (resumeAt) => set({ resumeAt }),
-      setMixMode: (mixMode) => set({ mixMode }),
-    }),
-    {
-      name: 'playarr.player',
-      version: 1,
-      partialize: ({ queue, order, pos, shuffle, repeat, volume, muted, resumeAt, source, mixMode }) => ({
-        source,
-        mixMode,
-        queue,
-        order,
-        pos,
-        shuffle,
-        repeat,
-        volume,
-        muted,
-        resumeAt,
-      }),
-      // A mix mode this version doesn't know (or none, from before mixing) plays as Auto.
-      merge: (saved, current) => {
-        const s = (saved ?? {}) as Partial<PlayerState>;
-        return { ...current, ...s, mixMode: MIX_MODES.includes(s.mixMode as MixMode) ? (s.mixMode as MixMode) : 'auto' };
-      },
-    },
-  ),
-);
+  setVolume: (volume) => {
+    forward(get(), 'setVolume', [volume]);
+    set({ volume: Math.min(1, Math.max(0, volume)), muted: false });
+  },
+  toggleMute: () => {
+    forward(get(), 'toggleMute', []);
+    set({ muted: !get().muted });
+  },
+  setResumeAt: (resumeAt) => set({ resumeAt }),
+  setMixMode: (mixMode) => {
+    forward(get(), 'setMixMode', [mixMode]);
+    set({ mixMode });
+  },
+}));
 
 export function currentTrack(s: Pick<PlayerState, 'queue' | 'order' | 'pos'>): Track | undefined {
   const idx = s.order[s.pos];
@@ -280,7 +303,7 @@ export function nextByPress(s: Pick<PlayerState, 'queue' | 'order' | 'pos' | 're
   return s.repeat === 'all' && s.order.length ? s.queue[s.order[0]!] : undefined;
 }
 
-/** High-frequency playback clock, kept out of the persisted store to avoid re-render storms. */
+/** High-frequency playback clock, kept out of the saved store to avoid re-render storms. */
 interface ClockState {
   time: number;
   duration: number;

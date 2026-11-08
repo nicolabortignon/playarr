@@ -12,7 +12,15 @@ import { createBrowserRouter, RouterProvider } from 'react-router';
 import { watchForUpdates } from './lib/appUpdate';
 import { forgetStaleBuildReload, reloadIntoNewBuild } from './lib/staleBuild';
 import { persistOptions, queryClient } from './lib/queryClient';
+import { hydrateOffline } from './player/offline';
+import { hydratePlayer } from './player/playerRecord';
+import { startTabs } from './player/tabs';
 import { routes } from './routes';
+
+// Which tab plays (player/tabs.ts), then the saved queue and what's kept on this device, read from IndexedDB.
+startTabs();
+void hydratePlayer();
+void hydrateOffline();
 
 const router = createBrowserRouter(routes);
 watchForUpdates();

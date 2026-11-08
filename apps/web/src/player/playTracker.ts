@@ -1,6 +1,7 @@
 import type { PlayReport, Track } from '@playarr/shared';
 import { api } from '../lib/api';
 import { usePrefs } from '../lib/prefs';
+import { isLeader } from './tabs';
 
 /** Heard this long (or half a shorter song): a play. */
 const PLAY_SECONDS = 30;
@@ -119,6 +120,7 @@ function writePending(plays: PlayReport[]) {
 }
 
 export const playTracker = new PlayTracker((plays) => {
-  // Settings → Playback can keep this device out of the history.
-  if (usePrefs.getState().recordPlays) sendWithRetry(plays);
+  // Settings → Playback can keep this device out of the history. Only the tab that plays reports (player/tabs.ts): a
+  // tab following it never sends a play, nor those waiting from earlier.
+  if (usePrefs.getState().recordPlays && isLeader()) sendWithRetry(plays);
 });

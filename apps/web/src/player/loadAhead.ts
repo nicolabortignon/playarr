@@ -7,6 +7,7 @@ import { playQuality } from '../lib/quality';
 import { useUI } from '../lib/ui';
 import { canKeepOffline, type Download, isDownloaded, keepSong, keptAsPlayed, reconcileOffline, touchSong, useOffline, workerReady } from './offline';
 import { currentTrack, usePlayer, type RepeatMode } from './store';
+import { isLeader, useTabs } from './tabs';
 
 /** Upcoming songs to have on the device on a good connection. */
 const AHEAD = 3;
@@ -85,6 +86,8 @@ export function nextToLoad(
 async function pump() {
   if (job) return;
   for (;;) {
+    // Another tab plays now: it loads ahead for itself.
+    if (!isLeader()) return;
     const quality = playQuality();
     const next = nextToLoad(plan, useOffline.getState(), quality, skipped);
     if (!next) return;
@@ -111,9 +114,13 @@ function preloadArt(track: Track | undefined) {
 /**
  * Load ahead: keeps the next songs in the queue (and the one playing) on this device, so tracks
  * start and seek instantly and keep playing without a connection; preloads the next cover too.
+ * Only in the tab that plays (player/tabs.ts), once it has read what's kept on the device.
  */
 export function useLoadAhead() {
+  const leading = useTabs((s) => s.leading);
+  const hydrated = useOffline((s) => s.hydrated);
   useEffect(() => {
+    if (!leading || !hydrated) return;
     void reconcileOffline();
     const playing = currentTrack(usePlayer.getState());
     if (playing) touchSong(playing.fileId);
@@ -149,7 +156,8 @@ export function useLoadAhead() {
       window.removeEventListener('online', retry);
       connection()?.removeEventListener('change', retry);
       navigator.serviceWorker?.removeEventListener('controllerchange', retry);
+      plan = [];
       job?.abort.abort();
     };
-  }, []);
+  }, [leading, hydrated]);
 }

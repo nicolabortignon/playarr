@@ -17,6 +17,7 @@ import { currentTrack, useClock, usePlayer } from './store';
 import { useTransition } from './transitions';
 import { useBlend } from './blend';
 import { pulseNow, useMetered } from './pulse';
+import { useTabs } from './tabs';
 
 vi.mock('./loadAhead', () => ({ useLoadAhead: () => {} }));
 vi.mock('./playTracker', () => ({ playTracker: { start: vi.fn(), finish: vi.fn(), tick: vi.fn(), pause: vi.fn() } }));
@@ -2453,5 +2454,43 @@ describe('AudioEngine', () => {
     expect(fake(a).time).toBe(80);
     a.dispatchEvent(new Event('loadedmetadata'));
     expect(fake(a).time).toBe(80);
+  });
+});
+
+describe('AudioEngine in a tab that follows another', () => {
+  afterEach(() => useTabs.setState({ leading: true, elsewhere: false }));
+
+  it('loads nothing while the other tab plays, and resumes where the record says once it leads', async () => {
+    useTabs.setState({ leading: false, elsewhere: true });
+    usePlayer.setState({ queue: [song(1), song(2)], order: [0, 1], pos: 0, playing: false, resumeAt: 42 });
+    const { container } = render(<AudioEngine />);
+    await settle();
+    const decks = [...container.querySelectorAll('audio')];
+    expect(decks.map(src)).toEqual([null, null, null]);
+    expect(document.title).toBe('Playarr');
+
+    // The other tab moved on meanwhile; this one follows its record.
+    await act(async () => usePlayer.setState({ pos: 1, resumeAt: 61 }));
+    await settle();
+    expect(decks.map(src)).toEqual([null, null, null]);
+
+    // Play, here: this tab leads and the song goes on from where the other tab was.
+    await act(async () => {
+      useTabs.setState({ leading: true, elsewhere: false });
+      usePlayer.getState().setPlaying(true);
+    });
+    await settle();
+    const deck = decks.find((d) => src(d) === '/stream/2')!;
+    expect(fake(deck).time).toBe(61);
+    expect(fake(deck).paused).toBe(false);
+    expect(playTracker.start).toHaveBeenCalledWith(expect.objectContaining({ fileId: 2 }));
+
+    // Another tab takes the lead: the music stops here.
+    await act(async () => {
+      useTabs.setState({ leading: false, elsewhere: true });
+      usePlayer.getState().setPlaying(false);
+    });
+    await settle();
+    expect(decks.map(src)).toEqual([null, null, null]);
   });
 });

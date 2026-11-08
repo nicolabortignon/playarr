@@ -180,15 +180,16 @@ function startBytes(track: Track, seconds: number): number | undefined {
   return bytes < track.size ? bytes : undefined;
 }
 
-/** The song's file, or its first `bytes`: from this device if it's kept here, else from the server. */
+/**
+ * The song's file, or its first `bytes`: from this device if it's kept here, else from the server. Of a kept file only
+ * those bytes are read: a slice of its Blob, as the service worker answers a seek (lib/rangeResponse.ts), rather than
+ * the whole file (up to 60 MB) read into memory to keep a few of them.
+ */
 async function songBytes(track: Track, bytes: number | undefined, signal: AbortSignal): Promise<ArrayBuffer> {
   const url = playableUrl(track);
   if (track.fileId in useOffline.getState().songs && typeof caches !== 'undefined') {
     const kept = await caches.match(url, { cacheName: AUDIO_CACHE });
-    if (kept) {
-      const file = await kept.arrayBuffer();
-      return bytes === undefined ? file : file.slice(0, bytes);
-    }
+    if (kept) return bytes === undefined ? kept.arrayBuffer() : (await kept.blob()).slice(0, bytes).arrayBuffer();
   }
   const res = await fetch(url, { signal, headers: bytes === undefined ? {} : { Range: `bytes=0-${bytes - 1}` } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -6,7 +6,6 @@ import { isAppleWebKit } from '../lib/quality';
 import { toast } from '../lib/toast';
 import { canSetVolume, continues, fadeCurve, fadeSeconds, levelDb, levelGain, playsAlbum, silentClip, upNext } from './decks';
 import { useDownloads } from './downloads';
-import { healQueue } from './healQueue';
 import { levelledStreamFailed, loadedAt, loadLevels, playsThroughGraph, useLevels } from './levels';
 import { canLiveMix, type LiveMix, type LiveMixPlayback, PREPARE_BUDGET_MS, playLiveMix, prepareLiveMix } from './liveMix';
 import { useLoadAhead } from './loadAhead';
@@ -34,6 +33,7 @@ import { useAutoplay } from './radio';
 import { fellAsleep, sleepGain, sleepsAtSongEnd, useSleep, useSleepTimer } from './sleep';
 import { currentTrack, nextByPress, takeNextPresses, useClock, useCurrentTrack, usePlayer } from './store';
 import { chooseStream, encodedStreamFailed, streamsEncoded } from './streams';
+import { onLeaving, useTabs } from './tabs';
 import { readyTransition, type ReadyTransition, upcomingPlan, useTransition, useUpcomingTransition } from './transitions';
 
 /** Have the next song loaded this long before the current one ends. */
@@ -283,9 +283,12 @@ export function AudioEngine() {
   const stepping = useRef<{ finish: () => void; cancel: () => void } | null>(null);
   /** How long an element takes to start playing (s), learned at each changeover: the next starts that much ahead. */
   const startLag = useRef(0.05);
-  const track = useCurrentTrack();
+  const shown = useCurrentTrack();
+  // The song this tab plays: none while another tab plays, whose record this one follows (player/tabs.ts).
+  const track = useTabs((s) => s.leading) ? shown : undefined;
   const playing = usePlayer((s) => s.playing);
   const restartToken = usePlayer((s) => s.restartToken);
+  /** The next song loaded is the first since the queue was read (or since this tab took the lead): it resumes where the record says. */
   const firstLoad = useRef(true);
   // True while a new source is loading; some browsers fire "pause" during a src swap.
   const switching = useRef(false);
@@ -1670,10 +1673,8 @@ export function AudioEngine() {
     applyVolumes();
   }
 
-  // Refresh tracks from a queue saved by an older version (adds fields like recordingId).
-  useEffect(() => {
-    void healQueue();
-  }, []);
+  // Another tab plays now: the song so far is reported, as when the page closes (never as a skip).
+  useEffect(() => onLeaving(() => playTracker.finish('closed')), []);
 
   useLoadAhead();
   useDownloads();
@@ -1733,6 +1734,8 @@ export function AudioEngine() {
     clearTimeout(handoffTimer.current);
     if (!track) {
       playTracker.finish('changed');
+      // Whatever plays next here starts where the record says (a queue just read, the lead taken from another tab).
+      firstLoad.current = true;
       endFade();
       if (mix.current) stopBridge(mix.current);
       mix.current = null;

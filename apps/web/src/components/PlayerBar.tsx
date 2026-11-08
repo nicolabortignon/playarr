@@ -13,6 +13,7 @@ import { openNowPlaying } from '../lib/viewTransitions';
 import { playAlbum } from '../player/actions';
 import { shortEndOfSongLine, useEndOfSongLine } from '../player/endOfSong';
 import { useClock, useCurrentTrack, usePlayer } from '../player/store';
+import { PLAYING_ELSEWHERE, useTabs } from '../player/tabs';
 import { Button } from './Button';
 import { Cover } from './Cover';
 import { Equalizer } from './Equalizer';
@@ -44,10 +45,12 @@ function PlayingTitle({ children }: { children: ReactNode }) {
 
 /**
  * Desktop/tablet bottom bar: the song (its cover opens Now Playing), the transport and the seek bar, then the format,
- * Queue and Lyrics, and the volume. With nothing playing, what to play instead: Resume and Feeling lucky.
+ * Queue and Lyrics, and the volume. With nothing playing, what to play instead: Resume and Feeling lucky (not before the
+ * saved queue is read, which would show them for a moment).
  */
 export function PlayerBar() {
   const track = useCurrentTrack();
+  const hydrated = usePlayer((s) => s.hydrated);
 
   return (
     <footer className="fixed inset-x-0 bottom-0 z-40 hidden h-[88px] border-t border-line bg-ink-950/85 backdrop-blur-2xl md:block">
@@ -86,8 +89,13 @@ export function PlayerBar() {
               <SeekBar compact className="w-full max-w-[640px]" />
             </div>
           </>
-        ) : (
+        ) : hydrated ? (
           <Idle />
+        ) : (
+          <>
+            <div />
+            <div />
+          </>
         )}
 
         <div className="flex items-center justify-end gap-2">
@@ -159,10 +167,13 @@ function Idle() {
 
 /**
  * Under the song's title, its artist (a link in the player bar); from ten seconds before the song gives way, what comes
- * next (plan 7 §5): "Next: Teardrop", or with DJ mix "Mixing into Teardrop on the next bar".
+ * next (plan 7 §5): "Next: Teardrop", or with DJ mix "Mixing into Teardrop on the next bar". In a tab following another
+ * that plays (player/tabs.ts), "Playing in another tab": Play plays it here instead.
  */
 function Subtitle({ track, link }: { track: Track; link?: boolean }) {
+  const elsewhere = useTabs((s) => !s.leading && s.elsewhere);
   const ending = useEndOfSongLine();
+  if (elsewhere) return <span className="block animate-fade truncate type-small text-muted">{PLAYING_ELSEWHERE}</span>;
   if (ending) return <EndingLine key={ending} text={ending} short={shortEndOfSongLine(ending)} />;
   return link ? (
     <Link to={`/artists/${track.artistId}`} className="block truncate type-small text-muted hover:text-paper-dim hover:underline">

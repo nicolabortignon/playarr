@@ -1,6 +1,6 @@
 import { CircleArrowDown } from 'lucide-react';
 import { cn } from '../lib/cn';
-import { isDownloaded, useIsDownloaded, useOffline } from '../player/offline';
+import { isDownloaded, useActiveDownload, useIsDownloaded, useOffline } from '../player/offline';
 
 const R = 5.5;
 const CIRCUMFERENCE = 2 * Math.PI * R;
@@ -11,7 +11,9 @@ const CIRCUMFERENCE = 2 * Math.PI * R;
  */
 export function OfflineMark({ fileId, className }: { fileId: number; className?: string }) {
   const kept = useIsDownloaded(fileId);
-  const progress = useOffline((s) => (s.active?.fileId === fileId && isDownloaded(fileId, s) ? s.active.loaded / s.active.total : null));
+  const pinned = useOffline((s) => isDownloaded(fileId, s));
+  const active = useActiveDownload(({ active: a }) => (a && a.fileId === fileId ? a.loaded / a.total : null));
+  const progress = pinned ? active : null;
 
   if (progress !== null) {
     const pct = Math.round(progress * 100);
