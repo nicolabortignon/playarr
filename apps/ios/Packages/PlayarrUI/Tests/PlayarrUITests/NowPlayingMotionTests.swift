@@ -34,16 +34,16 @@ import Testing
     #expect(biggest > 0.2)
   }
 
-  @Test func theCoverLeansAgainstThePhonesTurnUpToTwoDegrees() {
+  @Test func theCoverLeansAgainstThePhonesTurnUpToOneDegree() {
     let degree = Double.pi / 180
     // Upright, the phone's right edge turned 4° away (about its own top axis): the cover's right edge comes toward you,
-    // half the way (a quarter of 4° is 1° of the 2°).
+    // half the way (an eighth of 4° is ½° of the 1°).
     let turnedAway = CoverTilt.lean(turned: (x: 0, y: 4 * degree, z: 0), orientation: .portrait)
     #expect(abs(turnedAway.h - 0.5) < 1e-9)
     #expect(turnedAway.v == 0)
     // Its top turned toward you: the cover's top goes away.
     #expect(CoverTilt.lean(turned: (x: 4 * degree, y: 0, z: 0), orientation: .portrait).v < 0)
-    // Never more than 2°.
+    // Never more than 1°.
     #expect(CoverTilt.lean(turned: (x: 0, y: 30 * degree, z: 0), orientation: .portrait).h == 1)
     // Sideways, the screen's up runs along the phone's x axis: the same turn of the screen leans it the same way.
     let sideways = CoverTilt.lean(turned: (x: 4 * degree, y: 0, z: 0), orientation: .landscapeRight)

@@ -7,8 +7,8 @@ import SwiftUI
   import UIKit
 #endif
 
-/// Covers tilting with the phone, Now Playing's and the album page's (plan 7 §3; docs/design.md, Moments): up to 2°
-/// each way, as a card held a little behind the glass would. The phone's turning comes from its gyroscope and is let
+/// Covers tilting with the phone, Now Playing's and the album page's (plan 7 §3; docs/design.md, Moments): up to 1°
+/// each way, kept subtle (2° was too evident on a phone held in the hand, 2026-11-13), as a card held a little behind the glass would. The phone's turning comes from its gyroscope and is let
 /// go over a second and a half, so however the phone is held the cover comes to rest flat, and turning it tips the
 /// cover the other way for a moment. One for the app (`shared`), read while any cover that tilts is on screen
 /// (`tiltsWithPhone`): the phone has one gyroscope, and Core Motion wants one manager reading it. The web tilts Now
@@ -32,15 +32,16 @@ final class CoverTilt {
     case portrait, upsideDown, landscapeLeft, landscapeRight
   }
 
-  /// The most the cover tilts, in degrees (the web's `MAX_TILT`).
-  nonisolated static let maxDegrees = 2.0
+  /// The most the cover tilts, in degrees: half the web's `MAX_TILT`, as a phone in the hand turns all the time and a
+  /// mouse doesn't.
+  nonisolated static let maxDegrees = 1.0
   /// Degrees the cover tilts for each degree the phone turns: 8° of turning tilts it all the way.
-  nonisolated static let follow = 0.25
+  nonisolated static let follow = 0.125
   /// How long the phone's turning takes to be let go (seconds): about how fast the cover settles back flat.
   nonisolated static let settle = 1.5
   /// A lean too small to see, a hundredth of a degree: the gyroscope never reads quite still, and a phone on a stand
   /// shouldn't redraw the cover sixty times a second for hours.
-  nonisolated static let unseen = 0.005
+  nonisolated static let unseen = 0.01
 
   private(set) var lean = Lean()
 
@@ -183,10 +184,10 @@ private struct TiltsWithPhone: ViewModifier {
     on ? CoverTilt.shared.start() : CoverTilt.shared.stop()
   }
 
-  /// A soft light on the edge leaning toward you, as strong as the lean: paper at 22 % fading out (the web's).
+  /// A soft light on the edge leaning toward you, as strong as the lean: paper at 12 % fading out (the web's is 22 %).
   private static func sheen(_ lean: CoverTilt.Lean) -> some View {
     EllipticalGradient(
-      colors: [Color.paper.opacity(0.22), .clear], center: UnitPoint(x: 0.5 + 0.5 * lean.h, y: 0.5 - 0.5 * lean.v),
+      colors: [Color.paper.opacity(0.12), .clear], center: UnitPoint(x: 0.5 + 0.5 * lean.h, y: 0.5 - 0.5 * lean.v),
       startRadiusFraction: 0, endRadiusFraction: 0.75
     )
     .opacity(lean.amount)
