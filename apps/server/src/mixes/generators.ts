@@ -349,27 +349,45 @@ function deepcuts(ctx: Making, rng: Rng): Made | null {
   };
 }
 
+/**
+ * Fresh arrivals: songs not heard yet from the albums added most recently, going back as far as it takes to fill the mix
+ * (no window: a library that grows slowly still gets one). At most FRESH_PER_ALBUM from an album, and 2 per artist as
+ * everywhere; songs of yesterday's mix give way to the album's others. Built from calm to lively like the other mixes,
+ * an album's two songs well apart (`arrange`).
+ */
 function fresh(ctx: Making, rng: Rng): Made | null {
-  const since = ctx.now - 30 * DAY;
   const byAlbum = new Map<number, Song[]>();
   for (const s of ctx.songs) {
-    if (!usable(ctx, s) || s.addedAt === undefined || s.addedAt < since || ctx.taste.songs.has(s.track.recordingId)) continue;
+    if (!usable(ctx, s) || ctx.taste.songs.has(s.track.recordingId)) continue;
     byAlbum.set(s.track.albumId, [...(byAlbum.get(s.track.albumId) ?? []), s]);
   }
-  // Newest albums first, a few songs from each.
-  const albums = [...byAlbum.values()].sort((a, b) => b[0]!.addedAt! - a[0]!.addedAt!);
+  // Newest first by when the album arrived (its newest song); songs without a date only once the dated ones are used up.
+  const arrived = (album: Song[]) => Math.max(...album.map((s) => s.addedAt ?? -Infinity));
+  const albums = shuffle([...byAlbum.values()], rng).sort((a, b) => arrived(b) - arrived(a));
+  const perArtist = new Map<number, number>();
   const songs: Song[] = [];
   for (const album of albums) {
-    songs.push(...shuffle(album, rng).slice(0, 3));
     if (songs.length >= ctx.settings.length) break;
+    const yesterday = (s: Song) => (ctx.previous.has(s.track.recordingId) ? 1 : 0);
+    let taken = 0;
+    for (const s of shuffle(album, rng).sort((a, b) => yesterday(a) - yesterday(b))) {
+      const count = perArtist.get(s.track.artistId) ?? 0;
+      if (taken >= FRESH_PER_ALBUM || count >= 2 || songs.length >= ctx.settings.length) break;
+      perArtist.set(s.track.artistId, count + 1);
+      songs.push(s);
+      taken++;
+    }
   }
   return {
     title: 'Fresh arrivals',
     subtitle: 'New in your library',
-    description: `A few songs from each album added in the last 30 days that you haven’t played yet: ${artistsLine(songs)}.`,
-    songs: flow(songs.slice(0, ctx.settings.length), rng),
+    description: `Songs you haven’t played yet from the albums added most recently, no more than two from any album: ${artistsLine(songs)}.`,
+    songs: flow(songs, rng),
   };
 }
+
+/** Fresh arrivals takes at most this many songs from an album. */
+const FRESH_PER_ALBUM = 2;
 
 function decade(ctx: Making, rng: Rng, param?: string): Made | null {
   const from = Number(param);
@@ -768,21 +786,87 @@ export function spread(songs: Song[], rng: Rng): Song[] {
   return out;
 }
 
-/** Shuffled for a different start each time, then ordered so neighbours blend. */
+/**
+ * From calm to lively: the songs by energy (where it's known for at least half of them), a fresh shuffle deciding
+ * between equals, then arranged (`arrange`): alike styles side by side, an artist's or album's songs well apart.
+ */
 function flow(songs: Song[], rng: Rng): Song[] {
-  return blendOrder(spread(songs, rng));
+  if (!shapeable(songs)) return arrange(spread(songs, rng));
+  return arrange(byEnergy(shuffle(songs, rng)));
 }
 
-/** A gentle rise and fall of energy (where it's known) instead of jumps, ordered to blend within each step of it. */
+/** A gentle rise and fall of energy (where it's known) instead of jumps, arranged as `flow` is. */
 function smooth(songs: Song[], rng: Rng): Song[] {
-  const known = songs.filter((s) => s.energy !== undefined);
-  if (known.length < songs.length / 2) return flow(songs, rng);
-  const sorted = [...songs].sort((a, b) => (a.energy ?? MIDDLE_ENERGY) - (b.energy ?? MIDDLE_ENERGY));
+  if (!shapeable(songs)) return arrange(spread(songs, rng));
   // Low → high → low: alternate ends of the sorted list into the front and back.
   const front: Song[] = [];
   const back: Song[] = [];
-  sorted.forEach((s, i) => (i % 2 ? back : front).push(s));
-  return blendOrder([...front, ...back.reverse()], energyStep(MIDDLE_ENERGY));
+  byEnergy(shuffle(songs, rng)).forEach((s, i) => (i % 2 ? back : front).push(s));
+  return arrange([...front, ...back.reverse()]);
+}
+
+/** Enough songs with a known energy to give a mix a shape. */
+const shapeable = (songs: Song[]) => songs.filter((s) => s.energy !== undefined).length >= songs.length / 2;
+
+const pace = (s: Song) => s.energy ?? MIDDLE_ENERGY;
+
+/** Calmest first; a stable sort, so equals keep the order they came in. */
+const byEnergy = (songs: Song[]) => [...songs].sort((a, b) => pace(a) - pace(b));
+
+/** A mix in its shape is cut into stretches of about this many songs (at most MAX_STRETCHES): what blending keeps in order. */
+const SONGS_PER_STRETCH = 8;
+const MAX_STRETCHES = 8;
+/** Songs by one artist, or from one album, this many stretches apart at least, where it can be done. */
+const STRETCHES_APART = 2;
+
+/**
+ * Puts a mix that's in its shape (calm to lively, a rise and fall) in order. The shape is cut into stretches, kept in
+ * their order; an artist's or an album's songs are moved into stretches well apart (`spaceOut`), and within each
+ * stretch songs follow the one they blend with best, alike styles counting as well as tempo, key and energy
+ * (`blendOrder`). So a mix keeps its shape, styles come in runs, and the two songs of an album never sit together.
+ */
+function arrange(shaped: Song[]): Song[] {
+  const n = shaped.length;
+  if (n < 3) return [...shaped];
+  const count = Math.max(1, Math.min(MAX_STRETCHES, Math.round(n / SONGS_PER_STRETCH)));
+  const stretch = (i: number) => Math.floor((i * count) / n);
+  const order = spaceOut(shaped, stretch, Math.min(STRETCHES_APART, count - 1));
+  const of = new Map(order.map((s, i) => [s, stretch(i)]));
+  return blendOrder(order, (s) => of.get(s)!);
+}
+
+/** By the same artist or from the same album. */
+const related = (a: Song, b: Song) => a.track.artistId === b.track.artistId || a.track.albumId === b.track.albumId;
+
+/**
+ * Moves songs so that related ones (`related`) are at least `apart` stretches from each other: each song too close to
+ * another trades places with the song of the nearest energy that fits where it is, and where it fits. Where no
+ * trade fits, it stays.
+ */
+function spaceOut(shaped: Song[], stretch: (i: number) => number, apart: number): Song[] {
+  const order = [...shaped];
+  if (apart < 1) return order;
+  /** Whether `song` at `at` is too close to a related song, leaving out position `but` (where a trade would take it from). */
+  const crowded = (song: Song, at: number, but: number) =>
+    order.some((other, i) => i !== at && i !== but && related(other, song) && Math.abs(stretch(i) - stretch(at)) < apart);
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (let j = 0; j < order.length; j++) {
+      const song = order[j]!;
+      if (!crowded(song, j, -1)) continue;
+      let best = -1;
+      for (let k = 0; k < order.length; k++) {
+        const other = order[k]!;
+        if (stretch(k) === stretch(j) || related(other, song) || crowded(song, k, j) || crowded(other, j, k)) continue;
+        if (best === -1 || Math.abs(pace(other) - pace(song)) < Math.abs(pace(order[best]!) - pace(song))) best = k;
+      }
+      if (best === -1) continue;
+      [order[j], order[best]] = [order[best]!, song];
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return order;
 }
 
 /** What blending knows of a song without its energy: tempo and key from its mix map, unknown without one. */
@@ -802,19 +886,19 @@ const NO_MIX_MAP: Blendable = { bpm: 0, beatConfidence: 0, gridStable: false };
  * quick. Swaps that keep an artist from playing twice in a row don't count: that rule always comes first.
  */
 const MAX_BLEND_SWAPS = 200;
-/** Energy that builds or settles goes in steps this wide; within a step, songs are ordered to blend. */
-const ENERGY_STEP = 0.15;
+/**
+ * How much alike styles count next to how well two songs blend (both 0–1): enough that a mix plays its styles in runs
+ * rather than hopping between them, not so much that a run of one style ignores tempo and key.
+ */
+const STYLE_WEIGHT = 0.5;
 /** Blend gains smaller than this are rounding, not a better order. */
 const BLEND_EPSILON = 1e-9;
 
 /** Where songs of unknown energy go in a mix shaped by energy, unless it says otherwise. */
 const MIDDLE_ENERGY = 0.5;
 
-/** A song's step of energy; `unknown` must be what the mix sorted songs of unknown energy as, or they'd split its steps. */
-const energyStep = (unknown: number) => (song: Song) => Math.floor((song.energy ?? unknown) / ENERGY_STEP);
-
 /**
- * Orders songs so each blends into the next (blendScore): from the first song (the planned start), a
+ * Orders songs so each blends into the next (blendScore, and alike styles: STYLE_WEIGHT): from the first song (the planned start), a
  * greedy walk to the song left that blends best, then 2-opt passes (reversing a stretch of the order when
  * its two ends blend better that way round), at most MAX_BLEND_SWAPS of them. Never the same artist twice
  * in a row where it can be helped: that comes before blending. With `stepOf`, the order of steps is kept
@@ -824,7 +908,9 @@ export function blendOrder(songs: Song[], stepOf?: (song: Song) => number): Song
   const count = songs.length;
   if (count < 3) return [...songs];
   const blends = songs.map(blendable);
-  const score = blends.map((a, i) => blends.map((b, j) => (i === j ? 0 : blendScore(a, b))));
+  const score = blends.map((a, i) =>
+    blends.map((b, j) => (i === j ? 0 : blendScore(a, b) + STYLE_WEIGHT * familySimilarity(songs[i]!.families, songs[j]!.families))),
+  );
   const artist = songs.map((s) => s.track.artistId);
   // Runs of neighbours in the same step, numbered in order: the walk finishes one before starting the next.
   const run: number[] = [0];

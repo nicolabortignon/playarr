@@ -233,6 +233,57 @@ describe('mixes', () => {
     expect(mix.subtitle).toBe('Released this week, 1997–2004');
   });
 
+  it('Fresh arrivals goes back from the newest albums as far as it needs, two unheard songs from each, well apart', () => {
+    const day = 86_400_000;
+    // 30 albums by 30 artists, 4 songs each, one arriving every 20 days: most of them long before the last 30 days.
+    const songs = Array.from({ length: 30 }, (_, a) =>
+      library([a + 1], 4, { tags: [a % 2 ? 'rock' : 'jazz'] }).map((s, i) => ({
+        ...s,
+        track: { ...s.track, albumId: 1000 + a },
+        addedAt: NOW - (2 + a * 20) * day,
+        energy: ((a * 4 + i) * 37) % 100 / 100,
+      })),
+    ).flat();
+    // Three of the newest album's songs have been heard: it gives one.
+    const plays = songs.slice(0, 3).map((s) => play(s, 1));
+    const ctx = context(songs, plays, { length: 48 });
+    const mix = generateMix({ key: 'fresh', kind: 'fresh' }, ctx, 'p')!;
+    const picked = songsOf(ctx, mix.trackIds);
+    expect(picked).toHaveLength(48);
+    expect(picked.some((s) => songs.slice(0, 3).includes(s))).toBe(false);
+    const albums = picked.map((s) => s.track.albumId - 1000);
+    for (const a of new Set(albums)) expect(albums.filter((x) => x === a).length).toBeLessThanOrEqual(2);
+    // The newest albums, going back past 30 days: 1 + 2 × 23 + 1 songs reach the 25th album, and none older.
+    expect(Math.max(...albums)).toBe(24);
+    expect(albums).toContain(0);
+    // An album's two songs are far apart.
+    for (const a of new Set(albums)) {
+      const at = albums.flatMap((x, i) => (x === a ? [i] : []));
+      if (at.length === 2) expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  it('a shuffled mix builds from calm to lively, alike styles side by side, an artist’s songs well apart', () => {
+    const rng = new Rng(3);
+    const songs = library(Array.from({ length: 30 }, (_, i) => i + 1), 3, { tags: ['rock'] }).map((s, i) => {
+      const jazz = s.track.artistId % 2 === 0;
+      return { ...s, families: jazz ? { jazz: 1 } : { rock: 1 }, energy: rng.next() };
+    });
+    const ctx = context(songs, [], { length: 48 });
+    const picked = songsOf(ctx, generateMix({ key: 'discovery', kind: 'discovery' }, ctx, 'p')!.trackIds);
+    expect(picked).toHaveLength(48);
+    const mean = (xs: Song[]) => xs.reduce((sum, s) => sum + s.energy!, 0) / xs.length;
+    expect(mean(picked.slice(0, 12))).toBeLessThan(mean(picked.slice(-12)) - 0.3);
+    // Styles in runs: far fewer changes of style than in a random order (about half the pairs).
+    const changes = (xs: Song[]) => xs.slice(1).filter((s, i) => Object.keys(s.families)[0] !== Object.keys(xs[i]!.families)[0]).length;
+    expect(changes(picked)).toBeLessThan(16);
+    const artists = picked.map((s) => s.track.artistId);
+    for (const a of new Set(artists)) {
+      const at = artists.flatMap((x, i) => (x === a ? [i] : []));
+      if (at.length === 2) expect(at[1]! - at[0]!).toBeGreaterThanOrEqual(4);
+    }
+  });
+
   it('knows when the next hour, day and week start in the listener’s time zone', () => {
     const now = new Date('2026-11-01T21:30:00Z'); // a Sunday
     const local = localTime(now, 'UTC');

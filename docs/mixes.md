@@ -51,7 +51,7 @@ Mixes are made from the last 365 days of an account's plays, its favourites and 
 | **Blast from the past** | Songs played at least 3 times, not heard for the chosen 30–365 days. Short of history: loved songs not heard lately, then songs from albums added over a year ago and never played. | daily |
 | **Genre mixes** | One per style family with the most songs, weighted by what the account likes (at least 30 songs), e.g. "Electronic mix". | daily |
 | **Deep cuts** | Songs by the account's 20 favourite artists that have no liking of their own yet: unplayed, not favourites, not in playlists (needs at least 2 such artists). | daily |
-| **Fresh arrivals** | Up to 3 unplayed songs from each album added in the last 30 days, newest albums first. | daily |
+| **Fresh arrivals** | Unplayed songs from the albums added most recently, going back as far as it takes to fill the mix: at most 2 from any album, songs of yesterday's mix giving way to the album's others. | daily |
 | **Time machine** | One per decade with the most songs, weighted by what the account likes (at least 30 songs), e.g. "The 90s". | daily |
 | **Energy boost** | For moving: the library's most intense songs (energy 0.7 and up) that stay at full tilt, leaning to the uplifting; building to the peak. | daily |
 | **Chill** | For an easy afternoon: relaxed but alive (energy 0.15–0.6), an easy groove, warm, nothing tense or swelling; rolling gently. | daily |
@@ -63,7 +63,7 @@ Home shows them in that order (`planMixes`). The four mood mixes (Energy boost, 
 
 - Never short intros, outros, interludes or skits, spoken word or stand-up, anything under 30 s, or under a minute without a sure beat (On Repeat keeps what's played most, short songs and Christmas songs too, but not skits). Christmas songs only from 24 November to 6 January, in mixes, radio and Feeling lucky.
 - A mix made for a new period, or drawn again, leans away from the songs of the one it replaces; made again for the same period (a setting changed), it's the same draw.
-- At most 2 songs per artist (3 in Blast from the past and Deep cuts), and never the same artist twice in a row where it can be helped.
+- At most 2 songs per artist (3 in Blast from the past and Deep cuts), and never the same artist twice in a row where it can be helped. In the mixes that are arranged (below), an artist's or an album's songs are kept well apart.
 - A mix with fewer than 8 songs isn't shown. Songs per mix is a setting (25–100).
 - Each mix is seeded by its key and period, so it doesn't reshuffle on every visit. **New mix** (`POST /api/mixes/:key/regenerate`) draws another for the same period. **Save** (`POST /api/mixes/:key/save`) keeps it as an ordinary playlist named "<mix> · 5 Nov".
 - Mixes are stored by recording id (table `mixes`, one row per account and mix), so they survive restarts and matching.
@@ -76,10 +76,12 @@ Home shows them in that order (`planMixes`). The four mood mixes (Energy boost, 
 
 ### Blending order (`packages/mix/src/blend.ts`)
 
-`blendScore(a, b)` rates how well one song would mix into the next from tempo, key and energy (the formula is in [mixing.md](mixing.md#5-choosing-songs-that-blend-blendts)). `blendOrder` in `generators.ts` uses it: from the first song, a greedy walk to the song that blends best (another artist first), then up to 200 2-opt swaps (reversing a stretch when its ends blend better that way round), then any run of one artist broken up. How each mix uses it:
+`blendScore(a, b)` rates how well one song would mix into the next from tempo, key and energy (the formula is in [mixing.md](mixing.md#5-choosing-songs-that-blend-blendts)). `blendOrder` in `generators.ts` adds how alike the two songs' styles are (`STYLE_WEIGHT`, 0.5), so styles come in runs: from the first song, a greedy walk to the song that fits best (another artist first), then up to 200 2-opt swaps (reversing a stretch when its ends fit better that way round), then any run of one artist broken up.
 
-- **Flow** (Discovery, Blast from the past, Deep cuts, Fresh arrivals, Time machine): shuffled for a different start, then ordered to blend.
-- **Smooth** (Vibes, genre mixes, Chill): energy rises then falls, in steps of 0.15, ordered to blend within each step. With energy known for under half the songs, it falls back to flow.
+**Arranged** (`arrange`): a mix put in its shape (calm to lively, or a rise and fall) is cut into stretches of about 8 songs (at most 8 stretches), kept in their order. Songs by the same artist or from the same album are moved at least 2 stretches apart where they can be, each trading places with the song nearest its energy that fits (`spaceOut`), and within each stretch `blendOrder` decides. With energy known for under half the songs there's no shape: shuffled, then arranged the same way. How each mix is ordered:
+
+- **Flow** (Discovery, Blast from the past, Deep cuts, Fresh arrivals, Time machine): from calm to lively, arranged.
+- **Smooth** (Vibes, genre mixes, Chill): energy rises then falls, arranged.
 - **Energy boost** rises and **Wind down** settles, in five steps of their own songs, blending within each step.
 - **Deep focus** holds level: from the song in the middle of its energy, each next one the song that blends best.
 - **On Repeat** (most played first) and **On this day** (oldest first) keep their own order.
