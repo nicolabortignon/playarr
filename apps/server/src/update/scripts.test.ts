@@ -676,7 +676,9 @@ for (const shell of SHELLS) {
       w.answer(checksOf(NEW), green());
       // Migrating for a while, then up, then down again straight away, then up for good.
       w.health('img-new', [503, ''], [503, ''], [200, HEALTHY], [503, ''], [200, HEALTHY]);
-      const res = await w.update(['--quiet']);
+      // Four tries and a 10 s second look: 15 s of real clock (sleep is a stub, date isn't) is too tight for a busy CI
+      // machine, or a busybox whose sh runs its own sleep rather than the stub. A minute leaves the tries to decide.
+      const res = await w.update(['--quiet'], { PLAYARR_HEALTH_WAIT: '60' });
       expect(res.code).toBe(0);
       expect(readFileSync(join(w.stub, 'count.health-img-new'), 'utf8').trim()).toBe('6');
     });
