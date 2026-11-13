@@ -236,7 +236,7 @@ describe('mixes', () => {
   it('Fresh arrivals goes back from the newest albums as far as it needs, two unheard songs from each, well apart', () => {
     const day = 86_400_000;
     // 30 albums by 30 artists, 4 songs each, one arriving every 20 days: most of them long before the last 30 days.
-    const songs = Array.from({ length: 30 }, (_, a) =>
+    const songs: Song[] = Array.from({ length: 30 }, (_, a) =>
       library([a + 1], 4, { tags: [a % 2 ? 'rock' : 'jazz'] }).map((s, i) => ({
         ...s,
         track: { ...s.track, albumId: 1000 + a },
