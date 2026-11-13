@@ -23,6 +23,7 @@ describe('coverImage', () => {
     expect(coverImage('/art/album/70/cover', files)?.key).toBe('album/70/0');
     expect(coverImage('/art/copy/9000', files)).toEqual({ key: 'copy/9000/4321', kind: 'copy', file: files.get(9000), embedded: false });
     expect(coverImage('/art/copy/9000?embedded=1', files)?.key).toBe('copy/9000/4321/embedded');
+    expect(coverImage('/art/copy/9000?embedded=1&mbid=rg-1', files)).toMatchObject({ key: 'copy/9000/4321/embedded', embedded: true, mbid: 'rg-1' });
   });
 
   it('knows an album’s MusicBrainz cover by its URL, as the art route writes it', () => {

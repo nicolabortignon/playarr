@@ -47,7 +47,8 @@ describe('buildCatalog', () => {
       size: 40_000_000,
       streamUrl: '/stream/9000',
       // No artwork from Lidarr: the release group's own cover.
-      coverUrl: `/art/remote?url=${encodeURIComponent('https://images.lidarr.audio/cache/https://coverartarchive.org/release-group/rg-1/front-500')}`,
+      // No cover in Lidarr: the picture in its first song, else its MusicBrainz cover (catalog/build.ts embeddedCoverUrl).
+      coverUrl: '/art/copy/9000?embedded=1&mbid=rg-1',
     });
     expect(c.artists.get(7)).toMatchObject({ name: 'Massive Attack', albumCount: 1, trackCount: 2 });
     expect(c.tracks.map((t) => t.id)).toEqual([700, 701]);
@@ -114,9 +115,10 @@ describe('buildCatalog', () => {
       copies: [copy('y', 'yellow', '/one/Yellow.mp3'), copy('f', 'fix', '/one/Fix You.mp3'), copy('d', 'demo1', '/one/Demo.mp3')],
     });
     const cover = (title: string) => [...buildCatalog(store.load()).albums.values()].find((a) => a.title === title)!.coverUrl;
-    // Nothing from that folder's images: the release group's cover when the album is identified, else the picture
-    // in its own song, if it has one.
-    expect(cover('Parachutes')).toContain(encodeURIComponent('release-group/rg-p/front-500'));
+    // Nothing from that folder's images: the picture in the album's own song, and when it has none, the release
+    // group's cover if the album is identified.
+    const parachutesAlone = [...buildCatalog(store.load()).albums.values()].find((a) => a.title === 'Parachutes')!;
+    expect(cover('Parachutes')).toBe(`/art/copy/${parachutesAlone.tracks[0]!.fileId}?embedded=1&mbid=rg-p`);
     const demo = [...buildCatalog(store.load()).albums.values()].find((a) => a.title === 'Demo')!;
     expect(cover('Demo')).toBe(`/art/copy/${demo.tracks[0]!.fileId}?embedded=1`);
     // Parachutes' own folder, with another of its songs: its cover comes from there, whatever song comes first.

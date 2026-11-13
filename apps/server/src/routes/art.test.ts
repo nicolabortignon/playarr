@@ -6,10 +6,12 @@ import sharp from 'sharp';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FileResolver } from '../catalog/files.ts';
 import { LocalFolderFs } from '../catalog/folderFs.ts';
+import { LocalMediaSource } from '../media/local.ts';
 import { FLAC, flacBytes, freshDb, tempDir } from '../catalog/testFixtures.ts';
 import { coverArtArchive } from '../discover/art.ts';
 import { CoverColorStore, type CoverImage } from '../library/coverColorStore.ts';
 import type { LidarrClient } from '../lidarr/client.ts';
+import { LidarrError } from '../lidarr/client.ts';
 import { artRoutes, coverReader, LocalArt, trimArtCache } from './art.ts';
 
 let cleanup = () => {};
@@ -48,7 +50,7 @@ describe('artRoutes and cover colors', () => {
     artRoutes(app, {
       art: { original: async () => ({ body: original, mime: 'image/png' }) } as unknown as LocalArt,
       cacheDir: t.dir,
-      library: { file: async () => undefined, hasArtwork: async () => true, hasCover: () => false },
+      library: { album: async () => undefined, file: async () => undefined, hasArtwork: async () => true, hasCover: () => false },
       files: {} as FileResolver,
       folders: { get: () => undefined },
       colors: { offer },
@@ -73,7 +75,7 @@ describe('artRoutes and cover colors', () => {
     artRoutes(app, {
       art: {} as LocalArt,
       cacheDir: join(t.dir, 'cache'),
-      library: { file: async (id: number) => (id === song.id ? song : undefined), hasArtwork: async () => true, hasCover: () => false },
+      library: { album: async () => undefined, file: async (id: number) => (id === song.id ? song : undefined), hasArtwork: async () => true, hasCover: () => false },
       files: { resolve: () => ({ path: song.path }) } as unknown as FileResolver,
       folders: { get: () => new LocalFolderFs() },
       colors: { offer },
@@ -94,7 +96,7 @@ describe('artRoutes and cover colors', () => {
     artRoutes(app, {
       art: {} as LocalArt,
       cacheDir: t.dir,
-      library: { file: async () => undefined, hasArtwork: async () => true, hasCover: (key: string) => key === library.key },
+      library: { album: async () => undefined, file: async () => undefined, hasArtwork: async () => true, hasCover: (key: string) => key === library.key },
       files: {} as FileResolver,
       folders: { get: () => undefined },
       colors: { offer },
@@ -106,6 +108,91 @@ describe('artRoutes and cover colors', () => {
     expect((await get(discover)).statusCode).toBe(200); // from the cache this time
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(offer).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A FLAC with `picture` embedded (a PICTURE block, front cover) after its stream info. */
+function flacWithPicture(picture: Buffer): Buffer {
+  const plain = flacBytes();
+  const mime = Buffer.from('image/png');
+  const u32 = (n: number) => {
+    const b = Buffer.alloc(4);
+    b.writeUInt32BE(n);
+    return b;
+  };
+  const body = Buffer.concat([u32(3), u32(mime.length), mime, u32(0), u32(64), u32(64), u32(24), u32(0), u32(picture.length), picture]);
+  const header = Buffer.alloc(4);
+  header[0] = 6;
+  header.writeUIntBE(body.length, 1, 3);
+  // fLaC + STREAMINFO (4 + 34 bytes), then the picture, then the rest (the comments, marked last).
+  return Buffer.concat([plain.subarray(0, 42), header, body, plain.subarray(42)]);
+}
+
+describe('album covers from the songs', () => {
+  /** A song of a Lidarr album (file 9200, source 1: no folder of Playarr's own), read through the media source. */
+  function lidarrSetup(dir: string, bytes: Buffer, lidarrHasCover = false) {
+    const path = join(dir, '01.flac');
+    writeFileSync(path, bytes);
+    const song = { id: 9200, sourceId: 1, path, size: statSync(path).size, format: FLAC };
+    const app = Fastify();
+    artRoutes(app, {
+      art: {
+        original: async () => {
+          if (lidarrHasCover) return { body: bytes, mime: 'image/png' };
+          throw new LidarrError('Not found', 404);
+        },
+      } as unknown as LocalArt,
+      cacheDir: join(dir, 'cache'),
+      library: {
+        album: async (id: number) => (id === 70 ? ({ id: 70, mbid: 'rg-1', tracks: [{ fileId: 9200 }] } as never) : undefined),
+        file: async (id: number) => (id === song.id ? song : undefined),
+        hasArtwork: async () => true,
+        hasCover: () => false,
+      },
+      files: { resolve: () => ({ media: new LocalMediaSource('ffmpeg'), path }) } as unknown as FileResolver,
+      folders: { get: () => undefined },
+    });
+    return app;
+  }
+
+  it('reads the picture embedded in a Lidarr album’s file', async () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    const picture = await png('#00ff00');
+    const app = lidarrSetup(t.dir, flacWithPicture(picture));
+    const res = await app.inject({ method: 'GET', url: '/art/copy/9200?embedded=1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload).toEqual(picture);
+  });
+
+  it('takes the album’s MusicBrainz cover, fetched by the server, when its file has no picture', async () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    const front = await png('#0000ff');
+    const fetch = remoteHost(front);
+    const app = lidarrSetup(t.dir, flacBytes());
+    expect((await app.inject({ method: 'GET', url: '/art/copy/9200?embedded=1' })).statusCode).toBe(404);
+    // Nothing but a MusicBrainz id goes into the URL.
+    expect((await app.inject({ method: 'GET', url: `/art/copy/9200?embedded=1&mbid=${encodeURIComponent('../x?y')}` })).statusCode).toBe(404);
+    expect(fetch).not.toHaveBeenCalled();
+    const res = await app.inject({ method: 'GET', url: '/art/copy/9200?embedded=1&mbid=rg-1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload).toEqual(front);
+    expect(String(fetch.mock.calls[0]![0])).toContain('release-group/rg-1/front-500');
+  });
+
+  it('answers a Lidarr cover Lidarr can’t give with the picture in the album’s first song', async () => {
+    const t = tempDir();
+    cleanup = t.cleanup;
+    const picture = await png('#ff00ff');
+    const app = lidarrSetup(t.dir, flacWithPicture(picture));
+    const res = await app.inject({ method: 'GET', url: '/art/album/70/cover?v=5' });
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload).toEqual(picture);
+    expect(res.headers['cache-control']).toBe('public, max-age=86400');
+    // An album the library doesn't know, or an artist's picture, still has none.
+    expect((await app.inject({ method: 'GET', url: '/art/album/71/cover' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/art/artist/7/poster' })).statusCode).toBe(404);
   });
 });
 

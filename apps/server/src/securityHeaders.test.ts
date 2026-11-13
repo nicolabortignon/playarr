@@ -138,7 +138,7 @@ describe('security headers', () => {
     artRoutes(app, {
       art: { original: async () => ({ body: cover, mime: 'image/png' }) } as unknown as LocalArt,
       cacheDir: t.dir,
-      library: { file: async () => undefined, hasArtwork: async () => true, hasCover: () => false },
+      library: { album: async () => undefined, file: async () => undefined, hasArtwork: async () => true, hasCover: () => false },
       files: {} as FileResolver,
       folders: { get: () => undefined },
       colors: { offer: async () => {} },

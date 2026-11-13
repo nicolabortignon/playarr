@@ -23,7 +23,8 @@ const MAX_WAITING = 16;
  */
 export type CoverImage =
   | { key: string; kind: 'lidarr'; albumId: number; version: string }
-  | { key: string; kind: 'copy'; file: FileRecord; embedded: boolean }
+  /** `mbid`: the album's release group, whose Cover Art Archive front stands in when the file has no picture. */
+  | { key: string; kind: 'copy'; file: FileRecord; embedded: boolean; mbid?: string }
   | { key: string; kind: 'remote'; url: string };
 
 /**
@@ -63,11 +64,12 @@ export function coverImage(url: string | undefined, files: ReadonlyMap<number, F
     }
     return isAllowedRemote(target) ? { key: remoteCoverKey(target.href), kind: 'remote', url: target.href } : undefined;
   }
-  const copy = url?.match(/^\/art\/copy\/(\d+)(\?embedded=1)?$/);
+  const copy = url?.match(/^\/art\/copy\/(\d+)(\?embedded=1(?:&mbid=([^&]+))?)?$/);
   const file = copy ? files.get(Number(copy[1])) : undefined;
   if (!copy || !file) return undefined;
   const embedded = copy[2] !== undefined;
-  return { key: copyCoverKey(file.id, file.size, embedded), kind: 'copy', file, embedded };
+  const mbid = copy[3] ? decodeURIComponent(copy[3]) : undefined;
+  return { key: copyCoverKey(file.id, file.size, embedded), kind: 'copy', file, embedded, ...(mbid ? { mbid } : {}) };
 }
 
 interface Row {

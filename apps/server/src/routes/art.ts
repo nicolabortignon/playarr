@@ -1,17 +1,20 @@
 import { createHash } from 'node:crypto';
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import sharp from 'sharp';
 import { trimCacheDir } from '../cacheDir.ts';
+import type { FileRecord } from '../catalog/build.ts';
 import type { FileResolver } from '../catalog/files.ts';
 import { copyCover } from '../catalog/folderArt.ts';
 import type { FolderFs } from '../catalog/folderFs.ts';
-import { fetchRemoteImage, imageBody, isAllowedRemote } from '../discover/art.ts';
+import { pictureFrom } from '../catalog/tags.ts';
+import { coverArtArchive, fetchRemoteImage, imageBody, isAllowedRemote } from '../discover/art.ts';
 import { libraryOf, sourcesOf } from '../accounts/rights.ts';
 import { copyCoverKey, lidarrCoverKey, remoteCoverKey, type CoverColorStore, type CoverReader } from '../library/coverColorStore.ts';
 import type { Library } from '../library/library.ts';
 import { LidarrError, type LidarrClient } from '../lidarr/client.ts';
+import type { MediaSource } from '../media/index.ts';
 
 const SIZES = [96, 160, 240, 320, 480, 640, 960, 1200];
 const TYPES: Record<string, { file: string; square: boolean; mime: string }> = {
@@ -144,7 +147,7 @@ export function artRoutes(
   deps: {
     art: LocalArt;
     cacheDir: string;
-    library: Pick<Library, 'file' | 'hasArtwork' | 'hasCover'> & Partial<Pick<Library, 'view'>>;
+    library: Pick<Library, 'album' | 'file' | 'hasArtwork' | 'hasCover'> & Partial<Pick<Library, 'view'>>;
     files: FileResolver;
     folders: { get(sourceId: number): FolderFs | undefined };
     colors?: Pick<CoverColorStore, 'offer'>;
@@ -215,35 +218,24 @@ export function artRoutes(
     }
   });
 
-  // Artwork drawn from a folder file (embedded picture or an image beside it), wherever the folder is.
-  // `?embedded=1`: only the picture in the file (see catalog/build.ts folderCovers).
-  app.get<{ Params: { id: string }; Querystring: { size?: string; embedded?: string } }>('/art/copy/:id', async (req, reply) => {
-    const id = Number(req.params.id);
-    const file = Number.isInteger(id) ? await libraryOf(deps.library, req).file(id) : undefined;
-    if (!file) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'Unknown file' });
-    let path: string;
-    try {
-      path = deps.files.resolve(file).path;
-    } catch {
-      return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
-    }
-    const fs = deps.folders.get(file.sourceId);
-    if (!fs) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
-    const requested = Number(req.query.size);
-    const size = requested > 0 ? (SIZES.find((s) => s >= requested) ?? SIZES.at(-1)) : undefined;
-    const embeddedOnly = req.query.embedded === '1';
+  /**
+   * A song file's cover at `size` (undefined: as it is), from the art cache or made and kept there: the picture
+   * embedded in it, from any source (Lidarr's files too), or for a folder file without `embeddedOnly` a cover image
+   * beside it; and when there's none, the Cover Art Archive front of `mbid`, the album's release group. null: none.
+   */
+  async function copyArt(file: FileRecord, size: number | undefined, embeddedOnly: boolean, mbid?: string): Promise<{ body: Buffer; mime: string } | null> {
     const colorKey = copyCoverKey(file.id, file.size, embeddedOnly);
     const cached = join(dir, copyArtFile(file.id, file.size, size, embeddedOnly));
     try {
       const body = await readFile(cached);
       const mime = (await readFile(`${cached}.mime`, 'utf8').catch(() => null)) ?? 'image/webp';
       offerCover(colorKey, body);
-      return reply.header('Cache-Control', 'public, max-age=86400').type(mime).send(body);
+      return { body, mime };
     } catch {
       // cache miss
     }
-    const original = await copyCover(fs, path, file.size, embeddedOnly).catch(() => null);
-    if (!original) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
+    const original = (await filePicture(deps, file, embeddedOnly)) ?? (mbid ? await musicBrainzCover(mbid) : null);
+    if (!original) return null;
     offerCover(colorKey, original.body);
     const out = size
       ? {
@@ -252,8 +244,34 @@ export function artRoutes(
         }
       : original;
     await saveCached(dir, cached, out.body, out.mime);
-    return reply.header('Cache-Control', 'public, max-age=86400').type(out.mime).send(out.body);
+    return out;
+  }
+
+  // Artwork drawn from a song file (embedded picture, or an image beside a folder file), wherever it's kept.
+  // `?embedded=1`: only the picture in the file (see catalog/build.ts embeddedCoverUrl), and `&mbid=`: the album's
+  // Cover Art Archive front when the file has none.
+  app.get<{ Params: { id: string }; Querystring: { size?: string; embedded?: string; mbid?: string } }>('/art/copy/:id', async (req, reply) => {
+    const id = Number(req.params.id);
+    const file = Number.isInteger(id) ? await libraryOf(deps.library, req).file(id) : undefined;
+    if (!file) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'Unknown file' });
+    const requested = Number(req.query.size);
+    const size = requested > 0 ? (SIZES.find((s) => s >= requested) ?? SIZES.at(-1)) : undefined;
+    const embeddedOnly = req.query.embedded === '1';
+    const mbid = embeddedOnly && MBID.test(req.query.mbid ?? '') ? req.query.mbid : undefined;
+    const art = await copyArt(file, size, embeddedOnly, mbid).catch(() => null);
+    if (!art) return reply.code(404).header('Cache-Control', 'no-store').send({ error: 'No artwork' });
+    return reply.header('Cache-Control', 'public, max-age=86400').type(art.mime).send(art.body);
   });
+
+  /** An album whose Lidarr cover isn't there: the picture embedded in its first song, else its MusicBrainz cover. */
+  async function albumFallback(req: FastifyRequest, albumId: number, size: number | undefined) {
+    const library = libraryOf(deps.library, req);
+    const album = await library.album(albumId);
+    const first = album?.tracks[0];
+    const file = first && (await library.file(first.fileId));
+    if (!album || !file) return null;
+    return copyArt(file, size, true, album.mbid).catch(() => null);
+  }
 
   app.get<{ Params: { kind: string; id: string; type: string }; Querystring: { size?: string; v?: string } }>(
     '/art/:kind/:id/:type',
@@ -298,6 +316,11 @@ export function artRoutes(
         return reply.header('Cache-Control', cacheOk).type(mime).send(body);
       } catch (err) {
         reply.header('Cache-Control', 'no-store');
+        // Lidarr lists a cover it can't give (never downloaded, or gone): the album's own songs may have one.
+        if (kind === 'album' && type === 'cover') {
+          const fallback = await albumFallback(req, id, size);
+          if (fallback) return reply.header('Cache-Control', 'public, max-age=86400').type(fallback.mime).send(fallback.body);
+        }
         if (err instanceof LidarrError && err.status === 404) {
           return reply.code(404).send({ error: 'No artwork' });
         }
@@ -311,6 +334,35 @@ export function artRoutes(
 /** The art cache's name for a folder file's picture at a size (undefined: as it is). */
 function copyArtFile(fileId: number, fileSize: number, size: number | undefined, embedded: boolean): string {
   return createHash('sha1').update(`copy/${fileId}/${fileSize}/${size ?? 'orig'}${embedded ? '/embedded' : ''}`).digest('hex');
+}
+
+/** A MusicBrainz id as the art routes take one: anything else isn't put into a URL. */
+const MBID = /^[\w-]{1,64}$/;
+
+/**
+ * The picture in a song file, wherever it's kept: a folder file's through its source (with a cover image beside it
+ * unless `embeddedOnly`), a Lidarr file's through MEDIA_SOURCE (only what's embedded: its folder is Lidarr's to keep).
+ * null when there's none, or the file can't be read.
+ */
+async function filePicture(
+  deps: { files: Pick<FileResolver, 'resolve'>; folders: { get(sourceId: number): FolderFs | undefined } },
+  file: FileRecord,
+  embeddedOnly: boolean,
+): Promise<{ body: Buffer; mime: string } | null> {
+  let resolved: { media: MediaSource; path: string };
+  try {
+    resolved = deps.files.resolve(file);
+  } catch {
+    return null; // its source was removed, or the file isn't in its folder
+  }
+  const fs = deps.folders.get(file.sourceId);
+  if (fs) return copyCover(fs, resolved.path, file.size, embeddedOnly).catch(() => null);
+  return pictureFrom(resolved.media, resolved.path, file.size).catch(() => null);
+}
+
+/** The Cover Art Archive front of a release group, through the same allowlisted fetch as other remote covers. */
+async function musicBrainzCover(mbid: string): Promise<{ body: Buffer; mime: string } | null> {
+  return fetchRemoteImage(coverArtArchive(mbid, 500)).catch(() => null);
 }
 
 /** The art cache's name for a remote image at a size (undefined: as it is), cropped square or kept `wide`. */
@@ -368,21 +420,21 @@ export function coverReader(deps: {
       // A remote host's 404 is a cover without a picture (null), looked at again after a day.
       return cached ?? (await fetchGently(image.url))?.body ?? null;
     }
-    const { file, embedded } = image;
+    const { file, embedded, mbid } = image;
     const cached = await fromCache(sizes.map((size) => copyArtFile(file.id, file.size, size, embedded)));
     if (cached) return cached;
-    let path: string;
+    let resolved: { media: MediaSource; path: string };
     try {
-      path = deps.files.resolve(file).path;
+      resolved = deps.files.resolve(file);
     } catch {
       return undefined; // its source was removed, or the file isn't in its folder: no cover to read
     }
     const fs = deps.folders.get(file.sourceId);
-    if (!fs) return undefined;
-    const picture = await copyCover(fs, path, file.size, embedded);
+    const picture = fs ? await copyCover(fs, resolved.path, file.size, embedded) : await pictureFrom(resolved.media, resolved.path, file.size).catch(() => null);
     if (picture) return picture.body;
-    // copyCover can't tell a file without a picture from a folder that's away: only a file that's there has none.
-    if (!(await fs.stat(path).catch(() => null))) throw new Error('The file can’t be reached');
+    // A file without a picture from a folder that's away can't be told apart: only a file that's there has none.
+    if (fs && !(await fs.stat(resolved.path).catch(() => null))) throw new Error('The file can’t be reached');
+    if (mbid && MBID.test(mbid)) return (await fetchGently(coverArtArchive(mbid, 500)))?.body ?? null;
     return null;
   };
 }
