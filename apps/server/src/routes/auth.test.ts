@@ -91,7 +91,7 @@ describe('auth routes', () => {
   it('keeps each account signed in on the browser as a cookie no script reads, and switches to it by its id', async () => {
     const { app, accounts, sessions, post } = setup();
     await accounts.setPassword(1, 'correct horse');
-    const sam = accounts.create({ username: 'sam', name: 'Sam', role: 'member' });
+    const sam = accounts.create({ username: 'sam', name: 'Sam', role: 'member', canRequest: false, sources: null });
     const mine = sessions.create(1, 'Mac', 'web').token;
     const sams = sessions.create(sam.id, 'Mac', 'web').token;
     // A token an older web app kept in localStorage becomes a cookie, sent only to /api/auth.
