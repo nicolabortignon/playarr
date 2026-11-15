@@ -64,10 +64,10 @@ public class CuttableMediaSource private constructor(source: MediaSource, privat
     publish()
   }
 
-  /** Ends the song at `endUs` into its stream. Only on the playback thread (a PlayerMessage). */
+  /** Ends the song at `endUs` into its stream (C.TIME_END_OF_SOURCE: at its own end again). Only on the playback thread. */
   public fun cut(endUs: Long) {
     this.endUs = endUs
-    formats.cut = true
+    formats.cut = endUs != C.TIME_END_OF_SOURCE
     periods.forEach { it.updateClipping(0, endUs) }
     publish()
   }

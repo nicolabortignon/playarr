@@ -99,6 +99,15 @@ the web):
 - **The player** (`PlayerFactory`): ExoPlayer over the app's OkHttp (the token only on this server's media requests),
   pausing for other apps' audio and when headphones go, a network wake lock, and a 503's `Retry-After` honored up to 10
   times while the server encodes.
+- **DJ mix** (Settings → Playback → Transitions; `DjMixer`, `TransitionAsker`, `Joins`, `CuttableMediaSource`): while
+  a song plays, the transition into the next is asked for by the iOS app's rules. Once it's ready in time, the song is
+  cut at an AAC frame boundary inside the transition's 3 s lead, without restarting it, and the transition plays as
+  AAC from the sample the song stops on (`/transitions/:file/aac?start=`). The next song then goes on from the sample
+  after the transition (`levelled.aac?start=`). One decoder plays all three, so both joins are exact
+  (`make join-test` checks it on the emulator or the TV, sample by sample). The song's declared padding is still
+  trimmed off the cut end, so the song stops that many samples before the boundary, and the transition starts there.
+  Only whole songs as encoded streams, in order, are joined; Original plays as High with DJ mix. Skipping into a
+  joined part plays the next song whole. No crossfade on the TV yet.
 - **History** (`PlayTracker`, as iOS's): each song is reported when it stops being the current one, with the seconds
   actually heard (a seek doesn't count) and the local hour and weekday (0 = Sunday). 30 s heard, or half a shorter song,
   is a play; changed after 3 s, a skip; closing the app is neither. Reports the server didn't get go again with the next.

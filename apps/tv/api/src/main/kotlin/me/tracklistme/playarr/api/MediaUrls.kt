@@ -20,13 +20,19 @@ public class MediaUrls(public val baseUrl: String, public val home: HomeAddress?
    * The song encoded by the server as AAC at `kbps` (128 or 256) in fragmented MP4, levelled to `gain` dB when given
    * (even volume): what the TV plays by default (plan 9 §4; docs/server/streaming-and-art.md §2).
    */
-  public fun encoded(track: Track, kbps: Int, gain: Double? = null): String {
-    val query = "kbps=$kbps" + (gain?.let { "&gain=$it" } ?: "")
+  public fun encoded(track: Track, kbps: Int, gain: Double? = null, start: Long = 0): String {
+    val query = "kbps=$kbps" + (gain?.let { "&gain=$it" } ?: "") + (if (start > 0) "&start=$start" else "")
     return url("${track.streamUrl}/${if (gain != null) "levelled.aac" else "aac"}?$query")
   }
 
   /** A rendered transition: the `url` of a ready `TransitionAnswer` (or its `continuationUrl`). */
   public fun transition(path: String): String = url(path)
+
+  /**
+   * A rendered transition encoded as the songs' streams are, AAC at `kbps` from its sample `start` (what the TV plays:
+   * `/transitions/:file/aac`, docs/server/streaming-and-art.md §4).
+   */
+  public fun transitionAac(path: String, kbps: Int, start: Long): String = url("$path/aac?kbps=$kbps" + (if (start > 0) "&start=$start" else ""))
 
   /** A cover or artist image resized by the server to `size` pixels (the longest side). */
   public fun art(path: String?, size: Int): String? {

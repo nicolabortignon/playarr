@@ -9,13 +9,12 @@ import me.tracklistme.playarr.player.StreamQuality
 
 /** Settings → Playback, on this TV (the phone's PlaybackSettings, less what a TV has no use for). */
 class PlaybackSettings(context: Context) {
-  enum class Transitions { Off, Crossfade, Dj }
+  /** How songs follow each other: gapless (Off), or joined by the server's DJ transitions. No crossfade on the TV yet. */
+  enum class Transitions { Off, Dj }
 
   data class Values(
     val quality: StreamQuality = StreamQuality.High,
     val transitions: Transitions = Transitions.Off,
-    /** Seconds songs overlap with Crossfade. */
-    val crossfade: Int = 6,
     /** "Even out the volume". */
     val evenVolume: Boolean = true,
     /** "Keep playing when the queue ends". */
@@ -34,7 +33,6 @@ class PlaybackSettings(context: Context) {
     prefs.edit {
       putString(QUALITY, v.quality.name)
       putString(TRANSITIONS, v.transitions.name)
-      putInt(CROSSFADE, v.crossfade)
       putBoolean(EVEN_VOLUME, v.evenVolume)
       putBoolean(AUTOPLAY, v.autoplay)
       putBoolean(RECORD_PLAYS, v.recordPlays)
@@ -47,7 +45,6 @@ class PlaybackSettings(context: Context) {
     return Values(
       quality = StreamQuality.of(prefs.getString(QUALITY, null)),
       transitions = Transitions.entries.firstOrNull { it.name == prefs.getString(TRANSITIONS, null) } ?: d.transitions,
-      crossfade = prefs.getInt(CROSSFADE, d.crossfade).takeIf { it in CROSSFADES } ?: d.crossfade,
       evenVolume = prefs.getBoolean(EVEN_VOLUME, d.evenVolume),
       autoplay = prefs.getBoolean(AUTOPLAY, d.autoplay),
       recordPlays = prefs.getBoolean(RECORD_PLAYS, d.recordPlays),
@@ -55,11 +52,8 @@ class PlaybackSettings(context: Context) {
   }
 
   companion object {
-    /** The crossfade lengths offered (seconds), as on the web and the phone. */
-    val CROSSFADES = listOf(3, 6, 9, 12)
     private const val QUALITY = "quality"
     private const val TRANSITIONS = "transitions"
-    private const val CROSSFADE = "crossfade"
     private const val EVEN_VOLUME = "evenVolume"
     private const val AUTOPLAY = "autoplay"
     private const val RECORD_PLAYS = "recordPlays"

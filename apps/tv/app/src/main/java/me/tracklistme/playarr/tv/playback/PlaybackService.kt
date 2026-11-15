@@ -37,6 +37,7 @@ import me.tracklistme.playarr.tv.playarr
  * - each song heard is reported to the server's history (PlayTracker) unless this TV doesn't count, sent again with the
  *   next one when the server couldn't be reached;
  * - the queue's last song asks for more like it (Radio), when "Keep playing" is on;
+ * - with DJ mix, songs are joined by the server's transitions (DjMixer);
  * - the sleep timer fades the music out and pauses it, or pauses at the end of the song;
  * - a dead spot (the network or the server gone a moment) is ridden out: the song is asked for again where it stopped,
  *   after 2 s, then longer, up to every 30 s; a stream the server refuses falls back to another form of the song
@@ -45,6 +46,9 @@ import me.tracklistme.playarr.tv.playarr
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
   private lateinit var player: ExoPlayer
+  private lateinit var mixer: DjMixer
+  /** The part of a song playing (a DJ join's transition, the rest of the song after it, or a whole song). */
+  private var playingPart = QueueItems.Part.Song
   private var session: MediaSession? = null
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
   private val unsent = mutableListOf<PlayReport>()
@@ -58,6 +62,7 @@ class PlaybackService : MediaSessionService() {
   private val tick = object : Runnable {
     override fun run() {
       tracker.tick(player.currentPosition / 1000.0)
+      mixer.tick()
       sleepTick()
       main.postDelayed(this, TICK_MS)
     }
@@ -66,12 +71,21 @@ class PlaybackService : MediaSessionService() {
   override fun onCreate() {
     super.onCreate()
     val app = playarr
-    player = PlayerFactory.player(this, app.songHttp, PlaybackCache.of(this))
+    val built = PlayerFactory.player(this, app.songHttp, PlaybackCache.of(this))
+    player = built.player
+    mixer = DjMixer(app, player, built.sources, scope)
     session = PlayerFactory.session(this, player, app.http)
     player.addListener(object : Player.Listener {
       override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-        tracker.finish(if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) Finish.Ended else Finish.Changed)
-        QueueItems.track(item)?.let { tracker.start(it) }
+        val part = QueueItems.part(item)
+        val auto = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+        // From a DJ transition into the rest of its song: the same song going on.
+        if (!(auto && playingPart == QueueItems.Part.Transition && part == QueueItems.Part.Rest)) {
+          tracker.finish(if (auto) Finish.Ended else Finish.Changed)
+          QueueItems.track(item)?.let { tracker.start(it) }
+        }
+        playingPart = part
+        mixer.changed(item, reason)
         continueRadio()
       }
 
@@ -121,7 +135,8 @@ class PlaybackService : MediaSessionService() {
     val key = "$index:${player.currentMediaItem?.mediaId}"
     if (key == radioAskedAt) return
     radioAskedAt = key
-    val queue = (0 until player.mediaItemCount).mapNotNull { QueueItems.track(player.getMediaItemAt(it)) }
+    // The songs, once each: a DJ join's transition is the next song's too.
+    val queue = (0 until player.mediaItemCount).map { player.getMediaItemAt(it) }.filter { QueueItems.part(it) != QueueItems.Part.Transition }.mapNotNull { QueueItems.track(it) }
     val ask = Radio.continuation(
       played = queue.take(index + 1),
       queue = queue,

@@ -25,18 +25,21 @@ import okhttp3.OkHttpClient
  */
 @OptIn(UnstableApi::class)
 public object PlayerFactory {
-  public fun player(context: Context, http: OkHttpClient, cache: SimpleCache?): ExoPlayer {
+  /** The player, and its sources (the songs a DJ transition can cut). */
+  public class Built(public val player: ExoPlayer, public val sources: SongSources)
+
+  public fun player(context: Context, http: OkHttpClient, cache: SimpleCache?): Built {
     val network = OkHttpDataSource.Factory(http)
     val data = cache?.let { CacheDataSource.Factory().setCache(it).setUpstreamDataSourceFactory(network).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR) } ?: network
-    val sources = DefaultMediaSourceFactory(context)
-      .setDataSourceFactory(data)
-      .setLoadErrorHandlingPolicy(BusyServer())
-    return ExoPlayer.Builder(context)
+    val errors = BusyServer()
+    val sources = SongSources(data, errors, DefaultMediaSourceFactory(context).setDataSourceFactory(data).setLoadErrorHandlingPolicy(errors))
+    val player = ExoPlayer.Builder(context)
       .setMediaSourceFactory(sources)
       .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
       .setHandleAudioBecomingNoisy(true)
       .setWakeMode(C.WAKE_MODE_NETWORK)
       .build()
+    return Built(player, sources)
   }
 
   /** The session the system's Now Playing card and the remote's media keys talk to; covers load with the token. */

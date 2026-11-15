@@ -5,6 +5,7 @@ import me.tracklistme.playarr.api.Api
 import me.tracklistme.playarr.api.Track
 import me.tracklistme.playarr.api.TrackLevel
 import me.tracklistme.playarr.player.QueueItems
+import me.tracklistme.playarr.player.StreamQuality
 import me.tracklistme.playarr.tv.PlayarrApp
 
 /** Songs as the player's items, at the quality and level Settings → Playback asks for. */
@@ -24,7 +25,9 @@ class Songs(private val app: PlayarrApp) {
   suspend fun items(queue: List<Track>, from: Int = 0): List<MediaItem> {
     val media = app.media() ?: return emptyList()
     val settings = app.playback.now
-    return QueueItems.items(queue, levels(queue.drop(from)), media, settings.quality, settings.evenVolume, from)
+    // DJ mix cuts songs at AAC frames: Original's lossless WAV plays as High then.
+    val quality = if (settings.transitions == PlaybackSettings.Transitions.Dj && settings.quality == StreamQuality.Original) StreamQuality.High else settings.quality
+    return QueueItems.items(queue, levels(queue.drop(from)), media, quality, settings.evenVolume, from)
   }
 
   private companion object {

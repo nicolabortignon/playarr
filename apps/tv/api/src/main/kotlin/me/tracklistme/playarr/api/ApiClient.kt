@@ -4,8 +4,10 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import okhttp3.Call
 import okhttp3.Callback
@@ -86,8 +88,11 @@ public class ApiClient(
     if (base == home?.url && home?.isProven != true) throw IOException("The home address isn't proven on this network")
     val timeout = endpoint.timeoutMillis ?: timeoutMillis
     val client = http.newBuilder().callTimeout(timeout, TimeUnit.MILLISECONDS).build()
-    return client.newCall(request(endpoint, base)).await().use { response ->
-      Answer(response.code, response.body.string(), response.header("Retry-After")?.trim()?.toIntOrNull())
+    // The body is read off the caller's thread: await() resumes on the caller's dispatcher (the main one, for screens).
+    return withContext(Dispatchers.IO) {
+      client.newCall(request(endpoint, base)).await().use { response ->
+        Answer(response.code, response.body.string(), response.header("Retry-After")?.trim()?.toIntOrNull())
+      }
     }
   }
 
