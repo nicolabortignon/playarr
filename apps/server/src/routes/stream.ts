@@ -1,6 +1,6 @@
 import { parseRange, wavFallbackOf } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { PassThrough, type Readable } from 'node:stream';
+import type { Readable } from 'node:stream';
 import type { Analyzer } from '../analysis/analyzer.ts';
 import { LOUDNESS_RATE } from '../analysis/loudness.ts';
 import { FileAccessError, type FileResolver } from '../catalog/files.ts';
@@ -12,7 +12,8 @@ import { mimeForPath } from '../library/format.ts';
 import { MediaUnavailableError, type MediaSource } from '../media/index.ts';
 import { seeksInexactly } from '../media/source.ts';
 import { bytesPerFrame, LEVELLED, WAV_HEADER_BYTES, wavRange, type PcmShape } from '../media/levelled.ts';
-import { EncodeBusyError, encodeInput, STREAM_KBPS, streamLayout, type EncodedStreams, type EncodeJob, type StreamCodec, type StreamKbps } from '../media/encoded.ts';
+import { STREAM_KBPS, type EncodedStreams, type StreamCodec, type StreamKbps } from '../media/encoded.ts';
+import { sendEncoded } from './encodedResponse.ts';
 import { STREAM_RATE } from '../media/mp4.ts';
 
 /** The most a levelled stream turns a song up or down (dB): the levels route never asks for more. */
@@ -21,8 +22,6 @@ const MAX_GAIN_DB = 20;
 const LENGTHS_KEPT = 2000;
 /** Bumped when an encoded stream's bytes would change for the same song and arguments (its layout): new ETags. */
 const ENCODED_VERSION = 1;
-/** How long a request waits for an encode's first fragment before giving up on it. */
-const FIRST_FRAGMENT_MS = 20_000;
 
 export function streamRoutes(
   app: FastifyInstance,
@@ -255,88 +254,21 @@ export function streamRoutes(
       if (!length) return reply.code(404).send({ error: 'This song’s length can’t be read: play its own file' });
       if (start >= length) return reply.code(400).send({ error: 'That’s past the song’s end' });
 
-      const layout = streamLayout(codec, kbps as StreamKbps, length - start);
-      const total = layout.total;
       // The song's length is in it: a length counted by analysis after one read from the header is another stream.
       const etag = `"${codec}${kbps}-${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}-${length.toString(36)}-${start.toString(36)}-${gain}-${ENCODED_VERSION}"`;
-      // The stream's headers, on everything but an error (which is JSON).
-      const streamHeaders = () => reply.header('Accept-Ranges', 'bytes').header('Content-Type', 'audio/mp4').header('ETag', etag).header('Cache-Control', 'private, max-age=86400');
-      if (req.headers['if-none-match'] === etag) return streamHeaders().code(304).send();
-      const range = parseRange(req.headers.range, total);
-      if (range === null) return streamHeaders().code(416).header('Content-Range', `bytes */${total}`).send();
-      const from = range?.start ?? 0;
-      const to = range?.end ?? total - 1;
-      if (req.method === 'HEAD') {
-        streamHeaders();
-        if (range) reply.code(206).header('Content-Range', `bytes ${from}-${to}/${total}`);
-        return reply.header('Content-Length', to - from + 1).send();
-      }
-
-      // One encode per stream, whoever asks (an <audio> element's ranges, the device keeping it).
-      const account = req.auth?.account?.id ?? null;
-      let job: EncodeJob;
-      try {
-        job = deps.encoded.job(
-          `${file.id}:${etag}`,
-          account,
-          layout,
-          () => encode(path, { codec, kbps, ...encodeInput(layout, start, !seeksInexactly(file.format)), ...(gain ? { gainDb: gain } : {}), priority: 'normal' }),
-          { from, to },
-        );
-      } catch (err) {
-        if (!(err instanceof EncodeBusyError)) throw err;
-        return reply.code(503).header('Retry-After', '5').send({ error: err.message });
-      }
-      // Attached at once: what this request reads from is kept for it from here on.
-      const reader = job.attach(from);
-      // The first fragment, or the encode's failure, before answering: a file that can't be encoded gets an error,
-      // not a stream that stops. A range within the init segment (a player's first look) needs neither.
-      if (to >= layout.init.length) {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const ready = await Promise.race([
-          job.started.then(() => true),
-          new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), FIRST_FRAGMENT_MS).unref())),
-        ]).finally(() => clearTimeout(timer));
-        if (!ready || (job.state === 'failed' && job.produced === layout.init.length)) {
-          job.detach(reader);
-          req.log.warn({ err: job.error, path }, 'a song couldn’t be encoded');
-          return reply.code(502).send({ error: ready ? `This song couldn’t be encoded: ${job.error?.message ?? 'unknown error'}` : 'Encoding this song took too long' });
-        }
-      }
-      streamHeaders();
-      if (range) reply.code(206).header('Content-Range', `bytes ${from}-${to}/${total}`);
-      reply.header('Content-Length', to - from + 1);
-      const stop = new AbortController();
-      const out = new PassThrough();
-      // Stop reading as soon as the player drops the connection (seek, skip): the encode goes on only while someone reads.
-      reply.raw.once('close', () => stop.abort());
-      out.once('close', () => stop.abort());
-      /** Until the response has room for more, or is gone. */
-      const drained = () =>
-        new Promise<void>((resolve) => {
-          const done = () => {
-            out.off('drain', done);
-            out.off('close', done);
-            resolve();
-          };
-          out.on('drain', done);
-          out.on('close', done);
-        });
-      void (async () => {
-        try {
-          for await (const piece of job.read(from, to, stop.signal, reader)) {
-            if (out.destroyed) return;
-            if (!out.write(piece)) await drained();
-          }
-          out.end();
-        } catch (err) {
-          if (!stop.signal.aborted) req.log.warn({ err, path }, 'an encoded stream broke off');
-          out.destroy(err as Error);
-        } finally {
-          job.detach(reader);
-        }
-      })();
-      return reply.send(out);
+      return sendEncoded(req, reply, {
+        encoded: deps.encoded,
+        codec,
+        kbps: kbps as StreamKbps,
+        length,
+        start,
+        seeksExactly: !seeksInexactly(file.format),
+        etag,
+        key: `${file.id}:${etag}`,
+        encode: (input) => encode(path, { codec, kbps, ...input, ...(gain ? { gainDb: gain } : {}), priority: 'normal' }),
+        what: 'song',
+        path,
+      });
     };
   }
 

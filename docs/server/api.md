@@ -53,7 +53,7 @@ Albums and songs, wherever they're answered, carry their cover's colors once the
 | `GET /art/playlist/:id`, `/art/playlist/:id/preview` | a playlist's generated cover, a candidate cover | signed in |
 | `POST /api/levels` | even-volume gains (track and album) for up to 50 songs | signed in |
 | `POST /api/mix-maps`; `GET\|PUT /api/recordings/:id/cues` | mix maps for up to 50 songs; mix points set by hand | signed in |
-| `POST /api/transitions`; `GET/HEAD /transitions/:file` | ask for a DJ transition A→B; the rendered file | signed in |
+| `POST /api/transitions`; `GET/HEAD /transitions/:file`, `/transitions/:file/aac` | ask for a DJ transition A→B; the rendered file, or the same encoded as AAC from a sample (the TV) | signed in |
 
 Details in [streaming-and-art.md](streaming-and-art.md) and [../mixing.md](../mixing.md).
 

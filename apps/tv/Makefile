@@ -165,7 +165,7 @@ join-test: connect
 	$(ADB) -s $(TV) shell am instrument -w $(APP_ID:.tv=.player).test/androidx.test.runner.AndroidJUnitRunner
 	rm -rf build/spike/out && mkdir -p build/spike/out
 	$(ADB) -s $(TV) pull /sdcard/Android/data/$(APP_ID:.tv=.player).test/files/. build/spike/out/ >/dev/null
-	node scripts/join-spike/make-signal.mjs >/dev/null && node scripts/join-spike/analyze.mjs whole aac delay
+	node scripts/join-spike/make-signal.mjs >/dev/null && node scripts/join-spike/analyze.mjs whole server
 
 clean:
 	rm -rf build app/build .gradle

@@ -3,7 +3,6 @@ package me.tracklistme.playarr.player
 import android.content.Context
 import android.util.Log
 import androidx.media3.common.C
-import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -17,11 +16,7 @@ import androidx.media3.exoplayer.source.ClippingMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.Extractor
-import androidx.media3.extractor.ExtractorOutput
-import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.PositionHolder
-import androidx.media3.extractor.TrackOutput
-import androidx.media3.extractor.flac.FlacExtractor
 import androidx.media3.extractor.mp4.FragmentedMp4Extractor
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.test.utils.FakeExtractorInput
@@ -38,11 +33,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Plan 9 §4's join spike: can ExoPlayer play song A up to a sample, a DJ transition (a FLAC whose first part is A as it
- * is), then song B from a sample, with nothing repeated or lost at the two joins? Each configuration's output, after
- * Media3's trimming, is written to the test app's files as 16-bit PCM for `build/spike/analyze.mjs` to compare with the
- * signal. The assets come from `make demo` (a.mp4 and b.mp4 are the server's encoded streams of a 6 s test signal,
- * b.mp4 from sample S; t.flac is the signal from F to S, made as the server makes transitions).
+ * Plan 9 §4's join spike: ExoPlayer plays song A up to a sample, a DJ transition, then song B from a sample, with
+ * nothing repeated or lost at the two joins. What reaches the speakers (after Media3's trimming) is written to the test
+ * app's files as 16-bit PCM for `scripts/join-spike/analyze.mjs` to compare with the signal (`make join-test`).
+ *
+ * The assets are the server's own encodes of a 6 s test signal (scripts/join-spike/make-signal.mjs, played by
+ * `make demo`): a.mp4 the song's stream, b.mp4 its stream from sample S; t.flac the signal from F to S as the server
+ * renders a transition (24-bit FLAC), and ts.mp4 that file through `/transitions/:file/aac?start=487`.
+ * What was found, and why transitions play as AAC: plan 9's Progress, 2026-11-15.
  */
 @RunWith(AndroidJUnit4::class)
 class JoinSpike {
@@ -71,24 +69,8 @@ class JoinSpike {
       DefaultAudioSink.Builder(context).setAudioProcessors(arrayOf(TeeAudioProcessor(tap))).build()
   }
 
-  /** An extractor whose track says the decoder should drop `delay` samples first, as for an encoder's priming. */
-  private class Delayed(private val inner: Extractor, private val delay: Int) : Extractor by inner {
-    override fun init(output: ExtractorOutput) =
-      inner.init(object : ExtractorOutput by output {
-        override fun track(id: Int, type: Int): TrackOutput {
-          val track = output.track(id, type)
-          return object : TrackOutput by track {
-            override fun format(format: Format) = track.format(format.buildUpon().setEncoderDelay(delay).build())
-          }
-        }
-      })
-  }
-
-  private fun asset(name: String, extractors: ExtractorsFactory? = null): MediaSource {
-    val data = DefaultDataSource.Factory(context)
-    val factory = if (extractors != null) ProgressiveMediaSource.Factory(data, extractors) else ProgressiveMediaSource.Factory(data)
-    return factory.createMediaSource(MediaItem.fromUri("asset:///$name"))
-  }
+  private fun asset(name: String): MediaSource =
+    ProgressiveMediaSource.Factory(DefaultDataSource.Factory(context)).createMediaSource(MediaItem.fromUri("asset:///$name"))
 
   /** The times (µs) of a.mp4's first two AAC frames: frame k starts at t0 + k × (t1 − t0). */
   private fun aacFrameTimes(): Pair<Long, Long> {
@@ -98,7 +80,7 @@ class JoinSpike {
     extractor.init(output)
     val input = FakeExtractorInput.Builder().setData(bytes).build()
     val position = PositionHolder()
-    while (extractor.read(input, position) != Extractor.RESULT_END_OF_INPUT) Unit
+    do {} while (extractor.read(input, position) != Extractor.RESULT_END_OF_INPUT)
     val track = output.trackOutputs.valueAt(0)
     Log.i(TAG, "a.mp4: encoderDelay ${track.lastFormat?.encoderDelay}, padding ${track.lastFormat?.encoderPadding}, ${track.sampleCount} frames")
     return track.getSampleTimeUs(0) to track.getSampleTimeUs(1)
@@ -149,28 +131,10 @@ class JoinSpike {
     val alignedUs = t0 + k * frameUs
     Log.i(TAG, "frames at $t0 + k × $frameUs µs; F = $F, aligned to $aligned (frame $k at $alignedUs µs)")
 
-    // All AAC, one decoder throughout: A to its frame k, a transition encoded from there (t.mp4: the signal from
-    // `aligned`) clipped at its own frame j, and B from the sample after (b2.mp4: from 155 520).
-    val j = (S + PRIMING - aligned + FRAME - 1) / FRAME
-    Log.i(TAG, "aac: transition to its frame $j, B from ${aligned + j * FRAME - PRIMING}")
-    play(
-      "aac",
-      listOf(
-        ClippingMediaSource.Builder(asset("a.mp4")).setEndPositionUs(frameStartUs(k)).build(),
-        ClippingMediaSource.Builder(asset("t.mp4")).setEndPositionUs(frameStartUs(j)).build(),
-        asset("b2.mp4"),
-      ),
-    )
-    // A clipped at an AAC frame boundary, the transition's first samples dropped as an encoder delay.
-    val delay = (aligned - F).toInt()
-    play(
-      "delay",
-      listOf(
-        ClippingMediaSource.Builder(asset("a.mp4")).setEndPositionUs(frameStartUs(k)).build(),
-        asset("t.flac") { arrayOf(Delayed(FlacExtractor(), delay)) },
-        asset("b.mp4"),
-      ),
-    )
+    // As the TV plays a DJ transition: A cut at its frame k, the transition as the server encodes it from A's frame
+    // boundary (ts.mp4: /transitions/:file/aac?start=aligned − F, to its end), then B from the sample after it
+    // (b.mp4: levelled.aac?start=S). All AAC, so one decoder plays the three.
+    play("server", listOf(ClippingMediaSource.Builder(asset("a.mp4")).setEndPositionUs(frameStartUs(k)).build(), asset("ts.mp4"), asset("b.mp4")))
     // The control: A alone, as gapless playback of the whole song.
     play("whole", listOf(asset("a.mp4")))
   }
@@ -181,6 +145,5 @@ class JoinSpike {
     const val PRIMING = 2112L
     const val FRAME = 1024L
     const val F = 88_537L
-    const val S = 154_800L
   }
 }

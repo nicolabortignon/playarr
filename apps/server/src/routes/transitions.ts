@@ -1,11 +1,19 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { parseRange } from '@playarr/shared';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { libraryOf, sourcesOf } from '../accounts/rights.ts';
 import type { Library } from '../library/library.ts';
 import type { TransitionAnswer, Transitions } from '../transitions/transitions.ts';
+import { pcmLengthFrom } from '../catalog/tags.ts';
+import { STREAM_KBPS, type EncodedStreams, type StreamKbps } from '../media/encoded.ts';
+import type { MediaSource } from '../media/index.ts';
+import { STREAM_RATE } from '../media/mp4.ts';
+import { sendEncoded } from './encodedResponse.ts';
+
+/** Bumped when a transition's encoded bytes would change for the same file and arguments: new ETags. */
+const ENCODED_VERSION = 1;
 
 const input = z.object({
   from: z.number().int().nonnegative(),
@@ -35,9 +43,23 @@ export function transitionRoutes(
     /** The library, narrowed to each account's sources for planning and serving. */
     library?: Pick<Library, 'track' | 'trackByRecording'> & Partial<Pick<Library, 'view'>>;
     unavailableReason?: string;
+    /** For transitions as AAC (`/transitions/:file/aac`): the encodes, and the source that reads the cache's files. */
+    encoded?: EncodedStreams;
+    media?: MediaSource;
+    /** A file's exact length, from its header (tests stand in their own). */
+    pcmLength?: typeof pcmLengthFrom;
   },
 ) {
   const { transitions } = deps;
+  const pcmLength = deps.pcmLength ?? pcmLengthFrom;
+
+  /** An account that hears only some sources hears a transition only when it may hear both its songs. */
+  async function hearable(req: FastifyRequest, file: string): Promise<boolean> {
+    if (sourcesOf(req) === null) return true;
+    const pair = transitions?.recordingsOf?.(file);
+    const view = pair && deps.library ? libraryOf(deps.library, req) : undefined;
+    return !!view && !!pair && !!(await view.trackByRecording(pair[0])) && !!(await view.trackByRecording(pair[1]));
+  }
   const unavailableReason = deps.unavailableReason ?? 'Mixed transitions need audio analysis';
 
   app.post('/api/transitions', async (req, reply): Promise<TransitionAnswer> => {
@@ -79,12 +101,7 @@ export function transitionRoutes(
       const size = path ? await stat(path).then((info) => (info.isFile() ? info.size : undefined), () => undefined) : undefined;
       if (!path || size === undefined) return reply.code(404).send({ error: 'Unknown transition' });
       // Only when the account may hear both songs.
-      if (sourcesOf(req) !== null) {
-        const pair = transitions?.recordingsOf?.(req.params.file);
-        const view = pair && deps.library ? libraryOf(deps.library, req) : undefined;
-        const hearable = !!view && !!pair && !!(await view.trackByRecording(pair[0])) && !!(await view.trackByRecording(pair[1]));
-        if (!hearable) return reply.code(404).send({ error: 'Unknown transition' });
-      }
+      if (!(await hearable(req, req.params.file))) return reply.code(404).send({ error: 'Unknown transition' });
 
       reply.header('Accept-Ranges', 'bytes');
       const range = parseRange(req.headers.range, size);
@@ -101,6 +118,47 @@ export function transitionRoutes(
       // Stop reading as soon as the browser drops the connection (seek, skip).
       reply.raw.once('close', () => stream.destroy());
       return reply.send(stream);
+    },
+  });
+
+  /**
+   * A transition as the TV plays it (plan 9 §4): encoded like a song's stream (`/stream/:id/aac`), AAC at `kbps` in
+   * fragmented MP4 from the file's sample `start` on, so one decoder plays song, transition and song, and a player
+   * that starts it at A's AAC frame boundary joins it to the sample. The levels are already in the file.
+   */
+  app.route<{ Params: { file: string }; Querystring: { kbps?: string; start?: string } }>({
+    method: ['GET', 'HEAD'],
+    url: '/transitions/:file/aac',
+    handler: async (req, reply) => {
+      const kbps = Number(req.query.kbps ?? 256);
+      if (!STREAM_KBPS.includes(kbps as StreamKbps)) return reply.code(400).send({ error: 'Invalid bitrate: 128 or 256' });
+      const start = Number(req.query.start ?? 0);
+      if (!Number.isInteger(start) || start < 0) return reply.code(400).send({ error: 'Invalid start' });
+      const { encoded, media } = deps;
+      if (!encoded || !media?.encodedStream) return reply.code(404).send({ error: 'This server doesn’t encode transitions' });
+      const path = transitions?.filePath(req.params.file);
+      const info = path ? await media.stat(path).catch(() => undefined) : undefined;
+      if (!path || !info) return reply.code(404).send({ error: 'Unknown transition' });
+      if (!(await hearable(req, req.params.file))) return reply.code(404).send({ error: 'Unknown transition' });
+      const header = await pcmLength(media, path, info.size).catch(() => null);
+      if (!header?.frames || header.sampleRate !== STREAM_RATE) return reply.code(404).send({ error: 'This transition’s length can’t be read' });
+      const length = header.frames;
+      if (start >= length) return reply.code(400).send({ error: 'That’s past the transition’s end' });
+      // The names are content keys: the same name is the same audio.
+      const etag = `"t-aac${kbps}-${req.params.file}-${start.toString(36)}-${ENCODED_VERSION}"`;
+      return sendEncoded(req, reply, {
+        encoded,
+        codec: 'aac',
+        kbps: kbps as StreamKbps,
+        length,
+        start,
+        seeksExactly: true,
+        etag,
+        key: `transition:${etag}`,
+        encode: (input) => media.encodedStream!(path, { codec: 'aac', kbps, ...input, priority: 'normal' }),
+        what: 'transition',
+        path,
+      });
     },
   });
 }

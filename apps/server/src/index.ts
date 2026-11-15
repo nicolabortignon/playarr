@@ -28,6 +28,7 @@ import { LidarrClient } from './lidarr/client.ts';
 import { CoverColorStore } from './library/coverColorStore.ts';
 import { Library } from './library/library.ts';
 import { EncodedStreams } from './media/encoded.ts';
+import { LocalMediaSource } from './media/local.ts';
 import { createMediaSource } from './media/index.ts';
 import { hasRclone } from './media/rclone.ts';
 import { apiRoutes } from './routes/api.ts';
@@ -230,7 +231,14 @@ mixMapRoutes(app, {
   onCuesChanged: transitions && ((recordingId) => transitions.forget(recordingId)),
   libraryScan: () => readMixSettings(store).analyzeLibrary,
 });
-transitionRoutes(app, { transitions, library, unavailableReason: 'DJ mixing needs audio analysis, which is off on this server' });
+// Transitions are files in this server's cache: read and encoded (for the TV) here, whatever the songs' source.
+transitionRoutes(app, {
+  transitions,
+  library,
+  unavailableReason: 'DJ mixing needs audio analysis, which is off on this server',
+  encoded,
+  media: new LocalMediaSource(config.FFMPEG_PATH),
+});
 lyricsRoutes(app, { lyrics, library });
 discoverRoutes(app, { discover, requests, library });
 favoriteRoutes(app, { favorites, library, recommendations });
