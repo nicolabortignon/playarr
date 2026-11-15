@@ -28,6 +28,10 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import me.tracklistme.playarr.api.ApiJson
+import me.tracklistme.playarr.api.TransitionAnswer
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -86,7 +90,8 @@ class JoinSpike {
     return track.getSampleTimeUs(0) to track.getSampleTimeUs(1)
   }
 
-  private fun play(name: String, sources: List<MediaSource>) {
+  /** Plays `sources` to the end, tapping the output; `meanwhile` runs on the main thread a second in. */
+  private fun play(name: String, sources: List<MediaSource>, meanwhile: ((ExoPlayer) -> Unit)? = null) {
     val dir = context.getExternalFilesDir(null)!!
     val tap = Tap(name, dir)
     val done = CountDownLatch(1)
@@ -107,6 +112,10 @@ class JoinSpike {
       player.setMediaSources(sources)
       player.prepare()
       player.play()
+    }
+    if (meanwhile != null) {
+      Thread.sleep(1000)
+      InstrumentationRegistry.getInstrumentation().runOnMainSync { meanwhile(player) }
     }
     done.await(60, TimeUnit.SECONDS)
     InstrumentationRegistry.getInstrumentation().runOnMainSync { player.release() }
@@ -135,6 +144,24 @@ class JoinSpike {
     // boundary (ts.mp4: /transitions/:file/aac?start=aligned − F, to its end), then B from the sample after it
     // (b.mp4: levelled.aac?start=S). All AAC, so one decoder plays the three.
     play("server", listOf(ClippingMediaSource.Builder(asset("a.mp4")).setEndPositionUs(frameStartUs(k)).build(), asset("ts.mp4"), asset("b.mp4")))
+    // As the TV really does it: A starts uncut (a CuttableMediaSource), and a second in, as a ready transition
+    // arrives, it's cut where Joins says, on the playback thread; the transition from the sample Joins gives (ts2.mp4:
+    // /transitions/:file/aac?start=959, for A's padding of 552), then B. The transition file here starts at F, with
+    // a one-second lead, and B goes on at S.
+    val a = CuttableMediaSource.of(MediaItem.fromUri("asset:///a.mp4"), DefaultDataSource.Factory(context), DefaultLoadErrorHandlingPolicy())
+    val ready = ApiJson.reading.decodeFromString(
+      TransitionAnswer.ByTag,
+      """{"status":"ready","url":"/transitions/x.flac","lead":1,"tail":0,"plan":{"style":"long","aStart":${(F + RATE) / RATE.toDouble()},
+        "bStart":0,"length":1,"bResume":${S / RATE.toDouble()},"switchAt":0,"bRate":[],"aGain":[],"bGain":[],"aLowDb":[],"bLowDb":[],
+        "aHighPassHz":[],"reason":"","beats":0}}""",
+    ) as TransitionAnswer.Ready
+    play("cut", listOf(a, asset("ts2.mp4"), asset("b.mp4"))) { player ->
+      val join = Joins.of(ready, a.trimmed!!)!!
+      Log.i(TAG, "cut: A trims ${a.trimmed}, $join")
+      assertEquals(959L, join.transitionStart)
+      assertEquals(S, join.bStart)
+      player.createMessage { _, _ -> a.cut(join.cutUs) }.setLooper(player.playbackLooper).send()
+    }
     // The control: A alone, as gapless playback of the whole song.
     play("whole", listOf(asset("a.mp4")))
   }
@@ -145,5 +172,6 @@ class JoinSpike {
     const val PRIMING = 2112L
     const val FRAME = 1024L
     const val F = 88_537L
+    const val S = 154_800L
   }
 }
