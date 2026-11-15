@@ -18,6 +18,9 @@ import me.tracklistme.playarr.api.KeystoreSecretStore
 import me.tracklistme.playarr.api.MediaUrls
 import me.tracklistme.playarr.api.ServerBrowser
 import me.tracklistme.playarr.api.ServerStore
+import me.tracklistme.playarr.player.SleepTimer
+import me.tracklistme.playarr.tv.playback.PlaybackSettings
+import me.tracklistme.playarr.tv.playback.PlayerConnection
 import okhttp3.Cache
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -29,7 +32,9 @@ import okhttp3.OkHttpClient
 class PlayarrApp : Application(), SingletonImageLoader.Factory {
   val store: ServerStore by lazy { ServerStore(Preferences(this), KeystoreSecretStore(this)) }
   val browser: ServerBrowser by lazy { ServerBrowser(this) }
-  val player: me.tracklistme.playarr.tv.playback.PlayerConnection by lazy { me.tracklistme.playarr.tv.playback.PlayerConnection(this) }
+  val player: PlayerConnection by lazy { PlayerConnection(this) }
+  val playback: PlaybackSettings by lazy { PlaybackSettings(this) }
+  val sleep: SleepTimer by lazy { SleepTimer() }
 
   val http: OkHttpClient by lazy {
     OkHttpClient.Builder()
@@ -37,6 +42,9 @@ class PlayarrApp : Application(), SingletonImageLoader.Factory {
       .addInterceptor(MediaAuth { media() })
       .build()
   }
+
+  /** The player's: songs are kept in its own cache (PlaybackCache), not with the covers and API answers. */
+  val songHttp: OkHttpClient by lazy { http.newBuilder().cache(null).build() }
 
   val device: DeviceInfo by lazy {
     val name = Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)?.takeIf { it.isNotBlank() } ?: "${Build.MANUFACTURER} ${Build.MODEL}"

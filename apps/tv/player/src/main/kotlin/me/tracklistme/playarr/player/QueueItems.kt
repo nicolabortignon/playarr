@@ -10,25 +10,36 @@ import me.tracklistme.playarr.api.Track
 import me.tracklistme.playarr.api.TrackLevel
 
 /**
- * Songs as Media3 items: the server's encoded stream (AAC at 256 kbps in fragmented MP4, gapless by its iTunSMPB),
- * levelled to the song's gain when even volume knows it (`levelled.aac`, plan 9 §4), with the title, artist, album and
- * cover the system's Now Playing card shows. The Track itself rides along in the extras, so the queue can be read back.
+ * Songs as Media3 items: by default the server's encoded stream (AAC at 256 kbps in fragmented MP4, gapless by its
+ * iTunSMPB), levelled to the song's gain when even volume knows it (`levelled.aac`, plan 9 §4; other qualities in
+ * StreamQuality), with the title, artist, album and cover the system's Now Playing card shows. The Track itself rides
+ * along in the extras, so the queue can be read back.
  */
 public object QueueItems {
-  public const val KBPS: Int = 256
   private const val TRACK = "playarr.track"
 
-  public fun items(queue: List<Track>, levels: Map<String, TrackLevel>, media: MediaUrls, evenVolume: Boolean = true): List<MediaItem> =
-    queue.mapIndexed { index, track ->
+  /**
+   * `queue`'s songs from `from` on, each at its level within the queue (an album in order at the album's): the songs
+   * before `from` are there for that only (the song playing, when more are added after it).
+   */
+  public fun items(
+    queue: List<Track>,
+    levels: Map<String, TrackLevel>,
+    media: MediaUrls,
+    quality: StreamQuality = StreamQuality.High,
+    evenVolume: Boolean = true,
+    from: Int = 0,
+  ): List<MediaItem> =
+    (from until queue.size).map { index ->
+      val track = queue[index]
       val gain = if (evenVolume) levels[track.recordingId]?.let { roundGain(JoinRules.levelDb(queue, index, it)) } else null
-      item(track, media, gain)
+      item(track, quality.uri(track, media, gain), media)
     }
 
-  public fun item(track: Track, media: MediaUrls, gain: Double?): MediaItem =
+  public fun item(track: Track, uri: String, media: MediaUrls): MediaItem =
     MediaItem.Builder()
-      .setMediaId("${track.fileId}:${gain ?: "-"}")
-      .setUri(media.encoded(track, KBPS, gain))
-      .setMimeType("audio/mp4")
+      .setMediaId("${track.fileId}:$uri")
+      .setUri(uri)
       .setMediaMetadata(
         MediaMetadata.Builder()
           .setTitle(track.title)

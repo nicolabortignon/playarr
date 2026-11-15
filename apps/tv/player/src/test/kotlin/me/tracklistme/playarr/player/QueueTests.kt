@@ -15,7 +15,7 @@ internal fun track(id: Int, album: Int = 1, number: Int = id, disc: Int = 1, dur
   Track(
     id = id, recordingId = "track:$id", fileId = id, albumId = album, artistId = 1, title = "Song $id", artistName = "Artist",
     albumTitle = "Album $album", trackNumber = number, discNumber = disc, duration = duration, explicit = false,
-    format = AudioFormat(codec = "flac", container = "flac", lossless = true), size = 1, streamUrl = "/api/stream/$id",
+    format = AudioFormat(codec = "flac", container = "flac", lossless = true), size = 1, streamUrl = "/stream/$id",
   )
 
 class JoinRulesTests {
