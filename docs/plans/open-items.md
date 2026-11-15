@@ -4,6 +4,9 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 
 ## In progress
 
+- The TV app, plan 9: steps 1–3 built (tools, the api module, signing in with a code); not yet run on the TV or an emulator; the TV's `adb` readings; then the gapless and Ambilight spikes, playback, the ten-foot screens, the Ambilight, releases and Google Play. *([2026-11-15-9-tv-client.md](2026-11-15-9-tv-client.md), Progress)*
+- iOS opening a TV's sign-in link (`playarr://link`) itself, rather than in Safari through the web's `/link` page. *(plan 9 §3)*
+
 - App Store launch: the user's decisions, the privacy and support pages, the screenshots, the CI release job, a dry run, the submission. *([2026-11-03-ios-phase11-app-store.md](2026-11-03-ios-phase11-app-store.md))*
 - Checks on a real iPhone, iPad and iPhone Duo: sideways, iPad keyboard, pointer, drag, narrow windows, restoration, VoiceOver, Siri, the Duo's hinge, offline, the server settings panels. *([2026-11-05-ios-device-checklist.md](2026-11-05-ios-device-checklist.md))*
 - iOS offline, in the simulator against the dev server: album download ring and Library → Downloads, a playlist download fetching its transitions, lowering the limit to 512 MB, playing offline with skipped songs, resuming after quitting from the switcher. *(ios-status, phase 7)*

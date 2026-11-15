@@ -49,6 +49,8 @@ cp .env /tmp/playarr-tf/ && cp -R apps/ios/.tools /tmp/playarr-tf/apps/ios/
 make -C /tmp/playarr-tf/apps/ios beta-upload
 ```
 
+**Behind an HTTP proxy.** Node doesn't read `HTTPS_PROXY` on its own, so `release.mjs` gets "no answer from App Store Connect (EPERM)" where only the proxy may reach the internet: run `NODE_USE_ENV_PROXY=1 make beta-upload` (Node 24 and later). The signing step, `xcodebuild -exportArchive`, also needs Xcode's own App Store Connect service, which a sandboxed shell (Claude's) can't reach: there, the archive builds but the export fails ("No signing certificate iOS Distribution found"), and the upload has to run from a normal terminal (found 2026-11-15).
+
 **On a phone without TestFlight.** `pnpm ios:device` builds Debug and installs it on a paired iPhone with `xcrun devicectl` (`DEVICE="name or UDID"` picks one). It signs with the key and `-allowProvisioningDeviceRegistration`, which registers the phone. The phone needs pairing once by cable, Trust, and Developer Mode.
 
 **Crash reports.** `pnpm ios:crashes` (`asc.mjs crashes`) lists crash reports testers sent from TestFlight that haven't been looked at yet, and saves each log to `apps/ios/build/crashes/<date>-<id>.crash`. What's been seen is kept in `build/crashes/seen.json`; `node scripts/asc.mjs crashes --all` (from `apps/ios`, with the `.env` variables set) lists them all again.
