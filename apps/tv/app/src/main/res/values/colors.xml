@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- docs/design.md's palette (apps/web/src/index.css). -->
+<resources>
+  <color name="ink_900">#0F0E0C</color>
+</resources>

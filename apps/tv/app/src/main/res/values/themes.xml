@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Ink behind everything from the first frame, so the TV never flashes white while Compose starts. -->
+  <style name="Theme.Playarr" parent="android:Theme.DeviceDefault.NoActionBar">
+    <item name="android:windowBackground">@color/ink_900</item>
+    <item name="android:colorBackground">@color/ink_900</item>
+  </style>
+</resources>

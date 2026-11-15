@@ -1,7 +1,7 @@
 {
   "name": "playarr",
   "private": true,
-  "version": "0.6.604",
+  "version": "0.6.605",
   "type": "module",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
@@ -14,6 +14,14 @@
     "typecheck": "pnpm -r typecheck",
     "deploy:nas": "node --env-file=.env --disable-warning=ExperimentalWarning docker/deploy.mjs",
     "sim": "node scripts/ios-sim/sim.mjs",
+    "tv:bootstrap": "make -C apps/tv bootstrap",
+    "tv:build": "make -C apps/tv build",
+    "tv:test": "make -C apps/tv test",
+    "tv:install": "make -C apps/tv install",
+    "tv:logs": "make -C apps/tv logs",
+    "tv:meminfo": "make -C apps/tv meminfo",
+    "tv:device-info": "make -C apps/tv device-info",
+    "tv:screens": "make -C apps/tv screens",
     "ios:bootstrap": "make -C apps/ios bootstrap",
     "ios:build": "make -C apps/ios build",
     "ios:test": "make -C apps/ios test",
