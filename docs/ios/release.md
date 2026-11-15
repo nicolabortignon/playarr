@@ -65,7 +65,7 @@ make -C /tmp/playarr-tf/apps/ios beta-upload
 
 Pull requests never see the secrets. On `main` a run is never cancelled mid-upload: a newer push waits, and replaces any run still waiting. Elsewhere a newer push cancels the running one. There's no release job yet: App Store releases run from the Mac.
 
-`.github/workflows/ios-contracts.yml` guards the copies of the app already on phones. On every push and pull request that changes `packages/**`, `apps/server/**` or `apps/ios/**`, it checks `Models.generated.swift` against the TypeScript types (`gen-models.mjs --check`), records every endpoint family afresh from the server's routes (`RECORD_FIXTURES=1`, `contract.test.ts`) and runs `ContractTests` on what was recorded. A server change whose answers the app can't decode fails there, before anyone merges or pushes it further.
+`.github/workflows/contracts.yml` guards the copies of the app already on phones (and, in its `tv` job, the TV app's: docs/tv/README.md). On every push and pull request that changes `packages/**`, `apps/server/**`, `apps/ios/**` or `apps/tv/**`, it checks `Models.generated.swift` against the TypeScript types (`gen-models.mjs --check`), records every endpoint family afresh from the server's routes (`RECORD_FIXTURES=1`, `contract.test.ts`) and runs `ContractTests` on what was recorded. A server change whose answers the app can't decode fails there, before anyone merges or pushes it further.
 
 ### When to raise `minAppVersion`
 

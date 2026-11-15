@@ -2,7 +2,10 @@
 #
 #   make bootstrap   download the pinned JDK and Android SDK into .tools/ (checksums checked), accept the SDK's licenses
 #   make build       a debug APK (app/build/outputs/apk/debug/)
-#   make test        the unit tests and Android Lint
+#   make test        the unit tests (the contract tests among them) and Android Lint
+#   make contracts   only the contract tests: the server's recorded answers decode into the generated models
+#   make models      regenerate the api module's Kotlin models from the shared TypeScript types (models-check: up to date?)
+#   make gradle ARGS=":api:test --tests '*Contract*'"  any Gradle task, with the pinned JDK, SDK and proxy
 #   make install     build, then install and start it on the TV over adb (TV_ADDRESS=192.168.1.42 by default; the TV
 #                    needs Developer options → USB debugging / network debugging on, and accepts the Mac once)
 #   make logs        the app's log from the TV
@@ -51,7 +54,7 @@ APP_ID := me.tracklistme.playarr.tv
 APK := app/build/outputs/apk/debug/app-debug.apk
 SCREENS_ROOT := ../../screenshots/tv
 
-.PHONY: bootstrap jdk sdk build test install connect logs meminfo device-info screens clean
+.PHONY: bootstrap jdk sdk build test contracts models models-check gradle install connect logs meminfo device-info screens clean
 
 bootstrap: jdk sdk
 
@@ -83,6 +86,18 @@ build:
 
 test:
 	$(GRADLE) test lint
+
+contracts:
+	$(GRADLE) :api:testDebugUnitTest --tests 'me.tracklistme.playarr.api.ContractTests'
+
+models:
+	node scripts/gen-models.mjs
+
+models-check:
+	node scripts/gen-models.mjs --check
+
+gradle:
+	$(GRADLE) $(ARGS)
 
 connect:
 	@$(ADB) connect $(TV) | grep -q -E 'connected|already' || { echo "No answer from the TV at $(TV): is network debugging on (Settings → Developer options)?" >&2; exit 1; }

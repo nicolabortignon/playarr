@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // TypeScript API types → Swift Codable models (`pnpm ios:models`).
 //
-// ts-json-schema-generator reads the shared TypeScript types into JSON Schema; the emitter below turns
+// scripts/api-schema.mjs reads the shared TypeScript types into JSON Schema (as for the TV's Kotlin); the emitter below turns
 // that schema into Swift. The output is committed; `--check` fails when it is out of date (CI).
 //
 // Rules (docs/ios/README.md):
@@ -18,25 +18,12 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createGenerator } from 'ts-json-schema-generator';
+import {
+  camel, isIntegerName, isNumberEnum, isObject, isRecord, isStringEnum, loadDefinitions, mixMapVersion, pascal, refName, splitNull, tagOf, trimEnd,
+} from '../../../scripts/api-schema.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../../..');
-const INPUTS = ['packages/shared/src/index.ts', 'packages/mix/src/types.ts'];
 const OUTPUT = resolve(here, '../Packages/PlayarrAPI/Sources/PlayarrAPI/Models.generated.swift');
-/** Exported, but not part of the API. */
-const SKIP = new Set(['parseRange', 'ByteRange', 'wavFallbackOf']);
-/** Numbers that are whole: what the server stores as SQLite integers or counts. */
-const INTEGERS = new Set([
-  'albums', 'albumsComplete', 'albumsIncomplete', 'albumsUnknown', 'analyzed', 'artists', 'audioFiles', 'background', 'batchId', 'beatModel', 'bits', 'channels',
-  'count', 'currentStreak', 'days', 'decadeMixes', 'disc', 'discNumber', 'earlier', 'era', 'failed', 'files', 'freeSpace', 'genreMixes',
-  'have', 'heapTotalBytes', 'heapUsedBytes', 'hour', 'ignored', 'lastCheck', 'lastUpdate', 'latest', 'longestStreak', 'loudnessWaiting', 'loudnessWorking', 'matches',
-  'matched', 'matching', 'moved', 'newArtists', 'pending', 'plays', 'playlists', 'port', 'position', 'profile', 'queued', 'ready',
-  'recorded', 'restored', 'review', 'rssBytes', 'sampleRate', 'sent', 'size', 'sizeBytes', 'songs', 'songsComplete', 'songsIncomplete', 'songsUnknown', 'sources',
-  'status2xx', 'status3xx', 'status4xx', 'status5xx', 'tagsWaiting', 'total', 'trackNumber', 'trackTotal', 'tracks', 'variant', 'version', 'waiting', 'weekday',
-  'working', 'year', 'years',
-]);
-const isIntegerName = (name) => name === 'id' || /(Id|Ids|Count)$/.test(name) || INTEGERS.has(name);
 const KEYWORDS = new Set([
   'associatedtype', 'class', 'deinit', 'enum', 'extension', 'func', 'import', 'init', 'inout', 'internal', 'let',
   'operator', 'private', 'protocol', 'public', 'static', 'struct', 'subscript', 'typealias', 'var', 'break',
@@ -45,70 +32,12 @@ const KEYWORDS = new Set([
   'Self', 'throw', 'throws', 'true', 'try', 'Type', 'Protocol', 'any', 'some',
 ]);
 
-function loadDefinitions() {
-  const definitions = {};
-  for (const input of INPUTS) {
-    const schema = createGenerator({
-      path: resolve(root, input),
-      type: '*',
-      expose: 'export',
-      topRef: true,
-      jsDoc: 'extended',
-      skipTypeCheck: true,
-      additionalProperties: false,
-    }).createSchema('*');
-    for (const [name, def] of Object.entries(schema.definitions ?? {})) {
-      if (SKIP.has(name)) continue;
-      if (definitions[name]) throw new Error(`${name} is exported by two inputs`);
-      definitions[name] = def;
-    }
-  }
-  return definitions;
-}
-
-const pascal = (s) => s.replace(/(^|[^A-Za-z0-9]+)([A-Za-z0-9])/g, (_, __, c) => c.toUpperCase());
-const camel = (s) => {
-  const p = pascal(s);
-  return p.charAt(0).toLowerCase() + p.slice(1);
-};
 const ident = (name) => (KEYWORDS.has(name) ? `\`${name}\`` : name);
 const caseName = (value) => {
   if (value === 'none') return 'noneValue'; // `.none` would be read as Optional.none
   if (value === 'unknown') throw new Error('"unknown" is the fallback case name');
   return ident(camel(value));
 };
-const refName = (schema) => schema.$ref?.replace('#/definitions/', '');
-const trimEnd = (lines) => {
-  while (lines.at(-1) === '') lines.pop();
-  return lines;
-};
-const nonNull = (types) => (Array.isArray(types) ? types.filter((t) => t !== 'null') : [types]);
-
-/** Strips `null` from a schema: { schema, nullable }. */
-function splitNull(schema) {
-  if (Array.isArray(schema.type) && schema.type.includes('null')) {
-    const rest = nonNull(schema.type);
-    return { schema: { ...schema, type: rest.length === 1 ? rest[0] : rest }, nullable: true };
-  }
-  const options = schema.anyOf;
-  if (options?.some((o) => o.type === 'null')) {
-    const rest = options.filter((o) => o.type !== 'null');
-    return { schema: rest.length === 1 ? { ...rest[0], description: schema.description } : { ...schema, anyOf: rest }, nullable: true };
-  }
-  return { schema, nullable: false };
-}
-
-const isStringEnum = (s) => s.type === 'string' && Array.isArray(s.enum);
-const isNumberEnum = (s) => s.type === 'number' && Array.isArray(s.enum);
-const isObject = (s) => s.type === 'object' && s.properties;
-const isRecord = (s) => s.type === 'object' && !s.properties && typeof s.additionalProperties === 'object';
-const tagOf = (s) => {
-  const options = s.anyOf;
-  if (!options?.length || !options.every(isObject)) return undefined;
-  const tag = Object.keys(options[0].properties).find((key) => options.every((o) => typeof o.properties[key]?.const === 'string'));
-  return tag;
-};
-
 function docLines(description, indent) {
   if (!description) return [];
   return description.split('\n').map((line) => `${indent}/// ${line}`.trimEnd());
@@ -301,13 +230,6 @@ function emitSwift(definitions) {
     }
   }
   return out;
-}
-
-/** The MIX_MAP_VERSION constant, which JSON Schema doesn't carry. */
-function mixMapVersion() {
-  const match = /export const MIX_MAP_VERSION = (\d+);/.exec(readFileSync(resolve(root, 'packages/mix/src/types.ts'), 'utf8'));
-  if (!match) throw new Error('MIX_MAP_VERSION not found in packages/mix/src/types.ts');
-  return Number(match[1]);
 }
 
 function render() {

@@ -1,4 +1,5 @@
-// Playarr on the TV (plan 9). Modules: app (the screens); api and player come with steps 2 and 4.
+// Playarr on the TV (plan 9). Modules: api (models, client, servers, tokens) and app (the screens); player comes with
+// step 4. app depends on api.
 pluginManagement {
   repositories {
     google()
@@ -16,4 +17,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "playarr-tv"
-include(":app")
+include(":api", ":app")

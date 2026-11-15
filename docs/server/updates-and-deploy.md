@@ -244,6 +244,6 @@ For edge installs (the owner's NAS among them) there's no separate release step:
 
 Stable installs follow GitHub releases: publish one on a commit whose check has passed, its tag named after the version (`gh release create v0.6.600 --target <commit> --generate-notes`), and each picks it up at its next check. Pre-releases and drafts don't count.
 
-Watch the result in Settings → Updates or the compose logs. CI is three workflows: `.github/workflows/server-web.yml` typechecks and tests the shared packages, the server and the web app on every push and pull request, on the Docker image's Node (the web's smoke tests need a server, so they're skipped there), and its job's check run, "Server and web", is what the updater waits for; `.github/workflows/ios-contracts.yml` checks the iOS app's models against the server's answers; `.github/workflows/ios.yml` tests the iOS app and uploads TestFlight builds.
+Watch the result in Settings → Updates or the compose logs. CI is three workflows: `.github/workflows/server-web.yml` typechecks and tests the shared packages, the server and the web app on every push and pull request, on the Docker image's Node (the web's smoke tests need a server, so they're skipped there), and its job's check run, "Server and web", is what the updater waits for; `.github/workflows/contracts.yml` checks the iOS and TV apps' models against the server's answers; `.github/workflows/ios.yml` tests the iOS app and uploads TestFlight builds.
 
 See also [../decisions.md](../decisions.md) for why things are this way.
