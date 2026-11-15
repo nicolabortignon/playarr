@@ -1,118 +1,104 @@
 package me.tracklistme.playarr.tv.ui.home
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
-import me.tracklistme.playarr.api.Api
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
-import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
-import coil3.compose.AsyncImage
-import me.tracklistme.playarr.api.Album
-import me.tracklistme.playarr.api.AccountRecord
+import kotlinx.coroutines.launch
+import me.tracklistme.playarr.api.AlbumSort
+import me.tracklistme.playarr.api.Api
+import me.tracklistme.playarr.api.MixSummary
 import me.tracklistme.playarr.tv.playarr
+import me.tracklistme.playarr.tv.ui.common.Art
+import me.tracklistme.playarr.tv.ui.common.CardWidth
+import me.tracklistme.playarr.tv.ui.common.CoverCard
+import me.tracklistme.playarr.tv.ui.common.Load
+import me.tracklistme.playarr.tv.ui.common.Margins
+import me.tracklistme.playarr.tv.ui.common.cardRow
+import me.tracklistme.playarr.tv.ui.common.rememberLoad
+import me.tracklistme.playarr.tv.ui.shell.Route
+import me.tracklistme.playarr.tv.ui.shell.nav
 import me.tracklistme.playarr.tv.ui.theme.Palette
 import me.tracklistme.playarr.tv.ui.theme.Type
 
 /**
- * Step 2's proof that the TV talks to the server: the library's albums, newest first, with who's listening and the
- * accounts to switch to. Step 5 replaces it with Home, Search, Library and Settings on a side rail.
+ * Home (plan 9 §5): Jump back in (the albums played lately), Made for you (the server's mixes, and Feeling Lucky),
+ * and Recently added. Each row is asked for on its own, so a slow one doesn't hold the others up.
  */
 @Composable
-fun HomeScreen(account: AccountRecord, others: List<AccountRecord>, onSwitch: (AccountRecord) -> Unit, onAddAccount: () -> Unit, onSignOut: () -> Unit) {
-  val model: AlbumsModel = viewModel(key = "albums-${account.id}")
-  val state by model.current.collectAsStateWithLifecycle()
+fun HomeScreen(name: String) {
+  val recent by rememberLoad { it.send(Api.Library.recentAlbums()) }
+  val mixes by rememberLoad { it.send(Api.Mixes.list()) }
+  val added by rememberLoad { it.send(Api.Library.albums(AlbumSort.Added, limit = 24)) }
+  val nav = nav()
   val app = LocalContext.current.playarr
-  val now by app.player.current.collectAsStateWithLifecycle()
   val scope = rememberCoroutineScope()
-  Column(Modifier.fillMaxSize().background(Palette.ink900).padding(horizontal = 58.dp, vertical = 28.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      Column(Modifier.weight(1f)) {
-        Text("LISTENING AS ${account.name.uppercase()}", style = Type.kicker)
-        Text("Albums", style = Type.pageTitle)
-      }
-      now.track?.let { track ->
-        OutlinedButton(onClick = { app.player.toggle() }) {
-          Text("${if (now.playing) "Pause" else "Play"} · ${track.title} — ${track.artistName}", style = Type.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-      }
-      state.total?.let { Text("$it", style = Type.meta) }
-      others.forEach { other -> OutlinedButton(onClick = { onSwitch(other) }) { Text("Listen as ${other.name}", style = Type.label) } }
-      OutlinedButton(onClick = onAddAccount) { Text("Add account", style = Type.label) }
-      OutlinedButton(onClick = onSignOut) { Text("Sign out", style = Type.label) }
+  val failed = listOf(recent, mixes, added).filterIsInstance<Load.Failed>().firstOrNull()
+  LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Margins.Horizontal, end = Margins.Horizontal, top = Margins.Vertical, bottom = 48.dp)) {
+    item(key = "title") {
+      Text("LISTENING AS ${name.uppercase()}", style = Type.kicker)
+      Text("Home", style = Type.pageTitle)
+      failed?.let { Text(it.message, style = Type.small.copy(color = Palette.danger), modifier = Modifier.padding(top = 8.dp)) }
     }
-    Spacer(Modifier.height(20.dp))
-    state.error?.let { Text(it, style = Type.small.copy(color = Palette.danger)) }
-    LazyVerticalGrid(
-      columns = GridCells.Adaptive(150.dp),
-      contentPadding = PaddingValues(vertical = 12.dp),
-      horizontalArrangement = Arrangement.spacedBy(24.dp),
-      verticalArrangement = Arrangement.spacedBy(24.dp),
-    ) {
-      itemsIndexed(state.albums, key = { _, album -> album.id }) { index, album ->
-        if (index >= state.albums.size - 12) model.more()
-        AlbumCard(album) {
-          scope.launch {
-            val client = app.client() ?: return@launch
-            runCatching { client.send(Api.Library.album(album.id)) }.onSuccess { app.player.play(it.tracks) }
+    cardRow("Jump back in", (recent as? Load.Done)?.value.orEmpty(), key = { "r${it.id}" }) { album ->
+      CoverCard(album.title, album.artistName, album.coverUrl, album.coverColor) { nav.go(Route.Album(album.id)) }
+    }
+    val made = (mixes as? Load.Done)?.value.orEmpty()
+    if (made.isNotEmpty()) {
+      cardRow("Made for you", listOf<MixSummary?>(null) + made, key = { it?.key ?: "lucky" }) { mix ->
+        if (mix == null) {
+          MixCard("Feeling Lucky", "Fifteen songs, picked now", null, 30.0) {
+            scope.launch {
+              val client = app.client() ?: return@launch
+              runCatching { client.send(Api.Mixes.lucky()) }.onSuccess { app.player.play(it.tracks) }
+            }
           }
+        } else {
+          MixCard(mix.title, mix.subtitle, mix.covers.firstOrNull(), mix.hue) { nav.go(Route.Mix(mix.key)) }
         }
       }
+    }
+    cardRow("Recently added", (added as? Load.Done)?.value.orEmpty(), key = { "a${it.id}" }) { album ->
+      CoverCard(album.title, album.artistName, album.coverUrl, album.coverColor) { nav.go(Route.Album(album.id)) }
     }
   }
 }
 
-/** A cover that grows on focus, with the title and artist under it. The cover is asked for at the size it's shown. */
+/** A mix: its cover washed in its hue, its name on it, the subtitle under. */
 @Composable
-private fun AlbumCard(album: Album, onClick: () -> Unit) {
-  val media = LocalContext.current.playarr.media()
-  val pixels = with(LocalDensity.current) { 150.dp.roundToPx() }
-  Column {
-    Card(
-      onClick = onClick,
-      shape = CardDefaults.shape(RoundedCornerShape(4.dp)),
-      scale = CardDefaults.scale(focusedScale = 1.08f),
-      modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-    ) {
-      AsyncImage(
-        model = media?.art(album.coverUrl, pixels),
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize().background(album.coverColor?.let(::parse) ?: Palette.ink800),
-      )
+private fun MixCard(title: String, subtitle: String, cover: String?, hue: Double, onClick: () -> Unit) {
+  val tint = Color.hsv((((hue % 360) + 360) % 360).toFloat(), 0.55f, 0.45f)
+  Column(Modifier.width(CardWidth.Large)) {
+    Card(onClick = onClick, shape = CardDefaults.shape(RoundedCornerShape(6.dp)), scale = CardDefaults.scale(focusedScale = 1.06f), modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+      Box(Modifier.fillMaxSize().background(tint)) {
+        cover?.let { Art(it, CardWidth.Large, null, Modifier.fillMaxSize()) }
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, tint.copy(alpha = 0.9f)))))
+        Text(title, style = Type.sectionTitle, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(16.dp))
+      }
     }
     Spacer(Modifier.height(10.dp))
-    Text(album.title, style = Type.small.copy(color = Palette.paper), maxLines = 1, overflow = TextOverflow.Ellipsis)
-    Text(album.artistName, style = Type.meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(subtitle, style = Type.meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
   }
 }
-
-/** "#rrggbb" → Color; null when it isn't one. */
-private fun parse(hex: String): Color? = hex.removePrefix("#").toLongOrNull(16)?.takeIf { hex.length == 7 }?.let { Color(0xFF000000 or it) }

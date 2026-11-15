@@ -45,6 +45,9 @@ object Type {
   val meta = TextStyle(fontFamily = DmMono, fontSize = 15.sp, color = Palette.muted)
   /** A button's label: no color of its own, so it takes the button's, ink on the paper a focused button turns. */
   val label = TextStyle(fontFamily = Schibsted, fontSize = 18.sp, lineHeight = 24.sp)
+  /** A list row's title and line under it: no color of their own, so a focused row (paper) shows them in ink. */
+  val rowTitle = TextStyle(fontFamily = Schibsted, fontSize = 20.sp, lineHeight = 26.sp)
+  val rowDetail = TextStyle(fontFamily = Schibsted, fontSize = 16.sp, lineHeight = 22.sp)
   /** The sign-in code: big enough to read across the room. */
   val code = TextStyle(fontFamily = DmMono, fontWeight = FontWeight.Medium, fontSize = 64.sp, letterSpacing = 0.12.em, color = Palette.paper)
 }

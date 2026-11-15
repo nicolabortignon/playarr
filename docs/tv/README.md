@@ -111,3 +111,30 @@ the web):
 - **History** (`PlayTracker`, as iOS's): each song is reported when it stops being the current one, with the seconds
   actually heard (a seek doesn't count) and the local hour and weekday (0 = Sunday). 30 s heard, or half a shorter song,
   is a play; changed after 3 s, a skip; closing the app is neither. Reports the server didn't get go again with the next.
+
+## The screens (plan 9 §5)
+
+Compose for TV (`androidx.tv:tv-material`), in `app/…/ui/`, laid out for 1920×1080 at three metres in the palette and
+type of [design.md](../design.md):
+
+- **`shell/`**: `Shell` is the side rail (the account, Home, Search, Library, Discover, Now Playing while something
+  plays, Settings; it opens as the focus enters it) and the page beside it. `Navigator` keeps the pages opened as a
+  stack of `Route`s, each saved as a line of text (`album:12`, `mix:daily:2`), so the page survives the TV reclaiming
+  the app. Back goes up a page; from a section's own page it goes to the rail, then out. A rail section starts afresh;
+  Now Playing opens on top of the page you were on. Each page opens with the focus in it (where the page puts it, else
+  its first item), not on the rail.
+- **Pages**: Home (Jump back in, Made for you with Feeling Lucky, Recently added), Library (albums paged, artists,
+  playlists, favorites), album, artist, playlist and mix pages led by Play and Shuffle, Search (the server's search
+  as you type, a quarter of a second after the last key), Discover (artists and albums from MusicBrainz, requesting
+  as the account's request access allows, with Requests), Settings and Now Playing.
+- **Typing**: `SearchEntry` is a button until OK, so the TV's keyboard doesn't cover the page as it opens; the
+  keyboard's microphone key, where the remote has one, types by voice.
+- **Now Playing**: the cover large on its accent (`coverAccent`), the song, where it is, the transport, the sleep
+  timer, and the synced lyrics or what's up next. After a minute without a key it turns to **art mode** for OLED
+  screens: the cover drifts over minutes, the text dims, the rail is covered and nothing bright stands still. The
+  first key only wakes it.
+- **Common pieces** (`common/`): `rememberLoad`/`Loaded` for an answer from the server, `CoverCard` (grows on focus),
+  `TrackRow`, `PageHeader`, and `Art`, which asks `/art` for the pixels the card shows. Coil's memory cache is capped
+  at 32 MB.
+- **Opening a page from outside**: `adb shell am start -n me.tracklistme.playarr.tv/.MainActivity --es route album:12`
+  (the activity is `singleTop`, so a running app goes there too): for screenshots now, for the TV's links later.

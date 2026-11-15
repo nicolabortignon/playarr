@@ -25,6 +25,7 @@ androidx-activity-compose = { module = "androidx.activity:activity-compose", ver
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
+compose-material-icons = { module = "androidx.compose.material:material-icons-core" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 tv-material = { module = "androidx.tv:tv-material", version.ref = "tvMaterial" }
 junit = { module = "junit:junit", version.ref = "junit" }
