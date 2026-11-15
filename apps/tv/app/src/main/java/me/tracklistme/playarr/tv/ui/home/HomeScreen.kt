@@ -53,9 +53,9 @@ fun HomeScreen(account: AccountRecord, others: List<AccountRecord>, onSwitch: (A
         Text("Albums", style = Type.pageTitle)
       }
       state.total?.let { Text("$it", style = Type.meta) }
-      others.forEach { other -> OutlinedButton(onClick = { onSwitch(other) }) { Text("Listen as ${other.name}", style = Type.small) } }
-      OutlinedButton(onClick = onAddAccount) { Text("Add account", style = Type.small) }
-      OutlinedButton(onClick = onSignOut) { Text("Sign out", style = Type.small) }
+      others.forEach { other -> OutlinedButton(onClick = { onSwitch(other) }) { Text("Listen as ${other.name}", style = Type.label) } }
+      OutlinedButton(onClick = onAddAccount) { Text("Add account", style = Type.label) }
+      OutlinedButton(onClick = onSignOut) { Text("Sign out", style = Type.label) }
     }
     Spacer(Modifier.height(20.dp))
     state.error?.let { Text(it, style = Type.small.copy(color = Palette.danger)) }

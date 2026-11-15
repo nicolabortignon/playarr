@@ -107,8 +107,8 @@ private fun Finding(
             ListItem(
               selected = false,
               onClick = { choose(server) },
-              headlineContent = { Text(server.name, style = Type.body) },
-              supportingContent = { Text(URI(server.baseUrl).authority ?: server.baseUrl, style = Type.meta) },
+              headlineContent = { Text(server.name, style = Type.label) },
+              supportingContent = { Text(URI(server.baseUrl).authority ?: server.baseUrl, style = Type.meta.copy(color = androidx.compose.ui.graphics.Color.Unspecified)) },
               modifier = if (server == servers.first()) Modifier.focusRequester(first) else Modifier,
             )
           }
@@ -120,14 +120,28 @@ private fun Finding(
       Spacer(Modifier.height(8.dp))
       AddressField(address, { address = it }, onDone = { type(address) })
       Spacer(Modifier.height(16.dp))
-      OutlinedButton(onClick = { type(address) }, enabled = address.isNotBlank()) { Text("Connect", style = Type.body) }
+      OutlinedButton(onClick = { type(address) }, enabled = address.isNotBlank()) { Text("Connect", style = Type.label) }
     }
   }
 }
 
+/**
+ * The address: a button until it's chosen, so the keyboard doesn't cover the screen the moment it opens (focus lands on
+ * the first thing it can), then a field with the keyboard up; Go on the keyboard connects.
+ */
 @Composable
 private fun AddressField(value: String, onChange: (String) -> Unit, onDone: () -> Unit) {
+  var editing by remember { mutableStateOf(false) }
   var focused by remember { mutableStateOf(false) }
+  val field = remember { FocusRequester() }
+  val shape = RoundedCornerShape(12.dp)
+  if (!editing) {
+    OutlinedButton(onClick = { editing = true }, modifier = Modifier.fillMaxWidth()) {
+      Text(value.ifEmpty { "Type an address" }, style = Type.label)
+    }
+    return
+  }
+  LaunchedEffect(Unit) { runCatching { field.requestFocus() } }
   BasicTextField(
     value = value,
     onValueChange = onChange,
@@ -135,18 +149,25 @@ private fun AddressField(value: String, onChange: (String) -> Unit, onDone: () -
     textStyle = Type.body,
     cursorBrush = SolidColor(Palette.accent),
     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
-    keyboardActions = KeyboardActions(onGo = { onDone() }),
+    keyboardActions = KeyboardActions(onGo = {
+      editing = false
+      onDone()
+    }),
     decorationBox = { inner ->
       Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        if (value.isEmpty()) Text("192.168.1.103:4000 or music.example.com", style = Type.body.copy(color = Palette.muted))
+        if (value.isEmpty()) Text("192.168.1.103:4000", style = Type.body.copy(color = Palette.muted))
         inner()
       }
     },
     modifier = Modifier
       .fillMaxWidth()
-      .onFocusChanged { focused = it.isFocused }
-      .background(Palette.ink800, RoundedCornerShape(12.dp))
-      .border(2.dp, if (focused) Palette.paper else Palette.line, RoundedCornerShape(12.dp)),
+      .focusRequester(field)
+      .onFocusChanged {
+        if (focused && !it.isFocused) editing = false
+        focused = it.isFocused
+      }
+      .background(Palette.ink800, shape)
+      .border(2.dp, if (focused) Palette.paper else Palette.line, shape),
   )
 }
 
@@ -180,7 +201,7 @@ private fun Message(title: String, text: String, action: Pair<String, () -> Unit
     Text(text, style = Type.small)
     action?.let { (label, onClick) ->
       Spacer(Modifier.height(32.dp))
-      Button(onClick = onClick, modifier = Modifier.focusRequester(focus)) { Text(label, style = Type.body) }
+      Button(onClick = onClick, modifier = Modifier.focusRequester(focus)) { Text(label, style = Type.label) }
       LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     }
   }

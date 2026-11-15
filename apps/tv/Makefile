@@ -12,6 +12,9 @@
 #   make meminfo     the app's memory on the TV (dumpsys meminfo), the number plan 9 keeps under 200 MB
 #   make device-info the TV's Android version, RAM, heap limit and low-RAM flag (plan 9's table)
 #   make screens     a screenshot of what the TV shows, in screenshots/tv/ at the repo root
+#   make emulator    boot an Android TV emulator (2 GB, Android 16) without a window; then TV=emulator-5554 make install …
+#   make demo        a local Playarr with a made-up library for the emulator, at http://10.0.2.2:4620 there
+#                    (scripts/demo-server.mjs; `node scripts/demo-server.mjs approve CODE` signs a TV in as its owner)
 #   make clean       remove build output
 #
 # Nothing comes from Homebrew (not writable on the owner's Mac): the JDK, the SDK and Gradle (through the checked-in
@@ -49,12 +52,15 @@ endif
 
 GRADLE := ./gradlew --console=plain
 TV_ADDRESS ?= 192.168.1.42
-TV := $(TV_ADDRESS):5555
+# The device adb talks to: the owner's TV over the network, or TV=emulator-5554 for the emulator.
+TV ?= $(TV_ADDRESS):5555
+EMULATOR_IMAGE := system-images;android-36;android-tv;arm64-v8a
+export ANDROID_AVD_HOME := $(TOOLS)/avd
 APP_ID := me.tracklistme.playarr.tv
 APK := app/build/outputs/apk/debug/app-debug.apk
 SCREENS_ROOT := ../../screenshots/tv
 
-.PHONY: bootstrap jdk sdk build test contracts models models-check gradle install connect logs meminfo device-info screens clean
+.PHONY: bootstrap jdk sdk build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
 
 bootstrap: jdk sdk
 
@@ -100,11 +106,12 @@ gradle:
 	$(GRADLE) $(ARGS)
 
 connect:
-	@$(ADB) connect $(TV) | grep -q -E 'connected|already' || { echo "No answer from the TV at $(TV): is network debugging on (Settings → Developer options)?" >&2; exit 1; }
+	@case "$(TV)" in emulator-*) exit 0 ;; esac; \
+	$(ADB) connect $(TV) | grep -q -E 'connected|already' || { echo "No answer from the TV at $(TV): is network debugging on (Settings → Developer options)?" >&2; exit 1; }
 
 install: build connect
 	$(ADB) -s $(TV) install -r $(APK)
-	$(ADB) -s $(TV) shell monkey -p $(APP_ID) -c android.intent.category.LEANBACK_LAUNCHER 1 >/dev/null
+	$(ADB) -s $(TV) shell am start -n $(APP_ID)/.MainActivity >/dev/null
 
 logs: connect
 	$(ADB) -s $(TV) logcat --pid=$$($(ADB) -s $(TV) shell pidof -s $(APP_ID))
@@ -123,6 +130,18 @@ device-info: connect
 screens: connect
 	@set -e; mkdir -p $(SCREENS_ROOT); f=$(SCREENS_ROOT)/$$(date +%Y%m%d-%H%M%S).png; \
 	$(ADB) -s $(TV) exec-out screencap -p > $$f; echo "$$f"
+
+emulator: $(JAVA_HOME)/bin/java $(SDKMANAGER)
+	@set -e; \
+	[ -d $(ANDROID_HOME)/system-images/android-36/android-tv ] || yes | $(SDKMANAGER) $(SDK_PROXY) emulator '$(EMULATOR_IMAGE)' >/dev/null; \
+	[ -d $(ANDROID_AVD_HOME)/playarr-tv.avd ] || { mkdir -p $(ANDROID_AVD_HOME); echo no | $(ANDROID_HOME)/cmdline-tools/latest/bin/avdmanager create avd -n playarr-tv -k '$(EMULATOR_IMAGE)' -d tv_1080p >/dev/null; echo hw.ramSize=2048 >> $(ANDROID_AVD_HOME)/playarr-tv.avd/config.ini; }; \
+	$(ADB) start-server >/dev/null; \
+	$(ANDROID_HOME)/emulator/emulator -avd playarr-tv -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot > build/emulator.log 2>&1 & \
+	until [ "$$($(ADB) -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do sleep 2; done; \
+	echo "Emulator up: TV=emulator-5554 make install"
+
+demo:
+	node scripts/demo-server.mjs
 
 clean:
 	rm -rf build app/build .gradle

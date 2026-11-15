@@ -26,9 +26,30 @@ Gradle comes through the checked-in wrapper (9.9.1, its distribution pinned by S
 
 ## The TV and adb
 
-On the TV, once: Settings → Android settings → Device preferences → About → Build, seven times; then Developer options
-→ USB debugging (and network debugging where the firmware lists it). The first `pnpm tv:install` makes the TV ask
-whether to trust this Mac: tick "Always allow".
+No cable is needed: adb, which installs the app, works over the network.
+
+1. On the TV: Settings → Android settings → Device preferences → About → **Build**, seven times, for Developer options.
+2. Developer options → **USB debugging** on (on Android TV it also opens adb on the network, port 5555), and **Wireless
+   debugging** or **Network debugging** where the firmware lists one.
+3. With *Wireless debugging* (Android 11 and later), pair once: "Pair device with pairing code" on the TV, then
+   `apps/tv/.tools/android-sdk/platform-tools/adb pair <TV address>:<port shown> <code shown>` on the Mac.
+4. `pnpm tv:install` (from the repo, in a terminal: Claude's shell can't reach the home network). The TV asks to allow
+   debugging from this computer once: "Always allow".
+
+Without adb at all, the free **Downloader** app (AFTVnews) on the TV fetches an APK from an address and installs it
+once "install unknown apps" is allowed for it; plan 9 §7 makes GitHub releases that address, and the app then updates
+itself. Later, Google Play's internal testing track installs it like any app.
+
+## The emulator and a demo server
+
+For work without the TV: `make -C apps/tv emulator` boots an Android TV emulator (Android 16, 2 GB, no window) and
+`make -C apps/tv demo` starts a local Playarr with a made-up library (twelve invented albums of three seconds of silence
+each, with covers drawn for them: no ffmpeg or music needed), claimed by an owner account. Then:
+
+- `TV=emulator-5554 make -C apps/tv install`; on the TV, type the address `10.0.2.2:4620` (the emulator's name for the
+  Mac);
+- `node apps/tv/scripts/demo-server.mjs approve <code>` approves the code the TV shows, as a phone would;
+- `TV=emulator-5554 make -C apps/tv screens` saves what it shows to `screenshots/tv/`.
 
 ## Modules
 
