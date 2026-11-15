@@ -90,10 +90,11 @@ struct DetailHeader<Cover: View, Title: View, Meta: View, Actions: View>: View {
 
 /// How big a detail header's cover is on a phone.
 enum DetailCover {
-  /// 64 % of the width, at most 256 points; an artist's circle 40 %, at most 160 (the web's `min(64vw, 256px)` and
-  /// `min(40vw, 160px)`). Small enough that Play shows on the first screen; `small` (an empty playlist) as the circle.
+  /// Three quarters of the width, as big as Now Playing's cover on the same phone (about 300 points on an iPhone 17 Pro,
+  /// 240 on an SE), so a song's cover is the same size on its album and in the player; an artist's circle 40 %, at most
+  /// 160 (the web's `min(40vw, 160px)`); `small` (an empty playlist) as the circle, so its line shows on the first screen.
   static func side(width: CGFloat, round: Bool, small: Bool = false) -> CGFloat {
-    round || small ? min(width * 0.4, 160) : min(width * 0.64, 256)
+    round || small ? min(width * 0.4, 160) : (width * 0.75).rounded()
   }
 }
 

@@ -77,7 +77,7 @@ struct AlbumView: View {
   private func header(_ album: AlbumDetail, cover: Bool) -> some View {
     DetailHeader(kicker: model.kicker ?? "Album", overArt: true, showsCover: cover) {
       // Tilting with the phone, as Now Playing's does; not while Now Playing is open over the page.
-      Cover(path: album.coverUrl, points: 256, label: album.title, color: album.coverColor)
+      Cover(path: album.coverUrl, points: 330, label: album.title, color: album.coverColor)
         .tiltsWithPhone(corner: Radius.cover, active: !session.router.nowPlaying)
     } title: {
       DetailTitle(album.title)

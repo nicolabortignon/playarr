@@ -25,9 +25,11 @@ struct NowPlayingBackdrop: View {
       if !Self.isFlat(contrast: contrast, reducesTransparency: reducesTransparency) {
         TimelineView(.animation(minimumInterval: Self.step, paused: reducesMotion), content: Self.drifting(blurred, since: start, still: reducesMotion))
           .animation(reducesMotion ? nil : .easeInOut(duration: 1.2), value: track.coverUrl)
-        RadialGradient(colors: [.clear, .black.opacity(0.5), .black.opacity(0.92)], center: .top, startRadius: 0, endRadius: 700)
-        // A dark wash over it all, so words stay readable over a bright cover.
-        Color.black.opacity(0.3)
+        // Darker towards the foot, where the controls are; light enough at the top that the cover's color reads as
+        // strongly as the album page's wash.
+        RadialGradient(colors: [.clear, .black.opacity(0.3), .black.opacity(0.75)], center: .top, startRadius: 0, endRadius: 900)
+        // A faint dark wash over it all, so words stay readable over a bright cover.
+        Color.black.opacity(0.15)
       }
     }
     .ignoresSafeArea()
@@ -40,7 +42,7 @@ struct NowPlayingBackdrop: View {
   }
 
   private var blurred: some View {
-    Cover(path: track.coverUrl, points: 300, color: track.coverColor).scaleEffect(1.5).blur(radius: 90).opacity(0.55).saturation(1.5)
+    Cover(path: track.coverUrl, points: 300, color: track.coverColor).scaleEffect(1.5).blur(radius: 90).opacity(0.75).saturation(1.5)
       .id(track.coverUrl)
       .transition(.opacity)
   }

@@ -11,9 +11,9 @@ import Testing
     #expect(MetaLine.join([nil, ""]) == "")
   }
 
-  @Test func aPhonesCoverLeavesRoomForPlayOnTheFirstScreen() {
-    #expect(DetailCover.side(width: 402, round: false) == 256)
-    #expect(DetailCover.side(width: 375, round: false) == 240)
+  @Test func aPhonesCoverIsAsBigAsNowPlayingsAndAnArtistsCircleSmaller() {
+    #expect(DetailCover.side(width: 402, round: false) == 302)
+    #expect(DetailCover.side(width: 320, round: false) == 240)
     #expect(DetailCover.side(width: 402, round: true) == 160)
     #expect(DetailCover.side(width: 320, round: true) == 128)
     // A playlist with nothing in it yet: as small as the circle, so its line shows on the first screen.

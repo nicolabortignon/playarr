@@ -2,7 +2,7 @@ import PlayarrAPI
 import SwiftUI
 
 /// Now Playing's cover, as an object (plan 7 §3; docs/design.md, Moments; the web's `CoverObject`): paused, it settles
-/// back (smaller, its shadow softer) and lifts again on Play, so you can tell from across the room; it tilts up to 2°
+/// back (smaller, its shadow softer) and lifts again on Play, so you can tell from across the room; it tilts up to 1°
 /// with the phone, catching a faint sheen on the edge that comes toward you (`tiltsWithPhone`). It settles back without
 /// moving, and doesn't tilt, under Reduce Motion.
 struct NowPlayingCover: View {

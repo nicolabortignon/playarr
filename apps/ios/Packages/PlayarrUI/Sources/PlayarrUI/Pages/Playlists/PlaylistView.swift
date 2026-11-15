@@ -91,7 +91,7 @@ struct PlaylistView: View {
 
   /// The page's own cover (without the name drawn on it: it's beside it), which opens the cover picker on your own
   /// playlists, and says so when the songs have moved on from it.
-  @ViewBuilder private func cover(_ playlist: PlaylistDetail, points: CGFloat = 256) -> some View {
+  @ViewBuilder private func cover(_ playlist: PlaylistDetail, points: CGFloat = 330) -> some View {
     let art = PlaylistCover(cover: playlist.cover, points: points, name: playlist.name, titled: false)
     if model.canPickCover {
       Button { pickingCover = true } label: {
