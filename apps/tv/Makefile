@@ -16,6 +16,7 @@
 #   make demo        a local Playarr with a made-up library for the emulator, at http://10.0.2.2:4620 there, with a
 #                    pinned ffmpeg in .tools/ for the streams it plays
 #                    (scripts/demo-server.mjs; `node scripts/demo-server.mjs approve CODE` signs a TV in as its owner)
+#   make join-test   the DJ-transition join spike on the TV or emulator, checked sample by sample
 #   make clean       remove build output
 #
 # Nothing comes from Homebrew (not writable on the owner's Mac): the JDK, the SDK and Gradle (through the checked-in
@@ -65,7 +66,7 @@ APP_ID := me.tracklistme.playarr.tv
 APK := app/build/outputs/apk/debug/app-debug.apk
 SCREENS_ROOT := ../../screenshots/tv
 
-.PHONY: bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
+.PHONY: join-test bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
 
 bootstrap: jdk sdk
 
@@ -156,6 +157,15 @@ $(TOOLS)/ffmpeg/ffmpeg:
 
 demo: ffmpeg
 	node scripts/demo-server.mjs
+
+# Plan 9 §4's join spike on the TV or the emulator: plays song, DJ transition, song (player/src/androidTest), pulls
+# what reached the speakers and compares it with the signal, sample by sample (scripts/join-spike/).
+join-test: connect
+	ANDROID_SERIAL=$(TV) $(GRADLE) :player:installDebugAndroidTest
+	$(ADB) -s $(TV) shell am instrument -w $(APP_ID:.tv=.player).test/androidx.test.runner.AndroidJUnitRunner
+	rm -rf build/spike/out && mkdir -p build/spike/out
+	$(ADB) -s $(TV) pull /sdcard/Android/data/$(APP_ID:.tv=.player).test/files/. build/spike/out/ >/dev/null
+	node scripts/join-spike/make-signal.mjs >/dev/null && node scripts/join-spike/analyze.mjs whole aac delay
 
 clean:
 	rm -rf build app/build .gradle

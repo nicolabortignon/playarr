@@ -5,7 +5,10 @@ plugins {
 android {
   namespace = "me.tracklistme.playarr.player"
   compileSdk = 37
-  defaultConfig { minSdk = 28 }
+  defaultConfig {
+    minSdk = 28
+    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+  }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
@@ -30,4 +33,8 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.media3.test.utils)
   testImplementation(libs.robolectric)
+  // On the emulator or the TV (make join-test): what Media3 really decodes at the joins.
+  androidTestImplementation(libs.androidx.test.runner)
+  androidTestImplementation(libs.androidx.test.junit)
+  androidTestImplementation(libs.media3.test.utils)
 }
