@@ -681,6 +681,102 @@ public struct CuePoints: Codable, Hashable, Sendable {
     }
 }
 
+/// POST /api/auth/device/lookup (signed in): which device a code is for, before approving it.
+public struct DeviceCodeInfo: Codable, Hashable, Sendable {
+    public var device: String
+    public var platform: String
+    public var expiresAt: String
+
+    public init(device: String, platform: String, expiresAt: String) {
+        self.device = device
+        self.platform = platform
+        self.expiresAt = expiresAt
+    }
+}
+
+/// POST /api/auth/device: a TV (or anything without a keyboard) starts signing in. It shows `code` and a QR code for `verifyUrl`; someone signed in on a phone or the web approves it there, and the TV, asking with `pollToken` every `interval` seconds, gets a session of the approver's account (plan 9 §3).
+public struct DeviceCodeStart: Codable, Hashable, Sendable {
+    /// 8 characters from the setup codes' alphabet, shown as two groups of four.
+    public var code: String
+    /// `<server>/link?code=<code>`, for the QR code.
+    public var verifyUrl: String
+    /// Only the TV has it: the code alone can't collect the session.
+    public var pollToken: String
+    /// Seconds the code lasts (600).
+    public var expiresIn: Double
+    /// Seconds to wait between polls (5).
+    public var interval: Double
+
+    public init(code: String, verifyUrl: String, pollToken: String, expiresIn: Double, interval: Double) {
+        self.code = code
+        self.verifyUrl = verifyUrl
+        self.pollToken = pollToken
+        self.expiresIn = expiresIn
+        self.interval = interval
+    }
+}
+
+/// POST /api/auth/device/poll: still waiting, approved (with the TV's own session), or expired (start again).
+public enum DevicePoll: Codable, Hashable, Sendable {
+    case pending(Pending)
+    case expired(Expired)
+    case approved(Approved)
+    /// A `status` this version of the app doesn't know yet.
+    case unknown(String)
+
+    private enum TagKey: String, CodingKey { case status = "status" }
+
+    public var status: String {
+        switch self {
+        case .pending: "pending"
+        case .expired: "expired"
+        case .approved: "approved"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let tag = try decoder.container(keyedBy: TagKey.self).decode(String.self, forKey: .status)
+        switch tag {
+        case "pending": self = .pending(try Pending(from: decoder))
+        case "expired": self = .expired(try Expired(from: decoder))
+        case "approved": self = .approved(try Approved(from: decoder))
+        default: self = .unknown(tag)
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .pending(let value): try value.encode(to: encoder)
+        case .expired(let value): try value.encode(to: encoder)
+        case .approved(let value): try value.encode(to: encoder)
+        case .unknown: break
+        }
+        var container = encoder.container(keyedBy: TagKey.self)
+        try container.encode(status, forKey: .status)
+    }
+
+    public struct Pending: Codable, Hashable, Sendable {
+        public init() {
+        }
+    }
+
+    public struct Expired: Codable, Hashable, Sendable {
+        public init() {
+        }
+    }
+
+    public struct Approved: Codable, Hashable, Sendable {
+        public var token: String
+        public var account: Account
+
+        public init(token: String, account: Account) {
+            self.token = token
+            self.account = account
+        }
+    }
+}
+
 /// Settings kept on each device that an admin can stop an account from changing.
 public enum DeviceSetting: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
     case playback
@@ -3159,17 +3255,20 @@ public struct ServerInfo: Codable, Hashable, Sendable, Identifiable {
     public var name: String
     public var version: String
     public var minAppVersion: String
+    /// The oldest TV app this server works with (plan 9). Missing from servers older than the TV app.
+    public var minTvVersion: String?
     public var setup: Bool
     /// Only while `setup`: the owner's current username, for the setup page to pre-fill.
     public var ownerUsername: String?
     /// PUBLIC_URL when set (e.g. https://tracklist.me): the address every client should use.
     public var publicUrl: String?
 
-    public init(id: String, name: String, version: String, minAppVersion: String, setup: Bool, ownerUsername: String? = nil, publicUrl: String? = nil) {
+    public init(id: String, name: String, version: String, minAppVersion: String, minTvVersion: String? = nil, setup: Bool, ownerUsername: String? = nil, publicUrl: String? = nil) {
         self.id = id
         self.name = name
         self.version = version
         self.minAppVersion = minAppVersion
+        self.minTvVersion = minTvVersion
         self.setup = setup
         self.ownerUsername = ownerUsername
         self.publicUrl = publicUrl

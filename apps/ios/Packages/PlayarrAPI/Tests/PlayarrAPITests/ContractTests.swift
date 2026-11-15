@@ -24,6 +24,8 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("auth-sign-in", SignInResponse.self),
         Contract("auth-me", Account.self),
         Contract("auth-proof", AuthProof.self),
+        Contract("auth-device", DeviceCodeStart.self),
+        Contract("auth-device-approved", DevicePoll.self),
         Contract("accounts", [ListedAccount].self),
         Contract("account-created", CreatedAccount.self),
         Contract("setup-code", SetupCode.self),

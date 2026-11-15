@@ -1,10 +1,11 @@
-import type { AuthProof, SignInResponse } from '@playarr/shared';
+import type { AuthProof, DeviceCodeStart, DevicePoll, SignInResponse } from '@playarr/shared';
 import Fastify from 'fastify';
 import { randomBytes } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Accounts } from '../accounts/accounts.ts';
 import { authHook } from '../accounts/auth.ts';
+import { DeviceCodes } from '../accounts/deviceCodes.ts';
 import { hashToken, Sessions } from '../accounts/sessions.ts';
 import { SetupCodes } from '../accounts/setupCodes.ts';
 import { freshDb } from '../catalog/testFixtures.ts';
@@ -269,5 +270,84 @@ describe('the home-address proof', () => {
       expect(res.statusCode).toBe(403);
     }
     expect((await ask(app, VECTOR.id)).json()).toEqual({ proof: VECTOR.proof });
+  });
+});
+
+describe('signing in a TV with a code (plan 9 §3)', () => {
+  const tv = { device: 'Living room TV', platform: 'tv' };
+
+  async function signedInOwner(ctx: ReturnType<typeof setup>) {
+    await ctx.accounts.setPassword(1, 'correct horse');
+    const res = await ctx.post('/api/auth/sign-in', { username: 'home', password: 'correct horse', ...device });
+    return { authorization: `Bearer ${(res.json() as SignInResponse).token}` };
+  }
+
+  it('gives the TV a code, and a session of the approver’s account once approved, once', async () => {
+    const ctx = setup();
+    const owner = await signedInOwner(ctx);
+    const started = await ctx.post('/api/auth/device', tv, { headers: { host: 'nas.local:4000' } });
+    expect(started.statusCode).toBe(200);
+    const start = started.json() as DeviceCodeStart;
+    expect(start.code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+    expect(start.verifyUrl).toBe(`http://nas.local:4000/link?code=${start.code}`);
+    expect(start).toMatchObject({ expiresIn: 600, interval: 5 });
+    recordFixture('auth-device', started, (answer) => ({ ...answer, code: 'ABCD2345', verifyUrl: 'http://nas.local:4000/link?code=ABCD2345', pollToken: 'p'.repeat(43) }));
+
+    expect((await ctx.post('/api/auth/device/poll', { pollToken: start.pollToken })).json()).toEqual({ status: 'pending' });
+    // Typed as it's read off the screen: lower case, with a space.
+    const code = `${start.code.slice(0, 4)} ${start.code.slice(4)}`.toLowerCase();
+    const looked = await ctx.post('/api/auth/device/lookup', { code }, { headers: owner });
+    expect(looked.json()).toMatchObject({ device: 'Living room TV', platform: 'tv' });
+    expect((await ctx.post('/api/auth/device/approve', { code }, { headers: owner })).statusCode).toBe(200);
+    // Approved once: the code is spent.
+    expect((await ctx.post('/api/auth/device/approve', { code }, { headers: owner })).statusCode).toBe(404);
+
+    const approved = await ctx.post('/api/auth/device/poll', { pollToken: start.pollToken });
+    const answer = approved.json() as DevicePoll & { status: 'approved' };
+    expect(answer.status).toBe('approved');
+    expect(answer.account.id).toBe(1);
+    recordFixture('auth-device-approved', approved, (body) => ({ ...body, token: 'token' }));
+    const me = await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { ...H, authorization: `Bearer ${answer.token}` } });
+    expect(me.json()).toMatchObject({ id: 1 });
+    expect(ctx.sessions.list(1, -1).find((s) => s.device === 'Living room TV')).toMatchObject({ platform: 'tv' });
+    // Collected once.
+    expect((await ctx.post('/api/auth/device/poll', { pollToken: start.pollToken })).json()).toEqual({ status: 'expired' });
+  });
+
+  it('needs someone signed in to look a code up or approve it', async () => {
+    const ctx = setup();
+    await ctx.accounts.setPassword(1, 'correct horse');
+    const start = (await ctx.post('/api/auth/device', tv)).json() as DeviceCodeStart;
+    expect((await ctx.post('/api/auth/device/approve', { code: start.code })).statusCode).toBe(401);
+    expect((await ctx.post('/api/auth/device/lookup', { code: start.code })).statusCode).toBe(401);
+    expect((await ctx.post('/api/auth/device/poll', { pollToken: start.pollToken })).json()).toEqual({ status: 'pending' });
+  });
+
+  it('lets a code lapse after 10 minutes, and turns away a server nobody has set up', async () => {
+    let now = Date.parse('2026-11-15T12:00:00Z');
+    const db = freshDb();
+    const accounts = new Accounts(db);
+    const sessions = new Sessions(db);
+    const app = Fastify();
+    app.decorateRequest('auth', null);
+    app.addHook('onRequest', authHook({ accounts, sessions }));
+    authRoutes(app, { accounts, sessions, setupCodes: new SetupCodes(db), deviceCodes: new DeviceCodes(() => now) });
+    const post = (url: string, payload: object, headers: Record<string, string> = {}) => app.inject({ method: 'POST', url, payload, headers: { ...H, ...headers } });
+    expect((await post('/api/auth/device', tv)).statusCode).toBe(409);
+    await accounts.setPassword(1, 'correct horse');
+    const { token } = (await post('/api/auth/sign-in', { username: 'home', password: 'correct horse', ...device })).json() as SignInResponse;
+    const start = (await post('/api/auth/device', tv)).json() as DeviceCodeStart;
+    now += 600_000;
+    expect((await post('/api/auth/device/approve', { code: start.code }, { authorization: `Bearer ${token}` })).statusCode).toBe(404);
+    expect((await post('/api/auth/device/poll', { pollToken: start.pollToken })).json()).toEqual({ status: 'expired' });
+  });
+
+  it('counts wrong codes as failed tries, and limits the codes an address starts', async () => {
+    const ctx = setup();
+    const owner = await signedInOwner(ctx);
+    for (let i = 0; i < 10; i++) expect((await ctx.post('/api/auth/device/approve', { code: 'WRONG234' }, { headers: owner })).statusCode).toBe(404);
+    expect((await ctx.post('/api/auth/device/approve', { code: 'WRONG234' }, { headers: owner })).statusCode).toBe(429);
+    for (let i = 0; i < 20; i++) expect((await ctx.post('/api/auth/device', tv, { remoteAddress: AWAY })).statusCode).toBe(200);
+    expect((await ctx.post('/api/auth/device', tv, { remoteAddress: AWAY })).statusCode).toBe(429);
   });
 });

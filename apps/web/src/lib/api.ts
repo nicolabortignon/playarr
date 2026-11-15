@@ -15,6 +15,7 @@ import type {
   ArtistMatch,
   CoverLayout,
   CreatedAccount,
+  DeviceCodeInfo,
   DeviceSetting,
   DiscoverArtist,
   DiscoverArtistDetail,
@@ -284,6 +285,9 @@ export const api = {
   switchAccount: (who: { token: string } | { accountId: number }) => request<Account>('/api/auth/switch', { method: 'POST', body: JSON.stringify(who) }),
   /** A token an older version kept in localStorage, for the server to keep as a cookie no script can read. */
   keepSignIn: (token: string) => request<Account>('/api/auth/keep', { method: 'POST', body: JSON.stringify({ token }) }),
+  /** A TV's sign-in code (plan 9 §3): which device it is for, and approving it for the account signed in here. */
+  deviceLookup: (code: string) => request<DeviceCodeInfo>('/api/auth/device/lookup', { method: 'POST', body: JSON.stringify({ code }) }),
+  deviceApprove: (code: string) => request<DeviceCodeInfo>('/api/auth/device/approve', { method: 'POST', body: JSON.stringify({ code }) }),
   accounts: () => get<ListedAccount[]>('/api/accounts'),
   createAccount: (body: AccountInput) => request<CreatedAccount>('/api/accounts', { method: 'POST', body: JSON.stringify(body) }),
   updateAccount: (id: number, patch: Partial<AccountInput>) => request<Account>(`/api/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),

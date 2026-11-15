@@ -8,6 +8,8 @@ import { VERSION } from '../version.ts';
 
 /** The oldest iOS app this server works with: raised when an API change would break older apps. */
 export const MIN_APP_VERSION = '1.0.0';
+/** The oldest TV app this server works with (plan 9), raised by the same rule (docs/ios/release.md). */
+export const MIN_TV_VERSION = '1.0.0';
 const SERVER_ID_KEY = 'server.id';
 
 /** This server's id: made once and kept, so apps know it under any address. */
@@ -36,6 +38,7 @@ export function serverInfo(deps: {
     name: deps.name?.trim() || hostname(),
     version: VERSION,
     minAppVersion: MIN_APP_VERSION,
+    minTvVersion: MIN_TV_VERSION,
     setup,
     // Only while nobody has a password: afterwards usernames aren't anyone's business before signing in.
     ...(setup ? { ownerUsername: deps.ownerUsername() } : {}),

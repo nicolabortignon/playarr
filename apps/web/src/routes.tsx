@@ -42,6 +42,7 @@ const pages: RouteObject[] = [
   { path: 'requests', lazy: () => import('./pages/Requests').then((m) => ({ Component: m.RequestsPage })) },
   { path: 'discover/artists/:mbid', lazy: () => import('./pages/DiscoverArtist').then((m) => ({ Component: m.DiscoverArtistPage })) },
   { path: 'discover/artist', lazy: () => import('./pages/FindArtist').then((m) => ({ Component: m.FindArtistPage })) },
+  { path: 'link', lazy: () => import('./pages/Link').then((m) => ({ Component: m.LinkPage })) },
   { path: 'settings/listening', element: <ListeningMoved /> },
   { path: 'settings/:panel?', lazy: () => import('./pages/Settings').then((m) => ({ Component: m.SettingsPage })) },
   { path: '*', lazy: () => import('./pages/NotFound').then((m) => ({ Component: m.NotFoundPage })) },

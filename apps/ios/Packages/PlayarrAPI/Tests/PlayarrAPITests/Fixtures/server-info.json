@@ -3,6 +3,7 @@
   "name": "Playarr",
   "version": "0.7.0",
   "minAppVersion": "1.0.0",
+  "minTvVersion": "1.0.0",
   "setup": false,
   "publicUrl": "https://playarr.example"
 }

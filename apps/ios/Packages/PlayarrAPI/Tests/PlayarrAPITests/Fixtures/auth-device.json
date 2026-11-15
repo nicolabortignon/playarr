@@ -1,0 +1,7 @@
+{
+  "code": "ABCD2345",
+  "verifyUrl": "http://nas.local:4000/link?code=ABCD2345",
+  "pollToken": "ppppppppppppppppppppppppppppppppppppppppppp",
+  "expiresIn": 600,
+  "interval": 5
+}

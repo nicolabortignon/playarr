@@ -1114,6 +1114,8 @@ export interface ServerInfo {
   name: string;
   version: string;
   minAppVersion: string;
+  /** The oldest TV app this server works with (plan 9). Missing from servers older than the TV app. */
+  minTvVersion?: string;
   setup: boolean;
   /** Only while `setup`: the owner's current username, for the setup page to pre-fill. */
   ownerUsername?: string;
@@ -1131,6 +1133,32 @@ export interface SignInResponse {
 export interface AuthProof {
   /** HMAC-SHA256 keyed by the SHA-256 of the session's token, of "playarr-home-proof:" and the nonce; base64url. */
   proof: string;
+}
+
+/** POST /api/auth/device: a TV (or anything without a keyboard) starts signing in. It shows `code` and a QR code for
+ *  `verifyUrl`; someone signed in on a phone or the web approves it there, and the TV, asking with `pollToken` every
+ *  `interval` seconds, gets a session of the approver's account (plan 9 §3). */
+export interface DeviceCodeStart {
+  /** 8 characters from the setup codes' alphabet, shown as two groups of four. */
+  code: string;
+  /** `<server>/link?code=<code>`, for the QR code. */
+  verifyUrl: string;
+  /** Only the TV has it: the code alone can't collect the session. */
+  pollToken: string;
+  /** Seconds the code lasts (600). */
+  expiresIn: number;
+  /** Seconds to wait between polls (5). */
+  interval: number;
+}
+
+/** POST /api/auth/device/poll: still waiting, approved (with the TV's own session), or expired (start again). */
+export type DevicePoll = { status: 'pending' } | { status: 'expired' } | ({ status: 'approved' } & SignInResponse);
+
+/** POST /api/auth/device/lookup (signed in): which device a code is for, before approving it. */
+export interface DeviceCodeInfo {
+  device: string;
+  platform: string;
+  expiresAt: string;
 }
 
 /** A one-time code (and link) for choosing a first password. */

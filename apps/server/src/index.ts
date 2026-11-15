@@ -205,7 +205,7 @@ const recommendations = new Recommendations(playlists, favorites, requests, musi
 // Every request's account (req.auth), from a Bearer token or the session cookie; 401 once set up.
 app.decorateRequest('auth', null);
 app.addHook('onRequest', authHook({ accounts, sessions }));
-authRoutes(app, { accounts, sessions, setupCodes });
+authRoutes(app, { accounts, sessions, setupCodes, publicUrl: config.PUBLIC_URL });
 accountRoutes(app, { accounts, sessions, setupCodes, publicUrl: config.PUBLIC_URL });
 const info = () => serverInfo({ store, name: config.SERVER_NAME, setupMode: () => accounts.setupMode(), ownerUsername: () => accounts.owner().username, publicUrl: config.PUBLIC_URL });
 // Settings → Away from home: whether the server answers at PUBLIC_URL over HTTPS, asked from the server itself.

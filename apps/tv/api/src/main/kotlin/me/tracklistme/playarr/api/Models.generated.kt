@@ -479,6 +479,83 @@ public data class CuePoints(
 )
 
 /**
+ * POST /api/auth/device/lookup (signed in): which device a code is for, before approving it.
+ */
+@Serializable
+public data class DeviceCodeInfo(
+    public val device: String,
+    public val platform: String,
+    public val expiresAt: String,
+)
+
+/**
+ * POST /api/auth/device: a TV (or anything without a keyboard) starts signing in. It shows `code` and a QR code for `verifyUrl`; someone signed in on a phone or the web approves it there, and the TV, asking with `pollToken` every `interval` seconds, gets a session of the approver's account (plan 9 §3).
+ */
+@Serializable
+public data class DeviceCodeStart(
+    /**
+     * 8 characters from the setup codes' alphabet, shown as two groups of four.
+     */
+    public val code: String,
+    /**
+     * `<server>/link?code=<code>`, for the QR code.
+     */
+    public val verifyUrl: String,
+    /**
+     * Only the TV has it: the code alone can't collect the session.
+     */
+    public val pollToken: String,
+    /**
+     * Seconds the code lasts (600).
+     */
+    public val expiresIn: Double,
+    /**
+     * Seconds to wait between polls (5).
+     */
+    public val interval: Double,
+)
+
+/**
+ * POST /api/auth/device/poll: still waiting, approved (with the TV's own session), or expired (start again).
+ */
+@Serializable(with = DevicePoll.ByTag::class)
+public sealed interface DevicePoll {
+    public val status: String
+
+    @Serializable
+    public data class Pending(
+        @EncodeDefault override val status: String = "pending",
+    ) : DevicePoll
+
+    @Serializable
+    public data class Expired(
+        @EncodeDefault override val status: String = "expired",
+    ) : DevicePoll
+
+    @Serializable
+    public data class Approved(
+        public val token: String,
+        public val account: Account,
+        @EncodeDefault override val status: String = "approved",
+    ) : DevicePoll
+
+    /** A `status` this version of the app doesn't know yet. */
+    @Serializable
+    public data class Unknown(override val status: String) : DevicePoll
+
+    /** Picks the variant by `status`. */
+    public object ByTag : JsonContentPolymorphicSerializer<DevicePoll>(DevicePoll::class) {
+        override fun selectDeserializer(element: JsonElement): DeserializationStrategy<DevicePoll> =
+            when ((element as? JsonObject)?.get("status")?.let { (it as? JsonPrimitive)?.contentOrNull }) {
+                "pending" -> Pending.serializer()
+                "expired" -> Expired.serializer()
+                "approved" -> Approved.serializer()
+                else -> Unknown.serializer()
+            }
+    }
+}
+
+/**
  * Settings kept on each device that an admin can stop an account from changing.
  */
 @Serializable
@@ -2307,6 +2384,10 @@ public data class ServerInfo(
     public val name: String,
     public val version: String,
     public val minAppVersion: String,
+    /**
+     * The oldest TV app this server works with (plan 9). Missing from servers older than the TV app.
+     */
+    public val minTvVersion: String? = null,
     public val setup: Boolean,
     /**
      * Only while `setup`: the owner's current username, for the setup page to pre-fill.

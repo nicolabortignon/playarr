@@ -98,7 +98,7 @@ Details in [../mixes.md](../mixes.md).
 
 | method and path | purpose | who |
 |---|---|---|
-| `GET /api/server` | server id, name, version, oldest app version, setup mode, public URL; the owner's username in setup mode | open |
+| `GET /api/server` | server id, name, version, oldest iOS and TV app versions (`minAppVersion`, `minTvVersion`), setup mode, public URL; the owner's username in setup mode | open |
 | `GET /api/diagnostics` | what someone helping with a problem asks first (`ServerDiagnostics`, below) | admin |
 | `GET /reachable/:token` | the reachability check's own request, through the proxy: the answer to a token of a check that's running, once; a plain 404 for anything else; 30 a minute per visitor ([https.md](https.md)) | open |
 | `POST /api/auth/setup` | claim the server: the owner's username and password | setup |
@@ -106,6 +106,8 @@ Details in [../mixes.md](../mixes.md).
 | `POST /api/auth/switch` | make a token this browser's session cookie, `{ token }` or `{ accountId }` for the token kept for that account in a cookie, and keep it so (authenticates by the token) | open |
 | `POST /api/auth/keep` | keep a token an older web app had in localStorage as that account's cookie, `playarr_kept_<id>` ([accounts-and-access.md](accounts-and-access.md)) | open |
 | `GET /api/auth/proof?id=&nonce=` | the server at an app's home address proving it holds the app's session, asked without the token (rate-limited per address; see [accounts-and-access.md](accounts-and-access.md#8-the-home-address)) | open |
+| `POST /api/auth/device`, `/api/auth/device/poll` | a TV signing in with a code: start one (`DeviceCodeStart`), then poll with its `pollToken` until it's `approved` with the TV's own session, or `expired` (rate-limited per address; [accounts-and-access.md](accounts-and-access.md#signing-in-a-tv-with-a-code)) | open |
+| `POST /api/auth/device/lookup`, `/api/auth/device/approve` | which device a code is for; approve it for the signed-in account (the web's `/link` page) | session |
 | `GET /api/auth/me`, `POST /api/auth/sign-out` | who's signed in; sign this device out | session |
 | `GET\|POST /api/accounts`, `DELETE /api/accounts/:id`, `POST /api/accounts/:id/reset` | list, create (with a setup code), remove, reset a password; create and reset refused in setup mode | admin |
 | `PATCH /api/accounts/:id` | change an account; members may change their own name only | admin, or own name |

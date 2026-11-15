@@ -1,0 +1,15 @@
+{
+  "status": "approved",
+  "token": "token",
+  "account": {
+    "id": 1,
+    "username": "home",
+    "name": "Home",
+    "role": "admin",
+    "canRequest": true,
+    "requestAccess": "on",
+    "sources": null,
+    "hasPassword": true,
+    "locked": []
+  }
+}

@@ -11,7 +11,7 @@ import { loadConfig } from '../config.ts';
 import { Reachability } from '../reachability/reachability.ts';
 import { recordFixture } from '../testing/recordFixture.ts';
 import { VERSION } from '../version.ts';
-import { MIN_APP_VERSION, serverId, serverInfo, serverRoutes } from './server.ts';
+import { MIN_APP_VERSION, MIN_TV_VERSION, serverId, serverInfo, serverRoutes } from './server.ts';
 
 describe('server identity', () => {
   it('keeps one id for good, made the first time it’s asked for', () => {
@@ -29,7 +29,7 @@ describe('server identity', () => {
     serverRoutes(app, { info: () => serverInfo({ store, name: undefined, setupMode: () => setup, ownerUsername: () => 'home' }) });
     const body = (await app.inject({ url: '/api/server' })).json() as ServerInfo;
     // While nobody has set it up, the setup page pre-fills the owner's current username.
-    expect(body).toEqual({ id: serverId(store), name: hostname(), version: VERSION, minAppVersion: MIN_APP_VERSION, setup: true, ownerUsername: 'home' });
+    expect(body).toEqual({ id: serverId(store), name: hostname(), version: VERSION, minAppVersion: MIN_APP_VERSION, minTvVersion: MIN_TV_VERSION, setup: true, ownerUsername: 'home' });
     setup = false;
     expect((await app.inject({ url: '/api/server' })).json()).toEqual({ ...body, setup: false, ownerUsername: undefined });
     expect(serverInfo({ store, name: ' Living room ', setupMode: () => false, ownerUsername: () => 'home' }).name).toBe('Living room');

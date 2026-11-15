@@ -36,7 +36,8 @@ declare module 'fastify' {
 const PROTECTED = /^\/(api|stream|art|transitions)\//;
 /**
  * Open to anyone: what an app needs to find this server and sign in. Switch checks the token it's sent; proof is
- * asked without one, before the token goes to the server's home address.
+ * asked without one, before the token goes to the server's home address; a TV starts and polls its sign-in code
+ * before it has a session (approving one needs a session).
  */
 const OPEN = new Set([
   'GET /api/server',
@@ -47,6 +48,8 @@ const OPEN = new Set([
   'POST /api/auth/switch',
   'POST /api/auth/keep',
   'GET /api/auth/proof',
+  'POST /api/auth/device',
+  'POST /api/auth/device/poll',
 ]);
 
 /** One cookie's value from a Cookie header. */

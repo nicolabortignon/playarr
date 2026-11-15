@@ -1,8 +1,9 @@
-import type { Account, AuthProof, SignInResponse } from '@playarr/shared';
+import type { Account, AuthProof, DeviceCodeInfo, DevicePoll, SignInResponse } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AccountError, checkPassword, type Accounts } from '../accounts/accounts.ts';
-import { KEPT_COOKIE, keptCookie, readCookie, sessionCookie } from '../accounts/auth.ts';
+import { KEPT_COOKIE, keptCookie, originOf, readCookie, sessionCookie } from '../accounts/auth.ts';
+import { DeviceCodes } from '../accounts/deviceCodes.ts';
 import { RateLimiter } from '../accounts/rateLimit.ts';
 import { requireLocalSetup } from '../accounts/rights.ts';
 import type { Sessions } from '../accounts/sessions.ts';
@@ -21,10 +22,17 @@ const tokenInput = z.object({ token: z.string().min(1).max(200) });
 const switchInput = z.union([tokenInput, z.object({ accountId: z.number().int().positive() })]);
 // An HMAC-SHA256 in base64url, and a nonce of at least 128 random bits.
 const proofInput = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{43}$/), nonce: z.string().regex(/^[A-Za-z0-9_-]{22,128}$/) });
+const deviceInput = z.object({ device: z.string().trim().min(1).max(80).default('TV'), platform: z.string().trim().min(1).max(20).default('tv') });
+const pollInput = z.object({ pollToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+const codeInput = z.object({ code: z.string().trim().min(1).max(32) });
 
 const TOO_MANY = 'Too many tries. Wait a few minutes and try again.';
 /** Home-address proofs per client address in 15 minutes: an app asks once per network it joins. */
 const PROOFS = 30;
+/** Codes a device may start per client address in 15 minutes: each lasts 10 minutes. */
+const DEVICE_STARTS = 20;
+/** Polls per client address in 15 minutes: one every 5 s is 180. */
+const DEVICE_POLLS = 300;
 
 /** A request body as `schema` wants it, or a 400 naming what's wrong. */
 export function parseInput<T>(schema: z.ZodType<T>, body: unknown): T {
@@ -46,12 +54,27 @@ export async function handleAccountErrors(reply: FastifyReply, fn: () => unknown
 /** Claiming the server, signing in and out, setup codes, who's signed in, and the home-address proof. */
 export function authRoutes(
   app: FastifyInstance,
-  deps: { accounts: Accounts; sessions: Sessions; setupCodes: SetupCodes; limiter?: RateLimiter; proofLimiter?: RateLimiter },
+  deps: {
+    accounts: Accounts;
+    sessions: Sessions;
+    setupCodes: SetupCodes;
+    deviceCodes?: DeviceCodes;
+    /** PUBLIC_URL: where a device's code is approved (`verifyUrl`), whoever reached the server how. */
+    publicUrl?: string;
+    limiter?: RateLimiter;
+    proofLimiter?: RateLimiter;
+    deviceLimiter?: RateLimiter;
+    pollLimiter?: RateLimiter;
+  },
 ) {
   const { accounts, sessions, setupCodes } = deps;
+  const deviceCodes = deps.deviceCodes ?? new DeviceCodes();
   // Failed sign-ins and codes count per client address: req.ip, the visitor's behind a proxy trusted with TRUST_PROXY.
   const limiter = deps.limiter ?? new RateLimiter();
   const proofLimiter = deps.proofLimiter ?? new RateLimiter(PROOFS);
+  const deviceLimiter = deps.deviceLimiter ?? new RateLimiter(DEVICE_STARTS);
+  // Every address outside together may poll as much as 10 TVs signing in at once.
+  const pollLimiter = deps.pollLimiter ?? new RateLimiter(DEVICE_POLLS, 15 * 60_000, Date.now, DEVICE_POLLS * 10);
   const signedIn = (account: Account, input: { device: string; platform: string }): SignInResponse => ({
     token: sessions.create(account.id, input.device, input.platform).token,
     account,
@@ -127,6 +150,58 @@ export function authRoutes(
     if (!proofLimiter.take(req.ip)) return reply.code(429).send({ error: TOO_MANY });
     const answer: AuthProof = { proof: sessions.proof(parsed.data.id, parsed.data.nonce, isLocalRequest(req)) };
     return answer;
+  });
+
+  // Signing in a TV from the sofa (plan 9 §3): the TV starts a code, someone signed in on a phone or the web approves
+  // it for their account (the /link page), and the TV collects a session of its own with a token only it has. Starting
+  // and polling are open, and counted per address; approving needs a session, so a code is no way in by itself. Wrong
+  // codes count as failed tries, as setup codes do.
+  app.post('/api/auth/device', (req, reply) => {
+    const parsed = deviceInput.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'A device name and platform, at most 80 and 20 characters' });
+    if (accounts.setupMode()) return reply.code(409).send({ error: 'Set up Playarr on a phone or computer first' });
+    if (!deviceLimiter.take(req.ip)) return reply.code(429).send({ error: TOO_MANY });
+    return deviceCodes.start(parsed.data.device, parsed.data.platform, originOf(req, deps.publicUrl));
+  });
+
+  app.post('/api/auth/device/poll', (req, reply) => {
+    const parsed = pollInput.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'A poll token is required' });
+    if (!pollLimiter.take(req.ip)) return reply.code(429).send({ error: TOO_MANY });
+    const answer = deviceCodes.poll(parsed.data.pollToken);
+    if (answer.status !== 'approved') return answer satisfies DevicePoll;
+    const account = accounts.get(answer.accountId);
+    // The account went while the TV was waiting.
+    if (!account) return { status: 'expired' } satisfies DevicePoll;
+    return { status: 'approved', ...signedIn(account, answer) } satisfies DevicePoll;
+  });
+
+  const needsSession = (reply: FastifyReply) => reply.code(401).send({ error: 'Sign in to approve a device', setup: accounts.setupMode() });
+
+  app.post('/api/auth/device/lookup', (req, reply) => {
+    if (!req.auth?.session) return needsSession(reply);
+    const parsed = codeInput.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'A code is required' });
+    if (!limiter.allows(req.ip)) return reply.code(429).send({ error: TOO_MANY });
+    const info = deviceCodes.lookup(parsed.data.code);
+    if (!info) {
+      limiter.fail(req.ip);
+      return reply.code(404).send({ error: 'That code is wrong, used or expired. Start again on the TV.' });
+    }
+    return info satisfies DeviceCodeInfo;
+  });
+
+  app.post('/api/auth/device/approve', (req, reply) => {
+    if (!req.auth?.session) return needsSession(reply);
+    const parsed = codeInput.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'A code is required' });
+    if (!limiter.allows(req.ip)) return reply.code(429).send({ error: TOO_MANY });
+    const info = deviceCodes.approve(parsed.data.code, req.auth.account.id);
+    if (!info) {
+      limiter.fail(req.ip);
+      return reply.code(404).send({ error: 'That code is wrong, used or expired. Start again on the TV.' });
+    }
+    return info satisfies DeviceCodeInfo;
   });
 
   // The web keeps each account signed in on the browser (`keptCookie`); switching makes one's token the session cookie:

@@ -1,5 +1,5 @@
 import type { Account, AccountRole, DeviceSetting, ListedAccount, RequestAccess, SessionInfo, SetupCode } from '@playarr/shared';
-import { Copy, KeyRound, LogOut, Pencil, Smartphone, Trash, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, LogOut, Monitor, Pencil, Smartphone, Tablet, Trash, Tv, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { signOut } from '../lib/accounts';
@@ -93,6 +93,7 @@ function Devices({ accountId }: { accountId: number }) {
       <ul className="divide-y divide-line">
         {sessions.map((s) => (
           <li key={s.id} className="flex items-center gap-3 py-2">
+            <DeviceIcon platform={s.platform} />
             <span className="min-w-0 flex-1">
               <span className="block truncate type-body text-paper">
                 {s.device}
@@ -110,6 +111,12 @@ function Devices({ accountId }: { accountId: number }) {
       </ul>
     </>
   );
+}
+
+/** What kind of device a session is on, by the platform it signed in with: a TV (plan 9), a phone, a tablet, a browser. */
+function DeviceIcon({ platform }: { platform: string }) {
+  const Icon = platform === 'tv' ? Tv : platform === 'ios' ? Smartphone : platform === 'ipados' ? Tablet : Monitor;
+  return <Icon aria-label={platform === 'tv' ? 'TV' : undefined} aria-hidden={platform !== 'tv'} className="size-4 shrink-0 text-muted" />;
 }
 
 /** The device settings an admin can stop a member from changing, as the form names them. */
