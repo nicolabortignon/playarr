@@ -17,6 +17,9 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import me.tracklistme.playarr.api.Api
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,11 +49,19 @@ import me.tracklistme.playarr.tv.ui.theme.Type
 fun HomeScreen(account: AccountRecord, others: List<AccountRecord>, onSwitch: (AccountRecord) -> Unit, onAddAccount: () -> Unit, onSignOut: () -> Unit) {
   val model: AlbumsModel = viewModel(key = "albums-${account.id}")
   val state by model.current.collectAsStateWithLifecycle()
+  val app = LocalContext.current.playarr
+  val now by app.player.current.collectAsStateWithLifecycle()
+  val scope = rememberCoroutineScope()
   Column(Modifier.fillMaxSize().background(Palette.ink900).padding(horizontal = 58.dp, vertical = 28.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
       Column(Modifier.weight(1f)) {
         Text("LISTENING AS ${account.name.uppercase()}", style = Type.kicker)
         Text("Albums", style = Type.pageTitle)
+      }
+      now.track?.let { track ->
+        OutlinedButton(onClick = { app.player.toggle() }) {
+          Text("${if (now.playing) "Pause" else "Play"} · ${track.title} — ${track.artistName}", style = Type.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
       }
       state.total?.let { Text("$it", style = Type.meta) }
       others.forEach { other -> OutlinedButton(onClick = { onSwitch(other) }) { Text("Listen as ${other.name}", style = Type.label) } }
@@ -67,7 +78,12 @@ fun HomeScreen(account: AccountRecord, others: List<AccountRecord>, onSwitch: (A
     ) {
       itemsIndexed(state.albums, key = { _, album -> album.id }) { index, album ->
         if (index >= state.albums.size - 12) model.more()
-        AlbumCard(album)
+        AlbumCard(album) {
+          scope.launch {
+            val client = app.client() ?: return@launch
+            runCatching { client.send(Api.Library.album(album.id)) }.onSuccess { app.player.play(it.tracks) }
+          }
+        }
       }
     }
   }
@@ -75,12 +91,12 @@ fun HomeScreen(account: AccountRecord, others: List<AccountRecord>, onSwitch: (A
 
 /** A cover that grows on focus, with the title and artist under it. The cover is asked for at the size it's shown. */
 @Composable
-private fun AlbumCard(album: Album) {
+private fun AlbumCard(album: Album, onClick: () -> Unit) {
   val media = LocalContext.current.playarr.media()
   val pixels = with(LocalDensity.current) { 150.dp.roundToPx() }
   Column {
     Card(
-      onClick = {},
+      onClick = onClick,
       shape = CardDefaults.shape(RoundedCornerShape(4.dp)),
       scale = CardDefaults.scale(focusedScale = 1.08f),
       modifier = Modifier.fillMaxWidth().aspectRatio(1f),

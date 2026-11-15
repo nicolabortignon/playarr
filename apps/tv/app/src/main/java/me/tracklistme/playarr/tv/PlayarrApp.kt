@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import androidx.core.content.edit
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -28,6 +29,7 @@ import okhttp3.OkHttpClient
 class PlayarrApp : Application(), SingletonImageLoader.Factory {
   val store: ServerStore by lazy { ServerStore(Preferences(this), KeystoreSecretStore(this)) }
   val browser: ServerBrowser by lazy { ServerBrowser(this) }
+  val player: me.tracklistme.playarr.tv.playback.PlayerConnection by lazy { me.tracklistme.playarr.tv.playback.PlayerConnection(this) }
 
   val http: OkHttpClient by lazy {
     OkHttpClient.Builder()
@@ -82,7 +84,7 @@ private class MediaAuth(private val media: () -> MediaUrls?) : Interceptor {
 private class Preferences(context: Context) : KeyValues {
   private val prefs = context.getSharedPreferences("playarr", Context.MODE_PRIVATE)
   override fun get(key: String): String? = prefs.getString(key, null)
-  override fun set(key: String, value: String?) = prefs.edit().apply { if (value == null) remove(key) else putString(key, value) }.apply()
+  override fun set(key: String, value: String?) = prefs.edit { if (value == null) remove(key) else putString(key, value) }
 }
 
 val Context.playarr: PlayarrApp get() = applicationContext as PlayarrApp

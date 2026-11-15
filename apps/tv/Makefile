@@ -13,7 +13,8 @@
 #   make device-info the TV's Android version, RAM, heap limit and low-RAM flag (plan 9's table)
 #   make screens     a screenshot of what the TV shows, in screenshots/tv/ at the repo root
 #   make emulator    boot an Android TV emulator (2 GB, Android 16) without a window; then TV=emulator-5554 make install …
-#   make demo        a local Playarr with a made-up library for the emulator, at http://10.0.2.2:4620 there
+#   make demo        a local Playarr with a made-up library for the emulator, at http://10.0.2.2:4620 there, with a
+#                    pinned ffmpeg in .tools/ for the streams it plays
 #                    (scripts/demo-server.mjs; `node scripts/demo-server.mjs approve CODE` signs a TV in as its owner)
 #   make clean       remove build output
 #
@@ -32,6 +33,10 @@ JDK_SHA256 := bf036b35b071bfb2f54f2c0af8ee8d88afa95ee6eb3dce02c0f94cfc2524d04a
 CMDLINE_FILE := commandlinetools-mac_arm64-16111833_latest.zip
 CMDLINE_SHA1 := ad03dc49bfacfd52c110b14104ea548b8a07e830
 SDK_PACKAGES := platform-tools platforms;android-37.0 build-tools;37.0.0
+
+# ffmpeg for the demo server's encoded streams (levelled.aac, what the TV plays): a static macOS build.
+FFMPEG_URL := https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip
+FFMPEG_SHA256 := c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924
 
 TOOLS := $(CURDIR)/.tools
 # On CI the runner's own JDK and SDK (JAVA_HOME, ANDROID_HOME) are used.
@@ -60,7 +65,7 @@ APP_ID := me.tracklistme.playarr.tv
 APK := app/build/outputs/apk/debug/app-debug.apk
 SCREENS_ROOT := ../../screenshots/tv
 
-.PHONY: bootstrap jdk sdk build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
+.PHONY: bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
 
 bootstrap: jdk sdk
 
@@ -140,7 +145,16 @@ emulator: $(JAVA_HOME)/bin/java $(SDKMANAGER)
 	until [ "$$($(ADB) -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do sleep 2; done; \
 	echo "Emulator up: TV=emulator-5554 make install"
 
-demo:
+ffmpeg: $(TOOLS)/ffmpeg/ffmpeg
+
+$(TOOLS)/ffmpeg/ffmpeg:
+	@set -e; mkdir -p $(TOOLS)/ffmpeg; rm -f $(TOOLS)/ffmpeg.zip; \
+	curl -fsSL -o $(TOOLS)/ffmpeg.zip $(FFMPEG_URL); \
+	actual=$$(shasum -a 256 $(TOOLS)/ffmpeg.zip | cut -d ' ' -f 1); \
+	if [ "$$actual" != "$(FFMPEG_SHA256)" ]; then rm -f $(TOOLS)/ffmpeg.zip; echo "ffmpeg.zip has SHA-256 $$actual; the Makefile expects $(FFMPEG_SHA256)" >&2; exit 1; fi; \
+	unzip -q -o $(TOOLS)/ffmpeg.zip -d $(TOOLS)/ffmpeg && rm $(TOOLS)/ffmpeg.zip
+
+demo: ffmpeg
 	node scripts/demo-server.mjs
 
 clean:

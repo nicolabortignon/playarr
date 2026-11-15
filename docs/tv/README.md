@@ -44,7 +44,8 @@ itself. Later, Google Play's internal testing track installs it like any app.
 
 For work without the TV: `make -C apps/tv emulator` boots an Android TV emulator (Android 16, 2 GB, no window) and
 `make -C apps/tv demo` starts a local Playarr with a made-up library (twelve invented albums of three seconds of silence
-each, with covers drawn for them: no ffmpeg or music needed), claimed by an owner account. Then:
+each, with covers drawn for them: no music needed), claimed by an owner account. Its streams are made by a pinned
+static ffmpeg it fetches into `apps/tv/.tools/ffmpeg` the first time. Then:
 
 - `TV=emulator-5554 make -C apps/tv install`; on the TV, type the address `10.0.2.2:4620` (the emulator's name for the
   Mac);
@@ -53,8 +54,8 @@ each, with covers drawn for them: no ffmpeg or music needed), claimed by an owne
 
 ## Modules
 
-`api` (models generated from `packages/shared`, the client, servers and tokens) and `app` (the screens); `player`
-(Media3, the queue, levels, transitions, play reports) comes with plan 9's step 4. `app` depends on `player`, and both on
+`api` (models generated from `packages/shared`, the client, servers and tokens), `player` (Media3: the queue as media
+items, levels, play reports) and `app` (the screens and the playback service). `app` depends on `player`, and both on
 `api`.
 
 ## Talking to the server (plan 9 §2)
@@ -80,3 +81,24 @@ the web):
 - **Contract tests** (`make -C apps/tv contracts`) decode every answer the server's route tests record, the same files
   as the iOS app's (`apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/Fixtures`). `.github/workflows/contracts.yml`
   records them afresh and runs both apps' tests.
+
+## Playing (plan 9 §4)
+
+- **The stream**: every song plays as the server's encoded stream, AAC at 256 kbps in fragmented MP4
+  (`levelled.aac?kbps=256&gain=…`), so the TV never decodes FLAC or ALAC and the server does the levelling. The gain is
+  rounded to 0.1 dB so the same song at the same level is the same URL, which the server's cache serves again.
+- **Gapless needs nothing of ours**: the server writes its priming (2112 samples) and padding in `iTunSMPB`, and
+  Media3's fragmented-MP4 reader trims AAC by them. `GaplessTests` checks it on a real stream (`stream1.mp4`, three
+  seconds of silence from `make demo`). It needs Robolectric because Media3's extractors read `Build` fields.
+- **Levels** (`JoinRules`, as on iOS and the web): an album played in order plays at the album's level, anything else
+  at the song's. `POST /api/levels` is asked for the queue's songs, 50 at a time; a song it doesn't know plays as it is.
+- **`PlaybackService`** is a Media3 `MediaSessionService`: it plays on after Home and with the screen off, with a
+  foreground notification, and the remote's media keys and the system's Now Playing card talk to its session. It's
+  exported for them (Lint's `ExportedService` is ignored there on purpose). `PlayerConnection` is the screens'
+  `MediaController` to it.
+- **The player** (`PlayerFactory`): ExoPlayer over the app's OkHttp (the token only on this server's media requests),
+  pausing for other apps' audio and when headphones go, a network wake lock, and a 503's `Retry-After` honored up to 10
+  times while the server encodes.
+- **History** (`PlayTracker`, as iOS's): each song is reported when it stops being the current one, with the seconds
+  actually heard (a seek doesn't count) and the local hour and weekday (0 = Sunday). 30 s heard, or half a shorter song,
+  is a play; changed after 3 s, a skip; closing the app is neither. Reports the server didn't get go again with the next.

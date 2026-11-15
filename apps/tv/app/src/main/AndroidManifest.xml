@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
 
   <!-- A TV app: no touchscreen needed, and it shows in the TV's launcher (Google Play's TV rules). -->
   <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -8,6 +9,10 @@
   <uses-permission android:name="android.permission.INTERNET" />
   <!-- Bonjour (NsdManager) finds servers on the home network. -->
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <!-- Playing on in the background (PlaybackService), and keeping Wi-Fi up while it does. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
 
   <application
     android:name=".PlayarrApp"
@@ -26,5 +31,16 @@
         <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
       </intent-filter>
     </activity>
+    <!-- Exported so the system's media controls (the remote's keys, the Now Playing card, the Assistant) can reach the
+         session; Media3 asks the session about each controller as it connects. -->
+    <service
+      android:name=".playback.PlaybackService"
+      android:exported="true"
+      android:foregroundServiceType="mediaPlayback"
+      tools:ignore="ExportedService">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaSessionService" />
+      </intent-filter>
+    </service>
   </application>
 </manifest>

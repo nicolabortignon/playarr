@@ -47,7 +47,7 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
-  implementation(project(":api"))
+  implementation(project(":player"))
   implementation(libs.androidx.core.ktx)
   implementation(libs.lifecycle.viewmodel.compose)
   implementation(libs.lifecycle.runtime.compose)

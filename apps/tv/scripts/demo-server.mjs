@@ -7,7 +7,8 @@
 //   node scripts/demo-server.mjs approve ABCD2345   approve a TV's sign-in code as the owner
 //
 // Nothing here is real music: the albums and artists are invented, the songs three seconds of silence, so it needs no
-// ffmpeg and no music on the Mac.
+// music on the Mac. The TV plays the server's encoded streams, made by ffmpeg: `make demo` fetches a pinned one into
+// .tools/ffmpeg.
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,6 +23,7 @@ const TV = join(here, '..');
 const SERVER = join(TV, '../server');
 const LIBRARY = join(TV, 'build/demo-library');
 const OWNER = join(TV, 'build/demo-owner.json');
+const FFMPEG = join(TV, '.tools/ffmpeg/ffmpeg');
 const PORT = 4620;
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -101,6 +103,8 @@ async function start() {
   const env = {
     PATH: process.env.PATH, HOME: process.env.HOME, PORT: String(PORT), HOST: '0.0.0.0', DATA_DIR: join(data, 'data'),
     CACHE_DIR: join(data, 'cache'), ANALYSIS: 'off', BONJOUR: 'off', SERVER_NAME: 'Playarr demo', FOLDER_ROOTS: LIBRARY,
+    // The encoded streams (levelled.aac) need ffmpeg: the one in .tools/ when there is one.
+    ...(existsSync(FFMPEG) ? { FFMPEG_PATH: FFMPEG } : {}),
   };
   const server = spawn('corepack', ['pnpm', 'exec', 'tsx', '--disable-warning=ExperimentalWarning', 'src/index.ts'], { cwd: SERVER, env, stdio: ['ignore', 'ignore', 'inherit'] });
   const stop = () => {
