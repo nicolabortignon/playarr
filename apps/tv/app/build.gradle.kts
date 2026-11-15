@@ -47,7 +47,13 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
+  implementation(project(":api"))
   implementation(libs.androidx.core.ktx)
+  implementation(libs.lifecycle.viewmodel.compose)
+  implementation(libs.lifecycle.runtime.compose)
+  implementation(libs.zxing.core)
+  implementation(libs.coil.compose)
+  implementation(libs.coil.network.okhttp)
   implementation(libs.androidx.activity.compose)
   implementation(platform(libs.compose.bom))
   implementation(libs.compose.ui)

@@ -3,33 +3,38 @@ package me.tracklistme.playarr.tv
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.sp
-import androidx.tv.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.tracklistme.playarr.tv.ui.connect.ConnectScreen
+import me.tracklistme.playarr.tv.ui.home.HomeScreen
+import me.tracklistme.playarr.tv.ui.theme.PlayarrTheme
 
-/** Step 1's app (plan 9): it installs, shows in the launcher with its banner, and says hello from the sofa. */
+/** One activity: connecting until someone has signed in, then the library; adding an account goes back to connecting. */
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    val store = playarr.store
     setContent {
-      Column(
-        modifier = Modifier.fillMaxSize().background(Ink),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-      ) {
-        Text("Playarr", color = Paper, fontSize = 64.sp)
-        Text("On the TV, version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", color = PaperDim, fontSize = 24.sp)
+      PlayarrTheme {
+        val state by store.current.collectAsStateWithLifecycle()
+        var adding by rememberSaveable { mutableStateOf(false) }
+        val server = state.server
+        val account = state.account
+        if (server == null || account == null || adding) {
+          ConnectScreen(onSignedIn = { adding = false }, onCancel = if (account != null) ({ adding = false }) else null)
+        } else {
+          HomeScreen(
+            account = account,
+            others = server.accounts.filter { it.id != account.id },
+            onSwitch = { store.switchTo(server.id, it.id) },
+            onAddAccount = { adding = true },
+            onSignOut = { store.signedOut(server.id, account.id) },
+          )
+        }
       }
     }
   }
 }
-
-private val Ink = Color(0xFF0F0E0C)
-private val Paper = Color(0xFFECE6DC)
-private val PaperDim = Color(0xFFB8B0A3)

@@ -25,9 +25,18 @@ public object Api {
     /** GET /api/auth/me: the signed-in account. */
     public fun me(): Endpoint<Account> = get("/api/auth/me")
 
+    /** POST /api/auth/device: a code for signing this TV in from a phone or the web (plan 9 §3). */
+    public fun startDevice(device: DeviceInfo): Endpoint<DeviceCodeStart> =
+      send(HttpMethod.POST, "/api/auth/device", DeviceBody(device.name, device.platform))
+
+    /** POST /api/auth/device/poll: pending, approved with this TV's own session, or expired. */
+    public fun pollDevice(pollToken: String): Endpoint<DevicePoll> = send(HttpMethod.POST, "/api/auth/device/poll", PollBody(pollToken))
+
     /** GET /api/auth/proof: the server at a home address proving it holds a session (`HomeAddress`). */
     public fun proof(id: String, nonce: String): Endpoint<AuthProof> = get("/api/auth/proof", items("id" to id, "nonce" to nonce))
 
+    @Serializable internal data class DeviceBody(val device: String, val platform: String)
+    @Serializable internal data class PollBody(val pollToken: String)
     @Serializable internal data class SignInBody(val username: String, val password: String, val device: String, val platform: String)
   }
 

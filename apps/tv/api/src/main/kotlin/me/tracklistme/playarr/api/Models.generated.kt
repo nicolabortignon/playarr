@@ -508,11 +508,11 @@ public data class DeviceCodeStart(
     /**
      * Seconds the code lasts (600).
      */
-    public val expiresIn: Double,
+    public val expiresIn: Int,
     /**
      * Seconds to wait between polls (5).
      */
-    public val interval: Double,
+    public val interval: Int,
 )
 
 /**

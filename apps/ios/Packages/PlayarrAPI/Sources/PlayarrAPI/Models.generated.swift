@@ -703,11 +703,11 @@ public struct DeviceCodeStart: Codable, Hashable, Sendable {
     /// Only the TV has it: the code alone can't collect the session.
     public var pollToken: String
     /// Seconds the code lasts (600).
-    public var expiresIn: Double
+    public var expiresIn: Int
     /// Seconds to wait between polls (5).
-    public var interval: Double
+    public var interval: Int
 
-    public init(code: String, verifyUrl: String, pollToken: String, expiresIn: Double, interval: Double) {
+    public init(code: String, verifyUrl: String, pollToken: String, expiresIn: Int, interval: Int) {
         self.code = code
         self.verifyUrl = verifyUrl
         self.pollToken = pollToken

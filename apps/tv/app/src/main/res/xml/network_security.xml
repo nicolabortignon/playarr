@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain HTTP for the home network only, as the iOS app's App Transport Security allows: ServerAddress refuses
+     http:// for any address that isn't local, so cleartext is permitted here and the check lives in the app. Android's
+     config can't name every private range, and a server found by Bonjour is at whatever address the router gave it. -->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="true">
+    <trust-anchors>
+      <certificates src="system" />
+    </trust-anchors>
+  </base-config>
+</network-security-config>
