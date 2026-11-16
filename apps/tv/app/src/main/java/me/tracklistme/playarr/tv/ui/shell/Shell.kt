@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
@@ -30,11 +32,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,6 +71,8 @@ import me.tracklistme.playarr.tv.ui.search.SearchScreen
 import me.tracklistme.playarr.tv.ui.settings.SettingsScreen
 import me.tracklistme.playarr.tv.ui.theme.Palette
 import me.tracklistme.playarr.tv.ui.theme.Type
+import me.tracklistme.playarr.tv.update.UpdateState
+import me.tracklistme.playarr.tv.update.release
 
 /**
  * The ten-foot app (plan 9 §5): a side rail with the account, Home, Search, Library, Discover, Now Playing while
@@ -79,6 +85,8 @@ fun Shell(account: AccountRecord, onAddAccount: () -> Unit, opening: Route? = nu
   val app = LocalContext.current.playarr
   val now by app.player.current.collectAsStateWithLifecycle()
   val me by rememberLoad(account.id) { it.send(Api.Auth.me()) }
+  // An update waiting (sideload flavor): a dot on Settings.
+  val update by remember(app) { app.updates?.state ?: MutableStateFlow(UpdateState.Unknown) }.collectAsStateWithLifecycle()
   // A page asked for from outside while the app runs.
   LaunchedEffect(opening) { opening?.let { if (it == it.section) nav.section(it) else nav.go(it) } }
   BackHandler(enabled = nav.canGoBack) { nav.back() }
@@ -97,7 +105,8 @@ fun Shell(account: AccountRecord, onAddAccount: () -> Unit, opening: Route? = nu
             RailItem(TvIcons.Discover, "Discover", nav.current.section == Route.Discover, value) { nav.section(Route.Discover) }
             if (now.track != null) RailItem(TvIcons.NowPlaying, "Now Playing", nav.current == Route.NowPlaying, value) { nav.section(Route.NowPlaying) }
             Spacer(Modifier.weight(1f))
-            RailItem(Icons.Filled.Settings, "Settings", nav.current.section == Route.Settings, value) { nav.section(Route.Settings) }
+            val updateWaiting = update.release != null && update !is UpdateState.Installing
+            RailItem(Icons.Filled.Settings, "Settings", nav.current.section == Route.Settings, value, dot = updateWaiting) { nav.section(Route.Settings) }
           }
         },
       ) {
@@ -139,11 +148,16 @@ private val RailWidth = 80.dp
 val LocalImmersive = staticCompositionLocalOf<MutableState<Boolean>> { mutableStateOf(false) }
 
 @Composable
-private fun NavigationDrawerScope.RailItem(icon: ImageVector, label: String, selected: Boolean, value: DrawerValue, onClick: () -> Unit) {
+private fun NavigationDrawerScope.RailItem(icon: ImageVector, label: String, selected: Boolean, value: DrawerValue, dot: Boolean = false, onClick: () -> Unit) {
   NavigationDrawerItem(
     selected = selected,
     onClick = onClick,
-    leadingContent = { Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp)) },
+    leadingContent = {
+      Box {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+        if (dot) Box(Modifier.align(Alignment.TopEnd).offset(x = 3.dp, y = (-3).dp).size(8.dp).background(Palette.accent, CircleShape))
+      }
+    },
     modifier = Modifier.width(if (value == DrawerValue.Open) 220.dp else 56.dp),
   ) { Text(label, style = Type.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }

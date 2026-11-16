@@ -4,7 +4,7 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 
 ## In progress
 
-- The TV app, plan 9: steps 1–3 built (tools, the api module, signing in with a code); not yet run on the TV or an emulator; the TV's `adb` readings; then the gapless and Ambilight spikes, playback, the ten-foot screens, the Ambilight, releases and Google Play. *([2026-11-15-9-tv-client.md](2026-11-15-9-tv-client.md), Progress)*
+- The TV app, plan 9: built through step 8 and seen on the emulator. Left: the [checks on the TV](2026-11-16-tv-device-checklist.md), the upload key into GitHub's secrets, the first `tv-v*` release, Google Play's account and forms, and the store pictures. *([2026-11-15-9-tv-client.md](2026-11-15-9-tv-client.md), Progress)*
 - iOS opening a TV's sign-in link (`playarr://link`) itself, rather than in Safari through the web's `/link` page. *(plan 9 §3)*
 
 - App Store launch: the user's decisions, the privacy and support pages, the screenshots, the CI release job, a dry run, the submission. *([2026-11-03-ios-phase11-app-store.md](2026-11-03-ios-phase11-app-store.md))*

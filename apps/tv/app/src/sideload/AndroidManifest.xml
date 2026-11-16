@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sideload flavor (plan 9 §7) updates itself from GitHub releases: the TV asks the owner to allow Playarr to
+     install unknown apps once, and to confirm an update. Once Playarr has installed itself, Android 12 and later let
+     it update without asking, given the second permission. Google Play allows neither, so the play flavor has none. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+  <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+  <application>
+    <receiver android:name=".update.InstallReceiver" android:exported="false" />
+  </application>
+</manifest>

@@ -18,11 +18,17 @@ Gradle comes through the checked-in wrapper (9.9.1, its distribution pinned by S
 | | |
 |---|---|
 | `pnpm tv:build` | a debug APK |
-| `pnpm tv:test` | unit tests and Android Lint |
+| `pnpm tv:test` | unit tests, Android Lint of both flavors, and the scripts' tests |
 | `pnpm tv:install` | build, install and start it on the TV over adb (`TV_ADDRESS`, the owner's TV by default) |
 | `pnpm tv:logs`, `tv:meminfo` | the app's log, and its memory (`dumpsys meminfo`) |
 | `pnpm tv:device-info` | the TV's Android version, RAM, heap limit and low-RAM flag |
 | `pnpm tv:screens` | a screenshot of the TV, in `screenshots/tv/` |
+| `make -C apps/tv release` | the signed APK and Play bundle in `apps/tv/build/release/` ([release.md](release.md)) |
+
+**A new Mac** needs only `pnpm tv:bootstrap` to build and test: about 1 GB in `apps/tv/.tools/`, 2 GB of Gradle
+caches, and a few minutes for Gradle's first build. Releases also need the upload key (`make -C apps/tv upload-key` on
+the Mac that makes them, or the keystore copied from that Mac with its lines in the repo's `.env`). The emulator
+(`make -C apps/tv emulator`) takes about 11 GB more.
 
 ## The TV and adb
 
@@ -58,6 +64,11 @@ static ffmpeg it fetches into `apps/tv/.tools/ffmpeg` the first time. Then:
 items, levels, play reports) and `app` (the screens and the playback service). `app` depends on `player`, and both on
 `api`.
 
+`app` has two flavors (`productFlavors`, dimension `store`): **`sideload`** for GitHub releases, which updates itself
+(`app/src/sideload/`: `GitHubUpdates`, `InstallReceiver`, and the permissions to install), and **`play`** for Google
+Play, which has neither. Code both share asks for the flavor's updater through `PlayarrApp.updates`, which is null in
+`play`.
+
 ## Talking to the server (plan 9 §2)
 
 The `api` module is the iOS app's PlayarrAPI in Kotlin, for what the TV calls (admin settings stay on the phone and
@@ -81,6 +92,20 @@ the web):
 - **Contract tests** (`make -C apps/tv contracts`) decode every answer the server's route tests record, the same files
   as the iOS app's (`apps/ios/Packages/PlayarrAPI/Tests/PlayarrAPITests/Fixtures`). `.github/workflows/contracts.yml`
   records them afresh and runs both apps' tests.
+
+## Signing in (plan 9 §3)
+
+- **Finding the server**: servers on the home network appear as Bonjour finds them (`ServerBrowser`, NsdManager), or
+  the address is typed with the remote.
+- **The code**: the TV asks `POST /api/auth/device` for a code, and shows it large in DM Mono beside a QR code for
+  `<server>/link?code=…` (ink on paper, as phone cameras read it). It polls `/device/poll` every 5 s and asks for a
+  new code when one expires. Someone signed in on a phone or the web approves it on the `/link` page, choosing the
+  account. The TV then gets a session of its own (platform `tv`), shown as a TV under the account's devices. The
+  server's side is in [accounts-and-access.md](../server/accounts-and-access.md#signing-in-a-tv-with-a-code).
+- **Several accounts**: Settings → Accounts lists who's signed in on this TV. Listen as switches between them; Add an
+  account goes through a code again; Sign out is for this TV only. Tokens are sealed in the Android Keystore
+  (`KeystoreSecretStore`), and app backups are off, so they never leave the TV.
+- **Not built**: claiming a server from the remote. A server in setup mode says to set it up on a phone or computer.
 
 ## Playing (plan 9 §4)
 
@@ -166,3 +191,14 @@ Settings → Ambilight → "Lights follow the music", off by default (`app/…/a
   Mac's port 1926 (self-signed HTTPS, pairing with a PIN it prints, Digest, and the Ambilight's calls, printing each
   color sent). The emulator reaches it at its own 127.0.0.1:1926 through `adb reverse`.
 - **Not yet:** pulsing on the beat from the song's mix map.
+
+## Releases and updates (plan 9 §7)
+
+How a release is made, the upload key, the self-update and Google Play are in [release.md](release.md). In short:
+
+- A `tv-v<version>` tag builds the signed sideload APK and puts it on a GitHub release, and sends the Play bundle to
+  Play's internal testing track (`.github/workflows/tv.yml`).
+- The sideload flavor asks GitHub once a day for a newer release. Settings → About offers it, with a dot on the
+  Settings rail item, then downloads it, checks it and installs it through PackageInstaller.
+- `scripts/play-upload.mjs` talks to the Play Developer API with no dependencies; `scripts/fake-releases.mjs` stands in
+  for GitHub's releases on the emulator.

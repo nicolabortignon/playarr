@@ -24,6 +24,11 @@ class MainActivity : ComponentActivity() {
     intent.getStringExtra(ROUTE)?.let { opening = Route.decode(it) }
   }
 
+  override fun onResume() {
+    super.onResume()
+    playarr.updates?.resumed()
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     val store = playarr.store

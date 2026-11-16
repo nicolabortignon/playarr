@@ -2,7 +2,7 @@
 #
 #   make bootstrap   download the pinned JDK and Android SDK into .tools/ (checksums checked), accept the SDK's licenses
 #   make build       a debug APK (app/build/outputs/apk/debug/)
-#   make test        the unit tests (the contract tests among them) and Android Lint
+#   make test        the unit tests (the contract tests among them), Android Lint of both flavors, and the scripts' tests
 #   make contracts   only the contract tests: the server's recorded answers decode into the generated models
 #   make models      regenerate the api module's Kotlin models from the shared TypeScript types (models-check: up to date?)
 #   make gradle ARGS=":api:test --tests '*Contract*'"  any Gradle task, with the pinned JDK, SDK and proxy
@@ -19,6 +19,10 @@
 #   make join-test   the DJ-transition join spike on the TV or emulator, checked sample by sample
 #   make fake-tv     a stand-in for the TV's JointSpace (the Ambilight) that the emulator reaches
 #   make release     the signed sideload APK and Play bundle in build/release/ (docs/tv/release.md)
+#   make upload-key  make the upload key that signs releases (once, kept outside the repo; named in the repo's .env)
+#   make ci-secrets  give GitHub the upload key (and the Play service account) for the tv-v* tag's release job
+#   make play-check  is the Play service account accepted? (play-upload sends build/release's bundle to TRACK)
+#   make fake-releases  a stand-in for GitHub's releases, for trying the self-update on the emulator
 #   make clean       remove build output
 #
 # Nothing comes from Homebrew (not writable on the owner's Mac): the JDK, the SDK and Gradle (through the checked-in
@@ -68,7 +72,7 @@ APP_ID := me.tracklistme.playarr.tv
 APK := app/build/outputs/apk/sideload/debug/app-sideload-debug.apk
 SCREENS_ROOT := ../../screenshots/tv
 
-.PHONY: join-test fake-tv release version bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
+.PHONY: join-test fake-tv release version upload-key ci-secrets play-check play-upload fake-releases test-scripts bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
 
 bootstrap: jdk sdk
 
@@ -98,8 +102,12 @@ $(TOOLS)/android-sdk/platform-tools/adb: $(JAVA_HOME)/bin/java $(SDKMANAGER)
 build:
 	$(GRADLE) :app:assembleSideloadDebug
 
-test:
-	$(GRADLE) test lint
+# `lint` alone checks one flavor (play); the sideload flavor has code of its own (updating itself).
+test: test-scripts
+	$(GRADLE) test lint :app:lintSideloadDebug
+
+test-scripts:
+	node --test scripts/*.test.mjs
 
 contracts:
 	$(GRADLE) :api:testDebugUnitTest --tests 'me.tracklistme.playarr.api.ContractTests'
@@ -158,10 +166,19 @@ $(TOOLS)/ffmpeg/ffmpeg:
 	unzip -q -o $(TOOLS)/ffmpeg.zip -d $(TOOLS)/ffmpeg && rm $(TOOLS)/ffmpeg.zip
 
 # A release (plan 9 §7): the sideload APK for GitHub releases and the Play app bundle, signed with the upload key
-# from PLAYARR_TV_KEYSTORE (+ _PASSWORD, PLAYARR_TV_KEY_ALIAS, PLAYARR_TV_KEY_PASSWORD), in build/release/.
+# from PLAYARR_TV_KEYSTORE (+ _PASSWORD, PLAYARR_TV_KEY_ALIAS, PLAYARR_TV_KEY_PASSWORD), in build/release/. On a Mac they
+# come from the repo's .env when the environment doesn't have them (`make upload-key` writes them there); CI sets them.
 VERSION := $(shell sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/build.gradle.kts)
+ENV_FILE := $(wildcard ../../.env)
+from_env = $(if $(ENV_FILE),$(shell sed -n 's/^$(1)=//p' $(ENV_FILE) | tail -n 1))
+export PLAYARR_TV_KEYSTORE ?= $(call from_env,PLAYARR_TV_KEYSTORE)
+export PLAYARR_TV_KEYSTORE_PASSWORD ?= $(call from_env,PLAYARR_TV_KEYSTORE_PASSWORD)
+export PLAYARR_TV_KEY_ALIAS ?= $(call from_env,PLAYARR_TV_KEY_ALIAS)
+export PLAY_SERVICE_ACCOUNT_FILE ?= $(call from_env,PLAY_SERVICE_ACCOUNT_FILE)
+UPLOAD_KEY ?= $(HOME)/.playarr/playarr-tv-upload.jks
+
 release:
-	@[ -n "$$PLAYARR_TV_KEYSTORE" ] || { echo "PLAYARR_TV_KEYSTORE isn't set: see docs/tv/release.md"; exit 1; }
+	@[ -n "$$PLAYARR_TV_KEYSTORE" ] || { echo "No upload key: make upload-key, or set PLAYARR_TV_KEYSTORE (docs/tv/release.md)"; exit 1; }
 	$(GRADLE) :app:assembleSideloadRelease :app:bundlePlayRelease
 	@mkdir -p build/release
 	cp app/build/outputs/apk/sideload/release/app-sideload-release.apk build/release/playarr-tv-$(VERSION).apk
@@ -170,6 +187,46 @@ release:
 
 version:
 	@echo $(VERSION)
+
+# The upload key, once: a PKCS12 keystore valid for 27 years (Play wants past 2033) with a random password, at
+# UPLOAD_KEY outside the repo, its settings added to the repo's .env. A sideloaded TV only takes updates signed with
+# it, so back up the file and the password together.
+upload-key: $(JAVA_HOME)/bin/java
+	@set -e; \
+	if [ -e "$(UPLOAD_KEY)" ]; then echo "$(UPLOAD_KEY) exists already: it signs every release, so it's kept" >&2; exit 1; fi; \
+	if [ -n "$$PLAYARR_TV_KEYSTORE" ]; then echo "An upload key is set already: $$PLAYARR_TV_KEYSTORE" >&2; exit 1; fi; \
+	mkdir -p "$(dir $(UPLOAD_KEY))"; chmod 700 "$(dir $(UPLOAD_KEY))"; \
+	password=$$(openssl rand -hex 24); \
+	$(JAVA_HOME)/bin/keytool -genkeypair -keystore "$(UPLOAD_KEY)" -storetype PKCS12 -alias upload -keyalg RSA -keysize 4096 \
+	  -validity 10000 -dname "CN=Playarr for TV" -storepass "$$password" -keypass "$$password" >/dev/null 2>&1; \
+	chmod 600 "$(UPLOAD_KEY)"; \
+	touch ../../.env; chmod 600 ../../.env; \
+	{ echo; echo "# The TV app's upload key (make -C apps/tv upload-key, docs/tv/release.md): back up the file and the password together."; \
+	  echo "PLAYARR_TV_KEYSTORE=$(UPLOAD_KEY)"; echo "PLAYARR_TV_KEYSTORE_PASSWORD=$$password"; echo "PLAYARR_TV_KEY_ALIAS=upload"; } >> ../../.env; \
+	echo "Made $(UPLOAD_KEY), named in the repo's .env. Back it up with its password; then make ci-secrets."; \
+	$(JAVA_HOME)/bin/keytool -list -v -keystore "$(UPLOAD_KEY)" -storepass "$$password" | grep -E "SHA256:" | head -n 1
+
+# The upload key, and the Play service account when PLAY_SERVICE_ACCOUNT_FILE is set, as the repository's GitHub
+# secrets (with gh, signed in to GitHub), for .github/workflows/tv.yml's release job.
+ci-secrets:
+	@set -e; \
+	[ -n "$$PLAYARR_TV_KEYSTORE" ] || { echo "No upload key: make upload-key first" >&2; exit 1; }; \
+	base64 < "$$PLAYARR_TV_KEYSTORE" | tr -d '\n' | gh secret set PLAYARR_TV_KEYSTORE_BASE64; \
+	printf %s "$$PLAYARR_TV_KEYSTORE_PASSWORD" | gh secret set PLAYARR_TV_KEYSTORE_PASSWORD; \
+	printf %s "$${PLAYARR_TV_KEY_ALIAS:-upload}" | gh secret set PLAYARR_TV_KEY_ALIAS; \
+	if [ -n "$$PLAY_SERVICE_ACCOUNT_FILE" ]; then gh secret set PLAY_SERVICE_ACCOUNT_JSON < "$$PLAY_SERVICE_ACCOUNT_FILE"; fi; \
+	gh secret list | grep -E 'PLAYARR_TV|PLAY_SERVICE'
+
+play-check:
+	node scripts/play-upload.mjs --check
+
+# The release's bundle to a Play track from this Mac (TRACK=internal by default); a tv-v* tag does it on CI.
+TRACK ?= internal
+play-upload:
+	node scripts/play-upload.mjs build/release/playarr-tv-$(VERSION).aab --track $(TRACK)
+
+fake-releases:
+	node scripts/fake-releases.mjs $(wildcard build/release/playarr-tv-*.apk)
 
 demo: ffmpeg
 	node scripts/demo-server.mjs

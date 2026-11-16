@@ -38,6 +38,11 @@ How Playarr works today, part by part. The code is the final word; these pages s
 - [ios/layouts.md](ios/layouts.md): portrait, sideways, iPad and iPhone Duo layouts, and accessibility.
 - [ios/release.md](ios/release.md): TestFlight and App Store tooling.
 
+## TV app (`apps/tv`)
+
+- [tv/README.md](tv/README.md): the Android TV app: tools, adb and the emulator, modules, talking to the server, signing in with a code, playing and DJ mix, the ten-foot screens, the Ambilight, and releases.
+- [tv/release.md](tv/release.md): the upload key, making a release, the app updating itself from GitHub, and Google Play.
+
 ## Plans (work not finished)
 
 - [plans/2026-11-05-1-safety-and-release.md](plans/2026-11-05-1-safety-and-release.md): nothing a push does can blank the app, lose data or leak a credential; every release can be undone. *Done (the gate still to be seen on the NAS; of 4, the check of past uploads' warnings left).*
@@ -48,7 +53,8 @@ How Playarr works today, part by part. The code is the final word; these pages s
 - [plans/2026-11-05-6-ux-flows.md](plans/2026-11-05-6-ux-flows.md): touch at desktop width, Undo for removals, one song menu, pages that lead with Play, a player that's never dead, Settings on a phone, search without dead ends, keyboard and VoiceOver. *Done on both apps; a few smaller things left.*
 - [plans/2026-11-05-7-delight.md](plans/2026-11-05-7-delight.md): things that move from where they came from, an app that keeps time with the music, covers as objects, one voice, small rituals, scrubbing you can see, haptics. *Done on both apps (iOS 2026-11-07); the bigger ideas wait until they're asked for.*
 - [plans/2026-11-07-8-mood-mixes.md](plans/2026-11-07-8-mood-mixes.md): what defines Energy boost, Chill, Deep focus and Wind down, and the algorithm that matches songs to them from the measured sound, tags, lyrics and shape. *Built on the server, lyrics looked up ahead for Deep focus; to tune on a real library.*
-- [plans/2026-11-15-9-tv-client.md](plans/2026-11-15-9-tv-client.md): Playarr on the living-room TV (Android TV, Compose for TV and Media3): signing in with a code, server-side audio, a ten-foot app within 200 MB, the Ambilight following the cover, sideloaded updates then Google Play. *Drafted; four decisions to take first.*
+- [plans/2026-11-15-9-tv-client.md](plans/2026-11-15-9-tv-client.md): Playarr on the living-room TV (Android TV, Compose for TV and Media3): signing in with a code, server-side audio, a ten-foot app within 200 MB, the Ambilight following the cover, sideloaded updates then Google Play. *Built through step 8 and seen on the emulator; the TV's checks, the first release and Google Play are the owner's to do.*
 - [plans/open-items.md](plans/open-items.md): everything else still open, one line each, with where it came from.
 - [plans/2026-11-03-ios-phase11-app-store.md](plans/2026-11-03-ios-phase11-app-store.md): the App Store launch, in progress.
 - [plans/2026-11-05-ios-device-checklist.md](plans/2026-11-05-ios-device-checklist.md): what still has to be checked on a real iPhone or iPad.
+- [plans/2026-11-16-tv-device-checklist.md](plans/2026-11-16-tv-device-checklist.md): what still has to be checked on the real TV.

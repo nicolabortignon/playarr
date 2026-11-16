@@ -1,0 +1,25 @@
+Playarr plays the music on your own server on your TV: the albums you own, kept on your computer or NAS, from the sofa with the remote.
+
+Playarr is a free, open-source music server that you run yourself, at home or on a machine you rent. It reads the music folders you give it and, if you use Lidarr, the library Lidarr manages. This app is its player for Android TV. You need a Playarr server to use it: set one up from github.com/nicolabortignon/playarr, or ask someone who runs one for an account.
+
+SIGN IN FROM THE SOFA
+• The TV finds Playarr servers on your home network, or you type the address with the remote
+• No password to type: the TV shows a code, and you approve it on your phone by scanning its QR code
+• One server, many people: each has their own account, history, favorites and playlists, and the TV switches between them
+
+LISTEN
+• Gapless albums
+• Even volume: every song at the same loudness, prepared by your server
+• DJ mix: songs blend into each other on the beat, mixed by your server
+• Synced lyrics, a sleep timer, and radio that keeps playing similar songs from your library when the queue ends
+• The music plays on behind the screensaver and other apps, with the TV's own media controls
+
+TEN FEET AWAY
+• Home, with Jump back in, mixes made from what you listen to, and Feeling lucky
+• Search, artists, albums, favorites and playlists, all with the remote
+• Now Playing with the cover large, and an art mode that keeps an OLED screen safe when it's left up
+• On a Philips TV, the Ambilight can take the colors of the cover playing (off unless you turn it on)
+• Where the server's owner allows it, discover music and ask for an album to be added to the server's Lidarr library
+
+NOTHING ELSE
+Playarr talks only to the servers you add (and, for the Ambilight, to the TV itself). No ads, no tracking, no account with us.

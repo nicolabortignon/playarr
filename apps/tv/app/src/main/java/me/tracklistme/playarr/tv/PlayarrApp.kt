@@ -23,6 +23,8 @@ import me.tracklistme.playarr.tv.ambilight.Ambilight
 import me.tracklistme.playarr.tv.ambilight.AmbilightStore
 import me.tracklistme.playarr.tv.playback.PlaybackSettings
 import me.tracklistme.playarr.tv.playback.PlayerConnection
+import me.tracklistme.playarr.tv.update.SelfUpdate
+import me.tracklistme.playarr.tv.update.selfUpdate
 import okhttp3.Cache
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -38,6 +40,8 @@ class PlayarrApp : Application(), SingletonImageLoader.Factory {
   val playback: PlaybackSettings by lazy { PlaybackSettings(this) }
   val sleep: SleepTimer by lazy { SleepTimer() }
   val ambilight: Ambilight by lazy { Ambilight(AmbilightStore(this, KeystoreSecretStore(this)), http, device.name) }
+  /** Updating from GitHub releases (Settings → About), in the sideload flavor; null in the play flavor. */
+  val updates: SelfUpdate? by lazy { selfUpdate(this) }
 
   val http: OkHttpClient by lazy {
     OkHttpClient.Builder()

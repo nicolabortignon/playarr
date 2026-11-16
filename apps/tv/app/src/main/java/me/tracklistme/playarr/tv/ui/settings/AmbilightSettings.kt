@@ -81,7 +81,7 @@ class AmbilightFocus {
 }
 
 @Composable
-private fun Note(text: String) {
+internal fun Note(text: String) {
   Text(text, style = Type.rowDetail.copy(color = Palette.muted), modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
 }
 

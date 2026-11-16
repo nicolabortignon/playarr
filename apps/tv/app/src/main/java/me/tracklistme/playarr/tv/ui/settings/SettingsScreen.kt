@@ -18,6 +18,7 @@ import androidx.tv.material3.ListItem
 import androidx.tv.material3.ListItemDefaults
 import androidx.tv.material3.Switch
 import androidx.tv.material3.Text
+import kotlinx.coroutines.flow.MutableStateFlow
 import me.tracklistme.playarr.api.Api
 import me.tracklistme.playarr.player.StreamQuality
 import me.tracklistme.playarr.tv.playarr
@@ -27,9 +28,11 @@ import me.tracklistme.playarr.tv.ui.common.Margins
 import me.tracklistme.playarr.tv.ui.common.rememberLoad
 import me.tracklistme.playarr.tv.ui.theme.Palette
 import me.tracklistme.playarr.tv.ui.theme.Type
+import me.tracklistme.playarr.tv.update.UpdateState
 
 /**
- * Settings on the TV (plan 9 §5): playback, the Ambilight, accounts, the server and about. Admin settings stay on the phone and the
+ * Settings on the TV (plan 9 §5): playback, the Ambilight, accounts, the server and about (with updates, in the
+ * sideload flavor). Admin settings stay on the phone and the
  * web: a TV is shared, and organizing sources and accounts belongs to a person's own device.
  */
 @Composable
@@ -41,6 +44,8 @@ fun SettingsScreen(onAddAccount: () -> Unit, extra: LazyListScope.() -> Unit = {
   val ambilight by app.ambilight.status.collectAsStateWithLifecycle()
   val ambilightFocus = remember { AmbilightFocus() }
   val server by rememberLoad { it.send(Api.Server.info()) }
+  val updates = app.updates
+  val update by remember(updates) { updates?.state ?: MutableStateFlow(UpdateState.Unknown) }.collectAsStateWithLifecycle()
   val version = remember(app) { runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "" }
   LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Margins.Horizontal, end = Margins.Horizontal, top = Margins.Vertical, bottom = 48.dp)) {
     item { Text("Settings", style = Type.pageTitle) }
@@ -86,6 +91,7 @@ fun SettingsScreen(onAddAccount: () -> Unit, extra: LazyListScope.() -> Unit = {
 
     section("About")
     item { Choice("Playarr for TV", version, "Admin settings, sources and accounts are on the phone and the web.") {} }
+    updates?.let { updateSettings(it, update) }
   }
 }
 

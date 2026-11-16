@@ -1,8 +1,8 @@
-# The TV app (plan 9 §7): the unit tests (the contract tests among them) and Android Lint for every push and pull
-# request that changes apps/tv, the shared types or this file. A `tv-v*` tag (tv-v1.2.0, matching versionName in
-# apps/tv/app/build.gradle.kts) also builds the release: the sideload APK, signed with the upload key, goes on a GitHub
-# release that the app on the TV offers in Settings → About; the Play bundle goes to Google Play's internal testing
-# track once the Play secrets exist. Pull requests never see the secrets: only the tag's steps use them.
+# The TV app (plan 9 §7): the unit tests (the contract tests among them), Android Lint and the scripts' tests for every
+# push and pull request that changes apps/tv, the shared types or this file. A `tv-v*` tag (tv-v1.2.0, matching
+# versionName in apps/tv/app/build.gradle.kts) also builds the release: the sideload APK, signed with the upload key,
+# goes on a GitHub release that the app on the TV offers in Settings → About; the Play bundle goes to Google Play's
+# internal testing track once the Play secrets exist. Pull requests never see the secrets: only the tag's steps use them.
 name: TV
 
 on:
@@ -32,6 +32,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+
+      # The scripts' tests (play-upload.mjs) run with the release job's Node.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       # The runner's Android SDK, with the platform the app compiles against (apps/tv/Makefile's SDK_PACKAGES).
       - name: Android SDK
