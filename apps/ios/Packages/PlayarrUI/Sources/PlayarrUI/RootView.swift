@@ -29,6 +29,9 @@ public struct RootView: View {
             .sheet(item: $model.redeemLink) { link in
                 AddServerFlow(app: model, start: .redeem(link), onCancel: { model.redeemLink = nil }) { model.redeemLink = nil }
             }
+            .sheet(item: $model.deviceLink) { link in
+                SignInTVView(app: model, link: link) { model.deviceLink = nil }
+            }
             .task(id: model.store.active) { await model.checkActiveServer() }
             .task(id: model.store.activeAccount) { model.syncSession() }
             .pinningDownloadedPages(model.session?.player.downloads) { model.session?.queries.setPinned($0) }

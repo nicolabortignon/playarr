@@ -22,6 +22,16 @@ extension API {
         /// GET /api/auth/me: the signed-in account.
         public static func me() -> Endpoint<Account> { Endpoint(.get, "/api/auth/me") }
 
+        /// POST /api/auth/device/lookup: which device a TV's sign-in code is for, before signing it in (plan 9 §3).
+        public static func deviceLookup(code: String) -> Endpoint<DeviceCodeInfo> {
+            Endpoint(.post, "/api/auth/device/lookup", body: CodeBody(code: code))
+        }
+
+        /// POST /api/auth/device/approve: signs that device in as this account; the TV picks up a session of its own.
+        public static func deviceApprove(code: String) -> Endpoint<DeviceCodeInfo> {
+            Endpoint(.post, "/api/auth/device/approve", body: CodeBody(code: code))
+        }
+
         /// GET /api/auth/proof: the server at a home address proving it holds a session (`HomeAddress`). Sent without
         /// the token: `id` names the session, `nonce` makes the answer new.
         public static func proof(id: String, nonce: String) -> Endpoint<AuthProof> {
@@ -38,6 +48,10 @@ extension API {
 
         private struct RedeemBody: Encodable, Sendable {
             let code, password, device, platform: String
+        }
+
+        private struct CodeBody: Encodable, Sendable {
+            let code: String
         }
     }
 }

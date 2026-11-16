@@ -298,6 +298,7 @@ describe('signing in a TV with a code (plan 9 §3)', () => {
     const code = `${start.code.slice(0, 4)} ${start.code.slice(4)}`.toLowerCase();
     const looked = await ctx.post('/api/auth/device/lookup', { code }, { headers: owner });
     expect(looked.json()).toMatchObject({ device: 'Living room TV', platform: 'tv' });
+    recordFixture('auth-device-lookup', looked);
     expect((await ctx.post('/api/auth/device/approve', { code }, { headers: owner })).statusCode).toBe(200);
     // Approved once: the code is spent.
     expect((await ctx.post('/api/auth/device/approve', { code }, { headers: owner })).statusCode).toBe(404);

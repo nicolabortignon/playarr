@@ -16,3 +16,14 @@ export function onIPhoneOrIPad(ua = navigator.userAgent, touchPoints = navigator
 export function appRedeemLink(server: string, code: string): string {
   return `playarr://redeem?server=${encodeURIComponent(server)}&code=${encodeURIComponent(code)}`;
 }
+
+/** A TV's sign-in code opened in the app (`DeviceLink.swift`): it signs the TV in at `server` as an account signed in there. */
+export function appDeviceLink(server: string, code: string): string {
+  return `playarr://link?server=${encodeURIComponent(server)}&code=${encodeURIComponent(code)}`;
+}
+
+/** The TV's code when a page is on its way to signing a TV in (`/link?code=…`), else ''. */
+export function deviceCodeOf(next: string): string {
+  const match = /^\/link\?code=([A-Za-z0-9 -]{8,11})$/.exec(next);
+  return match ? match[1]!.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+}

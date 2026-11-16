@@ -148,10 +148,17 @@ Seen on the emulator (Android TV 16) on 2026-11-16:
 8. **Closed testing before production.** A personal account opened after November 2023 needs a closed test with at
    least 12 testers opted in for 14 days in a row before it can publish to production.
 
-**The store listing** lives in `apps/tv/store/en-US/`: `title.txt`, `short-description.txt`, `full-description.txt`
-and `whats-new.txt`, within Play's limits (the script's tests check them). `play-upload.mjs <bundle> --listing` sends
-the words with a release. The pictures aren't in the repo yet: a 512×512 icon, a 1024×500 feature graphic, a
-1280×720 TV banner, and TV screenshots at 1920×1080 (`make screens`).
+**The store listing** lives in `apps/tv/store/en-US/`:
+
+- the words: `title.txt`, `short-description.txt`, `full-description.txt` and `whats-new.txt`, within Play's limits
+  (the script's tests check them);
+- the pictures in `images/`: `icon.png` (512×512), `feature-graphic.png` (1024×500) and `tv-banner.png` (1280×720),
+  drawn by `make store-images` (`scripts/store-images.swift`, from the icon's shapes and Gloock, which also draws the
+  launcher's banner), and `tv-screenshots/` (1920×1080), taken by `make store-screens` from the emulator signed in to
+  `make demo`, whose albums are invented.
+
+`play-upload.mjs <bundle> --listing` sends the words and the pictures with a release, each picture type replacing
+what Play had.
 
 **`scripts/play-upload.mjs`**:
 
@@ -174,7 +181,7 @@ the words with a release. The pictures aren't in the repo yet: a 512×512 icon, 
 | A Now Playing card while playing (`MediaSessionService`), Ambient Mode left alone | Done |
 | 64-bit, and 16 KB pages | Done: the only native code is AndroidX's own path library, 16 KB-aligned |
 | A privacy policy | Waiting for the page |
-| TV screenshots and a TV banner in the listing | Not made yet |
+| TV screenshots and a TV banner in the listing | In `store/en-US/images/` |
 
 ## 5. The server and old apps
 

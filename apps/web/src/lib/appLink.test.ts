@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appRedeemLink, onIPhoneOrIPad } from './appLink';
+import { appDeviceLink, appRedeemLink, deviceCodeOf, onIPhoneOrIPad } from './appLink';
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1';
 const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15';
@@ -15,5 +15,14 @@ describe('the iOS app link', () => {
 
   it('opens a setup code in the app at the address the page came from', () => {
     expect(appRedeemLink('https://music.example.com', 'K7PQ2MXA')).toBe('playarr://redeem?server=https%3A%2F%2Fmusic.example.com&code=K7PQ2MXA');
+    expect(appDeviceLink('http://nas.local:4000', 'ABCD2345')).toBe('playarr://link?server=http%3A%2F%2Fnas.local%3A4000&code=ABCD2345');
+  });
+
+  it('reads the TV’s code from where signing in goes next', () => {
+    expect(deviceCodeOf('/link?code=ABCD2345')).toBe('ABCD2345');
+    expect(deviceCodeOf('/link?code=abcd-2345')).toBe('ABCD2345');
+    expect(deviceCodeOf('/link')).toBe('');
+    expect(deviceCodeOf('/link?code=ABC')).toBe('');
+    expect(deviceCodeOf('/library?code=ABCD2345')).toBe('');
   });
 });

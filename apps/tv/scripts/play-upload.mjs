@@ -4,7 +4,8 @@
 //   node scripts/play-upload.mjs <bundle.aab> [--track internal] [--listing]
 //                                    upload the bundle to a track (internal testing unless told), with
 //                                    store/en-US/whats-new.txt as its release notes; --listing also sends the store
-//                                    listing's words (store/en-US: title, short and full description)
+//                                    listing: its words (store/en-US: title, short and full description) and its
+//                                    pictures (store/en-US/images: icon, feature graphic, TV banner, TV screenshots)
 //   node scripts/play-upload.mjs --check
 //                                    is the service account accepted, and may it release the app?
 //
@@ -12,7 +13,7 @@
 // PLAY_SERVICE_ACCOUNT_FILE (its path). Google's API can't create an app, and the first bundle goes up by hand in Play
 // Console; after that, a `tv-v*` tag runs this (.github/workflows/tv.yml). docs/tv/release.md has the steps.
 import { createSign } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -93,12 +94,12 @@ export async function accessToken(creds, { fetch = globalThis.fetch, now = Date.
 
 /** Calls on the API with the token: `call('POST', '/edits', { json })`, or `{ upload: Buffer }` for the upload host. */
 export function client(token, { fetch = globalThis.fetch } = {}) {
-  return async function call(method, path, { json, upload, query, what } = {}) {
+  return async function call(method, path, { json, upload, type = 'application/octet-stream', query, what } = {}) {
     const url = `${upload ? UPLOAD : API}/applications/${PACKAGE}${path}${query ? `?${new URLSearchParams(query)}` : ''}`;
     const headers = { Authorization: `Bearer ${token}` };
     let body;
     if (upload) {
-      headers['Content-Type'] = 'application/octet-stream';
+      headers['Content-Type'] = type;
       body = upload;
     } else if (json !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -131,12 +132,28 @@ export function readStore(dir = STORE, { listing = false } = {}) {
   return out;
 }
 
+/** Play's image types, by file in store/<language>/images/ (a folder holds several, in name order). */
+export const IMAGES = { icon: 'icon.png', featureGraphic: 'feature-graphic.png', tvBanner: 'tv-banner.png', tvScreenshots: 'tv-screenshots' };
+
+/** The listing's pictures, by Play's image type; a type without its file or folder is left as Play has it. */
+export function readImages(dir = join(STORE, 'images')) {
+  const out = {};
+  for (const [type, name] of Object.entries(IMAGES)) {
+    const path = join(dir, name);
+    if (!existsSync(path)) continue;
+    out[type] = name.endsWith('.png')
+      ? [readFileSync(path)]
+      : readdirSync(path).filter((f) => f.endsWith('.png')).sort().map((f) => readFileSync(join(path, f)));
+  }
+  return out;
+}
+
 /**
  * Sends a bundle to a track in one edit: the bundle, the listing's words if asked, the track's release (its notes from
  * whats-new.txt), then commits. An app Play still has as a draft (never sent for review) takes only draft releases, and
  * some edits can't be sent for review on their own; both are retried as Play asks. A failed edit is deleted.
  */
-export async function upload(call, { bundle, track = 'internal', words, log = console.log }) {
+export async function upload(call, { bundle, track = 'internal', words, images = {}, log = console.log }) {
   const edit = await call('POST', '/edits', { json: {}, what: 'starting an edit' });
   const id = edit.id;
   try {
@@ -149,6 +166,15 @@ export async function upload(call, { bundle, track = 'internal', words, log = co
         what: 'the store listing',
       });
       log('Sent the store listing (en-US)');
+    }
+    for (const [type, files] of Object.entries(images)) {
+      if (!files.length) continue;
+      // Replaced, not added to: Play keeps every picture uploaded until it's deleted.
+      await call('DELETE', `/edits/${id}/listings/en-US/${type}`, { what: `the listing's ${type}` });
+      for (const file of files) {
+        await call('POST', `/edits/${id}/listings/en-US/${type}`, { upload: file, type: 'image/png', query: { uploadType: 'media' }, what: `the listing's ${type}` });
+      }
+      log(`Sent ${files.length} ${type}`);
     }
     const release = (status) => ({
       track,
@@ -205,8 +231,9 @@ async function main() {
   const call = client(await accessToken(credentials()));
   if (args.check) return check(call);
   const words = readStore(STORE, { listing: args.listing });
+  const images = args.listing ? readImages() : {};
   console.log(`Sending ${basename(args.bundle)} to Google Play (${args.track})`);
-  await upload(call, { bundle: readFileSync(args.bundle), track: args.track, words });
+  await upload(call, { bundle: readFileSync(args.bundle), track: args.track, words, images });
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

@@ -26,6 +26,7 @@ struct Contract: Sendable, CustomTestStringConvertible {
         Contract("auth-proof", AuthProof.self),
         Contract("auth-device", DeviceCodeStart.self),
         Contract("auth-device-approved", DevicePoll.self),
+        Contract("auth-device-lookup", DeviceCodeInfo.self),
         Contract("accounts", [ListedAccount].self),
         Contract("account-created", CreatedAccount.self),
         Contract("setup-code", SetupCode.self),

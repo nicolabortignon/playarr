@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { LIMITS, PACKAGE, accessToken, assertion, check, client, credentials, explain, parseArgs, readStore, upload } from './play-upload.mjs';
+import { LIMITS, PACKAGE, accessToken, assertion, check, client, credentials, explain, parseArgs, readImages, readStore, upload } from './play-upload.mjs';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const pem = privateKey.export({ type: 'pkcs8', format: 'pem' });
@@ -106,6 +106,45 @@ test('with the listing, its words go in the same edit', async () => {
   await upload(client('tok', { fetch: google.fetch }), { bundle: Buffer.alloc(1), track: 'beta', words: all, log: quiet });
   const listing = google.calls.find((c) => c.key.includes('/listings/'));
   assert.deepEqual(JSON.parse(listing.init.body), { language: 'en-US', title: 'Playarr', shortDescription: 'Short.', fullDescription: 'Full.' });
+});
+
+test('the listing’s pictures replace Play’s, type by type, in the same edit', async () => {
+  const google = fakeGoogle({
+    [`POST ${V3}/edits`]: { id: 'e7' },
+    [`POST ${UP}/edits/e7/bundles?uploadType=media`]: { versionCode: 9 },
+    [`DELETE ${V3}/edits/e7/listings/en-US/icon`]: null,
+    [`POST ${UP}/edits/e7/listings/en-US/icon?uploadType=media`]: { image: {} },
+    [`DELETE ${V3}/edits/e7/listings/en-US/tvScreenshots`]: null,
+    [`POST ${UP}/edits/e7/listings/en-US/tvScreenshots?uploadType=media`]: { image: {} },
+    [`PUT ${V3}/edits/e7/tracks/internal`]: {},
+    [`POST ${V3}/edits/e7:commit`]: {},
+  });
+  const images = { icon: [Buffer.from('icon')], tvScreenshots: [Buffer.from('one'), Buffer.from('two')], tvBanner: [] };
+  await upload(client('tok', { fetch: google.fetch }), { bundle: Buffer.alloc(1), words, images, log: quiet });
+  const pictures = google.calls.filter((c) => c.key.includes('/listings/'));
+  assert.deepEqual(pictures.map((c) => c.key.replace(/^(\w+) .*\/en-US\//, '$1 ')), [
+    'DELETE icon',
+    'POST icon?uploadType=media',
+    'DELETE tvScreenshots',
+    'POST tvScreenshots?uploadType=media',
+    'POST tvScreenshots?uploadType=media',
+  ]);
+  assert.equal(pictures[1].init.headers['Content-Type'], 'image/png');
+  assert.equal(String(pictures[4].init.body), 'two');
+});
+
+test('the pictures are read from the images folder, screenshots in name order', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'images-'));
+  writeFileSync(join(dir, 'icon.png'), 'icon');
+  mkdirSync(join(dir, 'tv-screenshots'));
+  writeFileSync(join(dir, 'tv-screenshots', '02-album.png'), 'b');
+  writeFileSync(join(dir, 'tv-screenshots', '01-home.png'), 'a');
+  writeFileSync(join(dir, 'tv-screenshots', 'notes.txt'), 'x');
+  const images = readImages(dir);
+  assert.deepEqual(Object.keys(images), ['icon', 'tvScreenshots']);
+  assert.deepEqual(images.tvScreenshots.map(String), ['a', 'b']);
+  // The repo's own: the icon, feature graphic and TV banner at least.
+  assert.ok(['icon', 'featureGraphic', 'tvBanner'].every((type) => readImages()[type]?.length === 1));
 });
 
 test('an app Play still has as a draft gets a draft release', async () => {

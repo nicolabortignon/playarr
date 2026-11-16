@@ -27,6 +27,8 @@ public final class AppModel {
     public private(set) var tooOld: ServerInfo?
     /// A setup-code link to open (playarr://redeem).
     public var redeemLink: RedeemLink?
+    /// A TV's sign-in code to approve (playarr://link, plan 9 §3).
+    public var deviceLink: DeviceLink?
     public var showingAccounts = false
     /// The window comes back where it was after iOS closed the app in the background. UI tests turn it off (each
     /// test starts on Home) unless they launch with `-UITestsRestore`.
@@ -158,11 +160,15 @@ public final class AppModel {
         return "Playarr couldn’t get playback ready on this device: \(error.localizedDescription)"
     }
 
-    /// playarr:// links: redeem a setup code, leaving the demo for it.
+    /// playarr:// links: redeem a setup code, or sign in a TV, leaving the demo for either.
     public func open(_ url: URL) {
-        guard let link = RedeemLink(url) else { return }
-        leaveTrial()
-        redeemLink = link
+        if let link = RedeemLink(url) {
+            leaveTrial()
+            redeemLink = link
+        } else if let link = DeviceLink(url) {
+            leaveTrial()
+            deviceLink = link
+        }
     }
 
     /// Asks the active server who it is: its name may have changed, or it may need a newer app.

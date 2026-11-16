@@ -111,6 +111,25 @@ describe('sign-in pages', () => {
     expect(screen.queryByRole('link', { name: 'Open in the Playarr app' })).toBeNull();
   });
 
+  it('on its way to sign a TV in, offers the app on an iPhone instead', async () => {
+    vi.spyOn(api, 'server').mockResolvedValue(SERVER);
+    const ua = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) Mobile/15E148');
+    renderAt(`/sign-in?next=${encodeURIComponent('/link?code=ABCD2345')}`);
+    const open = await screen.findByRole('link', { name: 'Open in the Playarr app' });
+    expect(open.getAttribute('href')).toBe(`playarr://link?server=${encodeURIComponent(window.location.origin)}&code=ABCD2345`);
+    expect(screen.getByText('Signed in on the Playarr app? Sign the TV in there instead.')).toBeTruthy();
+    cleanup();
+    // Signing in for anything else: no offer.
+    renderAt('/sign-in?next=%2Falbums');
+    await screen.findByLabelText('Username');
+    expect(screen.queryByRole('link', { name: 'Open in the Playarr app' })).toBeNull();
+    cleanup();
+    ua.mockReturnValue('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0');
+    renderAt(`/sign-in?next=${encodeURIComponent('/link?code=ABCD2345')}`);
+    await screen.findByLabelText('Username');
+    expect(screen.queryByRole('link', { name: 'Open in the Playarr app' })).toBeNull();
+  });
+
   it('sets up the owner’s account, then opens Settings → Sources as the first step', async () => {
     vi.spyOn(api, 'server').mockResolvedValue({ ...SERVER, setup: true });
     const setup = vi.spyOn(api, 'setup').mockResolvedValue({ token: 'tok-1', account: NICOLA });

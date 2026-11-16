@@ -29,6 +29,7 @@ class ContractTests(private val fixture: String, private val type: Deserializati
       "auth-proof" to AuthProof.serializer(),
       "auth-device" to DeviceCodeStart.serializer(),
       "auth-device-approved" to DevicePoll.serializer(),
+      "auth-device-lookup" to DeviceCodeInfo.serializer(),
       "accounts" to list(ListedAccount.serializer()),
       "account-created" to CreatedAccount.serializer(),
       "setup-code" to SetupCode.serializer(),

@@ -23,6 +23,8 @@
 #   make ci-secrets  give GitHub the upload key (and the Play service account) for the tv-v* tag's release job
 #   make play-check  is the Play service account accepted? (play-upload sends build/release's bundle to TRACK)
 #   make fake-releases  a stand-in for GitHub's releases, for trying the self-update on the emulator
+#   make store-images   draw the Play pictures (store/en-US/images/) and the launcher banner (scripts/store-images.swift)
+#   make store-screens  the Play listing's TV screenshots from the emulator and make demo (store/en-US/images/tv-screenshots/)
 #   make clean       remove build output
 #
 # Nothing comes from Homebrew (not writable on the owner's Mac): the JDK, the SDK and Gradle (through the checked-in
@@ -72,7 +74,7 @@ APP_ID := me.tracklistme.playarr.tv
 APK := app/build/outputs/apk/sideload/debug/app-sideload-debug.apk
 SCREENS_ROOT := ../../screenshots/tv
 
-.PHONY: join-test fake-tv release version upload-key ci-secrets play-check play-upload fake-releases test-scripts bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
+.PHONY: join-test fake-tv release version upload-key ci-secrets play-check play-upload fake-releases store-images store-screens test-scripts bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
 
 bootstrap: jdk sdk
 
@@ -227,6 +229,18 @@ play-upload:
 
 fake-releases:
 	node scripts/fake-releases.mjs $(wildcard build/release/playarr-tv-*.apk)
+
+store-images:
+	swift scripts/store-images.swift
+
+# The Play listing's TV screenshots (1920×1080), from the emulator signed in to `make demo`: Home, Library, an album
+# (ALBUM, its id: 2 is the red Rewind) and Now Playing, paused on that album's first song.
+ALBUM ?= 2
+store-screens: connect
+	@set -e; d=store/en-US/images/tv-screenshots; mkdir -p $$d; a="$(ADB) -s $(TV)"; \
+	shot() { $$a shell am start -n $(APP_ID)/.MainActivity --es route "$$1" >/dev/null; sleep 5; $$a exec-out screencap -p > $$d/$$2.png; echo "$$d/$$2.png"; }; \
+	shot Home 01-home; shot Library 02-library; shot album:$(ALBUM) 03-album; \
+	$$a shell input keyevent DPAD_CENTER; sleep 3; $$a shell input keyevent MEDIA_PAUSE; shot NowPlaying 04-now-playing
 
 demo: ffmpeg
 	node scripts/demo-server.mjs

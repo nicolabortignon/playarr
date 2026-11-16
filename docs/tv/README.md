@@ -105,6 +105,9 @@ the web):
 - **Several accounts**: Settings → Accounts lists who's signed in on this TV. Listen as switches between them; Add an
   account goes through a code again; Sign out is for this TV only. Tokens are sealed in the Android Keystore
   (`KeystoreSecretStore`), and app backups are off, so they never leave the TV.
+- **From the iPhone app**: the QR code opens the web's page; signed out there, its sign-in page offers "Open in the
+  Playarr app", and the app signs the TV in as an account signed in in the app (`playarr://link`,
+  [ios/README.md](../ios/README.md)).
 - **Not built**: claiming a server from the remote. A server in setup mode says to set it up on a phone or computer.
 
 ## Playing (plan 9 §4)
