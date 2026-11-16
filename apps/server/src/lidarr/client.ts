@@ -25,6 +25,14 @@ export class LidarrError extends Error {
 /** Lidarr's answers that mean "not now" (restarting, or a proxy in front of it that can't reach it yet). */
 const NOT_NOW = new Set([502, 503, 504]);
 
+/** How long a call to Lidarr may take: a question or a change. */
+const QUESTION_TIMEOUT_MS = 30_000;
+/**
+ * How long a whole list may take (every artist, every album, an artist's tracks and files, the queue). A large library
+ * on a NAS takes Lidarr well over 30 s to list, and a catalog sync can't go on without the answer.
+ */
+const LIST_TIMEOUT_MS = 5 * 60_000;
+
 export class LidarrClient {
   private baseUrl = '';
   private apiKey = '';
@@ -72,7 +80,7 @@ export class LidarrClient {
           ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
         body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-        signal: AbortSignal.timeout(init.timeoutMs ?? 30_000),
+        signal: AbortSignal.timeout(init.timeoutMs ?? QUESTION_TIMEOUT_MS),
       });
     } catch (err) {
       if (again && (err as Error).name !== 'TimeoutError') return retry();
@@ -120,24 +128,24 @@ export class LidarrClient {
   }
 
   artists() {
-    return this.get<LidarrArtist[]>('/api/v1/artist');
+    return this.get<LidarrArtist[]>('/api/v1/artist', LIST_TIMEOUT_MS);
   }
 
   albums() {
-    return this.get<LidarrAlbum[]>('/api/v1/album');
+    return this.get<LidarrAlbum[]>('/api/v1/album', LIST_TIMEOUT_MS);
   }
 
   tracksForArtist(artistId: number) {
-    return this.get<LidarrTrack[]>(`/api/v1/track?artistId=${artistId}`);
+    return this.get<LidarrTrack[]>(`/api/v1/track?artistId=${artistId}`, LIST_TIMEOUT_MS);
   }
 
   trackFilesForArtist(artistId: number) {
-    return this.get<LidarrTrackFile[]>(`/api/v1/trackfile?artistId=${artistId}`);
+    return this.get<LidarrTrackFile[]>(`/api/v1/trackfile?artistId=${artistId}`, LIST_TIMEOUT_MS);
   }
 
   albumsByIds(ids: number[]) {
     if (!ids.length) return Promise.resolve([] as LidarrAlbum[]);
-    return this.get<LidarrAlbum[]>(`/api/v1/album?${ids.map((id) => `albumIds=${id}`).join('&')}`);
+    return this.get<LidarrAlbum[]>(`/api/v1/album?${ids.map((id) => `albumIds=${id}`).join('&')}`, LIST_TIMEOUT_MS);
   }
 
   /** Metadata search (artists + albums) via Lidarr's MusicBrainz-backed metadata server. */
@@ -178,7 +186,7 @@ export class LidarrClient {
   }
 
   async queue(): Promise<LidarrQueueItem[]> {
-    const page = await this.get<{ records: LidarrQueueItem[] }>('/api/v1/queue?page=1&pageSize=500');
+    const page = await this.get<{ records: LidarrQueueItem[] }>('/api/v1/queue?page=1&pageSize=500', LIST_TIMEOUT_MS);
     return page.records;
   }
 
