@@ -20,11 +20,32 @@ android {
     versionName = "1.0.0"
   }
 
+  // Where the app comes from (plan 9 §7): GitHub releases, updating itself from them (Settings → About), or Google
+  // Play, which updates it and doesn't allow an app to install packages.
+  flavorDimensions += "store"
+  productFlavors {
+    create("sideload") { dimension = "store" }
+    create("play") { dimension = "store" }
+  }
+
+  // The upload key, from the environment (CI's secrets, or the owner's Mac: docs/tv/release.md). Without it a release
+  // build is left unsigned.
+  val keystore = System.getenv("PLAYARR_TV_KEYSTORE")?.takeIf { it.isNotBlank() }
+  signingConfigs {
+    if (keystore != null) create("upload") {
+      storeFile = file(keystore)
+      storePassword = System.getenv("PLAYARR_TV_KEYSTORE_PASSWORD")
+      keyAlias = System.getenv("PLAYARR_TV_KEY_ALIAS") ?: "upload"
+      keyPassword = System.getenv("PLAYARR_TV_KEY_PASSWORD") ?: System.getenv("PLAYARR_TV_KEYSTORE_PASSWORD")
+    }
+  }
+
   buildTypes {
     release {
       isMinifyEnabled = true
       isShrinkResources = true
-      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      if (keystore != null) signingConfig = signingConfigs.getByName("upload")
     }
   }
 

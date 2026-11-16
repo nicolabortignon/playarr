@@ -1,0 +1,108 @@
+# The TV app (plan 9 §7): the unit tests (the contract tests among them) and Android Lint for every push and pull
+# request that changes apps/tv, the shared types or this file. A `tv-v*` tag (tv-v1.2.0, matching versionName in
+# apps/tv/app/build.gradle.kts) also builds the release: the sideload APK, signed with the upload key, goes on a GitHub
+# release that the app on the TV offers in Settings → About; the Play bundle goes to Google Play's internal testing
+# track once the Play secrets exist. Pull requests never see the secrets: only the tag's steps use them.
+name: TV
+
+on:
+  push:
+    paths: ['apps/tv/**', 'packages/shared/**', '.github/workflows/tv.yml']
+    tags: ['tv-v*']
+  pull_request:
+    paths: ['apps/tv/**', 'packages/shared/**', '.github/workflows/tv.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tv-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the version code is the commit count
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # The runner's Android SDK, with the platform the app compiles against (apps/tv/Makefile's SDK_PACKAGES).
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0' > /dev/null
+
+      - name: Test
+        run: make -C apps/tv test
+
+      - name: Lint report
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: lint
+          path: apps/tv/app/build/reports/lint-results-*.html
+          if-no-files-found: ignore
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/tv-v')
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # the GitHub release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0' > /dev/null
+
+      - name: The tag is the version
+        run: |
+          version="$(make -s -C apps/tv version)"
+          [ "${GITHUB_REF_NAME}" = "tv-v${version}" ] || { echo "Tag ${GITHUB_REF_NAME} but versionName is ${version}"; exit 1; }
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          KEYSTORE_BASE64: ${{ secrets.PLAYARR_TV_KEYSTORE_BASE64 }}
+          PLAYARR_TV_KEYSTORE_PASSWORD: ${{ secrets.PLAYARR_TV_KEYSTORE_PASSWORD }}
+          PLAYARR_TV_KEY_ALIAS: ${{ secrets.PLAYARR_TV_KEY_ALIAS }}
+          PLAYARR_TV_KEY_PASSWORD: ${{ secrets.PLAYARR_TV_KEY_PASSWORD }}
+        run: |
+          export PLAYARR_TV_KEYSTORE="$RUNNER_TEMP/upload.jks"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$PLAYARR_TV_KEYSTORE"
+          make -C apps/tv release
+          rm "$PLAYARR_TV_KEYSTORE"
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" "apps/tv/build/release/playarr-tv-${VERSION}.apk" \
+            --title "Playarr for TV ${VERSION}" --notes-file apps/tv/store/en-US/whats-new.txt --latest=false
+
+      - name: Google Play (internal testing)
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        if: env.PLAY_SERVICE_ACCOUNT_JSON != ''
+        run: node apps/tv/scripts/play-upload.mjs "apps/tv/build/release/playarr-tv-${VERSION}.aab" --track internal

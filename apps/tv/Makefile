@@ -17,6 +17,8 @@
 #                    pinned ffmpeg in .tools/ for the streams it plays
 #                    (scripts/demo-server.mjs; `node scripts/demo-server.mjs approve CODE` signs a TV in as its owner)
 #   make join-test   the DJ-transition join spike on the TV or emulator, checked sample by sample
+#   make fake-tv     a stand-in for the TV's JointSpace (the Ambilight) that the emulator reaches
+#   make release     the signed sideload APK and Play bundle in build/release/ (docs/tv/release.md)
 #   make clean       remove build output
 #
 # Nothing comes from Homebrew (not writable on the owner's Mac): the JDK, the SDK and Gradle (through the checked-in
@@ -63,10 +65,10 @@ TV ?= $(TV_ADDRESS):5555
 EMULATOR_IMAGE := system-images;android-36;android-tv;arm64-v8a
 export ANDROID_AVD_HOME := $(TOOLS)/avd
 APP_ID := me.tracklistme.playarr.tv
-APK := app/build/outputs/apk/debug/app-debug.apk
+APK := app/build/outputs/apk/sideload/debug/app-sideload-debug.apk
 SCREENS_ROOT := ../../screenshots/tv
 
-.PHONY: join-test fake-tv bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
+.PHONY: join-test fake-tv release version bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
 
 bootstrap: jdk sdk
 
@@ -94,7 +96,7 @@ $(TOOLS)/android-sdk/platform-tools/adb: $(JAVA_HOME)/bin/java $(SDKMANAGER)
 	$(SDKMANAGER) $(SDK_PROXY) $(foreach p,$(SDK_PACKAGES),'$(p)')
 
 build:
-	$(GRADLE) :app:assembleDebug
+	$(GRADLE) :app:assembleSideloadDebug
 
 test:
 	$(GRADLE) test lint
@@ -154,6 +156,20 @@ $(TOOLS)/ffmpeg/ffmpeg:
 	actual=$$(shasum -a 256 $(TOOLS)/ffmpeg.zip | cut -d ' ' -f 1); \
 	if [ "$$actual" != "$(FFMPEG_SHA256)" ]; then rm -f $(TOOLS)/ffmpeg.zip; echo "ffmpeg.zip has SHA-256 $$actual; the Makefile expects $(FFMPEG_SHA256)" >&2; exit 1; fi; \
 	unzip -q -o $(TOOLS)/ffmpeg.zip -d $(TOOLS)/ffmpeg && rm $(TOOLS)/ffmpeg.zip
+
+# A release (plan 9 §7): the sideload APK for GitHub releases and the Play app bundle, signed with the upload key
+# from PLAYARR_TV_KEYSTORE (+ _PASSWORD, PLAYARR_TV_KEY_ALIAS, PLAYARR_TV_KEY_PASSWORD), in build/release/.
+VERSION := $(shell sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/build.gradle.kts)
+release:
+	@[ -n "$$PLAYARR_TV_KEYSTORE" ] || { echo "PLAYARR_TV_KEYSTORE isn't set: see docs/tv/release.md"; exit 1; }
+	$(GRADLE) :app:assembleSideloadRelease :app:bundlePlayRelease
+	@mkdir -p build/release
+	cp app/build/outputs/apk/sideload/release/app-sideload-release.apk build/release/playarr-tv-$(VERSION).apk
+	cp app/build/outputs/bundle/playRelease/app-play-release.aab build/release/playarr-tv-$(VERSION).aab
+	@echo "build/release/playarr-tv-$(VERSION).apk and .aab"
+
+version:
+	@echo $(VERSION)
 
 demo: ffmpeg
 	node scripts/demo-server.mjs
