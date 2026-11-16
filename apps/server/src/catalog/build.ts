@@ -9,6 +9,8 @@ export interface FileRecord {
   path: string; // as the source reports it
   size: number;
   format: AudioFormat;
+  /** The song it's a copy of. */
+  trackId?: number;
 }
 
 /** A release group as Lidarr sees it (if it does), and the library album once it's playable. */
@@ -46,6 +48,8 @@ export interface Catalog {
   tracks: Track[];
   /** Every copy on an enabled source, so saved queues can still stream a copy that's no longer the best. */
   files: Map<number, FileRecord>;
+  /** The copies of each song that has more than one, best first: what plays when one can't be read (routes/stream.ts). */
+  copies: Map<number, FileRecord[]>;
   albumsByMbid: Map<string, LidarrAlbumRef>;
   artistIdByMbid: Map<string, number>;
   stats: LibraryStats;
@@ -55,13 +59,19 @@ interface Ranked {
   format: AudioFormat;
   /** The source's place in the Settings list (lower comes first). */
   position: number;
+  /** Its source doesn't answer just now (catalog/health.ts). */
+  offline?: boolean;
 }
 
-/** Negative when `a` should play rather than `b`: lossless, bit depth, sample rate, bitrate, then source order. */
+/**
+ * Negative when `a` should play rather than `b`: a copy on a source that answers, then lossless, bit depth, sample
+ * rate, bitrate, then source order.
+ */
 export function compareCopies(a: Ranked, b: Ranked): number {
   const fa = a.format;
   const fb = b.format;
   return (
+    Number(a.offline ?? false) - Number(b.offline ?? false) ||
     Number(fb.lossless) - Number(fa.lossless) ||
     (fb.bits ?? 0) - (fa.bits ?? 0) ||
     (fb.sampleRate ?? 0) - (fa.sampleRate ?? 0) ||
@@ -70,15 +80,20 @@ export function compareCopies(a: Ranked, b: Ranked): number {
   );
 }
 
-export function buildCatalog(rows: CatalogRows): Catalog {
+/**
+ * The library from the catalog's rows: every enabled source's songs, each playing its best copy. Copies on the
+ * sources in `offline` play only where a song has no other (catalog/health.ts).
+ */
+export function buildCatalog(rows: CatalogRows, offline: ReadonlySet<number> = new Set()): Catalog {
   const position = new Map(rows.sources.filter((s) => s.enabled).map((s) => [s.id, s.position]));
-  const rank = (c: CopyRow): Ranked => ({ format: c.format, position: position.get(c.sourceId)! });
+  const steadyRank = (c: CopyRow): Ranked => ({ format: c.format, position: position.get(c.sourceId)! });
+  const rank = (c: CopyRow): Ranked => ({ ...steadyRank(c), offline: offline.has(c.sourceId) });
 
   const files = new Map<number, FileRecord>();
   const copiesByTrack = new Map<number, CopyRow[]>();
   for (const c of rows.copies) {
     if (!position.has(c.sourceId)) continue;
-    files.set(c.id, { id: c.id, sourceId: c.sourceId, path: c.path, size: c.size, format: c.format });
+    files.set(c.id, { id: c.id, sourceId: c.sourceId, path: c.path, size: c.size, format: c.format, trackId: c.trackId });
     const list = copiesByTrack.get(c.trackId);
     if (list) list.push(c);
     else copiesByTrack.set(c.trackId, [c]);
@@ -106,12 +121,18 @@ export function buildCatalog(rows: CatalogRows): Catalog {
   const folderCover = folderCovers(rows, copiesByTrack, kindOf);
 
   const byAlbum = new Map<number, { tracks: Track[]; added: string[] }>();
+  const copies = new Map<number, FileRecord[]>();
+  // Each song's best copy whether or not its source answers just now, where that isn't the copy it plays: an album's
+  // embedded cover comes from it, so a source going away for a while doesn't change the album's cover.
+  const steadyFileId = new Map<number, number>();
   for (const t of rows.tracks) {
-    const copies = copiesByTrack.get(t.id);
+    const found = copiesByTrack.get(t.id);
     const album = albumRows.get(t.albumId);
     const artist = album && artistRows.get(album.artistId);
-    if (!copies || !album || !artist) continue;
-    const copy = copies.reduce((best, c) => (compareCopies(rank(c), rank(best)) < 0 ? c : best));
+    if (!found || !album || !artist) continue;
+    const ranked = found.length > 1 ? [...found].sort((a, b) => compareCopies(rank(a), rank(b))) : found;
+    if (ranked.length > 1) copies.set(t.id, ranked.map((c) => files.get(c.id)!));
+    const copy = ranked[0]!;
     const track: Track = {
       id: t.id,
       recordingId: t.recordingId,
@@ -130,10 +151,14 @@ export function buildCatalog(rows: CatalogRows): Catalog {
       streamUrl: `/stream/${copy.id}`,
       coverUrl: album.meta.coverUrl,
     };
+    if (offline.size && found.length > 1) {
+      const steady = found.reduce((best, c) => (compareCopies(steadyRank(c), steadyRank(best)) < 0 ? c : best));
+      if (steady !== copy) steadyFileId.set(t.id, steady.id);
+    }
     let entry = byAlbum.get(album.id);
     if (!entry) byAlbum.set(album.id, (entry = { tracks: [], added: [] }));
     entry.tracks.push(track);
-    for (const c of copies) if (c.addedAt) entry.added.push(c.addedAt);
+    for (const c of found) if (c.addedAt) entry.added.push(c.addedAt);
   }
 
   const albums = new Map<number, AlbumDetail>();
@@ -148,7 +173,8 @@ export function buildCatalog(rows: CatalogRows): Catalog {
     );
     // No artwork URL of the album's own (Lidarr's): a folder that holds the album, else the picture embedded in its
     // first song, wherever it's kept, and failing that its MusicBrainz cover (the art route tries them in that order).
-    const fallbackCover = folderCover.get(albumId) ?? embeddedCoverUrl(entry.tracks[0]!.fileId, row.meta.mbid);
+    const first = entry.tracks[0]!;
+    const fallbackCover = folderCover.get(albumId) ?? embeddedCoverUrl(steadyFileId.get(first.id) ?? first.fileId, row.meta.mbid);
     const detail = toAlbumDetail(row, artist, entry.tracks, entry.added, missing, fallbackCover);
     for (const t of entry.tracks) t.coverUrl ??= detail.coverUrl;
     albums.set(albumId, detail);
@@ -199,6 +225,7 @@ export function buildCatalog(rows: CatalogRows): Catalog {
     albums,
     tracks,
     files,
+    copies,
     albumsByMbid,
     artistIdByMbid,
     stats: {

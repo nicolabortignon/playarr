@@ -320,3 +320,100 @@ describe('encoded streams', () => {
     expect((await app.inject({ url: '/stream/7/levelled.wav?gain=-2' })).headers['content-type']).toBe('audio/wav');
   });
 });
+
+describe('another copy, when the one asked for can’t be read', () => {
+  /** A song with a FLAC on source 1 (copy 7) and an MP3 on source 2 (copy 8), and their contents. */
+  function copies(opts: { down?: Set<string>; offline?: Set<number>; measured?: boolean } = {}) {
+    const flac = { id: 7, sourceId: 1, path: '/nas/a.flac', size: 2000, format: { codec: 'FLAC', container: 'flac' }, trackId: 1 };
+    const mp3 = { id: 8, sourceId: 2, path: '/phone/a.mp3', size: 1000, format: { codec: 'MP3', container: 'mp3' }, trackId: 1 };
+    const all = [flac, mp3];
+    const down = opts.down ?? new Set<string>();
+    const stats: string[] = [];
+    const media = {
+      kind: 'local',
+      stat: async (path: string) => {
+        stats.push(path);
+        if (down.has(path)) throw new Error(`${path}: ENOENT`);
+        return { size: path.endsWith('.flac') ? 2000 : 1000, mtimeMs: 42 };
+      },
+      open: async (path: string) => Readable.from([Buffer.from(`bytes of ${path}`)]),
+      pcmStream: vi.fn(() => Readable.from([Buffer.alloc(0)])),
+    } as unknown as MediaSource;
+    const library = {
+      file: async (id: number) => all.find((f) => f.id === id),
+      copiesOf: async (id: number) => (all.some((f) => f.id === id) ? all : []),
+    } as unknown as Library;
+    const files = { resolve: (file: { path: string }) => ({ media, path: file.path }) } as unknown as FileResolver;
+    const offline = opts.offline ?? new Set<number>();
+    const health = { isOffline: (id: number) => offline.has(id), check: vi.fn(async () => true), reached: vi.fn() };
+    const measured: SongLoudness = { ...MEASURED, fileId: 7, size: 2000 };
+    const loudness = { loudnessOfFile: vi.fn((id: number) => (opts.measured !== false && id === 7 ? measured : undefined)), remeasureLoudness: vi.fn() };
+    const pcmLength = vi.fn(async () => ({ frames: SAMPLES, sampleRate: LOUDNESS_RATE, channels: 2, bits: 16 }));
+    const app = Fastify();
+    streamRoutes(app, { library, files, health, loudness, pcmLength });
+    return { app, stats, health, loudness, down };
+  }
+
+  it('streams the next copy of the song, as it is, when the one asked for is gone', async () => {
+    const { app, health } = copies({ down: new Set(['/nas/a.flac']) });
+    const res = await app.inject({ url: '/stream/7' });
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toBe('bytes of /phone/a.mp3');
+    expect(res.headers['content-type']).toBe('audio/mpeg');
+    expect(res.headers['content-length']).toBe('1000');
+    // Is it the file or its source? Asked about the one that failed; the one read answers.
+    expect(health.check).toHaveBeenCalledWith(1);
+    expect(health.reached).toHaveBeenCalledWith(2);
+  });
+
+  it('streams the copy asked for while it can be read', async () => {
+    const { app, stats } = copies();
+    expect((await app.inject({ url: '/stream/7' })).payload).toBe('bytes of /nas/a.flac');
+    expect((await app.inject({ url: '/stream/8' })).payload).toBe('bytes of /phone/a.mp3');
+    expect(stats).toEqual(['/nas/a.flac', '/phone/a.mp3']);
+  });
+
+  it('keeps streaming a song from the copy it started on, even once the one asked for is back', async () => {
+    const { app, down } = copies({ down: new Set(['/nas/a.flac']) });
+    expect((await app.inject({ url: '/stream/7' })).payload).toBe('bytes of /phone/a.mp3');
+    down.clear();
+    // The rest of the song, in a range: the same file's bytes, not the other copy's from that offset.
+    const rest = await app.inject({ url: '/stream/7', headers: { range: 'bytes=500-' } });
+    expect(rest.headers['content-range']).toBe('bytes 500-999/1000');
+  });
+
+  it('goes back to the copy asked for when the one standing in can’t be read either', async () => {
+    const { app, down } = copies({ down: new Set(['/nas/a.flac']) });
+    await app.inject({ url: '/stream/7' });
+    down.clear();
+    down.add('/phone/a.mp3');
+    expect((await app.inject({ url: '/stream/7' })).payload).toBe('bytes of /nas/a.flac');
+  });
+
+  it('doesn’t keep a player waiting on a copy whose source doesn’t answer, unless it’s the one asked for', async () => {
+    const { app, stats } = copies({ down: new Set(['/nas/a.flac']), offline: new Set([1]) });
+    // Asked for the MP3 while the FLAC's source is away: only the MP3 is read.
+    await app.inject({ url: '/stream/8' });
+    expect(stats).toEqual(['/phone/a.mp3']);
+    // Asked for the FLAC: the MP3 first, which answers.
+    stats.length = 0;
+    expect((await app.inject({ url: '/stream/7' })).payload).toBe('bytes of /phone/a.mp3');
+    expect(stats).toEqual(['/phone/a.mp3']);
+  });
+
+  it('says what was wrong with the copy asked for when no copy can be read', async () => {
+    const { app } = copies({ down: new Set(['/nas/a.flac', '/phone/a.mp3']) });
+    const res = await app.inject({ url: '/stream/7' });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('Cannot read audio file: /nas/a.flac: ENOENT');
+  });
+
+  it('levels a copy standing in for one that was measured, as long as its header says', async () => {
+    const { app, loudness } = copies({ down: new Set(['/nas/a.flac']) });
+    const res = await app.inject({ method: 'HEAD', url: '/stream/7/levelled.wav?gain=-3' });
+    expect(res.statusCode).toBe(200);
+    expect(Number(res.headers['content-length'])).toBe(44 + SAMPLES * 4);
+    // Its own size isn't the measured file's: that's no reason to measure the song again.
+    expect(loudness.remeasureLoudness).not.toHaveBeenCalled();
+  });
+});

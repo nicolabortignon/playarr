@@ -165,6 +165,58 @@ describe('buildCatalog', () => {
       expect(c.albums.get(70)!.tracks[0]!.fileId).toBe(9000);
       expect(c.files.has(folderCopyId)).toBe(false);
     });
+
+    it('keeps each song’s copies, best first, for when one can’t be read', () => {
+      const { store, folderCopyId } = twoSources(MP3, FLAC);
+      const c = buildCatalog(store.load());
+      const song = c.albums.get(70)!.tracks[0]!;
+      expect(c.copies.get(song.id)!.map((f) => f.id)).toEqual([folderCopyId, 9000]);
+      expect(c.files.get(9000)!.trackId).toBe(song.id);
+      // A song with one copy needs no list.
+      expect(c.copies.has(c.albums.get(70)!.tracks[1]!.id)).toBe(false);
+    });
+
+    it('plays a copy on a source that answers while the better one’s source doesn’t, and only then', () => {
+      const { store, folderCopyId } = twoSources(MP3, FLAC);
+      const folder = store.load().copies.find((c) => c.id === folderCopyId)!.sourceId;
+      const away = buildCatalog(store.load(), new Set([folder]));
+      const song = away.albums.get(70)!.tracks[0]!;
+      expect(song.fileId).toBe(9000);
+      expect(song.format).toEqual(MP3);
+      expect(song.streamUrl).toBe('/stream/9000');
+      expect(away.copies.get(song.id)!.map((f) => f.id)).toEqual([9000, folderCopyId]);
+      // Still in the library, still streamable: a saved queue's copy is tried in case it's back.
+      expect(away.files.has(folderCopyId)).toBe(true);
+      expect(buildCatalog(store.load()).albums.get(70)!.tracks[0]!.fileId).toBe(folderCopyId);
+    });
+
+    it('keeps the songs whose only copies are on a source that doesn’t answer', () => {
+      const { store } = lidarrOnly();
+      const c = buildCatalog(store.load(), new Set([1]));
+      expect(c.albums.get(70)!.tracks[0]!.fileId).toBe(9000);
+    });
+
+    it('keeps an album’s embedded cover while the source of its first song’s best copy is away', () => {
+      const store = new CatalogStore(freshDb());
+      const first = store.addSource('folder', 'Lossless');
+      const second = store.addSource('folder', 'Phone copies');
+      // A folder of songs from several albums, so no folder's pictures are Demo's cover: its song's own picture is.
+      const track = (key: string, albumKey: string) => ({ key, albumKey, recordingId: key, title: key, trackNumber: 1, discNumber: 1, duration: 200, explicit: false });
+      const sync = (dir: string, format: typeof FLAC) => ({
+        artists: [{ key: 'a', name: 'Coldplay', sortName: 'Coldplay', genres: [] }],
+        albums: ['demo', 'x', 'y'].map((key) => ({ key, artistKey: 'a', title: key, albumType: 'Album', secondaryTypes: [], genres: [] })),
+        tracks: [track('demo1', 'demo'), track('x1', 'x'), track('y1', 'y')],
+        copies: ['demo1', 'x1', 'y1'].map((key) => ({ ref: `${dir}/${key}`, trackKey: key, path: `${dir}/${key}`, size: 1, format })),
+      });
+      store.applySync(first, sync('/lossless', FLAC));
+      store.applySync(second, sync('/phone', MP3));
+      const demo = (offline?: Set<number>) => [...buildCatalog(store.load(), offline).albums.values()].find((a) => a.title === 'demo')!;
+      const here = demo();
+      const away = demo(new Set([first]));
+      expect(away.tracks[0]!.fileId).not.toBe(here.tracks[0]!.fileId);
+      expect(away.coverUrl).toBe(here.coverUrl);
+      expect(here.coverUrl).toBe(`/art/copy/${here.tracks[0]!.fileId}?embedded=1`);
+    });
   });
 });
 
@@ -175,6 +227,11 @@ describe('compareCopies', () => {
     expect(compareCopies(at(FLAC_24), at(FLAC))).toBeLessThan(0);
     expect(compareCopies(at(FLAC, 0), at(FLAC, 1))).toBeLessThan(0);
     expect(compareCopies(at(MP3, 0), at(FLAC, 1))).toBeGreaterThan(0);
+  });
+
+  it('ranks a copy on a source that answers above any on one that doesn’t', () => {
+    expect(compareCopies(at(MP3, 1), { ...at(FLAC_24, 0), offline: true })).toBeLessThan(0);
+    expect(compareCopies({ ...at(FLAC, 0), offline: true }, { ...at(MP3, 1), offline: true })).toBeLessThan(0);
   });
 });
 

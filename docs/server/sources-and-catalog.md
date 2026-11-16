@@ -75,7 +75,21 @@ Each row remembers how trusted its metadata is. Lower wins: Lidarr 0, a MusicBra
 
 ### Merging duplicates
 
-There's no same-file detection. Copies that land on the same song key are one song, whichever sources they come from. The song plays its **best copy** (`compareCopies` in `catalog/build.ts`): lossless first, then bit depth, sample rate and bitrate, then the higher source in Settings. Only copies on enabled sources count. The other copies still stream, so a saved queue pointing at one keeps working. If the best copy fails to play, nothing falls back to another copy. A source whose folder or host is offline keeps its copies in the catalog, and their songs fail to play until it's back.
+There's no same-file detection. Copies that land on the same song key are one song, whichever sources they come from. The song plays its **best copy** (`compareCopies` in `catalog/build.ts`): lossless first, then bit depth, sample rate and bitrate, then the higher source in Settings. Only copies on enabled sources count. The other copies still stream, so a saved queue pointing at one keeps working.
+
+**When a copy can't be read**, another copy of the song stands in for it under the same address, best first (see [streaming-and-art.md](streaming-and-art.md#when-a-copy-cant-be-read)).
+
+**A source that doesn't answer** (`SourceHealth` in `catalog/health.ts`) is found when one of its files can't be read or its sync fails. The server then asks the source itself (`FileResolver.probe`):
+- a folder: its connection, then its folder there with something in it, since an unmounted disk leaves an empty folder behind;
+- Lidarr: each of `PATH_MAP`'s folders through `MEDIA_SOURCE`.
+
+A file that's gone with its source still there is the file's problem, not the source's. While a source is offline:
+- it keeps its copies in the catalog;
+- each song plays a copy on a source that answers where it has one, and the library and every account's view are rebuilt from the rows they have (`Library.setOffline`);
+- songs it alone has stay listed, and their copies are still tried when asked for;
+- an album's embedded cover still comes from its first song's usual best copy, so the album's cover doesn't change.
+
+Offline sources are asked again every minute, and are back as soon as they answer or one of their files is read. The log says when a source goes and comes back.
 
 Untagged folder files join existing rows **by name** through a name index (`CatalogStore.nameIndex`): artist by normalised name, album by artist and title, song by album and title. MusicBrainz-keyed rows are preferred. A file with no album tag or album folder goes on the album the library already has that song on (studio album first), else under its artist's "Loose songs".
 

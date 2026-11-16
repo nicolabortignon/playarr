@@ -48,4 +48,27 @@ export class FileResolver {
     }
     return { media: this.lidarr.media, path };
   }
+
+  /**
+   * Whether the source answers (catalog/health.ts): a folder's connection, and its folder there with something in
+   * it (an unmounted disk leaves an empty folder behind); for Lidarr, its music folders as PATH_MAP gives them.
+   * Undefined when there's nothing to ask: a source removed, or Lidarr's files without PATH_MAP.
+   */
+  probe(sourceId: number): Promise<void> | undefined {
+    const source = this.store.source(sourceId);
+    if (!source) return undefined;
+    if (source.kind === 'folder') {
+      const root = (source.settings as { path?: string }).path;
+      const fs = this.folders.get(sourceId);
+      if (!root || !fs) return undefined;
+      return (async () => {
+        await fs.media.check();
+        if (!(await fs.stat(root))?.dir) throw new Error(`${root} isn’t there`);
+        if (!(await fs.readdir(root)).length) throw new Error(`${root} is empty`);
+      })();
+    }
+    const roots = [...new Set(this.lidarr.pathMap.map(([, to]) => to))];
+    if (!roots.length) return undefined;
+    return Promise.all(roots.map((root) => this.lidarr.media.check(root))).then(() => {});
+  }
 }

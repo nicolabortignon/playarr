@@ -285,6 +285,81 @@ describe('library views', () => {
     expect(await library.view([cc]).file(9000)).toBeUndefined();
     expect(await library.view([cc]).file(mp3.fileId)).toMatchObject({ sourceId: cc });
   });
+
+  /** Angel on Lidarr (FLAC, copy 9000) and in a Creative Commons folder (MP3). */
+  async function angelTwice() {
+    const store = new CatalogStore(freshDb());
+    const lidarr = store.addSource('lidarr', 'Lidarr');
+    const cc = store.addSource('folder', 'Creative Commons');
+    const mezz = mezzanine();
+    const angel = mezz.tracks.find((t) => t.recordingId === 'rec-1')!;
+    const alsoHere: SourceSync = {
+      artists: mezz.artists,
+      albums: mezz.albums,
+      tracks: [angel],
+      copies: [{ ref: 'angel.mp3', trackKey: angel.key, path: '/cc/angel.mp3', size: 9_000_000, format: MP3 }],
+    };
+    const library = new Library(
+      store,
+      () => [
+        { id: lidarr, source: { kind: 'lidarr', sync: async () => mezz } },
+        { id: cc, source: { kind: 'folder', sync: async () => alsoHere } },
+      ],
+      log,
+    );
+    await library.refresh();
+    const mp3 = (await library.view([cc]).track(700))!.fileId;
+    return { library, lidarr, cc, mp3 };
+  }
+
+  it('lists a song’s copies, best first, for when one can’t be read: those the view’s sources have', async () => {
+    const { library, cc, mp3 } = await angelTwice();
+    expect((await library.copiesOf(9000)).map((f) => f.id)).toEqual([9000, mp3]);
+    expect((await library.copiesOf(mp3)).map((f) => f.id)).toEqual([9000, mp3]);
+    expect((await library.view([cc]).copiesOf(mp3)).map((f) => f.id)).toEqual([mp3]);
+    expect(await library.view([cc]).copiesOf(9000)).toEqual([]);
+    // A song with one copy.
+    expect((await library.copiesOf(9001)).map((f) => f.id)).toEqual([9001]);
+  });
+
+  it('plays songs from a source that answers while another doesn’t, in the library and its views, until it’s back', async () => {
+    const { library, lidarr, cc, mp3 } = await angelTwice();
+    const both = library.view([lidarr, cc]);
+    expect((await both.track(700))!.fileId).toBe(9000);
+    const listened = vi.fn();
+    library.onRefresh(listened);
+    const version = library.version;
+
+    library.setOffline(new Set([lidarr]));
+    expect((await library.track(700))!.fileId).toBe(mp3);
+    expect((await both.track(700))!.fileId).toBe(mp3);
+    expect((await library.copiesOf(9000)).map((f) => f.id)).toEqual([mp3, 9000]);
+    // Songs only Lidarr has are still there.
+    expect((await library.track(701))!.fileId).toBe(9001);
+    expect(library.version).toBe(version + 1);
+    expect(listened).toHaveBeenCalledTimes(1);
+    // Told again, nothing changes.
+    library.setOffline(new Set([lidarr]));
+    expect(library.version).toBe(version + 1);
+
+    library.setOffline(new Set());
+    expect((await library.track(700))!.fileId).toBe(9000);
+    expect((await both.track(700))!.fileId).toBe(9000);
+  });
+
+  it('says how each source’s sync went', async () => {
+    const store = new CatalogStore(freshDb());
+    const a = store.addSource('lidarr', 'Lidarr');
+    const b = store.addSource('folder', 'Drive');
+    const library = new Library(store, () => [{ id: a, source: ok }, { id: b, source: broken }], log);
+    const synced: [number, string | null][] = [];
+    library.onSync((id, err) => synced.push([id, err?.message ?? null]));
+    await library.refresh();
+    expect(synced).toEqual([
+      [a, null],
+      [b, 'Drive not mounted'],
+    ]);
+  });
 });
 
 describe('Library: refreshes that find nothing new', () => {

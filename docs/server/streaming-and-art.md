@@ -20,9 +20,23 @@ The client never sends a path, only a file id:
 
 1. The id must be a file in the account's view of the catalog (404 otherwise).
 2. `FileResolver.resolve` finds where its bytes are. A folder source's file must lie inside that source's folder (403 otherwise) and is read through that source's filesystem (this server, SSH, SFTP or an SMB share). A Lidarr file's path goes through `PATH_MAP`, and must then lie inside one of `PATH_MAP`'s target folders (403 otherwise), read through `MEDIA_SOURCE`. With an empty `PATH_MAP` there's no root to check against.
-3. A source that's unreachable answers 503; a file that can't be read, 502.
+3. A source that's unreachable answers 503; a file that can't be read, 502, unless another copy stands in (below).
 
 How sources and files are set up is in [sources-and-catalog.md](sources-and-catalog.md).
+
+### When a copy can't be read
+
+Every `/stream/:fileId` route opens its copy in one place (`open` in `routes/stream.ts`). When the copy asked for can't be read (its disk or host away, its file gone, its source removed), the song's other copies are tried, best first (`Library.copiesOf`), among those the account may hear. The first that can be read is streamed under the same address, as it is:
+- its own `Content-Type`, length and `ETag`;
+- for `levelled.wav`, the length analysis counted for it, else its header's;
+- for the encoded streams, its own length.
+
+The apps need nothing new. They keep asking for the copy their queue holds, and the server serves whichever copy can be read.
+
+- **A song keeps the copy it started on.** A player asks for the rest of a song in ranges, so a stand-in keeps standing in for that copy until it hasn't been asked for in 15 minutes, even once the copy asked for can be read again. Otherwise the rest of the song would come from another file at the same offset. The stand-in is dropped sooner if it can't be read itself.
+- **Copies on a source known to be offline aren't tried** (they would only keep the player waiting), except the copy asked for, last, since its source may be back.
+- **A failed read asks whether the source itself answers** (see [sources-and-catalog.md](sources-and-catalog.md#merging-duplicates)). The next copy is tried meanwhile.
+- When no copy can be read, the answer is what the copy asked for gave: 404, 403, 502 or 503.
 
 ### Lossless WAV: `/stream/:fileId/lossless.wav`
 

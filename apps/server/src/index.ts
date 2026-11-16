@@ -10,6 +10,7 @@ import { BeatModelThread } from './analysis/beatModelThread.ts';
 import { DspThread } from './analysis/dspThread.ts';
 import { AcoustId, hasFpcalc } from './catalog/acoustid.ts';
 import { FileResolver } from './catalog/files.ts';
+import { SourceHealth } from './catalog/health.ts';
 import { FolderAccess } from './catalog/folderAccess.ts';
 import { Matcher } from './catalog/matcher.ts';
 import { toReleaseInfo } from './catalog/mbRelease.ts';
@@ -140,6 +141,17 @@ const art = new LocalArt(lidarr, resolve(config.CACHE_DIR, 'art'));
 const media = createMediaSource(config);
 // Lidarr's files through MEDIA_SOURCE + PATH_MAP; folder sources through their own filesystem.
 const files = new FileResolver(store, { media, pathMap: config.pathMap }, folders);
+// Sources whose disk or host is away: their songs play from other sources where they can, and they're asked again
+// every minute. A failed sync asks too; a successful one says nothing about Lidarr's files.
+const health = new SourceHealth({
+  probe: (id) => files.probe(id),
+  onChange: (offline) => library.setOffline(offline),
+  log: { info: (m) => app.log.info(m), warn: (m) => app.log.warn(m) },
+});
+library.onSync((id, err) => {
+  if (err) void health.check(id);
+});
+health.start();
 // Keep every cover cached locally so browsing never waits on Lidarr; then read the colors of covers that have none.
 const readCover = coverReader({ art, cacheDir: resolve(config.CACHE_DIR), files, folders });
 library.onRefresh((lib) => void art.warm(lib.artworkUrls(), app.log).finally(() => coverColors.fill(lib.coverImages(), readCover)));
@@ -222,7 +234,7 @@ const encoded = new EncodedStreams({
   cacheBytes: config.ENCODE_CACHE_MB * 1024 * 1024,
   log: app.log,
 });
-streamRoutes(app, { library, files, loudness: analyzer, encoded });
+streamRoutes(app, { library, files, health, loudness: analyzer, encoded });
 levelRoutes(app, { analyzer, library });
 // New cue points make new plans: the transitions made from the old ones are deleted.
 mixMapRoutes(app, {

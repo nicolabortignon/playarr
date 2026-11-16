@@ -5,6 +5,7 @@ import type { Analyzer } from '../analysis/analyzer.ts';
 import { LOUDNESS_RATE } from '../analysis/loudness.ts';
 import { FileAccessError, type FileResolver } from '../catalog/files.ts';
 import type { FileRecord } from '../catalog/build.ts';
+import type { SourceHealth } from '../catalog/health.ts';
 import { pcmLengthFrom } from '../catalog/tags.ts';
 import type { Library } from '../library/library.ts';
 import { libraryOf } from '../accounts/rights.ts';
@@ -22,12 +23,27 @@ const MAX_GAIN_DB = 20;
 const LENGTHS_KEPT = 2000;
 /** Bumped when an encoded stream's bytes would change for the same song and arguments (its layout): new ETags. */
 const ENCODED_VERSION = 1;
+/** How long a copy standing in for one that can't be read keeps doing so after it was last asked for (see open). */
+const STAND_IN_MS = 15 * 60_000;
+/** Stand-ins remembered at most. */
+const STAND_INS_KEPT = 2000;
+
+/** A copy opened to be streamed: the copy, where it lives, and its size and time. */
+interface Opened {
+  file: FileRecord;
+  media: MediaSource;
+  path: string;
+  size: number;
+  mtimeMs: number;
+}
 
 export function streamRoutes(
   app: FastifyInstance,
   deps: {
-    library: Pick<Library, 'file'> & Partial<Pick<Library, 'view'>>;
+    library: Pick<Library, 'file'> & Partial<Pick<Library, 'view' | 'copiesOf'>>;
     files: FileResolver;
+    /** Which sources answer: a copy on one that doesn't is tried only when it's the one asked for. */
+    health?: Pick<SourceHealth, 'isOffline' | 'check' | 'reached'>;
     loudness?: Pick<Analyzer, 'loudnessOfFile' | 'remeasureLoudness'>;
     /** A file's exact length and format, from its header (tests stand in their own). */
     pcmLength?: typeof pcmLengthFrom;
@@ -72,13 +88,28 @@ export function streamRoutes(
     return reply.send(stream);
   }
 
-  /** The library file asked for, where it lives, and its size and time; or the error already sent. */
-  async function open(req: FastifyRequest<{ Params: { fileId: string } }>, reply: FastifyReply) {
-    const fileId = Number(req.params.fileId);
-    // Only files of songs the account may hear, as the catalog knows them: the client never supplies a path.
-    const file = Number.isInteger(fileId) ? await libraryOf(library, req).file(fileId) : undefined;
-    if (!file) return void reply.code(404).send({ error: 'Unknown track file' });
+  /**
+   * Copies standing in for ones that couldn't be read, by the copy asked for: a song keeps streaming from the copy it
+   * started on (a player asks for the rest of it in ranges), even once the copy asked for answers again, until it
+   * hasn't been asked for in a while.
+   */
+  const standIns = new Map<number, { fileId: number; usedAt: number }>();
 
+  /** The copies to try for the copy asked for, in order (see open). */
+  function candidates(file: FileRecord, copies: FileRecord[]): FileRecord[] {
+    const others = copies.filter((c) => c.id !== file.id);
+    const standIn = standIns.get(file.id);
+    if (standIn && Date.now() - standIn.usedAt > STAND_IN_MS) standIns.delete(file.id);
+    const first = standIns.has(file.id) ? others.find((c) => c.id === standIn!.fileId) : undefined;
+    const ordered = first ? [first, file, ...others.filter((c) => c !== first)] : [file, ...others];
+    // Copies on a source that doesn't answer would only keep the player waiting; the one asked for is still tried
+    // last, as its source may be back.
+    const reachable = ordered.filter((c) => !deps.health?.isOffline(c.sourceId));
+    return reachable.includes(file) ? reachable : [...reachable, file];
+  }
+
+  /** A copy opened, or why it can't be. */
+  async function read(req: FastifyRequest, file: FileRecord): Promise<Opened | { status: number; error: string }> {
     // Defense in depth: never read outside the source's folder or the configured roots.
     let media: MediaSource;
     let path: string;
@@ -87,16 +118,54 @@ export function streamRoutes(
     } catch (err) {
       if (!(err instanceof FileAccessError)) throw err;
       req.log.warn({ path: file.path }, err.message);
-      return void reply.code(err.status).send({ error: err.message });
+      return { status: err.status, error: err.message };
     }
     try {
       const { size, mtimeMs } = await media.stat(path);
-      return { file, media, path, size, mtimeMs } as { file: FileRecord; media: MediaSource; path: string; size: number; mtimeMs: number };
+      deps.health?.reached(file.sourceId);
+      return { file, media, path, size, mtimeMs };
     } catch (err) {
-      if (err instanceof MediaUnavailableError) return void reply.code(503).send({ error: err.message });
+      if (err instanceof MediaUnavailableError) return { status: 503, error: err.message };
       req.log.warn({ err, path }, 'stat failed');
-      return void reply.code(502).send({ error: `Cannot read audio file: ${(err as Error).message}` });
+      // The file, or its whole source? Asked meanwhile: the next copy is tried either way.
+      void deps.health?.check(file.sourceId);
+      return { status: 502, error: `Cannot read audio file: ${(err as Error).message}` };
     }
+  }
+
+  /**
+   * The library file asked for, where it lives, and its size and time; or the error already sent. When it can't be
+   * read (its disk or host away, the file gone), another copy of the song stands in for it, best first, as long as
+   * the account may hear it: what the copy asked for would have said goes only when none can be read.
+   */
+  async function open(req: FastifyRequest<{ Params: { fileId: string } }>, reply: FastifyReply): Promise<Opened | undefined> {
+    const fileId = Number(req.params.fileId);
+    // Only files of songs the account may hear, as the catalog knows them: the client never supplies a path.
+    const lib = libraryOf(library, req);
+    const file = Number.isInteger(fileId) ? await lib.file(fileId) : undefined;
+    if (!file) return void reply.code(404).send({ error: 'Unknown track file' });
+    const copies = (await lib.copiesOf?.(fileId)) ?? [file];
+
+    let failed: { status: number; error: string } | undefined;
+    for (const candidate of candidates(file, copies)) {
+      const opened = await read(req, candidate);
+      if (!('file' in opened)) {
+        if (candidate === file) failed = opened;
+        else failed ??= opened;
+        continue;
+      }
+      if (candidate !== file) {
+        if (standIns.get(file.id)?.fileId !== candidate.id) req.log.info({ fileId, standIn: candidate.id }, 'a copy stands in for one that can’t be read');
+        standIns.delete(file.id);
+        if (standIns.size >= STAND_INS_KEPT) standIns.delete(standIns.keys().next().value!);
+        standIns.set(file.id, { fileId: candidate.id, usedAt: Date.now() });
+      } else {
+        standIns.delete(file.id);
+      }
+      return opened;
+    }
+    reply.code(failed!.status).send({ error: failed!.error });
+    return undefined;
   }
 
   app.route<{ Params: { fileId: string } }>({
@@ -184,8 +253,14 @@ export function streamRoutes(
       const opened = await open(req, reply);
       if (!opened) return reply;
       const { file, media, path, size, mtimeMs } = opened;
-      // The file changed since it was measured: its length may have too. Measured again; until then, its own file.
-      if (size !== measured.size || mtimeMs !== measured.mtimeMs) {
+      let frames = measured.samples;
+      if (file.id !== measured.fileId) {
+        // Another copy stands in: as long as analysis counted it, else as its header says.
+        const length = await streamLength(opened, LOUDNESS_RATE).catch(() => undefined);
+        if (!length) return reply.code(404).send({ error: 'This song’s loudness isn’t measured yet' });
+        frames = length;
+      } else if (size !== measured.size || mtimeMs !== measured.mtimeMs) {
+        // The file changed since it was measured: its length may have too. Measured again; until then, its own file.
         deps.loudness!.remeasureLoudness(measured.recordingId);
         return reply.code(404).send({ error: 'This song changed: its loudness is being measured again' });
       }
@@ -195,7 +270,7 @@ export function streamRoutes(
       // From the sample asked for: exactly (by decoding from the start) where a seek would only land near it.
       const exactSeek = seeksInexactly(file.format);
       return sendWav(req, reply, {
-        frames: measured.samples,
+        frames,
         shape: LEVELLED,
         etag: `"lv-${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}-${gain}"`,
         decode: (from, count) =>
@@ -212,16 +287,17 @@ export function streamRoutes(
   });
 
   /**
-   * A song's length in samples at the encoded streams' rate: as loudness analysis counted it, when it measured
-   * this very file, else from the file's header. Undefined when neither knows.
+   * A song's length in samples at `rate` (the encoded streams', unless said): as loudness analysis counted it, when
+   * it measured this very file, else from the file's header. Undefined when neither knows.
    */
-  async function streamLength(opened: { file: FileRecord; media: MediaSource; path: string; size: number; mtimeMs: number }): Promise<number | undefined> {
+  async function streamLength(opened: Opened, rate = STREAM_RATE): Promise<number | undefined> {
     const measured = deps.loudness?.loudnessOfFile(opened.file.id);
-    if (measured?.samples && measured.size === opened.size && measured.mtimeMs === opened.mtimeMs) return measured.samples;
+    // Analysis counts at LOUDNESS_RATE, the encoded streams' rate too.
+    if (measured?.samples && measured.size === opened.size && measured.mtimeMs === opened.mtimeMs) return Math.round((measured.samples * rate) / LOUDNESS_RATE);
     // Measured from an older version of the file: measured again, and its header says meanwhile.
     if (measured?.samples) deps.loudness!.remeasureLoudness(measured.recordingId);
     const length = await wavLength(opened.media, opened.path, opened.size, opened.mtimeMs);
-    return length?.frames && length.sampleRate ? Math.round((length.frames * STREAM_RATE) / length.sampleRate) : undefined;
+    return length?.frames && length.sampleRate ? Math.round((length.frames * rate) / length.sampleRate) : undefined;
   }
 
   /**

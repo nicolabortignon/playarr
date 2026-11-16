@@ -263,6 +263,14 @@ export abstract class LibraryView {
     return snap.files.get(fileId);
   }
 
+  /** The copies of this copy's song that this library has, best first (itself alone when it's the only one). */
+  async copiesOf(fileId: number): Promise<FileRecord[]> {
+    const snap = await this.ready();
+    const file = snap.files.get(fileId);
+    if (!file) return [];
+    return (file.trackId !== undefined && snap.copies.get(file.trackId)) || [file];
+  }
+
   async search(query: string, limit = 20): Promise<SearchResults> {
     const snap = await this.ready();
     const q = normalize(query);
@@ -325,6 +333,9 @@ export class Library extends LibraryView {
   private refreshTimer: NodeJS.Timeout | null = null;
   private rebuildTimer: NodeJS.Timeout | null = null;
   private listeners: ((library: Library) => void)[] = [];
+  private syncListeners: ((sourceId: number, error: Error | null) => void)[] = [];
+  /** Sources that don't answer just now (catalog/health.ts): their copies play only where a song has no other. */
+  private offline: ReadonlySet<number> = new Set();
 
   constructor(
     private readonly store: CatalogStore,
@@ -349,6 +360,7 @@ export class Library extends LibraryView {
         version: () => this.version,
         painted: () => this.painted,
         rows: () => this.rows,
+        offline: () => this.offline,
         ready: () => this.ready(),
         colors: this.colors,
       });
@@ -386,8 +398,21 @@ export class Library extends LibraryView {
   private setSnapshot({ rows, generation }: { rows: CatalogRows; generation: number }) {
     this.rows = rows;
     this.rowsGeneration = generation;
-    this.snapshot = toSnapshot(buildCatalog(rows), this.colors);
+    this.snapshot = toSnapshot(buildCatalog(rows, this.offline), this.colors);
     this.version++;
+  }
+
+  /**
+   * These sources don't answer just now (or answer again): songs play a copy elsewhere where they have one, and the
+   * library and every view are rebuilt from the rows they have, without asking the sources or the catalog.
+   */
+  setOffline(sources: ReadonlySet<number>) {
+    const same = sources.size === this.offline.size && [...sources].every((id) => this.offline.has(id));
+    if (same) return;
+    this.offline = new Set(sources);
+    if (!this.rows) return;
+    this.setSnapshot({ rows: this.rows, generation: this.rowsGeneration });
+    for (const listener of this.listeners) listener(this);
   }
 
   /**
@@ -411,6 +436,11 @@ export class Library extends LibraryView {
   /** Called after every successful refresh. */
   onRefresh(listener: (library: Library) => void) {
     this.listeners.push(listener);
+  }
+
+  /** Called after each source's sync, with what went wrong if it failed. */
+  onSync(listener: (sourceId: number, error: Error | null) => void) {
+    this.syncListeners.push(listener);
   }
 
   /** Serve the catalog saved by a previous run, so a restart doesn't wait on the sources. */
@@ -482,9 +512,11 @@ export class Library extends LibraryView {
       try {
         await this.sourceLocks.run(id, async () => this.store.applySync(id, await source.sync()));
         this.store.setSyncError(id, null);
+        for (const listener of this.syncListeners) listener(id, null);
       } catch (err) {
         this.store.setSyncError(id, (err as Error).message);
         failures.push(err as Error);
+        for (const listener of this.syncListeners) listener(id, err as Error);
       }
     }
     // One unreachable source shouldn't hide the others: its last sync stays in the catalog.
@@ -547,6 +579,7 @@ class SourceView extends LibraryView {
       version: () => number;
       painted: () => number;
       rows: () => CatalogRows | null;
+      offline: () => ReadonlySet<number>;
       ready: () => Promise<unknown>;
       colors?: CoverColorSource;
     },
@@ -568,7 +601,7 @@ class SourceView extends LibraryView {
     const version = this.library.version();
     if (this.built?.version !== version) {
       const keep = new Set(this.sources);
-      const catalog = buildCatalog({ ...rows, sources: rows.sources.filter((s) => keep.has(s.id)) });
+      const catalog = buildCatalog({ ...rows, sources: rows.sources.filter((s) => keep.has(s.id)) }, this.library.offline());
       this.built = { version, snap: toSnapshot(catalog, this.library.colors) };
     }
     return this.built.snap;
