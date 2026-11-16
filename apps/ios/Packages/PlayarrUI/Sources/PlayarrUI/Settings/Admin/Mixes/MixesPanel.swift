@@ -2,15 +2,17 @@ import PlayarrAPI
 import SwiftUI
 
 /// Settings → Mixes: admins choose which mixes Home shows and how they're made, which members see but can't
-/// change; everyone sees their own listening history (and clears it) and their ListenBrainz link.
+/// change; everyone sees their own listening history (and clears it) and their ListenBrainz and Last.fm links.
 public struct MixesPanel: View {
   @State private var model: MixSettingsModel
   @State private var listenBrainz: ListenBrainzModel
+  @State private var lastFm: LastFmModel
   @State private var confirmClear = false
 
   public init(api: any APISending, isAdmin: Bool, mixesChanged: @escaping @MainActor () -> Void = {}) {
     _model = State(initialValue: MixSettingsModel(api: api, isAdmin: isAdmin, mixesChanged: mixesChanged))
     _listenBrainz = State(initialValue: ListenBrainzModel(api: api))
+    _lastFm = State(initialValue: LastFmModel(api: api))
   }
 
   public var body: some View {
@@ -24,6 +26,7 @@ public struct MixesPanel: View {
         howTheyreMade(info).disabled(!model.isAdmin)
         history(info)
         ListenBrainzSection(model: listenBrainz)
+        LastFmSection(model: lastFm, isAdmin: model.isAdmin)
         if model.isAdmin {
           Section("Sound") { Text(MixSettingsModel.soundText).font(.footnote).foregroundStyle(.secondary) }
         }
@@ -36,6 +39,7 @@ public struct MixesPanel: View {
     .navigationTitle(SettingsPanel.mixes.title)
     .task { await model.load() }
     .task { await listenBrainz.poll() }
+    .task { await lastFm.poll() }
   }
 
   private var kinds: some View {

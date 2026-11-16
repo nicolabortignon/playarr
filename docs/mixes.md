@@ -131,6 +131,7 @@ Admins change how mixes are made (`PUT /api/settings/mixes`); members see it rea
 - **Sending.** From then on its plays are sent, signed with the session. *Also send N earlier plays* sends those from the two weeks before, since Last.fm ignores older plays. A play counts as Last.fm says: a song longer than 30 seconds, heard for half its length or four minutes. Plays go 50 at a time, every minute and after each new report, with the recording's MusicBrainz id when it has one, and those Last.fm ignored aren't sent again.
 - **When it goes wrong.** Access taken back on Last.fm turns sending off with a message. Last.fm busy, unreachable or asking to slow down pauses 5 minutes (10 for its rate limit), and a refused API key pauses an hour.
 - Whether a play went to Last.fm is `plays.lastfm`, as `plays.listenbrainz` is for ListenBrainz.
+- In the apps: the web's `LastFmSection` and the iOS app's (`LastFmModel`, `LastFmSection`), each in Settings → Mixes after ListenBrainz's. On iOS *Allow Playarr on Last.fm* opens the page in Safari, and *Finish connecting* waits back in the app.
 
 **Tag lookup** (`Analyzer.fetchMeta`, `recordingTags`). Genre and mood tags, and the first release year, for every song the mixes see, 25 recordings per call to ListenBrainz's metadata endpoint, paced by its rate-limit headers. Tags weigh the recording's most, then the release group's (0.6), then the artist's (0.4); the top 16 are kept in `track_meta`. It is cheap, so it runs whether or not the whole library is being analysed; Settings → Analysis shows it as *tags*.
 

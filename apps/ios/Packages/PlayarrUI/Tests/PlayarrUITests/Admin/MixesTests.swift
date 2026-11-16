@@ -114,6 +114,53 @@ import Testing
     #expect(lb.notice == "ListenBrainz disconnected" && lb.info?.connected == false)
   }
 
+  static func lastFm(available: Bool = true, apiKey: String? = nil, connected: Bool = false, user: String? = nil, sent: Int = 0, pending: Int = 0, earlier: Int = 0, error: String? = nil) -> LastFmInfo {
+    LastFmInfo(available: available, apiKey: apiKey, connected: connected, user: user, enabled: connected, pending: pending, sent: sent, earlier: earlier, error: error)
+  }
+
+  @Test func addsTheServersLastFmAccountThenConnectsInTwoHalves() async {
+    let fm = LastFmModel(api: api)
+    api.on(.get, "/api/settings/lastfm", Self.lastFm(available: false))
+    await fm.load()
+    fm.apiKey = " key "
+    #expect(!fm.canAddApp)
+    fm.secret = "secret"
+    api.on(.put, "/api/settings/lastfm/app", Self.lastFm(apiKey: String(repeating: "a", count: 26) + "abc123"))
+    await fm.addApp()
+    #expect(api.bodies(.put, "/api/settings/lastfm/app") == [#"{"apiKey":"key","secret":"secret"}"#])
+    #expect(fm.apiKey.isEmpty && fm.secret.isEmpty)
+    #expect(fm.appLine == "This server’s Last.fm API account: …abc123")
+
+    api.on(.post, "/api/settings/lastfm/connect", LastFmConnect(url: "https://www.last.fm/api/auth/?api_key=k&token=t", token: "t"))
+    await fm.connect()
+    #expect(fm.waiting?.url == "https://www.last.fm/api/auth/?api_key=k&token=t")
+    api.on(.post, "/api/settings/lastfm/finish", Self.lastFm(connected: true, user: "nicola", sent: 120, pending: 3, earlier: 12))
+    await fm.finish()
+    #expect(api.bodies(.post, "/api/settings/lastfm/finish") == [#"{"token":"t"}"#])
+    #expect(fm.waiting == nil)
+    #expect(fm.switchLabel == "Send plays to nicola")
+    #expect(fm.switchDetail == "120 scrobbles sent · 3 waiting")
+    #expect(fm.earlierLabel == "Also send 12 earlier plays")
+  }
+
+  @Test func pausesSendsEarlierPlaysToLastFmAndDisconnects() async {
+    let fm = LastFmModel(api: api)
+    let on = Self.lastFm(connected: true, user: "nicola", sent: 1, error: "Last.fm no longer accepts Playarr for this account: connect again.")
+    api.on(.get, "/api/settings/lastfm", on)
+    await fm.load()
+    #expect(fm.switchDetail == "Last.fm no longer accepts Playarr for this account: connect again.")
+    #expect(fm.appLine == nil)
+    api.on(.put, "/api/settings/lastfm", on)
+    await fm.setEnabled(false)
+    #expect(api.bodies(.put, "/api/settings/lastfm") == [#"{"enabled":false}"#])
+    api.on(.post, "/api/settings/lastfm/earlier", on)
+    await fm.sendEarlier()
+    #expect(fm.notice == "Sending your earlier plays to Last.fm")
+    api.on(.delete, "/api/settings/lastfm", Self.lastFm())
+    await fm.disconnect()
+    #expect(fm.notice == "Last.fm disconnected" && fm.info?.connected == false)
+  }
+
   @Test func refreshesListenBrainzEvery30Seconds() async {
     let clock = TestClock()
     let lb = ListenBrainzModel(api: api, clock: clock)

@@ -52,6 +52,24 @@ extension API {
 
         public static func disconnectListenBrainz() -> Endpoint<ListenBrainzInfo> { Endpoint(.delete, "/api/settings/listenbrainz") }
         public static func sendEarlierListens() -> Endpoint<ListenBrainzInfo> { Endpoint(.post, "/api/settings/listenbrainz/earlier") }
+        public static func lastFm() -> Endpoint<LastFmInfo> { Endpoint(.get, "/api/settings/lastfm") }
+
+        /// An admin: the server's Last.fm API account, which the server checks with Last.fm.
+        public static func saveLastFmApp(apiKey: String, secret: String) -> Endpoint<LastFmInfo> {
+            Endpoint(.put, "/api/settings/lastfm/app", body: LastFmAppBody(apiKey: apiKey, secret: secret))
+        }
+
+        public static func removeLastFmApp() -> Endpoint<LastFmInfo> { Endpoint(.delete, "/api/settings/lastfm/app") }
+        /// The Last.fm page where the account allows Playarr, and the token to finish with.
+        public static func connectLastFm() -> Endpoint<LastFmConnect> { Endpoint(.post, "/api/settings/lastfm/connect") }
+
+        public static func finishLastFm(token: String) -> Endpoint<LastFmInfo> {
+            Endpoint(.post, "/api/settings/lastfm/finish", body: LastFmTokenBody(token: token))
+        }
+
+        public static func saveLastFm(enabled: Bool) -> Endpoint<LastFmInfo> { Endpoint(.put, "/api/settings/lastfm", body: LastFmEnabledBody(enabled: enabled)) }
+        public static func disconnectLastFm() -> Endpoint<LastFmInfo> { Endpoint(.delete, "/api/settings/lastfm") }
+        public static func sendEarlierToLastFm() -> Endpoint<LastFmInfo> { Endpoint(.post, "/api/settings/lastfm/earlier") }
 
         private struct TestBody: Encodable, Sendable {
             let id: Int?
@@ -62,6 +80,19 @@ extension API {
         private struct ListenBrainzBody: Encodable, Sendable {
             let token: String?
             let enabled: Bool?
+        }
+
+        private struct LastFmAppBody: Encodable, Sendable {
+            let apiKey: String
+            let secret: String
+        }
+
+        private struct LastFmTokenBody: Encodable, Sendable {
+            let token: String
+        }
+
+        private struct LastFmEnabledBody: Encodable, Sendable {
+            let enabled: Bool
         }
     }
 }

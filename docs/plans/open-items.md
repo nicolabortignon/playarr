@@ -17,7 +17,6 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - ReplayGain tags (as an alternative to Playarr's own loudness) and EQ. *(PLAN.md roadmap phase 6)*
 - Lidarr: interactive release picking from inside Playarr. *(PLAN.md roadmap phase 6)*
 - Live library updates through Lidarr's SignalR feed instead of the 10-minute refresh. *(PLAN.md roadmap phase 6)*
-- Last.fm in the iOS app's Settings → Mixes, beside ListenBrainz (the web's has it). *(found)*
 - Merge and key unmatched folder songs by fingerprint (today they keep `local:<hash>` ids for good). *(sources design, sources phase 3)*
 - A loose song's menu listing the other releases it's on. *(sources design)*
 - Levels for accounts limited to some sources: loudness is measured on the full library's best copy, so an account whose only copy is another file hears that song unlevelled. *(iOS phase 1 accounts plan)*
