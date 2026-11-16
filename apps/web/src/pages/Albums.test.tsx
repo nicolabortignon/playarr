@@ -1,6 +1,6 @@
-import type { Album, AlbumPage, HealthStatus } from '@playarr/shared';
+import type { Album, AlbumFilters, AlbumPage, HealthStatus } from '@playarr/shared';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../lib/api';
@@ -57,6 +57,7 @@ beforeEach(() => {
   );
   vi.spyOn(api, 'health').mockResolvedValue({ ok: true, requests: false } as unknown as HealthStatus);
   vi.spyOn(api, 'requests').mockResolvedValue([]);
+  vi.spyOn(api, 'albumFilters').mockResolvedValue({ genres: [], fidelities: [] });
 });
 
 afterEach(() => {
@@ -65,14 +66,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function view() {
+function view(url = '/albums') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const router = createMemoryRouter([{ path: '/albums', element: <AlbumsPage /> }], { initialEntries: ['/albums'] });
+  const router = createMemoryRouter([{ path: '/albums', element: <AlbumsPage /> }], { initialEntries: [url] });
   render(
     <QueryClientProvider client={client}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return router;
 }
 
 const shown = () => screen.queryAllByText(/^Album \d+$/).length;
@@ -84,10 +86,10 @@ describe('the Albums page', () => {
     await waitFor(() => expect(shown()).toBe(ALBUM_PAGE));
     expect(screen.getByText('150')).toBeTruthy();
     expect(pages).toHaveBeenCalledTimes(1);
-    expect(pages).toHaveBeenCalledWith('artist', 0, ALBUM_PAGE);
+    expect(pages).toHaveBeenCalledWith('artist', 0, ALBUM_PAGE, {});
     reveal();
     await waitFor(() => expect(shown()).toBe(150));
-    expect(pages).toHaveBeenLastCalledWith('artist', ALBUM_PAGE, ALBUM_PAGE);
+    expect(pages).toHaveBeenLastCalledWith('artist', ALBUM_PAGE, ALBUM_PAGE, {});
     // The last page is in: nothing more to ask for.
     reveal();
     expect(pages).toHaveBeenCalledTimes(2);
@@ -106,6 +108,58 @@ describe('the Albums page', () => {
     await waitFor(() => expect(pages).toHaveBeenCalledTimes(4));
     expect(pages.mock.calls.map(([, offset]) => offset)).toEqual([0, ALBUM_PAGE, 0, ALBUM_PAGE]);
     await waitFor(() => expect(shown()).toBe(150));
+  });
+});
+
+describe('the Albums page’s filters', () => {
+  const offered: AlbumFilters = {
+    genres: [
+      { name: 'Jazz', count: 2 },
+      { name: 'Soul', count: 1 },
+    ],
+    fidelities: [
+      { value: 'hi-res', count: 1 },
+      { value: 'lossless', count: 2 },
+      { value: 'lossy', count: 1 },
+    ],
+  };
+
+  it('offers the albums’ genres and qualities, and shows the albums a choice finds', async () => {
+    vi.mocked(api.albumFilters).mockResolvedValue(offered);
+    const pages = vi.spyOn(api, 'albumPage').mockResolvedValue(page(0, 3, 3));
+    const router = view();
+    const genre = (await screen.findByRole('combobox', { name: 'Genre' })) as HTMLSelectElement;
+    expect([...genre.options].map((o) => o.text)).toEqual(['All genres', 'Jazz · 2', 'Soul · 1']);
+    fireEvent.change(genre, { target: { value: 'Jazz' } });
+    await waitFor(() => expect(pages).toHaveBeenLastCalledWith('artist', 0, ALBUM_PAGE, { genre: 'Jazz' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Hi-Res' }));
+    await waitFor(() => expect(pages).toHaveBeenLastCalledWith('artist', 0, ALBUM_PAGE, { genre: 'Jazz', fidelity: 'hi-res' }));
+    // In the address, with the sort, so Back and a shared link keep them.
+    fireEvent.click(screen.getByRole('radio', { name: 'Title' }));
+    await waitFor(() => expect(router.state.location.search).toBe('?sort=title&genre=Jazz&fidelity=hi-res'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Any quality' }));
+    fireEvent.change(genre, { target: { value: '' } });
+    await waitFor(() => expect(router.state.location.search).toBe('?sort=title'));
+  });
+
+  it('offers no filters while there’s nothing to choose between', async () => {
+    vi.mocked(api.albumFilters).mockResolvedValue({ genres: [], fidelities: [{ value: 'lossy', count: 3 }] });
+    vi.spyOn(api, 'albumPage').mockResolvedValue(page(0, 3, 3));
+    view();
+    await waitFor(() => expect(shown()).toBe(3));
+    await waitFor(() => expect(api.albumFilters).toHaveBeenCalled());
+    expect(screen.queryByRole('combobox', { name: 'Genre' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'Quality' })).toBeNull();
+  });
+
+  it('says when a filter finds nothing, still offering it, and shows every album again', async () => {
+    vi.mocked(api.albumFilters).mockResolvedValue(offered);
+    vi.spyOn(api, 'albumPage').mockImplementation(async (_sort, _offset, _limit, filter) => (filter?.genre ? page(0, 0, 0) : page(0, 3, 3)));
+    view('/albums?genre=Polka&fidelity=hi-res');
+    expect(await screen.findByText('No Hi-Res albums in Polka yet.')).toBeTruthy();
+    expect(((await screen.findByRole('combobox', { name: 'Genre' })) as HTMLSelectElement).value).toBe('Polka');
+    fireEvent.click(screen.getByRole('button', { name: 'Show all albums' }));
+    await waitFor(() => expect(shown()).toBe(3));
   });
 });
 

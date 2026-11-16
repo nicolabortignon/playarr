@@ -135,6 +135,33 @@ public data class AlbumDetail(
 )
 
 /**
+ * GET /api/albums/filters: what the albums can be filtered by (GET /api/albums?genre=&fidelity=), each with how many albums it finds. A filter by `lossless` finds every lossless album, Hi-Res ones too, and counts them so.
+ */
+@Serializable
+public data class AlbumFilters(
+    /**
+     * By name, A to Z; told apart regardless of case.
+     */
+    public val genres: List<GenresItem>,
+    /**
+     * Those that find an album, in the order Hi-Res, lossless, lossy.
+     */
+    public val fidelities: List<FidelitiesItem>,
+) {
+    @Serializable
+    public data class GenresItem(
+        public val name: String,
+        public val count: Int,
+    )
+
+    @Serializable
+    public data class FidelitiesItem(
+        public val value: Fidelity,
+        public val count: Int,
+    )
+}
+
+/**
  * GET /api/albums with `offset`: one page of the albums, in the order asked for, and how many there are in all. Every page comes from the library at `version`: a later page with another version was read after the library changed, so the pages before it may have moved (start again from the first).
  */
 @Serializable
@@ -676,6 +703,25 @@ public data class FavoriteTrack(
     public val coverAccent: String? = null,
     public val favoritedAt: String,
 )
+
+/**
+ * How faithful a format is (`fidelityOf`): Hi-Res (lossless above CD quality), lossless (CD quality or less), or lossy.
+ */
+@Serializable
+@JvmInline
+public value class Fidelity(public val value: String) {
+    /** One of the values this version of the app knows. */
+    public val isKnown: Boolean get() = this in entries
+
+    override fun toString(): String = value
+
+    public companion object {
+        public val HiRes: Fidelity = Fidelity("hi-res")
+        public val Lossless: Fidelity = Fidelity("lossless")
+        public val Lossy: Fidelity = Fidelity("lossy")
+        public val entries: List<Fidelity> = listOf(HiRes, Lossless, Lossy)
+    }
+}
 
 /**
  * A file's own tags (folder sources), as read from the file.
@@ -3042,5 +3088,40 @@ public value class WavFallback(public val value: String) {
         public val ALAC: WavFallback = WavFallback("ALAC")
         public val AIFF: WavFallback = WavFallback("AIFF")
         public val entries: List<WavFallback> = listOf(ALAC, AIFF)
+    }
+}
+
+@Serializable
+public data class fidelityOf(
+    public val namedArgs: NamedArgs? = null,
+) {
+    @Serializable
+    public data class NamedArgs(
+        public val format: Format,
+    ) {
+        @Serializable
+        public data class Format(
+            public val lossless: Boolean,
+            public val bits: Int? = null,
+            public val sampleRate: Int? = null,
+        )
+    }
+}
+
+@Serializable
+public data class hasFidelity(
+    public val namedArgs: NamedArgs? = null,
+) {
+    @Serializable
+    public data class NamedArgs(
+        public val format: Format,
+        public val fidelity: Fidelity,
+    ) {
+        @Serializable
+        public data class Format(
+            public val lossless: Boolean,
+            public val bits: Int? = null,
+            public val sampleRate: Int? = null,
+        )
     }
 }

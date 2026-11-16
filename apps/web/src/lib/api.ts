@@ -4,6 +4,7 @@ import type {
   AccountRole,
   Album,
   AlbumDetail,
+  AlbumFilters,
   AlbumPage,
   AlbumRef,
   AlbumRequest,
@@ -21,6 +22,7 @@ import type {
   DiscoverArtistDetail,
   DiscoverResults,
   FavoriteTrack,
+  Fidelity,
   FolderAccessOptions,
   FolderBrowseRequest,
   FolderListing,
@@ -164,6 +166,12 @@ async function request<T>(path: string, init: RequestInit = {}, timeout = TIMEOU
 
 const get = <T>(path: string, signal?: AbortSignal, timeout?: number) => request<T>(path, { signal }, timeout);
 
+/** Which albums a list shows (GET /api/albums?genre=&fidelity=). */
+export interface AlbumFilter {
+  genre?: string;
+  fidelity?: Fidelity;
+}
+
 export const api = {
   health: () => get<HealthStatus>('/api/health'),
   musicbrainzStatus: () => get<MusicBrainzStatus>('/api/musicbrainz/status'),
@@ -172,7 +180,12 @@ export const api = {
   artistTracks: (id: number) => get<Track[]>(`/api/artists/${id}/tracks`),
   albums: (sort: AlbumSort, limit?: number) =>
     get<Album[]>(`/api/albums?sort=${sort}${limit ? `&limit=${limit}` : ''}`),
-  albumPage: (sort: AlbumSort, offset: number, limit: number) => get<AlbumPage>(`/api/albums?sort=${sort}&offset=${offset}&limit=${limit}`),
+  /** A page of the albums in this order, those with `genre` and of `fidelity` when given. */
+  albumPage: (sort: AlbumSort, offset: number, limit: number, filter: AlbumFilter = {}) =>
+    get<AlbumPage>(
+      `/api/albums?sort=${sort}&offset=${offset}&limit=${limit}${filter.genre ? `&genre=${encodeURIComponent(filter.genre)}` : ''}${filter.fidelity ? `&fidelity=${filter.fidelity}` : ''}`,
+    ),
+  albumFilters: () => get<AlbumFilters>('/api/albums/filters'),
   randomAlbums: (limit = 12) => get<Album[]>(`/api/albums/random?limit=${limit}`),
   album: (id: number) => get<AlbumDetail>(`/api/albums/${id}`),
   randomTracks: (limit = 50) => get<Track[]>(`/api/tracks/random?limit=${limit}`),

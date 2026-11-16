@@ -57,6 +57,35 @@ describe('the albums and artists lists', () => {
     expect(titles(((await get('/api/albums?offset=-3')).json() as AlbumPage).albums)).toEqual(['Royalty Free', 'Mezzanine']);
   });
 
+  it('are filtered by fidelity and genre, and say what they can be filtered by', async () => {
+    const { get } = await setup();
+    expect((await get('/api/albums/filters')).json()).toEqual({
+      // Mezzanine has its artist's.
+      genres: [{ name: 'trip hop', count: 1 }],
+      fidelities: [
+        { value: 'lossless', count: 1 },
+        { value: 'lossy', count: 1 },
+      ],
+    });
+    expect(titles((await get('/api/albums?fidelity=lossy')).json())).toEqual(['Royalty Free']);
+    expect((await get('/api/albums?fidelity=lossless&offset=0')).json()).toMatchObject({ albums: [{ title: 'Mezzanine' }], total: 1 });
+    expect((await get('/api/albums?fidelity=hi-res&offset=0')).json()).toMatchObject({ albums: [], total: 0 });
+    expect(titles((await get('/api/albums?genre=Trip%20Hop')).json())).toEqual(['Mezzanine']);
+    expect((await get('/api/albums?genre=Polka&offset=0')).json()).toMatchObject({ albums: [], total: 0 });
+    // A filter that isn't one is left out.
+    expect(titles((await get('/api/albums?fidelity=loud')).json())).toEqual(['Royalty Free', 'Mezzanine']);
+    // Each filter has its own ETag, and the filters theirs.
+    const tags = await Promise.all(
+      ['/api/albums?offset=0', '/api/albums?offset=0&fidelity=lossy', '/api/albums?offset=0&genre=Polka', '/api/albums/filters'].map(async (url) => (await get(url)).headers.etag),
+    );
+    expect(new Set(tags).size).toBe(tags.length);
+    const filters = await get('/api/albums/filters');
+    expect((await get('/api/albums/filters', 1, { 'if-none-match': filters.headers.etag as string })).statusCode).toBe(304);
+    // An account's filters are its library's.
+    expect((await get('/api/albums/filters', 2)).json()).toEqual({ genres: [], fidelities: [{ value: 'lossy', count: 1 }] });
+    expect((await get('/api/albums?fidelity=lossless&offset=0', 2)).json()).toMatchObject({ total: 0 });
+  });
+
   it('have the library of the account asking', async () => {
     const { get } = await setup();
     expect((await get('/api/albums?offset=0', 2)).json()).toMatchObject({ albums: [{ title: 'Royalty Free' }], total: 1 });

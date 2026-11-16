@@ -183,6 +183,39 @@ public struct AlbumDetail: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// GET /api/albums/filters: what the albums can be filtered by (GET /api/albums?genre=&fidelity=), each with how many albums it finds. A filter by `lossless` finds every lossless album, Hi-Res ones too, and counts them so.
+public struct AlbumFilters: Codable, Hashable, Sendable {
+    /// By name, A to Z; told apart regardless of case.
+    public var genres: [GenresItem]
+    /// Those that find an album, in the order Hi-Res, lossless, lossy.
+    public var fidelities: [FidelitiesItem]
+
+    public init(genres: [GenresItem], fidelities: [FidelitiesItem]) {
+        self.genres = genres
+        self.fidelities = fidelities
+    }
+
+    public struct GenresItem: Codable, Hashable, Sendable {
+        public var name: String
+        public var count: Int
+
+        public init(name: String, count: Int) {
+            self.name = name
+            self.count = count
+        }
+    }
+
+    public struct FidelitiesItem: Codable, Hashable, Sendable {
+        public var value: Fidelity
+        public var count: Int
+
+        public init(value: Fidelity, count: Int) {
+            self.value = value
+            self.count = count
+        }
+    }
+}
+
 /// GET /api/albums with `offset`: one page of the albums, in the order asked for, and how many there are in all. Every page comes from the library at `version`: a later page with another version was read after the library changed, so the pages before it may have moved (start again from the first).
 public struct AlbumPage: Codable, Hashable, Sendable {
     public var albums: [Album]
@@ -965,6 +998,44 @@ public struct FavoriteTrack: Codable, Hashable, Sendable, Identifiable {
         self.coverColor = coverColor
         self.coverAccent = coverAccent
         self.favoritedAt = favoritedAt
+    }
+}
+
+/// How faithful a format is (`fidelityOf`): Hi-Res (lossless above CD quality), lossless (CD quality or less), or lossy.
+public enum Fidelity: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case hiRes
+    case lossless
+    case lossy
+    /// A value this version of the app doesn't know yet.
+    case unknown(String)
+
+    public static let allCases: [Fidelity] = [.hiRes, .lossless, .lossy]
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "hi-res": self = .hiRes
+        case "lossless": self = .lossless
+        case "lossy": self = .lossy
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .hiRes: "hi-res"
+        case .lossless: "lossless"
+        case .lossy: "lossy"
+        case .unknown(let value): value
+        }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
 
@@ -4139,5 +4210,63 @@ public enum WavFallback: RawRepresentable, Codable, Hashable, Sendable, CaseIter
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
+    }
+}
+
+public struct fidelityOf: Codable, Hashable, Sendable {
+    public var namedArgs: NamedArgs?
+
+    public init(namedArgs: NamedArgs? = nil) {
+        self.namedArgs = namedArgs
+    }
+
+    public struct NamedArgs: Codable, Hashable, Sendable {
+        public var format: Format
+
+        public init(format: Format) {
+            self.format = format
+        }
+
+        public struct Format: Codable, Hashable, Sendable {
+            public var lossless: Bool
+            public var bits: Int?
+            public var sampleRate: Int?
+
+            public init(lossless: Bool, bits: Int? = nil, sampleRate: Int? = nil) {
+                self.lossless = lossless
+                self.bits = bits
+                self.sampleRate = sampleRate
+            }
+        }
+    }
+}
+
+public struct hasFidelity: Codable, Hashable, Sendable {
+    public var namedArgs: NamedArgs?
+
+    public init(namedArgs: NamedArgs? = nil) {
+        self.namedArgs = namedArgs
+    }
+
+    public struct NamedArgs: Codable, Hashable, Sendable {
+        public var format: Format
+        public var fidelity: Fidelity
+
+        public init(format: Format, fidelity: Fidelity) {
+            self.format = format
+            self.fidelity = fidelity
+        }
+
+        public struct Format: Codable, Hashable, Sendable {
+            public var lossless: Bool
+            public var bits: Int?
+            public var sampleRate: Int?
+
+            public init(lossless: Bool, bits: Int? = nil, sampleRate: Int? = nil) {
+                self.lossless = lossless
+                self.bits = bits
+                self.sampleRate = sampleRate
+            }
+        }
     }
 }

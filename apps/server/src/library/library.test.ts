@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildCatalog, type Catalog } from '../catalog/build.ts';
 import { CatalogStore } from '../catalog/store.ts';
 import { twoSources } from '../accounts/testAccess.ts';
-import { CC_REC, creativeCommons, freshDb, mezzanine, MP3 } from '../catalog/testFixtures.ts';
+import { CC_REC, creativeCommons, FLAC, FLAC_24, freshDb, mezzanine, MP3 } from '../catalog/testFixtures.ts';
 import type { CatalogSource, SourceSync } from '../catalog/types.ts';
 import { coverArtArchive } from '../discover/art.ts';
 import { syntheticLibrary } from '../testing/syntheticLibrary.ts';
@@ -359,6 +359,53 @@ describe('library views', () => {
       [a, null],
       [b, 'Drive not mounted'],
     ]);
+  });
+});
+
+describe('album filters', () => {
+  /** Three albums by one artist: hi-res with "Jazz", CD with "jazz" and "Soul", an MP3 with no genre. */
+  async function shelf() {
+    const store = new CatalogStore(freshDb());
+    const id = store.addSource('folder', 'Music');
+    const album = (key: string, genres: string[]) => ({ key, artistKey: 'a', title: key, albumType: 'Album', secondaryTypes: [], genres });
+    const track = (key: string) => ({ key: `${key}1`, albumKey: key, recordingId: `${key}1`, title: `${key}1`, trackNumber: 1, discNumber: 1, duration: 200, explicit: false });
+    const copy = (key: string, format: typeof MP3) => ({ ref: key, trackKey: `${key}1`, path: `/m/${key}`, size: 1, format });
+    const sync: SourceSync = {
+      artists: [{ key: 'a', name: 'Nina', sortName: 'Nina', genres: [] }],
+      albums: [album('Blue', ['Jazz']), album('Gold', ['jazz', ' Soul ']), album('Grey', [])],
+      tracks: [track('Blue'), track('Gold'), track('Grey')],
+      copies: [copy('Blue', FLAC_24), copy('Gold', FLAC), copy('Grey', MP3)],
+    };
+    const library = new Library(store, () => [{ id, source: { kind: 'folder', sync: async () => sync } }], log);
+    await library.refresh();
+    return library;
+  }
+
+  it('finds the albums of a genre, in any case, and of a fidelity, lossless counting Hi-Res too', async () => {
+    const library = await shelf();
+    const titlesOf = async (filter: Parameters<Library['albums']>[2]) => (await library.albums('title', undefined, filter)).map((a) => a.title);
+    expect(await titlesOf({ genre: 'JAZZ' })).toEqual(['Blue', 'Gold']);
+    expect(await titlesOf({ genre: 'soul' })).toEqual(['Gold']);
+    expect(await titlesOf({ fidelity: 'hi-res' })).toEqual(['Blue']);
+    expect(await titlesOf({ fidelity: 'lossless' })).toEqual(['Blue', 'Gold']);
+    expect(await titlesOf({ fidelity: 'lossy' })).toEqual(['Grey']);
+    expect(await titlesOf({ genre: 'jazz', fidelity: 'hi-res' })).toEqual(['Blue']);
+    expect(await library.albumPage('title', 1, 10, { genre: 'jazz' })).toMatchObject({ albums: [{ title: 'Gold' }], total: 2 });
+  });
+
+  it('says what the albums can be filtered by: genres A to Z as most albums spell them, and fidelities, with counts', async () => {
+    const library = await shelf();
+    expect(await library.albumFilters()).toEqual({
+      genres: [
+        { name: 'jazz', count: 2 },
+        { name: 'Soul', count: 1 },
+      ],
+      fidelities: [
+        { value: 'hi-res', count: 1 },
+        { value: 'lossless', count: 2 },
+        { value: 'lossy', count: 1 },
+      ],
+    });
   });
 });
 

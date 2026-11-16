@@ -26,7 +26,7 @@ import type {
 import { MIX_MAP_VERSION, type MixMap, type MixMapEntry } from '@playarr/mix';
 import { keepPreviousData, queryOptions, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError, type AnalysisKind } from './api';
+import { api, ApiError, type AlbumFilter, type AnalysisKind } from './api';
 import { plural } from './format';
 import { queryClient } from './queryClient';
 import { toast } from './toast';
@@ -117,10 +117,10 @@ export const ALBUM_PAGE = 120;
  * The albums in this order a page at a time (`fetchNextPage` for the next), so a collector's 10,000 open as fast
  * as a few dozen: the first page is about 60 KB where the whole list is about 5 MB.
  */
-export const useAlbumPages = (sort: AlbumSort) =>
+export const useAlbumPages = (sort: AlbumSort, filter: AlbumFilter = {}) =>
   useInfiniteQuery({
-    queryKey: ['albums', sort, 'pages'],
-    queryFn: ({ pageParam }) => api.albumPage(sort, pageParam, ALBUM_PAGE),
+    queryKey: ['albums', sort, 'pages', filter.genre ?? '', filter.fidelity ?? ''],
+    queryFn: ({ pageParam }) => api.albumPage(sort, pageParam, ALBUM_PAGE, filter),
     initialPageParam: 0,
     getNextPageParam: (last, pages) => {
       const loaded = pages.reduce((n, page) => n + page.albums.length, 0);
@@ -128,6 +128,9 @@ export const useAlbumPages = (sort: AlbumSort) =>
     },
     placeholderData: keepPreviousData,
   });
+
+/** What the albums can be filtered by: their genres and fidelities, with how many albums each finds. */
+export const useAlbumFilters = () => useQuery({ queryKey: ['albums', 'filters'], queryFn: api.albumFilters });
 
 /** `seed` is only part of the cache key: bump it to draw a fresh random set. */
 export const useRandomAlbums = (limit = 12, seed = 0) =>

@@ -1,4 +1,18 @@
-import type { Album, AlbumDetail, AlbumPage, AlbumSort, Artist, ArtistDetail, ArtistPage, LibraryStats, SearchResults, Track } from '@playarr/shared';
+import {
+  hasFidelity,
+  type Album,
+  type AlbumDetail,
+  type AlbumFilters,
+  type AlbumPage,
+  type AlbumSort,
+  type Artist,
+  type ArtistDetail,
+  type ArtistPage,
+  type Fidelity,
+  type LibraryStats,
+  type SearchResults,
+  type Track,
+} from '@playarr/shared';
 import { randomBytes } from 'node:crypto';
 import { buildCatalog, type Catalog, type FileRecord, type LidarrAlbumRef } from '../catalog/build.ts';
 import type { CatalogRows, CatalogStore } from '../catalog/store.ts';
@@ -48,7 +62,13 @@ export interface Snapshot extends Catalog {
   albumsByCover: Map<string, AlbumDetail[]>;
   search: SearchIndex;
   /** The albums in each order lists ask for, and the artists A to Z: sorted once, when first asked for. */
-  sorted: { albums: Map<AlbumSort, AlbumDetail[]>; artists?: Artist[] };
+  sorted: {
+    albums: Map<AlbumSort, AlbumDetail[]>;
+    artists?: Artist[];
+    /** The albums in an order, filtered (filterKey), kept for the filters asked for most recently. */
+    filtered: Map<string, AlbumDetail[]>;
+    filters?: AlbumFilters;
+  };
 }
 
 /** Tells this run of the server from the last in the versions it hands out: the library's version starts over at each start. */
@@ -211,15 +231,21 @@ export abstract class LibraryView {
       .flatMap((a) => a.tracks);
   }
 
-  async albums(sort: AlbumSort = 'artist', limit?: number): Promise<Album[]> {
-    const sorted = sortedAlbums(await this.ready(), sort);
+  async albums(sort: AlbumSort = 'artist', limit?: number, filter: AlbumFilter = {}): Promise<Album[]> {
+    const sorted = filteredAlbums(await this.ready(), sort, filter);
     return (limit ? sorted.slice(0, limit) : sorted).map(stripAlbum);
   }
 
-  /** One page of the albums in this order, and how many there are in all. */
-  async albumPage(sort: AlbumSort, offset: number, limit: number): Promise<AlbumPage> {
-    const sorted = sortedAlbums(await this.ready(), sort);
+  /** One page of the albums in this order (those the filter finds), and how many there are in all. */
+  async albumPage(sort: AlbumSort, offset: number, limit: number, filter: AlbumFilter = {}): Promise<AlbumPage> {
+    const sorted = filteredAlbums(await this.ready(), sort, filter);
     return { albums: sorted.slice(offset, offset + limit).map(stripAlbum), total: sorted.length, version: this.listVersion };
+  }
+
+  /** What the albums can be filtered by, each with how many albums it finds. */
+  async albumFilters(): Promise<AlbumFilters> {
+    const snap = await this.ready();
+    return (snap.sorted.filters ??= albumFiltersOf(snap.albums.values()));
   }
 
   async randomAlbums(count: number): Promise<Album[]> {
@@ -637,6 +663,66 @@ function sortedAlbums(snap: Snapshot, sort: AlbumSort): AlbumDetail[] {
   return sorted;
 }
 
+/** Which albums a list shows: those with this genre (in any case) and of this fidelity (see hasFidelity). */
+export interface AlbumFilter {
+  genre?: string;
+  fidelity?: Fidelity;
+}
+
+/** Filtered lists kept per snapshot, the most recently asked for: each is an array of references, a few KB. */
+const FILTERED_KEPT = 32;
+
+/** The albums in an order that a filter finds, filtered on first asking and kept with the snapshot. */
+function filteredAlbums(snap: Snapshot, sort: AlbumSort, filter: AlbumFilter): AlbumDetail[] {
+  const genre = filter.genre?.trim().toLowerCase();
+  const { fidelity } = filter;
+  if (!genre && !fidelity) return sortedAlbums(snap, sort);
+  const key = `${sort}\0${genre ?? ''}\0${fidelity ?? ''}`;
+  const kept = snap.sorted.filtered;
+  let found = kept.get(key);
+  if (found) {
+    // Most recently asked for last, so the oldest goes first.
+    kept.delete(key);
+  } else {
+    found = sortedAlbums(snap, sort).filter(
+      (album) =>
+        (!genre || album.genres.some((g) => g.trim().toLowerCase() === genre)) &&
+        (!fidelity || (!!album.format && hasFidelity(album.format, fidelity))),
+    );
+    if (kept.size >= FILTERED_KEPT) kept.delete(kept.keys().next().value!);
+  }
+  kept.set(key, found);
+  return found;
+}
+
+const FIDELITIES: Fidelity[] = ['hi-res', 'lossless', 'lossy'];
+
+/** The albums' genres (told apart regardless of case, named as most albums spell them) and fidelities, with counts. */
+export function albumFiltersOf(albums: Iterable<AlbumDetail>): AlbumFilters {
+  const genres = new Map<string, { count: number; spellings: Map<string, number> }>();
+  const fidelities = new Map<Fidelity, number>();
+  for (const album of albums) {
+    const seen = new Set<string>();
+    for (const raw of album.genres) {
+      const name = raw.trim();
+      const key = name.toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      let genre = genres.get(key);
+      if (!genre) genres.set(key, (genre = { count: 0, spellings: new Map() }));
+      genre.count++;
+      genre.spellings.set(name, (genre.spellings.get(name) ?? 0) + 1);
+    }
+    if (album.format) for (const f of FIDELITIES) if (hasFidelity(album.format, f)) fidelities.set(f, (fidelities.get(f) ?? 0) + 1);
+  }
+  return {
+    genres: [...genres.values()]
+      .map(({ count, spellings }) => ({ name: [...spellings].sort((a, b) => b[1] - a[1] || collator.compare(a[0], b[0]))[0]![0], count }))
+      .sort((a, b) => byBase.compare(a.name, b.name)),
+    fidelities: FIDELITIES.filter((f) => fidelities.has(f)).map((value) => ({ value, count: fidelities.get(value)! })),
+  };
+}
+
 /** The artists A to Z, sorted on first asking and kept with the snapshot. */
 function sortedArtists(snap: Snapshot): Artist[] {
   return (snap.sorted.artists ??= [...snap.artists.values()].sort(bySortName));
@@ -688,7 +774,7 @@ function toSnapshot(catalog: Catalog, colors?: CoverColorSource): Snapshot {
       trackTitles,
       trackFull: catalog.tracks.map((t, i) => both(norm(t.artistName), trackTitles[i]!)),
     },
-    sorted: { albums: new Map() },
+    sorted: { albums: new Map(), filtered: new Map() },
   };
 }
 

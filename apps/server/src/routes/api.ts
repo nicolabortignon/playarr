@@ -1,4 +1,4 @@
-import type { AlbumSort, HealthStatus, RequestSettings } from '@playarr/shared';
+import type { AlbumFilters, AlbumSort, Fidelity, HealthStatus, RequestSettings } from '@playarr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Config } from '../config.ts';
@@ -8,6 +8,7 @@ import { mapPath, type MediaSource } from '../media/index.ts';
 import { canRequest, isAdmin, libraryOf, requireAdmin } from '../accounts/rights.ts';
 
 const ALBUM_SORTS: AlbumSort[] = ['title', 'artist', 'year', 'added'];
+const FIDELITIES: Fidelity[] = ['hi-res', 'lossless', 'lossy'];
 
 function clampInt(raw: string | undefined, fallback: number, max: number) {
   const n = Number.parseInt(raw ?? '', 10);
@@ -138,15 +139,26 @@ export function apiRoutes(
     libraryOf(library, req).artistTracks(Number(req.params.id)),
   );
 
-  app.get<{ Querystring: { sort?: string; limit?: string; offset?: string } }>('/api/albums', async (req, reply) => {
+  app.get<{ Querystring: { sort?: string; limit?: string; offset?: string; genre?: string; fidelity?: string } }>('/api/albums', async (req, reply) => {
     const view = libraryOf(library, req);
     const sort = ALBUM_SORTS.includes(req.query.sort as AlbumSort) ? (req.query.sort as AlbumSort) : 'artist';
     const page = pageOf(req.query);
     // Without an offset, `limit` is the first so many, as it always was.
     const limit = !page && req.query.limit ? clampInt(req.query.limit, 50, 10_000) : undefined;
-    const tag = `${await view.listTag('albums')}-${sort}${page ? `-${page.offset}.${page.limit}` : limit ? `-${limit}` : ''}`;
+    // Those with this genre and of this fidelity; a filter that isn't one is left out.
+    const genre = req.query.genre?.trim().slice(0, 200) || undefined;
+    const fidelity = FIDELITIES.includes(req.query.fidelity as Fidelity) ? (req.query.fidelity as Fidelity) : undefined;
+    const filter = { ...(genre ? { genre } : {}), ...(fidelity ? { fidelity } : {}) };
+    const filtered = genre || fidelity ? `-${encodeURIComponent(genre?.toLowerCase() ?? '')}.${fidelity ?? ''}` : '';
+    const tag = `${await view.listTag('albums')}-${sort}${filtered}${page ? `-${page.offset}.${page.limit}` : limit ? `-${limit}` : ''}`;
     if (fresh(req, reply, tag)) return reply.code(304).send();
-    return page ? view.albumPage(sort, page.offset, page.limit) : view.albums(sort, limit);
+    return page ? view.albumPage(sort, page.offset, page.limit, filter) : view.albums(sort, limit, filter);
+  });
+
+  app.get('/api/albums/filters', async (req, reply): Promise<AlbumFilters | undefined> => {
+    const view = libraryOf(library, req);
+    if (fresh(req, reply, `${await view.listTag('albums')}-filters`)) return void reply.code(304).send();
+    return view.albumFilters();
   });
 
   app.get<{ Querystring: { limit?: string } }>('/api/albums/random', (req) =>

@@ -177,6 +177,20 @@ export interface ServerDiagnostics {
 
 export type AlbumSort = 'title' | 'artist' | 'year' | 'added';
 
+/** How faithful a format is (`fidelityOf`): Hi-Res (lossless above CD quality), lossless (CD quality or less), or lossy. */
+export type Fidelity = 'hi-res' | 'lossless' | 'lossy';
+
+/**
+ * GET /api/albums/filters: what the albums can be filtered by (GET /api/albums?genre=&fidelity=), each with how many
+ * albums it finds. A filter by `lossless` finds every lossless album, Hi-Res ones too, and counts them so.
+ */
+export interface AlbumFilters {
+  /** By name, A to Z; told apart regardless of case. */
+  genres: { name: string; count: number }[];
+  /** Those that find an album, in the order Hi-Res, lossless, lossy. */
+  fidelities: { value: Fidelity; count: number }[];
+}
+
 /**
  * GET /api/albums with `offset`: one page of the albums, in the order asked for, and how many there are in all. Every
  * page comes from the library at `version`: a later page with another version was read after the library changed,
@@ -453,6 +467,7 @@ export interface Recommendations {
   seedCount: number;
 }
 
+export * from './fidelity.ts';
 export * from './playable.ts';
 export * from './range.ts';
 
