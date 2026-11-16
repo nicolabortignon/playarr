@@ -76,11 +76,36 @@ struct DownloadTests {
     #expect(starts.count == 3 && starts == starts.sorted() && starts.allSatisfy { $0 > 0 })
   }
 
-  @Test func aFourthBreakIsAFailure() async throws {
-    StubServer.serve("/stream/3", .init(body: body, breakAfter: 10_000, breaks: 4))
+  @Test func aFourthBreakInARowWithNothingArrivingIsAFailure() async throws {
+    StubServer.serve("/stream/3", .init(body: body, breakAfter: 0, breaks: 4))
     let d = download("/stream/3")
     d.start()
     await #expect(throws: Download.Failure.network) { try await d.waitUntilFinished() }
+  }
+
+  /// A flaky connection that keeps giving some bytes before it breaks never runs out of tries: each break counts from
+  /// the bytes that came before it.
+  @Test func breaksBetweenBytesArrivingNeverRunOutOfTries() async throws {
+    StubServer.serve("/stream/7", .init(body: body, breakAfter: 10_000, breaks: 6))
+    let d = download("/stream/7")
+    d.start()
+    try await d.waitUntilFinished()
+    #expect(try Data(contentsOf: d.file) == body)
+    #expect(StubServer.requests("/stream/7").count == 7)
+  }
+
+  /// How fast the bytes come in goes to the meter, from the first bytes (the wait for them is the server's).
+  @Test func measuresHowFastTheBytesComeIn() async throws {
+    // 200 000 bytes in chunks of 8 KB, 20 ms apart: about 400 KB/s, 3 Mbps.
+    StubServer.serve("/stream/8", .init(body: body, chunk: 8 * 1024, pause: .milliseconds(20)))
+    let meter = Bandwidth()
+    let d = Download(
+      request: StubServer.request("/stream/8"), file: temporaryDirectory().appending(path: "f.part"), retryDelay: .milliseconds(5),
+      meter: meter, configuration: StubServer.configuration)
+    d.start()
+    try await d.waitUntilFinished()
+    let kbps = try #require(meter.estimate())
+    #expect(kbps > 1000 && kbps < 4000, "measured \(kbps) kbps")
   }
 
   @Test func theServersRefusalCarriesItsMessage() async throws {

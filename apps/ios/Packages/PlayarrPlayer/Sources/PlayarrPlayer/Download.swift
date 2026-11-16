@@ -2,8 +2,9 @@ import Foundation
 import Synchronization
 
 /// One file fetched over HTTP into a local file, from a byte on, readable while it arrives. A connection that breaks
-/// is asked again from the byte it stopped at, up to `retries` times (3, as `STREAM_RETRIES` on the web), backing off
-/// further each time (`backoff`): a dead spot of a few seconds goes by without the song failing. An encoded stream's
+/// is asked again from the byte it stopped at, up to `retries` times in a row (3, as `STREAM_RETRIES` on the web; any
+/// bytes arriving start the count again), backing off further each time (`backoff`): a dead spot of a few seconds goes
+/// by without the song failing. With a `meter`, how fast the bytes come in is measured for Automatic quality. An encoded stream's
 /// download (`endsAtPadding`) ends where its padding starts (`StreamPadding`): the rest isn't fetched.
 ///
 /// URLSession calls the delegate methods on its own queue while readers wait on other tasks, so all state sits in a
@@ -45,12 +46,19 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
     var onFinish: (@Sendable () -> Void)?
     /// The walk to an encoded stream's padding, through the resource's bytes from its first.
     var padding: StreamPadding?
+    /// Measuring: since when, and the bytes since (from the first bytes of each request: the wait for them is the
+    /// server's, not the connection's).
+    var measuringSince: ContinuousClock.Instant?
+    var measuredBytes = 0
   }
 
   private let state: Mutex<State>
   private let configuration: @Sendable () -> URLSessionConfiguration
   private let retryDelay: Duration
   private let retries: Int
+  private let meter: Bandwidth?
+  /// Measurements of at least this long go to the meter.
+  static let measureEvery: Duration = .milliseconds(500)
 
   /// The waits before asking again, in `retryDelay`s: 1, 3 and 8 s by default (plan 2 §5).
   static let backoff = [1, 3, 8]
@@ -60,9 +68,10 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
   /// padding.
   public init(
     request: URLRequest, firstByte: Int64 = 0, file: URL, finalFile: URL? = nil, retries: Int = 3,
-    retryDelay: Duration = .seconds(1), endsAtPadding: Bool = false,
+    retryDelay: Duration = .seconds(1), endsAtPadding: Bool = false, meter: Bandwidth? = nil,
     configuration: @escaping @Sendable () -> URLSessionConfiguration = { .default }
   ) {
+    self.meter = meter
     self.request = request
     self.firstByte = firstByte
     self.retryDelay = retryDelay
@@ -171,6 +180,8 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
     s.status = 0
     s.skip = 0
     s.errorBody = Data()
+    s.measuringSince = nil
+    s.measuredBytes = 0
     s.task = s.session?.dataTask(with: request)
     s.task?.resume()
   }
@@ -205,6 +216,7 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
   }
 
   public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    var measured: (bytes: Int, seconds: Double)?
     let (ready, onFinish) = state.withLock { s -> ([Waiter], (@Sendable () -> Void)?) in
       guard (200..<300).contains(s.status), !s.finished else {
         if !s.finished { s.errorBody.append(data) }
@@ -239,6 +251,9 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
         return ([], nil)
       }
       s.received += Int64(data.count)
+      // Bytes came: the connection works, and the next break starts the count of retries again.
+      s.retriesLeft = retries
+      if meter != nil { measured = measure(&s, bytes: data.count, force: end != nil) }
       if let end {
         s.task?.cancel()
         s.session?.invalidateAndCancel()
@@ -252,8 +267,29 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
       s.waiters = stay
       return (go, nil)
     }
+    if let measured { meter?.record(bytes: measured.bytes, seconds: measured.seconds) }
     for w in ready { w.continuation.resume() }
     onFinish?()
+  }
+
+  /// Adds `bytes` to the measurement under way: one at least `measureEvery` long is handed back, for the meter, and a
+  /// new one starts. Called with the lock held.
+  private func measure(_ s: inout State, bytes: Int, force: Bool = false) -> (bytes: Int, seconds: Double)? {
+    let now = ContinuousClock.now
+    guard let since = s.measuringSince else {
+      // The first bytes start the clock.
+      s.measuringSince = now
+      return nil
+    }
+    s.measuredBytes += bytes
+    let elapsed = now - since
+    guard elapsed >= Self.measureEvery || (force && elapsed >= .milliseconds(100)) else { return nil }
+    let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+    defer {
+      s.measuringSince = now
+      s.measuredBytes = 0
+    }
+    return s.measuredBytes > 0 ? (s.measuredBytes, seconds) : nil
   }
 
   /// The file is whole at `length` bytes (an encoded stream up to its padding): kept at that, and moved into place.
@@ -275,9 +311,12 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
 
   public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
     enum Outcome { case done, failed(Failure), retry(after: Duration), nothing }
+    var measured: (bytes: Int, seconds: Double)?
     let (outcome, waiters, onFinish) = state.withLock { s -> (Outcome, [Waiter], (@Sendable () -> Void)?) in
       s.task = nil
       if s.cancelled || s.finished { return (.nothing, [], nil) }
+      // The last of what came in: a fast download may be over before a measurement is due.
+      if meter != nil, error == nil { measured = measure(&s, bytes: 0, force: true) }
       let broken = error != nil || (s.status == 206 && s.total.map { s.received < $0 } == true)
       let outcome: Outcome
       if s.status == 416 && s.received > 0 {
@@ -310,6 +349,7 @@ public final class Download: NSObject, URLSessionDataDelegate, Sendable {
       defer { s.waiters = [] }
       return (outcome, s.waiters, s.onFinish)
     }
+    if let measured { meter?.record(bytes: measured.bytes, seconds: measured.seconds) }
     switch outcome {
     case .retry(let wait):
       Task {

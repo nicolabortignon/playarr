@@ -10,7 +10,13 @@ public actor StreamCache {
   public let directory: URL
   private let maxBytes: Int64
   private let configuration: @Sendable () -> URLSessionConfiguration
+  /// Songs' downloads give up on a connection that has sent nothing for this long and ask again (URLSession's own
+  /// wait is a minute): a stalled connection is found out while the music still has some left. Not transitions',
+  /// which the server answers once it has made them.
+  private let songConfiguration: @Sendable () -> URLSessionConfiguration
   private let retryDelay: Duration
+  /// Measures how fast songs arrive, for Automatic quality.
+  private let bandwidth: Bandwidth?
   /// By file name (`file(for:quality:)`'s).
   private var downloads: [String: Download] = [:]
   private var transitions: [String: Download] = [:]
@@ -26,13 +32,19 @@ public actor StreamCache {
   }
 
   public init(
-    directory: URL, maxBytes: Int64 = 1 << 30, retryDelay: Duration = .seconds(1),
-    configuration: @escaping @Sendable () -> URLSessionConfiguration = { .default }
+    directory: URL, maxBytes: Int64 = 1 << 30, retryDelay: Duration = .seconds(1), bandwidth: Bandwidth? = nil,
+    songTimeout: TimeInterval = 20, configuration: @escaping @Sendable () -> URLSessionConfiguration = { .default }
   ) {
     self.directory = directory
     self.maxBytes = maxBytes
     self.retryDelay = retryDelay
+    self.bandwidth = bandwidth
     self.configuration = configuration
+    songConfiguration = {
+      let songs = configuration().copy() as! URLSessionConfiguration
+      songs.timeoutIntervalForRequest = songTimeout
+      return songs
+    }
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   }
 
@@ -44,7 +56,7 @@ public actor StreamCache {
   /// The song's whole file at `quality` or better, if it's here: its own file first, then the encoded streams, the
   /// better first. Marks it as just played.
   public func completedFile(for track: Track, atLeast quality: StreamQuality = .original) -> URL? {
-    for kind in [StreamQuality.original, .high, .normal] where kind.atLeast(quality) {
+    for kind in StreamQuality.bestFirst where kind.atLeast(quality) {
       let url = file(for: track, quality: kind)
       guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { continue }
       try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path(percentEncoded: false))
@@ -62,7 +74,7 @@ public actor StreamCache {
     if let running = downloads[name], running.isActive || running.isFinished { return running }
     let d = Download(
       request: request, file: final.appendingPathExtension("part"), finalFile: final, retryDelay: retryDelay,
-      endsAtPadding: quality != .original, configuration: configuration)
+      endsAtPadding: quality != .original, meter: bandwidth, configuration: songConfiguration)
     d.onFinish { [weak self] in Task { await self?.finished(name) } }
     downloads[name] = d
     d.start()
@@ -98,7 +110,7 @@ public actor StreamCache {
   public func temporary(request: URLRequest, firstByte: Int64) -> Download {
     let d = Download(
       request: request, firstByte: firstByte, file: directory.appending(path: "levelled-\(UUID().uuidString).wav"),
-      retryDelay: retryDelay, configuration: configuration)
+      retryDelay: retryDelay, meter: bandwidth, configuration: songConfiguration)
     d.start()
     return d
   }
@@ -108,7 +120,7 @@ public actor StreamCache {
   public func temporaryEncoded(request: URLRequest) -> Download {
     let d = Download(
       request: request, file: directory.appending(path: "encoded-\(UUID().uuidString).m4a"), retryDelay: retryDelay,
-      endsAtPadding: true, configuration: configuration)
+      endsAtPadding: true, meter: bandwidth, configuration: songConfiguration)
     d.start()
     return d
   }
@@ -123,6 +135,14 @@ public actor StreamCache {
   public func prefetch(_ songs: [(Track, StreamQuality, URLRequest)]) {
     waiting = songs.filter { completedFile(for: $0.0, atLeast: $0.1) == nil }
     pump()
+  }
+
+  /// Stops this song's downloads under way (what's here stays, and continues later): it plays on at another quality.
+  public func stopDownloads(of fileId: Int) {
+    for (name, d) in downloads where !d.isFinished && OfflineFolder.fileId(ofName: name) == fileId {
+      d.cancel()
+      downloads[name] = nil
+    }
   }
 
   /// Stops the downloads of other songs (what's here stays, and continues later).

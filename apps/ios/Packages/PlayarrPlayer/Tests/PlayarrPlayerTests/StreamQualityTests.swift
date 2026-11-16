@@ -39,7 +39,17 @@ struct StreamQualityTests {
     #expect(!StreamQuality.normal.encodes(track))
   }
 
+  @Test func encodesAtLowFilesWellAbove64Kbps() {
+    #expect(StreamQuality.low.kbps == 64)
+    #expect(StreamQuality.low.encodes(encodable(song(1), kbps: 128)))
+    #expect(!StreamQuality.low.encodes(encodable(song(2, container: "mp3"), kbps: 80)))
+    #expect(StreamQuality.low.bitrate(of: encodable(song(1))) == 64)
+    #expect(StreamQuality.original.bitrate(of: encodable(song(1))) == 900)
+  }
+
   @Test func ranksBetterCopiesAsDoing() {
+    #expect(StreamQuality.normal.atLeast(.low))
+    #expect(!StreamQuality.low.atLeast(.normal))
     #expect(StreamQuality.original.atLeast(.normal))
     #expect(StreamQuality.high.atLeast(.normal))
     #expect(StreamQuality.high.atLeast(.high))

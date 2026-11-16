@@ -60,7 +60,8 @@ public struct StatsForNerdsOverlay: View {
       transitions: player.settings.transitions, crossfade: player.settings.crossfade, mixMode: player.queue.mixMode, next: next,
       upcoming: result, djWanted: player.transitions.planner.upcoming.fromFileId == track.fileId, mixMissed: player.upcomingMixMissed,
       mix: player.engine.mix, engineNow: player.engine.now, reports: player.engine.mixReports, decks: player.engine.snapshot().decks,
-      continuation: item?.continuation, encoded: item?.continuation == nil ? player.encodedQuality(of: track) : nil)
+      continuation: item?.continuation, encoded: item?.continuation == nil ? player.encodedQuality(of: track) : nil,
+      streaming: player.settings.streaming, bandwidth: player.bandwidth.estimate())
   }
 
   private func panel(_ track: Track, width: CGFloat) -> some View {

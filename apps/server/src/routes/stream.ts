@@ -302,13 +302,13 @@ export function streamRoutes(
 
   /**
    * Encoded streams (media/encoded.ts): the song as AAC or Opus in fragmented MP4, from the sample `start` on
-   * (44.1 kHz; 0, its start, unless said), at `kbps` (128 or 256), and for the levelled ones at `gain` dB. A
+   * (44.1 kHz; 0, its start, unless said), at `kbps` (64, 128 or 256), and for the levelled ones at `gain` dB. A
    * file of a known length that answers byte ranges like any other: what isn't encoded yet is waited for.
    */
   function encodedRoute(codec: StreamCodec, levelled: boolean) {
     return async (req: FastifyRequest<{ Params: { fileId: string }; Querystring: { kbps?: string; start?: string; gain?: string } }>, reply: FastifyReply) => {
       const kbps = Number(req.query.kbps ?? 128);
-      if (!STREAM_KBPS.includes(kbps as StreamKbps)) return reply.code(400).send({ error: 'Invalid bitrate: 128 or 256' });
+      if (!STREAM_KBPS.includes(kbps as StreamKbps)) return reply.code(400).send({ error: 'Invalid bitrate: 64, 128 or 256' });
       const start = Number(req.query.start ?? 0);
       if (!Number.isInteger(start) || start < 0) return reply.code(400).send({ error: 'Invalid start' });
       const gain = levelled ? Number(req.query.gain ?? 0) : 0;

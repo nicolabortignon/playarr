@@ -46,7 +46,7 @@ Chrome and Firefox can't play Apple Lossless or AIFF (`wavFallbackOf` in `packag
 
 ## 2. Encoded streams: `/stream/:fileId/aac`
 
-Settings → Playback → Streaming quality ([../web.md](../web.md#10-settings-panels)). At High (256 kbps) or Normal (128 kbps) a song isn't sent as its file: the server encodes it as it's asked for, AAC-LC at 44.1 kHz in stereo, in fragmented MP4 (`media/encoded.ts`, `media/mp4.ts`, the routes in `routes/stream.ts`). An hour at Normal is about 58 MB, at High about 115 MB, against 300 to 600 MB for lossless files.
+Settings → Playback → Streaming quality ([../web.md](../web.md#10-settings-panels); the iOS app's Automatic picks by the connection's speed, [../ios/audio-engine.md](../ios/audio-engine.md)). At High (256 kbps), Normal (128 kbps) or Low (64 kbps, for a poor connection) a song isn't sent as its file: the server encodes it as it's asked for, AAC-LC at 44.1 kHz in stereo, in fragmented MP4 (`media/encoded.ts`, `media/mp4.ts`, the routes in `routes/stream.ts`). An hour at Low is about 29 MB, at Normal about 58 MB, at High about 115 MB, against 300 to 600 MB for lossless files.
 
 ### The routes
 
@@ -128,7 +128,7 @@ Bare ADTS starts at once in AVPlayer, but 2112 samples late and with a guessed d
 
 The app does all this (docs/ios/audio-engine.md §3, offline.md §5):
 
-- Ask for `aac`, or `levelled.aac` with the song's gain, never Opus; `kbps` 128 or 256; `start` 0 for a song from its start.
+- Ask for `aac`, or `levelled.aac` with the song's gain, never Opus; `kbps` 64, 128 or 256; `start` 0 for a song from its start.
 - Read it as an M4A file (AudioFileStream opened with `kAudioFileM4AType`, as `StreamDecoder` opens an `m4a`; or AVAudioFile and AVAssetReader on a copy on the device) and trim by its packet table (`kAudioFileStreamProperty_PacketTableInfo`): after the 2112 primed samples, the first decoded sample is the song's sample `start`; stop after `mNumberValidFrames`.
 - To seek, ask for a new stream from `start` (samples at 44.1 kHz), or seek within what's downloaded by its fragments.
 - After a broken connection, resume with a range from the last byte received: the same URL is the same bytes. (A server update that brings another ffmpeg could change them under the same `ETag`; resuming across one garbles a frame at the join, as it would in any file replaced meanwhile.)

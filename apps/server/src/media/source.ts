@@ -50,7 +50,7 @@ export interface EncodeOptions {
 }
 
 /** The bitrates (kbps) an encode may ask for. */
-const ENCODE_KBPS = new Set([128, 256]);
+const ENCODE_KBPS = new Set([64, 128, 256]);
 
 /** Refuse anything but sane numbers, as checkPcmOptions does: they end up on a command line (over SSH too). */
 function checkEncodeOptions({ codec, kbps, seekSeconds, skipSamples, leadSamples, samples, gainDb }: EncodeOptions): void {

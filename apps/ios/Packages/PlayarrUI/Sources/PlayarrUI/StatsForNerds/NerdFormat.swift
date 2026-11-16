@@ -20,6 +20,13 @@ public enum NerdFormat {
   /// −9.04 → "−9.0", with a real minus sign.
   public static func signed(_ x: Double) -> String { (x < 0 ? "−" : "") + fixed(abs(x), 1) }
 
+  /// A connection's speed: "640 kbps", "3.4 Mbps", "48 Mbps".
+  public static func speed(_ kbps: Double) -> String {
+    if kbps < 1000 { return "\(Int(kbps.rounded())) kbps" }
+    let mbps = kbps / 1000
+    return mbps < 10 ? "\(fixed(mbps, 1)) Mbps" : "\(Int(mbps.rounded())) Mbps"
+  }
+
   public static func pct(_ x: Double) -> String { "\(Int((min(1, max(0, x)) * 100).rounded()))%" }
 
   public static func n2(_ x: Double) -> String { fixed(x, 2) }

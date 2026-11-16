@@ -198,7 +198,8 @@ struct TrackSourceTests {
     let (missing, _) = source(106)  // no route: the stub answers 404 {"error":"Unknown track file"}
     await #expect(throws: PlaybackError.server("Unknown track file")) { try await missing.read(maxFrames: 4096) }
 
-    StubServer.serve("/stream/107", .init(body: try Data(contentsOf: AudioFiles.flac(seconds: 2)), breakAfter: 1000, breaks: 4))
+    // Four connections in a row that break before a byte arrives.
+    StubServer.serve("/stream/107", .init(body: try Data(contentsOf: AudioFiles.flac(seconds: 2)), breakAfter: 0, breaks: 4))
     let (breaking, _) = source(107)
     await #expect(throws: PlaybackError.keptBreakingOff) { _ = try await readAll(breaking) }
 

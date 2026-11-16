@@ -63,6 +63,17 @@ struct NerdStatsTests {
     #expect(row(leveled, "Playback", "Stream") == "its encoded stream, AAC 256 kbps, leveled on this device at −6.0 dB")
   }
 
+  @Test func saysTheQualityChosenAndTheSpeedMeasured() {
+    let automatic = NerdStats.groups(.init(
+      track: track, time: 18.25, duration: 379.5, buffered: 9.96, loading: false, playing: true, encoded: .high, bandwidth: 3420))
+    #expect(row(automatic, "Playback", "Quality") == "Automatic · 3.4 Mbps measured")
+    let fixed = NerdStats.groups(.init(
+      track: track, time: 18.25, duration: 379.5, buffered: 9.96, loading: false, playing: true, streaming: .normal, bandwidth: 640.4))
+    #expect(row(fixed, "Playback", "Quality") == "Normal, whatever the connection · 640 kbps measured")
+    let first = NerdStats.groups(.init(track: track, time: 0, duration: 379.5, buffered: 0, loading: true, playing: true))
+    #expect(row(first, "Playback", "Quality") == "Automatic · nothing measured yet")
+  }
+
   @Test func everyGroupWithTheNativeStreamDecksAndChangeovers() {
     let report = MixReport(kind: .mixIn, way: .server, songs: "Angel → Teardrop", sample: 154_350, songTime: 207.5, headroom: 2.61)
     let deck = DeckSnapshot(name: "A", title: "Angel", startsAt: 0, decodedSeconds: 12.34, scheduledSeconds: 2.5, finished: false, gain: 0.5)

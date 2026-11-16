@@ -20,8 +20,8 @@ import type { Readable } from 'node:stream';
 import { AAC_FRAME, FREE_HEADER, fragment, freeHeader, initSegment, moofSize, OPUS_PACKET, OPUS_RATE, STREAM_RATE, type StreamTrack } from './mp4.ts';
 
 export type StreamCodec = 'aac' | 'opus';
-/** The bitrates on offer (kbps): Normal and High. */
-export const STREAM_KBPS = [128, 256] as const;
+/** The bitrates on offer (kbps): Low (for a poor connection), Normal and High. */
+export const STREAM_KBPS = [64, 128, 256] as const;
 export type StreamKbps = (typeof STREAM_KBPS)[number];
 
 /**

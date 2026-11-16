@@ -58,13 +58,18 @@ struct PlaybackPanel: View {
           }
         }
         Section {
-          Picker("On Wi-Fi", selection: $settings.wifiQuality) { qualities }
-          Picker("On mobile data", selection: $settings.cellularQuality) { qualities }
+          Picker("Streaming", selection: $settings.streaming) {
+            Text("Automatic").tag(StreamingChoice.automatic)
+            Text("Original").tag(StreamingChoice.original)
+            Text("High").tag(StreamingChoice.high)
+            Text("Normal").tag(StreamingChoice.normal)
+            Text("Low").tag(StreamingChoice.low)
+          }
           Picker("Downloads", selection: downloadQuality) { qualities }
         } header: {
-          Text("Streaming quality")
+          Text("Quality")
         } footer: {
-          Text("Original streams each song’s own file as it is: lossless takes 300 MB an hour or more. High and Normal stream it made smaller on the server as it plays: High at 256 kbps, about 120 MB an hour and hard to tell from the original; Normal at 128 kbps, about 60 MB. A file already that small plays as it is. Choose a better quality for downloads and those downloaded below it are fetched again.")
+          Text("Automatic plays each song at the best quality your connection keeps up with, measured as songs arrive, on Wi-Fi or mobile data alike: when the music stops to wait for a song, it goes on a quality lower. In Low Data Mode it goes no higher than Normal. Original streams each song’s own file as it is: lossless takes 300 MB an hour or more. The others stream it made smaller on the server as it plays: High at 256 kbps, about 120 MB an hour and hard to tell from the original; Normal at 128 kbps, about 60 MB; Low at 64 kbps, about 30 MB, for a poor connection. A file already that small plays as it is. Choose a better quality for downloads and those downloaded below it are fetched again.")
         }
       }
       .disabled(locked)

@@ -30,6 +30,7 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - Load-ahead, Cache Storage and downloads have only been tested with unit and smoke tests, never in a real browser. *(PLAN.md decisions log, 2026-10-29)*
 - Phones held sideways could get the iOS app's sleeve layout for Now Playing. *(iOS sideways Now Playing spec)*
 - Optional wrappers: Tauri on desktop, Capacitor on mobile. *(PLAN.md roadmap phase 6)*
+- Automatic streaming quality, as the iOS app has it (by the measured speed, not Wi-Fi or mobile data): the web still picks by `navigator.connection` (its Wi-Fi and mobile data settings), and the TV plays the one quality picked in its settings. *(automatic quality, 2026-11-16)*
 - Feeling lucky's fan of covers is cut short where the button goes as the music starts (the idle player bar, the empty queue's page); keeping it would take a layer above the page. *(found)*
 - On a phone, Feeling lucky asks for its songs only as a finger touches it, so with a slow server the first song's card can still come out after the others; asking when Home opens would cover it, at one request per visit. *(found)*
 
@@ -39,6 +40,7 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 - Accessibility Nutrition Labels on the App Store, once the device checks pass. *(phase 11, "Not in this phase")*
 - Mac and CarPlay. *(iOS app design)*
 - Seeking inside a DJ transition abandons the mix rather than seeking within it. *(phase 5)*
+- Automatic quality on a real phone and a real poor connection (the step down was tested with a stream that runs dry, the speed with a stub server): how soon it steps down, and whether 1.3 times the bitrate is the right room. An encode the server can't make or is too busy for (502, 503) still plays the song's own file, which on a poor connection may be worse than waiting. *(automatic quality, 2026-11-16)*
 - Mix colors drawn in Display P3 rather than sRGB (optional; today's washes fit in sRGB). *(phase 6 next steps)*
 - Once in five iPhone runs of `AccessibilityAuditTests`, Now Playing didn't open from the mini player within 5 seconds; it has passed every run since. *(found)*
 

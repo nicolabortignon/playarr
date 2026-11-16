@@ -60,6 +60,10 @@ public final class Player {
   }
   /// What the session has learned of the server's encoded streams (plan 2 §1).
   @ObservationIgnored let encodeSupport: EncodeSupport
+  /// How fast songs arrive, measured from the stream cache's downloads: Automatic quality goes by it.
+  @ObservationIgnored public let bandwidth: Bandwidth
+  /// The quality each song was opened at, by engine item.
+  @ObservationIgnored let openedAt: OpenedQualities
   /// How long the queue must stay put before keep-ahead fetches (tests: zero).
   @ObservationIgnored public var settle: Duration = KeepAhead.settle
 
@@ -98,6 +102,13 @@ public final class Player {
   @ObservationIgnored private var pauseAtMixEnd: SampleTime?
   /// A song stopped by a dead spot, waiting to play on from where it was (`stall`).
   @ObservationIgnored private(set) var stalled: Stall?
+  /// Seconds the music has lately spent waiting for the song to arrive: each one waited adds itself, each ten played
+  /// take one away. Past `starvedLimit`, Automatic quality goes a quality lower (`stepDown`).
+  @ObservationIgnored private(set) var starved: Double = 0
+  @ObservationIgnored private var lastTick: Date?
+  /// Seconds of waiting for the song that make Automatic quality go lower: about three dry spells of a second, or one
+  /// of three.
+  static let starvedLimit = 3.0
   /// The song is waiting out a dead spot (Settings → Copy diagnostics says so).
   public var isStalled: Bool { stalled != nil }
   @ObservationIgnored private var seekedSinceTick = false
@@ -145,14 +156,16 @@ public final class Player {
     makeSource: (@MainActor (EngineItem, Int64) -> any PCMSource)? = nil, scheduler: (any Scheduling)? = nil
   ) throws {
     let folder = OfflineFolder(root: directory)
-    let cache = StreamCache(directory: folder.stream)
+    let networkReader = NetworkReader()
+    let bandwidth = Bandwidth(kbps: settings.lastMeasured(on: networkReader.read()))
+    let opened = OpenedQualities()
+    let cache = StreamCache(directory: folder.stream, bandwidth: bandwidth)
     let support = EncodeSupport()
     let downloads = DownloadStore(folder: folder, settings: settings, cache: cache, transport: transport, backend: backend, support: support)
     let levels = LevelStore(file: directory.appending(path: "levels.json")) { ids in try await backend.levels(ids) }
     levels.remember(downloads.keptLevels)
     downloads.learnedLevels = { [weak levels] found in levels?.remember(found) }
     let reports = PlayReportQueue(file: directory.appending(path: "pending-plays.json")) { try await backend.reportPlays($0) }
-    let networkReader = NetworkReader()
     let sources: @MainActor (EngineItem, Int64) -> any PCMSource = makeSource ?? { item, frame in
       // After a transition into an MP3: the server's rest of it, which runs on from the transition sample for sample.
       if let rest = item.continuation {
@@ -162,10 +175,13 @@ public final class Player {
             stream: backend.transitionRequest(rest.url), levelled: nil, kept: downloads.keptTransitionFile(rest.url)),
           cache: cache)
       }
+      let network = networkReader.read()
+      let quality = settings.streamQuality(for: item.track, on: network, kbps: bandwidth.estimate())
+      opened.record(item.id, quality)
       return TrackSource(
         track: item.track, firstFrame: frame,
         origin: Self.origin(
-          for: item.track, on: networkReader.read(), settings: settings, backend: backend, downloads: downloads,
+          for: item.track, at: quality, on: network, backend: backend, downloads: downloads,
           levelled: levels.levels[item.track.recordingId] != nil, support: support),
         cache: cache)
     }
@@ -185,6 +201,8 @@ public final class Player {
       })
     self.backend = backend
     self.networkReader = networkReader
+    self.bandwidth = bandwidth
+    openedAt = opened
     encodeSupport = support
     self.settings = settings
     self.levels = levels
@@ -340,6 +358,12 @@ public final class Player {
   /// once back online, a song stopped by a dead spot plays on, and offline the next song joined is one on this device.
   public func networkChanged(_ kind: NetworkKind) {
     let wasOffline = lastNetwork == .offline
+    // Another connection: what was measured on this one is kept for next time, and the new one starts from what was
+    // last measured on its kind, if lately.
+    if kind != lastNetwork {
+      rememberBandwidth()
+      bandwidth.reset(to: settings.lastMeasured(on: kind))
+    }
     lastNetwork = kind
     Log.network.info("Network: \(String(describing: kind), privacy: .public)")
     downloads.networkChanged(kind)
@@ -360,6 +384,7 @@ public final class Player {
   /// The app is going to the background, or closing: the queue, where it is in the song and the downloads' list are
   /// written now rather than in a moment.
   public func flushSaves() {
+    rememberBandwidth()
     _queue.resumeAt = time
     saved.write(queue)
     saved.flush()
@@ -393,6 +418,7 @@ public final class Player {
     if loaded != nil { time = stalled?.at ?? engine.position }
     buffered = engine.bufferedAhead
     loading = engine.state == .loading || engine.state == .buffering
+    watchForStarving(now)
     if engine.state == .playing { tracker.tick(time) } else { tracker.pause() }
     transitions.planner.clock(time, seeked: seekedSinceTick)
     seekedSinceTick = false
@@ -421,7 +447,66 @@ public final class Player {
       _queue.resumeAt = time
       lastSaved = now
       saveResumePoint()
+      rememberBandwidth()
     }
+  }
+
+  // MARK: Automatic quality
+
+  /// The music ran dry waiting for the song (the engine buffering while it should play): the connection doesn't keep
+  /// up with the song. Waiting adds up, smooth playing wears it down; past `starvedLimit` the song goes a quality lower.
+  private func watchForStarving(_ now: Date) {
+    let elapsed = lastTick.map { min(max(now.timeIntervalSince($0), 0), 0.5) } ?? 0
+    lastTick = now
+    guard queue.playing, loaded != nil, stalled == nil else { return }
+    switch engine.state {
+    case .buffering:
+      starved += elapsed
+      if starved >= Self.starvedLimit {
+        starved = 0
+        stepDown()
+      }
+    case .playing:
+      starved = max(0, starved - elapsed / 10)
+    default:
+      break
+    }
+  }
+
+  /// The quality the current song was opened at, or would be now.
+  private func currentQuality(_ item: EngineItem) -> StreamQuality {
+    openedAt.quality(of: item.id) ?? settings.streamQuality(for: item.track, on: network(), kbps: bandwidth.estimate())
+  }
+
+  /// Automatic quality, when the current song couldn't keep up: the connection is taken to be slower than its bitrate
+  /// for a while (`Bandwidth.fellBehind`), so it and the next songs go a quality lower. False when there's none lower,
+  /// or the quality isn't Automatic.
+  @discardableResult
+  private func fellBehind() -> Bool {
+    guard settings.streaming == .automatic, network() != .offline, let current = loaded, current.item.continuation == nil else { return false }
+    let track = current.item.track
+    let quality = currentQuality(current.item)
+    guard let lower = AutoQuality.below(quality, for: track) else { return false }
+    bandwidth.fellBehind(at: quality.bitrate(of: track))
+    Log.player.notice("Song \(track.id) fell behind at \(quality.rawValue, privacy: .public): \(lower.rawValue, privacy: .public) or lower from here")
+    return true
+  }
+
+  /// The song keeps running dry: it plays on from where it is a quality lower, its download at the quality it leaves
+  /// stopped, so the two don't share the connection. The same play.
+  private func stepDown() {
+    guard let current = loaded, fellBehind() else { return }
+    let at = time
+    let fileId = current.item.track.fileId
+    Task { [cache] in await cache.stopDownloads(of: fileId) }
+    loadCurrent(current.entry, resumingAt: at)
+    prefetch()
+  }
+
+  /// What's measured is kept for the next time on this kind of network.
+  private func rememberBandwidth() {
+    guard let kbps = bandwidth.measured else { return }
+    settings.remember(measured: kbps, on: lastNetwork)
   }
 
   // MARK: Keeping the engine in step
@@ -463,7 +548,9 @@ public final class Player {
     save()
   }
 
-  private func loadCurrent(_ entry: Entry?) {
+  /// Loads the current song: from `resumingAt` as the same play (a quality lower, `stepDown`), from where a dead spot
+  /// stopped it, or from its start.
+  private func loadCurrent(_ entry: Entry?, resumingAt: Double? = nil) {
     guard let entry, let track = queue.currentTrack else {
       tracker.finish(.changed)
       engine.stop()
@@ -473,7 +560,7 @@ public final class Player {
       return
     }
     if network() == .offline, !downloads.isKept(track.fileId), skipToKept() { return loadCurrent(currentEntry) }
-    let resumed = stalled?.entry == entry ? stalled?.at : nil
+    let resumed = resumingAt ?? (stalled?.entry == entry ? stalled?.at : nil)
     if resumed == nil {
       endStall()
       // Played again from the start (repeat one, "previous" near the start): it counts as heard through.
@@ -485,7 +572,8 @@ public final class Player {
     queue.startAt = nil
     firstLoad = false
     let item = EngineItem(track: track, gainDb: gainDb(track), startAt: start)
-    Log.player.info("Song \(track.id) from \(start, format: .fixed(precision: 1)) s\(resumed == nil ? "" : ", after a dead spot", privacy: .public)")
+    Log.player.info("Song \(track.id) from \(start, format: .fixed(precision: 1)) s\(resumingAt != nil ? ", a quality lower" : resumed == nil ? "" : ", after a dead spot", privacy: .public)")
+    starved = 0
     pressed = nil
     pressAwaits = nil
     pauseAtMixEnd = nil
@@ -702,11 +790,13 @@ public final class Player {
     keptAhead = KeepAhead.plan(queue, network: network, limit: settings.offlineLimit)
     let keep = Set((playingSongs + keptAhead).map(\.fileId))
     downloads.protect(keep)
-    // Each at the quality it plays at on this network: its encoded stream, or its own file.
+    // Each at the quality it would play at now: its encoded stream, or its own file.
+    let kbps = bandwidth.estimate()
     let requests = keptAhead.compactMap { track -> (Track, StreamQuality, URLRequest)? in
-      let quality = settings.streamQuality(on: network).of(track)
+      let chosen = settings.streamQuality(for: track, on: network, kbps: kbps)
+      let quality = chosen.of(track)
       guard !downloads.keeps(track, atLeast: quality) else { return nil }
-      if Self.playsEncoded(track, on: network, settings: settings, backend: backend, support: encodeSupport), let kbps = quality.kbps,
+      if Self.playsEncoded(track, at: chosen, on: network, backend: backend, support: encodeSupport), let kbps = quality.kbps,
         let request = backend.encodedRequest(track, kbps: kbps, start: 0)
       {
         return (track, quality, request)
@@ -719,12 +809,13 @@ public final class Player {
     }
   }
 
-  /// The quality a song streams at here now when it comes encoded (Stats for nerds); nil when it plays its own file or
-  /// a copy on this device.
+  /// The quality the current song streams at when it comes encoded (Stats for nerds); nil when it plays its own file
+  /// or a copy on this device.
   public func encodedQuality(of track: Track) -> StreamQuality? {
     let network = network()
-    let quality = settings.streamQuality(on: network)
-    guard Self.playsEncoded(track, on: network, settings: settings, backend: backend, support: encodeSupport),
+    let quality = loaded.flatMap { $0.item.track.fileId == track.fileId ? openedAt.quality(of: $0.item.id) : nil }
+      ?? settings.streamQuality(for: track, on: network, kbps: bandwidth.estimate())
+    guard Self.playsEncoded(track, at: quality, on: network, backend: backend, support: encodeSupport),
       !downloads.keeps(track, atLeast: quality.of(track))
     else { return nil }
     return quality
@@ -734,27 +825,25 @@ public final class Player {
   /// the stream cache has at the quality wanted on this network (any copy offline); else its encoded stream when it
   /// comes encoded here; else its own file.
   static func origin(
-    for track: Track, on network: NetworkKind, settings: PlaybackSettings, backend: any PlayerBackend, downloads: DownloadStore,
+    for track: Track, at quality: StreamQuality, on network: NetworkKind, backend: any PlayerBackend, downloads: DownloadStore,
     levelled: Bool, support: EncodeSupport
   ) -> TrackSource.Origin {
-    let quality = settings.streamQuality(on: network)
     var encoded: TrackSource.Encoded?
-    if playsEncoded(track, on: network, settings: settings, backend: backend, support: support), let kbps = quality.kbps {
+    if playsEncoded(track, at: quality, on: network, backend: backend, support: support), let kbps = quality.kbps {
       encoded = TrackSource.Encoded(quality: quality, support: support) { start in
         backend.encodedRequest(track, kbps: kbps, start: start) ?? backend.streamRequest(track)
       }
     }
     return TrackSource.Origin(
       stream: backend.streamRequest(track), levelled: levelled ? backend.levelledRequest(track) : nil,
-      kept: downloads.downloadedFile(track), accepts: network == .offline ? .normal : quality.of(track), encoded: encoded)
+      kept: downloads.downloadedFile(track), accepts: network == .offline ? .low : quality.of(track), encoded: encoded)
   }
 
   /// The song streams encoded here now: online, at a quality that encodes it, from a server that has encoded streams
   /// and hasn't failed this song's.
   static func playsEncoded(
-    _ track: Track, on network: NetworkKind, settings: PlaybackSettings, backend: any PlayerBackend, support: EncodeSupport
+    _ track: Track, at quality: StreamQuality, on network: NetworkKind, backend: any PlayerBackend, support: EncodeSupport
   ) -> Bool {
-    let quality = settings.streamQuality(on: network)
     guard network != .offline, quality.encodes(track), let kbps = quality.kbps, support.allows(track.fileId) else { return false }
     return backend.encodedRequest(track, kbps: kbps, start: 0) != nil
   }
@@ -836,6 +925,8 @@ public final class Player {
     case .failed(let id, let failure):
       guard let current = loaded, current.item.id == id else { return }
       if skipToKept() { return sync() }
+      // The song kept breaking off while the server answers: Automatic quality tries again a quality lower.
+      if failure == .keptBreakingOff, network() != .offline { fellBehind() }
       if failure.isNetwork, stall(current.entry) { return }
       endStall()
       Log.player.error("Song \(current.item.track.id) failed: \(failure.message, privacy: .public)")
@@ -980,4 +1071,17 @@ extension Player {
 /// Where the player reads the network from: the app's monitor, set after the player is made (`Player.network`).
 @MainActor final class NetworkReader {
   var read: () -> NetworkKind = { .wifi }
+}
+
+/// The quality each song was opened at (`Player`'s sources record it), by engine item: the last few.
+@MainActor final class OpenedQualities {
+  private var byItem: [(UUID, StreamQuality)] = []
+
+  func record(_ item: UUID, _ quality: StreamQuality) {
+    byItem.removeAll { $0.0 == item }
+    byItem.append((item, quality))
+    if byItem.count > 8 { byItem.removeFirst() }
+  }
+
+  func quality(of item: UUID) -> StreamQuality? { byItem.last { $0.0 == item }?.1 }
 }

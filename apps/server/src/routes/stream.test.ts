@@ -162,7 +162,7 @@ describe('Apple Lossless and AIFF as WAV, for browsers that can’t play them', 
 });
 
 describe('encoded streams', () => {
-  const total = (kbps: 128 | 256, valid: number) => streamLayout('aac', kbps, valid).total;
+  const total = (kbps: 64 | 128 | 256, valid: number) => streamLayout('aac', kbps, valid).total;
 
   it('serves the song as AAC in fragmented MP4, a file of a length known before it’s encoded', async () => {
     const { app, encodes } = setup();
@@ -175,6 +175,15 @@ describe('encoded streams', () => {
     expect(res.rawPayload.toString('latin1', 4, 12)).toBe('ftypM4A ');
     // The pre-roll before the song's first sample is silence; the song from its start, at the stream's length.
     expect(encodes).toEqual([{ codec: 'aac', kbps: 128, skipSamples: 0, leadSamples: PRE_ROLL, samples: PRE_ROLL + SAMPLES, priority: 'normal' }]);
+  });
+
+  it('serves Low, at 64 kbps, for a poor connection', async () => {
+    const { app, encodes } = setup();
+    const res = await app.inject({ url: '/stream/7/aac?kbps=64' });
+    expect(res.statusCode).toBe(200);
+    expect(Number(res.headers['content-length'])).toBe(total(64, SAMPLES));
+    expect(total(64, SAMPLES)).toBeLessThan(total(128, SAMPLES));
+    expect(encodes[0]).toMatchObject({ codec: 'aac', kbps: 64 });
   });
 
   it('answers byte ranges as a file does', async () => {

@@ -1,4 +1,5 @@
 import Foundation
+import PlayarrAPI
 import Observation
 
 /// Settings → Playback, per device as on the web (apps/web/src/lib/prefs.ts), kept in UserDefaults.
@@ -20,10 +21,9 @@ public final class PlaybackSettings {
   public var offlineLimit: Int64 { didSet { defaults.set(offlineLimit, forKey: Key.offlineLimit) } }
   /// "Allow downloads on mobile data" (and personal hotspots). Off: downloads wait for Wi-Fi.
   public var cellularDownloads: Bool { didSet { defaults.set(cellularDownloads, forKey: Key.cellularDownloads) } }
-  /// Streaming quality on Wi-Fi (Original), on mobile data and in Low Data Mode (Normal), and for downloads (Original),
-  /// as `wifiQuality`, `cellularQuality` and `downloadQuality` on the web (plan 2 §1).
-  public var wifiQuality: StreamQuality { didSet { defaults.set(wifiQuality.rawValue, forKey: Key.wifiQuality) } }
-  public var cellularQuality: StreamQuality { didSet { defaults.set(cellularQuality.rawValue, forKey: Key.cellularQuality) } }
+  /// Streaming quality: Automatic (by how fast songs arrive, `AutoQuality`), or one quality whatever the connection.
+  public var streaming: StreamingChoice { didSet { defaults.set(streaming.rawValue, forKey: Key.streaming) } }
+  /// Downloads' quality (Original), as `downloadQuality` on the web (plan 2 §1).
   public var downloadQuality: StreamQuality { didSet { defaults.set(downloadQuality.rawValue, forKey: Key.downloadQuality) } }
 
   @ObservationIgnored private let defaults: UserDefaults
@@ -36,9 +36,9 @@ public final class PlaybackSettings {
     static let recordPlays = "playback.recordPlays"
     static let offlineLimit = "playback.offlineLimit"
     static let cellularDownloads = "playback.cellularDownloads"
-    static let wifiQuality = "playback.wifiQuality"
-    static let cellularQuality = "playback.cellularQuality"
+    static let streaming = "playback.streaming"
     static let downloadQuality = "playback.downloadQuality"
+    static func measured(_ network: NetworkKind) -> String { "playback.measured.\(network)" }
   }
 
   public init(defaults: UserDefaults = .standard) {
@@ -52,18 +52,32 @@ public final class PlaybackSettings {
     let limit = (defaults.object(forKey: Key.offlineLimit) as? NSNumber)?.int64Value
     offlineLimit = limit.flatMap { OfflineLimit.options.contains($0) ? $0 : nil } ?? OfflineLimit.defaultLimit
     cellularDownloads = defaults.object(forKey: Key.cellularDownloads) as? Bool ?? false
-    wifiQuality = defaults.string(forKey: Key.wifiQuality).flatMap(StreamQuality.init) ?? .original
-    cellularQuality = defaults.string(forKey: Key.cellularQuality).flatMap(StreamQuality.init) ?? .normal
+    streaming = defaults.string(forKey: Key.streaming).flatMap(StreamingChoice.init) ?? .automatic
     downloadQuality = defaults.string(forKey: Key.downloadQuality).flatMap(StreamQuality.init) ?? .original
   }
 
-  /// The quality songs stream at on this network: mobile data's on mobile data and in Low Data Mode, else Wi-Fi's.
-  public func streamQuality(on network: NetworkKind) -> StreamQuality {
-    switch network {
-    case .cellular, .constrained: cellularQuality
-    case .wifi, .offline: wifiQuality
-    }
+  /// The quality a song streams at: the one chosen, or Automatic's for the connection's speed as measured (`kbps`),
+  /// never better than Normal in Low Data Mode.
+  public func streamQuality(for track: Track, on network: NetworkKind, kbps: Double?) -> StreamQuality {
+    streaming.fixed ?? AutoQuality.pick(for: track, kbps: kbps, lowDataMode: network == .constrained)
   }
+
+  /// The speed last measured on this kind of network (kbps), within the last hour: where Automatic starts after a
+  /// launch or a change of network, rather than at Normal.
+  public func lastMeasured(on network: NetworkKind, now: Date = Date()) -> Double? {
+    guard network != .offline, let saved = defaults.array(forKey: Key.measured(network)) as? [Double], saved.count == 2,
+      now.timeIntervalSince1970 - saved[1] < Self.measuredLasts
+    else { return nil }
+    return saved[0]
+  }
+
+  public func remember(measured kbps: Double, on network: NetworkKind, now: Date = Date()) {
+    guard network != .offline else { return }
+    defaults.set([kbps, now.timeIntervalSince1970], forKey: Key.measured(network))
+  }
+
+  /// How long a speed measured is worth starting from.
+  static let measuredLasts: TimeInterval = 60 * 60
 
   /// Seconds songs overlap on this setting: only Crossfade fades (DJ mix plays gapless until it can mix).
   public var crossfadeSeconds: Double { transitions == .crossfade ? crossfade : 0 }

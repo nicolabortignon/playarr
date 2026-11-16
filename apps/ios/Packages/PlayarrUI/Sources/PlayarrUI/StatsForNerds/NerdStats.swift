@@ -86,20 +86,24 @@ public enum NerdStats {
     public var continuation: EngineItem.Continuation?
     /// The quality the song streams at, encoded by the server (plan 2 §1); nil for its own file or a copy on the device.
     public var encoded: StreamQuality?
+    /// Settings → Playback → Streaming, and how fast songs arrive as measured (kbps; nil before anything was).
+    public var streaming: StreamingChoice
+    public var bandwidth: Double?
 
     public init(track: Track, time: Double, duration: Double, buffered: Double, loading: Bool, playing: Bool, error: String? = nil,
       map: MixMapEntry? = nil, level: TrackLevel? = nil, metadata: TrackMetadata? = nil, gainDb: Double = 0, levelVolume: Bool = true,
       albumGain: Bool = false, transitions: PlaybackSettings.Transitions = .dj, crossfade: Double = 0, mixMode: MixMode = .auto,
       next: Track? = nil, upcoming: TransitionPlanner.Result? = nil, djWanted: Bool = false, mixMissed: Bool = false,
       mix: AudioEngine.MixInProgress? = nil, engineNow: SampleTime = 0, reports: [MixReport.Kind: MixReport] = [:], decks: [DeckSnapshot] = [],
-      continuation: EngineItem.Continuation? = nil, encoded: StreamQuality? = nil
+      continuation: EngineItem.Continuation? = nil, encoded: StreamQuality? = nil, streaming: StreamingChoice = .automatic,
+      bandwidth: Double? = nil
     ) {
       self.track = track; self.time = time; self.duration = duration; self.buffered = buffered; self.loading = loading
       self.playing = playing; self.error = error; self.map = map; self.level = level; self.metadata = metadata; self.gainDb = gainDb
       self.levelVolume = levelVolume; self.albumGain = albumGain; self.transitions = transitions; self.crossfade = crossfade
       self.mixMode = mixMode; self.next = next; self.upcoming = upcoming; self.djWanted = djWanted; self.mixMissed = mixMissed
       self.mix = mix; self.engineNow = engineNow; self.reports = reports; self.decks = decks; self.continuation = continuation
-      self.encoded = encoded
+      self.encoded = encoded; self.streaming = streaming; self.bandwidth = bandwidth
     }
   }
 
@@ -215,6 +219,7 @@ public enum NerdStats {
       ("Position", "\(NerdFormat.at(i.time)) / \(NerdFormat.at(i.duration)) · \(i.loading ? "loading" : i.playing ? "playing" : "paused")"),
       ("Buffer", i.buffered > 0 ? "\(NerdFormat.fixed(i.buffered, 1)) s ahead" : "none ahead"),
       ("Stream", stream(i)),
+      ("Quality", quality(i)),
     ])
     list += i.decks.filter { $0.title != nil }.map { Row(label: "Deck \($0.name)", value: .text(deck($0))) }
     list += rows([
@@ -237,6 +242,12 @@ public enum NerdStats {
     if let rest = i.continuation, i.time >= rest.from { return "the rest after the transition, from \(NerdFormat.at(rest.from))" }
     let what = i.encoded?.kbps.map { "its encoded stream, AAC \($0) kbps" } ?? "its own file"
     return i.gainDb != 0 ? "\(what), leveled on this device at \(NerdFormat.dB(i.gainDb))" : what
+  }
+
+  /// "Automatic · 3.4 Mbps measured", "High, whatever the connection · 640 kbps measured".
+  static func quality(_ i: Input) -> String {
+    let choice = i.streaming == .automatic ? "Automatic" : "\(i.streaming.rawValue.capitalized), whatever the connection"
+    return "\(choice) · \(i.bandwidth.map { "\(NerdFormat.speed($0)) measured" } ?? "nothing measured yet")"
   }
 
   /// "Song 2 · at 3:12.0 · 9.5 s decoded, 2.5 s scheduled · +2.0 dB".

@@ -402,7 +402,7 @@ public final class DownloadStore {
   private func adopt(_ track: Track) -> Bool {
     guard manifest.songs[track.fileId] == nil else { return false }
     let wanted = quality(for: track)
-    for kind in [StreamQuality.original, .high, .normal] where kind.atLeast(wanted) {
+    for kind in StreamQuality.bestFirst where kind.atLeast(wanted) {
       let path = folder.songPath(track, quality: kind)
       guard let bytes = folder.size(of: path), bytes > 0 else { continue }
       record(track.fileId, path: path, bytes: bytes)

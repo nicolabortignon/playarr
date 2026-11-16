@@ -2,11 +2,14 @@ import Foundation
 import PlayarrAPI
 import Synchronization
 
-/// Settings → Playback → Streaming quality (plan 2 §1, `lib/quality.ts` on the web): a song's own file, or the
-/// server's encoded stream of it, AAC at High (256 kbps) or Normal (128 kbps), made as it's asked for from any sample on
-/// (docs/server/streaming-and-art.md §2).
+/// What a song streams at (plan 2 §1, `lib/quality.ts` on the web): its own file, or the server's encoded stream of
+/// it, AAC at High (256 kbps), Normal (128 kbps) or Low (64 kbps, for a poor connection), made as it's asked for from
+/// any sample on (docs/server/streaming-and-art.md §2). Settings → Playback picks one, or Automatic (`AutoQuality`).
 public enum StreamQuality: String, Sendable, CaseIterable, Codable {
-  case original, high, normal
+  case original, high, normal, low
+
+  /// Every quality, the best first.
+  public static let bestFirst: [StreamQuality] = [.original, .high, .normal, .low]
 
   /// The encoded stream's bitrate (kbps); nil for the song's own file.
   public var kbps: Int? {
@@ -14,6 +17,7 @@ public enum StreamQuality: String, Sendable, CaseIterable, Codable {
     case .original: nil
     case .high: 256
     case .normal: 128
+    case .low: 64
     }
   }
 
@@ -22,9 +26,10 @@ public enum StreamQuality: String, Sendable, CaseIterable, Codable {
 
   private var rank: Int {
     switch self {
-    case .original: 2
-    case .high: 1
-    case .normal: 0
+    case .original: 3
+    case .high: 2
+    case .normal: 1
+    case .low: 0
     }
   }
 
@@ -38,6 +43,12 @@ public enum StreamQuality: String, Sendable, CaseIterable, Codable {
 
   /// What the song is at this quality: this one when it comes encoded, else its own file.
   public func of(_ track: Track) -> StreamQuality { encodes(track) ? self : .original }
+
+  /// The song's bitrate at this quality (kbps): its encoded stream's, else its own file's.
+  public func bitrate(of track: Track) -> Double {
+    guard encodes(track), let kbps else { return Self.fileKbps(track) }
+    return Double(kbps)
+  }
 
   /// The bytes the song takes at this quality: its own file's size, or at most what its encoded stream declares (the
   /// server allows the encoder 20% over its bitrate, and 16 KiB more).

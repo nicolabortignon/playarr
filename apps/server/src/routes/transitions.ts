@@ -131,7 +131,7 @@ export function transitionRoutes(
     url: '/transitions/:file/aac',
     handler: async (req, reply) => {
       const kbps = Number(req.query.kbps ?? 256);
-      if (!STREAM_KBPS.includes(kbps as StreamKbps)) return reply.code(400).send({ error: 'Invalid bitrate: 128 or 256' });
+      if (!STREAM_KBPS.includes(kbps as StreamKbps)) return reply.code(400).send({ error: 'Invalid bitrate: 64, 128 or 256' });
       const start = Number(req.query.start ?? 0);
       if (!Number.isInteger(start) || start < 0) return reply.code(400).send({ error: 'Invalid start' });
       const { encoded, media } = deps;
