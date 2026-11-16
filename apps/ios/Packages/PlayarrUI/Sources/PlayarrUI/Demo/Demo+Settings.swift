@@ -59,6 +59,7 @@ extension Demo {
           history: .init(plays: me.plays, since: "2026-09-01T09:00:00.000Z"))
       ),
       (.get, "/api/settings/listenbrainz", ListenBrainzInfo(connected: false, enabled: false, pending: 0, sent: 0, earlier: me.plays)),
+      (.get, "/api/settings/lastfm", LastFmInfo(available: true, connected: false, enabled: false, pending: 0, sent: 0, earlier: 0)),
       (
         .get, "/api/analysis/progress",
         AnalysisProgress(

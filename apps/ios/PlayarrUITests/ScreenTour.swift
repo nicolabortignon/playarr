@@ -279,6 +279,13 @@ final class ScreenTour: XCTestCase {
         }
         back(from: "Sources")
       }
+      // Mixes: how they're made, then the history, ListenBrainz and Last.fm at its foot.
+      if tap(reveal(app.buttons["settings.mixes"].firstMatch), timeout: 2) {
+        shot("14g-settings-mixes", after: 1.5)
+        for _ in 0..<4 { app.swipeUp(velocity: .slow) }
+        shot("14h-settings-mixes-scrobbling", after: 0.8)
+        back(from: "Made for you")
+      }
     }
 
     // A playlist of your own with nothing in it yet, and what deleting it asks.
