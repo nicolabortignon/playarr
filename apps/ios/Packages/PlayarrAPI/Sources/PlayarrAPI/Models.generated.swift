@@ -3972,6 +3972,10 @@ public struct UpdateInfo: Codable, Hashable, Sendable {
         /// Commit running (full SHA), and the newest on the channel, when known.
         public var deployed: String?
         public var latest: String?
+        /// Unix seconds when the running commit was installed (by the updater or by hand), when known.
+        public var deployedAt: Int?
+        /// Unix seconds when the newest version came out: its release's publication on stable, the commit's date on edge.
+        public var latestAt: Int?
         public var error: String?
         /// The channel the last check followed.
         public var channel: UpdateChannel?
@@ -3980,12 +3984,14 @@ public struct UpdateInfo: Codable, Hashable, Sendable {
         /// Why the last check didn't install `latest`: its checks on GitHub haven't finished (waiting) or failed (checksFailed), stable has no release yet (noRelease), or it didn't start and the version that was running came back (rolledBack). waiting and noRelease aren't failures (state idle); the others come with `error`. Absent: updated, up to date, or another failure.
         public var outcome: Outcome?
 
-        public init(state: State, lastCheck: Int, lastUpdate: Int, deployed: String? = nil, latest: String? = nil, error: String? = nil, channel: UpdateChannel? = nil, release: String? = nil, outcome: Outcome? = nil) {
+        public init(state: State, lastCheck: Int, lastUpdate: Int, deployed: String? = nil, latest: String? = nil, deployedAt: Int? = nil, latestAt: Int? = nil, error: String? = nil, channel: UpdateChannel? = nil, release: String? = nil, outcome: Outcome? = nil) {
             self.state = state
             self.lastCheck = lastCheck
             self.lastUpdate = lastUpdate
             self.deployed = deployed
             self.latest = latest
+            self.deployedAt = deployedAt
+            self.latestAt = latestAt
             self.error = error
             self.channel = channel
             self.release = release

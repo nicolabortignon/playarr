@@ -79,7 +79,9 @@ extension Demo {
         .get, "/api/settings/updates",
         UpdateInfo(
           enabled: true, intervalMinutes: 60, available: true,
-          status: .init(state: .idle, lastCheck: checked, lastUpdate: checked - 3 * 86_400, deployed: commit, latest: commit),
+          status: .init(
+            state: .idle, lastCheck: checked, lastUpdate: checked - 3 * 86_400, deployed: commit, latest: commit,
+            deployedAt: checked - 3 * 86_400, latestAt: checked - 4 * 86_400),
           requested: false)
       ),
       (.post, "/api/settings/reachability/check", reachability),

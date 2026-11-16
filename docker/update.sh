@@ -122,15 +122,21 @@ fetch() {
 
 # get URL FILE ACCEPT: GitHub's API answer to URL into FILE; prints the HTTP status (000 when nothing answered).
 get() {
+  # The answer's headers go to FILE.headers (last_modified reads them).
   if command -v curl >/dev/null 2>&1; then
-    curl -sSL --connect-timeout 10 -m 60 -H "$3" -o "$2" -w '%{http_code}' "$1" 2>/dev/null || true
+    curl -sSL --connect-timeout 10 -m 60 -H "$3" -D "$2.headers" -o "$2" -w '%{http_code}' "$1" 2>/dev/null || true
   else
     # wget tells the status only among the headers it prints (-S, on stderr), and saves nothing on errors.
     wget -S -T 60 --header="$3" -O "$2" "$1" 2>"$2.headers" || true
     got="$(sed -n 's/^ *HTTP\/[0-9.]* \([0-9][0-9][0-9]\).*/\1/p' "$2.headers" | tail -n 1)"
-    rm -f "$2.headers"
     printf '%s' "${got:-000}"
   fi
+}
+
+# last_modified FILE: the Last-Modified header of the answer get saved in FILE (for a commit, GitHub's is its date), as
+# GitHub wrote it; empty without one.
+last_modified() {
+  tr -d '\r' < "$1.headers" 2>/dev/null | sed -n 's/^ *[Ll][Aa][Ss][Tt]-[Mm][Oo][Dd][Ii][Ff][Ii][Ee][Dd]: *//p' | tail -n 1
 }
 
 # Why a call to GitHub's API didn't work, for the messages below. Without signing in, GitHub allows 60 calls an hour
@@ -333,7 +339,7 @@ elif [ "$CHANNEL" = stable ]; then
   fi
   if [ "$got" = 404 ]; then
     : > "$DIR/LATEST.new" && mv "$DIR/LATEST.new" "$DIR/LATEST"
-    rm -f "$DIR/RELEASE"
+    rm -f "$DIR/RELEASE" "$DIR/LATEST_AT"
     printf '%s\n' "There's no release of $REPO yet, so Playarr stays on $RUNNING_LABEL until there is one."
     exit 5
   fi
@@ -349,6 +355,18 @@ if [ -n "$TAG" ]; then LABEL="$TAG ($SHORT)"; else LABEL="$SHORT"; fi
 # The newest commit, and on stable its release, for Settings → Updates (written every time, also when up to date).
 printf '%s\n' "$SHA" > "$DIR/LATEST.new" && mv "$DIR/LATEST.new" "$DIR/LATEST"
 if [ -n "$TAG" ]; then printf '%s\n' "$TAG" > "$DIR/RELEASE.new" && mv "$DIR/RELEASE.new" "$DIR/RELEASE"; else rm -f "$DIR/RELEASE"; fi
+# When it came out: the release's publication on stable, else the commit's date, as GitHub wrote it (Playarr reads it).
+LATEST_AT=""
+if [ -n "$TAG" ]; then
+  LATEST_AT="$(tr '{},' '\n\n\n' < "$WORK/release" | sed -n 's/^[[:space:]]*"published_at":[[:space:]]*"\([^"\\]*\)"[[:space:]]*$/\1/p' | head -n 1)"
+fi
+[ -n "$LATEST_AT" ] || LATEST_AT="$(last_modified "$WORK/commit")"
+case "$LATEST_AT" in *[!A-Za-z0-9\ ,:.+-]*) LATEST_AT="" ;; esac
+if [ -n "$LATEST_AT" ] && [ "${#LATEST_AT}" -le 40 ]; then
+  printf '%s\n' "$LATEST_AT" > "$DIR/LATEST_AT.new" && mv "$DIR/LATEST_AT.new" "$DIR/LATEST_AT"
+else
+  rm -f "$DIR/LATEST_AT"
+fi
 
 if [ "$DEPLOYED" = "$SHA" ] && [ "$FORCE" = 0 ]; then
   say "Playarr is up to date ($LABEL)."

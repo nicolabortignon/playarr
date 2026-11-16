@@ -71,6 +71,17 @@ describe('UpdateBridge', () => {
     expect((await setup({ 'status.json': odd }).bridge.info()).status).toEqual({ state: 'idle', lastCheck: 100, lastUpdate: 50, deployed: SHA, latest: SHA });
   });
 
+  it('passes on when the running version was installed and when the newest came out, in Unix seconds', async () => {
+    const commit = status({ deployedAt: 1_795_000_000, latestAt: 'Mon, 16 Nov 2026 11:18:32 GMT' });
+    expect((await setup({ 'status.json': commit }).bridge.info()).status).toMatchObject({ deployedAt: 1_795_000_000, latestAt: 1_794_827_912 });
+    const release = status({ latestAt: '2026-11-14T09:30:00Z' });
+    expect((await setup({ 'status.json': release }).bridge.info()).status).toMatchObject({ latestAt: 1_794_648_600 });
+    for (const odd of [{ deployedAt: -5, latestAt: 'soon' }, { deployedAt: '1795000000', latestAt: 1_795_000_000 }, { latestAt: 'x'.repeat(41) }]) {
+      const read = (await setup({ 'status.json': status(odd) }).bridge.info()).status!;
+      expect([read.deployedAt, read.latestAt]).toEqual([undefined, undefined]);
+    }
+  });
+
   it('treats a damaged status as missing and drops odd fields', async () => {
     expect((await setup({ 'status.json': '{not json' }).bridge.info()).status).toBeUndefined();
     const odd = await setup({ 'status.json': status({ state: 'hacked', deployed: 'rm -rf /', lastCheck: 'x' }) }).bridge.info();

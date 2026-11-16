@@ -121,6 +121,10 @@ export class UpdateBridge {
     const channel = CHANNELS.includes(raw.channel as string) ? (raw.channel as UpdateChannel) : undefined;
     const release = typeof raw.release === 'string' && /^[A-Za-z0-9._/-]{1,100}$/.test(raw.release) ? raw.release : undefined;
     const outcome = OUTCOMES.includes(raw.outcome as string) ? (raw.outcome as Outcome) : undefined;
+    const deployedAt = seconds(raw.deployedAt);
+    // As GitHub wrote it: an HTTP date (a commit's Last-Modified) or ISO 8601 (a release's published_at).
+    const parsed = typeof raw.latestAt === 'string' && raw.latestAt.length <= 40 ? Date.parse(raw.latestAt) : NaN;
+    const latestAt = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed / 1000) : 0;
     return {
       heartbeat: seconds(raw.heartbeat),
       status: {
@@ -129,6 +133,8 @@ export class UpdateBridge {
         lastUpdate: seconds(raw.lastUpdate),
         ...(deployed ? { deployed } : {}),
         ...(latest ? { latest } : {}),
+        ...(deployedAt ? { deployedAt } : {}),
+        ...(latestAt ? { latestAt } : {}),
         ...(error ? { error } : {}),
         ...(channel ? { channel } : {}),
         ...(release ? { release } : {}),

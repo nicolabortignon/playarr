@@ -24,7 +24,7 @@ class TvReleasesTests {
     names.joinToString(",", "[", "]") { """{"ref":"refs/tags/$it","object":{"sha":"abc","type":"commit"}}""" }
 
   private fun release(version: String, digest: String? = "sha256:${"ab".repeat(32)}", draft: Boolean = false, prerelease: Boolean = false, asset: String = "playarr-tv-$version.apk") = """
-    {"tag_name":"tv-v$version","draft":$draft,"prerelease":$prerelease,"body":"What's new in $version",
+    {"tag_name":"tv-v$version","draft":$draft,"prerelease":$prerelease,"body":"What's new in $version","published_at":"2026-11-14T09:30:00Z",
      "assets":[
        {"name":"other.txt","browser_download_url":"https://example/other.txt","size":3,"state":"uploaded"},
        {"name":"$asset","browser_download_url":"https://github.com/o/playarr/releases/download/tv-v$version/$asset",
@@ -44,6 +44,7 @@ class TvReleasesTests {
     assertEquals(12345L, found.size)
     assertEquals("ab".repeat(32), found.sha256)
     assertEquals("What's new in 1.10.0", found.notes)
+    assertEquals(1_794_648_600_000L, found.published)
 
     val asked = server.takeRequest()
     assertEquals("/repos/o/playarr/git/matching-refs/tags/tv-v", asked.url.encodedPath)
@@ -51,10 +52,18 @@ class TvReleasesTests {
     assertEquals("/repos/o/playarr/releases/tags/tv-v1.10.0", server.takeRequest().url.encodedPath)
   }
 
-  @Test fun nothingNewerMeansNoRequestForARelease() {
+  @Test fun upToDateStillReadsTheNewestRelease() {
     server.enqueue(ok(tags("tv-v0.9.0", "tv-v1.0.0")))
+    server.enqueue(ok(release("1.0.0")))
+    val latest = releases().latest()!!
+    assertEquals("1.0.0", latest.version)
+    assertEquals(1_794_648_600_000L, latest.published)
+    assertEquals(false, latest.isNewerThan("1.0.0"))
+    assertEquals(true, latest.isNewerThan("0.9.9"))
+
+    server.enqueue(ok(tags("tv-v0.9.0", "tv-v1.0.0")))
+    server.enqueue(ok(release("1.0.0")))
     assertNull(releases().newest("1.0.0"))
-    assertEquals(1, server.requestCount)
   }
 
   @Test fun noTagsAtAll() {

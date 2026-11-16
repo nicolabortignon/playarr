@@ -41,15 +41,21 @@ case "$OUTCOME" in waiting | checksFailed | noRelease | rolledBack) ;; *) OUTCOM
 LAST_CHANNEL="$(jq -r '.channel // ""' "$UPD/status.json" 2>/dev/null)"
 case "$LAST_CHANNEL" in stable | edge) ;; *) LAST_CHANNEL="" ;; esac
 
+# deployedAt: when update.sh last wrote DEPLOYED, so when the running version was installed (by hand too); latestAt:
+# when the newest version came out, as GitHub wrote it (update.sh's LATEST_AT; Playarr reads the date).
 write_status() {
   jq -n \
     --arg state "$STATE" --arg error "$LAST_ERROR" --arg outcome "$OUTCOME" --arg channel "$LAST_CHANNEL" \
     --arg deployed "$(cat "$DIR/DEPLOYED" 2>/dev/null || true)" \
     --arg latest "$(cat "$DIR/LATEST" 2>/dev/null || true)" \
     --arg release "$(cat "$DIR/RELEASE" 2>/dev/null || true)" \
+    --arg latestAt "$(head -n 1 "$DIR/LATEST_AT" 2>/dev/null | cut -c 1-40 || true)" \
+    --argjson deployedAt "$(number "$(date -r "$DIR/DEPLOYED" +%s 2>/dev/null || true)")" \
     --argjson heartbeat "$(now)" --argjson lastCheck "$LAST_CHECK" --argjson lastUpdate "$LAST_UPDATE" \
     '{state: $state, heartbeat: $heartbeat, lastCheck: $lastCheck, lastUpdate: $lastUpdate,
       deployed: $deployed, latest: $latest}
+      + (if $deployedAt == 0 then {} else {deployedAt: $deployedAt} end)
+      + (if $latestAt == "" then {} else {latestAt: $latestAt} end)
       + (if $error == "" then {} else {error: $error} end)
       + (if $outcome == "" then {} else {outcome: $outcome} end)
       + (if $channel == "" then {} else {channel: $channel} end)

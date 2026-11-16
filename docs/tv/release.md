@@ -86,8 +86,9 @@ can't update a release. Uninstall it first (`adb uninstall me.tracklistme.playar
   - A tag whose release isn't there yet (CI still building) gives way to the one below it.
   - Drafts, pre-releases and releases without `playarr-tv-<version>.apk` are skipped.
   - GitHub allows 60 unauthenticated calls an hour per address, shared with the NAS updater's.
-- **Offering.** Settings → About shows the release's notes and **Install version …**. The Settings rail item carries
-  an orange dot.
+- **Offering.** Settings → About shows the release's notes and **Install version …** with when it was released. The
+  Settings rail item carries an orange dot. Up to date, it says the latest release and when it came out, and the
+  version row says when this one was installed (in the play flavor too).
 - **Allowing, the first time.** The TV must allow Playarr to install unknown apps once. The app opens the TV's own
   panel for it. Where a TV has no such panel, Settings says where the switch is: Device Preferences (or Apps) →
   Security & restrictions → Unknown sources. Back from the panel with it allowed, the install carries on.

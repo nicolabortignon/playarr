@@ -23,7 +23,8 @@ sealed interface UpdateState {
   /** Not asked yet. */
   data object Unknown : UpdateState
   data object Checking : UpdateState
-  data object UpToDate : UpdateState
+  /** Nothing newer than this app; [latest] is the newest release there is (null: none yet). */
+  data class UpToDate(val latest: TvReleases.Release?) : UpdateState
   data class Available(val release: TvReleases.Release) : UpdateState
   data class Downloading(val release: TvReleases.Release, val percent: Int) : UpdateState
   /** The TV's "install unknown apps" isn't allowed for Playarr yet. */
@@ -33,7 +34,7 @@ sealed interface UpdateState {
   data class Failed(val message: String, val release: TvReleases.Release?) : UpdateState
 }
 
-/** The release an update state is about, if any. */
+/** The release an update state offers to install, if any. */
 val UpdateState.release: TvReleases.Release?
   get() = when (this) {
     is UpdateState.Available -> release

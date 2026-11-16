@@ -1,6 +1,7 @@
 package me.tracklistme.playarr.tv.update
 
 import java.io.IOException
+import java.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -17,8 +18,8 @@ import okhttp3.Request
 /**
  * The TV app's releases on GitHub (plan 9 §7). CI puts each `tv-v<version>` tag's sideload APK,
  * `playarr-tv-<version>.apk`, on a release of its own, not marked latest (the server's releases are), so finding the
- * newest takes two small requests: the repository's `tv-v*` tags, then the release of the highest tag newer than this
- * app. A tag whose release isn't there yet (CI still building it) gives way to the one below it.
+ * newest takes two small requests: the repository's `tv-v*` tags, then the release of the highest tag. A tag whose
+ * release isn't there yet (CI still building it) gives way to the one below it.
  *
  * [repo] is the repository's API address, `https://api.github.com/repos/<owner>/<name>`.
  */
@@ -31,15 +32,17 @@ class TvReleases(private val http: OkHttpClient, private val repo: String) {
     /** The APK's SHA-256 in hex, from GitHub's asset digest; null on a release from before GitHub gave them. */
     val sha256: String?,
     val notes: String,
-  )
+    /** When it was published (epoch milliseconds), when GitHub says. */
+    val published: Long? = null,
+  ) {
+    fun isNewerThan(installed: String): Boolean = Version.parse(version)?.let { it > (Version.parse(installed) ?: Version(emptyList())) } == true
+  }
 
-  /** The newest release newer than [installed], or null when there's none. Throws IOException when GitHub can't say. */
-  fun newest(installed: String): Release? {
-    val current = Version.parse(installed) ?: Version(emptyList())
+  /** The newest release, or null when there's none yet. Throws IOException when GitHub can't say. */
+  fun latest(): Release? {
     val tags = get("$repo/git/matching-refs/tags/$TAG")?.jsonArray.orEmpty()
       .mapNotNull { it.jsonObject["ref"]?.jsonPrimitive?.contentOrNull?.removePrefix("refs/tags/") }
       .mapNotNull { tag -> Version.parse(tag.removePrefix(TAG))?.let { it to tag } }
-      .filter { (version) -> version > current }
       .sortedByDescending { (version) -> version }
     for ((_, tag) in tags.take(TRIES)) {
       val release = get("$repo/releases/tags/$tag")?.jsonObject ?: continue
@@ -47,6 +50,9 @@ class TvReleases(private val http: OkHttpClient, private val repo: String) {
     }
     return null
   }
+
+  /** The newest release if it's newer than [installed], else null. Throws IOException when GitHub can't say. */
+  fun newest(installed: String): Release? = latest()?.takeIf { it.isNewerThan(installed) }
 
   /** The answer's JSON, or null for a 404. */
   private fun get(url: String): JsonElement? {
@@ -66,7 +72,7 @@ class TvReleases(private val http: OkHttpClient, private val repo: String) {
 
   companion object {
     const val TAG = "tv-v"
-    /** How many tags newer than this app to try, newest first, before saying there's nothing. */
+    /** How many tags to try, newest first, before saying there's nothing. */
     private const val TRIES = 3
 
     /** The APK on a release, or null when it's a draft, a pre-release or has no `playarr-tv-<version>.apk` yet. */
@@ -82,7 +88,8 @@ class TvReleases(private val http: OkHttpClient, private val repo: String) {
       val digest = asset["digest"]?.jsonPrimitive?.contentOrNull
       val sha256 = digest?.takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")?.lowercase()?.takeIf { HEX.matches(it) }
       val notes = release["body"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-      return Release(version, url, size, sha256, notes)
+      val published = release["published_at"]?.jsonPrimitive?.contentOrNull?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+      return Release(version, url, size, sha256, notes, published)
     }
 
     private val HEX = Regex("[0-9a-f]{64}")

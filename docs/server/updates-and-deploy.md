@@ -105,6 +105,7 @@ The NAS is a UGREEN DXP2800 running UGOS (Debian 12). Lidarr runs in its own com
 | `src/` | The deployed source (`src/REVISION` holds its commit): the build context |
 | `DEPLOYED`, `LATEST` | The commit running, and the newest on its channel at the last check (empty on stable without a release) |
 | `RELEASE` | On stable, the newest release's tag at the last check |
+| `LATEST_AT` | When the newest came out, as GitHub wrote it: the release's `published_at` on stable, else the commit's date (GitHub's `Last-Modified` for it, from the call that already finds it) |
 | `ROLLED_BACK` | A commit that didn't start and was rolled back: not tried again until a newer one (or `--force`) |
 | `src.previous/`, `compose.yaml.previous` | While an update runs, what was running, put back if the new version doesn't start |
 | `config/` | The database: keep and back up. `config/backups/` holds the copies made before migrations |
@@ -138,7 +139,7 @@ A new install starts on stable. One whose Settings → Updates were saved before
 
 ### `update.sh`
 
-`docker/update.sh` lives in the deploy folder and does one update. It takes the channel from `--channel stable|edge`, or else from `update/settings.json` by the updater's rule (below), read with nothing but `dd`, `tr`, `sed` and `case`; `--ref X` deploys a branch, tag or commit by hand instead. It asks GitHub's API for the channel's newest commit (one call for edge, two for stable) and writes it to `LATEST`, and on stable the release's tag to `RELEASE`. If that's already `DEPLOYED` (and there's no `--force`), it stops. A commit in `ROLLED_BACK` isn't tried again (until `--force`). Otherwise:
+`docker/update.sh` lives in the deploy folder and does one update. It takes the channel from `--channel stable|edge`, or else from `update/settings.json` by the updater's rule (below), read with nothing but `dd`, `tr`, `sed` and `case`; `--ref X` deploys a branch, tag or commit by hand instead. It asks GitHub's API for the channel's newest commit (one call for edge, two for stable) and writes it to `LATEST`, when it came out to `LATEST_AT`, and on stable the release's tag to `RELEASE`. If that's already `DEPLOYED` (and there's no `--force`), it stops. A commit in `ROLLED_BACK` isn't tried again (until `--force`). Otherwise:
 
 1. **The gate.** It asks GitHub for the commit's check runs named "Server and web" (`/commits/<sha>/check-runs?check_name=…`, the job in `.github/workflows/server-web.yml`), one more call. Every run must have completed with success. None yet, or one still running: it stays and says the commit is waiting for its checks, and asks again next time. One failed (or was canceled or skipped): it stays and says which commit failed. A rebuild of the commit running (`--force`) skips the gate.
 2. It downloads the tarball from codeload (no git needed) and swaps it into `src/`, keeping the old one as `src.previous/`, and writes `REVISION`.
@@ -203,7 +204,7 @@ Nothing in `update/` is trusted by the updater, and nothing in it is ever run.
 |---|---|---|---|
 | `settings.json` | Playarr | updater | `{enabled, intervalMinutes, channel}`. jq reads only `enabled == true`, an interval of 15, 60, 360 or 1440 (anything else counts as 60) and a `channel` of exactly `stable` or `edge` (see above). It must be a regular file, not a symlink |
 | `request` | Playarr | updater | Its existence asks for a check (the content is a timestamp); the updater deletes it |
-| `status.json` | updater | Playarr | `state` (`idle`, `checking`, `failed`), `heartbeat`, `lastCheck`, `lastUpdate` (Unix seconds), `deployed`, `latest`, `error` when failed, and from the last check `outcome` (`waiting`, `checksFailed`, `noRelease`, `rolledBack`), `channel` and, on stable, `release`. `deployed`, `latest` and `release` come from `update.sh`'s files in the deploy folder, never from the old status |
+| `status.json` | updater | Playarr | `state` (`idle`, `checking`, `failed`), `heartbeat`, `lastCheck`, `lastUpdate` (Unix seconds), `deployed`, `latest`, `deployedAt` (Unix seconds: when `update.sh` last wrote `DEPLOYED`, so when the running version was installed, by hand too) and `latestAt` (`LATEST_AT` as GitHub wrote it; Playarr reads it into Unix seconds), `error` when failed, and from the last check `outcome` (`waiting`, `checksFailed`, `noRelease`, `rolledBack`), `channel` and, on stable, `release`. `deployed`, `latest`, `latestAt` and `release` come from `update.sh`'s files in the deploy folder, never from the old status |
 | `last.log` | updater | Playarr | The last run's output only |
 
 Both sides write to a temporary file and rename it into place. The updater writes its temporary files in the deploy folder, which Playarr can't write to, so a rename replaces any symlink planted in `update/` rather than writing through it.
@@ -220,7 +221,7 @@ The routes in `apps/server/src/routes/settings.ts` are `GET /api/settings/update
 
 The panel (`apps/web/src/components/UpdatesPanel.tsx`, and `UpdatesPanel.swift` in the iOS app) shows:
 
-- the running version and commit, and the newest on the last check's channel: "Latest on main: 9f8e7d6" or "Latest release: v0.7.0 · 9f8e7d6", then "Up to date", "A newer version is available", or why it isn't installed ("Waiting for its checks", "Its checks failed", "It didn’t start"); "Latest release: none yet" on stable without one;
+- the running version and commit, when it was installed ("Installed 2 hours ago"), and the newest on the last check's channel with when it came out: "Latest on main: 9f8e7d6, 3 hours ago" or "Latest release: v0.7.0 · 9f8e7d6, 2 days ago", then "Up to date", "A newer version is available", or why it isn't installed ("Waiting for its checks", "Its checks failed", "It didn’t start"); "Latest release: none yet" on stable without one;
 - the channel, Stable or Edge, with what it installs;
 - an on/off switch and an interval;
 - Check now;

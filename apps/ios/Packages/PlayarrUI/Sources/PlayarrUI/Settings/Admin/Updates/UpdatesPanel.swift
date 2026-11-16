@@ -21,7 +21,8 @@ public struct UpdatesPanel: View {
         Section { Text(UpdatesModel.intro).font(.footnote).foregroundStyle(.secondary) }
         Section("Version") {
           Text(model.versionText)
-          if let latest = model.latestText { Text(latest).font(.footnote).foregroundStyle(.secondary) }
+          if let installed = model.installedText() { Text(installed).font(.footnote).foregroundStyle(.secondary) }
+          if let latest = model.latestText() { Text(latest).font(.footnote).foregroundStyle(.secondary) }
         }
         if let notice = model.notice { InlineMessage(text: notice) }
         if let unavailable = model.unavailable {

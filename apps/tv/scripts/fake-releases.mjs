@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // A stand-in for GitHub's releases, for trying the sideload flavor's self-update without a real release (plan 9 §7):
 // the two API calls TvReleases makes (the tv-v* tags, then a tag's release) and the APK's download, with its size and
-// SHA-256 as GitHub gives them. Each APK named playarr-tv-<version>.apk given here is a release. A build pointed at it
-// with -PupdatesRepo=http://10.0.2.2:4621/repos/owner/playarr asks it instead of GitHub (docs/tv/release.md).
+// SHA-256 as GitHub gives them, and the APK file's time as the release's publication. Each APK named
+// playarr-tv-<version>.apk given here is a release. A build pointed at it with
+// -PupdatesRepo=http://10.0.2.2:4621/repos/owner/playarr asks it instead of GitHub (docs/tv/release.md).
 //
 //   node apps/tv/scripts/fake-releases.mjs build/release/playarr-tv-1.0.1.apk [more.apk…]   (PORT=4621)
 
@@ -16,7 +17,8 @@ const releases = new Map(); // version → { path, size, sha256 }
 for (const path of process.argv.slice(2)) {
   const version = basename(path).match(/^playarr-tv-(.+)\.apk$/)?.[1];
   if (!version) throw new Error(`${path}: name it playarr-tv-<version>.apk`);
-  releases.set(version, { path, size: statSync(path).size, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") });
+  const { size, mtime } = statSync(path);
+  releases.set(version, { path, size, published: mtime.toISOString(), sha256: createHash("sha256").update(readFileSync(path)).digest("hex") });
 }
 if (!releases.size) {
   console.error("Give it one or more playarr-tv-<version>.apk files");
@@ -45,6 +47,7 @@ createServer((req, res) => {
       draft: false,
       prerelease: false,
       body: `Playarr for TV ${tag}, from the stand-in for GitHub.`,
+      published_at: found.published,
       assets: [{ name, state: "uploaded", size: found.size, digest: `sha256:${found.sha256}`, browser_download_url: `${base}/download/${name}` }],
     });
   }

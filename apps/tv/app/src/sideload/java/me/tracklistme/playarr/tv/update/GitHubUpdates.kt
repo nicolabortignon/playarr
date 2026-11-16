@@ -47,7 +47,7 @@ class GitHubUpdates(
   private val prefs = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
   private val dir = File(context.cacheDir, "updates")
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-  private val stateFlow = MutableStateFlow<UpdateState>(saved()?.let { UpdateState.Available(it) } ?: UpdateState.Unknown)
+  private val stateFlow = MutableStateFlow(saved()?.let(::shown) ?: UpdateState.Unknown)
   override val state: StateFlow<UpdateState> = stateFlow.asStateFlow()
   private var job: Job? = null
 
@@ -68,11 +68,11 @@ class GitHubUpdates(
     stateFlow.value = UpdateState.Checking
     job = scope.launch {
       try {
-        val found = releases.newest(installed)
+        val latest = releases.latest()
         prefs.edit { putLong(CHECKED_AT, System.currentTimeMillis()) }
-        save(found)
-        if (found == null) dir.deleteRecursively()
-        stateFlow.value = found?.let { UpdateState.Available(it) } ?: UpdateState.UpToDate
+        save(latest)
+        if (latest?.isNewerThan(installed) != true) dir.deleteRecursively()
+        stateFlow.value = shown(latest)
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
@@ -96,7 +96,9 @@ class GitHubUpdates(
       try {
         // Asked afresh: what was found may be a day old, and a release can gain a newer one or have its APK replaced
         // since (its SHA-256 then differs from the one kept).
-        latest = releases.newest(installed) ?: return@launch upToDate()
+        val found = releases.latest()
+        if (found?.isNewerThan(installed) != true) return@launch upToDate(found)
+        latest = found
         save(latest)
         stateFlow.value = UpdateState.Downloading(latest, 0)
         val apk = download(latest)
@@ -113,16 +115,20 @@ class GitHubUpdates(
 
   // The installer's answers (InstallReceiver).
 
-  fun installed() = upToDate()
+  fun installed() = upToDate(saved())
 
-  private fun upToDate() {
+  private fun upToDate(latest: TvReleases.Release?) {
     dir.deleteRecursively()
-    save(null)
-    stateFlow.value = UpdateState.UpToDate
+    save(latest)
+    stateFlow.value = UpdateState.UpToDate(latest)
   }
 
+  /** What there is to say about the newest release: an offer when it's newer than this app. */
+  private fun shown(latest: TvReleases.Release?): UpdateState =
+    if (latest != null && latest.isNewerThan(installed)) UpdateState.Available(latest) else UpdateState.UpToDate(latest)
+
   fun failed(status: Int, message: String?) {
-    val release = stateFlow.value.release ?: saved() ?: return
+    val release = stateFlow.value.release ?: saved()?.takeIf { it.isNewerThan(installed) } ?: return
     stateFlow.value = when (status) {
       PackageInstaller.STATUS_FAILURE_ABORTED -> UpdateState.Available(release)
       PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
@@ -225,29 +231,30 @@ class GitHubUpdates(
     }
   }
 
-  // The release found, kept so the offer outlives the app.
+  // The newest release found, kept so the offer (or "Latest release …") outlives the app.
 
   private fun saved(): TvReleases.Release? {
     val version = prefs.getString(VERSION, null) ?: return null
-    if (Version.parse(version)?.let { found -> Version.parse(installed)?.let { found > it } } != true) return null
     return TvReleases.Release(
       version = version,
       apk = prefs.getString(APK, null) ?: return null,
       size = prefs.getLong(SIZE, -1).takeIf { it > 0 } ?: return null,
       sha256 = prefs.getString(SHA256, null),
       notes = prefs.getString(NOTES, null).orEmpty(),
+      published = prefs.getLong(PUBLISHED, 0).takeIf { it > 0 },
     )
   }
 
   private fun save(release: TvReleases.Release?) = prefs.edit {
     if (release == null) {
-      listOf(VERSION, APK, SIZE, SHA256, NOTES).forEach(::remove)
+      listOf(VERSION, APK, SIZE, SHA256, NOTES, PUBLISHED).forEach(::remove)
     } else {
       putString(VERSION, release.version)
       putString(APK, release.apk)
       putLong(SIZE, release.size)
       putString(SHA256, release.sha256)
       putString(NOTES, release.notes)
+      putLong(PUBLISHED, release.published ?: 0)
     }
   }
 
@@ -259,6 +266,7 @@ class GitHubUpdates(
     const val SIZE = "size"
     const val SHA256 = "sha256"
     const val NOTES = "notes"
+    const val PUBLISHED = "published"
 
     fun sha256(file: File): String {
       val digest = MessageDigest.getInstance("SHA-256")

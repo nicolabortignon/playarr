@@ -123,4 +123,44 @@ describe('UpdatesPanel', () => {
     expect((await screen.findByText(error)).className).toContain('text-danger');
     expect(screen.getByText(/Latest release/).textContent).toBe('Latest release: v0.7.0 · bbbbbbb · It didn’t start');
   });
+
+  it('says when the running version was installed and when the newest came out', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    show({
+      available: true,
+      enabled: true,
+      intervalMinutes: 15,
+      channel: 'stable',
+      requested: false,
+      status: {
+        state: 'idle',
+        lastCheck: now - 60,
+        lastUpdate: 0,
+        deployed: OLD,
+        latest: NEW,
+        channel: 'stable',
+        release: 'v0.7.0',
+        deployedAt: now - 2 * 3600,
+        latestAt: now - 3 * 86_400,
+      },
+    });
+    const installed = await screen.findByText(/^Installed/);
+    expect(installed.textContent).toBe('Installed 2 hours ago');
+    expect(installed.querySelector('time')?.getAttribute('dateTime')).toBe(new Date((now - 2 * 3600) * 1000).toISOString());
+    expect(screen.getByText(/Latest release/).textContent).toBe('Latest release: v0.7.0 · bbbbbbb, 3 days ago · A newer version is available');
+  });
+
+  it('says nothing of dates it doesn’t know', async () => {
+    const lastCheck = Math.floor(Date.now() / 1000) - 60;
+    show({
+      available: true,
+      enabled: true,
+      intervalMinutes: 15,
+      channel: 'edge',
+      requested: false,
+      status: { state: 'idle', lastCheck, lastUpdate: 0, deployed: NEW, latest: NEW, channel: 'edge' },
+    });
+    expect((await screen.findByText(/Latest on main/)).textContent).toBe('Latest on main: bbbbbbb · Up to date');
+    expect(screen.queryByText(/^Installed/)).toBeNull();
+  });
 });

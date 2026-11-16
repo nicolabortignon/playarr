@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -48,8 +48,21 @@ function checkRun(status: string, conclusion: string | null) {
   };
 }
 const checkRuns = (...runs: ReturnType<typeof checkRun>[]) => JSON.stringify({ total_count: runs.length, check_runs: runs }, null, 2);
-const release = (tag: string) =>
-  JSON.stringify({ id: 1, tag_name: tag, name: `Playarr ${tag}`, body: 'Notes, with "tag_name": "evil" in them', draft: false, prerelease: false, assets: [] }, null, 2);
+const release = (tag: string, published?: string) =>
+  JSON.stringify(
+    {
+      id: 1,
+      tag_name: tag,
+      name: `Playarr ${tag}`,
+      body: 'Notes, with "tag_name": "evil" and "published_at": "1999-01-01T00:00:00Z" in them',
+      draft: false,
+      prerelease: false,
+      ...(published ? { published_at: published } : {}),
+      assets: [],
+    },
+    null,
+    2,
+  );
 
 // ── The stubs ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -76,16 +89,18 @@ respond() {
   [ "$n" -le "$last" ] || n="$last"
   read -r code < "$STUB/http/$key/$n.code"
   body="$STUB/http/$key/$n.body"
+  headers="$STUB/http/$key/$n.headers"
 }
 `;
 
 const CURL = `#!/bin/sh
 . "$STUB/respond"
-out=""; fmt=""; url=""; fail=0
+out=""; fmt=""; url=""; fail=0; dump=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift ;;
     -w) fmt="$2"; shift ;;
+    -D) dump="$2"; shift ;;
     -H) echo "curl header $2" >> "$STUB/calls"; shift ;;
     -m | --connect-timeout) shift ;;
     --*) ;;
@@ -97,6 +112,9 @@ done
 echo "curl $url" >> "$STUB/calls"
 respond "$url"
 if [ "$code" = 000 ]; then [ -z "$fmt" ] || printf 000; exit 7; fi
+if [ -n "$dump" ]; then
+  { printf 'HTTP/2 %s\r\n' "$code"; [ ! -f "$headers" ] || cat "$headers"; printf '\r\n'; } > "$dump"
+fi
 if [ "$fail" = 1 ] && [ "$code" -ge 400 ]; then exit 22; fi
 if [ -n "$out" ]; then cat "$body" > "$out"; else cat "$body"; fi
 [ -z "$fmt" ] || printf '%s' "$code"
@@ -104,12 +122,12 @@ if [ -n "$out" ]; then cat "$body" > "$out"; else cat "$body"; fi
 
 const WGET = `#!/bin/sh
 . "$STUB/respond"
-out=-; url=""; headers=0
+out=-; url=""; show=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -O) out="$2"; shift ;;
     -T) shift ;;
-    -S) headers=1 ;;
+    -S) show=1 ;;
     -q | --header=*) ;;
     *) url="$1" ;;
   esac
@@ -118,7 +136,10 @@ done
 echo "wget $url" >> "$STUB/calls"
 respond "$url"
 if [ "$code" = 000 ]; then echo "wget: can't connect to remote host" >&2; exit 1; fi
-[ "$headers" = 0 ] || echo "  HTTP/1.1 $code Answer" >&2
+if [ "$show" = 1 ]; then
+  echo "  HTTP/1.1 $code Answer" >&2
+  [ ! -f "$headers" ] || tr -d '\r' < "$headers" | sed 's/^/  /' >&2
+fi
 if [ "$code" -ge 400 ]; then [ "$out" = - ] || : > "$out"; echo "wget: server returned error: HTTP/1.1 $code" >&2; exit 1; fi
 if [ "$out" = - ]; then cat "$body"; else cat "$body" > "$out"; fi
 `;
@@ -212,7 +233,7 @@ const JQ = which('jq');
 const scratch = tempDir();
 afterAll(scratch.cleanup);
 
-type Answer = [status: number, body: string];
+type Answer = [status: number, body: string, headers?: Record<string, string>];
 const keyOf = (url: string) => url.replace(/^[a-z]*:\/\//, '').replace(/[^A-Za-z0-9._-]/g, '_');
 
 /**
@@ -300,9 +321,10 @@ function nas(shell: Shell, { fresh = false, curl = true } = {}) {
   function answer(key: string, answers: Answer[]) {
     const folder = join(stub, 'http', key);
     rmSync(folder, { recursive: true, force: true });
-    answers.forEach(([status, body], i) => {
+    answers.forEach(([status, body, headers], i) => {
       put(join(folder, `${i + 1}.code`), `${status}\n`);
       put(join(folder, `${i + 1}.body`), body);
+      if (headers) put(join(folder, `${i + 1}.headers`), Object.entries(headers).map(([k, v]) => `${k}: ${v}\r\n`).join(''));
     });
     put(join(folder, 'last'), `${answers.length}\n`);
   }
@@ -666,6 +688,45 @@ for (const shell of SHELLS) {
       expect(w.compose()).toEqual([]);
     });
 
+    it('records when the newest version came out: the commit’s date on edge, the release’s on stable', async () => {
+      const w = nas(shell);
+      w.answer(`${API}/commits/main`, [200, OLD, { 'Last-Modified': 'Mon, 16 Nov 2026 11:18:32 GMT' }]);
+      expect((await w.update([])).code).toBe(0);
+      expect(w.read('LATEST_AT')).toBe('Mon, 16 Nov 2026 11:18:32 GMT\n');
+      expect(w.github()).toEqual(['/commits/main']);
+
+      w.answer(`${API}/releases/latest`, [200, release('v0.7.0', '2026-11-14T09:30:00Z')]);
+      w.answer(`${API}/commits/refs/tags/v0.7.0`, [200, OLD, { 'last-modified': 'Fri, 13 Nov 2026 08:00:00 GMT' }]);
+      expect((await w.update(['--channel', 'stable'])).code).toBe(0);
+      expect(w.read('LATEST_AT')).toBe('2026-11-14T09:30:00Z\n');
+
+      // A release without a date gives its commit's; no date, or one with anything odd in it, none.
+      w.answer(`${API}/releases/latest`, [200, release('v0.7.0')]);
+      expect((await w.update(['--channel', 'stable'])).code).toBe(0);
+      expect(w.read('LATEST_AT')).toBe('Fri, 13 Nov 2026 08:00:00 GMT\n');
+      w.answer(`${API}/commits/main`, [200, OLD, { 'Last-Modified': 'Mon, 16 Nov 2026 11:18:32 GMT"; $(reboot)' }]);
+      expect((await w.update([])).code).toBe(0);
+      expect(w.has('LATEST_AT')).toBe(false);
+      w.answer(`${API}/commits/main`, [200, OLD, { 'Last-Modified': 'Mon, 16 Nov 2026 11:18:32 GMT' }]);
+      await w.update([]);
+      w.answer(`${API}/commits/main`, [200, OLD]);
+      expect((await w.update([])).code).toBe(0);
+      expect(w.has('LATEST_AT')).toBe(false);
+
+      // Stable without a release has no date either.
+      w.answer(`${API}/commits/main`, [200, OLD, { 'Last-Modified': 'Mon, 16 Nov 2026 11:18:32 GMT' }]);
+      await w.update([]);
+      w.answer(`${API}/releases/latest`, [404, '{"message":"Not Found"}']);
+      expect((await w.update(['--channel', 'stable'])).code).toBe(5);
+      expect(w.has('LATEST_AT')).toBe(false);
+
+      // wget prints the headers among its own lines.
+      const g = nas(shell, { curl: false });
+      g.answer(`${API}/commits/main`, [200, OLD, { 'Last-Modified': 'Mon, 16 Nov 2026 11:18:32 GMT' }]);
+      expect((await g.update([])).code).toBe(0);
+      expect(g.read('LATEST_AT')).toBe('Mon, 16 Nov 2026 11:18:32 GMT\n');
+    });
+
     it('asks GitHub once when up to date', async () => {
       const w = nas(shell);
       w.answer(`${API}/commits/main`, [200, OLD]);
@@ -738,6 +799,20 @@ for (const shell of SHELLS) {
           expect(w.has('update/request')).toBe(false);
         }),
       );
+    });
+
+    it('says when the running version was installed and when the newest came out', async () => {
+      const w = nas(shell);
+      w.put('LATEST_AT', 'Mon, 16 Nov 2026 11:18:32 GMT\n');
+      const installed = Math.floor(statSync(join(w.deploy, 'DEPLOYED')).mtimeMs / 1000);
+      await w.updater();
+      expect(w.status()).toMatchObject({ deployed: OLD, deployedAt: installed, latestAt: 'Mon, 16 Nov 2026 11:18:32 GMT' });
+
+      // Neither known: neither said.
+      const bare = nas(shell);
+      rmSync(join(bare.deploy, 'DEPLOYED'));
+      await bare.updater();
+      expect(Object.keys(bare.status()).filter((key) => key === 'deployedAt' || key === 'latestAt')).toEqual([]);
     });
 
     it('refuses a channel that isn’t stable or edge, running nothing', async () => {

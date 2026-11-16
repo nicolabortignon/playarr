@@ -2942,6 +2942,14 @@ public data class UpdateInfo(
          */
         public val deployed: String? = null,
         public val latest: String? = null,
+        /**
+         * Unix seconds when the running commit was installed (by the updater or by hand), when known.
+         */
+        public val deployedAt: Int? = null,
+        /**
+         * Unix seconds when the newest version came out: its release's publication on stable, the commit's date on edge.
+         */
+        public val latestAt: Int? = null,
         public val error: String? = null,
         /**
          * The channel the last check followed.

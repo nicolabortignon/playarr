@@ -734,6 +734,10 @@ export interface UpdateInfo extends UpdateSettings {
     /** Commit running (full SHA), and the newest on the channel, when known. */
     deployed?: string;
     latest?: string;
+    /** Unix seconds when the running commit was installed (by the updater or by hand), when known. */
+    deployedAt?: number;
+    /** Unix seconds when the newest version came out: its release's publication on stable, the commit's date on edge. */
+    latestAt?: number;
     error?: string;
     /** The channel the last check followed. */
     channel?: UpdateChannel;

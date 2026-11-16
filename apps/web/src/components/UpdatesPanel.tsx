@@ -146,10 +146,20 @@ function Version({ info }: { info: UpdateInfo }) {
         Playarr v{__APP_VERSION__}
         {__APP_REVISION__ && <span className="type-meta text-muted"> · {__APP_REVISION__}</span>}
       </p>
+      {status?.deployedAt ? (
+        <p className="text-paper-dim">
+          Installed <Ago seconds={status.deployedAt} />
+        </p>
+      ) : null}
       {status && latest ? (
         <p className="text-paper-dim">
           {stable ? 'Latest release' : 'Latest on main'}:{' '}
           <span className="type-meta">{stable && status.release ? `${status.release} · ${short(latest)}` : short(latest)}</span>
+          {status.latestAt ? (
+            <>
+              , <Ago seconds={status.latestAt} />
+            </>
+          ) : null}
           {upToDate !== undefined && (
             <span className={upToDate ? 'text-muted' : 'text-accent'}>
               {' · '}
@@ -207,12 +217,20 @@ function LastCheck({ info }: { info: UpdateInfo }) {
     );
   return (
     <p className="type-body text-paper-dim">
-      <time dateTime={new Date(status.lastCheck * 1000).toISOString()} title={new Date(status.lastCheck * 1000).toLocaleString()}>
-        {ago(status.lastCheck)}
-      </time>
+      <Ago seconds={status.lastCheck} />
       {' · '}
       {outcome}
     </p>
+  );
+}
+
+/** "2 hours ago" for a Unix time in seconds, the full date and time on hover. */
+function Ago({ seconds }: { seconds: number }) {
+  const date = new Date(seconds * 1000);
+  return (
+    <time dateTime={date.toISOString()} title={date.toLocaleString()}>
+      {ago(seconds)}
+    </time>
   );
 }
 

@@ -1,5 +1,6 @@
 package me.tracklistme.playarr.tv.ui.settings
 
+import android.text.format.DateUtils
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.lazy.LazyListScope
 import me.tracklistme.playarr.tv.update.SelfUpdate
@@ -13,7 +14,7 @@ import me.tracklistme.playarr.tv.update.UpdateState
  */
 fun LazyListScope.updateSettings(updates: SelfUpdate, state: UpdateState) {
   item(key = "update") {
-    val row = row(updates, state)
+    val row = row(updates, state, System.currentTimeMillis())
     val note = note(state)
     Column {
       if (note != null) Note(note)
@@ -26,11 +27,24 @@ private class Row(val title: String, val value: String = "", val detail: String?
 
 private const val ONCE_A_DAY = "Playarr looks for a new version on GitHub once a day."
 
-private fun row(updates: SelfUpdate, state: UpdateState): Row = when (state) {
+/** "2 hours ago", "3 days ago", or the date beyond a week. */
+internal fun ago(time: Long, now: Long): String =
+  DateUtils.getRelativeTimeSpanString(time, now, DateUtils.MINUTE_IN_MILLIS).toString()
+
+private fun row(updates: SelfUpdate, state: UpdateState, now: Long): Row = when (state) {
   UpdateState.Unknown -> Row("Check for updates", detail = ONCE_A_DAY, action = updates::check)
   UpdateState.Checking -> Row("Check for updates", "Looking…", ONCE_A_DAY)
-  UpdateState.UpToDate -> Row("Check for updates", "Up to date", ONCE_A_DAY, updates::check)
-  is UpdateState.Available -> Row("Install version ${state.release.version}", detail = "The music stops while it installs; open Playarr again afterwards.", action = updates::install)
+  is UpdateState.UpToDate -> Row(
+    "Check for updates",
+    "Up to date",
+    state.latest?.let { "Latest release: ${it.version}${it.published?.let { at -> ", ${ago(at, now)}" }.orEmpty()}." } ?: "No release on GitHub yet.",
+    updates::check,
+  )
+  is UpdateState.Available -> Row(
+    "Install version ${state.release.version}",
+    detail = "${state.release.published?.let { "Released ${ago(it, now)}. " }.orEmpty()}The music stops while it installs; open Playarr again afterwards.",
+    action = updates::install,
+  )
   is UpdateState.Downloading -> Row("Downloading version ${state.release.version}", "${state.percent}%")
   is UpdateState.Allow -> Row("Allow Playarr to install updates", detail = "Once, in the TV’s settings.", action = updates::install)
   is UpdateState.Installing -> Row("Installing version ${state.release.version}", detail = "Confirm on the screen the TV shows.")

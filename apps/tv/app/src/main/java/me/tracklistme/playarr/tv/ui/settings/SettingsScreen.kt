@@ -46,7 +46,10 @@ fun SettingsScreen(onAddAccount: () -> Unit, extra: LazyListScope.() -> Unit = {
   val server by rememberLoad { it.send(Api.Server.info()) }
   val updates = app.updates
   val update by remember(updates) { updates?.state ?: MutableStateFlow(UpdateState.Unknown) }.collectAsStateWithLifecycle()
-  val version = remember(app) { runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "" }
+  val packageInfo = remember(app) { runCatching { app.packageManager.getPackageInfo(app.packageName, 0) }.getOrNull() }
+  val version = packageInfo?.versionName.orEmpty()
+  // When this version was installed (or last updated).
+  val installed = packageInfo?.lastUpdateTime?.takeIf { it > 0 }
   LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Margins.Horizontal, end = Margins.Horizontal, top = Margins.Vertical, bottom = 48.dp)) {
     item { Text("Settings", style = Type.pageTitle) }
 
@@ -90,7 +93,10 @@ fun SettingsScreen(onAddAccount: () -> Unit, extra: LazyListScope.() -> Unit = {
     item { Choice("Another server", "", "Connect to another Playarr; this one stays signed in.", onAddAccount) }
 
     section("About")
-    item { Choice("Playarr for TV", version, "Admin settings, sources and accounts are on the phone and the web.") {} }
+    item {
+      val since = installed?.let { "Installed ${ago(it, System.currentTimeMillis())}. " }.orEmpty()
+      Choice("Playarr for TV", version, "${since}Admin settings, sources and accounts are on the phone and the web.") {}
+    }
     updates?.let { updateSettings(it, update) }
   }
 }

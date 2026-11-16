@@ -80,13 +80,21 @@ public final class UpdatesModel {
     return "Playarr v\(serverVersion ?? "?")\(deployed)"
   }
 
-  /// "Latest on main: 9f8e7d6 · A newer version is available", "Latest release: v0.7.0 · 9f8e7d6 · Up to date".
-  public var latestText: String? {
+  /// "Installed 2 hours ago": when the running version was installed, when the updater knows.
+  public func installedText(now: Date = Date()) -> String? {
+    guard let at = info?.status?.deployedAt, at > 0 else { return nil }
+    return "Installed \(AdminText.ago(at, now: now))"
+  }
+
+  /// "Latest on main: 9f8e7d6, 3 hours ago · A newer version is available", "Latest release: v0.7.0 · 9f8e7d6, 2 days
+  /// ago · Up to date" (the date when the updater knows it).
+  public func latestText(now: Date = Date()) -> String? {
     guard let status = info?.status else { return nil }
     guard let latest = status.latest else { return status.outcome == .noRelease ? "Latest release: none yet" : nil }
     var text = status.channel == .stable
       ? "Latest release: \(status.release.map { "\($0) · " } ?? "")\(short(latest))"
       : "Latest on main: \(short(latest))"
+    if let at = status.latestAt, at > 0 { text += ", \(AdminText.ago(at, now: now))" }
     if let running = status.deployed {
       let upToDate = latest.hasPrefix(running) || running.hasPrefix(latest)
       text += " · " + (upToDate ? "Up to date" : Self.notInstalled(status.outcome) ?? "A newer version is available")
