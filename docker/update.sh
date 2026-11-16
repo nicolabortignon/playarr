@@ -323,6 +323,14 @@ if [ -n "$REF" ]; then
 elif [ "$CHANNEL" = stable ]; then
   # The tag comes from the repository's own releases, never from Settings.
   got="$(get "https://api.github.com/repos/$REPO/releases/latest" "$WORK/release" 'Accept: application/vnd.github+json')"
+  if [ "$got" = 200 ]; then
+    TAG="$(tr '{},' '\n\n\n' < "$WORK/release" | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"\\]*\)"[[:space:]]*$/\1/p' | head -n 1)"
+    # No "..": curl would fold it into another path of the API (git refuses it in tag names anyway).
+    case "$TAG" in "" | -* | *..* | *[!A-Za-z0-9._/-]*) fail "GitHub answered something unexpected for the latest release of $REPO" ;; esac
+    # The TV app's releases (tv-v*, docs/tv/release.md) are never marked latest; should GitHub answer one anyway while
+    # the server has no release of its own, it isn't a release of the server.
+    case "$TAG" in tv-v*) got=404 ;; esac
+  fi
   if [ "$got" = 404 ]; then
     : > "$DIR/LATEST.new" && mv "$DIR/LATEST.new" "$DIR/LATEST"
     rm -f "$DIR/RELEASE"
@@ -330,9 +338,6 @@ elif [ "$CHANNEL" = stable ]; then
     exit 5
   fi
   [ "$got" = 200 ] || fail "Couldn't ask GitHub for the latest release of $REPO ($(github_said "$got"))"
-  TAG="$(tr '{},' '\n\n\n' < "$WORK/release" | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"\\]*\)"[[:space:]]*$/\1/p' | head -n 1)"
-  # No "..": curl would fold it into another path of the API (git refuses it in tag names anyway).
-  case "$TAG" in "" | -* | *..* | *[!A-Za-z0-9._/-]*) fail "GitHub answered something unexpected for the latest release of $REPO" ;; esac
   # refs/tags/: a tag, never read as a commit or a branch.
   SHA="$(commit_of "refs/tags/$TAG")"
 else

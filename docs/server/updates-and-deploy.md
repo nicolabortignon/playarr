@@ -131,7 +131,7 @@ The image is always built on the NAS itself (x86_64): there's no registry and no
 
 ### Channels
 
-- **Stable** installs the newest release of `PLAYARR_REPO` (default `nicolabortignon/playarr`): the tag GitHub's releases API calls latest (pre-releases and drafts don't count), resolved to its commit as `refs/tags/<tag>`. Until the repository has a release, a stable install stays where it is and says so; that isn't a failure.
+- **Stable** installs the newest release of `PLAYARR_REPO` (default `nicolabortignon/playarr`): the tag GitHub's releases API calls latest (pre-releases and drafts don't count), resolved to its commit as `refs/tags/<tag>`. The TV app's releases (`tv-v*`, [tv/release.md](../tv/release.md)) are never marked latest, and a `tv-v*` tag is never taken for one of the server's, should GitHub answer one while the server has none. Until the repository has a release, a stable install stays where it is and says so; that isn't a failure.
 - **Edge** installs the newest commit on `main`.
 
 A new install starts on stable. One whose Settings → Updates were saved before there were channels (a `settings.json` without `channel`) stays on edge, as it was: the owner's NAS deploys every push that way. Switching from edge to stable installs the newest release at the next check, even when it's older than what's running; if that release can't use the database a newer version migrated, it refuses to start, and the update goes back (below).

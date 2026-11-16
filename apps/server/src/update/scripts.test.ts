@@ -559,6 +559,17 @@ for (const shell of SHELLS) {
       expect(w.compose()).toEqual([]);
     });
 
+    it('never takes a release of the TV app for one of the server', async () => {
+      const w = nas(shell);
+      w.answer(`${API}/releases/latest`, [200, release('tv-v1.0.0')]);
+      const res = await w.update(['--channel', 'stable']);
+      expect(res.code).toBe(5);
+      expect(res.out).toBe("There's no release of test/playarr yet, so Playarr stays on aaaaaaa until there is one.\n");
+      expect(w.github()).toEqual(['/releases/latest']);
+      expect([w.read('LATEST'), w.has('RELEASE'), w.read('DEPLOYED')]).toEqual(['', false, `${OLD}\n`]);
+      expect(w.compose()).toEqual([]);
+    });
+
     it('follows the channel in Settings → Updates when run by hand, as the updater reads it', async () => {
       const cases: [settings: string | undefined, asks: string][] = [
         // Saved before there were channels: main, as before.
