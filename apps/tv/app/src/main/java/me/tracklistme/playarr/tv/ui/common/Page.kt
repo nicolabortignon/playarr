@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -82,10 +84,24 @@ fun <T> LazyListScope.cardRow(title: String, items: List<T>, key: (T) -> Any, ca
   if (items.isEmpty()) return
   item(key = "title:$title") { Text(title, style = Type.sectionTitle, modifier = Modifier.padding(top = 20.dp, bottom = 12.dp)) }
   item(key = "row:$title") {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.fillMaxWidth()) {
+    LazyRow(
+      horizontalArrangement = Arrangement.spacedBy(24.dp),
+      contentPadding = PaddingValues(horizontal = Bleed, vertical = Bleed),
+      modifier = Modifier.fillMaxWidth().bleed(Bleed),
+    ) {
       items(items, key = key) { card(it) }
     }
   }
+}
+
+/** Room around a row for a focused card to grow into (it scales by 8%), the row reaching that far past the margin. */
+private val Bleed = 16.dp
+
+/** Lays the row out `by` wider on each side and higher, so its edges sit `by` past the page's margins. */
+private fun Modifier.bleed(by: Dp): Modifier = layout { measurable, constraints ->
+  val extra = by.roundToPx()
+  val placeable = measurable.measure(constraints.copy(minWidth = constraints.minWidth + 2 * extra, maxWidth = constraints.maxWidth + 2 * extra))
+  layout(constraints.maxWidth, (placeable.height - 2 * extra).coerceAtLeast(0)) { placeable.place(-extra, -extra) }
 }
 
 /** Space under a row, so a focused card's growth isn't clipped. */

@@ -22,7 +22,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.OutlinedButton
@@ -31,23 +33,39 @@ import me.tracklistme.playarr.tv.ui.theme.Type
 
 /**
  * A text field for the remote: a button until chosen, so the TV's keyboard doesn't cover the screen as the page
- * opens; OK opens the keyboard (its microphone key, where the remote has one, types by voice), Done or moving away
- * closes it. `focus` lets the page give the button the first focus.
+ * opens; OK opens the keyboard (its microphone key, where the remote has one, types by voice), its action key or moving
+ * away closes it (the action key also calls `onDone`). `focus` lets the page give the button the first focus.
  */
 @Composable
-fun SearchEntry(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, focus: FocusRequester? = null) {
+fun TextEntry(
+  value: String,
+  onChange: (String) -> Unit,
+  placeholder: String,
+  modifier: Modifier = Modifier,
+  focus: FocusRequester? = null,
+  icon: ImageVector = Icons.Filled.Search,
+  keyboard: KeyboardType = KeyboardType.Text,
+  onDone: () -> Unit = {},
+) {
   var editing by remember { mutableStateOf(false) }
   var focused by remember { mutableStateOf(false) }
   val field = remember { FocusRequester() }
+  val button = focus ?: remember { FocusRequester() }
+  // Closed by the keyboard's action key: the field it was goes, so the focus goes back to the button.
+  var refocus by remember { mutableStateOf(false) }
   val shape = RoundedCornerShape(12.dp)
   if (!editing) {
     // As wide as the page: it doesn't grow on focus (it would cover what's beside it), it lights up.
     OutlinedButton(
       onClick = { editing = true },
       scale = ButtonDefaults.scale(focusedScale = 1f),
-      modifier = modifier.fillMaxWidth().then(focus?.let { Modifier.focusRequester(it) } ?: Modifier),
+      modifier = modifier.fillMaxWidth().focusRequester(button),
     ) {
-      IconLabel(Icons.Filled.Search, value.ifEmpty { placeholder })
+      IconLabel(icon, value.ifEmpty { placeholder })
+    }
+    LaunchedEffect(refocus) {
+      if (refocus) runCatching { button.requestFocus() }
+      refocus = false
     }
     return
   }
@@ -58,8 +76,11 @@ fun SearchEntry(value: String, onChange: (String) -> Unit, placeholder: String, 
     singleLine = true,
     textStyle = Type.body,
     cursorBrush = SolidColor(Palette.accent),
-    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-    keyboardActions = KeyboardActions(onSearch = { editing = false }),
+    keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = if (keyboard == KeyboardType.Text) ImeAction.Search else ImeAction.Done),
+    keyboardActions = KeyboardActions(
+      onSearch = { refocus = true; editing = false; onDone() },
+      onDone = { refocus = true; editing = false; onDone() },
+    ),
     decorationBox = { inner ->
       Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         if (value.isEmpty()) androidx.tv.material3.Text(placeholder, style = Type.body.copy(color = Palette.muted))

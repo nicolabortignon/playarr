@@ -29,7 +29,7 @@ import me.tracklistme.playarr.tv.playarr
 import me.tracklistme.playarr.tv.ui.common.CoverCard
 import me.tracklistme.playarr.tv.ui.common.count
 import me.tracklistme.playarr.tv.ui.common.Margins
-import me.tracklistme.playarr.tv.ui.common.SearchEntry
+import me.tracklistme.playarr.tv.ui.common.TextEntry
 import me.tracklistme.playarr.tv.ui.common.TrackRow
 import me.tracklistme.playarr.tv.ui.common.cardRow
 import me.tracklistme.playarr.tv.ui.shell.Route
@@ -65,7 +65,7 @@ fun SearchScreen() {
     item(key = "entry") {
       Text("Search", style = Type.pageTitle)
       Spacer(Modifier.height(12.dp))
-      SearchEntry(query, { query = it }, "Artists, albums and songs", focus = focus)
+      TextEntry(query, { query = it }, "Artists, albums and songs", focus = focus)
       error?.let { Text(it, style = Type.small.copy(color = Palette.danger), modifier = Modifier.padding(top = 8.dp)) }
     }
     val found = results

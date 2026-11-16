@@ -66,7 +66,7 @@ APP_ID := me.tracklistme.playarr.tv
 APK := app/build/outputs/apk/debug/app-debug.apk
 SCREENS_ROOT := ../../screenshots/tv
 
-.PHONY: join-test bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
+.PHONY: join-test fake-tv bootstrap jdk sdk ffmpeg build test contracts models models-check gradle install connect logs meminfo device-info screens emulator demo clean
 
 bootstrap: jdk sdk
 
@@ -157,6 +157,12 @@ $(TOOLS)/ffmpeg/ffmpeg:
 
 demo: ffmpeg
 	node scripts/demo-server.mjs
+
+# A stand-in for the Philips TV's JointSpace (plan 9 §6) on the emulator: its own 127.0.0.1:1926 reaches this Mac's,
+# where the fake answers pairing (the PIN is printed here) and prints the colors the Ambilight is sent.
+fake-tv:
+	$(ADB) -s emulator-5554 reverse tcp:1926 tcp:1926
+	node scripts/fake-jointspace.mjs
 
 # Plan 9 §4's join spike on the TV or the emulator: plays song, DJ transition, song (player/src/androidTest), pulls
 # what reached the speakers and compares it with the signal, sample by sample (scripts/join-spike/).

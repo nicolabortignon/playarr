@@ -21,6 +21,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
+import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.Text
@@ -65,6 +67,8 @@ fun CoverCard(
       onClick = onClick,
       shape = CardDefaults.shape(shape),
       scale = CardDefaults.scale(focusedScale = 1.08f),
+      // The focus ring in the card's own shape (round for artists), not the default rounded square.
+      border = CardDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Palette.paper), shape = shape)),
       modifier = Modifier.fillMaxWidth().aspectRatio(1f),
     ) {
       Art(art, width, color, Modifier.fillMaxSize(), shape)

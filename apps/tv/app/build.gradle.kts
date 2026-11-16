@@ -61,4 +61,5 @@ dependencies {
   implementation(libs.compose.material.icons)
   implementation(libs.tv.material)
   testImplementation(libs.junit)
+  testImplementation(libs.okhttp.mockwebserver)
 }

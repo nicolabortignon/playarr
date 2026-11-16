@@ -19,6 +19,8 @@ import me.tracklistme.playarr.api.MediaUrls
 import me.tracklistme.playarr.api.ServerBrowser
 import me.tracklistme.playarr.api.ServerStore
 import me.tracklistme.playarr.player.SleepTimer
+import me.tracklistme.playarr.tv.ambilight.Ambilight
+import me.tracklistme.playarr.tv.ambilight.AmbilightStore
 import me.tracklistme.playarr.tv.playback.PlaybackSettings
 import me.tracklistme.playarr.tv.playback.PlayerConnection
 import okhttp3.Cache
@@ -35,6 +37,7 @@ class PlayarrApp : Application(), SingletonImageLoader.Factory {
   val player: PlayerConnection by lazy { PlayerConnection(this) }
   val playback: PlaybackSettings by lazy { PlaybackSettings(this) }
   val sleep: SleepTimer by lazy { SleepTimer() }
+  val ambilight: Ambilight by lazy { Ambilight(AmbilightStore(this, KeystoreSecretStore(this)), http, device.name) }
 
   val http: OkHttpClient by lazy {
     OkHttpClient.Builder()

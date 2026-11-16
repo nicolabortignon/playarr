@@ -29,7 +29,7 @@ import me.tracklistme.playarr.tv.ui.theme.Palette
 import me.tracklistme.playarr.tv.ui.theme.Type
 
 /**
- * Settings on the TV (plan 9 §5): playback, accounts, the server and about. Admin settings stay on the phone and the
+ * Settings on the TV (plan 9 §5): playback, the Ambilight, accounts, the server and about. Admin settings stay on the phone and the
  * web: a TV is shared, and organizing sources and accounts belongs to a person's own device.
  */
 @Composable
@@ -37,6 +37,9 @@ fun SettingsScreen(onAddAccount: () -> Unit, extra: LazyListScope.() -> Unit = {
   val app = LocalContext.current.playarr
   val settings by app.playback.values.collectAsStateWithLifecycle()
   val state by app.store.current.collectAsStateWithLifecycle()
+  val ambilightOn by app.ambilight.enabled.collectAsStateWithLifecycle()
+  val ambilight by app.ambilight.status.collectAsStateWithLifecycle()
+  val ambilightFocus = remember { AmbilightFocus() }
   val server by rememberLoad { it.send(Api.Server.info()) }
   val version = remember(app) { runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "" }
   LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = Margins.Horizontal, end = Margins.Horizontal, top = Margins.Vertical, bottom = 48.dp)) {
@@ -58,6 +61,9 @@ fun SettingsScreen(onAddAccount: () -> Unit, extra: LazyListScope.() -> Unit = {
     item { Toggle("Count what this TV plays", "Songs heard here go into the listening history.", settings.recordPlays) { v -> app.playback.update { it.copy(recordPlays = v) } } }
 
     extra()
+
+    section("Ambilight")
+    ambilightSettings(app.ambilight, ambilightOn, ambilight, ambilightFocus)
 
     section("Accounts")
     val current = state.account
@@ -109,8 +115,9 @@ fun Choice(title: String, value: String, detail: String?, onClick: () -> Unit) {
 }
 
 @Composable
-fun Toggle(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+fun Toggle(title: String, detail: String, checked: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
   ListItem(
+    modifier = modifier,
     selected = false,
     onClick = { onChange(!checked) },
     headlineContent = { Text(title, style = Type.rowTitle) },

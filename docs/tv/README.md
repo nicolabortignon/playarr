@@ -138,3 +138,31 @@ type of [design.md](../design.md):
   at 32 MB.
 - **Opening a page from outside**: `adb shell am start -n me.tracklistme.playarr.tv/.MainActivity --es route album:12`
   (the activity is `singleTop`, so a running app goes there too): for screenshots now, for the TV's links later.
+
+## The Ambilight (plan 9 §6)
+
+Settings → Ambilight → "Lights follow the music", off by default (`app/…/ambilight/`):
+
+- **Finding the TV's JointSpace** (`JointSpace.find`): HTTPS on 1926, then plain HTTP on 1925, at 127.0.0.1 and then
+  the TV's own network addresses. The first that answers `GET /6/system` is kept. If none answers, the switch says
+  the TV doesn't have JointSpace, and the music carries on.
+- **Its certificate is self-signed.** `FirstUseTrust` trusts the certificate seen first and only that one after;
+  "Pair again" forgets it. Names aren't checked (the certificate names a model, not an address), but the client only
+  talks to the TV's own addresses.
+- **Pairing** where the TV asks for it: `POST /6/pair/request` makes the TV show a PIN, and the PIN is typed in
+  Settings. `POST /6/pair/grant` carries it, signed with base64(HMAC-SHA1(JointSpace's shared key, timestamp + PIN)),
+  with Digest authentication (`DigestAuthenticator`; OkHttp has only Basic) as this app's id and the key the TV gave.
+  Those credentials, kept in the Keystore like tokens, sign every call after.
+- **While a song plays** (`Ambilight`, told by `PlaybackService`):
+  - Playarr saves the owner's mode and style (`ambilight/mode`, `ambilight/currentconfiguration`) and sets `manual`.
+  - Each side gets the cover's colors (`AmbilightColors`): `coverAccent` at the sides, `coverColor` at the bottom and
+    a blend along the top, brightened to at least 70% so a dark cover still lights the wall. They're sent to
+    `ambilight/cached`, one entry per light of `ambilight/topology`.
+  - Colors fade over 1.5 s from one song to the next, and over 8 s into a DJ transition.
+  - With the Ambilight's power off, the lights stay off.
+- **Giving the lights back:** the saved mode and style come back half a minute after the music stops, or at once when
+  the switch goes off or playback ends. A mode left at `manual` by a crash goes back to `internal`.
+- **Without the TV:** `make -C apps/tv fake-tv` runs `scripts/fake-jointspace.mjs`, a stand-in JointSpace on this
+  Mac's port 1926 (self-signed HTTPS, pairing with a PIN it prints, Digest, and the Ambilight's calls, printing each
+  color sent). The emulator reaches it at its own 127.0.0.1:1926 through `adb reverse`.
+- **Not yet:** pulsing on the beat from the song's mix map.

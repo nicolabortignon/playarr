@@ -53,7 +53,7 @@ import me.tracklistme.playarr.tv.ui.common.CoverCard
 import me.tracklistme.playarr.tv.ui.common.Load
 import me.tracklistme.playarr.tv.ui.common.Loaded
 import me.tracklistme.playarr.tv.ui.common.Margins
-import me.tracklistme.playarr.tv.ui.common.SearchEntry
+import me.tracklistme.playarr.tv.ui.common.TextEntry
 import me.tracklistme.playarr.tv.ui.common.cardRow
 import me.tracklistme.playarr.tv.ui.common.rememberLoad
 import me.tracklistme.playarr.tv.ui.shell.Route
@@ -97,7 +97,7 @@ fun DiscoverScreen() {
       Text("Discover", style = Type.pageTitle)
       Spacer(Modifier.height(12.dp))
       Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        SearchEntry(query, { query = it }, "Any artist or album", Modifier.weight(1f), focus)
+        TextEntry(query, { query = it }, "Any artist or album", Modifier.weight(1f), focus)
         if (access != null) OutlinedButton(onClick = { nav.go(Route.Requests) }) { Text("Requests", style = Type.label) }
       }
       error?.let { Text(it, style = Type.small.copy(color = Palette.danger), modifier = Modifier.padding(top = 8.dp)) }

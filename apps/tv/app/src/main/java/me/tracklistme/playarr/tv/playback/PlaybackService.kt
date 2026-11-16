@@ -27,6 +27,7 @@ import me.tracklistme.playarr.player.PlayerFactory
 import me.tracklistme.playarr.player.QueueItems
 import me.tracklistme.playarr.player.Radio
 import me.tracklistme.playarr.player.StreamQuality
+import me.tracklistme.playarr.tv.ambilight.Ambilight
 import me.tracklistme.playarr.tv.playarr
 
 /**
@@ -87,11 +88,15 @@ class PlaybackService : MediaSessionService() {
         playingPart = part
         mixer.changed(item, reason)
         continueRadio()
+        // The lights change over a DJ transition as the music does.
+        val fade = if (part == QueueItems.Part.Transition) Ambilight.TRANSITION_FADE_MS else Ambilight.FADE_MS
+        app.ambilight.follow(QueueItems.track(item), player.playWhenReady, fade)
       }
 
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         main.removeCallbacks(tick)
         if (isPlaying) main.post(tick) else tracker.pause()
+        app.ambilight.follow(QueueItems.track(player.currentMediaItem), isPlaying)
       }
 
       override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
@@ -202,6 +207,7 @@ class PlaybackService : MediaSessionService() {
 
   override fun onDestroy() {
     tracker.finish(Finish.Closed)
+    playarr.ambilight.stopped()
     main.removeCallbacksAndMessages(null)
     session?.run {
       player.release()
