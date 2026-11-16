@@ -121,9 +121,16 @@ Admins change how mixes are made (`PUT /api/settings/mixes`); members see it rea
 
 ---
 
-## 7. ListenBrainz
+## 7. ListenBrainz and Last.fm
 
 **Scrobbling** (`apps/server/src/listenbrainz/scrobbler.ts`). Each account can link its own ListenBrainz account in Settings → Mixes with a user token, which the server checks with ListenBrainz and keeps (it is never sent back). From then on its plays are sent; *Also send N earlier plays* sends the history from before. Only plays heard for half the song or four minutes count as listens, as ListenBrainz asks; the rest are marked not to send. Listens go in batches of 100, every minute and after each new report, with the recording's MusicBrainz id when it has one. A refused token turns sending off with a message; ListenBrainz asking to slow down (or being unreachable) pauses for as long as it says, or 5 minutes.
+
+**Last.fm** (`apps/server/src/lastfm/scrobbler.ts`) takes the same plays too, for accounts that use it.
+- **The server's API account.** Last.fm signs every call with an API account's shared secret, so the server needs its own: Last.fm gives one to anyone who asks (last.fm/api/account/create), and a self-hosted server can't share one secret with every other. An admin adds its API key and shared secret once in Settings → Mixes (`PUT /api/settings/lastfm/app`). The server checks them with Last.fm by asking for a token, and never sends the secret back. A new key voids the sessions made with the old one, and removing it disconnects everyone.
+- **Connecting** (Last.fm's desktop flow). *Connect Last.fm* asks Last.fm for a token, which lasts an hour, and offers *Allow Playarr on Last.fm*, which opens Last.fm's page for it. *Finish connecting* trades the token for a session that doesn't expire (`auth.getSession`), kept on the server and never sent back. Until the account has allowed Playarr, finishing says so.
+- **Sending.** From then on its plays are sent, signed with the session. *Also send N earlier plays* sends those from the two weeks before, since Last.fm ignores older plays. A play counts as Last.fm says: a song longer than 30 seconds, heard for half its length or four minutes. Plays go 50 at a time, every minute and after each new report, with the recording's MusicBrainz id when it has one, and those Last.fm ignored aren't sent again.
+- **When it goes wrong.** Access taken back on Last.fm turns sending off with a message. Last.fm busy, unreachable or asking to slow down pauses 5 minutes (10 for its rate limit), and a refused API key pauses an hour.
+- Whether a play went to Last.fm is `plays.lastfm`, as `plays.listenbrainz` is for ListenBrainz.
 
 **Tag lookup** (`Analyzer.fetchMeta`, `recordingTags`). Genre and mood tags, and the first release year, for every song the mixes see, 25 recordings per call to ListenBrainz's metadata endpoint, paced by its rate-limit headers. Tags weigh the recording's most, then the release group's (0.6), then the artist's (0.4); the top 16 are kept in `track_meta`. It is cheap, so it runs whether or not the whole library is being analysed; Settings → Analysis shows it as *tags*.
 

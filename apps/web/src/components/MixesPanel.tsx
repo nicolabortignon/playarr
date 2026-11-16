@@ -7,6 +7,7 @@ import { plural } from '../lib/format';
 import { useClearHistory, useIsMember, useMixSettings, useSaveMixSettings } from '../lib/queries';
 import { Button } from './Button';
 import { ConfirmDialog } from './Dialog';
+import { LastFmSection } from './LastFmSection';
 import { ListenBrainzSection } from './ListenBrainzSection';
 import { Choice } from './Choice';
 import { AwayNotice, SettingsSection, Switch } from './SettingsControls';
@@ -152,6 +153,8 @@ export function MixesPanel() {
       </SettingsSection>
 
       <ListenBrainzSection />
+
+      <LastFmSection />
 
       <SettingsSection title="Sound">
         <p className="text-sm text-muted">

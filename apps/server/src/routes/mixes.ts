@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import type { CatalogStore } from '../catalog/store.ts';
+import { LastFmError, type LastFm } from '../lastfm/scrobbler.ts';
 import { ListenBrainzError, type Scrobbler } from '../listenbrainz/scrobbler.ts';
 import type { History } from '../mixes/history.ts';
 import { MixError, type Mixes } from '../mixes/mixes.ts';
@@ -11,7 +12,7 @@ import { isStatsRange, listeningStats } from '../mixes/stats.ts';
 import { validTimeZone } from '../mixes/time.ts';
 import { stripAlbum, type Library } from '../library/library.ts';
 import { PlaylistError } from '../playlists.ts';
-import { accountId, libraryOf, requireAdmin, requireOwn } from '../accounts/rights.ts';
+import { accountId, isAdmin, libraryOf, requireAdmin, requireOwn } from '../accounts/rights.ts';
 
 const playsInput = z.object({
   plays: z
@@ -56,7 +57,9 @@ async function handle(reply: FastifyReply, fn: () => unknown) {
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof MixError || err instanceof PlaylistError || err instanceof ListenBrainzError) return reply.code(err.status).send({ error: err.message });
+    if (err instanceof MixError || err instanceof PlaylistError || err instanceof ListenBrainzError || err instanceof LastFmError) {
+      return reply.code(err.status).send({ error: err.message });
+    }
     throw err;
   }
 }
@@ -76,6 +79,7 @@ export function mixRoutes(
     /** The database the history is in, for stats. */
     db?: DatabaseSync;
     scrobbler?: Pick<Scrobbler, 'info' | 'connect' | 'disconnect' | 'setEnabled' | 'sendEarlier' | 'kick'>;
+    lastfm?: Pick<LastFm, 'info' | 'setApp' | 'removeApp' | 'connect' | 'finish' | 'disconnect' | 'setEnabled' | 'sendEarlier' | 'kick'>;
   },
 ) {
   const { mixes, history, store } = deps;
@@ -92,7 +96,10 @@ export function mixRoutes(
     if (!readMixSettings(store).recordHistory) return reply.code(202).send({ recorded: 0 });
     // Whoever is signed in listened: the session decides.
     const recorded = await history.record(parsed.data.plays, who(req));
-    if (recorded) void deps.scrobbler?.kick();
+    if (recorded) {
+      void deps.scrobbler?.kick();
+      void deps.lastfm?.kick();
+    }
     return { recorded };
   });
 
@@ -184,6 +191,43 @@ export function mixRoutes(
     );
     app.delete('/api/settings/listenbrainz', own, (req) => scrobbler.disconnect(who(req)));
     app.post('/api/settings/listenbrainz/earlier', own, (req) => scrobbler.sendEarlier(who(req)));
+  }
+
+  // Settings → Mixes → Last.fm: the server's API account (an admin's), then each account's own link. The shared secret
+  // and the session keys go in, never out.
+  const { lastfm } = deps;
+  if (lastfm) {
+    const info = (req: FastifyRequest) => lastfm.info(who(req), isAdmin(req));
+    const appInput = z.object({ apiKey: z.string().trim().regex(/^[0-9a-f]{32}$/i, 'An API key is 32 letters and digits'), secret: z.string().trim().regex(/^[0-9a-f]{32}$/i, 'A shared secret is 32 letters and digits') });
+    const tokenInput = z.object({ token: z.string().trim().min(1).max(100) });
+    const enabledInput = z.object({ enabled: z.boolean() });
+    const parsed = <T>(schema: z.ZodType<T>, body: unknown, reply: FastifyReply): T | undefined => {
+      const result = schema.safeParse(body ?? {});
+      if (result.success) return result.data;
+      reply.code(400).send({ error: result.error.issues[0]?.message ?? 'Invalid settings' });
+      return undefined;
+    };
+    app.get('/api/settings/lastfm', own, (req) => info(req));
+    app.put('/api/settings/lastfm/app', { onRequest: requireAdmin }, (req, reply) =>
+      handle(reply, async () => {
+        const input = parsed(appInput, req.body, reply);
+        return input && lastfm.setApp(input.apiKey.toLowerCase(), input.secret.toLowerCase(), who(req));
+      }),
+    );
+    app.delete('/api/settings/lastfm/app', { onRequest: requireAdmin }, (req) => lastfm.removeApp(who(req)));
+    app.post('/api/settings/lastfm/connect', own, (_req, reply) => handle(reply, () => lastfm.connect()));
+    app.post('/api/settings/lastfm/finish', own, (req, reply) =>
+      handle(reply, async () => {
+        const input = parsed(tokenInput, req.body, reply);
+        return input && (await lastfm.finish(input.token, who(req)), info(req));
+      }),
+    );
+    app.put('/api/settings/lastfm', own, (req, reply) => {
+      const input = parsed(enabledInput, req.body, reply);
+      return input && (lastfm.setEnabled(input.enabled, who(req)), info(req));
+    });
+    app.delete('/api/settings/lastfm', own, (req) => (lastfm.disconnect(who(req)), info(req)));
+    app.post('/api/settings/lastfm/earlier', own, (req) => (lastfm.sendEarlier(who(req)), info(req)));
   }
 
   /** Forget everything played; the mixes are made again from scratch. */

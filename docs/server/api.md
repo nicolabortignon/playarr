@@ -131,6 +131,8 @@ Details in [../mixes.md](../mixes.md).
 | `GET /api/settings/mixes`; `PUT /api/settings/mixes` | Settings → Mixes with the caller's history; changing how mixes are made | own; admin |
 | `DELETE /api/settings/mixes/history` | forget the account's listening history | own |
 | `GET\|PUT\|DELETE /api/settings/listenbrainz`, `POST /api/settings/listenbrainz/earlier` | the account's ListenBrainz link; send earlier plays | own |
+| `GET\|PUT\|DELETE /api/settings/lastfm`, `POST /api/settings/lastfm/connect`, `/finish`, `/earlier` | the account's Last.fm link (`LastFmInfo`; an admin's has the server's API key): connect (`LastFmConnect`), finish once allowed on Last.fm, pause, disconnect, send the last two weeks' earlier plays | own |
+| `PUT\|DELETE /api/settings/lastfm/app` | the server's Last.fm API account (key and shared secret, checked with Last.fm; the secret never comes back) | admin |
 | `GET /api/analysis/progress` | each analysis's progress over the library | signed in |
 | `POST /api/analysis/:kind` | queue beat, sound, loudness or tag analysis (or all) for the library | admin |
 

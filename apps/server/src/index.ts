@@ -41,6 +41,7 @@ import { transitionRoutes } from './routes/transitions.ts';
 import { Transitions } from './transitions/transitions.ts';
 import { lyricsRoutes } from './routes/lyrics.ts';
 import { LyricsService } from './lyrics/lyrics.ts';
+import { LastFm } from './lastfm/scrobbler.ts';
 import { Scrobbler } from './listenbrainz/scrobbler.ts';
 import { Accounts } from './accounts/accounts.ts';
 import { advertise } from './bonjour.ts';
@@ -204,7 +205,9 @@ const mixes = new Mixes({
 });
 mixes.start();
 const scrobbler = new Scrobbler(db, store, library, { log: app.log, accounts: () => accounts.ids() });
+const lastfm = new LastFm(db, store, library, { log: app.log, accounts: () => accounts.ids() });
 scrobbler.start();
+lastfm.start();
 // Settings → Requests, read fresh each time so a change applies at once; .env values are the fallback.
 const requestSettings = () => readRequestSettings(store);
 const requests = new Requests(lidarr, musicbrainz, library, { db, legacyFile: resolve(config.CACHE_DIR, 'requests.json') }, requestSettings, {
@@ -263,6 +266,7 @@ mixRoutes(app, {
   analyzeLibrary: () => void analyzer.analyzeLibrary().catch((err: unknown) => app.log.warn({ err }, 'queueing the library for analysis failed')),
   library,
   scrobbler,
+  lastfm,
   db,
 });
 // Settings → Updates: files shared with the updater container (UPDATE_DIR, set by docker/compose.yaml).

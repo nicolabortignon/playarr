@@ -342,6 +342,8 @@ const MIGRATIONS: Migration[] = [
    INSERT INTO album_request_askers (mbid, account_id, asked_at, seen_at)
      SELECT mbid, requested_by, requested_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') FROM album_requests
      WHERE requested_by IN (SELECT id FROM accounts);`,
+  // Sending plays to Last.fm, as to ListenBrainz: NULL waiting, 1 sent, 2 not to be sent.
+  `ALTER TABLE plays ADD COLUMN lastfm INTEGER;`,
 ];
 
 /** How many copies made before migrations are kept in `backups/`: the newest. */

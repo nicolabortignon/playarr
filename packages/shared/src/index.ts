@@ -1030,6 +1030,41 @@ export interface ListenBrainzInfo {
   error?: string;
 }
 
+/**
+ * Settings → Mixes → Last.fm: as ListenBrainzInfo, for the account's Last.fm. Accounts connect through the server's
+ * own Last.fm API account, which an admin adds once (`PUT /api/settings/lastfm/app`); its shared secret and the
+ * accounts' session keys are never sent back.
+ */
+export interface LastFmInfo {
+  /** The server has a Last.fm API account, so accounts can connect. */
+  available: boolean;
+  /** For an admin: the API key of the server's Last.fm API account. */
+  apiKey?: string;
+  /** A session is saved. */
+  connected: boolean;
+  /** The Last.fm user the session belongs to. */
+  user?: string;
+  enabled: boolean;
+  /** Plays waiting to be sent. */
+  pending: number;
+  /** Plays sent so far. */
+  sent: number;
+  /** Plays in the history from before connecting, which can be sent too. */
+  earlier: number;
+  lastSentAt?: string;
+  /** Why sending stopped, e.g. access was taken back on Last.fm. */
+  error?: string;
+}
+
+/**
+ * POST /api/settings/lastfm/connect: the Last.fm page where the account allows Playarr, and the token to finish with
+ * (POST /api/settings/lastfm/finish) once it has. The token lasts an hour.
+ */
+export interface LastFmConnect {
+  url: string;
+  token: string;
+}
+
 /** A song's words: timed lines when known (to follow along), else the text. */
 export interface Lyrics {
   /** Lines with when they're sung, in seconds. */

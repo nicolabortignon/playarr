@@ -889,6 +889,56 @@ public data class HealthStatus(
     )
 }
 
+/**
+ * POST /api/settings/lastfm/connect: the Last.fm page where the account allows Playarr, and the token to finish with (POST /api/settings/lastfm/finish) once it has. The token lasts an hour.
+ */
+@Serializable
+public data class LastFmConnect(
+    public val url: String,
+    public val token: String,
+)
+
+/**
+ * Settings → Mixes → Last.fm: as ListenBrainzInfo, for the account's Last.fm. Accounts connect through the server's own Last.fm API account, which an admin adds once (`PUT /api/settings/lastfm/app`); its shared secret and the accounts' session keys are never sent back.
+ */
+@Serializable
+public data class LastFmInfo(
+    /**
+     * The server has a Last.fm API account, so accounts can connect.
+     */
+    public val available: Boolean,
+    /**
+     * For an admin: the API key of the server's Last.fm API account.
+     */
+    public val apiKey: String? = null,
+    /**
+     * A session is saved.
+     */
+    public val connected: Boolean,
+    /**
+     * The Last.fm user the session belongs to.
+     */
+    public val user: String? = null,
+    public val enabled: Boolean,
+    /**
+     * Plays waiting to be sent.
+     */
+    public val pending: Int,
+    /**
+     * Plays sent so far.
+     */
+    public val sent: Int,
+    /**
+     * Plays in the history from before connecting, which can be sent too.
+     */
+    public val earlier: Int,
+    public val lastSentAt: String? = null,
+    /**
+     * Why sending stopped, e.g. access was taken back on Last.fm.
+     */
+    public val error: String? = null,
+)
+
 @Serializable
 public data class LibraryStats(
     public val artists: Int,

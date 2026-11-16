@@ -1298,6 +1298,52 @@ public struct HealthStatus: Codable, Hashable, Sendable {
     }
 }
 
+/// POST /api/settings/lastfm/connect: the Last.fm page where the account allows Playarr, and the token to finish with (POST /api/settings/lastfm/finish) once it has. The token lasts an hour.
+public struct LastFmConnect: Codable, Hashable, Sendable {
+    public var url: String
+    public var token: String
+
+    public init(url: String, token: String) {
+        self.url = url
+        self.token = token
+    }
+}
+
+/// Settings → Mixes → Last.fm: as ListenBrainzInfo, for the account's Last.fm. Accounts connect through the server's own Last.fm API account, which an admin adds once (`PUT /api/settings/lastfm/app`); its shared secret and the accounts' session keys are never sent back.
+public struct LastFmInfo: Codable, Hashable, Sendable {
+    /// The server has a Last.fm API account, so accounts can connect.
+    public var available: Bool
+    /// For an admin: the API key of the server's Last.fm API account.
+    public var apiKey: String?
+    /// A session is saved.
+    public var connected: Bool
+    /// The Last.fm user the session belongs to.
+    public var user: String?
+    public var enabled: Bool
+    /// Plays waiting to be sent.
+    public var pending: Int
+    /// Plays sent so far.
+    public var sent: Int
+    /// Plays in the history from before connecting, which can be sent too.
+    public var earlier: Int
+    public var lastSentAt: String?
+    /// Why sending stopped, e.g. access was taken back on Last.fm.
+    public var error: String?
+
+    public init(available: Bool, apiKey: String? = nil, connected: Bool, user: String? = nil, enabled: Bool, pending: Int, sent: Int, earlier: Int, lastSentAt: String? = nil, error: String? = nil) {
+        self.available = available
+        self.apiKey = apiKey
+        self.connected = connected
+        self.user = user
+        self.enabled = enabled
+        self.pending = pending
+        self.sent = sent
+        self.earlier = earlier
+        self.lastSentAt = lastSentAt
+        self.error = error
+    }
+}
+
 public struct LibraryStats: Codable, Hashable, Sendable {
     public var artists: Int
     public var albums: Int

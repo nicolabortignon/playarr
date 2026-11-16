@@ -8,6 +8,7 @@ import type {
   FavoriteTrack,
   FolderBrowseRequest,
   LibraryStats,
+  LastFmInfo,
   ListenBrainzInfo,
   MixDetail,
   MixSettings,
@@ -994,6 +995,28 @@ export const useListenBrainz = () =>
     refetchInterval: 30_000,
     retry: (count, err) => !(err instanceof ApiError && err.status === 403) && count < 2,
   });
+
+export const useLastFm = () =>
+  useQuery({
+    queryKey: ['lastfm'],
+    queryFn: api.lastFm,
+    // Shows plays going out while the panel is open.
+    refetchInterval: 30_000,
+    retry: (count, err) => !(err instanceof ApiError && err.status === 403) && count < 2,
+  });
+
+/** Set up, connect, pause, disconnect or send earlier plays to Last.fm: the panel shows what the server answers. */
+export function useLastFmAction<T>(fn: (arg: T) => Promise<LastFmInfo>, done?: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (data) => {
+      client.setQueryData(['lastfm'], data);
+      if (done) toast(done);
+    },
+    onError: (err: Error) => toast(err.message, 'error'),
+  });
+}
 
 /** Connect, pause, disconnect or send earlier plays: the panel shows what the server answers. */
 export function useListenBrainzAction<T>(fn: (arg: T) => Promise<ListenBrainzInfo>, done?: string) {

@@ -29,6 +29,8 @@ import type {
   HealthStatus,
   ListedAccount,
   LuckyMix,
+  LastFmConnect,
+  LastFmInfo,
   ListenBrainzInfo,
   ListeningStats,
   Lyrics,
@@ -358,6 +360,16 @@ export const api = {
     request<ListenBrainzInfo>('/api/settings/listenbrainz', { method: 'PUT', body: JSON.stringify(patch) }, SLOW_MS),
   disconnectListenBrainz: () => request<ListenBrainzInfo>('/api/settings/listenbrainz', { method: 'DELETE' }),
   sendEarlierListens: () => request<ListenBrainzInfo>('/api/settings/listenbrainz/earlier', { method: 'POST' }, SLOW_MS),
+  lastFm: () => get<LastFmInfo>('/api/settings/lastfm'),
+  /** An admin: the server's Last.fm API account, checked with Last.fm. */
+  saveLastFmApp: (app: { apiKey: string; secret: string }) =>
+    request<LastFmInfo>('/api/settings/lastfm/app', { method: 'PUT', body: JSON.stringify(app) }, SLOW_MS),
+  removeLastFmApp: () => request<LastFmInfo>('/api/settings/lastfm/app', { method: 'DELETE' }),
+  connectLastFm: () => request<LastFmConnect>('/api/settings/lastfm/connect', { method: 'POST' }, SLOW_MS),
+  finishLastFm: (token: string) => request<LastFmInfo>('/api/settings/lastfm/finish', { method: 'POST', body: JSON.stringify({ token }) }, SLOW_MS),
+  saveLastFm: (enabled: boolean) => request<LastFmInfo>('/api/settings/lastfm', { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  disconnectLastFm: () => request<LastFmInfo>('/api/settings/lastfm', { method: 'DELETE' }),
+  sendEarlierToLastFm: () => request<LastFmInfo>('/api/settings/lastfm/earlier', { method: 'POST' }, SLOW_MS),
   clearHistory: () => request<MixSettingsInfo>('/api/settings/mixes/history', { method: 'DELETE' }),
 };
 
