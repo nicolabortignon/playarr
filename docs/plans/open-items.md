@@ -8,7 +8,7 @@ Everything known to be unfinished, one line each, with where it came from. Gathe
 
 - App Store launch: the user's decisions, the privacy and support pages, the screenshots, the CI release job, a dry run, the submission. *([2026-11-03-ios-phase11-app-store.md](2026-11-03-ios-phase11-app-store.md))*
 - Checks on a real iPhone, iPad and iPhone Duo: sideways, iPad keyboard, pointer, drag, narrow windows, restoration, VoiceOver, Siri, the Duo's hinge, offline, the server settings panels. *([2026-11-05-ios-device-checklist.md](2026-11-05-ios-device-checklist.md))*
-- iOS offline, in the simulator against the dev server: album download ring and Library → Downloads, a playlist download fetching its transitions, lowering the limit to 512 MB, playing offline with skipped songs, resuming after quitting from the switcher. *(ios-status, phase 7)*
+- iOS offline, in the simulator: a playlist download fetching its transitions (needs analysed music for the beats), playing offline with skipped songs (needs the network off), resuming a download after quitting from the switcher (needs a download slow enough to interrupt). An album's download, Library → Downloads and lowering Keep up to are checked by `make -C apps/ios offline-check` (2026-11-16). *(ios-status, phase 7)*
 
 ## Server
 

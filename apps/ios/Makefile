@@ -44,7 +44,7 @@ XCODEBUILD = xcodebuild -project Playarr.xcodeproj -scheme Playarr -derivedDataP
 # The repo's .env has ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID and IOS_BUNDLE_ID; CI sets them itself.
 NODE = node --env-file-if-exists=../../.env
 
-.PHONY: bootstrap tools project design-check build test test-scripts test-packages test-app screens models models-check setup crashes beta beta-upload device screenshots store-check release release-submit clean
+.PHONY: bootstrap tools project design-check build test test-scripts test-packages test-app screens offline-check offline-run models models-check setup crashes beta beta-upload device screenshots store-check release release-submit clean
 
 bootstrap: project
 
@@ -112,6 +112,14 @@ screens: project
 
 screens-run:
 	$(XCODEBUILD) test -only-testing:PlayarrUITests/ScreenTour
+
+# OfflineTests (downloads, songs kept as you listen, Keep up to) on a simulator of its own, against a server of its own
+# with the web tour's library (scripts/offline-check.mjs); the test's screenshots land in build/offline-check/.
+offline-check: project
+	node scripts/offline-check.mjs
+
+offline-run:
+	$(XCODEBUILD) test -only-testing:PlayarrUITests/OfflineTests $(if $(RESULT),-resultBundlePath "$(RESULT)")
 
 # Swift models from the shared TypeScript types (committed).
 models:

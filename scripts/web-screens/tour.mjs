@@ -11,19 +11,18 @@
 // other screens stay as they were. --no-build (or NO_BUILD=1) serves the last build. Needs Xcode's simulators. The
 // first run fetches the library from MusicBrainz and the Cover Art Archive; it's kept in .cache/web-screens/, with
 // the build and the server's log.
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from 'node:fs';
-import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { createServer } from 'node:net';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ALBUMS, buildLibrary } from './library.mjs';
 import { seed } from './seed.mjs';
+import { startServer } from './server.mjs';
 import { checkSteps, walk, wanted } from './walk.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const WEB = join(ROOT, 'apps', 'web');
-const SERVER = join(ROOT, 'apps', 'server');
 const CACHE = join(ROOT, '.cache', 'web-screens');
 const OUT = join(ROOT, 'screenshots', 'web');
 
@@ -34,7 +33,6 @@ const DEVICES = {
 };
 const USAGE = 'Usage: pnpm web:screens [phone] [tablet] [--shots name,…] [--no-build]';
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const shown = (path) => relative(ROOT, path);
 
 function options(args, env) {
@@ -63,43 +61,9 @@ function buildWeb(dist) {
   execFileSync(process.execPath, [vite, 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'warn'], { cwd: WEB, stdio: 'inherit' });
 }
 
-const freePort = () =>
-  new Promise((resolve, reject) => {
-    const probe = createServer().once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address();
-      probe.close(() => resolve(port));
-    });
-  });
-
-/**
- * The repo's server on a free port, serving `dist`: a data folder made afresh, only the library's folder, no
- * analysis, Bonjour or Lidarr. Its output goes to .cache/web-screens/server.log.
- */
-async function startServer(library, dist) {
-  const dir = join(CACHE, 'server');
-  rmSync(dir, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true });
-  const port = await freePort();
-  const base = `http://127.0.0.1:${port}`;
-  // A clean environment: the repo's .env may point at Lidarr or a real music folder.
-  const env = {
-    PATH: process.env.PATH, HOME: process.env.HOME, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: join(dir, 'data'),
-    CACHE_DIR: join(dir, 'cache'), ANALYSIS: 'off', BONJOUR: 'off', SERVER_NAME: 'Playarr', FOLDER_ROOTS: library, WEB_DIST: dist,
-  };
-  const logFile = join(CACHE, 'server.log');
-  const log = openSync(logFile, 'w');
-  const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--import', 'tsx', 'src/index.ts'], { cwd: SERVER, env, stdio: ['ignore', log, log] });
-  closeSync(log);
-  const stop = () => server.exitCode === null && server.signalCode === null && server.kill();
-  process.on('exit', stop);
-  for (const deadline = Date.now() + 90_000; Date.now() < deadline && server.exitCode === null; await sleep(500)) {
-    if (await fetch(`${base}/api/server`).then((res) => res.ok, () => false)) return { base, stop };
-  }
-  stop();
-  const tail = readFileSync(logFile, 'utf8').trim().split('\n').slice(-15).join('\n');
-  throw new Error(`The server didn't start on ${base} (corepack pnpm install, then try again). Its last words:\n${tail}`);
-}
+/** The server for the tour, its output in .cache/web-screens/server.log. */
+const startTourServer = (library, dist) =>
+  startServer({ library, dist, dir: join(CACHE, 'server'), logFile: join(CACHE, 'server.log') });
 
 async function main() {
   const started = Date.now();
@@ -123,7 +87,7 @@ async function main() {
   if (missing.length === ALBUMS.length) throw new Error('No albums to play: MusicBrainz and the Cover Art Archive are needed the first time.');
 
   console.log('▸ Starting the server');
-  const server = await startServer(library, dist);
+  const server = await startTourServer(library, dist);
   const failures = [];
   const done = [];
   try {

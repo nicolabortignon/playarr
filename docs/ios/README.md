@@ -23,7 +23,7 @@ More detail:
 | `Packages/PlayarrAPI` | Talking to servers: the generated models, `Endpoint<T>` and every call as `API.<Feature>.<call>()`, `APIClient`, `ServerStore`, Keychain tokens, Bonjour (`ServerBrowser`), `MediaURLs`. No dependencies. |
 | `Packages/PlayarrPlayer` | Playback: the queue, the audio engine and its decks, levels, transitions, play reports, radio, the sleep timer, the lock screen, the stream cache and downloads. |
 | `Packages/PlayarrUI` | Every screen and component, the per-account session, the query and image caches, the shell, the demo library, the web's fonts (`Fonts/`). |
-| `PlayarrUITests` | XCUITest flows, the accessibility audits, `ScreenTour` (`make screens`) and `StoreScreenshots` (`make screenshots`). |
+| `PlayarrUITests` | XCUITest flows, the accessibility audits, `ScreenTour` (`make screens`), `StoreScreenshots` (`make screenshots`) and `OfflineTests` (`make offline-check`). |
 
 Dependencies point one way: the app target depends on `PlayarrUI`; `PlayarrUI` on `PlayarrPlayer` and `PlayarrAPI`; `PlayarrPlayer` on `PlayarrAPI`. Each package declares iOS 26 and macOS 26, so `swift test` runs its tests on the Mac without a simulator.
 
@@ -142,4 +142,5 @@ Notes:
 - **UI tests run on a simulator of their own**: parallel runs on a shared one break each other. `make screens` makes "Playarr Screens iphone", "ipad" and "duo" (and "se" when asked for); the iPhone Duo needs its own iOS 27 runtime.
 - **Drags.** XCUITest drags don't reach SwiftUI's list reordering on the simulator, so the playlist UI test only checks the reorder handles; `PlaylistModelTests` covers the move.
 - **Against a dev server.** `AccountsUITests` signs in to a real server when given `TEST_RUNNER_PLAYARR_UITEST_SERVER`, `_ADMIN` and `_PASSWORD`, and is skipped without them (as in CI).
+- **Downloads against a server of their own.** `make offline-check` (`scripts/offline-check.mjs`) starts the repo's server with the web tour's library of 20 real albums (`scripts/web-screens`: silent MP3s at their real lengths, kept in `.cache/web-screens/library`) on the simulator "Playarr Offline iPhone", and runs `OfflineTests` against it. The test downloads Moon Safari from its page, finds it in Library → Downloads, plays Dummy so songs are kept as you listen, and lowers Keep up to: 512 MB keeps them, Off lets them go, and the download stays. Its screenshots land in `build/offline-check/`. About three minutes after the first build.
 - **CI** runs `make test` on every push and pull request that changes `apps/ios`; see [release.md](release.md).
