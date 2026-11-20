@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import PlayarrAPI
 import PlayarrPlayer
@@ -49,5 +50,81 @@ import Testing
   @Test func theDemoWritesNothing() {
     let demo = AppModel.demo()
     #expect(demo.widgets == nil)
+  }
+
+  /// The covers the shelves asked for.
+  final class Asked {
+    var albums: [String] = []
+    var mixes: [String] = []
+  }
+
+  func art(_ asked: Asked) -> WidgetPublisher.Art {
+    WidgetPublisher.Art(
+      albumCover: { path in
+        asked.albums.append(path)
+        return Data("album \(path)".utf8)
+      },
+      mixCover: { mix in
+        asked.mixes.append(mix.key)
+        return Data("mix \(mix.key)".utf8)
+      })
+  }
+
+  @Test func putsTheAlbumsAndMixesOnTheShelvesMakingEachCoverOnce() async throws {
+    let publisher = WidgetPublisher(store: widgets) { [reloads] in reloads.count += 1 }
+    let record = AccountRecord(serverId: "srv-1", account: account(1, "Nicola"))
+    publisher.listening(as: record, on: "Home")
+    let albums = Array(Demo.albums.prefix(10))
+    let shown = albums.prefix(WidgetSnapshot.shelfSize)
+    let asked = Asked()
+
+    await publisher.shelves(for: record.key, albums: albums, mixes: [Demo.mix], art: art(asked))
+
+    let snapshot = try #require(widgets.read())
+    #expect(snapshot.albums.map(\.id) == shown.map { String($0.id) })
+    #expect(snapshot.albums.map(\.subtitle) == shown.map(\.artistName))
+    #expect(snapshot.mixes.map(\.id) == [Demo.mix.key])
+    let first = try #require(snapshot.albums.first?.cover)
+    #expect(try Data(contentsOf: widgets.cover(first)) == Data("album \(try #require(albums[0].coverUrl))".utf8))
+    #expect(asked.albums == shown.compactMap(\.coverUrl))
+    #expect(asked.mixes == [Demo.mix.key])
+
+    // Home again, nothing new: the covers are kept and the widgets aren't reloaded.
+    let reloaded = reloads.count
+    await publisher.shelves(for: record.key, albums: albums, mixes: [Demo.mix], art: art(asked))
+    #expect(asked.albums == shown.compactMap(\.coverUrl))
+    #expect(asked.mixes == [Demo.mix.key])
+    #expect(reloads.count == reloaded)
+
+    // The albums didn't come this time and the mixes are gone: the albums stay, and the mix's cover goes with it.
+    let mixCover = try #require(snapshot.mixes.first?.cover)
+    await publisher.shelves(for: record.key, albums: nil, mixes: [], art: art(asked))
+    #expect(widgets.read()?.albums == snapshot.albums)
+    #expect(widgets.read()?.mixes == [])
+    #expect(!widgets.hasCover(mixCover))
+    #expect(widgets.hasCover(first))
+  }
+
+  @Test func dropsTheShelvesOfAnAccountNoLongerListening() async {
+    let publisher = WidgetPublisher(store: widgets) {}
+    let nicola = AccountRecord(serverId: "srv-1", account: account(1, "Nicola"))
+    publisher.listening(as: AccountRecord(serverId: "srv-1", account: account(2, "Sam")), on: "Home")
+
+    await publisher.shelves(for: nicola.key, albums: Demo.albums, mixes: [Demo.mix], art: art(Asked()))
+
+    #expect(widgets.read()?.account?.name == "Sam")
+    #expect(widgets.read()?.albums == [])
+    #expect(widgets.read()?.mixes == [])
+  }
+
+  @Test func drawsAMixCoverAsHomeDoesAtTwiceTheWidgetsTileSize() async throws {
+    let app = AppModel.demo()
+    let session = try #require(app.session)
+
+    let data = try #require(await WidgetPublisher.Art.live(session: session, theme: app.theme).mixCover(Demo.mix))
+
+    let picture = try #require(CGImage.decoded(data))
+    #expect(picture.width == Int(WidgetPublisher.Art.points * 2))
+    #expect(picture.height == picture.width)
   }
 }

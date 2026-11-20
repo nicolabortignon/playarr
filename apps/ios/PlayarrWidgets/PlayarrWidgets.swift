@@ -8,6 +8,8 @@ import WidgetKit
 struct PlayarrWidgets: WidgetBundle {
   var body: some Widget {
     QuickPlayWidget()
+    JumpBackInWidget()
+    MadeForYouWidget()
     FeelingLuckyControl()
   }
 }

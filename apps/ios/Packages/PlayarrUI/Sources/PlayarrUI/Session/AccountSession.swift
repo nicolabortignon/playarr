@@ -31,6 +31,9 @@ public final class AccountSession {
   public let recentSearches: RecentSearches
   /// Feeling lucky's next press, asked for once one looks likely.
   let nextLucky: NextLucky
+  /// Hands the widgets Home's Jump back in and Made for you (plan 11), when the app has a `WidgetPublisher`: the albums
+  /// heard lately, nil to keep what they show. Set by `AppModel` as the session opens.
+  @ObservationIgnored var publishShelves: (@MainActor (_ albums: [Album]?) async -> Void)?
 
   /// `recentSearches`: where the account's recent searches are kept on this device (nil: in memory only).
   public init(

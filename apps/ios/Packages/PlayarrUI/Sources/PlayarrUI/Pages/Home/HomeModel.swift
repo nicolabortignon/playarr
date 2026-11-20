@@ -48,6 +48,7 @@ final class HomeModel {
     async let h: Void = rediscover.load()
     async let i: Void = review?.load() ?? ()
     _ = await (a, b, c, d, e, f, g, h, i)
+    await session.publishShelves?(heardLately.value)
   }
 
   /// Nothing to show and the server can't be reached (nothing kept either): Home says so, with Try again.
@@ -62,6 +63,7 @@ final class HomeModel {
       await query()
     }
     await session.refreshListening()
+    await session.publishShelves?(heardLately.value)
   }
 
   /// "8 songs across 3 albums, 44 min of music waiting in your library."

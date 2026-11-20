@@ -65,3 +65,59 @@ struct StartRadioIntent: AudioPlaybackIntent {
     }
   #endif
 }
+
+/// A widget's Jump back in: an album from the start. Not offered in Shortcuts (it'd ask for an album's id).
+struct PlayAlbumIntent: AudioPlaybackIntent {
+  static let title: LocalizedStringResource = "Play an album"
+  static let description = IntentDescription("Plays an album from the start.")
+  static let isDiscoverable = false
+
+  @Parameter(title: "Album") var albumId: Int
+
+  init() {}
+
+  init(albumId: Int) {
+    self.albumId = albumId
+  }
+
+  #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+  #else
+    @Dependency private var model: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+      model.syncSession()
+      try await QuickPlay(session: model.session).playAlbum(albumId)
+      return .result()
+    }
+  #endif
+}
+
+/// A widget's Made for you: a mix from the start. Not offered in Shortcuts (it'd ask for a mix's key).
+struct PlayMixIntent: AudioPlaybackIntent {
+  static let title: LocalizedStringResource = "Play a mix"
+  static let description = IntentDescription("Plays a Made for you mix from the start.")
+  static let isDiscoverable = false
+
+  @Parameter(title: "Mix") var mixKey: String
+
+  init() {}
+
+  init(mixKey: String) {
+    self.mixKey = mixKey
+  }
+
+  #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+  #else
+    @Dependency private var model: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+      model.syncSession()
+      try await QuickPlay(session: model.session).playMix(mixKey)
+      return .result()
+    }
+  #endif
+}

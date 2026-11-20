@@ -1,6 +1,7 @@
 import Foundation
 
-/// Where the snapshot is kept: `widget/snapshot.json` in the App Group's folder, shared by the app and its widgets.
+/// Where the snapshot is kept: `widget/snapshot.json` in the App Group's folder, shared by the app and its widgets, with
+/// the covers it names in `widget/covers/`.
 public struct WidgetStore: Sendable {
   public static let appGroup = "group.me.tracklistme.playarr"
 
@@ -17,6 +18,7 @@ public struct WidgetStore: Sendable {
   }
 
   var file: URL { folder.appending(path: "snapshot.json") }
+  var covers: URL { folder.appending(path: "covers", directoryHint: .isDirectory) }
 
   /// The snapshot written last; nil when there's none or it can't be read (the widgets then say to open Playarr).
   public func read() -> WidgetSnapshot? {
@@ -28,5 +30,24 @@ public struct WidgetStore: Sendable {
   public func write(_ snapshot: WidgetSnapshot) throws {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try JSONEncoder().encode(snapshot).write(to: file, options: .atomic)
+  }
+
+  /// A cover a snapshot names.
+  public func cover(_ name: String) -> URL { covers.appending(path: name) }
+
+  public func hasCover(_ name: String) -> Bool { FileManager.default.fileExists(atPath: cover(name).path) }
+
+  public func writeCover(_ data: Data, named name: String) throws {
+    try FileManager.default.createDirectory(at: covers, withIntermediateDirectories: true)
+    try data.write(to: cover(name), options: .atomic)
+  }
+
+  /// Deletes the covers the snapshot no longer names.
+  public func pruneCovers(keeping snapshot: WidgetSnapshot) {
+    let named = Set((snapshot.albums + snapshot.mixes).compactMap(\.cover))
+    let files = (try? FileManager.default.contentsOfDirectory(atPath: covers.path)) ?? []
+    for file in files where !named.contains(file) {
+      try? FileManager.default.removeItem(at: cover(file))
+    }
   }
 }

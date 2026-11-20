@@ -17,6 +17,7 @@ struct Cover: View {
 
   @Environment(AccountSession.self) private var session
   @Environment(\.displayScale) private var scale
+  @Environment(\.presetCovers) private var presets
   @State private var image: Image?
   /// The picture asked for last couldn't be had: the stand-in, not the color, until another one comes.
   @State private var missing = false
@@ -25,7 +26,7 @@ struct Cover: View {
     Color.clear
       .aspectRatio(1, contentMode: .fit)
       .overlay {
-        if let image {
+        if let image = image ?? path.flatMap({ presets[$0] }) {
           image.resizable().scaledToFill()
         } else if path != nil, !missing, let loading = RGB(css: color) {
           loading.color
@@ -55,6 +56,12 @@ struct Cover: View {
     image = await PreparedImages.shared.prepare(data, for: url)
     missing = false
   }
+}
+
+extension EnvironmentValues {
+  /// Pictures at hand already, by path: a cover drawn once to an image (a widget's mix cover, `WidgetArt`) can't wait
+  /// for one to load.
+  @Entry var presetCovers: [String: Image] = [:]
 }
 
 /// A record label: concentric grooves and the first letters of the name in the accent colour.

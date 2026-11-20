@@ -62,6 +62,20 @@ public struct QuickPlay {
     await session.actions.startRadio(track)
   }
 
+  /// An album from the start, as its page's Play (a widget's Jump back in).
+  public func playAlbum(_ id: Int) async throws(Failure) {
+    let session = try signedIn()
+    let album = try await ask(session) { try await $0.send(API.Library.album(id: id)) }
+    session.player.play(album.tracks, source: PlaySource(label: album.title, href: "/albums/\(id)"))
+  }
+
+  /// A mix from the start, as its page's Play (a widget's Made for you).
+  public func playMix(_ key: String) async throws(Failure) {
+    let session = try signedIn()
+    let mix = try await ask(session) { try await $0.send(API.Mixes.get(key: key)) }
+    session.player.play(mix.tracks, source: PlaySource(label: mix.title, href: "/mixes/\(key)"))
+  }
+
   private func signedIn() throws(Failure) -> AccountSession {
     guard let session else { throw .signedOut }
     return session

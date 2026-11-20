@@ -150,6 +150,12 @@ public final class AppModel {
                 return
             }
             session = opened
+            if let widgets {
+                opened.publishShelves = { [weak opened, theme] albums in
+                    guard let opened else { return }
+                    await widgets.shelves(for: opened.key, albums: albums, mixes: opened.mixes.mixes, art: .live(session: opened, theme: theme))
+                }
+            }
             if opensFirstSteps {
                 opensFirstSteps = false
                 opened.router.open(.firstStep(.music))
