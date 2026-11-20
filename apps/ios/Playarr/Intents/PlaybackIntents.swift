@@ -121,3 +121,63 @@ struct PlayMixIntent: AudioPlaybackIntent {
     }
   #endif
 }
+
+/// The Now Playing widget's play and pause.
+struct PlayPauseIntent: AudioPlaybackIntent {
+  static let title: LocalizedStringResource = "Play or pause"
+  static let description = IntentDescription("Pauses the song playing, or plays it again.")
+  static let isDiscoverable = false
+
+  #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+  #else
+    @Dependency private var model: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+      model.syncSession()
+      try QuickPlay(session: model.session).togglePlay()
+      return .result()
+    }
+  #endif
+}
+
+/// The Now Playing widget's next song.
+struct NextSongIntent: AudioPlaybackIntent {
+  static let title: LocalizedStringResource = "Next song"
+  static let description = IntentDescription("Skips to the next song.")
+  static let isDiscoverable = false
+
+  #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+  #else
+    @Dependency private var model: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+      model.syncSession()
+      try QuickPlay(session: model.session).next()
+      return .result()
+    }
+  #endif
+}
+
+/// The Now Playing widget's previous song (or the start of this one, as the player's own button).
+struct PreviousSongIntent: AudioPlaybackIntent {
+  static let title: LocalizedStringResource = "Previous song"
+  static let description = IntentDescription("Goes back to the song before, or to the start of this one.")
+  static let isDiscoverable = false
+
+  #if WIDGET_EXTENSION
+    func perform() async throws -> some IntentResult { .result() }
+  #else
+    @Dependency private var model: AppModel
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+      model.syncSession()
+      try QuickPlay(session: model.session).previous()
+      return .result()
+    }
+  #endif
+}

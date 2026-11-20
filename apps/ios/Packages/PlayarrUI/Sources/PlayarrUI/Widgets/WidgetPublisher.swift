@@ -24,6 +24,8 @@ public final class WidgetPublisher {
   private let reload: @MainActor () -> Void
   /// What was written last (read back from the folder the first time).
   private var written: WidgetSnapshot?
+  /// How many times what's playing was told, so a slow cover can't put an older state over a newer one.
+  private var nowPlayingTold = 0
 
   public init(store: WidgetStore, reload: @escaping @MainActor () -> Void = { WidgetCenter.shared.reloadAllTimelines() }) {
     self.store = store
@@ -84,6 +86,30 @@ public final class WidgetPublisher {
     var next = current
     next.albums = albumItems ?? current.albums
     next.mixes = mixItems ?? current.mixes
+    publish(next, over: current)
+    store.pruneCovers(keeping: written ?? current)
+  }
+
+  /// What's playing for `key`'s account, as the system's Now Playing is told it (nil: nothing). The time it would have
+  /// started is kept to the second, so a song playing on doesn't rewrite the snapshot.
+  func nowPlaying(for key: AccountKey, track: Track?, elapsed: Double, playing: Bool, now: Date = Date(), art: Art) async {
+    nowPlayingTold += 1
+    let told = nowPlayingTold
+    guard current?.account?.key == key.keychainAccount else { return }
+    var nowPlaying: WidgetSnapshot.NowPlaying?
+    if let track {
+      var cover: String?
+      if let path = track.coverUrl {
+        cover = await self.cover("a-\(Self.digest(path))") { await art.albumCover(path) }
+      }
+      let startedAt = Date(timeIntervalSince1970: (now.timeIntervalSince1970 - elapsed).rounded())
+      nowPlaying = WidgetSnapshot.NowPlaying(
+        title: track.title, artist: track.artistName, album: track.albumTitle, cover: cover, playing: playing,
+        elapsed: playing ? 0 : elapsed, duration: track.duration, startedAt: startedAt)
+    }
+    guard told == nowPlayingTold, let current, current.account?.key == key.keychainAccount else { return }
+    var next = current
+    next.nowPlaying = nowPlaying
     publish(next, over: current)
     store.pruneCovers(keeping: written ?? current)
   }

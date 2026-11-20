@@ -76,6 +76,17 @@ public struct QuickPlay {
     session.player.play(mix.tracks, source: PlaySource(label: mix.title, href: "/mixes/\(key)"))
   }
 
+  /// The Now Playing widget's buttons: play or pause, the next song, the one before.
+  public func togglePlay() throws(Failure) { try playing().togglePlay() }
+  public func next() throws(Failure) { try playing().next() }
+  public func previous() throws(Failure) { try playing().previous() }
+
+  private func playing() throws(Failure) -> Player {
+    let session = try signedIn()
+    guard session.player.queue.currentTrack != nil else { throw .nothingPlaying }
+    return session.player
+  }
+
   private func signedIn() throws(Failure) -> AccountSession {
     guard let session else { throw .signedOut }
     return session

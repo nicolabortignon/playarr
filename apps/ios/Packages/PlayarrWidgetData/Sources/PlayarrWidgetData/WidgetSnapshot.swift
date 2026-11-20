@@ -33,16 +33,43 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     }
   }
 
+  /// The song playing or paused: `startedAt` is when it would have started had it played without a break, so a widget
+  /// runs its progress from there while it plays; paused, it shows `elapsed`.
+  public struct NowPlaying: Codable, Equatable, Sendable {
+    public var title: String
+    public var artist: String
+    public var album: String
+    public var cover: String?
+    public var playing: Bool
+    public var elapsed: Double
+    public var duration: Double
+    public var startedAt: Date
+
+    public init(title: String, artist: String, album: String, cover: String?, playing: Bool, elapsed: Double, duration: Double, startedAt: Date) {
+      self.title = title
+      self.artist = artist
+      self.album = album
+      self.cover = cover
+      self.playing = playing
+      self.elapsed = elapsed
+      self.duration = duration
+      self.startedAt = startedAt
+    }
+  }
+
   public var account: Account?
   /// Jump back in: the albums heard lately, newest first, up to 8.
   public var albums: [Item]
   /// Made for you: Home's mixes, in its order, up to 8.
   public var mixes: [Item]
+  /// Nothing playing: nil.
+  public var nowPlaying: NowPlaying?
 
-  public init(account: Account?, albums: [Item] = [], mixes: [Item] = []) {
+  public init(account: Account?, albums: [Item] = [], mixes: [Item] = [], nowPlaying: NowPlaying? = nil) {
     self.account = account
     self.albums = albums
     self.mixes = mixes
+    self.nowPlaying = nowPlaying
   }
 
   /// A snapshot from an older app may lack the shelves: they're empty until the app writes them.
@@ -51,6 +78,7 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     account = try container.decodeIfPresent(Account.self, forKey: .account)
     albums = try container.decodeIfPresent([Item].self, forKey: .albums) ?? []
     mixes = try container.decodeIfPresent([Item].self, forKey: .mixes) ?? []
+    nowPlaying = try container.decodeIfPresent(NowPlaying.self, forKey: .nowPlaying)
   }
 
   /// How many items a shelf keeps: a large widget's two rows of four.
@@ -63,7 +91,8 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
   public static let placeholder = WidgetSnapshot(
     account: Account(key: "placeholder", server: "Playarr", name: "You"),
     albums: (1...8).map { Item(id: "\($0)", title: "Album", subtitle: "Artist", cover: nil) },
-    mixes: (1...8).map { Item(id: "\($0)", title: "Mix", subtitle: "Made for you", cover: nil) })
+    mixes: (1...8).map { Item(id: "\($0)", title: "Mix", subtitle: "Made for you", cover: nil) },
+    nowPlaying: NowPlaying(title: "Song", artist: "Artist", album: "Album", cover: nil, playing: false, elapsed: 70, duration: 210, startedAt: .now))
 }
 
 /// The widgets' kinds, which the app names to reload them.
@@ -71,5 +100,6 @@ public enum WidgetKind {
   public static let quickPlay = "QuickPlay"
   public static let jumpBackIn = "JumpBackIn"
   public static let madeForYou = "MadeForYou"
+  public static let nowPlaying = "NowPlaying"
   public static let luckyControl = "FeelingLuckyControl"
 }

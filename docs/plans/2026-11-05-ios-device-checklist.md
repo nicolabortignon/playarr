@@ -82,3 +82,15 @@ The app sends its token to the server's home address (`http://192.168.1.103:4000
 ## Restoring (iPhone)
 
 - [ ] **A backup without the Keychain.** Back up a phone signed in to Playarr in Finder with "Encrypt local backup" off (such a backup leaves the Keychain out), and restore it onto an iPhone: Playarr opens on "sign in again" for the account, still listed, rather than a spinner, and signing in brings it back. (An encrypted or iCloud backup brings the token back too, and Playarr opens signed in.)
+
+## Widgets (plan 11)
+
+- [ ] The first TestFlight build after plan 11 uploads: `release.mjs` finds the App Group on the app and the widget extension.
+- [ ] Quick play, Jump back in, Made for you and Now Playing appear in the widget gallery, in their sizes, with the gallery's stand-in content.
+- [ ] With the app closed (swiped away in the switcher), tapping Feeling lucky in Quick play starts the music without opening Playarr. If it opens the app or does nothing, the intents need another route: note what happened.
+- [ ] Jump back in and Made for you show your covers after Home has loaded once; a tap plays that album or mix from the start.
+- [ ] Now Playing follows song changes, play and pause, including with the phone locked; its bar moves on its own; previous, play/pause and next work from the widget.
+- [ ] The Feeling lucky control in Control Center, on the Lock Screen and on the Action button.
+- [ ] Signing out turns every widget to "Open Playarr to sign in"; switching accounts shows the other account's albums and mixes, never the last one's.
+- [ ] The tinted and clear Home Screen styles: covers grey, text readable.
+- [ ] On an iPad's Home Screen.

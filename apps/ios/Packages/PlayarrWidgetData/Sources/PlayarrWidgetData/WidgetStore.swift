@@ -44,7 +44,7 @@ public struct WidgetStore: Sendable {
 
   /// Deletes the covers the snapshot no longer names.
   public func pruneCovers(keeping snapshot: WidgetSnapshot) {
-    let named = Set((snapshot.albums + snapshot.mixes).compactMap(\.cover))
+    let named = Set((snapshot.albums + snapshot.mixes).compactMap(\.cover) + [snapshot.nowPlaying?.cover].compactMap { $0 })
     let files = (try? FileManager.default.contentsOfDirectory(atPath: covers.path)) ?? []
     for file in files where !named.contains(file) {
       try? FileManager.default.removeItem(at: cover(file))

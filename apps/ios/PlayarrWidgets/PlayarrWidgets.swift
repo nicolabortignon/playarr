@@ -10,6 +10,7 @@ struct PlayarrWidgets: WidgetBundle {
     QuickPlayWidget()
     JumpBackInWidget()
     MadeForYouWidget()
+    NowPlayingWidget()
     FeelingLuckyControl()
   }
 }

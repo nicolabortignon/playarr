@@ -127,4 +127,67 @@ import Testing
     #expect(picture.width == Int(WidgetPublisher.Art.points * 2))
     #expect(picture.height == picture.width)
   }
+
+  @Test func followsTheSongPlayingAndPausedWithoutRewritingWhileItPlaysOn() async throws {
+    let publisher = WidgetPublisher(store: widgets) { [reloads] in reloads.count += 1 }
+    let record = AccountRecord(serverId: "srv-1", account: account(1, "Nicola"))
+    publisher.listening(as: record, on: "Home")
+    let track = try #require(Demo.tracks.first { $0.coverUrl != nil })
+    let start = Date(timeIntervalSince1970: 1_000_000)
+
+    await publisher.nowPlaying(for: record.key, track: track, elapsed: 30.4, playing: true, now: start, art: art(Asked()))
+    let playing = try #require(widgets.read()?.nowPlaying)
+    #expect(playing.title == track.title)
+    #expect(playing.artist == track.artistName)
+    #expect(playing.playing)
+    #expect(playing.startedAt == Date(timeIntervalSince1970: 1_000_000 - 30))
+    #expect(playing.duration == track.duration)
+    let cover = try #require(playing.cover)
+    #expect(widgets.hasCover(cover))
+
+    // Told again ten seconds on, still playing: the same moment it started, nothing rewritten.
+    let reloaded = reloads.count
+    await publisher.nowPlaying(for: record.key, track: track, elapsed: 40.4, playing: true, now: start.addingTimeInterval(10), art: art(Asked()))
+    #expect(reloads.count == reloaded)
+
+    await publisher.nowPlaying(for: record.key, track: track, elapsed: 41, playing: false, now: start.addingTimeInterval(11), art: art(Asked()))
+    #expect(widgets.read()?.nowPlaying?.playing == false)
+    #expect(widgets.read()?.nowPlaying?.elapsed == 41)
+
+    await publisher.nowPlaying(for: record.key, track: nil, elapsed: 0, playing: false, art: art(Asked()))
+    #expect(widgets.read()?.nowPlaying == nil)
+    #expect(!widgets.hasCover(cover))
+  }
+
+  @Test func aSlowCoverDoesntPutAnOlderSongOverANewerOne() async throws {
+    let publisher = WidgetPublisher(store: widgets) {}
+    let record = AccountRecord(serverId: "srv-1", account: account(1, "Nicola"))
+    publisher.listening(as: record, on: "Home")
+    let first = try #require(Demo.tracks.first { $0.coverUrl != nil })
+    var second = try #require(Demo.tracks.last)
+    second.coverUrl = nil
+    let asking = Gate()
+    let gate = Gate()
+    let slow = WidgetPublisher.Art(
+      albumCover: { _ in
+        await asking.open()
+        await gate.wait()
+        return Data("cover".utf8)
+      },
+      mixCover: { _ in nil })
+
+    let older = Task { await publisher.nowPlaying(for: record.key, track: first, elapsed: 0, playing: true, art: slow) }
+    await asking.wait()  // the first song's cover is on its way
+    await publisher.nowPlaying(for: record.key, track: second, elapsed: 0, playing: true, art: art(Asked()))
+    await gate.open()
+    await older.value
+
+    #expect(widgets.read()?.nowPlaying?.title == second.title)
+  }
+
+  @Test func theWidgetsButtonsSayWhenNothingIsPlaying() throws {
+    let app = AppModel.demo()
+    #expect(throws: QuickPlay.Failure.nothingPlaying) { try QuickPlay(session: app.session).togglePlay() }
+    #expect(throws: QuickPlay.Failure.signedOut) { try QuickPlay(session: nil).next() }
+  }
 }

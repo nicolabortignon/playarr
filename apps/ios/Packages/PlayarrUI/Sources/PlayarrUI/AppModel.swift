@@ -155,6 +155,10 @@ public final class AppModel {
                     guard let opened else { return }
                     await widgets.shelves(for: opened.key, albums: albums, mixes: opened.mixes.mixes, art: .live(session: opened, theme: theme))
                 }
+                opened.player.onNowPlaying = { [weak opened, theme] track, elapsed, playing in
+                    guard let opened else { return }
+                    Task { await widgets.nowPlaying(for: opened.key, track: track, elapsed: elapsed, playing: playing, art: .live(session: opened, theme: theme)) }
+                }
             }
             if opensFirstSteps {
                 opensFirstSteps = false

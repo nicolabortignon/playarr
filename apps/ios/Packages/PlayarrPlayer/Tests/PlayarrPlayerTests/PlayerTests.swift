@@ -164,6 +164,20 @@ struct PlayerTests {
     #expect(player.sleep.sleptAt == nil)
   }
 
+  @Test func tellsTheNowPlayingWidgetWhatTheSystemIsTold() throws {
+    let player = try Player.testing()
+    var told: [(id: Int?, playing: Bool)] = []
+    player.onNowPlaying = { track, _, playing in told.append((track?.id, playing)) }
+
+    player.play([song(1), song(2)])
+    player.togglePlay()
+    player.next()
+
+    #expect(told.contains { $0.id == 1 && $0.playing })
+    #expect(told.contains { $0.id == 1 && !$0.playing })
+    #expect(told.last?.id == 2)
+  }
+
   @Test func radioCarriesOnWhenTheLastSongStarts() async throws {
     let backend = FakeBackend()
     backend.radioAnswer.withLock { $0 = [song(10), song(11)] }

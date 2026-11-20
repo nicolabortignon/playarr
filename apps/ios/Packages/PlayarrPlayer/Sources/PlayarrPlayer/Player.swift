@@ -52,6 +52,9 @@ public final class Player {
 
   @ObservationIgnored public private(set) var engine: AudioEngine
   @ObservationIgnored public var nowPlaying: NowPlayingBridge?
+  /// Told what the system's Now Playing is told (the song, where it is, playing or not), on play, pause, seek and song
+  /// changes: the Now Playing widget follows it (plan 11).
+  @ObservationIgnored public var onNowPlaying: (@MainActor (_ track: Track?, _ elapsed: Double, _ playing: Bool) -> Void)?
   @ObservationIgnored public var session: (any AudioSessionControlling)?
   /// The network the phone is on (the app's `NetworkMonitor`; tests set their own).
   @ObservationIgnored public var network: () -> NetworkKind {
@@ -861,6 +864,7 @@ public final class Player {
 
   private func showNowPlaying() {
     nowPlaying?.update(track: queue.currentTrack, elapsed: time, playing: queue.playing)
+    onNowPlaying?(queue.currentTrack, time, queue.playing)
   }
 
   private func save(at now: Date = Date()) {
