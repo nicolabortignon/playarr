@@ -132,8 +132,9 @@ async function check() {
 
 async function setup(testers) {
   const { bundleId } = config();
-  // Background audio and background downloads are Info.plist keys (UIBackgroundModes), not App ID
-  // capabilities, so the bundle id needs no capability registered.
+  // Background audio and background downloads are Info.plist keys (UIBackgroundModes), not App ID capabilities. The
+  // App Group the widgets share and the widget extension's bundle id are registered by the export's automatic signing
+  // (release.mjs checks the group made it into both).
   if (await findBundleId(bundleId)) console.log(`✓ Bundle id ${bundleId} already registered`);
   else {
     await asc('POST', '/v1/bundleIds', { data: { type: 'bundleIds', attributes: { identifier: bundleId, name: 'Playarr', platform: 'IOS' } } });

@@ -22,10 +22,12 @@ More detail:
 | `Playarr` (app target) | `PlayarrApp.swift` (the live `AppModel`; in Debug builds an empty or demo one from the launch arguments), `AppDelegate.swift` (the background download session, the orientation mask), `Intents/` (App Intents), the asset catalog, `PrivacyInfo.xcprivacy` (the privacy manifest, [release.md](release.md#8-the-privacy-manifest)). `Config/` holds `Info.plist` and the entitlements. |
 | `Packages/PlayarrAPI` | Talking to servers: the generated models, `Endpoint<T>` and every call as `API.<Feature>.<call>()`, `APIClient`, `ServerStore`, Keychain tokens, Bonjour (`ServerBrowser`), `MediaURLs`. No dependencies. |
 | `Packages/PlayarrPlayer` | Playback: the queue, the audio engine and its decks, levels, transitions, play reports, radio, the sleep timer, the lock screen, the stream cache and downloads. |
-| `Packages/PlayarrUI` | Every screen and component, the per-account session, the query and image caches, the shell, the demo library, the web's fonts (`Fonts/`). |
+| `Packages/PlayarrUI` | Every screen and component, the per-account session, the query and image caches, the shell, the demo library, the web's fonts (`Fonts/`), and `WidgetPublisher`, which hands the widgets their snapshot. |
+| `Packages/PlayarrWidgetData` | What the app hands its widgets: `WidgetSnapshot` and `WidgetStore`, the snapshot kept in the App Group's folder. No dependencies. |
+| `PlayarrWidgets` (widget extension) | The Home Screen widgets and the Feeling lucky control ([§5](#5-app-intents-and-widgets)). It links `PlayarrWidgetData` only, and compiles `Playarr/Intents/PlaybackIntents.swift` too. |
 | `PlayarrUITests` | XCUITest flows, the accessibility audits, `ScreenTour` (`make screens`), `StoreScreenshots` (`make screenshots`) and `OfflineTests` (`make offline-check`). |
 
-Dependencies point one way: the app target depends on `PlayarrUI`; `PlayarrUI` on `PlayarrPlayer` and `PlayarrAPI`; `PlayarrPlayer` on `PlayarrAPI`. Each package declares iOS 26 and macOS 26, so `swift test` runs its tests on the Mac without a simulator.
+Dependencies point one way: the app target depends on `PlayarrUI` and embeds `PlayarrWidgets`; `PlayarrUI` on `PlayarrPlayer`, `PlayarrAPI` and `PlayarrWidgetData`; `PlayarrPlayer` on `PlayarrAPI`; `PlayarrWidgets` on `PlayarrWidgetData` alone, to stay well within a widget's memory. Each package declares iOS 26 and macOS 26, so `swift test` runs its tests on the Mac without a simulator.
 
 ## 2. Talking to the server
 
@@ -95,9 +97,13 @@ Every page is a `Route`, registered once in `shellDestinations(_:)` so tabs and 
 - `DemoArt` draws each cover and artist photo from its address. `make screens` alone puts the albums' real covers in instead, from `PLAYARR_DEMO_COVERS` (see [release.md](release.md)).
 - Variants: `-UITestsRequests` (`DemoRequestsAPI`: Lidarr and an album to request; `-UITestsRequests asks-first` as a member whose requests wait for approval, with one declined, and `-UITestsRequests admin` with someone's request to approve or decline), `-UITestsOffline` (`OfflineAPI`: a server that can't be reached), `-UITestsLongQueue` (5,000 songs queued), `-UITestsManyPlaylists`, `-UITestsCollaborative` (Alex's "Sunday kitchen", shared and collaborative, with a song Sam added in it: the demo account adds to it and moves and removes its songs, as anyone it's shared with can; `DemoState` keeps the server's rules for collaborative playlists). The full list is in [conventions.md](conventions.md).
 
-## 5. App Intents
+## 5. App Intents and widgets
 
 `Playarr/Intents/` has three `AudioPlaybackIntent`s, so they play without bringing the app to the front: Play my Favorites, Feeling lucky (15 songs for this hour), and Start radio from the current song. `PlayarrShortcuts` gives Siri their phrases and the Shortcuts app their actions. They find the app's `AppModel` through `AppDependencyManager` (registered in `PlayarrApp.init`) and call `QuickPlay` in `PlayarrUI`, the same code as the buttons in the app; a failure is spoken as `QuickPlay.Failure`'s text ("Open Playarr and sign in first.").
+
+**Widgets** (plan 11, [2026-11-20-11-ios-widgets.md](../plans/2026-11-20-11-ios-widgets.md)). The `PlayarrWidgets` extension has Quick play (Feeling lucky, Play my Favorites and Start radio as buttons; small has Feeling lucky only) and a Feeling lucky control for Control Center, the Lock Screen and the Action button. Their buttons name the same intents: `PlaybackIntents.swift` is compiled into the extension too, as declarations only (`WIDGET_EXTENSION`), and the system performs audio playback intents in the app's process, starting it in the background, so a tap plays without opening Playarr.
+
+The widgets never ask a server. The app writes a snapshot to `widget/snapshot.json` in the App Group's folder (`group.me.tracklistme.playarr`, the app's and the extension's only entitlement), and `WidgetPublisher` reloads the widgets when it changes: `AppModel.syncSession()` tells it who's listening, a snapshot of its own for each account, `.signedOut` when nobody is. The demo and the UI tests have no publisher, so they write nothing. With no snapshot, or nobody signed in, a widget says "Open Playarr to sign in" and opens the app. `release.mjs` checks the exported app and extension were signed with the App Group, and stops before uploading if not. Logs: the `widgets` category.
 
 ## 6. Logs and diagnostics
 

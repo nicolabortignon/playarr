@@ -17,7 +17,7 @@ The names, folders, commands and habits the iOS app's code follows. Read this be
 | Swift | Swift 6 language mode (`SWIFT_VERSION: "6.0"` in `project.yml`; packages use tools version 6.2) |
 | Devices | iPhone and iPad (`TARGETED_DEVICE_FAMILY: "1,2"`) |
 | `Info.plist` | Background mode `audio` only (background `URLSession` downloads need none); `ITSAppUsesNonExemptEncryption` false; the `playarr` URL scheme; Bonjour `_playarr._tcp` with a Local Network usage text; `NSAllowsLocalNetworking`; the exported type `me.tracklistme.playarr.tracks` for dragging songs |
-| Entitlements | None (`Config/Playarr.entitlements` is empty) |
+| Entitlements | The App Group `group.me.tracklistme.playarr` only, for the app (`Config/Playarr.entitlements`) and the widget extension (`PlayarrWidgets/PlayarrWidgets.entitlements`), where the app hands the widgets their snapshot. The extension's bundle id is `me.tracklistme.playarr.widgets` |
 | Privacy manifest | `Playarr/PrivacyInfo.xcprivacy`: no tracking, no data collected, and a reason for each required-reason API the app and its packages call (user defaults, file timestamps, disk space, system boot time; [release.md](release.md#8-the-privacy-manifest)). A new such call adds its reason there |
 
 ## 2. Repository layout
@@ -33,7 +33,9 @@ apps/ios/
 ├── Packages/
 │   ├── PlayarrAPI/    # Sources/PlayarrAPI (+ Endpoints/), Tests/PlayarrAPITests (+ Fixtures/)
 │   ├── PlayarrPlayer/ # Sources/PlayarrPlayer, Tests/PlayarrPlayerTests (+ Support/)
-│   └── PlayarrUI/     # Sources/PlayarrUI (one folder per area), Tests/PlayarrUITests (+ Support/, Admin/)
+│   ├── PlayarrUI/     # Sources/PlayarrUI (one folder per area), Tests/PlayarrUITests (+ Support/, Admin/)
+│   └── PlayarrWidgetData/ # Sources/PlayarrWidgetData (the widgets' snapshot), Tests/PlayarrWidgetDataTests
+├── PlayarrWidgets/    # the widget extension: the widgets, the control, Info.plist, its entitlements, Assets.xcassets
 ├── PlayarrUITests/    # the XCUITest target: flows, audits, ScreenTour, StoreScreenshots
 ├── store/             # the App Store listing: app.json, en-US/*.txt
 └── scripts/           # asc.mjs, release.mjs, appstore.mjs, store.mjs, screenshots.mjs, screens-covers.mjs,
@@ -43,7 +45,7 @@ apps/ios/
 
 Two things share the name `PlayarrUITests`: the XCUITest target at `apps/ios/PlayarrUITests/`, and `PlayarrUI`'s package test target at `Packages/PlayarrUI/Tests/PlayarrUITests/`. Give the full path when it matters.
 
-Dependencies: the app target → `PlayarrUI` → `PlayarrPlayer` → `PlayarrAPI`, and `PlayarrUI` → `PlayarrAPI` directly. No third-party packages.
+Dependencies: the app target → `PlayarrUI` → `PlayarrPlayer` → `PlayarrAPI`, and `PlayarrUI` → `PlayarrAPI` and `PlayarrWidgetData` directly; the widget extension → `PlayarrWidgetData` only (never `PlayarrUI`). No third-party packages.
 
 ## 3. Commands
 

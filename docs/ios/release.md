@@ -18,7 +18,7 @@ One-time steps that only App Store Connect's website can do:
 - **The agreement**: until the account holder accepts the Apple Developer Program License Agreement, the API answers 403, and `asc.mjs` says so.
 - **App Privacy**, before the first App Store release.
 
-`pnpm ios:setup` (`asc.mjs setup`) registers the bundle id. Once the app record exists, it creates the internal TestFlight group "Household", which gets every build, and adds the App Store Connect users given in `TESTERS="a@example.com b@example.com"`. It's safe to run again. Background audio and downloads are `Info.plist` keys, so the bundle id needs no capabilities.
+`pnpm ios:setup` (`asc.mjs setup`) registers the bundle id. Once the app record exists, it creates the internal TestFlight group "Household", which gets every build, and adds the App Store Connect users given in `TESTERS="a@example.com b@example.com"`. It's safe to run again. Background audio and downloads are `Info.plist` keys. The one capability, App Groups (`group.me.tracklistme.playarr`, shared with the widgets, plan 11), and the widget extension's bundle id `me.tracklistme.playarr.widgets` are registered by the export's automatic signing through the key; `release.mjs` then checks both the app and the extension carry the group, and stops before uploading if either doesn't. If it stops there, add the group in the developer portal (Identifiers → App Groups) and tick it for both bundle ids.
 
 ## 2. Signing and uploading
 

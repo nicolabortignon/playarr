@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { exportOptions, marketingVersionIn, reviewerProblems, uploadNeeded, whatsNew, withMarketingVersion } from './release.mjs';
+import { APP_GROUP, exportOptions, marketingVersionIn, reviewerProblems, uploadNeeded, whatsNew, withMarketingVersion, withoutAppGroup } from './release.mjs';
 
 test('whatsNew lists the commit subjects, without merges', () => {
   assert.equal(
@@ -33,6 +33,14 @@ test('exportOptions signs for the App Store and writes an .ipa, keeping our buil
     assert.ok(plist.includes(`<key>${key}</key><string>${value}</string>`), `${key} = ${value}`);
   }
   assert.ok(plist.includes('<key>manageAppVersionAndBuildNumber</key><false/>'));
+});
+
+test('withoutAppGroup names the signed bundles that lack the App Group', () => {
+  const group = `<dict><key>com.apple.security.application-groups</key><array><string>${APP_GROUP}</string></array></dict>`;
+  const other = '<dict><key>com.apple.security.application-groups</key><array><string>group.example.other</string></array></dict>';
+  assert.deepEqual(withoutAppGroup({ 'Playarr.app': group, 'PlayarrWidgets.appex': group }), []);
+  assert.deepEqual(withoutAppGroup({ 'Playarr.app': group, 'PlayarrWidgets.appex': '<dict/>' }), ['PlayarrWidgets.appex']);
+  assert.deepEqual(withoutAppGroup({ 'Playarr.app': other, 'PlayarrWidgets.appex': group }), ['Playarr.app']);
 });
 
 test('uploadNeeded uploads a newer build only: one already there, or older than the last, is nothing to do', () => {

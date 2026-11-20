@@ -25,6 +25,9 @@ packages:
   PlayarrUI:
     path: Packages/PlayarrUI
     group: Packages
+  PlayarrWidgetData:
+    path: Packages/PlayarrWidgetData
+    group: Packages
 targets:
   Playarr:
     type: application
@@ -35,6 +38,7 @@ targets:
         buildPhase: none
     dependencies:
       - package: PlayarrUI
+      - target: PlayarrWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(PLAYARR_BUNDLE_ID)
@@ -42,6 +46,25 @@ targets:
         INFOPLIST_FILE: Config/Info.plist
         CODE_SIGN_ENTITLEMENTS: Config/Playarr.entitlements
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  # The widgets and the Feeling lucky control (plan 11), embedded in the app. It links PlayarrWidgetData only, and
+  # compiles the app's playback intents as declarations (WIDGET_EXTENSION): the system performs them in the app.
+  PlayarrWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - PlayarrWidgets
+      - path: Playarr/Intents/PlaybackIntents.swift
+    dependencies:
+      - package: PlayarrWidgetData
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(PLAYARR_BUNDLE_ID).widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: PlayarrWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PlayarrWidgets/PlayarrWidgets.entitlements
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) WIDGET_EXTENSION
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME: WidgetBackground
   PlayarrUITests:
     type: bundle.ui-testing
     platform: iOS

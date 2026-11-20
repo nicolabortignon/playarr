@@ -54,11 +54,13 @@ public final class AppModel {
     static let trialScratch: Scratch = (FileManager.default.temporaryDirectory.appending(path: "playarr-trial", directoryHint: .isDirectory), "playarr.trial")
 
     @ObservationIgnored private let makeSession: SessionFactory
+    /// Hands the widgets who's signed in and what to show (plan 11); none in the demo and UI tests.
+    @ObservationIgnored let widgets: WidgetPublisher?
 
     public init(
         store: ServerStore, browser: ServerBrowser, appVersion: AppVersion, device: DeviceInfo,
         playback: PlaybackSettings = PlaybackSettings(), appearance: AppearanceSettings = AppearanceSettings(),
-        makeSession: @escaping SessionFactory = AccountSession.live
+        widgets: WidgetPublisher? = nil, makeSession: @escaping SessionFactory = AccountSession.live
     ) {
         self.store = store
         self.browser = browser
@@ -68,12 +70,13 @@ public final class AppModel {
         self.appearance = appearance
         self.theme = Theme(appearance: appearance)
         self.makeSession = makeSession
+        self.widgets = widgets
         // A known server found at home keeps that address as its local one, once the server there proves itself.
         browser.onUpdate = { [weak store] servers in _ = store?.discovered(servers) }
     }
 
     public static func live() -> AppModel {
-        AppModel(store: .live(), browser: ServerBrowser(), appVersion: .current, device: .current())
+        AppModel(store: .live(), browser: ServerBrowser(), appVersion: .current, device: .current(), widgets: .live())
     }
 
     /// No servers, and nothing kept: for UI tests (`-UITests`) and previews.
@@ -133,6 +136,8 @@ public final class AppModel {
     /// (`sessionFailure`) until this is called again (Try again).
     public func syncSession() {
         let record = store.activeAccount.flatMap { $0.signedIn ? $0 : nil }
+        // Every time, not only when the session changes: a session that failed to open signs out with none opened.
+        widgets?.listening(as: record, on: record.flatMap { store.server($0.serverId)?.name })
         guard record?.key != session?.key else { return }
         session?.close()
         session = nil

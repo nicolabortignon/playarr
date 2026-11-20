@@ -138,6 +138,16 @@ async function uploadBuild(cfg, app) {
     const ipa = join(tmp, 'export', 'Playarr.ipa');
     if (!existsSync(ipa)) fail(`The export finished without ${ipa}.`);
 
+    // The archive is unsigned, so the entitlements come from the export's signing: a build whose app or widgets lost
+    // the App Group would install fine and show empty widgets.
+    step('Checking the app and its widgets share the App Group');
+    const unpacked = join(tmp, 'unpacked');
+    execFileSync('ditto', ['-x', '-k', ipa, unpacked]);
+    const bundle = join(unpacked, 'Payload', 'Playarr.app');
+    const signed = { 'Playarr.app': bundle, 'PlayarrWidgets.appex': join(bundle, 'PlugIns', 'PlayarrWidgets.appex') };
+    const missing = withoutAppGroup(Object.fromEntries(Object.entries(signed).map(([name, path]) => [name, sh('codesign', ['-d', '--entitlements', '-', '--xml', path])])));
+    if (missing.length) fail(`${missing.join(' and ')} signed without the App Group ${APP_GROUP}: register it for both bundle ids in the developer portal (Identifiers → App Groups), then try again.`);
+
     step('Uploading to App Store Connect');
     // altool reads the key from ~/.appstoreconnect/private_keys/AuthKey_<id>.p8, where config() found it.
     // It prints a harmless "CDUploaderStateInfoResumeFilePath" ERROR line before it starts.
@@ -161,6 +171,16 @@ async function processed(appId, build) {
     if (now === 'FAILED' || now === 'INVALID') fail(`App Store Connect couldn't process build ${build} (${now}); Apple emails the reason to the account holder.`);
   }
   fail(`Build ${build} still isn't processed after 45 minutes (last state: ${state}): see App Store Connect → TestFlight.`);
+}
+
+/** The App Group the app and its widgets share (plan 11; Config/Playarr.entitlements, PlayarrWidgets/PlayarrWidgets.entitlements). */
+export const APP_GROUP = 'group.me.tracklistme.playarr';
+
+/** Of the signed bundles, by name, the ones whose entitlements (as `codesign --xml` prints them) lack the App Group. */
+export function withoutAppGroup(entitlements) {
+  return Object.entries(entitlements)
+    .filter(([, xml]) => !xml.includes(`<string>${APP_GROUP}</string>`))
+    .map(([name]) => name);
 }
 
 /** Export options for an App Store build: cloud-managed signing, written to an .ipa for altool to upload. */

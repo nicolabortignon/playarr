@@ -29,7 +29,7 @@ XCODEGEN_VERSION := 2.46.0
 XCODEGEN_SHA256 := 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
 XCODEGEN := .tools/xcodegen-$(XCODEGEN_VERSION)/bin/xcodegen
 
-PACKAGES := PlayarrAPI PlayarrPlayer PlayarrUI
+PACKAGES := PlayarrAPI PlayarrPlayer PlayarrUI PlayarrWidgetData
 SIMULATOR ?= iPhone 17 Pro
 # That simulator's id, or the first available iPhone's when this Xcode has none by that name. The name is matched as
 # it's written (-F): as a pattern, "iPad Pro 13-inch (M5)"'s brackets matched nothing, and the tests ran on an iPhone.

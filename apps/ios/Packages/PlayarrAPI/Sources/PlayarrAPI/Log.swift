@@ -10,4 +10,5 @@ public enum Log {
   public static let downloads = Logger(subsystem: subsystem, category: "downloads")
   public static let network = Logger(subsystem: subsystem, category: "network")
   public static let auth = Logger(subsystem: subsystem, category: "auth")
+  public static let widgets = Logger(subsystem: subsystem, category: "widgets")
 }
